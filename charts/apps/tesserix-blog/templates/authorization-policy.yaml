@@ -1,8 +1,9 @@
-# Allow traffic from Istio ingress gateway
+# Allow all traffic to the blog - it's a public-facing site
+# Authentication/authorization is handled by the app itself (Keycloak OIDC + email whitelist)
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
-  name: {{ .Release.Name }}-allow-ingress
+  name: {{ .Release.Name }}-allow-all
   labels:
     {{- include "common.labels" . | nindent 4 }}
 spec:
@@ -11,34 +12,5 @@ spec:
       {{- include "common.selectorLabels" . | nindent 6 }}
   action: ALLOW
   rules:
-    # From Istio ingress gateway
-    - from:
-        - source:
-            namespaces:
-              - istio-ingress
-    # From same namespace (tesserix)
-    - from:
-        - source:
-            namespaces:
-              - tesserix
-    # From monitoring namespace (Prometheus)
-    - from:
-        - source:
-            namespaces:
-              - monitoring
-    # From Istio system
-    - from:
-        - source:
-            namespaces:
-              - istio-system
-    # Allow health checks and public blog endpoints
-    - to:
-        - operation:
-            paths:
-              - /api/health
-              - /api/posts/published*
-              - /api/posts/featured
-            methods:
-              - GET
-              - HEAD
-              - OPTIONS
+    # Allow all sources - blog is public
+    - {}
