@@ -1289,6 +1289,64 @@ buckets = [
       }
     ]
     iam_bindings = []
+  },
+
+  # ===========================================================================
+  # BLOG - Engineering Blog Assets (public read, upload-only for blog SA)
+  # Long-term retention 10yr+, lifecycle: Standard → Nearline → Coldline
+  # ===========================================================================
+  {
+    name                        = "tesserix-blog-assets"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "inherited"
+    versioning                  = false
+    labels = {
+      purpose   = "blog-images"
+      product   = "blog"
+      region    = "in"
+      retention = "long-term"
+    }
+    lifecycle_rules = [
+      {
+        action = {
+          type          = "SetStorageClass"
+          storage_class = "NEARLINE"
+        }
+        condition = {
+          age = 90
+        }
+      },
+      {
+        action = {
+          type          = "SetStorageClass"
+          storage_class = "COLDLINE"
+        }
+        condition = {
+          age = 365
+        }
+      }
+    ]
+    cors = [
+      {
+        origin          = ["https://blog.tesserix.app", "http://localhost:3003"]
+        method          = ["GET", "HEAD"]
+        response_header = ["Content-Type", "Content-Length"]
+        max_age_seconds = 86400
+      }
+    ]
+    iam_bindings = [
+      {
+        role   = "roles/storage.objectViewer"
+        member = "allUsers"
+      },
+      {
+        role   = "roles/storage.objectCreator"
+        member = "serviceAccount:blog-assets-writer@tesseracthub-480811.iam.gserviceaccount.com"
+      }
+    ]
   }
 ]
 
@@ -2962,6 +3020,26 @@ service_accounts = [
     ]
     bucket_bindings  = []
     secret_bindings  = []
+  },
+
+  # ===========================================================================
+  # BLOG - Blog Assets Writer (upload-only to GCS public bucket)
+  # ===========================================================================
+  {
+    name         = "blog-assets-writer"
+    display_name = "Blog Assets Writer"
+    description  = "Upload-only access to tesserix-blog-assets GCS bucket for blog image uploads"
+    project_roles = []
+    workload_identity_bindings = [
+      { namespace = "tesserix", kubernetes_service_account = "tesserix-blog" }
+    ]
+    bucket_bindings = [
+      {
+        bucket = "tesserix-blog-assets"
+        role   = "roles/storage.objectCreator"
+      }
+    ]
+    secret_bindings = []
   }
 ]
 
