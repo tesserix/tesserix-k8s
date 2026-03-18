@@ -43,9 +43,12 @@ spec:
               containerPort: {{ .Values.service.targetPort | default 3000 }}
               protocol: TCP
           env:
+            {{- $secretKeys := list "MONGODB_URI" "KEYCLOAK_CLIENT_SECRET" "SESSION_SECRET" }}
             {{- range $key, $value := .Values.env }}
+            {{- if not (and $.Values.externalSecrets.enabled (has $key $secretKeys)) }}
             - name: {{ $key }}
               value: {{ $value | quote }}
+            {{- end }}
             {{- end }}
             {{- if .Values.gcp.projectId }}
             - name: GCP_PROJECT_ID
