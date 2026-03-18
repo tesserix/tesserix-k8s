@@ -1,0 +1,53 @@
+{{- if not (and .Values.cloudRun .Values.cloudRun.enabled) }}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.domains.primary | quote }}
+  gateways:
+    - istio-ingress/tesserix-gateway
+  http:
+    # Health check (no auth needed)
+    - match:
+        - uri:
+            prefix: /api/health
+      route:
+        - destination:
+            host: {{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+
+    # Auth routes → blog app handles its own Keycloak OIDC
+    - match:
+        - uri:
+            prefix: /api/auth
+      route:
+        - destination:
+            host: {{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: 5xx,reset,connect-failure
+
+    # Default route → blog app
+    - route:
+        - destination:
+            host: {{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+      timeout: 15s
+      retries:
+        attempts: 2
+        perTryTimeout: 5s
+        retryOn: 5xx,reset,connect-failure
+  exportTo:
+    - "."
+    - "istio-system"
+{{- end }}

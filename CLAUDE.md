@@ -1,0 +1,277 @@
+# Claude Reference Guide — tesserix-k8s
+
+This file is the single source of truth for Claude when working on any Tesserix repository.
+Always read this before making any changes.
+
+---
+
+## Git Identity
+
+**Always** configure git before committing:
+
+```bash
+git config user.name "sam123ben"
+git config user.email "samyak.rout@gmail.com"
+```
+
+- **NEVER** include `Co-Authored-By: Claude` or any Claude/Anthropic/AI reference in commit messages.
+- **NEVER** mention Claude, Copilot, or any AI tool in commit messages, PR descriptions, or code comments.
+- All commits must appear as authored by `sam123ben <samyak.rout@gmail.com>`.
+
+---
+
+## Repository Conventions
+
+### Commit Messages
+
+Use conventional commits:
+
+```
+feat: short description
+fix: short description
+chore: short description
+docs: short description
+refactor: short description
+```
+
+- Keep the first line under 72 characters.
+- Add a blank line then a body for multi-line messages.
+- No emojis in commit messages.
+
+### Branch Naming
+
+```
+feat/short-description
+feature/short-description
+bugfix/short-description
+hotfix/short-description
+```
+
+---
+
+## GitHub Actions & CI/CD
+
+### Public/Private Repo Toggle for Builds
+
+The `tesserix` GitHub org has limited Actions minutes for private repos. When triggering CI:
+
+1. **Make repo public** before pushing/triggering CI:
+   ```bash
+   gh repo edit tesserix/<repo> --visibility public --accept-visibility-change-consequences
+   ```
+2. **Wait for CI to complete.**
+3. **Make repo private** after CI passes:
+   ```bash
+   gh repo edit tesserix/<repo> --visibility private --accept-visibility-change-consequences
+   ```
+
+### CI Workflow Pattern (Next.js apps)
+
+All Next.js apps use the same CI pattern:
+- Lint → Docker build → Push to GHCR → GKE/Knative deploy → Trivy scan
+- Docker build uses `--secret id=NODE_AUTH_TOKEN` for `@tesserix/web` package
+- Deployment via `kubectl patch ksvc <service> -n <namespace>` (Knative)
+- Image naming: `ghcr.io/tesserix/<service-name>:<tag>`
+
+### CI Workflow Pattern (Go services)
+
+- `go vet` → Unit tests → Docker build → Push to GHCR + GAR → Cloud Run deploy → Trivy scan
+- Private Go modules via `GOPRIVATE=github.com/tesserix/*` and `go-private-token` secret
+
+### Required GitHub Secrets
+
+| Secret | Purpose | Source |
+|--------|---------|--------|
+| `PKG_READ_TOKEN` | NPM `@tesserix/*` packages from GitHub Packages | GCP: `prod-ghcr-token` |
+| `GITHUB_TOKEN` | Automatic — GHCR push, PR operations | GitHub built-in |
+
+### GCP Workload Identity (for CI → GKE)
+
+```
+Provider: projects/849928263410/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+SA: github-actions@tesseracthub-480811.iam.gserviceaccount.com
+Cluster: tesseract-prod-in-gke
+Region: asia-south1
+```
+
+---
+
+## GCP Secret Manager
+
+**Project:** `tesseracthub-480811`
+
+### Naming Convention
+
+```
+{env}-{service}-{secret-name}
+```
+
+Examples:
+- `dev-blog-mongodb-uri`
+- `prod-ghcr-token`
+- `dev-auth-bff-session-secret`
+
+### Accessing Secrets
+
+```bash
+# List secrets
+gcloud secrets list --project=tesseracthub-480811 --filter="name:<search>"
+
+# Read a secret
+gcloud secrets versions access latest --secret=<name> --project=tesseracthub-480811
+
+# Create a new secret
+gcloud secrets create <name> --project=tesseracthub-480811 --replication-policy=automatic
+echo -n "value" | gcloud secrets versions add <name> --project=tesseracthub-480811 --data-file=-
+```
+
+### Key Tokens
+
+- `prod-ghcr-token` / `prod-ghcr-username` — GHCR auth for pulling/pushing images and `@tesserix/*` npm packages
+- `go-private-token` — GitHub PAT for Go private module access
+
+---
+
+## Helm Charts (tesserix-k8s)
+
+### Structure
+
+```
+charts/apps/
+├── common/          # Library chart — shared templates (_helpers.tpl, _gcp-secrets.tpl)
+├── global-config.yaml       # Dev shared config (GCP project, workload identity, etc.)
+├── global-config-prod.yaml  # Prod overrides
+├── <service>/
+│   ├── Chart.yaml           # Must depend on common chart
+│   ├── values.yaml          # Dev defaults
+│   ├── values-prod.yaml     # Prod overrides
+│   └── templates/           # K8s manifests
+```
+
+### Template Checklist (new service)
+
+Every service Helm chart should include:
+- [ ] `deployment.yaml` — with health probes, security context, emptyDir volumes for readOnlyRootFilesystem
+- [ ] `service.yaml` — ClusterIP
+- [ ] `serviceaccount.yaml` — with Workload Identity annotation
+- [ ] `ingress.yaml` — Kong (dev) / Istio (prod)
+- [ ] `externalsecret.yaml` — GCP Secret Manager integration
+- [ ] `network-policy.yaml` — default deny + explicit allows
+- [ ] `authorization-policy.yaml` — Istio RBAC
+- [ ] `scaledobject.yaml` — KEDA autoscaling (conditional)
+- [ ] `pdb.yaml` — PodDisruptionBudget (prod only, conditional)
+
+### Common Chart Helpers
+
+Use these in templates:
+- `{{ include "common.labels" . }}` — standard K8s labels
+- `{{ include "common.selectorLabels" . }}` — pod selector labels
+- `{{ include "common.podAnnotations" . }}` — Istio sidecar config
+
+---
+
+## ArgoCD
+
+### App Manifests
+
+```
+argocd/
+├── dev/
+│   ├── apps/global/<service>.yaml
+│   ├── infrastructure/
+│   └── projects/tesserix.yaml
+└── prod/
+    ├── apps/global/<service>.yaml
+    ├── infrastructure/
+    └── projects/tesserix.yaml
+```
+
+### ArgoCD App Template
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: <service>
+  namespace: argocd
+spec:
+  project: tesserix-{dev|prod}
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: main
+    path: charts/apps/<service>
+    helm:
+      valueFiles:
+        - values.yaml
+        - ../global-config.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tesserix
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+```
+
+---
+
+## Gotchas & Common Pitfalls
+
+### 1. @tesserix/web package auth
+The `@tesserix/web` package is hosted on GitHub Packages. Always need `NODE_AUTH_TOKEN` set:
+```bash
+NODE_AUTH_TOKEN=$(gcloud secrets versions access latest --secret=prod-ghcr-token --project=tesseracthub-480811) npm install
+```
+
+### 2. Docker build secrets
+Never put tokens in Dockerfile args. Use Docker build secrets:
+```dockerfile
+RUN --mount=type=secret,id=NODE_AUTH_TOKEN ...
+```
+In CI: `--secret id=NODE_AUTH_TOKEN,env=NODE_AUTH_TOKEN`
+
+### 3. Istio sidecar port exclusions
+Services that connect to NATS (4222), PostgreSQL (5432), or Redis (6379) need port exclusions in pod annotations. The `common.podAnnotations` helper adds these automatically.
+
+### 4. ReadOnly root filesystem
+Next.js apps need emptyDir volumes for `/tmp` and `/app/.next/cache` when `readOnlyRootFilesystem: true`.
+
+### 5. GKE Metadata server
+Pods using Workload Identity must exclude `169.254.169.254/32` from Istio proxy:
+```yaml
+traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+```
+
+### 6. Knative deployment
+Services deployed via Knative use `kubectl patch ksvc` with a timestamp annotation to trigger rollout — not `kubectl rollout restart`.
+
+### 7. External Secrets refresh
+ExternalSecrets refresh every 1 hour. For immediate secret rotation, delete the K8s secret and let ESO recreate it.
+
+### 8. MongoDB ObjectId
+MongoDB uses `_id` (ObjectId), not `id`. All frontend code must reference `post._id`, not `post.id`.
+
+### 9. Image registries
+- **GHCR** (`ghcr.io/tesserix/`) — primary for all services
+- **GAR** (`asia-south1-docker.pkg.dev/tesseracthub-480811/`) — secondary for Cloud Run
+
+### 10. Port conventions
+| Service Type | Port |
+|-------------|------|
+| Go microservices | 8080-8099 |
+| Next.js apps (local dev) | 3001-3200 |
+| Next.js apps (Docker/GKE) | 3000 |
+
+---
+
+## Platform Architecture Quick Reference
+
+- **Backend:** Go 1.26, Gin, GORM, PostgreSQL (microservices) / MongoDB (blog)
+- **Frontend:** Next.js 16, React 19, TypeScript, Tailwind v4, @tesserix/web
+- **Auth:** Keycloak + OpenFGA (marketplace) / Keycloak OIDC (blog)
+- **Infra:** GKE, Istio, ArgoCD, Helm, KEDA, cert-manager
+- **Messaging:** Google Pub/Sub
+- **Caching:** Redis
+- **Secrets:** GCP Secret Manager via External Secrets Operator
+- **CI/CD:** GitHub Actions → GHCR → GKE/Knative (ArgoCD for Helm sync)
+- **GCP Project:** tesseracthub-480811, Region: asia-south1

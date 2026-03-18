@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongodb-blog-init
+  labels:
+    app: mongodb-blog
+data:
+  init-blog.js: |
+    // ==========================================================================
+    // Tesserix Blog - MongoDB Schema Bootstrap
+    // Runs on first startup via /docker-entrypoint-initdb.d/
+    // Creates: tesserix_blog database, collections, indexes, validation, seed data
+    // ==========================================================================
+
+    print("=== Initializing tesserix_blog database ===");
+
+    db = db.getSiblingDB('tesserix_blog');
+
+    // Create blog app user
+    db.getSiblingDB('admin').createUser({
+      user: "blog_app",
+      pwd: process.env.MONGO_INITDB_ROOT_PASSWORD,
+      roles: [
+        { role: "readWrite", db: "tesserix_blog" }
+      ]
+    });
+    print("  Created blog_app user with readWrite access");
+
+    // --- Posts collection with schema validation ---
+    db.createCollection('posts', {
+      validator: {
+        $jsonSchema: {
+          bsonType: "object",
+          required: ["title", "slug", "content", "status", "authorEmail", "authorName", "createdAt", "updatedAt"],
+          properties: {
+            title:            { bsonType: "string", maxLength: 500 },
+            slug:             { bsonType: "string", maxLength: 255 },
+            excerpt:          { bsonType: "string" },
+            content:          { bsonType: "string" },
+            status:           { enum: ["DRAFT", "PUBLISHED", "ARCHIVED"] },
+            metaTitle:        { bsonType: "string", maxLength: 255 },
+            metaDescription:  { bsonType: "string", maxLength: 500 },
+            ogImage:          { bsonType: "string" },
+            featuredImage:    { bsonType: "string" },
+            featuredImageAlt: { bsonType: "string", maxLength: 255 },
+            authorEmail:      { bsonType: "string" },
+            authorName:       { bsonType: "string", maxLength: 255 },
+            authorAvatar:     { bsonType: "string" },
+            category:         { bsonType: "string", maxLength: 100 },
+            tags:             { bsonType: "array", items: { bsonType: "string" } },
+            isFeatured:       { bsonType: "bool" },
+            viewCount:        { bsonType: "int", minimum: 0 },
+            publishedAt:      { bsonType: ["date", "null"] },
+            createdAt:        { bsonType: "date" },
+            updatedAt:        { bsonType: "date" }
+          }
+        }
+      }
+    });
+    print("  Created 'posts' collection with schema validation");
+
+    // Posts indexes for query performance
+    db.posts.createIndex({ slug: 1 }, { unique: true, name: "idx_slug" });
+    db.posts.createIndex({ status: 1, publishedAt: -1 }, { name: "idx_status_published" });
+    db.posts.createIndex({ category: 1 }, { name: "idx_category" });
+    db.posts.createIndex({ tags: 1 }, { name: "idx_tags" });
+    db.posts.createIndex({ authorEmail: 1 }, { name: "idx_author" });
+    db.posts.createIndex({ isFeatured: 1, status: 1 }, { name: "idx_featured" });
+    db.posts.createIndex({ updatedAt: -1 }, { name: "idx_updated" });
+    db.posts.createIndex(
+      { title: "text", excerpt: "text", content: "text" },
+      { name: "idx_fulltext", weights: { title: 10, excerpt: 5, content: 1 } }
+    );
+    print("  Created 8 indexes on posts (including full-text search)");
+
+    // --- Sessions collection with TTL auto-cleanup ---
+    db.createCollection('sessions');
+    db.sessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0, name: "idx_ttl" });
+    db.sessions.createIndex({ email: 1 }, { name: "idx_email" });
+    db.sessions.createIndex({ keycloakSub: 1 }, { name: "idx_keycloak" });
+    print("  Created 'sessions' collection with TTL auto-cleanup");
+
+    // --- Seed initial blog post ---
+    var now = new Date();
+    db.posts.insertOne({
+      title: "Welcome to the Tesserix Engineering Blog",
+      slug: "welcome-to-tesserix-blog",
+      excerpt: "Introducing our engineering blog where we share technical insights, architecture decisions, and lessons learned building Tesserix.",
+      content: "<h2>Welcome!</h2><p>We're excited to launch the Tesserix Engineering Blog. Here, our team will share:</p><ul><li><strong>Technical deep-dives</strong> into our microservices architecture</li><li><strong>Architecture decisions</strong> and the reasoning behind them</li><li><strong>Platform updates</strong> and new feature announcements</li><li><strong>Lessons learned</strong> from scaling our GKE infrastructure</li></ul><p>Stay tuned for more posts coming soon!</p>",
+      status: "PUBLISHED",
+      metaTitle: "",
+      metaDescription: "Introducing the Tesserix Engineering Blog",
+      ogImage: "",
+      featuredImage: "",
+      featuredImageAlt: "",
+      authorEmail: "samyak.rout@gmail.com",
+      authorName: "Samyak Rout",
+      authorAvatar: "",
+      category: "Announcements",
+      tags: ["announcement", "welcome", "tesserix"],
+      isFeatured: true,
+      viewCount: NumberInt(0),
+      publishedAt: now,
+      createdAt: now,
+      updatedAt: now
+    });
+    print("  Seeded welcome blog post");
+
+    print("=== tesserix_blog initialization complete ===");
+    print("  Collections: posts, sessions");
+    print("  Indexes: 8 on posts, 3 on sessions (with TTL)");
+    print("  Seed data: 1 welcome post");

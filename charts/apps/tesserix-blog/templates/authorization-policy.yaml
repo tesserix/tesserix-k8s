@@ -1,0 +1,44 @@
+# Allow traffic from Istio ingress gateway
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ .Release.Name }}-allow-ingress
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  action: ALLOW
+  rules:
+    # From Istio ingress gateway
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+    # From same namespace (tesserix)
+    - from:
+        - source:
+            namespaces:
+              - tesserix
+    # From monitoring namespace (Prometheus)
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+    # From Istio system
+    - from:
+        - source:
+            namespaces:
+              - istio-system
+    # Allow health checks and public blog endpoints
+    - to:
+        - operation:
+            paths:
+              - /api/health
+              - /api/posts/published*
+              - /api/posts/featured
+            methods:
+              - GET
+              - HEAD
+              - OPTIONS

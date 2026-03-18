@@ -1,0 +1,95 @@
+# Production overrides for tesserix-blog
+
+image:
+  repository: ghcr.io/tesserix/tesserix-blog
+  tag: "0.1.0"
+
+replicaCount: 2
+
+# =============================================================================
+# Domain Configuration
+# =============================================================================
+domains:
+  primary: blog.tesserix.app
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  NODE_ENV: "production"
+  NEXT_PUBLIC_BLOG_URL: "https://blog.tesserix.app"
+  NEXT_PUBLIC_BLOG_NAME: "Tesserix Blog"
+
+  # MongoDB (prod - from GCP Secret Manager)
+  # MONGODB_URI injected from external secret
+
+  # Keycloak (prod)
+  KEYCLOAK_ISSUER: "https://auth.tesserix.app/realms/tesserix"
+  KEYCLOAK_CLIENT_ID: "tesserix-blog"
+
+  # Allowed authors
+  ALLOWED_AUTHORS: "samyak.rout@gmail.com,mahesh.sangawar@gmail.com"
+
+# =============================================================================
+# GCP
+# =============================================================================
+gcp:
+  secretManager:
+    secretPrefix: "prod"
+
+# =============================================================================
+# KEDA Autoscaling
+# =============================================================================
+keda:
+  enabled: true
+  minReplicaCount: 2
+  maxReplicaCount: 6
+  pollingInterval: 30
+  cooldownPeriod: 300
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "60"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "75"
+
+# =============================================================================
+# Pod Disruption Budget
+# =============================================================================
+pdb:
+  enabled: true
+  minAvailable: 1
