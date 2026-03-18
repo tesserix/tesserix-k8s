@@ -605,7 +605,6 @@ resource "helm_release" "argocd" {
         resources = var.argocd_repo_server_resources
       }
       applicationSet = {
-        enabled  = true
         replicas = 1
       }
       notifications = {

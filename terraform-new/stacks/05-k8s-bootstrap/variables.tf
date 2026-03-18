@@ -262,13 +262,13 @@ variable "argocd_namespace" {
 variable "argocd_chart_version" {
   description = "ArgoCD Helm chart version"
   type        = string
-  default     = "5.51.6"
+  default     = "7.7.23"
 }
 
 variable "argocd_image_tag" {
   description = "ArgoCD image tag"
   type        = string
-  default     = "v2.9.3"
+  default     = "v2.13.4"
 }
 
 variable "argocd_server_insecure" {
