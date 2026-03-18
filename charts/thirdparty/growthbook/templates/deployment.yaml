@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "growthbook.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "growthbook.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "growthbook.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "growthbook.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "growthbook.serviceAccountName" . }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: {{ .Values.securityContext.runAsNonRoot }}
+        runAsUser: {{ .Values.securityContext.runAsUser }}
+        fsGroup: {{ .Values.securityContext.fsGroup }}
+      containers:
+        - name: growthbook
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: app
+              containerPort: 3000
+              protocol: TCP
+            - name: api
+              containerPort: 3100
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: {{ .Values.config.nodeEnv | quote }}
+            - name: APP_ORIGIN
+              value: {{ .Values.config.appOrigin | quote }}
+            - name: API_HOST
+              value: {{ .Values.config.apiHost | quote }}
+            - name: MONGODB_URI
+              value: {{ include "growthbook.mongoUri" . | quote }}
+            - name: UPLOAD_METHOD
+              value: {{ .Values.config.uploadMethod | quote }}
+            - name: DISABLE_TELEMETRY
+              value: {{ .Values.config.disableTelemetry | quote }}
+            {{- if .Values.config.enableOpenFeature }}
+            - name: ENABLE_OPEN_FEATURE
+              value: "true"
+            {{- end }}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.jwtSecretName }}
+                  key: {{ .Values.secrets.jwtSecretKey }}
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.encryptionKeySecretName }}
+                  key: {{ .Values.secrets.encryptionKeyKey }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if and .Values.persistence.enabled (eq .Values.config.uploadMethod "local") }}
+          volumeMounts:
+            - name: uploads
+              mountPath: /usr/local/src/app/packages/back-end/uploads
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: api
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- if and .Values.persistence.enabled (eq .Values.config.uploadMethod "local") }}
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: {{ include "growthbook.fullname" . }}-uploads
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

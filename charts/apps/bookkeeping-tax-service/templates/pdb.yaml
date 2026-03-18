@@ -1,0 +1,22 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "bookkeeping-tax-service.fullname" . }}
+  labels:
+    {{- include "bookkeeping-tax-service.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.pdb.minAvailable }}
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  {{- else if .Values.pdb.maxUnavailable }}
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  {{- else }}
+  minAvailable: 1
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "bookkeeping-tax-service.selectorLabels" . | nindent 6 }}
+  {{- if .Values.pdb.unhealthyPodEvictionPolicy }}
+  unhealthyPodEvictionPolicy: {{ .Values.pdb.unhealthyPodEvictionPolicy }}
+  {{- end }}
+{{- end }}

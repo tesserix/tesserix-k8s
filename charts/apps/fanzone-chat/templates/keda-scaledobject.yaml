@@ -1,0 +1,17 @@
+{{- if .Values.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "fanzone-chat.fullname" . }}
+  labels:
+    {{- include "fanzone-chat.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "fanzone-chat.fullname" . }}
+  pollingInterval: {{ .Values.keda.pollingInterval | default 30 }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod | default 300 }}
+  minReplicaCount: {{ .Values.keda.minreplicaCount | default 1 }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount | default 10 }}
+  triggers:
+    {{- toYaml .Values.keda.triggers | nindent 4 }}
+{{- end }}

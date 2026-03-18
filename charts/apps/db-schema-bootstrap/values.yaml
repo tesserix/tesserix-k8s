@@ -1,0 +1,46 @@
+# Which product's schemas to deploy (marketplace, hms, fanzone, etc.)
+app: marketplace
+
+# CronJob configuration
+schedule: "*/30 * * * *"
+concurrencyPolicy: Forbid
+ttlSecondsAfterFinished: 600
+backoffLimit: 3
+activeDeadlineSeconds: 300
+
+# PostgreSQL targets — each maps to a StatefulSet in a namespace
+targets:
+  - name: global
+    host: postgresql.postgresql-global.svc.cluster.local
+    port: 5432
+    user: postgres
+    secretName: postgresql-global-password
+    secretKey: postgresql-password
+  - name: marketplace
+    host: postgresql.postgresql-marketplace.svc.cluster.local
+    port: 5432
+    user: postgres
+    secretName: postgresql-marketplace-password
+    secretKey: postgresql-password
+
+# GCP Secret Manager (alternative to K8s secrets)
+gcp:
+  enabled: false
+  project: ""
+  secrets: {}
+  #  global: "projects/PROJECT/secrets/postgresql-global-password/versions/latest"
+  #  marketplace: "projects/PROJECT/secrets/postgresql-marketplace-password/versions/latest"
+
+# Images
+image:
+  postgres: postgres:16-alpine
+  gcloud: google/cloud-sdk:alpine
+
+# Service account for GCP Workload Identity
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Namespace override
+namespaceOverride: ""

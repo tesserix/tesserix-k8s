@@ -1,0 +1,117 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nats
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: messaging
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/nats
+    targetRevision: HEAD
+    helm:
+      releaseName: nats
+      values: |
+        # Use latest alpine image
+        image:
+          repository: nats
+          tag: alpine
+          pullPolicy: Always
+
+        # Production: 3 replicas for high availability cluster
+        replicaCount: 3
+
+        # Cluster configuration for HA
+        cluster:
+          enabled: true
+          replicas: 3
+          # Route connections between cluster nodes
+          routeURLs:
+            user: nats
+            password: nats
+
+        # JetStream for persistent messaging
+        jetstream:
+          enabled: true
+          memoryStore:
+            enabled: true
+            maxSize: 512Mi
+          fileStore:
+            enabled: true
+            size: 5Gi
+            storageClassName: standard-rwo
+
+        # Production resource configuration
+        resources:
+          requests:
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+
+        # Persistence for GKE (per replica)
+        persistence:
+          enabled: true
+          storageClassName: standard-rwo
+          size: 5Gi
+
+        # Service configuration
+        service:
+          type: ClusterIP
+          port: 4222
+          clusterPort: 6222
+          monitorPort: 8222
+
+        # Pod Disruption Budget for HA
+        podDisruptionBudget:
+          enabled: true
+          minAvailable: 2
+
+        # Liveness and readiness probes
+        livenessProbe:
+          enabled: true
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        readinessProbe:
+          enabled: true
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        # Anti-affinity to spread across nodes
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: nats
+                  topologyKey: kubernetes.io/hostname
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nats
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Replace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

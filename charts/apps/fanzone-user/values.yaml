@@ -1,0 +1,178 @@
+# =============================================================================
+# FanZone User - User Profile & Points Service
+# Serves user profiles, points balance, room breakdown, and points history
+# =============================================================================
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/FanZone-Battle-Ground/fanzone-user
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Exclude ports from Istio sidecar for proper connectivity
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432,27017"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  # Istio sidecar configuration
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8084
+
+resources:
+  limits:
+    memory: 256Mi
+  requests:
+    memory: 64Mi
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+knative:
+  enabled: false
+  minScale: 0
+  maxScale: 5
+  scaleDownDelay: "60s"
+  concurrencyTarget: 100
+  containerConcurrency: 0
+  timeoutSeconds: 300
+
+autoscaling:
+  enabled: true
+  minReplicas: 0
+  maxReplicas: 7
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - fanzone-user
+          topologyKey: kubernetes.io/hostname
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# KEDA ScaledObject configuration
+keda:
+  enabled: true
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minreplicaCount: 1
+  maxReplicaCount: 7
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "80"
+
+# Graceful shutdown
+terminationGracePeriodSeconds: 30
+
+# Environment configuration
+env:
+  GO_ENV: production
+  LOG_LEVEL: info
+  LOG_FORMAT: json
+
+  # Server config
+  SERVER_PORT: "8084"
+
+  # NATS (game points worker)
+  NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+  NATS_STREAM_NAME: "FANZONE_GAME"
+
+  # MongoDB (chat message stats)
+  MONGO_URL: "mongodb://mongodb-fanzone.mongodb-fanzone.svc.cluster.local:27017"
+
+# PostgreSQL configuration (fanzone_auth database — has users, points, match_reminders tables)
+# Must use fanzone_auth to match auth & prediction services which write points data there
+database:
+  host: "postgresql.postgresql-fanzone.svc.cluster.local"
+  port: "5432"
+  user: "postgres"
+  name: "fanzone_auth"
+  sslmode: "require"
+  passwordSecretName: "postgresql-fanzone-password"
+  passwordSecretKey: "password"
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"
+  minAllowed:
+    memory: "32Mi"
+  maxAllowed:
+    memory: "256Mi"
+  excludeIstioProxy: true
+
+# GCP Secret Manager configuration
+gcp:
+  projectId: ""
+  namespace: "fanzone"
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "devtest"

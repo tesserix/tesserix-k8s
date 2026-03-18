@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-base
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: infrastructure
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: default
+  source:
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: base
+    targetRevision: 1.24.0
+    helm:
+      releaseName: istio-base
+      values: |
+        # Install Istio CRDs
+        defaultRevision: default
+
+        # Global settings
+        global:
+          # Enable istio CNI for better pod security
+          istioNamespace: istio-system
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - Replace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

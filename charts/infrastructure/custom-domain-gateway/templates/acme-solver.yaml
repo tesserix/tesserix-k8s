@@ -1,0 +1,80 @@
+{{- /*
+ACME HTTP-01 Challenge Routing for Custom Domain Gateway
+This configuration routes ACME HTTP-01 challenges to cert-manager's solver pods.
+
+How it works:
+1. When cert-manager validates a Certificate, it creates a solver Pod
+2. All solver Pods have the label: acme.cert-manager.io/http01-solver=true
+3. The Service below selects all solver Pods using this label
+4. The VirtualService routes ACME challenge requests to this Service
+5. The specific solver Pod responds with the challenge token
+
+This allows HTTP-01 challenges to work through the custom domain gateway
+without needing Gateway API or custom cert-manager configuration.
+*/ -}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: acme-http-solver
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    app.kubernetes.io/name: acme-http-solver
+    app.kubernetes.io/component: acme-solver
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  # Select all cert-manager HTTP-01 solver pods
+  # These pods are created dynamically during certificate validation
+  selector:
+    acme.cert-manager.io/http01-solver: "true"
+  ports:
+    - name: http
+      port: 8089
+      targetPort: 8089
+      protocol: TCP
+  type: ClusterIP
+---
+{{- /*
+VirtualService for ACME HTTP-01 Challenges
+Routes /.well-known/acme-challenge/* to the ACME solver service.
+This has higher priority than the HTTPS redirect due to exact prefix match.
+*/ -}}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: custom-domain-acme-challenge
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    app.kubernetes.io/name: custom-domain-acme-challenge
+    app.kubernetes.io/component: virtualservice
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  gateways:
+    - {{ .Values.gateway.namespace }}/{{ .Values.gateway.name }}
+  hosts:
+    - "*"  # Handle ACME challenges for any custom domain
+  http:
+    # =================================================================
+    # ACME HTTP-01 Challenge Handler
+    # =================================================================
+    # This route handles Let's Encrypt HTTP-01 validation requests.
+    # The path "/.well-known/acme-challenge/<TOKEN>" must return
+    # the correct response for certificate validation to succeed.
+    #
+    # Priority: This exact prefix match takes precedence over the
+    # HTTPS redirect VirtualService's generic "/" prefix match.
+    # =================================================================
+    - name: acme-challenge
+      match:
+        - uri:
+            prefix: "/.well-known/acme-challenge/"
+      route:
+        - destination:
+            host: acme-http-solver.{{ .Values.gateway.namespace }}.svc.cluster.local
+            port:
+              number: 8089
+      # Disable retries for ACME challenges - they should succeed first try
+      retries:
+        attempts: 0
+      # Short timeout for ACME challenges
+      timeout: 30s

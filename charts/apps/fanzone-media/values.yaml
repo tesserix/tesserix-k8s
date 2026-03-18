@@ -1,0 +1,119 @@
+# =============================================================================
+# FanZone Media - Go Media Service (Emoji Catalog + GIF Proxy)
+# Serves OpenMoji emoji catalog and proxies Klipy GIF API with Redis caching
+# =============================================================================
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/FanZone-Battle-Ground/fanzone-media
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  traffic.sidecar.istio.io/excludeOutboundPorts: "5432,6379"
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8086
+
+ingress:
+  enabled: false
+
+resources:
+  limits:
+    memory: 256Mi
+  requests:
+    memory: 64Mi
+
+livenessProbe:
+  enabled: false
+
+readinessProbe:
+  enabled: false
+
+knative:
+  enabled: false
+  minScale: 0
+  maxScale: 5
+  scaleDownDelay: "60s"
+  concurrencyTarget: 100
+  containerConcurrency: 0
+  timeoutSeconds: 300
+
+autoscaling:
+  enabled: false
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+terminationGracePeriodSeconds: 15
+
+# Environment configuration
+env:
+  SERVER_PORT: "8086"
+
+# Secrets from existing K8s secrets
+secretEnv:
+  - name: REDIS_PASSWORD
+    secretName: redis-fanzone-password
+    secretKey: password
+  # GIPHY_API_KEY is injected via ExternalSecret when externalSecrets.enabled=true
+
+# Redis URL constructed with password
+redisURL: "redis://:$(REDIS_PASSWORD)@redis.redis-fanzone.svc.cluster.local:6379/3"
+
+# PostgreSQL for GIF catalog
+database:
+  enabled: true
+  host: "postgresql.postgresql-fanzone.svc.cluster.local"
+  port: "5432"
+  name: "fanzone"
+  user: "postgres"
+  sslmode: "require"
+  secretName: "postgresql-fanzone-password"
+  secretKey: "password"
+
+# GCP configuration
+gcp:
+  projectId: ""
+  secretManager:
+    secretPrefix: "devtest"
+
+# External Secrets Operator (ESO) — creates K8s secrets from GCP Secret Manager
+externalSecrets:
+  enabled: false
+  secretStoreRef: "gcp-secret-store"
+
+# KEDA ScaledObject
+keda:
+  enabled: false

@@ -1,0 +1,359 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: grafana
+    targetRevision: 8.5.2
+    helm:
+      releaseName: grafana
+      values: |
+        # Replicas
+        replicas: 1
+
+        # Resource configuration (required for AKS Azure Policy)
+        resources:
+          requests:
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+
+        # Persistence on GKE Standard SSD
+        persistence:
+          enabled: true
+          size: 10Gi
+          storageClassName: standard-rwo
+
+        # Admin credentials (use sealed secret in production)
+        adminUser: admin
+        # adminPassword will be auto-generated if not set
+
+        # Ingress configuration
+        ingress:
+          enabled: true
+          ingressClassName: kong
+          annotations:
+            cert-manager.io/cluster-issuer: "letsencrypt-prod"
+            konghq.com/protocols: "https"
+          hosts:
+            - grafana.mark8ly.com
+          tls:
+            - secretName: grafana-tls
+              hosts:
+                - grafana.mark8ly.com
+
+        # Datasources
+        datasources:
+          datasources.yaml:
+            apiVersion: 1
+            datasources:
+              # Prometheus datasource
+              - name: Prometheus
+                type: prometheus
+                url: http://prometheus-server.monitoring.svc.cluster.local:80
+                access: proxy
+                isDefault: true
+                editable: true
+
+              # Elasticsearch datasource for logs
+              - name: Elasticsearch
+                type: elasticsearch
+                url: http://elasticsearch-master.logging.svc.cluster.local:9200
+                access: proxy
+                database: "fluentbit-*"
+                jsonData:
+                  timeField: "@timestamp"
+                  esVersion: "8.0.0"
+                  logMessageField: message
+                  logLevelField: level
+                editable: true
+
+              # Loki datasource (optional, for log aggregation)
+              # - name: Loki
+              #   type: loki
+              #   url: http://loki.logging.svc.cluster.local:3100
+              #   access: proxy
+              #   editable: true
+
+        # Dashboard providers
+        dashboardProviders:
+          dashboardproviders.yaml:
+            apiVersion: 1
+            providers:
+              # Downloaded dashboards from grafana.com
+              - name: 'default'
+                orgId: 1
+                folder: ''
+                type: file
+                disableDeletion: false
+                editable: true
+                allowUiUpdates: true
+                options:
+                  path: /var/lib/grafana/dashboards/default
+              - name: 'istio'
+                orgId: 1
+                folder: 'Istio'
+                type: file
+                disableDeletion: false
+                editable: true
+                allowUiUpdates: true
+                options:
+                  path: /var/lib/grafana/dashboards/istio
+              - name: 'kubernetes'
+                orgId: 1
+                folder: 'Kubernetes'
+                type: file
+                disableDeletion: false
+                editable: true
+                allowUiUpdates: true
+                options:
+                  path: /var/lib/grafana/dashboards/kubernetes
+              # Sidecar-provisioned dashboards (from ConfigMaps)
+              - name: 'sidecar'
+                orgId: 1
+                folder: 'Sidecar'
+                type: file
+                disableDeletion: false
+                editable: true
+                allowUiUpdates: true
+                options:
+                  path: /tmp/dashboards
+
+        # Download dashboards from Grafana.com
+        # These will be downloaded and provisioned automatically
+        dashboards:
+          default:
+            # Node Exporter Full - comprehensive node metrics
+            node-exporter:
+              gnetId: 1860
+              revision: 37
+              datasource: Prometheus
+
+            # Kubernetes Cluster Monitoring (via Prometheus)
+            kubernetes-cluster:
+              gnetId: 315
+              revision: 3
+              datasource: Prometheus
+
+            # Kubernetes cluster monitoring (via Prometheus)
+            k8s-views-global:
+              gnetId: 15757
+              revision: 37
+              datasource: Prometheus
+
+            # Kubernetes Views - Pods
+            k8s-views-pods:
+              gnetId: 15760
+              revision: 28
+              datasource: Prometheus
+
+            # Kubernetes Views - Namespaces
+            k8s-views-namespaces:
+              gnetId: 15758
+              revision: 34
+              datasource: Prometheus
+
+            # Kubernetes Views - Nodes
+            k8s-views-nodes:
+              gnetId: 15759
+              revision: 29
+              datasource: Prometheus
+
+            # CoreDNS
+            coredns:
+              gnetId: 5926
+              revision: 1
+              datasource: Prometheus
+
+          istio:
+            # Istio Mesh Dashboard
+            istio-mesh:
+              gnetId: 7639
+              revision: 194
+              datasource: Prometheus
+
+            # Istio Service Dashboard
+            istio-service:
+              gnetId: 7636
+              revision: 194
+              datasource: Prometheus
+
+            # Istio Workload Dashboard
+            istio-workload:
+              gnetId: 7630
+              revision: 194
+              datasource: Prometheus
+
+            # Istio Control Plane
+            istio-control-plane:
+              gnetId: 7645
+              revision: 194
+              datasource: Prometheus
+
+          kubernetes:
+            # Kubernetes API Server
+            k8s-api-server:
+              gnetId: 15761
+              revision: 17
+              datasource: Prometheus
+
+            # Kubernetes / Compute Resources / Cluster
+            k8s-resources-cluster:
+              gnetId: 7249
+              revision: 1
+              datasource: Prometheus
+
+            # Kubernetes / Compute Resources / Namespace (Pods)
+            k8s-resources-namespace:
+              gnetId: 6879
+              revision: 1
+              datasource: Prometheus
+
+            # Kubernetes / Compute Resources / Pod
+            k8s-resources-pod:
+              gnetId: 6781
+              revision: 1
+              datasource: Prometheus
+
+            # Kubernetes / Networking / Cluster
+            k8s-networking-cluster:
+              gnetId: 12124
+              revision: 1
+              datasource: Prometheus
+
+            # NGINX Ingress Controller
+            nginx-ingress:
+              gnetId: 9614
+              revision: 1
+              datasource: Prometheus
+
+        # Grafana configuration
+        grafana.ini:
+          server:
+            domain: grafana.mark8ly.com
+            root_url: "https://grafana.mark8ly.com"
+          auth:
+            disable_login_form: false
+          auth.anonymous:
+            enabled: false
+          # GitHub OAuth configuration
+          auth.github:
+            enabled: true
+            allow_sign_up: true
+            auto_login: false
+            scopes: user:email,read:org
+            auth_url: https://github.com/login/oauth/authorize
+            token_url: https://github.com/login/oauth/access_token
+            api_url: https://api.github.com/user
+            # Restrict to specific GitHub organization (optional)
+            # allowed_organizations: tesserix
+            # Role mapping based on GitHub teams (optional)
+            # team_ids:
+            # allowed_teams:
+          security:
+            admin_user: admin
+          users:
+            allow_sign_up: true
+          log:
+            mode: console
+            level: info
+          analytics:
+            check_for_updates: false
+            reporting_enabled: false
+
+        # Environment variables for GitHub OAuth (from secret)
+        # Note: Create a sealed secret with GH_AUTH_GITHUB_CLIENT_ID and GH_AUTH_GITHUB_CLIENT_SECRET
+        envFromSecrets:
+          - name: grafana-github-oauth
+            optional: true
+
+        # Sidecar for dashboard provisioning from ConfigMaps
+        sidecar:
+          # Resources for all sidecar containers
+          resources:
+            limits:
+              memory: 100Mi
+            requests:
+              memory: 50Mi
+          dashboards:
+            enabled: true
+            label: grafana_dashboard
+            labelValue: "1"
+            # Use /tmp/dashboards to avoid shadowing downloaded dashboards
+            folder: /tmp/dashboards
+            searchNamespace: ALL
+          datasources:
+            enabled: true
+            label: grafana_datasource
+            labelValue: "1"
+            searchNamespace: ALL
+
+        # Init container resources (required by AKS Azure Policy)
+        initChownData:
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              memory: 32Mi
+
+        # Download dashboards init container resources
+        downloadDashboardsImage:
+          pullPolicy: IfNotPresent
+        downloadDashboards:
+          resources:
+            limits:
+              memory: 128Mi
+            requests:
+              memory: 32Mi
+
+        # Service account
+        serviceAccount:
+          create: true
+          name: grafana
+
+        # Pod security context
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 472
+          runAsGroup: 472
+          fsGroup: 472
+
+        # Container security context
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: false
+
+        # Plugins to install (removed deprecated angular plugins)
+        plugins:
+          - grafana-clock-panel
+          - grafana-polystat-panel
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

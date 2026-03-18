@@ -1,0 +1,113 @@
+{{/*
+Database Access NetworkPolicies
+Each app namespace can only access its own database namespace
+*/}}
+
+# =============================================================================
+# PostgreSQL Access Rules
+# Each application namespace -> its own PostgreSQL namespace
+# =============================================================================
+{{- $namespaces := .Values.namespaces }}
+{{- range $namespaces }}
+{{- $ns := . }}
+{{- $dbNs := printf "postgresql-%s" $ns }}
+---
+# Allow {{ $ns }} to access {{ $dbNs }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-{{ $ns }}-to-postgresql
+  namespace: {{ $dbNs }}
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: {{ $ns }}
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# Egress from {{ $ns }} to {{ $dbNs }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-postgresql
+  namespace: {{ $ns }}
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: {{ $dbNs }}
+      ports:
+        - protocol: TCP
+          port: 5432
+{{- end }}
+
+# =============================================================================
+# Redis Access Rules
+# Each application namespace -> its own Redis namespace
+# =============================================================================
+{{- range $namespaces }}
+{{- $ns := . }}
+{{- $redisNs := printf "redis-%s" $ns }}
+{{- if ne $ns "bookkeeping" }}
+---
+# Allow {{ $ns }} to access {{ $redisNs }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-{{ $ns }}-to-redis
+  namespace: {{ $redisNs }}
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: {{ $ns }}
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+# Egress from {{ $ns }} to {{ $redisNs }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-redis
+  namespace: {{ $ns }}
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: {{ $redisNs }}
+      ports:
+        - protocol: TCP
+          port: 6379
+{{- end }}
+{{- end }}

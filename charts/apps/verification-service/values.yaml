@@ -1,0 +1,153 @@
+# Default values for verification-service
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/verification-service
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations:
+    # GCP Workload Identity for Secret Manager access
+    iam.gke.io/gcp-service-account: "app-secrets-marketplace@tesseracthub-480811.iam.gserviceaccount.com"
+  name: ""
+
+podAnnotations:
+  # Exclude ports from Istio sidecar for proper connectivity
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  # Istio sidecar configuration - wait for proxy before starting app
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Environment configuration
+env:
+  PORT: "8080"
+  GIN_MODE: "release"
+
+  # Database config is in database: section below
+
+  # NATS for event publishing
+  NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+
+  # Email provider - routes all emails through notification-service
+  # notification-service handles Postal/SendGrid delivery
+  EMAIL_PROVIDER: "notification-service"
+  EMAIL_FROM: "no-reply@mark8ly.com"
+  EMAIL_FROM_NAME: "mark8ly"
+  NOTIFICATION_SERVICE_URL: "http://notification-service.marketplace.svc.cluster.local:8090"
+
+  # OTP config
+  OTP_LENGTH: "6"
+  OTP_EXPIRY_MINUTES: "120"  # 2 hours for customer email verification
+
+  # Rate limiting
+  MAX_VERIFICATION_ATTEMPTS: "5"  # 5 attempts per OTP code
+  MAX_CODES_PER_HOUR: "5"  # 5 regeneration attempts per hour
+  COOLDOWN_MINUTES: "60"
+
+# Database configuration (used by deployment template)
+database:
+  host: "postgresql.postgresql-marketplace.svc.cluster.local"
+  port: "5432"
+  user: "postgres"
+  name: "tesseract_hub"
+  sslmode: "require"
+
+# API key and Encryption key are now sourced from GCP Secret Manager
+# The service uses secrets.GetAPIKey() and secrets.GetEncryptionKey()
+# which read from GCP Secret Manager via the *_SECRET_NAME env vars
+# Secret names: devtest-marketplace-api-key, devtest-marketplace-encryption-key
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"  # InPlaceOrRecreate (no-restart), Auto, Recreate, Initial, or Off
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true  # Don't let VPA manage istio-proxy
+
+# GCP Secret Manager configuration
+# When enabled, secrets are fetched from GCP Secret Manager via Workload Identity
+gcp:
+  projectId: "tesseracthub-480811"
+  namespace: "marketplace"  # Override if different from release namespace
+  workloadIdentity:
+    # Workload Identity is always enabled
+    gcpServiceAccount: "app-secrets-marketplace@tesseracthub-480811.iam.gserviceaccount.com"
+  secretManager:
+    # Workload Identity is always enabled
+    secretPrefix: "devtest"  # Environment prefix: dev, staging, prod
+
+knative:
+  enabled: false
+  minScale: 1
+  maxScale: 5
+  concurrencyTarget: 100
+  containerConcurrency: 100
+  timeoutSeconds: 30
+
+externalSecrets:
+  enabled: true
+  secretStoreRef: gcp-secret-store

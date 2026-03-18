@@ -1,0 +1,256 @@
+# =============================================================================
+# Sports Data Service - Multi-Sport Live Scores and Match Data
+# Production-ready Helm values
+# Supports: Cricket, AFL, Soccer, Rugby, Tennis, NBA, NFL, and more
+# =============================================================================
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/FanZone-Battle-Ground/sports-data
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Exclude ports from Istio sidecar for proper connectivity
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432,6379"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  # Workload Identity is always enabled
+  className: "kong"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Kong annotations (converted from nginx)
+    konghq.com/strip-path: "false"
+    konghq.com/protocols: "https"
+    konghq.com/read-timeout: "60000"
+    konghq.com/write-timeout: "60000"
+  hosts:
+    - host: sports.fanzone.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: sports-data-tls
+      hosts:
+        - sports.fanzone.example.com
+
+resources:
+  limits:
+    memory: 256Mi
+  requests:
+    memory: 128Mi
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+keda:
+  enabled: false
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 15
+
+nodeSelector: {}
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - sports-data
+          topologyKey: kubernetes.io/hostname
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+terminationGracePeriodSeconds: 30
+
+# Environment configuration
+env:
+  SERVER_PORT: "8080"
+  LOG_LEVEL: info
+  LOG_JSON: "true"
+
+  # =============================================================================
+  # MOCK DATA MODE (for testing without real APIs)
+  # Set to "true" to use mock data, "false" to use real APIs
+  # =============================================================================
+  USE_MOCK_DATA: "false"
+  MOCK_REFRESH_INTERVAL: "30s"
+
+  # Scraper settings
+  REFRESH_INTERVAL: "1s"
+  CACHE_TTL: "2m"
+  SCRAPER_TIMEOUT: "15s"
+  MAX_CONCURRENT_FETCH: "5"
+
+  # Rate limiting
+  RATE_LIMIT_REQUESTS: "100"
+  RATE_LIMIT_WINDOW: "1m"
+
+  # Server timeouts
+  READ_TIMEOUT: "30s"
+  WRITE_TIMEOUT: "30s"
+  SHUTDOWN_TIMEOUT: "10s"
+
+  # RapidAPI settings (ignored when USE_MOCK_DATA is true)
+  USE_RAPIDAPI: "true"
+  RAPIDAPI_TIMEOUT: "15s"
+  RAPIDAPI_CACHE_TTL: "30s"
+
+  # CricketData.org settings (set USE_CRICKETDATA=true + API key to enable)
+  USE_CRICKETDATA: "true"
+  CRICKETDATA_BASE_URL: "https://api.cricapi.com"
+  CRICKETDATA_CACHE_TTL: "1s"
+
+  # Database persistence
+  RUN_MIGRATIONS: "true"
+
+# PostgreSQL configuration
+database:
+  host: "postgresql.postgresql-fanzone.svc.cluster.local"
+  port: "5432"
+  user: "postgres"
+  name: "fanzone"
+  sslmode: "require"
+  passwordSecretName: "postgresql-fanzone-password"
+  passwordSecretKey: "password"
+
+# CricketData.org API key secret (optional - only needed when USE_CRICKETDATA=true)
+cricketData:
+  apiKeySecretName: "fanzone-cricketdata-api-key"
+  apiKeySecretKey: "api-key"
+
+# Redis configuration
+redis:
+  passwordSecretName: "redis-fanzone-password"
+  passwordSecretKey: "password"
+
+# API auth secret (X-API-Key header validation)
+apiAuth:
+  secretName: "fanzone-sports-api-key"
+  secretKey: "api-key"
+
+# JWT secret (for validating user JWTs — needed for ratings + any user-aware endpoints)
+jwt:
+  secretName: "fanzone-jwt-secret"
+  secretKey: "jwt-secret"
+
+# Service Monitor for Prometheus
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  path: /metrics
+  port: http
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"  # InPlaceOrRecreate (no-restart), Auto, Recreate, Initial, or Off
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true  # Don't let VPA manage istio-proxy
+
+# Knative Serving configuration (when enabled, replaces Deployment + Service)
+knative:
+  enabled: false
+  minScale: 0
+  maxScale: 5
+  scaleDownDelay: "60s"
+  concurrencyTarget: 100
+  containerConcurrency: 0
+  timeoutSeconds: 300
+
+# GCP Secret Manager configuration
+# When enabled, secrets are fetched from GCP Secret Manager via Workload Identity
+gcp:
+  projectId: ""  # Inherited from global-config.yaml if empty
+  namespace: "fanzone"  # Override if different from release namespace
+  workloadIdentity:
+    # Workload Identity is always enabled
+    gcpServiceAccount: ""  # e.g., app-secrets-marketplace@project.iam.gserviceaccount.com
+  secretManager:
+    # Workload Identity is always enabled
+    secretPrefix: "devtest"  # Environment prefix: dev, staging, prod

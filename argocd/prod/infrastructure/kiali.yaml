@@ -1,0 +1,144 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kiali
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: infrastructure
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://kiali.org/helm-charts
+    chart: kiali-server
+    targetRevision: 2.1.0
+    helm:
+      releaseName: kiali
+      values: |
+        # Kiali server configuration
+        fullnameOverride: kiali
+
+        # Istio namespace
+        istio_namespace: istio-system
+
+        # Authentication strategy (anonymous for dev, token/openid for prod)
+        auth:
+          strategy: anonymous
+
+        # Deployment configuration
+        deployment:
+          # Resource limits (required for AKS Azure Policy)
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+
+          # Accessible namespaces (** for all)
+          accessible_namespaces:
+            - "**"
+
+          # View only mode (set to false to allow configuration changes)
+          view_only_mode: false
+
+          # Pod annotations
+          pod_annotations:
+            prometheus.io/scrape: "true"
+            prometheus.io/port: "9090"
+
+          # Security context
+          security_context:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+
+        # Server configuration
+        server:
+          port: 20001
+          observability:
+            metrics:
+              enabled: true
+              port: 9090
+
+          # Web root for proxy
+          web_root: /kiali
+
+        # External services configuration
+        external_services:
+          # Prometheus configuration
+          prometheus:
+            url: "http://prometheus-server.monitoring.svc.cluster.local:80"
+
+          # Grafana configuration (optional)
+          grafana:
+            enabled: false
+            # url: "http://grafana.monitoring.svc.cluster.local:3000"
+
+          # Tracing configuration (optional)
+          tracing:
+            enabled: false
+            # url: "http://jaeger-query.istio-system.svc.cluster.local:16686"
+
+          # Istio configuration
+          istio:
+            root_namespace: istio-system
+            component_status:
+              enabled: true
+              components:
+                - app_label: istiod
+                  is_core: true
+                  namespace: istio-system
+                - app_label: istio-ingressgateway
+                  is_core: true
+                  namespace: istio-ingress
+                - app_label: istio-egressgateway
+                  is_core: false
+                  namespace: istio-egress
+
+        # Kiali feature flags
+        kiali_feature_flags:
+          # Enable validations
+          validations:
+            ignore:
+              - KIA1301
+
+          # UI features
+          ui_defaults:
+            graph:
+              find_options:
+                - description: "Find: unhealthy nodes"
+                  expression: "! healthy"
+                - description: "Find: http traffic"
+                  expression: "http > 0"
+              hide_options:
+                - description: "Hide: healthy nodes"
+                  expression: "healthy"
+              traffic:
+                grpc: requests
+                http: requests
+                tcp: sent
+
+        # Service configuration
+        service:
+          type: ClusterIP
+          port: 20001
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

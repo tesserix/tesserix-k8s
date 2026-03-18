@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: osrm
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: infrastructure
+  source:
+    repoURL: 'https://github.com/tesserix/tesserix-k8s.git' # Replace with your actual repo URL
+    targetRevision: HEAD
+    path: charts/thirdparty/osrm
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: marketplace
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

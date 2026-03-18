@@ -1,0 +1,158 @@
+{{- /* Generate ServiceEntry + DestinationRule for each external backend (Cloud Run) */ -}}
+{{- $seen := dict -}}
+{{- range .Values.ingress.backendServices }}
+{{- if .externalHost }}
+{{- if not (hasKey $seen .externalHost) }}
+{{- $_ := set $seen .externalHost true }}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: ext-{{ .externalHost | replace "." "-" | trunc 63 }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "fanzone-web.labels" $ | nindent 4 }}
+spec:
+  hosts:
+    - {{ .externalHost }}
+  location: MESH_EXTERNAL
+  ports:
+    - number: {{ .externalPort | default 443 }}
+      name: https
+      protocol: TLS
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: ext-{{ .externalHost | replace "." "-" | trunc 63 }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "fanzone-web.labels" $ | nindent 4 }}
+spec:
+  host: {{ .externalHost }}
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+      sni: {{ .externalHost }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- /* ServiceEntry + DestinationRule for default route Cloud Run host */ -}}
+{{- if .Values.defaultRoute }}
+{{- if .Values.defaultRoute.externalHost }}
+{{- if not (hasKey $seen .Values.defaultRoute.externalHost) }}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: ext-{{ .Values.defaultRoute.externalHost | replace "." "-" | trunc 63 }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fanzone-web.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.defaultRoute.externalHost }}
+  location: MESH_EXTERNAL
+  ports:
+    - number: {{ .Values.defaultRoute.externalPort | default 443 }}
+      name: https
+      protocol: TLS
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: ext-{{ .Values.defaultRoute.externalHost | replace "." "-" | trunc 63 }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fanzone-web.labels" . | nindent 4 }}
+spec:
+  host: {{ .Values.defaultRoute.externalHost }}
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+      sni: {{ .Values.defaultRoute.externalHost }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- /* ServiceEntry + DestinationRule for virtualService.websocket externalHost */ -}}
+{{- if .Values.virtualService }}
+{{- if .Values.virtualService.websocket }}
+{{- if .Values.virtualService.websocket.externalHost }}
+{{- if not (hasKey $seen .Values.virtualService.websocket.externalHost) }}
+{{- $_ := set $seen .Values.virtualService.websocket.externalHost true }}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: ext-{{ .Values.virtualService.websocket.externalHost | replace "." "-" | trunc 63 }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fanzone-web.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.virtualService.websocket.externalHost }}
+  location: MESH_EXTERNAL
+  ports:
+    - number: {{ .Values.virtualService.websocket.externalPort | default 443 }}
+      name: https
+      protocol: TLS
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: ext-{{ .Values.virtualService.websocket.externalHost | replace "." "-" | trunc 63 }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fanzone-web.labels" . | nindent 4 }}
+spec:
+  host: {{ .Values.virtualService.websocket.externalHost }}
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+      sni: {{ .Values.virtualService.websocket.externalHost }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- /* ServiceEntry + DestinationRule for virtualService.sse externalHost (if different from websocket) */ -}}
+{{- if .Values.virtualService.sse }}
+{{- if .Values.virtualService.sse.externalHost }}
+{{- if not (hasKey $seen .Values.virtualService.sse.externalHost) }}
+{{- $_ := set $seen .Values.virtualService.sse.externalHost true }}
+---
+apiVersion: networking.istio.io/v1beta1
+kind: ServiceEntry
+metadata:
+  name: ext-{{ .Values.virtualService.sse.externalHost | replace "." "-" | trunc 63 }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fanzone-web.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.virtualService.sse.externalHost }}
+  location: MESH_EXTERNAL
+  ports:
+    - number: {{ .Values.virtualService.sse.externalPort | default 443 }}
+      name: https
+      protocol: TLS
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: ext-{{ .Values.virtualService.sse.externalHost | replace "." "-" | trunc 63 }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fanzone-web.labels" . | nindent 4 }}
+spec:
+  host: {{ .Values.virtualService.sse.externalHost }}
+  trafficPolicy:
+    tls:
+      mode: SIMPLE
+      sni: {{ .Values.virtualService.sse.externalHost }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

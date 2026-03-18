@@ -1,0 +1,129 @@
+{{- if not .Values.knative.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "homechef-auth-bff.fullname" . }}
+  labels:
+    {{- include "homechef-auth-bff.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "homechef-auth-bff.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "homechef-auth-bff.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "homechef-auth-bff.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort | default .Values.service.port }}
+              protocol: TCP
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            # Keycloak - Customer IDP (for customer/chef/delivery partner auth)
+            - name: KEYCLOAK_CUSTOMER_URL
+              value: {{ .Values.keycloak.customer.url | quote }}
+            {{- if .Values.keycloak.customer.internalUrl }}
+            - name: KEYCLOAK_CUSTOMER_INTERNAL_URL
+              value: {{ .Values.keycloak.customer.internalUrl | quote }}
+            {{- end }}
+            - name: KEYCLOAK_CUSTOMER_REALM
+              value: {{ .Values.keycloak.customer.realm | quote }}
+            - name: KEYCLOAK_CUSTOMER_CLIENT_ID
+              value: {{ .Values.keycloak.customer.clientId | quote }}
+            # Keycloak - Internal IDP (for admin team auth)
+            - name: KEYCLOAK_INTERNAL_URL
+              value: {{ .Values.keycloak.internal.url | quote }}
+            {{- if .Values.keycloak.internal.internalUrl }}
+            - name: KEYCLOAK_INTERNAL_INTERNAL_URL
+              value: {{ .Values.keycloak.internal.internalUrl | quote }}
+            {{- end }}
+            - name: KEYCLOAK_INTERNAL_REALM
+              value: {{ .Values.keycloak.internal.realm | quote }}
+            - name: KEYCLOAK_INTERNAL_CLIENT_ID
+              value: {{ .Values.keycloak.internal.clientId | quote }}
+            # Redis configuration
+            - name: REDIS_URL
+              value: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "homechef-auth-bff.fullname" . }}-secrets
+                  key: REDIS_PASSWORD
+            # Secrets from ExternalSecret
+            - name: KEYCLOAK_CUSTOMER_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "homechef-auth-bff.fullname" . }}-secrets
+                  key: KEYCLOAK_CUSTOMER_CLIENT_SECRET
+            - name: KEYCLOAK_INTERNAL_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "homechef-auth-bff.fullname" . }}-secrets
+                  key: KEYCLOAK_INTERNAL_CLIENT_SECRET
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "homechef-auth-bff.fullname" . }}-secrets
+                  key: SESSION_SECRET
+          {{- if and .Values.livenessProbe .Values.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.livenessProbe.httpGet.path | default "/health/live" }}
+              port: http
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds | default 30 }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold | default 3 }}
+          {{- end }}
+          {{- if and .Values.readinessProbe .Values.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.readinessProbe.httpGet.path | default "/health/ready" }}
+              port: http
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold | default 3 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

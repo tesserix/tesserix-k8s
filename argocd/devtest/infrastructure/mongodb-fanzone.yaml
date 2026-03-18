@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mongodb-fanzone
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesseract-fanzone
+    app.kubernetes.io/component: database
+    target-namespace: fanzone
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/apps/mongodb-fanzone
+    targetRevision: HEAD
+    helm:
+      releaseName: mongodb-fanzone
+      values: |
+        persistence:
+          enabled: true
+          storageClassName: standard
+          size: 350Gi
+
+        resources:
+          requests:
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mongodb-fanzone
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Replace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

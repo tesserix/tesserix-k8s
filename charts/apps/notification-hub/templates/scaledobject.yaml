@@ -1,0 +1,33 @@
+{{- if .Values.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "notification-hub.fullname" . }}
+  labels:
+    {{- include "notification-hub.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "notification-hub.fullname" . }}
+  pollingInterval: {{ .Values.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
+  minReplicaCount: {{ .Values.keda.minReplicaCount }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
+  triggers:
+    {{- if .Values.keda.prometheus.enabled }}
+    # Traffic-based scaling using Prometheus + Istio metrics
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.prometheus.serverAddress | quote }}
+        metricName: istio_requests_per_second
+        query: {{ .Values.keda.prometheus.requestRateQuery | quote }}
+        threshold: {{ .Values.keda.prometheus.requestRateThreshold | quote }}
+    {{- end }}
+    {{- range .Values.keda.triggers }}
+    - type: {{ .type }}
+      metricType: {{ .metricType }}
+      metadata:
+        {{- range $key, $value := .metadata }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+    {{- end }}
+{{- end }}

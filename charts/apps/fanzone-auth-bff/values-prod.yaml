@@ -1,0 +1,46 @@
+# Production overrides for fanzone-auth-bff
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+knative:
+  enabled: true
+  minScale: 1
+  maxScale: 10
+  scaleDownDelay: "60s"
+
+# Disable KEDA and HPA — Knative handles autoscaling
+keda:
+  enabled: false
+
+autoscaling:
+  enabled: false
+
+# Production environment
+env:
+  LOG_LEVEL: "warn"
+  BASE_DOMAIN: "fanzonebattleground.com"
+  ALLOWED_ORIGINS: "fanzone://,https://fanzonebattleground.com,https://www.fanzonebattleground.com"
+  # fanzone-auth Go service (in-cluster Knative)
+  FANZONE_BASE_URL: "http://fanzone-auth.fanzone.svc.cluster.local"
+
+# Production GCP configuration
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    gcpServiceAccount: "app-secrets-fanzone-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  secretManager:
+    secretPrefix: "prod"
+
+# Production Keycloak configuration
+keycloak:
+  url: "https://identity.fanzonebattleground.com"
+  realm: "fanzone"
+
+# Istio VirtualService for auth.fanzonebattleground.com
+virtualService:
+  enabled: true
+  gateway: "istio-ingress/tesseract-gateway"
+  hosts:
+    - "auth.fanzonebattleground.com"
+  allowedOrigins:
+    - "https://fanzonebattleground.com"
+    - "https://www.fanzonebattleground.com"

@@ -1,0 +1,101 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: security
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.16.2
+    helm:
+      releaseName: cert-manager
+      values: |
+        # Install CRDs
+        installCRDs: true
+
+        # Replicas
+        replicaCount: 1
+
+        # Resource configuration
+        resources:
+          requests:
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+
+        # Webhook resources
+        webhook:
+          replicaCount: 1
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+
+        # CA Injector resources
+        cainjector:
+          replicaCount: 1
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+
+        # Starter resources
+        startupapicheck:
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+
+        # Security context
+        securityContext:
+          runAsNonRoot: true
+
+        # Pod security context
+        global:
+          podSecurityPolicy:
+            enabled: false
+            useAppArmor: false
+
+        # Prometheus metrics
+        prometheus:
+          enabled: true
+          servicemonitor:
+            enabled: false
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

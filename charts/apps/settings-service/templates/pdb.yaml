@@ -1,0 +1,13 @@
+{{- if and .Values.keda.enabled (gt (int .Values.keda.minReplicaCount) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "settings-service.fullname" . }}
+  labels:
+    {{- include "settings-service.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "settings-service.selectorLabels" . | nindent 6 }}
+{{- end }}

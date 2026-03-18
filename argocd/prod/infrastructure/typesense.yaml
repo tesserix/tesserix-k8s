@@ -1,0 +1,77 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: typesense
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: search
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/typesense
+    targetRevision: HEAD
+    helm:
+      releaseName: typesense
+      values: |
+        # Typesense configuration for production environment
+        replicaCount: 1
+
+        image:
+          repository: typesense/typesense
+          tag: "27.1"
+          pullPolicy: IfNotPresent
+
+        # Service configuration
+        service:
+          type: ClusterIP
+          port: 8108
+
+        # Resource configuration for devtest
+        resources:
+          requests:
+            memory: 512Mi
+          limits:
+            memory: 2Gi
+
+        # Typesense configuration
+        config:
+          dataDir: /data
+          apiPort: 8108
+          peeringPort: 8107
+          enableCors: true
+          corsDomains: "https://admin.mark8ly.com,https://marketplace.mark8ly.com,https://api.mark8ly.com"
+          logLevel: 3
+
+        # Secret reference
+        secrets:
+          apiKeySecretName: "typesense-secrets"
+          apiKeySecretKey: "api-key"
+
+        # Persistence
+        persistence:
+          enabled: true
+          size: 10Gi
+          storageClassName: standard-rwo
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: typesense
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Replace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

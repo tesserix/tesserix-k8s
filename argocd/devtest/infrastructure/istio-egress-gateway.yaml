@@ -1,0 +1,117 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-egress-gateway
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: infrastructure
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: gateway
+    targetRevision: 1.24.0
+    helm:
+      releaseName: istio-egress
+      values: |
+        # Gateway name
+        name: istio-egressgateway
+
+        # Image is set to "auto" by the chart and resolved by istiod's mutating webhook
+
+        # Service configuration
+        service:
+          # ClusterIP for internal egress traffic control
+          type: ClusterIP
+
+          # Ports configuration
+          ports:
+            - name: status-port
+              port: 15021
+              protocol: TCP
+              targetPort: 15021
+            - name: http2
+              port: 80
+              protocol: TCP
+              targetPort: 80
+            - name: https
+              port: 443
+              protocol: TCP
+              targetPort: 443
+            - name: tls
+              port: 15443
+              protocol: TCP
+              targetPort: 15443
+
+        # Resource configuration (required for AKS Azure Policy)
+        resources:
+          requests:
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+
+        # Auto-scaling configuration
+        autoscaling:
+          enabled: true
+          minReplicas: 1
+          maxReplicas: 3
+          targetCPUUtilizationPercentage: 80
+
+        # Pod disruption budget
+        # Use maxUnavailable instead of minAvailable to allow node drains with single replica
+        podDisruptionBudget:
+          maxUnavailable: 1
+
+        # Service account
+        serviceAccount:
+          create: true
+          name: istio-egressgateway
+
+        # Pod annotations
+        podAnnotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "15020"
+          prometheus.io/path: "/stats/prometheus"
+
+        # Security context
+        securityContext:
+          runAsUser: 1337
+          runAsGroup: 1337
+          runAsNonRoot: true
+
+        # Container security context
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+
+        # Labels for the gateway pods
+        labels:
+          app: istio-egressgateway
+          istio: egressgateway
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-egress
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    managedNamespaceMetadata:
+      labels:
+        istio-injection: enabled
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

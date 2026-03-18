@@ -1,0 +1,95 @@
+{{- if .Values.rateLimiting.enabled }}
+{{- /*
+Rate Limiting EnvoyFilter
+Implements local rate limiting for custom domain gateway
+*/ -}}
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: custom-domain-rate-limit
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    app.kubernetes.io/name: custom-domain-rate-limit
+    app.kubernetes.io/component: security
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  workloadSelector:
+    labels:
+      {{- toYaml .Values.gateway.selector | nindent 6 }}
+  configPatches:
+    # =================================================================
+    # Global Rate Limiting - Per IP Address
+    # =================================================================
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.local_ratelimit
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+            stat_prefix: http_local_rate_limiter
+            token_bucket:
+              max_tokens: {{ .Values.rateLimiting.global.burstSize }}
+              tokens_per_fill: {{ .Values.rateLimiting.global.requestsPerSecond }}
+              fill_interval: 1s
+            filter_enabled:
+              runtime_key: local_rate_limit_enabled
+              default_value:
+                numerator: 100
+                denominator: HUNDRED
+            filter_enforced:
+              runtime_key: local_rate_limit_enforced
+              default_value:
+                numerator: 100
+                denominator: HUNDRED
+            response_headers_to_add:
+              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                header:
+                  key: x-rate-limit-limit
+                  value: "{{ .Values.rateLimiting.global.requestsPerSecond }}"
+              - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                header:
+                  key: x-rate-limit-remaining
+                  value: "%DYNAMIC_METADATA(envoy.filters.http.local_ratelimit:remaining)%"
+            local_rate_limit_per_downstream_connection: false
+---
+{{- /*
+Connection Limits Configuration
+*/ -}}
+{{- if .Values.connectionLimits.enabled }}
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: custom-domain-connection-limits
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    app.kubernetes.io/name: custom-domain-connection-limits
+    app.kubernetes.io/component: security
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  workloadSelector:
+    labels:
+      {{- toYaml .Values.gateway.selector | nindent 6 }}
+  configPatches:
+    - applyTo: CLUSTER
+      match:
+        context: GATEWAY
+      patch:
+        operation: MERGE
+        value:
+          circuit_breakers:
+            thresholds:
+              - max_connections: {{ .Values.connectionLimits.maxConnections }}
+                max_pending_requests: {{ .Values.connectionLimits.maxPendingRequests }}
+                max_requests: {{ .Values.connectionLimits.maxRequests }}
+                max_retries: {{ .Values.connectionLimits.maxRetries }}
+{{- end }}
+{{- end }}

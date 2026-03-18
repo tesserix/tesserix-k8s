@@ -1,0 +1,309 @@
+# =============================================================================
+# FanZone WS - WebSocket Service for Real-time Communication
+# Production-ready with sticky sessions, multi-tenancy, and chat moderation
+# =============================================================================
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/FanZone-Battle-Ground/fanzone-ws
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Exclude ports from Istio sidecar for proper connectivity
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432,6379,27017,443"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  # Istio sidecar configuration
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  # Rewrite health probes to go through Istio's status endpoint
+  # Without this, kubelet health checks hit the envoy proxy which may return 500
+  sidecar.istio.io/rewriteAppHTTPProbers: "true"
+  # Prometheus scraping
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8082"
+  prometheus.io/path: "/metrics"
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8082
+
+ingress:
+  # Workload Identity is always enabled
+  className: "kong"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Kong annotations (converted from nginx)
+    konghq.com/strip-path: "false"
+    konghq.com/protocols: "https,wss"
+    # WebSocket specific - long timeouts for persistent connections (in ms)
+    konghq.com/read-timeout: "3600000"
+    konghq.com/write-timeout: "3600000"
+    konghq.com/connect-timeout: "60000"
+  hosts:
+    - host: ws.fanzone.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: fanzone-ws-tls
+      hosts:
+        - ws.fanzone.example.com
+
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    memory: 256Mi
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /health/live
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /health/ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 0
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 70
+  behavior:
+    scaleDown:
+      # Slow scale-down to avoid disconnecting users
+      stabilizationWindowSeconds: 600
+      policies:
+        - type: Percent
+          value: 5
+          periodSeconds: 120
+    scaleUp:
+      # Fast scale-up for traffic spikes
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 10
+          periodSeconds: 15
+
+nodeSelector: {}
+tolerations: []
+
+# Pod anti-affinity for high availability
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - fanzone-ws
+          topologyKey: kubernetes.io/hostname
+
+# Pod Disruption Budget (critical for WebSocket connections)
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# KEDA ScaledObject configuration
+keda:
+  enabled: true
+  # Workload Identity is always enabled
+  pollingInterval: 15
+  cooldownPeriod: 600
+  minreplicaCount: 1
+  maxReplicaCount: 100
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "60"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "70"
+
+# Graceful shutdown (allow WebSocket connections to close gracefully)
+terminationGracePeriodSeconds: 120
+
+# Environment configuration
+env:
+  GO_ENV: production
+  LOG_LEVEL: info
+  LOG_FORMAT: json
+
+  # NATS for event publishing and notification delivery
+  NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+  NATS_STREAM_NAME: "FANZONE_NOTIFICATIONS"
+  NATS_CONSUMER_NAME: "ws-notifications-v2"
+
+  # Server config
+  SERVER_PORT: "8082"
+
+  # Multi-tenancy
+  TENANT_MODE: "multi"
+  TENANT_HEADER: "X-Tenant-ID"
+  DEFAULT_TENANT: "default"
+
+  # Internal service URLs
+  API_SERVICE_URL: "http://fanzone-api.fanzone.svc.cluster.local:80"
+  AUTH_SERVICE_URL: "http://fanzone-auth.fanzone.svc.cluster.local:80"
+  MATCH_SERVICE_URL: "http://sports-data.fanzone.svc.cluster.local:80"
+  BASE_URL: "http://sports-data.fanzone.svc.cluster.local"
+
+  # Bot configuration
+  BOT_ENABLED: "true"
+  BOT_POLL_INTERVAL: "30s"
+
+  # Redis configuration
+  REDIS_HOST: "redis.redis-fanzone.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DB: "2"
+
+  # Redis pub/sub for multi-instance coordination
+  REDIS_CHANNEL_PREFIX: "fanzone:ws:"
+  REDIS_POOL_SIZE: "100"
+  REDIS_MIN_IDLE_CONNS: "10"
+
+  # WebSocket config
+  WS_READ_BUFFER_SIZE: "4096"
+  WS_WRITE_BUFFER_SIZE: "4096"
+  WS_MAX_MESSAGE_SIZE: "8192"
+  WS_PING_INTERVAL: "30s"
+  WS_PONG_TIMEOUT: "60s"
+  WS_WRITE_TIMEOUT: "10s"
+  WS_HANDSHAKE_TIMEOUT: "10s"
+
+  # Connection limits (per instance)
+  MAX_CONNECTIONS_PER_USER: "5"
+  MAX_ROOMS_PER_CONNECTION: "20"
+  MAX_CONNECTIONS_TOTAL: "50000"
+
+  # Chat moderation (feature flags)
+  CHAT_MODERATION_ENABLED: "true"
+  CHAT_MODERATION_LEVEL: "medium"
+  CHAT_ENCRYPTION_ENABLED: "true"
+
+  # Rate limiting (per user)
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_MESSAGES_PER_SECOND: "10"
+  RATE_LIMIT_BURST: "20"
+
+  # MongoDB for chat message persistence
+  MONGO_URL: "mongodb://mongodb-fanzone.mongodb-fanzone.svc.cluster.local:27017"
+
+  # Feature flags
+  ENABLE_FANTASY: "true"
+  ENABLE_AUCTION: "true"
+  ENABLE_PREDICTIONS: "true"
+  ENABLE_CHAT: "true"
+  ENABLE_LIVE_SCORES: "true"
+
+  # Connection draining
+  DRAIN_TIMEOUT: "60s"
+  GRACEFUL_SHUTDOWN_TIMEOUT: "120s"
+
+# PostgreSQL configuration
+database:
+  host: "postgresql.postgresql-fanzone.svc.cluster.local"
+  port: "5432"
+  user: "postgres"
+  name: "fanzone_auth"
+  sslmode: "require"
+  passwordSecretName: "postgresql-fanzone-password"
+  passwordSecretKey: "password"
+
+# Redis configuration (required for pub/sub across instances)
+redis:
+  enabled: true
+  passwordSecretName: "redis-fanzone-password"
+  passwordSecretKey: "password"
+
+# Service Monitor for Prometheus
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  path: /metrics
+  port: http
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"  # InPlaceOrRecreate (no-restart), Auto, Recreate, Initial, or Off
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true  # Don't let VPA manage istio-proxy
+
+# GCP Secret Manager configuration
+# When enabled, secrets are fetched from GCP Secret Manager via Workload Identity
+gcp:
+  projectId: ""  # Inherited from global-config.yaml if empty
+  namespace: "fanzone"  # Override if different from release namespace
+  workloadIdentity:
+    # Workload Identity is always enabled
+    gcpServiceAccount: ""  # e.g., app-secrets-marketplace@project.iam.gserviceaccount.com
+  secretManager:
+    # Workload Identity is always enabled
+    secretPrefix: "devtest"  # Environment prefix: dev, staging, prod
+
+# External Secrets Configuration
+externalSecrets:
+  enabled: true
+  secretStoreRef: "gcp-secret-store"
+
+# Knative Serving configuration (when enabled, replaces Deployment + Service)
+knative:
+  enabled: false
+  minScale: 0
+  maxScale: 5
+  scaleDownDelay: "60s"
+  concurrencyTarget: 100
+  containerConcurrency: 0
+  timeoutSeconds: 300

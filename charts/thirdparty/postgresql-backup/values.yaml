@@ -1,0 +1,174 @@
+# PostgreSQL Backup and Restore Configuration
+# Both backup and restore are disabled by default for safety
+# Enable them explicitly in ArgoCD applications
+
+# =============================================================================
+# Backup Configuration
+# =============================================================================
+backup:
+  # Enable/disable backup CronJob (default: false)
+  enabled: false
+
+  # Cron schedule (twice daily by default: 00:00 and 12:00 UTC)
+  schedule: "0 0,12 * * *"
+
+  # Database connection
+  database:
+    host: ""  # Required: e.g., postgresql.postgresql-global.svc.cluster.local
+    port: 5432
+    name: "postgres"  # Connection database (used for listing databases)
+    user: postgres
+    # Secret containing the PostgreSQL password
+    passwordSecretName: ""  # Required: secret name containing password
+    passwordSecretKey: "postgresql-password"
+    sslMode: require
+
+  # Backup settings
+  settings:
+    # Backup all databases on the server (recommended)
+    # When true: backs up each database as a separate .dump file
+    # When false: backs up only the database specified in database.name
+    allDatabases: true
+    # Databases to exclude from backup (only when allDatabases: true)
+    # template0, template1 are always excluded automatically
+    # postgres is excluded by default as it's the system database
+    excludeDatabases:
+      - postgres
+    format: custom       # plain, custom, directory
+    compression: zstd    # gzip, lz4, zstd (requires PostgreSQL 16+)
+    compressionLevel: 5  # 1-9 for zstd
+    excludeSchemas: []   # Schemas to exclude from each database backup
+    extraArgs: ""        # Additional pg_dump arguments
+
+  # GCS Configuration
+  gcs:
+    bucket: tesseract-database-backups
+    prefix: ""           # e.g., devtest/postgresql-global
+
+# =============================================================================
+# Restore Configuration
+# =============================================================================
+#
+# USAGE: To restore a specific database, run a manual job:
+#
+#   kubectl -n db-backup-and-restore create job restore-<dbname>-$(date +%s) \
+#     --image=ghcr.io/tesserix/global-services/db-backup-tools:latest \
+#     --dry-run=client -o yaml | kubectl apply -f - \
+#     ... (see docs/restore-database.md for full command)
+#
+# Or use the restore job template by setting restore.enabled=true temporarily.
+#
+restore:
+  # Enable/disable restore Job (default: false)
+  # WARNING: Restore will overwrite existing data!
+  # TIP: For ad-hoc restores, use kubectl run instead (see usage above)
+  enabled: false
+
+  # Backup file to restore from (required if enabled)
+  # Format: <prefix>/<database>-<timestamp>.dump
+  # Example: devtest/postgresql-marketplace/tenants_db-2026-02-05T02-02-07Z.dump
+  backupFile: ""
+
+  # Target database name to restore into
+  # This should match the database name in the backup file
+  # Example: tenants_db
+  targetDatabase: ""
+
+  # Database connection (uses same settings as backup if not specified)
+  database:
+    host: ""  # If empty, uses backup.database.host
+    port: 5432
+    user: postgres
+    passwordSecretName: ""  # If empty, uses backup.database.passwordSecretName
+    passwordSecretKey: "postgresql-password"
+    sslMode: require
+
+  # Restore settings
+  settings:
+    # Clean (drop) database objects before recreating
+    clean: true
+    # Use IF EXISTS when dropping objects
+    ifExists: true
+    # Number of parallel jobs for restore
+    parallelJobs: 4
+    # Create database if it doesn't exist
+    createDatabase: true
+    # Extra pg_restore arguments
+    extraArgs: ""
+
+  # GCS Configuration (uses backup settings if not specified)
+  gcs:
+    bucket: ""  # If empty, uses backup.gcs.bucket
+
+# =============================================================================
+# CronJob/Job Settings
+# =============================================================================
+cronJob:
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 3600
+  activeDeadlineSeconds: 7200  # 2 hour timeout
+  backoffLimit: 3
+  restartPolicy: OnFailure
+
+# Container image - pre-built with PostgreSQL 16 client + Google Cloud SDK
+# No runtime installation needed - all tools ready to use
+image:
+  repository: ghcr.io/tesserix/global-services/db-backup-tools
+  tag: "latest"
+  pullPolicy: Always
+  # Image pull secret for GHCR (created via External Secrets)
+  pullSecrets:
+    - name: ghcr-secret
+
+# Resources
+resources:
+  requests:
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+# Service Account
+serviceAccount:
+  create: true
+  name: postgres-backup
+  annotations: {}
+  # iam.gke.io/gcp-service-account: postgres-backup-sa@project.iam.gserviceaccount.com
+
+# Pod settings - needs root access for apt-get package installation
+podSecurityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  fsGroup: 0
+
+# Security context - needs to allow apt-get to install postgresql-client
+# Note: Running as root is required for package installation
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  runAsNonRoot: false
+  runAsUser: 0
+
+# Istio configuration
+istio:
+  # Disable mTLS for backup namespace (pods don't have sidecars)
+  disableMtls: true
+
+# Network Policy - restrict egress to only PostgreSQL namespaces and GCS
+# Disabled by default - mTLS handles security
+networkPolicy:
+  enabled: false
+  # List of PostgreSQL namespaces the backup/restore job can connect to
+  allowedPostgresqlNamespaces:
+    - postgresql-global
+    - postgresql-marketplace
+    - postgresql-fanzone
+    - postgresql-hms
+    - postgresql-homechef
+    - postgresql-bookkeeping
+
+# Node selection
+nodeSelector: {}
+tolerations: []
+affinity: {}

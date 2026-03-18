@@ -1,0 +1,109 @@
+{{/*
+EnvoyFilter to inject GCP identity tokens for authenticated Cloud Run services.
+Uses Workload Identity to fetch tokens from the GCE metadata server and adds
+X-Serverless-Authorization header. Cloud Run checks this header for IAM auth
+and removes it before forwarding to the application container.
+
+Tokens are cached for 55 minutes (they expire after 60 minutes).
+The user's Authorization header (JWT) is preserved — Cloud Run uses
+X-Serverless-Authorization exclusively for IAM verification.
+*/}}
+{{- if .Values.cloudRunAuth.enabled }}
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: cloudrun-auth-token
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cloud-run-auth
+spec:
+  workloadSelector:
+    labels:
+      istio: ingressgateway
+  configPatches:
+    # ---------------------------------------------------------------
+    # 1. Static cluster for GCE metadata server (Workload Identity)
+    # ---------------------------------------------------------------
+    - applyTo: CLUSTER
+      match:
+        context: GATEWAY
+      patch:
+        operation: ADD
+        value:
+          name: gce-metadata
+          type: STRICT_DNS
+          connect_timeout: 5s
+          load_assignment:
+            cluster_name: gce-metadata
+            endpoints:
+              - lb_endpoints:
+                  - endpoint:
+                      address:
+                        socket_address:
+                          address: 169.254.169.254
+                          port_value: 80
+
+    # ---------------------------------------------------------------
+    # 2. Lua filter: fetch identity token and inject header
+    # ---------------------------------------------------------------
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.lua.cloudrun_auth_token
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            inlineCode: |
+              -- Cloud Run IAM identity token injection
+              -- Fetches a GCP identity token via Workload Identity and caches it.
+              -- Adds X-Serverless-Authorization header so Cloud Run validates IAM
+              -- without interfering with the user's Authorization (JWT) header.
+
+              local cached_token = nil
+              local cached_expiry = 0
+
+              function envoy_on_request(request_handle)
+                local now = os.time()
+
+                -- Return cached token if still valid (55 min cache, tokens last 60 min)
+                if cached_token and now < cached_expiry then
+                  request_handle:headers():add("X-Serverless-Authorization", "Bearer " .. cached_token)
+                  return
+                end
+
+                -- Fetch identity token from GCE metadata server
+                local audience = "{{ .Values.cloudRunAuth.audience }}"
+                local path = "/computeMetadata/v1/instance/service-accounts/default/identity?audience=" .. audience .. "&format=full"
+
+                local headers, body = request_handle:httpCall(
+                  "gce-metadata",
+                  {
+                    [":method"] = "GET",
+                    [":path"] = path,
+                    [":authority"] = "metadata.google.internal",
+                    ["Metadata-Flavor"] = "Google"
+                  },
+                  "",   -- no body
+                  200   -- 200ms timeout (fail fast for non-Cloud Run routes)
+                )
+
+                if headers and headers[":status"] == "200" and body and body ~= "" then
+                  cached_token = body
+                  cached_expiry = now + 3300  -- cache for 55 minutes
+                  request_handle:headers():add("X-Serverless-Authorization", "Bearer " .. cached_token)
+                else
+                  -- Log error but don't block the request — let Cloud Run reject if auth required
+                  request_handle:logWarn("cloudrun_auth_token: failed to fetch identity token from metadata server")
+                end
+              end
+{{- end }}

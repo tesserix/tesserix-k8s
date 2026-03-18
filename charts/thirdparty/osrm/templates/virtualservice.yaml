@@ -1,0 +1,26 @@
+{{- if .Values.networking.enabled -}}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "osrm.fullname" . }}-vs
+  labels:
+    {{- include "osrm.labels" . | nindent 4 }}
+spec:
+  gateways:
+    - {{ .Values.networking.gateway }}
+  hosts:
+    {{- range .Values.networking.hosts }}
+    - {{ . | quote }}
+    {{- end }}
+  http:
+    - match:
+        - uri:
+            prefix: {{ .Values.networking.prefix }}
+      rewrite:
+        uri: / # Rewrite /api/v1/routing/foo -> /foo
+      route:
+        - destination:
+            host: {{ include "osrm.fullname" . }}
+            port:
+              number: {{ .Values.service.port }}
+{{- end }}

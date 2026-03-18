@@ -1,0 +1,89 @@
+githubConfigUrl: "${github_config_url}"
+githubConfigSecret: "${github_config_secret}"
+minRunners: ${min_runners}
+maxRunners: ${max_runners}
+runnerGroup: "${runner_group}"
+
+template:
+  spec:
+    restartPolicy: Never
+    initContainers:
+      - name: init-dind-externals
+        image: "${runner_image}"
+        command: ["cp"]
+        args: ["-r", "/home/runner/externals/.", "/home/runner/tmpDir/"]
+        volumeMounts:
+          - name: dind-externals
+            mountPath: /home/runner/tmpDir
+      - name: dind
+        image: docker:dind
+        args:
+          - dockerd
+          - --host=unix:///var/run/docker.sock
+          - --group=$(DOCKER_GROUP_GID)
+        env:
+          - name: DOCKER_GROUP_GID
+            value: "123"
+        securityContext:
+          privileged: true
+        restartPolicy: Always
+        startupProbe:
+          exec:
+            command:
+              - docker
+              - info
+          initialDelaySeconds: 0
+          failureThreshold: 24
+          periodSeconds: 5
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+          - name: dind-externals
+            mountPath: /home/runner/externals
+    containers:
+      - name: runner
+        image: "${runner_image}"
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: DOCKER_HOST
+            value: unix:///var/run/docker.sock
+          - name: RUNNER_WAIT_FOR_DOCKER_IN_SECONDS
+            value: "120"
+        resources:
+          limits:
+            cpu: "${cpu_limit}"
+            memory: "${memory_limit}"
+          requests:
+            cpu: "${cpu_request}"
+            memory: "${memory_request}"
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+%{ if length(node_selector) > 0 ~}
+    nodeSelector:
+%{ for key, value in node_selector ~}
+      ${key}: "${value}"
+%{ endfor ~}
+%{ endif ~}
+%{ if length(tolerations) > 0 ~}
+    tolerations:
+%{ for t in tolerations ~}
+      - key: "${t.key}"
+        operator: "${t.operator}"
+%{ if t.value != null ~}
+        value: "${t.value}"
+%{ endif ~}
+        effect: "${t.effect}"
+%{ endfor ~}
+%{ endif ~}
+    volumes:
+      - name: dind-sock
+        emptyDir: {}
+      - name: dind-externals
+        emptyDir: {}
+      - name: work
+        emptyDir: {}

@@ -1,0 +1,231 @@
+{{/*
+Certificates for Istio Gateway TLS termination
+These certificates must be in the istio-ingress namespace for the Gateway to use them
+*/}}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: admin-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: admin-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ .Values.subdomains.admin }}.{{ .Values.domain }}"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: storefront-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: storefront-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ .Values.subdomains.store }}.{{ .Values.domain }}"
+---
+{{- if .Values.subdomains.onboarding }}
+# Certificate for tenant onboarding subdomain
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: tenant-onboarding-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: tenant-onboarding-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ .Values.subdomains.onboarding }}.{{ .Values.domain }}"
+{{- else }}
+# Certificate for apex domain (tenant onboarding uses apex in prod)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: apex-domain-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: apex-domain-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ .Values.domain }}"
+{{- end }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: api-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: api-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ .Values.subdomains.api }}.{{ .Values.domain }}"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: fanzone-web-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: fanzone-web-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ .Values.subdomains.fanzone }}.{{ .Values.domain }}"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hms-staff-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: hms-staff-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ .Values.subdomains.hmsStaff }}.{{ .Values.domain }}"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: hms-patient-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: hms-patient-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ .Values.subdomains.hmsPatient }}.{{ .Values.domain }}"
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: growthbook-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: growthbook-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ .Values.subdomains.growthbook }}.{{ .Values.domain }}"
+---
+# Web Analytics certificate (OpenPanel)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: analytics-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: analytics-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    {{- if .Values.analyticsHost }}
+    - "{{ .Values.analyticsHost }}"
+    {{- else }}
+    - "{{ .Values.subdomains.analytics }}.{{ .Values.domain }}"
+    {{- end }}
+---
+# API Documentation certificate (Swagger UI)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: api-docs-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: api-docs-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ .Values.subdomains.apiDocs }}.{{ .Values.domain }}"
+---
+# Customer IDP certificate (Keycloak)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: customer-idp-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: customer-idp-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ .Values.subdomains.customerIdp }}.{{ .Values.domain }}"
+---
+# Wildcard certificate for multi-tenant storefronts
+# Enables <slug>.tesserix.app subdomain routing
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: storefront-wildcard-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: storefront-wildcard-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "*.{{ .Values.domain }}"
+{{- if .Values.companyHost }}
+---
+# Company website certificate (tesserix.app)
+# Cloud Run only — routed via ILB + Istio ServiceEntry
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: company-tls
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  secretName: company-tls
+  issuerRef:
+    name: {{ .Values.tls.clusterIssuer }}
+    kind: ClusterIssuer
+  dnsNames:
+    - "{{ .Values.companyHost }}"
+{{- end }}

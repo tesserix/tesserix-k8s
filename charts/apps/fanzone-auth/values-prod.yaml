@@ -1,0 +1,37 @@
+# Production overrides for fanzone-auth
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+# Knative Serving — always-on (minScale: 1, never scales to zero)
+knative:
+  enabled: true
+  minScale: 1
+  maxScale: 10
+  scaleDownDelay: "60s"
+
+# Disable traditional Deployment-based autoscaling — Knative handles it
+autoscaling:
+  enabled: false
+
+keda:
+  enabled: false
+
+# Production environment
+env:
+  GIN_MODE: "release"
+  LOG_LEVEL: "warn"
+  FRONTEND_URL: "https://fanzonebattleground.com"
+  GCS_BUCKET_NAME: "fanzone-prod-assets-in"
+  GCS_PROJECT_ID: "tesseracthub-480811"
+  OAUTH_CALLBACK_URL: "https://fanzonebattleground.com/auth"
+  GOOGLE_REDIRECT_URL: "https://fanzonebattleground.com/auth/google/callback"
+  META_REDIRECT_URL: "https://fanzonebattleground.com/auth/meta/callback"
+  TWITTER_REDIRECT_URL: "https://fanzonebattleground.com/auth/twitter/callback"
+
+# Production GCP configuration
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-fanzone-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  secretManager:
+    secretPrefix: "prod"

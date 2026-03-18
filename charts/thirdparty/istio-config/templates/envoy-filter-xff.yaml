@@ -1,0 +1,147 @@
+{{/*
+EnvoyFilter to properly handle X-Forwarded-For header
+This ensures the real client IP from the browser is passed to backend services
+*/}}
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: xff-trust-hops
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  workloadSelector:
+    labels:
+      istio: ingressgateway
+  configPatches:
+    # Configure the HTTP connection manager to properly handle X-Forwarded-For
+    - applyTo: NETWORK_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: MERGE
+        value:
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            # Use the rightmost IP from X-Forwarded-For after removing trusted hops
+            use_remote_address: true
+            # Number of trusted proxy hops (GKE Load Balancer = 1)
+            xff_num_trusted_hops: 1
+            # Skip XFF append since GKE LB already adds the client IP
+            skip_xff_append: false
+            # Forward client cert details
+            forward_client_cert_details: SANITIZE_SET
+            set_current_client_cert_details:
+              subject: true
+---
+{{/*
+EnvoyFilter for custom-ingressgateway (used by tenant custom domains like yahvismartfarm.com)
+*/}}
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: xff-trust-hops-custom
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  workloadSelector:
+    labels:
+      istio: custom-ingressgateway
+  configPatches:
+    - applyTo: NETWORK_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: MERGE
+        value:
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            use_remote_address: true
+            xff_num_trusted_hops: 0
+            skip_xff_append: false
+            forward_client_cert_details: SANITIZE_SET
+            set_current_client_cert_details:
+              subject: true
+---
+{{/*
+EnvoyFilter to add X-Real-IP header from downstream address at gateway level
+This ensures the real client IP is captured even if XFF is not properly set
+*/}}
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: add-client-ip-header
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  workloadSelector:
+    labels:
+      istio: custom-ingressgateway
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.lua
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            inlineCode: |
+              function envoy_on_request(request_handle)
+                local downstream_ip = request_handle:streamInfo():downstreamLocalAddress()
+                local remote_ip = request_handle:streamInfo():downstreamDirectRemoteAddress()
+                request_handle:headers():add("X-Real-Client-IP", remote_ip)
+                request_handle:logInfo("Client IP: " .. remote_ip .. ", Downstream: " .. downstream_ip)
+              end
+---
+{{/*
+EnvoyFilter for sidecar proxies to preserve X-Forwarded-For header
+This prevents sidecars from overwriting the client IP with their own IP (127.0.0.x)
+Applied to marketplace namespace where our services run
+*/}}
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: xff-sidecar-preserve
+  namespace: marketplace
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  configPatches:
+    # Configure sidecar inbound listeners to preserve X-Forwarded-For
+    - applyTo: NETWORK_FILTER
+      match:
+        context: SIDECAR_INBOUND
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+      patch:
+        operation: MERGE
+        value:
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+            # Don't use remote address for sidecars - trust the X-Forwarded-For from gateway
+            use_remote_address: false
+            # Don't append sidecar's IP to X-Forwarded-For
+            skip_xff_append: true
+            # Trust 2 hops: GKE LB -> Istio Gateway -> Sidecar
+            xff_num_trusted_hops: 2

@@ -1,0 +1,81 @@
+{{- if .Values.securityHeaders.enabled }}
+{{- /*
+Security Headers EnvoyFilter
+Adds security headers to all responses from custom domain gateway
+*/ -}}
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: custom-domain-security-headers
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    app.kubernetes.io/name: custom-domain-security-headers
+    app.kubernetes.io/component: security
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  workloadSelector:
+    labels:
+      {{- toYaml .Values.gateway.selector | nindent 6 }}
+  configPatches:
+    # =================================================================
+    # Add Security Headers to All Responses
+    # =================================================================
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.lua
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            inlineCode: |
+              function envoy_on_response(response_handle)
+                {{- if .Values.securityHeaders.hsts.enabled }}
+                -- Strict-Transport-Security
+                local hsts_value = "max-age={{ .Values.securityHeaders.hsts.maxAge }}"
+                {{- if .Values.securityHeaders.hsts.includeSubDomains }}
+                hsts_value = hsts_value .. "; includeSubDomains"
+                {{- end }}
+                {{- if .Values.securityHeaders.hsts.preload }}
+                hsts_value = hsts_value .. "; preload"
+                {{- end }}
+                response_handle:headers():add("Strict-Transport-Security", hsts_value)
+                {{- end }}
+
+                {{- if .Values.securityHeaders.xFrameOptions.enabled }}
+                -- X-Frame-Options
+                response_handle:headers():add("X-Frame-Options", "{{ .Values.securityHeaders.xFrameOptions.value }}")
+                {{- end }}
+
+                {{- if .Values.securityHeaders.xContentTypeOptions.enabled }}
+                -- X-Content-Type-Options
+                response_handle:headers():add("X-Content-Type-Options", "{{ .Values.securityHeaders.xContentTypeOptions.value }}")
+                {{- end }}
+
+                {{- if .Values.securityHeaders.xXssProtection.enabled }}
+                -- X-XSS-Protection
+                response_handle:headers():add("X-XSS-Protection", "{{ .Values.securityHeaders.xXssProtection.value }}")
+                {{- end }}
+
+                {{- if .Values.securityHeaders.referrerPolicy.enabled }}
+                -- Referrer-Policy
+                response_handle:headers():add("Referrer-Policy", "{{ .Values.securityHeaders.referrerPolicy.value }}")
+                {{- end }}
+
+                {{- if .Values.securityHeaders.permissionsPolicy.enabled }}
+                -- Permissions-Policy
+                response_handle:headers():add("Permissions-Policy", "{{ .Values.securityHeaders.permissionsPolicy.value }}")
+                {{- end }}
+
+                -- Remove server identification headers
+                response_handle:headers():remove("Server")
+                response_handle:headers():remove("X-Powered-By")
+              end
+{{- end }}

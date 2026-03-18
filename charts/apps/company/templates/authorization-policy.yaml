@@ -1,0 +1,55 @@
+{{/*
+Authorization policies for the company website in the tesserix namespace.
+Allows ingress from istio-ingress gateway and internal namespace traffic.
+*/}}
+---
+# Allow ingress from istio-ingress gateway to company pods
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-tesserix
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "company.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    # Allow from Istio ingress gateway
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+    # Allow internal tesserix namespace traffic
+    - from:
+        - source:
+            namespaces:
+              - {{ .Release.Namespace }}
+    # Allow from monitoring and istio-system
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+---
+# Public endpoints (health, readiness, CORS preflight)
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: public-endpoints-tesserix
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "company.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    # Health check endpoints
+    - to:
+        - operation:
+            paths:
+              - "/health"
+              - "/ready"
+              - "/metrics"
+    # CORS preflight
+    - to:
+        - operation:
+            methods: ["OPTIONS"]

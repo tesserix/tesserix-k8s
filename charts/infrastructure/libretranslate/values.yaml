@@ -1,0 +1,116 @@
+# Default values for LibreTranslate
+replicaCount: 1
+
+image:
+  repository: libretranslate/libretranslate
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 0
+
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  runAsGroup: 0
+
+service:
+  type: ClusterIP
+  port: 5000
+  targetPort: 5000
+
+# LibreTranslate configuration
+config:
+  # Number of threads for translation
+  threads: 4
+  # Maximum characters per request
+  charLimit: 10000
+  # Request rate limit per minute
+  reqLimit: 100
+  # Batch request limit
+  batchLimit: 50
+  # Frontend timeout in milliseconds
+  frontendTimeout: 500
+  # Default source language for frontend
+  frontendSourceLang: "en"
+  # Default target language for frontend
+  frontendTargetLang: "hi"
+  # Enable suggestions (saves translations for improvement)
+  suggestions: false
+  # Disable web UI (API only)
+  disableWebUI: false
+  # Update models on startup
+  updateModels: true
+  # Languages to load (available in Argos Translate)
+  # Note: Many Indian regional languages are NOT supported by Argos Translate
+  # Available: English (en), Hindi (hi), Spanish (es), French (fr), German (de),
+  # Portuguese (pt), Arabic (ar), Chinese (zh), Japanese (ja), Korean (ko),
+  # Indonesian (id), Thai (th), Vietnamese (vi), Russian (ru), Italian (it)
+  loadOnly: "en,hi,es,fr,de,pt,ar,zh,ja,ko,id,th,vi,ru,it"
+  # API keys (empty = no authentication required)
+  apiKeys: ""
+
+resources:
+  limits:
+    memory: 4Gi
+  requests:
+    memory: 2Gi
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /languages
+    port: http
+  initialDelaySeconds: 120
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /languages
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+persistence:
+  enabled: true
+  storageClass: "standard-rwo"
+  accessMode: ReadWriteOnce
+  size: 20Gi
+  # Path where models are stored
+  mountPath: /home/libretranslate/.local/share/argos-translate
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Pod Disruption Budget
+# Pod disruption budget
+# Use maxUnavailable instead of minAvailable to allow node drains with single replica
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1

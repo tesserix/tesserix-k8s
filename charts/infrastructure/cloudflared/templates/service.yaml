@@ -1,0 +1,17 @@
+{{- if .Values.healthService.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cloudflared.fullname" . }}
+  labels:
+    {{- include "cloudflared.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.healthService.type }}
+  ports:
+    - port: {{ .Values.healthService.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "cloudflared.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -1,0 +1,140 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kibana
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: logging
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://helm.elastic.co
+    chart: kibana
+    targetRevision: 7.17.3
+    helm:
+      releaseName: kibana
+      values: |
+        # Elasticsearch hosts
+        elasticsearchHosts: "http://elasticsearch-master:9200"
+
+        # Replicas
+        replicas: 1
+
+        # Disable the pre-install hooks that create ES tokens (not needed when security is disabled)
+        automountToken: false
+
+        # Resource configuration (required for AKS Azure Policy)
+        resources:
+          requests:
+            memory: 512Mi
+          limits:
+            memory: 1Gi
+
+        # Kibana configuration - Security disabled for dev
+        kibanaConfig:
+          kibana.yml: |
+            server.name: kibana
+            server.host: "0.0.0.0"
+            server.publicBaseUrl: "https://dev-kibana.tesserix.app"
+            elasticsearch.hosts: ["http://elasticsearch-master:9200"]
+            monitoring.ui.container.elasticsearch.enabled: true
+            server.ssl.enabled: false
+
+        # Extra environment variables (none needed without security)
+        extraEnvs: []
+
+        # Security context
+        podSecurityContext:
+          fsGroup: 1000
+
+        securityContext:
+          capabilities:
+            drop:
+              - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+
+        # Service
+        service:
+          type: ClusterIP
+          port: 5601
+
+        # Ingress
+        ingress:
+          enabled: true
+          className: kong
+          annotations:
+            cert-manager.io/cluster-issuer: "letsencrypt-prod"
+            konghq.com/protocols: "https"
+          hosts:
+            - host: dev-kibana.tesserix.app
+              paths:
+                - path: /
+          tls:
+            - secretName: kibana-tls
+              hosts:
+                - dev-kibana.tesserix.app
+
+        # Health checks
+        healthCheckPath: "/api/status"
+
+        readinessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+
+        # Lifecycle
+        lifecycle:
+          preStop:
+            exec:
+              command:
+                - bash
+                - -c
+                - sleep 10
+
+        # Protocol (http since TLS is handled by ingress)
+        protocol: http
+
+        # Server host
+        serverHost: "0.0.0.0"
+
+        # Update strategy
+        updateStrategy:
+          type: Recreate
+
+        # Priority class
+        # priorityClassName: ""
+
+        # Affinity
+        affinity: {}
+
+        # Node selector
+        nodeSelector: {}
+
+        # Tolerations
+        tolerations: []
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Replace=true
+      - SkipDryRunOnMissingResource=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

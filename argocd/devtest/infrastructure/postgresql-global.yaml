@@ -1,0 +1,92 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgresql-global
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesseract-platform
+    app.kubernetes.io/component: database
+    target-namespace: global
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/postgresql
+    targetRevision: HEAD
+    helm:
+      releaseName: postgresql
+      values: |
+        # PostgreSQL for Global Services
+        postgresql:
+          database: global_db
+          username: postgres
+          existingSecret: "postgresql-password"
+          existingSecretKey: "postgresql-password"
+
+        architecture: standalone
+
+        persistence:
+          enabled: true
+          storageClass: "standard-rwo"
+          size: 60Gi
+
+        resources:
+          requests:
+            memory: 1Gi
+          limits:
+            memory: 4Gi
+
+        service:
+          type: ClusterIP
+          port: 5432
+
+        metrics:
+          enabled: true
+          serviceMonitor:
+            enabled: false
+
+        # SSL/TLS Configuration - Uses K8s secret: postgresql-ssl-certs
+        ssl:
+          enabled: true
+          existingSecret: "postgresql-ssl-certs"
+
+        # Database initialization - creates required databases on startup
+        initdb:
+          enabled: true
+          databases:
+            - keycloak_internal
+            - keycloak_customer
+            - tenant_db
+            - tenant_onboarding_db
+            - custom_domains_db
+            - auth_db
+            - notification_db
+            - audit_db
+            - settings_db
+            - feature_flags_db
+            - search_db
+            - qr_db
+            - location_db
+            - document_db
+            - onboarding_content_db
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: postgresql-global
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

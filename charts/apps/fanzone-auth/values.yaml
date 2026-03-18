@@ -1,0 +1,299 @@
+# =============================================================================
+# FanZone Auth - Authentication & Session Management Service
+# Production-ready Helm values with multi-tenancy and distributed sessions
+# =============================================================================
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/FanZone-Battle-Ground/fanzone-auth
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Exclude ports from Istio sidecar for proper connectivity
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432,6379"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  # Istio sidecar configuration
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  # Prometheus scraping
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8081"
+  prometheus.io/path: "/metrics"
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8081
+
+ingress:
+  # Workload Identity is always enabled
+  className: "kong"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Kong annotations (converted from nginx)
+    konghq.com/strip-path: "false"
+    konghq.com/protocols: "https"
+    konghq.com/read-timeout: "60000"
+    konghq.com/write-timeout: "60000"
+  hosts:
+    - host: auth.fanzone.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: fanzone-auth-tls
+      hosts:
+        - auth.fanzone.example.com
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 0
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+
+nodeSelector: {}
+tolerations: []
+
+# Pod anti-affinity for high availability
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - fanzone-auth
+          topologyKey: kubernetes.io/hostname
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# KEDA ScaledObject configuration
+keda:
+  enabled: true
+  # Workload Identity is always enabled
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minreplicaCount: 1
+  maxReplicaCount: 20
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "80"
+
+# Graceful shutdown
+terminationGracePeriodSeconds: 30
+
+# Environment configuration
+env:
+  GO_ENV: production
+  GIN_MODE: release
+  LOG_LEVEL: info
+  LOG_FORMAT: json
+
+  # NATS for event publishing
+  NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+
+  # Server config
+  SERVER_PORT: "8081"
+  SERVER_READ_TIMEOUT: "30s"
+  SERVER_WRITE_TIMEOUT: "30s"
+  SERVER_IDLE_TIMEOUT: "120s"
+
+  # Multi-tenancy
+  TENANT_MODE: "multi"
+  TENANT_HEADER: "X-Tenant-ID"
+  DEFAULT_TENANT: "default"
+
+  # Internal service URLs
+  API_SERVICE_URL: "http://fanzone-api.fanzone.svc.cluster.local:80"
+  WEB_SERVICE_URL: "http://fanzone-web.fanzone.svc.cluster.local:80"
+
+  # Redis configuration
+  REDIS_HOST: "redis.redis-fanzone.svc.cluster.local"
+  REDIS_PORT: "6379"
+
+  # JWT config
+  JWT_ACCESS_TOKEN_EXPIRY: "15m"
+  JWT_REFRESH_TOKEN_EXPIRY: "7d"
+  JWT_ISSUER: "fanzone-auth"
+
+  # Internal API key for BFF token exchange
+  INTERNAL_API_KEY: "fz-internal-k8s-exchange-key-2026"
+
+  # OAuth providers (enabled flags)
+  # Enable providers as credentials are configured
+  OAUTH_GOOGLE_ENABLED: "true"
+  OAUTH_META_ENABLED: "true"
+  OAUTH_INSTAGRAM_ENABLED: "true"
+  OAUTH_TWITTER_ENABLED: "true"
+  OAUTH_WHATSAPP_ENABLED: "true"
+
+  # Rate limiting
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_LOGIN: "10"
+  RATE_LIMIT_REGISTER: "5"
+  RATE_LIMIT_WINDOW: "1m"
+
+  # Session config (distributed via Redis)
+  SESSION_STORE: "redis"
+  SESSION_COOKIE_SECURE: "true"
+  SESSION_COOKIE_HTTPONLY: "true"
+  SESSION_COOKIE_SAMESITE: "strict"
+  SESSION_MAX_AGE: "86400"
+
+  # Frontend URLs for redirects (overridden by ArgoCD)
+  FRONTEND_URL: "https://dev-fanzone.tesserix.app"
+
+  # OAuth callback URLs (must match Google/Meta/Twitter console settings)
+  GOOGLE_REDIRECT_URL: "https://dev-fanzone.tesserix.app/auth/google/callback"
+  META_REDIRECT_URL: "https://dev-fanzone.tesserix.app/auth/meta/callback"
+  TWITTER_REDIRECT_URL: "https://dev-fanzone.tesserix.app/auth/twitter/callback"
+
+  # Super Admin Configuration
+  # Comma-separated list of emails that are automatically promoted to super_admin on OAuth login
+  SUPER_ADMIN_EMAILS: "samyak.rout@gmail.com,unidevidp@gmail.com,mahesh.sangawar@gmail.com"
+
+  # Admin Login Configuration
+  # Enable/disable password-based admin login (set to "false" to allow only SSO login)
+  # Default: "true" - allows both SSO and password login
+  ADMIN_PASSWORD_LOGIN_ENABLED: "true"
+
+  # GCS Avatar Storage
+  GCS_BUCKET_NAME: ""
+  GCS_PROJECT_ID: ""
+
+# PostgreSQL configuration
+database:
+  host: "postgresql.postgresql-fanzone.svc.cluster.local"
+  port: "5432"
+  user: "postgres"
+  name: "fanzone_auth"
+  sslmode: "require"
+  passwordSecretName: "postgresql-fanzone-password"
+  passwordSecretKey: "password"
+
+# Redis configuration (required for distributed sessions)
+redis:
+  enabled: true
+  passwordSecretName: "redis-fanzone-password"
+  passwordSecretKey: "password"
+
+# Service Monitor for Prometheus
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  path: /metrics
+  port: http
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"  # InPlaceOrRecreate (no-restart), Auto, Recreate, Initial, or Off
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true  # Don't let VPA manage istio-proxy
+
+# Knative Serving configuration
+knative:
+  enabled: false
+  minScale: 0
+  maxScale: 10
+  scaleDownDelay: "60s"
+  concurrencyTarget: 100
+  containerConcurrency: 0
+  timeoutSeconds: 300
+
+# GCP Secret Manager configuration
+# When enabled, secrets are fetched from GCP Secret Manager via Workload Identity
+gcp:
+  projectId: ""  # Inherited from global-config.yaml if empty
+  namespace: "fanzone"  # Override if different from release namespace
+  workloadIdentity:
+    # Workload Identity is always enabled
+    gcpServiceAccount: ""  # e.g., app-secrets-marketplace@project.iam.gserviceaccount.com
+  secretManager:
+    # Workload Identity is always enabled
+    secretPrefix: "devtest"  # Environment prefix: dev, staging, prod

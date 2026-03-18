@@ -1,0 +1,159 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-auth-policies
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: security
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/infrastructure/istio-auth-policies
+    targetRevision: HEAD
+    helm:
+      releaseName: istio-auth-policies
+      valueFiles:
+        - values.yaml
+        - values-prod.yaml
+      values: |
+        # Production environment configuration
+        environment: prod
+
+        # Istio Ingress Gateway
+        ingressGateway:
+          namespace: istio-ingress
+          selector:
+            istio: ingressgateway
+
+        # Application namespaces
+        appNamespaces:
+          global: global
+          marketplace: marketplace
+          fanzone: fanzone
+
+        # Keycloak IDP Configuration - Production (customer-idp only)
+        keycloak:
+          customer:
+            issuer: "https://identity.fanzonebattleground.com/realms/tesserix-customer"
+            jwksUri: "https://identity.fanzonebattleground.com/realms/tesserix-customer/protocol/openid-connect/certs"
+            audiences:
+              - "tesserix-api"
+              - "mobile-app"
+              - "web-storefront"
+              - "admin-dashboard"
+              - "marketplace-dashboard"
+              - "account"
+          # Internal IDP disabled - using customer-idp only
+          internal:
+            enabled: false
+
+        # Service mesh principals for internal communication
+        meshPrincipals:
+          - "cluster.local/ns/global/sa/*"
+          - "cluster.local/ns/marketplace/sa/*"
+          - "cluster.local/ns/tesserix/sa/*"
+          - "cluster.local/ns/fanzone/sa/*"
+          - "cluster.local/ns/homechef/sa/*"
+          - "cluster.local/ns/istio-ingress/sa/*"
+          - "cluster.local/ns/istio-system/sa/*"
+          - "cluster.local/ns/monitoring/sa/*"
+
+        # mTLS mode - STRICT in production
+        mtls:
+          mode: STRICT
+
+        # Frontend apps - these need to be accessible without authentication
+        # for initial page load (login page, static assets, etc.)
+        frontendApps:
+          - name: storefront
+            label: storefront
+            namespace: marketplace
+            hosts:
+              # Wildcard matches all subdomains for tenant storefronts
+              - "*.mark8ly.com"
+          - name: admin
+            label: admin
+            namespace: marketplace
+            hosts:
+              - "admin.mark8ly.com"
+          - name: tenant-onboarding
+            label: tenant-onboarding
+            namespace: marketplace
+            hosts:
+              # Apex domain for tenant onboarding signup
+              - "mark8ly.com"
+          - name: company
+            label: company
+            namespace: tesserix
+            hosts:
+              # Company website (tesserix-home) on tesserix.app
+              - "tesserix.app"
+          - name: keycloak
+            label: keycloak
+            namespace: identity-customer
+            hosts:
+              - "identity.fanzonebattleground.com"
+              - "identity.fe3dr.com"
+              - "identity.fanzonebattleground.com"
+          - name: kibana
+            label: kibana
+            hosts:
+              - "kibana.tesserix.app"
+          - name: grafana
+            label: grafana
+            hosts:
+              - "grafana.tesserix.app"
+          - name: openpanel
+            label: openpanel
+            hosts:
+              - "analytics.tesserix.app"
+          - name: fanzone-web
+            label: fanzone-web
+            namespace: fanzone
+            hosts:
+              - "fanzonebattleground.com"
+              - "www.fanzonebattleground.com"
+              - "api.fanzonebattleground.com"
+              - "ws.fanzonebattleground.com"
+              - "auth.fanzonebattleground.com"
+          - name: homechef-web
+            label: homechef-web
+            hosts:
+              - "fe3dr.com"
+              - "www.fe3dr.com"
+              - "vendors.fe3dr.com"
+              - "admin.fe3dr.com"
+              - "delivery.fe3dr.com"
+              - "api.fe3dr.com"
+              - "identity.fe3dr.com"
+              - "internal-identity.fe3dr.com"
+              - "auth.fe3dr.com"
+          - name: keycloak-internal
+            label: keycloak-internal
+            hosts:
+              - "internal-idp.mark8ly.com"
+              - "internal-identity.fe3dr.com"
+              - "internal-identity.fanzonebattleground.com"
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-ingress
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,179 @@
+name: Stop GKE Prod Cluster
+
+on:
+  # Scheduled: 9 PM AEST daily (11:00 UTC)
+  schedule:
+    - cron: '0 11 * * *'
+
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'stop'
+        type: choice
+        options:
+          - stop
+          - start
+
+env:
+  PROJECT_ID: tesserix
+  CLUSTER_NAME: tesserix-prod-in-gke
+  CLUSTER_ZONE: asia-south1-a
+  NODE_POOL: optimized
+  # WIF Configuration (same as terraform)
+  WIF_PROVIDER: projects/677812215720/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+  SA_EMAIL: github-actions@tesserix.iam.gserviceaccount.com
+
+jobs:
+  manage-cluster:
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write  # Required for Workload Identity Federation
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF)
+        id: auth_wif
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.SA_EMAIL }}
+          project_id: ${{ env.PROJECT_ID }}
+        continue-on-error: true
+
+      - name: Authenticate to Google Cloud (SA Key Fallback)
+        if: steps.auth_wif.outcome == 'failure'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_PROD_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Determine action
+        id: action
+        run: |
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            echo "action=stop" >> $GITHUB_OUTPUT
+          else
+            echo "action=${{ github.event.inputs.action }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Wait for any running operations
+        run: |
+          echo "Checking for running operations..."
+          for i in {1..30}; do
+            RUNNING_OP=$(gcloud container operations list \
+              --zone ${{ env.CLUSTER_ZONE }} \
+              --filter="status=RUNNING AND targetLink~${{ env.CLUSTER_NAME }}" \
+              --format="value(name)" | head -1)
+            if [ -z "$RUNNING_OP" ]; then
+              echo "No running operations, proceeding..."
+              break
+            fi
+            echo "Waiting for operation $RUNNING_OP to complete... (attempt $i/30)"
+            sleep 60
+          done
+
+      - name: Stop GKE Prod Cluster
+        if: steps.action.outputs.action == 'stop'
+        run: |
+          echo "### Stopping GKE Prod Cluster" >> $GITHUB_STEP_SUMMARY
+          echo "Time: $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check current node count
+          CURRENT_NODES=$(gcloud container node-pools describe ${{ env.NODE_POOL }} \
+            --cluster ${{ env.CLUSTER_NAME }} \
+            --zone ${{ env.CLUSTER_ZONE }} \
+            --format="value(initialNodeCount)" 2>/dev/null || echo "1")
+
+          if [ "$CURRENT_NODES" == "0" ]; then
+            echo "✅ **Cluster already stopped (0 nodes)**" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          # Disable autoscaling first
+          gcloud container clusters update ${{ env.CLUSTER_NAME }} \
+            --no-enable-autoscaling \
+            --node-pool ${{ env.NODE_POOL }} \
+            --zone ${{ env.CLUSTER_ZONE }} \
+            --quiet || true
+
+          # Scale node pool to 0 (async to avoid timeout)
+          gcloud container clusters resize ${{ env.CLUSTER_NAME }} \
+            --node-pool ${{ env.NODE_POOL }} \
+            --num-nodes 0 \
+            --zone ${{ env.CLUSTER_ZONE }} \
+            --quiet \
+            --async
+
+          echo "✅ **GKE Prod cluster stop initiated**" >> $GITHUB_STEP_SUMMARY
+          echo "> Node pool resize is running in background. Nodes will be removed within 5-10 minutes." >> $GITHUB_STEP_SUMMARY
+
+      - name: Start GKE Prod Cluster
+        if: steps.action.outputs.action == 'start'
+        run: |
+          echo "### Starting GKE Prod Cluster" >> $GITHUB_STEP_SUMMARY
+          echo "Time: $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Scale node pool to 1 (async to avoid timeout)
+          gcloud container clusters resize ${{ env.CLUSTER_NAME }} \
+            --node-pool ${{ env.NODE_POOL }} \
+            --num-nodes 1 \
+            --zone ${{ env.CLUSTER_ZONE }} \
+            --quiet \
+            --async
+
+          echo "✅ **GKE Prod cluster start initiated**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> Nodes will be ready within 5-10 minutes. Autoscaling will be enabled once nodes are up." >> $GITHUB_STEP_SUMMARY
+
+      - name: Enable autoscaling after start
+        if: steps.action.outputs.action == 'start'
+        run: |
+          # Wait for resize operation to complete before enabling autoscaling
+          echo "Waiting for resize operation to complete..."
+          for i in {1..30}; do
+            RUNNING_OP=$(gcloud container operations list \
+              --zone ${{ env.CLUSTER_ZONE }} \
+              --filter="status=RUNNING AND targetLink~${{ env.CLUSTER_NAME }}" \
+              --format="value(name)" | head -1)
+            if [ -z "$RUNNING_OP" ]; then
+              echo "Resize complete, enabling autoscaling..."
+              break
+            fi
+            echo "Waiting for operation to complete... (attempt $i/30)"
+            sleep 60
+          done
+
+          # Re-enable autoscaling
+          gcloud container clusters update ${{ env.CLUSTER_NAME }} \
+            --enable-autoscaling \
+            --min-nodes 1 \
+            --max-nodes 6 \
+            --node-pool ${{ env.NODE_POOL }} \
+            --zone ${{ env.CLUSTER_ZONE }} \
+            --quiet
+
+          echo "Autoscaling enabled (1-6 nodes)"
+
+      - name: Summary
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Cluster | \`${{ env.CLUSTER_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Zone | \`${{ env.CLUSTER_ZONE }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Action | \`${{ steps.action.outputs.action }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY

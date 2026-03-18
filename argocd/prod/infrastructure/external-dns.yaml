@@ -1,0 +1,115 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-dns
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://kubernetes-sigs.github.io/external-dns
+    chart: external-dns
+    targetRevision: 1.14.5
+    helm:
+      releaseName: external-dns
+      values: |
+        # Cloudflare provider configuration
+        provider: cloudflare
+
+        # Cloudflare API token from secret
+        env:
+          - name: CF_API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: cloudflare-api-token
+                key: api-token
+
+        # Domain filter - only manage mark8ly.com domain
+        domainFilters:
+          - mark8ly.com
+
+        # Policy: sync will create, update and delete records
+        policy: sync
+
+        # Registry to track ownership of DNS records
+        registry: txt
+        txtOwnerId: "gke-prod"
+        txtPrefix: "_externaldns."
+
+        # Sources to watch for DNS records
+        sources:
+          - service
+          - ingress
+          - istio-virtualservice
+          - istio-gateway
+
+        # Resource configuration
+        resources:
+          requests:
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+
+        # Service account
+        serviceAccount:
+          create: true
+          name: external-dns
+
+        # Pod security context (fsGroup goes here)
+        podSecurityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+          fsGroup: 65534
+
+        # Container security context (no fsGroup here)
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+
+        # Cloudflare proxy - enable orange cloud (Proxied) instead of DNS Only
+        # CNAME target - all DNS records point to Cloudflare Tunnel instead of LoadBalancer IPs
+        extraArgs:
+          - --cloudflare-proxied
+          - --txt-wildcard-replacement=tunnel
+          # Create CNAME records pointing to Cloudflare Tunnel
+          # This ensures all traffic goes through the secure tunnel
+          - --managed-record-types=CNAME
+          - --default-targets=2b78323c-aa85-4b96-b703-c831357e7d33.cfargotunnel.com
+
+        # Log level
+        logLevel: info
+        logFormat: text
+
+        # Interval between DNS updates
+        interval: 1m
+
+        # Enable RBAC with Istio VirtualService permissions
+        rbac:
+          create: true
+          additionalPermissions:
+            # Allow external-dns to read Istio VirtualServices
+            - apiGroups: ["networking.istio.io"]
+              resources: ["virtualservices", "gateways"]
+              verbs: ["get", "list", "watch"]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-dns
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

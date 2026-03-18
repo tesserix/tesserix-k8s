@@ -1,0 +1,81 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-auth-policies
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: security
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/infrastructure/istio-auth-policies
+    targetRevision: HEAD
+    helm:
+      releaseName: istio-auth-policies
+      valueFiles:
+        - values.yaml
+      values: |
+        # Pilot environment configuration
+        environment: pilot
+
+        # Istio Ingress Gateway
+        ingressGateway:
+          namespace: istio-ingress
+          selector:
+            istio: ingressgateway
+
+        # Application namespaces
+        appNamespaces:
+          global: pilot
+          marketplace: pilot
+
+        # Keycloak IDP Configuration - Pilot (customer-idp only)
+        # Using devtest customer-idp for pilot environment
+        keycloak:
+          customer:
+            issuer: "https://devtest-customer-idp.tesserix.app/realms/tesserix-customer"
+            jwksUri: "https://devtest-customer-idp.tesserix.app/realms/tesserix-customer/protocol/openid-connect/certs"
+            audiences:
+              - "tesserix-api"
+              - "mobile-app"
+              - "web-storefront"
+              - "admin-dashboard"
+              - "marketplace-dashboard"
+              - "account"
+          # Internal IDP disabled - using customer-idp only
+          internal:
+            enabled: false
+
+        # Service mesh principals for internal communication
+        meshPrincipals:
+          - "cluster.local/ns/pilot/sa/*"
+          - "cluster.local/ns/istio-ingress/sa/*"
+          - "cluster.local/ns/istio-system/sa/*"
+          - "cluster.local/ns/monitoring/sa/*"
+
+        # mTLS mode - STRICT in pilot for better security testing
+        mtls:
+          mode: PERMISSIVE
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-ingress
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,143 @@
+# Hugging Face MT Service - Self-hosted machine translation
+# Uses Helsinki-NLP OPUS-MT models for translation
+
+replicaCount: 1
+
+image:
+  # Custom GHCR image built from marketplace-services
+  repository: ghcr.io/tesserix/marketplace-services/huggingface-mt-service
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Exclude ports from Istio sidecar for proper connectivity
+  traffic.sidecar.istio.io/excludeOutboundPorts: "5432"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  sidecar.istio.io/inject: "true"
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+# Resource requirements - adjust based on model usage
+# Models are loaded on-demand and cached in memory
+resources:
+  limits:
+    memory: 4Gi
+  requests:
+    memory: 2Gi
+
+# For GPU support, uncomment and configure:
+# gpu:
+#   enabled: true
+#   type: nvidia.com/gpu
+#   count: 1
+
+# Startup probe - allows time for model download/loading
+# 4 models × ~2min each = ~10 min, give 20 min buffer
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 15
+  timeoutSeconds: 10
+  failureThreshold: 80  # 80 × 15s = 20 minutes max startup
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /livez
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 15
+  timeoutSeconds: 10
+  failureThreshold: 5
+
+autoscaling:
+  # Workload Identity is always enabled
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Environment configuration
+env:
+  HOST: "0.0.0.0"
+  PORT: "8080"
+  LOG_LEVEL: "info"
+  # Models to preload at startup (comma-separated)
+  # Format: source-target (e.g., en-hi,en-es,hi-en)
+  PRELOAD_MODELS: "en-hi,en-es,en-fr,hi-en"
+
+# Persistent volume for model cache (recommended for production)
+persistence:
+  enabled: true
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+  # Mount path for model cache
+  mountPath: /app/.cache
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"  # InPlaceOrRecreate (no-restart), Auto, Recreate, Initial, or Off
+  minAllowed:
+    memory: "512Mi"
+  maxAllowed:
+    memory: "4Gi"  # Increased - models require 2Gi+ memory
+  excludeIstioProxy: true  # Don't let VPA manage istio-proxy
+
+# GCP Secret Manager configuration
+# When enabled, secrets are fetched from GCP Secret Manager via Workload Identity
+gcp:
+  projectId: ""  # Inherited from global-config.yaml if empty
+  namespace: "marketplace"  # Override if different from release namespace
+  workloadIdentity:
+    # Workload Identity is always enabled
+    gcpServiceAccount: ""  # e.g., app-secrets-marketplace@project.iam.gserviceaccount.com
+  secretManager:
+    # Workload Identity is always enabled
+    secretPrefix: "devtest"  # Environment prefix: dev, staging, prod

@@ -1,0 +1,666 @@
+# =============================================================================
+# SERVICE REGISTRY — Single source of truth for all Tesserix services
+# =============================================================================
+# Used by: Terraform (infra), tesserix-home (release UI), go-shared (dispatch)
+# =============================================================================
+
+defaults:
+  owner: tesserix
+  region: asia-south1
+  project: tesserix
+  buildWorkflow: ci.yml
+  releaseWorkflow: release.yml
+  goVersion: "1.26"
+  nodeVersion: "22"
+  cloudSqlProxy: "gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.3"
+
+goShared:
+  repo: tesserix/go-shared
+  # Dependent repos are auto-derived from services where usesGoShared: true
+
+services:
+  # ---------------------------------------------------------------------------
+  # PLATFORM SERVICES (shared across all products)
+  # ---------------------------------------------------------------------------
+
+  auth-bff:
+    displayName: Auth BFF
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: false
+    migration: none
+    usesGoShared: true
+    sidecar: none
+    invokes: [openfga, tenant-service]
+    publishesEvents: true
+    pubsubTopic: tesserix-audit-events
+    secrets:
+      - auth-bff-cookie-encryption-key
+      - auth-bff-csrf-secret
+      - openfga-preshared-key
+      - platform-client-secret
+    storageApps: []
+
+  openfga:
+    displayName: OpenFGA
+    type: backend
+    lang: go
+    appGroup: platform
+    managed: false # Uses openfga/openfga image, not custom-built
+    hasDb: true
+    migration: none
+    usesGoShared: false
+    sidecar: cloud-sql-proxy
+    invokes: []
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - openfga-preshared-key
+      - openfga-db-password
+      - openfga-db-uri
+    storageApps: []
+
+  audit-service:
+    displayName: Audit Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - audit-db-password
+      - openfga-preshared-key
+    storageApps: []
+
+  tenant-service:
+    displayName: Tenant Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - tenant-db-password
+      - openfga-preshared-key
+    storageApps: []
+
+  notification-service:
+    displayName: Notification Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: []
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - notification-db-password
+      - sendgrid-api-key
+    storageApps: []
+
+  settings-service:
+    displayName: Settings Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga]
+    publishesEvents: true
+    pubsubTopic: tesserix-settings-events
+    secrets:
+      - settings-db-password
+      - openfga-preshared-key
+      - openfga-platform-store-id
+    storageApps: []
+
+  subscription-service:
+    displayName: Subscription Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: []
+    publishesEvents: true
+    pubsubTopic: tesserix-subscription-events
+    secrets:
+      - subscription-db-password
+      - stripe-secret-key
+      - stripe-webhook-secret
+    storageApps: []
+
+  feature-flags-service:
+    displayName: Feature Flags Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: false
+    migration: none
+    usesGoShared: true
+    sidecar: none
+    invokes: []
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - growthbook-api-key
+    storageApps: []
+
+  tickets-service:
+    displayName: Tickets Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga, tenant-service, notification-service, document-service]
+    publishesEvents: true
+    pubsubTopic: tesserix-ticket-events
+    secrets:
+      - tickets-db-password
+      - openfga-preshared-key
+    storageApps: []
+
+  document-service:
+    displayName: Document Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: []
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - document-db-password
+    storageApps: [platform]
+
+  location-service:
+    displayName: Location Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - location-db-password
+      - openfga-preshared-key
+    storageApps: []
+
+  verification-service:
+    displayName: Verification Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [notification-service]
+    publishesEvents: true
+    pubsubTopic: tesserix-notification-events
+    secrets:
+      - verification-db-password
+      - shared-internal-service-key
+      - verification-encryption-key
+    storageApps: []
+
+  analytics-service:
+    displayName: Analytics Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: true
+    migration: none  # Uses FDW to query other DBs, no owned tables
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: []
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - analytics-db-password
+    storageApps: []
+
+  status-service:
+    displayName: Status Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: false
+    migration: none
+    usesGoShared: true
+    sidecar: none
+    invokes: []
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets: []
+    storageApps: []
+
+  qr-service:
+    displayName: QR Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: false
+    migration: none
+    usesGoShared: true
+    sidecar: none
+    invokes: []
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets: []
+    storageApps: []
+
+  tesserix-home:
+    displayName: Tesserix Home
+    type: frontend
+    lang: nextjs
+    appGroup: platform
+    hasDb: false
+    migration: none
+    usesGoShared: false
+    sidecar: none
+    invokes: [auth-bff]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - shared-internal-service-key
+    storageApps: []
+
+  tenant-router-service:
+    displayName: Tenant Router Service
+    type: backend
+    lang: go
+    appGroup: platform
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: false
+    sidecar: cloud-sql-proxy
+    invokes: [notification-service, audit-service]
+    publishesEvents: true
+    pubsubTopic: ""
+    secrets:
+      - tenant-router-db-password
+      - shared-internal-service-key
+      - cloudflare-api-token
+    storageApps: []
+
+  # ---------------------------------------------------------------------------
+  # MARKETPLACE SERVICES (mark8ly product)
+  # ---------------------------------------------------------------------------
+
+  marketplace-onboarding:
+    displayName: Marketplace Onboarding
+    repo: marketplace-onboarding
+    type: frontend
+    lang: nextjs
+    appGroup: mark8ly
+    hasDb: true
+    migration: drizzle
+    usesGoShared: false
+    sidecar: cloud-sql-proxy
+    invokes: [auth-bff, tenant-service, location-service, verification-service, tenant-router-service]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - mp_onboarding-db-password
+      - shared-internal-service-key
+    storageApps: []
+
+  marketplace-admin:
+    displayName: Marketplace Admin
+    repo: marketplace-admin
+    type: frontend
+    lang: nextjs
+    appGroup: mark8ly
+    hasDb: false
+    migration: none
+    usesGoShared: false
+    sidecar: none
+    invokes: [auth-bff, tenant-service, tenant-router-service, mp-products, mp-orders, mp-vendors, mp-customers, mp-categories, mp-coupons, mp-reviews, mp-shipping, settings-service, subscription-service, tickets-service, notification-service, feature-flags-service, document-service, location-service]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - shared-internal-service-key
+    storageApps: []
+
+  mp-storefront:
+    displayName: Marketplace Storefront
+    repo: marketplace-storefront
+    type: frontend
+    lang: nextjs
+    appGroup: mark8ly
+    hasDb: false
+    migration: none
+    usesGoShared: false
+    sidecar: none
+    invokes: [mp-products, mp-categories, mp-reviews, auth-bff, tenant-service, tenant-router-service, settings-service, notification-service]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets: []
+    storageApps: []
+
+  mp-products:
+    displayName: Products Service
+    repo: marketplace-products-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga]
+    publishesEvents: true
+    pubsubTopic: mp-product-events
+    secrets:
+      - mp_products-db-password
+      - openfga-preshared-key
+    storageApps: [marketplace]
+
+  mp-orders:
+    displayName: Orders Service
+    repo: marketplace-orders-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga, mp-inventory, mp-payments, notification-service]
+    publishesEvents: true
+    pubsubTopic: mp-order-events
+    secrets:
+      - mp_orders-db-password
+      - openfga-preshared-key
+    storageApps: []
+
+  mp-payments:
+    displayName: Payments Service
+    repo: marketplace-payment-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga]
+    publishesEvents: true
+    pubsubTopic: mp-payment-events
+    secrets:
+      - mp_payments-db-password
+      - stripe-secret-key
+      - stripe-webhook-secret
+    storageApps: []
+
+  mp-inventory:
+    displayName: Inventory Service
+    repo: marketplace-inventory-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: []
+    publishesEvents: true
+    pubsubTopic: mp-inventory-events
+    secrets:
+      - mp_inventory-db-password
+    storageApps: []
+
+  mp-shipping:
+    displayName: Shipping Service
+    repo: marketplace-shipping-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: []
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - mp_shipping-db-password
+    storageApps: []
+
+  mp-categories:
+    displayName: Categories Service
+    repo: marketplace-categories-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga, mp-approvals]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - mp_categories-db-password
+      - openfga-preshared-key
+    storageApps: []
+
+  mp-coupons:
+    displayName: Coupons Service
+    repo: marketplace-coupons-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: []
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - mp_coupons-db-password
+    storageApps: []
+
+  mp-reviews:
+    displayName: Reviews Service
+    repo: marketplace-reviews-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - mp_reviews-db-password
+      - openfga-preshared-key
+    storageApps: [marketplace]
+
+  mp-vendors:
+    displayName: Vendors Service
+    repo: marketplace-vendor-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - mp_vendors-db-password
+      - openfga-preshared-key
+    storageApps: [marketplace]
+
+  mp-customers:
+    displayName: Customers Service
+    repo: marketplace-customers-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - mp_customers-db-password
+      - openfga-preshared-key
+    storageApps: []
+
+  mp-staff:
+    displayName: Staff Service
+    repo: marketplace-staff-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [openfga, document-service]
+    publishesEvents: true
+    pubsubTopic: mp-staff-events
+    secrets:
+      - mp_staff-db-password
+      - openfga-preshared-key
+    storageApps: []
+
+  mp-content:
+    displayName: Content Service
+    repo: marketplace-content-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [mp-staff]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - mp_content-db-password
+    storageApps: []
+
+  mp-approvals:
+    displayName: Approvals Service
+    repo: marketplace-approval-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [mp-staff]
+    publishesEvents: true
+    pubsubTopic: mp-approval-events
+    secrets:
+      - mp_approvals-db-password
+    storageApps: []
+
+  mp-gift-cards:
+    displayName: Gift Cards Service
+    repo: marketplace-gift-cards-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [mp-staff]
+    publishesEvents: true
+    pubsubTopic: mp-gift-card-events
+    secrets:
+      - mp_gift_cards-db-password
+    storageApps: []
+
+  mp-marketing:
+    displayName: Marketing Service
+    repo: marketplace-marketing-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [mp-staff, notification-service]
+    publishesEvents: true
+    pubsubTopic: mp-marketing-events
+    secrets:
+      - mp_marketing-db-password
+    storageApps: []
+
+  mp-connector:
+    displayName: Marketplace Connector Service
+    repo: marketplace-marketplace-connector-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: [mp-products, mp-orders, mp-inventory]
+    publishesEvents: false
+    pubsubTopic: ""
+    secrets:
+      - mp_connector-db-password
+    storageApps: []
+
+  mp-tax:
+    displayName: Tax Service
+    repo: marketplace-tax-service
+    type: backend
+    lang: go
+    appGroup: mark8ly
+    hasDb: true
+    migration: golang-migrate
+    usesGoShared: true
+    sidecar: cloud-sql-proxy
+    invokes: []
+    publishesEvents: true
+    pubsubTopic: mp-tax-events
+    secrets:
+      - mp_tax-db-password
+    storageApps: []

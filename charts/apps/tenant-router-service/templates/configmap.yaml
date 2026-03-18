@@ -1,0 +1,20 @@
+{{- if .Values.knative.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tenant-router-service.fullname" . }}-config
+  labels:
+    {{- include "tenant-router-service.labels" . | nindent 4 }}
+data:
+  ENVIRONMENT: "production"
+  GCP_PROJECT_ID: {{ .Values.gcp.projectId | default "tesseracthub-480811" | quote }}
+  DB_HOST: "postgresql.postgresql-marketplace.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "tenant_router_db"
+  DB_USER: "postgres"
+  DB_SSLMODE: "require"
+  DB_SSL_MODE: "require"
+  PORT: "8089"
+  NOTIFICATION_SERVICE_URL: "http://notification-service.marketplace.svc.cluster.local"
+  AUDIT_SERVICE_URL: "http://audit-service.marketplace.svc.cluster.local"
+{{- end }}

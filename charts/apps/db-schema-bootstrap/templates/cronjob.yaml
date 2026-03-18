@@ -1,0 +1,103 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "db-schema-bootstrap.fullname" . }}
+  namespace: {{ include "db-schema-bootstrap.namespace" . }}
+  labels:
+    {{- include "db-schema-bootstrap.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  concurrencyPolicy: {{ .Values.concurrencyPolicy }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "db-schema-bootstrap.selectorLabels" . | nindent 8 }}
+        sidecar.istio.io/inject: "false"
+    spec:
+      ttlSecondsAfterFinished: {{ .Values.ttlSecondsAfterFinished }}
+      backoffLimit: {{ .Values.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "db-schema-bootstrap.selectorLabels" . | nindent 12 }}
+            sidecar.istio.io/inject: "false"
+        spec:
+          serviceAccountName: {{ include "db-schema-bootstrap.serviceAccountName" . }}
+          restartPolicy: OnFailure
+          {{- if .Values.gcp.enabled }}
+          initContainers:
+            - name: fetch-secrets
+              image: {{ .Values.image.gcloud }}
+              command:
+                - sh
+                - -c
+                - |
+                  {{- range .Values.targets }}
+                  {{- $secretRef := index $.Values.gcp.secrets .name }}
+                  {{- if $secretRef }}
+                  echo "Fetching password for target {{ .name }}..."
+                  mkdir -p /secrets/{{ .name }}
+                  gcloud secrets versions access "{{ $secretRef }}" \
+                    > /secrets/{{ .name }}/password
+                  {{- end }}
+                  {{- end }}
+              volumeMounts:
+                - name: secrets
+                  mountPath: /secrets
+          {{- end }}
+          containers:
+            - name: bootstrap
+              image: {{ .Values.image.postgres }}
+              command:
+                - sh
+                - /scripts/bootstrap.sh
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: secrets
+                  mountPath: /secrets
+                  readOnly: true
+                {{- range .Values.targets }}
+                {{- $schemaDir := printf "schemas/%s/%s" $.Values.app .name }}
+                {{- if $.Files.Glob (printf "%s/*.sql" $schemaDir) }}
+                - name: schemas-{{ .name }}
+                  mountPath: /schemas/{{ .name }}
+                  readOnly: true
+                {{- end }}
+                {{- end }}
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
+          volumes:
+            - name: scripts
+              configMap:
+                name: {{ include "db-schema-bootstrap.fullname" . }}-scripts
+                defaultMode: 0755
+            - name: secrets
+              {{- if not .Values.gcp.enabled }}
+              projected:
+                sources:
+                  {{- range .Values.targets }}
+                  - secret:
+                      name: {{ .secretName }}
+                      items:
+                        - key: {{ .secretKey }}
+                          path: {{ .name }}/password
+                  {{- end }}
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+            {{- range .Values.targets }}
+            {{- $schemaDir := printf "schemas/%s/%s" $.Values.app .name }}
+            {{- if $.Files.Glob (printf "%s/*.sql" $schemaDir) }}
+            - name: schemas-{{ .name }}
+              configMap:
+                name: {{ include "db-schema-bootstrap.fullname" $ }}-schemas-{{ .name }}
+            {{- end }}
+            {{- end }}

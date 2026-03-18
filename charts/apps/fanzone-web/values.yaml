@@ -1,0 +1,447 @@
+# =============================================================================
+# FanZone Web - Next.js Frontend
+# Production-ready Helm values with multi-tenancy and mobile support
+# =============================================================================
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/FanZone-Battle-Ground/fanzone-web
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Exclude ports from Istio sidecar for proper connectivity
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  # Istio sidecar configuration
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  # Prometheus scraping
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "3000"
+  prometheus.io/path: "/api/metrics"
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1001
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+ingress:
+  # Workload Identity is always enabled  # Disabled - routing handled by Istio VirtualService
+  className: "kong"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Kong annotations (converted from nginx)
+    konghq.com/strip-path: "false"
+    konghq.com/protocols: "https"
+    konghq.com/read-timeout: "3600000"
+    konghq.com/write-timeout: "3600000"
+    konghq.com/connect-timeout: "60000"
+  hosts:
+    - host: dev-fanzone.tesserix.app
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: fanzone-tls
+      hosts:
+        - dev-fanzone.tesserix.app
+  # Backend service routing (path-based)
+  # NOTE: /auth/login and /auth/callback are Next.js pages served by fanzone-web
+  # Only OAuth API endpoints go to fanzone-auth backend
+  backendServices:
+    # Sports Data Service routes MUST come before the generic /api route
+    # (Istio VirtualService matches top-to-bottom, first match wins)
+    - path: /api/v1/sports
+      pathType: Prefix
+      serviceName: sports-data
+      servicePort: 80
+    - path: /api/v1/cricket
+      pathType: Prefix
+      serviceName: sports-data
+      servicePort: 80
+    - path: /api/v1/nfl
+      pathType: Prefix
+      serviceName: sports-data
+      servicePort: 80
+    - path: /api/v1/nba
+      pathType: Prefix
+      serviceName: sports-data
+      servicePort: 80
+    - path: /api/v1/nhl
+      pathType: Prefix
+      serviceName: sports-data
+      servicePort: 80
+    - path: /api/v1/mlb
+      pathType: Prefix
+      serviceName: sports-data
+      servicePort: 80
+    # Location service routes
+    - path: /api/v1/countries
+      pathType: Prefix
+      serviceName: location-service
+      servicePort: 8080
+    - path: /api/v1/states
+      pathType: Prefix
+      serviceName: location-service
+      servicePort: 8080
+    - path: /api/v1/location
+      pathType: Prefix
+      serviceName: location-service
+      servicePort: 8080
+    - path: /api/v1/currencies
+      pathType: Prefix
+      serviceName: location-service
+      servicePort: 8080
+    - path: /api/v1/timezones
+      pathType: Prefix
+      serviceName: location-service
+      servicePort: 8080
+    # User service routes (profiles, points, gamification)
+    - path: /api/v1/users
+      pathType: Prefix
+      serviceName: fanzone-user
+      servicePort: 80
+    - path: /api/v1/user
+      pathType: Prefix
+      serviceName: fanzone-user
+      servicePort: 80
+    # Notification service routes (notifications, unread count)
+    - path: /api/v1/notifications
+      pathType: Prefix
+      serviceName: fanzone-notification
+      servicePort: 80
+    # Prediction service routes (markets, bets, house pool)
+    - path: /api/v1/predictions
+      pathType: Prefix
+      serviceName: fanzone-prediction
+      servicePort: 80
+    - path: /api/v1/admin/predictions
+      pathType: Prefix
+      serviceName: fanzone-prediction
+      servicePort: 80
+    # Admin pool routes (points pool management on user service)
+    - path: /api/v1/admin/pool
+      pathType: Prefix
+      serviceName: fanzone-user
+      servicePort: 80
+    # Admin point config routes (configurable point values on user service)
+    - path: /api/v1/admin/point-config
+      pathType: Prefix
+      serviceName: fanzone-user
+      servicePort: 80
+    # Chat service routes (message history)
+    # For Cloud Run: use externalHost/externalPort instead of serviceName/servicePort
+    - path: /api/rooms
+      pathType: Prefix
+      serviceName: fanzone-chat
+      servicePort: 80
+    # Media service routes (emoji catalog, GIF proxy)
+    - path: /api/media
+      pathType: Prefix
+      serviceName: fanzone-media
+      servicePort: 80
+    # Docs route (fanzone-api)
+    - path: /docs
+      pathType: Prefix
+      serviceName: fanzone-api
+      servicePort: 80
+    # Game service routes (Super Trump Card)
+    - path: /game/
+      pathType: Prefix
+      serviceName: fanzone-game
+      servicePort: 80
+      rewrite: /
+    # Auth BFF routes
+    - path: /bff/
+      pathType: Prefix
+      serviceName: fanzone-auth-bff
+      servicePort: 8090
+      rewrite: /
+    # Auth service routes
+    - path: /auth/me
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/username
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/profile
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/avatars
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /avatars/
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/admin
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/logout
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/refresh
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/phone
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/keycloak
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/providers
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/stats
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/google
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/instagram
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    - path: /auth/twitter
+      pathType: Prefix
+      serviceName: fanzone-auth
+      servicePort: 80
+    # Generic API route (fanzone-api) — catches /api/* that isn't matched above
+    - path: /api
+      pathType: Prefix
+      serviceName: fanzone-api
+      servicePort: 80
+    # /ws is handled by virtualService.websocket section below (no retries, 3600s timeout)
+
+# Istio VirtualService configuration (separate from Kong ingress)
+# Uses internal Istio gateway - NOT the customer gateway
+virtualService:
+  enabled: true
+  # Internal Istio gateway - routes traffic from Cloudflare tunnel
+  gateway: "istio-ingress/tesseract-gateway"
+  hosts:
+    - "fanzonebattleground.com"
+    - "www.fanzonebattleground.com"
+  websocket:
+    path: "/ws"
+    serviceName: "fanzone-ws"
+    servicePort: 80
+  sse:
+    path: "/events"
+    serviceName: "fanzone-ws"
+    servicePort: 80
+
+# API subdomain VirtualService (api.fanzonebattleground.com)
+apiVirtualService:
+  enabled: true
+  hosts:
+    - "api.fanzonebattleground.com"
+  defaultService:
+    name: "fanzone-api"
+    port: 80
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 256Mi
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 0
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+
+nodeSelector: {}
+tolerations: []
+
+# Pod anti-affinity for high availability
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - fanzone-web
+          topologyKey: kubernetes.io/hostname
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# KEDA ScaledObject configuration
+keda:
+  enabled: true
+  # Workload Identity is always enabled
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minreplicaCount: 1
+  maxReplicaCount: 20
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "80"
+
+# Graceful shutdown
+terminationGracePeriodSeconds: 30
+
+# Environment configuration
+env:
+  NODE_ENV: production
+  NEXT_TELEMETRY_DISABLED: "1"
+
+  # Backend service URLs (internal cluster DNS)
+  API_SERVICE_URL: "http://fanzone-api.fanzone.svc.cluster.local:80"
+  AUTH_SERVICE_URL: "http://fanzone-auth.fanzone.svc.cluster.local:80"
+  WS_SERVICE_URL: "http://fanzone-ws.fanzone.svc.cluster.local:80"
+  SPORTS_SERVICE_URL: "http://sports-data.fanzone.svc.cluster.local:80"
+  SPORTS_API_URL: "http://sports-data.fanzone.svc.cluster.local:80"
+
+  # Public environment variables
+  # Using relative URLs - browser fetches from same origin via ingress routing
+  # NEXT_PUBLIC_API_URL, NEXT_PUBLIC_AUTH_URL not needed (uses relative paths)
+  # WS URL constructed from window.location in client code
+
+  # Multi-tenancy
+  NEXT_PUBLIC_TENANT_MODE: "multi"
+  NEXT_PUBLIC_DEFAULT_TENANT: "default"
+
+  # Feature flags
+  NEXT_PUBLIC_ENABLE_FANTASY: "true"
+  NEXT_PUBLIC_ENABLE_AUCTION: "true"
+  NEXT_PUBLIC_ENABLE_PREDICTIONS: "true"
+  NEXT_PUBLIC_ENABLE_CHAT: "true"
+  NEXT_PUBLIC_ENABLE_PWA: "true"
+
+  # Chat moderation
+  NEXT_PUBLIC_CHAT_MODERATION_LEVEL: "medium"
+  NEXT_PUBLIC_CHAT_ENCRYPTION_ENABLED: "true"
+
+  # Mobile/PWA settings
+  NEXT_PUBLIC_MOBILE_APP_ENABLED: "true"
+
+# Redis for session management (shared across instances)
+redis:
+  enabled: true
+  existingSecret: "redis-password"
+  existingSecretKey: "redis-password"
+
+# ConfigMap for additional configuration
+configMap:
+  # Workload Identity is always enabled
+  data: {}
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"  # InPlaceOrRecreate (no-restart), Auto, Recreate, Initial, or Off
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true  # Don't let VPA manage istio-proxy
+
+# Knative Serving configuration
+knative:
+  enabled: false
+  minScale: 0
+  maxScale: 10
+  scaleDownDelay: "60s"
+  concurrencyTarget: 100
+  containerConcurrency: 0
+  timeoutSeconds: 300
+
+# GCP Secret Manager configuration
+# When enabled, secrets are fetched from GCP Secret Manager via Workload Identity
+gcp:
+  projectId: ""  # Inherited from global-config.yaml if empty
+  namespace: "fanzone"  # Override if different from release namespace
+  workloadIdentity:
+    # Workload Identity is always enabled
+    gcpServiceAccount: ""  # e.g., app-secrets-marketplace@project.iam.gserviceaccount.com
+  secretManager:
+    # Workload Identity is always enabled
+    secretPrefix: "devtest"  # Environment prefix: dev, staging, prod

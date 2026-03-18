@@ -1,0 +1,160 @@
+# =============================================================================
+# FanZone Notification - Notification Service with NATS JetStream
+# Handles match reminder scheduling, notification CRUD, and NATS publishing
+# =============================================================================
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/FanZone-Battle-Ground/fanzone-notification
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Exclude ports from Istio sidecar for proper connectivity
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  # Istio sidecar configuration
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8086
+
+resources:
+  limits:
+    memory: 256Mi
+  requests:
+    memory: 64Mi
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+knative:
+  enabled: false
+  minScale: 1
+  maxScale: 5
+  scaleDownDelay: "60s"
+  concurrencyTarget: 100
+  containerConcurrency: 0
+  timeoutSeconds: 300
+
+autoscaling:
+  enabled: false
+
+nodeSelector: {}
+tolerations: []
+
+affinity: {}
+
+# KEDA ScaledObject configuration
+keda:
+  enabled: true
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 7
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+
+# Graceful shutdown
+terminationGracePeriodSeconds: 30
+
+# Environment configuration
+env:
+  GO_ENV: production
+  LOG_LEVEL: info
+  LOG_FORMAT: json
+
+  # Server config
+  SERVER_PORT: "8086"
+
+  # NATS JetStream
+  NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+  NATS_STREAM_NAME: "FANZONE_NOTIFICATIONS"
+
+  # NATS Prediction Subscriber
+  NATS_PREDICTION_STREAM_NAME: "FANZONE_PREDICTION"
+  NATS_PREDICTION_CONSUMER_NAME: "notification-predictions"
+
+  # NATS Quiz Subscriber
+  NATS_QUIZ_STREAM_NAME: "FANZONE_QUIZ"
+  NATS_QUIZ_CONSUMER_NAME: "notification-quiz"
+
+  # NATS Sportsbook Subscriber
+  NATS_SPORTSBOOK_STREAM_NAME: "fanzone-sportsbook"
+  NATS_SPORTSBOOK_CONSUMER_NAME: "notification-sportsbook"
+
+  # NATS Game Subscriber
+  NATS_GAME_STREAM_NAME: "FANZONE_GAME"
+  NATS_GAME_CONSUMER_NAME: "notification-game"
+
+  # Scheduler config
+  SCHEDULER_INTERVAL: "1m"
+  REMINDER_LEAD_TIME: "30m"
+
+# PostgreSQL configuration (fanzone database — has match_reminders, matches, notifications tables)
+database:
+  host: "postgresql.postgresql-fanzone.svc.cluster.local"
+  port: "5432"
+  user: "postgres"
+  name: "fanzone"
+  sslmode: "require"
+  passwordSecretName: "postgresql-fanzone-password"
+  passwordSecretKey: "password"
+
+# GCP Secret Manager configuration
+gcp:
+  projectId: ""
+  namespace: "fanzone"
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "devtest"

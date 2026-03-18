@@ -1,0 +1,77 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgresql-homechef
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesseract-homechef
+    app.kubernetes.io/component: database
+    target-namespace: homechef
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: data
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/postgresql
+    targetRevision: HEAD
+    helm:
+      releaseName: postgresql
+      values: |
+        # PostgreSQL for HomeChef
+        postgresql:
+          database: homechef_db
+          username: postgres
+          existingSecret: "postgresql-password"
+          existingSecretKey: "postgresql-password"
+
+        architecture: standalone
+
+        # Storage - 60Gi (downsized from 650Gi — only ~46 MB actual data)
+        persistence:
+          enabled: true
+          storageClass: "standard-rwo"
+          size: 60Gi
+
+        # Resources
+        resources:
+          requests:
+            memory: 512Mi
+          limits:
+            memory: 2Gi
+
+        # Tuning
+        config:
+          maxConnections: "300"
+          sharedBuffers: "256MB"
+          effectiveCacheSize: "1GB"
+          maintenanceWorkMem: "128MB"
+          walBuffers: "8MB"
+
+        service:
+          type: ClusterIP
+          port: 5432
+
+        metrics:
+          enabled: true
+          serviceMonitor:
+            enabled: false
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: postgresql-homechef
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

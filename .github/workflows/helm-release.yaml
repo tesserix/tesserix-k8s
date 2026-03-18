@@ -1,0 +1,191 @@
+# =============================================================================
+# Helm Chart Release Workflow
+# Packages and pushes Helm charts to GHCR on releases and main branch pushes
+# =============================================================================
+name: Helm Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      chart:
+        description: 'Chart to release (leave empty for all changed charts)'
+        required: false
+        type: string
+      version:
+        description: 'Version override (leave empty to use Chart.yaml version)'
+        required: false
+        type: string
+
+env:
+  HELM_VERSION: '3.14.0'
+  REGISTRY: ghcr.io
+  REGISTRY_USER: ${{ github.repository_owner }}
+
+jobs:
+  detect-changes:
+    name: Detect Changed Charts
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    outputs:
+      charts: ${{ steps.detect.outputs.charts }}
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed charts
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ inputs.chart }}" ]; then
+            # Manual trigger with specific chart
+            charts="[\"${{ inputs.chart }}\"]"
+            echo "Manual release for chart: ${{ inputs.chart }}"
+          elif [ "${{ github.event_name }}" == "release" ]; then
+            # Release event - package all charts
+            charts=$(ls -d charts/apps/*/ | xargs -n1 basename | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "Release event - packaging all charts"
+          else
+            # Detect changed charts
+            if [ "${{ github.event_name }}" == "push" ]; then
+              base_sha="${{ github.event.before }}"
+              head_sha="${{ github.sha }}"
+            else
+              base_sha="origin/main"
+              head_sha="HEAD"
+            fi
+
+            changed_files=$(git diff --name-only $base_sha $head_sha 2>/dev/null || git diff --name-only HEAD~1 HEAD)
+            changed_charts=$(echo "$changed_files" | grep "^charts/apps/" | cut -d'/' -f3 | sort -u | grep -v "^$" || true)
+
+            if [ -z "$changed_charts" ]; then
+              echo "No chart changes detected"
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+              echo "charts=[]" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            charts=$(echo "$changed_charts" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "Changed charts: $changed_charts"
+          fi
+
+          echo "has_changes=true" >> $GITHUB_OUTPUT
+          echo "charts=$charts" >> $GITHUB_OUTPUT
+
+  package-and-push:
+    name: Package and Push Charts
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        chart: ${{ fromJson(needs.detect-changes.outputs.charts) }}
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get chart version
+        id: version
+        run: |
+          chart_path="charts/apps/${{ matrix.chart }}"
+
+          if [ -n "${{ inputs.version }}" ]; then
+            version="${{ inputs.version }}"
+          else
+            version=$(grep '^version:' "$chart_path/Chart.yaml" | awk '{print $2}')
+          fi
+
+          # Add git SHA suffix for non-release builds
+          if [ "${{ github.event_name }}" != "release" ]; then
+            short_sha=$(echo "${{ github.sha }}" | cut -c1-7)
+            version="${version}-${short_sha}"
+          fi
+
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "Chart: ${{ matrix.chart }}, Version: $version"
+
+      - name: Build chart dependencies
+        run: |
+          chart_path="charts/apps/${{ matrix.chart }}"
+          if grep -q "dependencies:" "$chart_path/Chart.yaml"; then
+            echo "Building dependencies for $chart_path..."
+            helm dependency build "$chart_path"
+          fi
+
+      - name: Lint chart
+        run: |
+          helm lint "charts/apps/${{ matrix.chart }}" --strict
+
+      - name: Package chart
+        run: |
+          helm package "charts/apps/${{ matrix.chart }}" \
+            --version "${{ steps.version.outputs.version }}" \
+            --destination .helm-packages
+
+      - name: Push chart to GHCR
+        run: |
+          chart_package=$(ls .helm-packages/${{ matrix.chart }}-*.tgz)
+          echo "Pushing $chart_package to ${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts"
+
+          helm push "$chart_package" "oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts"
+
+      - name: Upload chart artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-chart-${{ matrix.chart }}
+          path: .helm-packages/${{ matrix.chart }}-*.tgz
+          retention-days: 30
+
+  release-summary:
+    name: Release Summary
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    needs: [detect-changes, package-and-push]
+    if: always() && needs.detect-changes.outputs.has_changes == 'true'
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Helm Chart Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Released Charts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Chart | Registry |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|----------|" >> $GITHUB_STEP_SUMMARY
+
+          charts='${{ needs.detect-changes.outputs.charts }}'
+          echo "$charts" | jq -r '.[]' | while read chart; do
+            echo "| $chart | oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts/$chart |" >> $GITHUB_STEP_SUMMARY
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Usage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "# Pull a chart" >> $GITHUB_STEP_SUMMARY
+          echo "helm pull oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts/<chart-name>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Install a chart" >> $GITHUB_STEP_SUMMARY
+          echo "helm install <release-name> oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts/<chart-name>" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

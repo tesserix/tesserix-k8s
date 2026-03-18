@@ -1,0 +1,72 @@
+serviceType: nextjs
+port: 3000
+healthPath: /api/health
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/tesserix/mp-storefront
+  tag: latest
+
+knative:
+  enabled: false
+  minScale: 1
+  maxScale: 5
+  concurrencyTarget: 50
+  containerConcurrency: 50
+  timeoutSeconds: 60
+
+probes:
+  startup:
+    failureThreshold: 15
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 20
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+db:
+  enabled: false
+  host: ""
+  port: ""
+  name: ""
+  user: ""
+  sslmode: ""
+  secretKey: ""
+
+openfga:
+  enabled: false
+  url: ""
+  authMode: ""
+  apiKeySecret: false
+  storeId: ""
+
+externalSecrets:
+  enabled: false
+  secretStoreRef: gcp-secret-store
+  refreshInterval: 15m
+
+extraSecrets: []
+
+env:
+  PRODUCTS_SERVICE_URL: http://mp-products.marketplace.svc.cluster.local
+  CATEGORIES_SERVICE_URL: http://mp-categories.marketplace.svc.cluster.local
+  REVIEWS_SERVICE_URL: http://mp-reviews.marketplace.svc.cluster.local
+  AUTH_BFF_URL: http://auth-bff.marketplace.svc.cluster.local
+  TENANT_SERVICE_URL: http://tenant-service.marketplace.svc.cluster.local
+  TENANT_ROUTER_SERVICE_URL: http://tenant-router-service.marketplace.svc.cluster.local
+  SETTINGS_SERVICE_URL: http://settings-service.marketplace.svc.cluster.local
+  NOTIFICATION_SERVICE_URL: http://notification-service.marketplace.svc.cluster.local
+
+gcp:
+  projectId: ""

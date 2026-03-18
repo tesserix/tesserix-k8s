@@ -1,0 +1,168 @@
+# Photon Geocoding Service Configuration
+replicaCount: 1
+
+image:
+  repository: rtuszik/photon-docker
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 2322
+
+# Resource limits
+# Photon requires significant memory for geocoding operations
+# For devtest with regional data, 2Gi is sufficient
+# For production with global data, 64Gi+ is recommended
+resources:
+  limits:
+    memory: 4Gi
+  requests:
+    memory: 2Gi
+
+# Photon configuration
+config:
+  # Data directory - must match rtuszik/photon-docker's internal path
+  dataDir: /photon/data
+
+  # API port
+  port: 2322
+
+  # Region for initial data download
+  # Valid regions: planet, africa, asia, australia-oceania, europe, north-america, south-america
+  # Countries: canada, usa, mexico, germany, france, spain, netherlands, india, japan, etc.
+  # For devtest, use australia-oceania to reduce storage and startup time
+  # See: https://github.com/rtuszik/photon-docker for all available regions
+  countryCode: "australia-oceania"
+
+  # Download URL for OSM data extracts
+  # Default uses koalasec's R2 bucket with regional extracts
+  downloadUrl: "https://r2.koalasec.org/public"
+
+  # Enable structured query support
+  enableStructuredQuery: true
+
+  # Maximum number of results to return
+  maxResults: 15
+
+  # Languages for place names (comma-separated)
+  languages: "en,de,fr"
+
+# Persistence configuration
+# Photon data can be large depending on the region
+# australia-oceania: ~5GB, asia: ~40GB
+# planet: ~312GB during download (118GB download + 193GB extracted)
+persistence:
+  enabled: true
+  size: 350Gi
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+
+# Service Account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Pod security context
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  fsGroup: 0
+
+# Pod annotations
+podAnnotations:
+  # Istio sidecar configuration - wait for proxy before starting app
+  sidecar.istio.io/inject: "true"
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  # Exclude GCP metadata server for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+
+# Health check configuration
+# Photon takes a while to start as it needs to download and index data
+healthCheck:
+  enabled: true
+  path: /api
+  initialDelaySeconds: 120
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+
+# Startup probe - allows time for initial data download
+# Planet data is ~118GB and takes 45-90 minutes to download
+# 240 failures × 30s = 2 hours max startup time
+startupProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 240
+
+# Liveness probe - runs after startup probe succeeds
+livenessProbe:
+  initialDelaySeconds: 60
+  periodSeconds: 60
+  timeoutSeconds: 10
+  failureThreshold: 5
+
+# Node selector, tolerations, affinity
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Extra environment variables
+extraEnv: []
+
+# Horizontal Pod Autoscaler configuration
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  # Stabilization windows to prevent flapping
+  scaleDownStabilizationSeconds: 300
+  scaleUpStabilizationSeconds: 0
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"  # InPlaceOrRecreate (no-restart), Auto, Recreate, Initial, or Off
+  minAllowed:
+    memory: "1Gi"
+  maxAllowed:
+    memory: "16Gi"
+  excludeIstioProxy: true  # Don't let VPA manage istio-proxy
+
+# Pod Disruption Budget configuration
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# Istio VirtualService configuration
+networking:
+  enabled: false
+  gateway: "istio-ingress/tesseract-gateway"
+  hosts:
+    - "devtest-photon.tesserix.app"
+  prefix: "/"
+  corsPolicy:
+    allowOrigins:
+      - prefix: "https://dev-"
+    allowMethods:
+      - GET
+      - POST
+      - OPTIONS
+    allowHeaders:
+      - content-type
+      - authorization
+    maxAge: "24h"
+
+# NetworkPolicy configuration
+networkPolicy:
+  enabled: true
+  # Namespaces that can access Photon
+  allowedNamespaces:
+    - marketplace
+    - global

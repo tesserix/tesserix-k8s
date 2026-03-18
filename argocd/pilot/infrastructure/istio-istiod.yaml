@@ -1,0 +1,154 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-istiod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: infrastructure
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: istiod
+    targetRevision: 1.24.0
+    helm:
+      releaseName: istiod
+      values: |
+        # Istiod (Pilot) configuration
+        pilot:
+          # Enable status port for health checks
+          enabled: true
+
+          # Resource configuration (required for AKS Azure Policy)
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+
+          # Auto-scaling
+          autoscaleEnabled: true
+          autoscaleMin: 1
+          autoscaleMax: 5
+
+          # Pod disruption budget
+          # Use maxUnavailable instead of minAvailable to allow node drains with single replica
+          podDisruptionBudget:
+            maxUnavailable: 1
+
+          # Enable tracing
+          traceSampling: 100.0
+
+        # Global mesh configuration
+        global:
+          # Default proxy settings
+          proxy:
+            # Resource limits for sidecar proxies
+            resources:
+              requests:
+                memory: 64Mi
+              limits:
+                memory: 256Mi
+
+            # Enable access logging
+            accessLogFile: /dev/stdout
+            accessLogEncoding: JSON
+
+            # Lifecycle hooks for graceful shutdown
+            lifecycle:
+              preStop:
+                exec:
+                  command:
+                    - /bin/sh
+                    - -c
+                    - sleep 5
+
+          # Proxy init container resources
+          proxy_init:
+            resources:
+              requests:
+                memory: 32Mi
+              limits:
+                memory: 64Mi
+
+          # Logging configuration
+          logging:
+            level: "default:info"
+
+          # Enable tracing
+          tracer:
+            zipkin:
+              address: ""
+
+        # Mesh configuration
+        meshConfig:
+          # Enable access logging
+          accessLogFile: /dev/stdout
+          accessLogEncoding: JSON
+
+          # Enable distributed tracing
+          enableTracing: true
+
+          # Default proxy configuration
+          defaultConfig:
+            # Enable Envoy metrics
+            proxyMetadata:
+              ISTIO_META_DNS_AUTO_ALLOCATE: "true"
+              ISTIO_META_DNS_CAPTURE: "true"
+
+            # Hold application start until proxy is ready
+            holdApplicationUntilProxyStarts: true
+
+            # Tracing configuration
+            tracing:
+              sampling: 100.0
+              zipkin:
+                address: ""
+
+          # Enable auto mTLS
+          enableAutoMtls: true
+
+          # Trust domain
+          trustDomain: cluster.local
+
+          # Outbound traffic policy (ALLOW_ANY or REGISTRY_ONLY)
+          outboundTrafficPolicy:
+            mode: ALLOW_ANY
+
+          # Enable protocol sniffing
+          enablePrometheusMerge: true
+
+        # Telemetry configuration
+        telemetry:
+          enabled: true
+          v2:
+            enabled: true
+            prometheus:
+              enabled: true
+            stackdriver:
+              enabled: false
+
+        # Service account
+        serviceAccount:
+          create: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

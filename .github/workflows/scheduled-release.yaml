@@ -1,0 +1,124 @@
+# =============================================================================
+# Scheduled Helm Chart Release Workflow
+# Runs nightly to release charts with updated dependencies
+# =============================================================================
+name: Scheduled Release
+
+on:
+  schedule:
+    # Run every day at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force release even without changes'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  HELM_VERSION: '3.14.0'
+  REGISTRY: ghcr.io
+  REGISTRY_USER: ${{ github.repository_owner }}
+
+jobs:
+  check-updates:
+    name: Check for Updates
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    outputs:
+      has_updates: ${{ steps.check.outputs.has_updates }}
+      charts: ${{ steps.check.outputs.charts }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for recent changes
+        id: check
+        run: |
+          # Check if there were commits in the last 24 hours
+          recent_commits=$(git log --since="24 hours ago" --oneline -- charts/ | wc -l)
+
+          if [ "$recent_commits" -gt 0 ] || [ "${{ inputs.force }}" == "true" ]; then
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+
+            # Get all charts
+            charts=$(ls -d charts/apps/*/ | xargs -n1 basename | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "charts=$charts" >> $GITHUB_OUTPUT
+            echo "Found $recent_commits recent commits or force flag set"
+          else
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+            echo "charts=[]" >> $GITHUB_OUTPUT
+            echo "No recent changes detected"
+          fi
+
+  release:
+    name: Release Charts
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    needs: check-updates
+    if: needs.check-updates.outputs.has_updates == 'true'
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        chart: ${{ fromJson(needs.check-updates.outputs.charts) }}
+      max-parallel: 5
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get chart version
+        id: version
+        run: |
+          chart_path="charts/apps/${{ matrix.chart }}"
+          base_version=$(grep '^version:' "$chart_path/Chart.yaml" | awk '{print $2}')
+
+          # Add nightly suffix
+          date_suffix=$(date +%Y%m%d)
+          version="${base_version}-nightly.${date_suffix}"
+
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Package and push chart
+        run: |
+          helm lint "charts/apps/${{ matrix.chart }}" --strict
+          helm package "charts/apps/${{ matrix.chart }}" \
+            --version "${{ steps.version.outputs.version }}" \
+            --destination .helm-packages
+
+          chart_package=$(ls .helm-packages/${{ matrix.chart }}-*.tgz)
+          helm push "$chart_package" "oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts"
+
+  notify:
+    name: Notify
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    needs: [check-updates, release]
+    if: always() && needs.check-updates.outputs.has_updates == 'true'
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Nightly Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date -u +%Y-%m-%d)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.release.result }}" == "success" ]; then
+            echo "All charts released successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Some charts failed to release" >> $GITHUB_STEP_SUMMARY
+          fi

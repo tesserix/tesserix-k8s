@@ -1,0 +1,64 @@
+# Default values for RabbitMQ
+replicaCount: 1
+
+image:
+  repository: rabbitmq
+  tag: "3.12-management"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+auth:
+  username: postal
+  existingSecret: "rabbitmq-credentials"
+  existingSecretPasswordKey: "password"
+  existingSecretErlangCookieKey: "erlang-cookie"
+
+# Default vhost
+vhost: postal
+
+service:
+  type: ClusterIP
+  port: 5672
+  managementPort: 15672
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 256Mi
+
+persistence:
+  enabled: true
+  storageClass: "standard-rwo"
+  size: 5Gi
+
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+podSecurityContext:
+  fsGroup: 999
+
+securityContext:
+  runAsUser: 999
+
+sealedSecret:
+  enabled: false
+  password: ""
+  erlangCookie: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

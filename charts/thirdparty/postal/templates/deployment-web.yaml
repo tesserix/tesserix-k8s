@@ -1,0 +1,212 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "postal.fullname" . }}-web
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "postal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "postal.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: web
+  template:
+    metadata:
+      labels:
+        {{- include "postal.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: web
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/secret-config.yaml") . | sha256sum }}
+        # Istio sidecar configuration
+        sidecar.istio.io/inject: "true"
+        # Exclude MySQL and RabbitMQ ports from Istio sidecar
+        traffic.sidecar.istio.io/excludeOutboundPorts: "3306,5672"
+        # Exclude GCP metadata server for Workload Identity
+        traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+        # Wait for sidecar before starting app (helps with init containers)
+        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+    spec:
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.initContainers.enabled }}
+      initContainers:
+        - name: init-db
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["postal", "initialize"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "postal.fullname" . }}-env
+          env:
+            # Legacy env vars
+            - name: MAIN_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretPasswordKey }}
+            - name: MESSAGE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.messageDatabase.existingSecret }}
+                  key: {{ .Values.messageDatabase.existingSecretPasswordKey }}
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.rabbitmq.existingSecret }}
+                  key: {{ .Values.rabbitmq.existingSecretPasswordKey }}
+            - name: POSTAL_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.existingSecret }}
+                  key: {{ .Values.credentials.secretKeySecretKey }}
+            # Postal v3 env vars for passwords
+            - name: POSTAL__MAIN_DB__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretPasswordKey }}
+            - name: POSTAL__MESSAGE_DB__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.messageDatabase.existingSecret }}
+                  key: {{ .Values.messageDatabase.existingSecretPasswordKey }}
+            - name: POSTAL__RABBITMQ__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.rabbitmq.existingSecret }}
+                  key: {{ .Values.rabbitmq.existingSecretPasswordKey }}
+          volumeMounts:
+            - name: config
+              mountPath: /config/postal.yml
+              subPath: postal.yml
+            - name: config
+              mountPath: /opt/postal/app/config/initializers/additional_hosts.rb
+              subPath: additional_hosts.rb
+            - name: signing-key
+              mountPath: /config/signing.key
+              subPath: signing.key
+      {{- end }}
+      containers:
+        - name: web
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["postal", "web-server"]
+          ports:
+            - name: http
+              containerPort: 5000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "postal.fullname" . }}-env
+          env:
+            - name: BIND_ADDRESS
+              value: "0.0.0.0"
+            # Legacy env vars
+            - name: MAIN_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretPasswordKey }}
+            - name: MESSAGE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.messageDatabase.existingSecret }}
+                  key: {{ .Values.messageDatabase.existingSecretPasswordKey }}
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.rabbitmq.existingSecret }}
+                  key: {{ .Values.rabbitmq.existingSecretPasswordKey }}
+            - name: POSTAL_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.existingSecret }}
+                  key: {{ .Values.credentials.secretKeySecretKey }}
+            # Postal v3 env vars for passwords
+            - name: POSTAL__MAIN_DB__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretPasswordKey }}
+            - name: POSTAL__MESSAGE_DB__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.messageDatabase.existingSecret }}
+                  key: {{ .Values.messageDatabase.existingSecretPasswordKey }}
+            - name: POSTAL__RABBITMQ__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.rabbitmq.existingSecret }}
+                  key: {{ .Values.rabbitmq.existingSecretPasswordKey }}
+            {{- if .Values.relay.enabled }}
+            {{- if eq .Values.relay.provider "ses" }}
+            - name: SMTP_RELAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.relay.ses.existingSecret }}
+                  key: {{ .Values.relay.ses.existingSecretPasswordKey }}
+            {{- else if eq .Values.relay.provider "sendgrid" }}
+            - name: SMTP_RELAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.relay.sendgrid.existingSecret }}
+                  key: {{ .Values.relay.sendgrid.existingSecretPasswordKey }}
+            {{- end }}
+            {{- end }}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /config/postal.yml
+              subPath: postal.yml
+            - name: config
+              mountPath: /opt/postal/app/config/initializers/additional_hosts.rb
+              subPath: additional_hosts.rb
+            - name: signing-key
+              mountPath: /config/signing.key
+              subPath: signing.key
+            - name: data
+              mountPath: /opt/postal/data
+      volumes:
+        - name: config
+          secret:
+            secretName: {{ include "postal.fullname" . }}-config
+        - name: signing-key
+          secret:
+            secretName: {{ .Values.credentials.existingSecret }}
+            items:
+              - key: {{ .Values.credentials.signingKeySecretKey }}
+                path: signing.key
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "postal.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

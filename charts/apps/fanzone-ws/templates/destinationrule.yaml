@@ -1,0 +1,14 @@
+{{- if not .Values.knative.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: {{ include "fanzone-ws.fullname" . }}
+  labels:
+    {{- include "fanzone-ws.labels" . | nindent 4 }}
+spec:
+  host: {{ include "fanzone-ws.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+{{- end }}

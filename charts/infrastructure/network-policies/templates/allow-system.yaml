@@ -1,0 +1,47 @@
+{{- range .Values.namespaces }}
+---
+# Allow traffic from system namespaces (kube-system, istio, monitoring)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-system-namespaces
+  namespace: {{ . }}
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- range $.Values.systemNamespaces }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: {{ . }}
+    {{- end }}
+---
+# Allow DNS egress (required for service discovery)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: {{ . }}
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

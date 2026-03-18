@@ -1,0 +1,22 @@
+{{- if .Values.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "fanzone-prediction.fullname" . }}
+  labels:
+    {{- include "fanzone-prediction.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "fanzone-prediction.fullname" . }}
+  pollingInterval: {{ .Values.keda.pollingInterval | default 30 }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod | default 300 }}
+  minReplicaCount: {{ .Values.keda.minReplicaCount | default 1 }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount | default 10 }}
+  triggers:
+    {{- range .Values.keda.triggers }}
+    - type: {{ .type }}
+      metricType: {{ .metricType }}
+      metadata:
+        {{- toYaml .metadata | nindent 8 }}
+    {{- end }}
+{{- end }}

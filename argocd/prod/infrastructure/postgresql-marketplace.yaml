@@ -1,0 +1,88 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgresql-marketplace
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: database
+    target-namespace: marketplace
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: data
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/postgresql
+    targetRevision: HEAD
+    helm:
+      releaseName: postgresql
+      values: |
+        # PostgreSQL for Marketplace (Tesseract Hub)
+        postgresql:
+          database: marketplace_db
+          username: postgres
+          existingSecret: "postgresql-password"
+          existingSecretKey: "postgresql-password"
+
+        architecture: standalone
+
+        # Storage - 60Gi (downsized from 650Gi — only ~358 MB actual data)
+        persistence:
+          enabled: true
+          storageClass: "standard-rwo"
+          size: 60Gi
+
+        # Resources
+        resources:
+          requests:
+            memory: 1Gi
+          limits:
+            memory: 4Gi
+
+        # Tuning
+        config:
+          maxConnections: "500"
+          sharedBuffers: "512MB"
+          effectiveCacheSize: "2GB"
+          maintenanceWorkMem: "256MB"
+          walBuffers: "16MB"
+
+        service:
+          type: ClusterIP
+          port: 5432
+
+        metrics:
+          enabled: true
+          serviceMonitor:
+            enabled: false
+
+        # SSL/TLS Configuration - Uses K8s secret: postgresql-ssl-certs
+        ssl:
+          enabled: true
+          existingSecret: "postgresql-ssl-certs"
+
+        # Internal LoadBalancer for Cloud Run VPC connector access
+        ilb:
+          enabled: true
+
+        # Note: Database creation is handled by db-schema-bootstrap CronJob
+        # See: charts/apps/db-schema-bootstrap/
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: postgresql-marketplace
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

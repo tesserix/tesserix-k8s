@@ -1,0 +1,31 @@
+# =============================================================================
+# ALLOW INTERNAL SERVICE-TO-SERVICE COMMUNICATION
+# Backend services need to communicate without external auth
+# This applies namespace-wide (no selector) in each app namespace
+#
+# NOTE: Since mTLS is disabled in DestinationRule (tls.mode: DISABLE),
+# we cannot use principal-based authorization. Instead, we allow all
+# internal traffic. Security is enforced at the ingress gateway level.
+# =============================================================================
+{{- $seen := dict }}
+{{- range $key, $namespace := .Values.appNamespaces }}
+{{- if not (hasKey $seen $namespace) }}
+{{- $_ := set $seen $namespace true }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-mesh-internal
+  namespace: {{ $namespace }}
+  labels:
+    app.kubernetes.io/name: authz-policy
+    app.kubernetes.io/component: mesh-internal
+    app.kubernetes.io/part-of: istio-auth-policies
+spec:
+  action: ALLOW
+  rules:
+    # Allow all internal traffic within the namespace
+    # mTLS is disabled, so principal-based auth is not available
+    - {}
+{{- end }}
+{{- end }}

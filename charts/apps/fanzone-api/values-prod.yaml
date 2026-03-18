@@ -1,0 +1,36 @@
+# Production overrides for fanzone-api
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+knative:
+  enabled: true
+  minScale: 0
+  maxScale: 10
+  scaleDownDelay: "60s"
+
+# Disable KEDA and HPA — Knative handles autoscaling
+keda:
+  enabled: false
+
+autoscaling:
+  enabled: false
+
+# Production resource allocation - handles game/sports API traffic
+resources:
+  limits:
+    memory: 2Gi
+  requests:
+    memory: 512Mi
+
+# Production environment
+env:
+  GIN_MODE: "release"
+  LOG_LEVEL: "warn"
+
+# Production GCP configuration
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-fanzone-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  secretManager:
+    secretPrefix: "prod"

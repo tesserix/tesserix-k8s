@@ -1,0 +1,237 @@
+{{/*
+PeerAuthentication - Defines mTLS policy for multi-namespace architecture
+
+DISABLED when .Values.features.peerAuthentication.enabled is false
+*/}}
+
+{{- if .Values.features.peerAuthentication.enabled }}
+
+# =============================================================================
+# Mesh-Wide mTLS Policy
+# =============================================================================
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: {{ .Values.mtls.mode }}
+
+# =============================================================================
+# Application Namespace mTLS Policies
+# PERMISSIVE mode allows both plaintext and mTLS traffic
+# This is needed because istio-ingressgateway connects to services without mTLS client certs
+# =============================================================================
+{{- range $key, $ns := .Values.appNamespaces }}
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: {{ $key }}-mtls
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  mtls:
+    mode: PERMISSIVE
+{{- end }}
+
+# =============================================================================
+# Database Namespace mTLS Policies
+# DISABLE mTLS for database namespaces (use native PostgreSQL SSL)
+# =============================================================================
+{{- range $key, $dbNs := .Values.databaseNamespaces }}
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: {{ $key }}-db-mtls
+  namespace: {{ $dbNs }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  mtls:
+    mode: DISABLE
+{{- end }}
+
+# =============================================================================
+# Redis Namespace mTLS Policies
+# DISABLE mTLS for Redis namespaces (use native Redis AUTH)
+# =============================================================================
+{{- range $key, $redisNs := .Values.redisNamespaces }}
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: {{ $key }}-redis-mtls
+  namespace: {{ $redisNs }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  mtls:
+    mode: DISABLE
+{{- end }}
+
+# =============================================================================
+# MongoDB Namespace mTLS Policies
+# DISABLE mTLS for MongoDB namespaces (use native MongoDB wire protocol)
+# =============================================================================
+{{- range $key, $mongoNs := .Values.mongoNamespaces }}
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: {{ $key }}-mongo-mtls
+  namespace: {{ $mongoNs }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  mtls:
+    mode: DISABLE
+{{- end }}
+
+# =============================================================================
+# Infrastructure Namespace mTLS Policies
+# =============================================================================
+---
+# NATS - DISABLE mTLS
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: nats-mtls
+  namespace: nats
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: DISABLE
+
+---
+# Typesense - DISABLE mTLS
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: typesense-mtls
+  namespace: typesense
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: DISABLE
+
+---
+# Email - DISABLE mTLS
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: email-mtls
+  namespace: email
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: DISABLE
+
+---
+# Monitoring - PERMISSIVE mTLS (for scraping)
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: monitoring-mtls
+  namespace: monitoring
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: PERMISSIVE
+
+# =============================================================================
+# Infrastructure Namespace mTLS Policies
+# =============================================================================
+---
+# Translation - PERMISSIVE mTLS
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: translation-mtls
+  namespace: {{ .Values.infrastructureNamespaces.translation }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: PERMISSIVE
+
+---
+# Identity Customer (Keycloak) - PERMISSIVE mTLS
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: identity-mtls
+  namespace: {{ .Values.infrastructureNamespaces.identity }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: PERMISSIVE
+
+{{- if index .Values.infrastructureNamespaces "identity-internal" }}
+---
+# Identity Internal (Keycloak) - PERMISSIVE mTLS
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: identity-internal-mtls
+  namespace: {{ index .Values.infrastructureNamespaces "identity-internal" }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: PERMISSIVE
+{{- end }}
+
+---
+# GrowthBook - PERMISSIVE mTLS
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: growthbook-mtls
+  namespace: {{ .Values.infrastructureNamespaces.growthbook }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: PERMISSIVE
+
+---
+# OpenPanel - PERMISSIVE mTLS
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: openpanel-mtls
+  namespace: {{ .Values.infrastructureNamespaces.openpanel }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: PERMISSIVE
+
+{{- if .Values.infrastructureNamespaces.photon }}
+---
+# Photon - PERMISSIVE mTLS
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: photon-mtls
+  namespace: {{ .Values.infrastructureNamespaces.photon }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  mtls:
+    mode: PERMISSIVE
+{{- end }}
+
+{{- end }}

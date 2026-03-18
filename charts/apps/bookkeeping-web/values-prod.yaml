@@ -1,0 +1,42 @@
+# Production overrides for bookkeeping-web
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+replicaCount: 2
+
+# Production resource allocation for Next.js SSR
+resources:
+  limits:
+    memory: 768Mi
+  requests:
+    memory: 384Mi
+
+# Production environment
+env:
+  NODE_ENV: "production"
+
+# KEDA autoscaling - enabled for production
+# Production GCP configuration
+gcp:
+  secretManager:
+    secretPrefix: "prod"
+
+keda:
+  enabled: true
+  minReplicaCount: 2
+  maxReplicaCount: 10
+  pollingInterval: 30
+  cooldownPeriod: 300
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "75"
+
+# Pod Disruption Budget - enabled for production HA
+pdb:
+  enabled: true
+  minAvailable: 1

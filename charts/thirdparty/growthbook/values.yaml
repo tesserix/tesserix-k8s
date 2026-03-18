@@ -1,0 +1,186 @@
+# GrowthBook Configuration
+replicaCount: 1
+
+image:
+  repository: growthbook/growthbook
+  tag: "latest"
+  pullPolicy: Always
+
+# Service configuration
+service:
+  type: ClusterIP
+  # Frontend UI port
+  appPort: 3000
+  # Backend API port
+  apiPort: 3100
+
+# Resource limits
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    memory: 512Mi
+
+# Security context
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  fsGroup: 0
+
+# GrowthBook environment configuration
+config:
+  # Node environment (production for self-hosted)
+  nodeEnv: "production"
+
+  # Application origin URL (frontend)
+  appOrigin: "https://dev-growthbook.tesserix.app"
+
+  # API host URL (backend)
+  apiHost: "https://dev-growthbook.tesserix.app/api"
+
+  # MongoDB connection string (using in-cluster MongoDB)
+  mongoUri: "mongodb://mongodb:27017/growthbook"
+
+  # Upload method: local, s3, google-cloud
+  uploadMethod: "local"
+
+  # Enable API for SDKs
+  enableApi: true
+
+  # API key for SDK connections (optional, can be set per environment in UI)
+  # apiKey: ""
+
+  # Disable telemetry
+  disableTelemetry: true
+
+  # OpenFeature compatible API
+  enableOpenFeature: true
+
+# Secrets (referenced from Kubernetes secrets)
+secrets:
+  # JWT secret for authentication
+  jwtSecretName: "growthbook-secrets"
+  jwtSecretKey: "jwt-secret"
+
+  # Encryption key for sensitive data
+  encryptionKeySecretName: "growthbook-secrets"
+  encryptionKeyKey: "encryption-key"
+
+# MongoDB configuration (using Bitnami MongoDB subchart or external)
+mongodb:
+  # Use built-in MongoDB deployment
+  enabled: true
+
+  image:
+    repository: mongo
+    tag: "7.0"
+    pullPolicy: IfNotPresent
+
+  # Authentication
+  auth:
+    enabled: false
+    # rootUser: admin
+    # rootPassword: ""
+
+  # Persistence
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClassName: ""
+
+  # Resources
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      memory: 256Mi
+
+# Persistence for local uploads
+persistence:
+  enabled: true
+  size: 5Gi
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+
+# Service Account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Node selector, tolerations, affinity
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Pod annotations
+podAnnotations:
+  # Istio sidecar configuration
+  sidecar.istio.io/inject: "true"
+  # Exclude MongoDB port from Istio sidecar
+  traffic.sidecar.istio.io/excludeOutboundPorts: "27017"
+  # Exclude GCP metadata server for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+
+# Extra environment variables
+extraEnv:
+  # Allow self-service organization creation for first-time setup
+  - name: ALLOW_SELF_ORG_CREATION
+    value: "true"
+  # Email for site admin (optional - for bootstrapping)
+  - name: SITE_ADMIN_EMAIL
+    value: "admin@tesserix.app"
+  # Skip license check for self-hosted
+  - name: IS_MULTI_ORG
+    value: "false"
+
+# Feature Seeding Configuration
+# Automatically creates admin account, organization, SDK connections, and feature flags
+featureSeeding:
+  # Enable automatic feature seeding
+  enabled: true
+
+  # Environment name (devtest, prod)
+  environment: "devtest"
+
+  # Organization name
+  organizationName: "Tesserix"
+
+  # SDK connection configuration
+  sdkConnectionName: "Tesserix Platform"
+  sdkEnvironment: "production"
+
+  # Admin user for API authentication
+  adminEmail: "admin@tesserix.app"
+  adminName: "Tesserix Admin"
+
+  # Admin password configuration
+  # Option 1: Reference existing secret (recommended)
+  adminPasswordSecret:
+    name: "growthbook-admin-secret"
+    key: "password"
+
+  # Option 2: Create secret from sealed secret
+  sealedSecret:
+    enabled: true
+    # To generate: echo -n 'YourPassword' | kubeseal --raw --namespace growthbook --name growthbook-admin-secret --controller-namespace sealed-secrets
+    # Password: TesserixAdmin2026
+    encryptedPassword: "AgBq0EjPaeD6GbMXdOxIRQm1+1jnmBgoyHidJso8UaqFm9PNaDSzTmh1VYACt33+df+jnVG3mlKspkro6bdDt+YQIaXoQMSsaNuKYJBob18uJyu4bhy4gnE6vrOrWh0WQaX1UgEOPAAtbiEIYpC4ec1HmazuM79YypUYryq8Zz99Po5yFpdWZj0KxdIBI452z0296zjqag1tKKbZg4ylg7wr2+ljMpSieYt6gAcLkb2IFrfJDztW4AsQ+47DRlTyEb/flbICUmOGV+HgcKIXXLzwyYpZisguC4qicsBC9aItbol5ZwlnX2MUZIkdkeNsdkPT7mGEpYJA9JVmdpVMcXEBwKA6FD+YhmcS9MfdWrBeMDaQMvs1J8UjUJYKS0NfaHiK+w4CEgkBZIbhbf5aa+9jtZZrrdUe2Tgk87fJs1kzZhSlUaMUajPf96YKBZJW97Vw7f3Z23L2RfpQnzJDMY0syyecP8T1EmU0JzYp6HNaqH0p7u2LxTu6wd4uqu+0ZjeiF47Qg6+dZpMKUpe1XTHHcOs0LV1gSiz+hamroLyW/pYcvdK6VXA+LtAK46MP6Gg6XMYkuwBXv03fs6zSC8Czdp5D8wFkAhpC0zNEXXupO4gYntv2iHpu7Nfv8Jgr3uEpMBQ3C9EE0g3uxETpPPl4Ahp3dGNQy6b85gpKpWgCADW0AutIgJjQktrKuhd7VH/9xbGSlP29O55pxvjOrqXRfA=="
+
+  # Job configuration
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+
+  # Image for the seeding job (uses curl)
+  image:
+    repository: curlimages/curl
+    tag: "8.5.0"
+    pullPolicy: IfNotPresent
+
+  # Resource limits for the seeding job
+  resources:
+    limits:
+      memory: 128Mi
+    requests:
+      memory: 64Mi

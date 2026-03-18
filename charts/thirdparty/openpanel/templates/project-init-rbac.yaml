@@ -1,0 +1,51 @@
+{{- if .Values.projectInit.enabled }}
+# ServiceAccount for the project-init Job
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "openpanel.fullname" . }}-project-init
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: project-init
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+---
+# ClusterRole: allows creating/updating Secrets in the target namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "openpanel.fullname" . }}-project-init
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: project-init
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+    # Restrict to the target namespace via resourceNames is not possible for create,
+    # so we scope via the ClusterRoleBinding subjects namespace instead
+---
+# ClusterRoleBinding: binds the ServiceAccount to the ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "openpanel.fullname" . }}-project-init
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: project-init
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "openpanel.fullname" . }}-project-init
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "openpanel.fullname" . }}-project-init
+    namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -1,0 +1,72 @@
+# =============================================================================
+# DESTINATION RULES: Circuit breaker + connection pool settings
+# =============================================================================
+# Applied to all marketplace API services for resilience.
+# Knative services use port 80 (Knative network layer).
+# =============================================================================
+
+# Marketplace namespace — API services
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: marketplace-api-defaults
+  namespace: marketplace
+spec:
+  host: "*.marketplace.svc.cluster.local"
+  trafficPolicy:
+    connectionPool:
+      http:
+        h2UpgradePolicy: DEFAULT
+        maxRequestsPerConnection: 100
+      tcp:
+        maxConnections: 100
+        connectTimeout: 5s
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+# Shared namespace — auth-bff, tenant-service, etc.
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: shared-api-defaults
+  namespace: shared
+spec:
+  host: "*.shared.svc.cluster.local"
+  trafficPolicy:
+    connectionPool:
+      http:
+        h2UpgradePolicy: DEFAULT
+        maxRequestsPerConnection: 100
+      tcp:
+        maxConnections: 100
+        connectTimeout: 5s
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+# Platform namespace — tesserix-home, OpenFGA
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: platform-api-defaults
+  namespace: tesserix
+spec:
+  host: "*.platform.svc.cluster.local"
+  trafficPolicy:
+    connectionPool:
+      http:
+        h2UpgradePolicy: DEFAULT
+        maxRequestsPerConnection: 100
+      tcp:
+        maxConnections: 100
+        connectTimeout: 5s
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50

@@ -1,0 +1,102 @@
+# Production overrides for istio-auth-policies
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+# Production authentication policies
+authorizationPolicies:
+  enabled: true
+  strictMtls: true
+
+# Production frontend apps with mark8ly.com domain
+frontendApps:
+  - name: storefront
+    label: storefront
+    hosts:
+      - "*.mark8ly.com"  # Wildcard for tenant subdomains
+  - name: admin
+    label: admin
+    namespace: marketplace
+    hosts:
+      - "admin.mark8ly.com"
+  - name: tenant-onboarding
+    label: tenant-onboarding
+    namespace: marketplace
+    hosts:
+      - "mark8ly.com"  # Apex domain for tenant onboarding
+  - name: growthbook
+    label: growthbook
+    namespace: growthbook
+    hosts:
+      - "growthbook.mark8ly.com"
+  - name: idp-customer
+    label: keycloak
+    namespace: identity-customer
+    hosts:
+      - "identity.fanzonebattleground.com"
+  - name: kibana
+    label: kibana
+    hosts:
+      - "kibana.tesserix.app"
+  - name: grafana
+    label: grafana
+    hosts:
+      - "grafana.tesserix.app"
+  - name: openpanel
+    label: openpanel
+    hosts:
+      - "analytics.tesserix.app"
+  - name: fanzone-web
+    label: fanzone-web
+    namespace: fanzone
+    hosts:
+      - "fanzonebattleground.com"
+      - "www.fanzonebattleground.com"
+      - "api.fanzonebattleground.com"
+      - "ws.fanzonebattleground.com"
+      - "auth.fanzonebattleground.com"
+  - name: homechef-web
+    label: homechef-web
+    hosts:
+      - "fe3dr.com"
+      - "www.fe3dr.com"
+      - "vendors.fe3dr.com"
+      - "admin.fe3dr.com"
+      - "delivery.fe3dr.com"
+      - "api.fe3dr.com"
+      - "auth.fe3dr.com"
+      - "identity.fe3dr.com"
+      - "internal-identity.fe3dr.com"
+
+# Production Keycloak IDP Configuration
+keycloak:
+  customer:
+    enabled: true
+    issuer: "https://identity.fanzonebattleground.com/realms/tesserix-customer"
+    jwksUri: "https://identity.fanzonebattleground.com/realms/tesserix-customer/protocol/openid-connect/certs"
+    audiences:
+      - "tesserix-api"
+      - "mobile-app"
+      - "storefront-mobile"
+      - "web-storefront"
+      - "admin-dashboard"
+      - "account"
+  master:
+    enabled: true
+    issuer: "https://identity.fanzonebattleground.com/realms/master"
+    jwksUri: "https://identity.fanzonebattleground.com/realms/master/protocol/openid-connect/certs"
+    audiences: []
+
+# Production app namespaces
+appNamespaces:
+  global: global
+  marketplace: marketplace
+  fanzone: fanzone
+
+# Production mesh principals (service accounts trusted for internal communication)
+meshPrincipals:
+  - "cluster.local/ns/global/sa/*"
+  - "cluster.local/ns/marketplace/sa/*"
+  - "cluster.local/ns/fanzone/sa/*"
+  - "cluster.local/ns/homechef/sa/*"
+  - "cluster.local/ns/istio-ingress/sa/*"
+  - "cluster.local/ns/istio-system/sa/*"
+  - "cluster.local/ns/monitoring/sa/*"

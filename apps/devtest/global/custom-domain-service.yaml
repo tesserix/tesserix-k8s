@@ -1,0 +1,83 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: custom-domain-service
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/global-services/custom-domain-service
+    helm:
+      valueFiles:
+        - values.yaml
+      values: |
+        image:
+          tag: main
+
+        config:
+          ginMode: debug
+
+        database:
+          host: postgresql.postgresql-global.svc.cluster.local
+          name: custom_domains_db
+          sslMode: require
+          existingSecret: postgresql-password
+          existingSecretKey: postgres-password
+
+        redis:
+          host: redis.redis-global.svc.cluster.local
+          existingSecret: redis
+          existingSecretKey: redis-password
+
+        keycloak:
+          adminUrl: http://keycloak.identity-customer.svc.cluster.local:8080
+          existingSecret: keycloak-admin-credentials
+          existingSecretKey: clientSecret
+          clientId: custom-domain-admin
+
+        istio:
+          gatewayName: custom-domains-gateway
+          gatewayNamespace: istio-system
+          vsNamespace: marketplace
+
+        dns:
+          verificationDomain: devtest.tesserix.app
+          proxyDomain: proxy.devtest.tesserix.app
+
+        ssl:
+          issuerName: letsencrypt-staging
+          issuerKind: ClusterIssuer
+
+        tenant:
+          serviceUrl: http://tenant-service.marketplace.svc.cluster.local:8080
+
+        resources:
+          limits:
+            memory: 256Mi
+          requests:
+            memory: 64Mi
+
+        autoscaling:
+          enabled: false
+
+        replicaCount: 1
+
+        externalSecrets:
+          enabled: true
+          gcpSecrets:
+            postgresqlPassword: "devtest-global-postgresql-password"
+            redisPassword: "devtest-marketplace-redis-password"
+            keycloakClientSecret: "devtest-keycloak-customer-admin-client-secret"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: global
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

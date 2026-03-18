@@ -1,0 +1,28 @@
+{{- if .Values.networking.enabled -}}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: photon-vs
+  labels:
+    {{- include "photon.labels" . | nindent 4 }}
+spec:
+  gateways:
+    - {{ .Values.networking.gateway }}
+  hosts:
+    {{- range .Values.networking.hosts }}
+    - {{ . | quote }}
+    {{- end }}
+  http:
+    - match:
+        - uri:
+            prefix: {{ .Values.networking.prefix | default "/" }}
+      route:
+        - destination:
+            host: photon
+            port:
+              number: {{ .Values.service.port }}
+      {{- if .Values.networking.corsPolicy }}
+      corsPolicy:
+        {{- toYaml .Values.networking.corsPolicy | nindent 8 }}
+      {{- end }}
+{{- end }}

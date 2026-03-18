@@ -1,0 +1,23 @@
+{{- if not .Values.knative.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fanzone-api.fullname" . }}
+  labels:
+    {{- include "fanzone-api.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      name: http
+    {{- if .Values.service.grpcPort }}
+    - port: {{ .Values.service.grpcPort }}
+      targetPort: {{ .Values.service.grpcPort }}
+      protocol: TCP
+      name: grpc
+    {{- end }}
+  selector:
+    {{- include "fanzone-api.selectorLabels" . | nindent 4 }}
+{{- end }}

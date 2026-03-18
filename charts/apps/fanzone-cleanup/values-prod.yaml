@@ -1,0 +1,40 @@
+# Production overrides for fanzone-cleanup
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+# Knative Serving — replaces Deployment + Service with a Knative ksvc
+knative:
+  enabled: true
+  minScale: 0
+  maxScale: 3
+  scaleDownDelay: "60s"
+
+# Production resource allocation
+resources:
+  limits:
+    memory: 256Mi
+  requests:
+    memory: 128Mi
+
+# Production environment
+env:
+  GO_ENV: production
+  LOG_LEVEL: warn
+  LOG_FORMAT: json
+  SERVER_PORT: "8089"
+  CLEANUP_INTERVAL: "30m"
+  CLEANUP_DELAY_HOURS: "6"
+  BATCH_SIZE: "10"
+
+# Workload Identity annotation for GCP SA binding
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: "app-secrets-fanzone-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+# Production GCP configuration
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-fanzone-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  secretManager:
+    secretPrefix: "prod"

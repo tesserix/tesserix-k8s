@@ -1,0 +1,154 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: photon
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: geocoding
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/photon
+    targetRevision: HEAD
+    helm:
+      releaseName: photon
+      values: |
+        # Photon configuration for devtest environment
+        replicaCount: 1
+
+        image:
+          repository: rtuszik/photon-docker
+          tag: "latest"
+          pullPolicy: IfNotPresent
+
+        # Service configuration
+        service:
+          type: ClusterIP
+          port: 2322
+
+        # Resource configuration - minimal for devtest cluster capacity
+        # Photon needs significant memory for geocoding operations
+        # Note: For production, increase requests significantly
+        resources:
+          requests:
+            memory: 2Gi
+          limits:
+            memory: 8Gi
+
+        # Photon configuration
+        config:
+          # Data directory must match rtuszik/photon-docker's internal path
+          dataDir: /photon/data
+          port: 2322
+          # Use planet-wide data for comprehensive coverage (Asia, Australia, NZ, etc.)
+          # This includes all regions: africa, asia, australia-oceania, europe, americas
+          # Download size: ~116GB, requires significant disk space
+          countryCode: "planet"
+          downloadUrl: "https://r2.koalasec.org/public"
+
+        # Persistence - planet data requires ~312GB during download/extraction
+        # Final data is ~193GB but download + extract needs 312GB temp space
+        persistence:
+          enabled: true
+          size: 350Gi
+          storageClassName: standard-rwo
+
+        # Health checks - Photon takes time to download and index data
+        # IMPORTANT: Planet data (~120GB) can take 2-4 hours to download
+        # Probes must allow enough time for this to complete
+        healthCheck:
+          enabled: true
+          path: /api
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 10
+
+        # Startup probe - allows up to 12 hours for initial data download
+        # This prevents liveness probe from killing the pod during download
+        # Planet data (~120GB) can take several hours depending on network speed
+        startupProbe:
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 1440  # 1440 × 30s = 12 hours
+
+        livenessProbe:
+          initialDelaySeconds: 60  # Reduced since startupProbe handles initial wait
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 5
+
+        # Istio VirtualService for external access
+        networking:
+          enabled: true
+          gateway: "istio-ingress/tesseract-gateway"
+          hosts:
+            - "devtest-photon.tesserix.app"
+          prefix: "/"
+          corsPolicy:
+            allowOrigins:
+              - prefix: "https://dev-"
+            allowMethods:
+              - GET
+              - POST
+              - OPTIONS
+            allowHeaders:
+              - content-type
+              - authorization
+            maxAge: "24h"
+
+        # Horizontal Pod Autoscaler - scale based on CPU/Memory
+        autoscaling:
+          enabled: true
+          minReplicas: 1
+          maxReplicas: 3
+          targetCPUUtilizationPercentage: 70
+          targetMemoryUtilizationPercentage: 80
+          scaleDownStabilizationSeconds: 300
+          scaleUpStabilizationSeconds: 0
+
+        # Vertical Pod Autoscaler - optimize resource requests
+        vpa:
+          enabled: true
+          updateMode: "Auto"
+          minAllowed:
+            memory: "2Gi"
+          maxAllowed:
+            memory: "16Gi"
+          excludeIstioProxy: true
+
+        # Pod Disruption Budget - ensure availability during updates
+        podDisruptionBudget:
+          enabled: true
+          maxUnavailable: 1
+
+        # NetworkPolicy - allow access from marketplace and global namespaces
+        networkPolicy:
+          enabled: true
+          allowedNamespaces:
+            - marketplace
+            - global
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: photon
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Replace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

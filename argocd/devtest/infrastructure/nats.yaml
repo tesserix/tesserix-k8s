@@ -1,0 +1,104 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nats
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: messaging
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/nats
+    targetRevision: HEAD
+    helm:
+      releaseName: nats
+      values: |
+        # Use latest alpine image
+        image:
+          repository: nats
+          tag: alpine
+          pullPolicy: Always
+
+        # Single replica StatefulSet for JetStream persistence
+        # Using 1 replica to avoid cluster replication complexity
+        replicaCount: 1
+
+        # Cluster mode disabled for single replica
+        cluster:
+          enabled: false
+
+        # JetStream for persistent messaging (requires StatefulSet)
+        jetstream:
+          enabled: true
+          memoryStore:
+            enabled: true
+            maxSize: 1Gi
+          fileStore:
+            enabled: true
+            size: 12Gi
+            storageClassName: standard-rwo
+
+        # Production resource configuration
+        resources:
+          requests:
+            memory: 512Mi
+          limits:
+            memory: 2Gi
+
+        # Persistence for GKE - 12GB for JetStream data
+        persistence:
+          enabled: true
+          storageClassName: standard-rwo
+          size: 12Gi
+
+        # Service configuration
+        service:
+          type: ClusterIP
+          port: 4222
+          clusterPort: 6222
+          monitorPort: 8222
+
+        # Pod Disruption Budget (disabled for single replica)
+        podDisruptionBudget:
+          enabled: false
+
+        # Liveness and readiness probes
+        livenessProbe:
+          enabled: true
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        readinessProbe:
+          enabled: true
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        # Affinity rules (not needed for single replica)
+        affinity: {}
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nats
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Replace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

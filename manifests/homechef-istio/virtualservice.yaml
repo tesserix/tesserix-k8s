@@ -1,0 +1,879 @@
+##############################################################################
+# HomeChef Istio VirtualService Configuration
+# All services run in-cluster via Knative Serving
+# Traffic routes through knative-local-gateway with Host header rewriting
+# All portals authenticate via customer Keycloak realm (homechef)
+##############################################################################
+
+# --- Customer-facing SPA (fe3dr.com / www.fe3dr.com) ---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: homechef-web
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+    app.kubernetes.io/component: frontend
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - fe3dr.com
+    - www.fe3dr.com
+  http:
+    # BFF auth routes -> Auth BFF Knative service (via /bff/ prefix)
+    - match:
+        - uri:
+            prefix: /bff/
+      rewrite:
+        uri: /
+      headers:
+        request:
+          set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
+            x-forwarded-host: fe3dr.com
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy: &homechef-cors
+        allowOrigins:
+          - exact: "https://fe3dr.com"
+          - exact: "https://www.fe3dr.com"
+          - exact: "https://vendors.fe3dr.com"
+          - exact: "https://admin.fe3dr.com"
+          - exact: "https://delivery.fe3dr.com"
+          - exact: "https://analytics.fe3dr.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+          - x-auth-context
+          - x-csrf-token
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # Auth callback route -> Auth BFF (Keycloak redirects back here)
+    - match:
+        - uri:
+            prefix: /auth/
+      headers:
+        request:
+          set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
+            x-forwarded-host: fe3dr.com
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+
+    # API routes -> HomeChef API Knative service
+    - match:
+        - uri:
+            prefix: /api
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+
+    # WebSocket routes -> API Knative service
+    - match:
+        - uri:
+            prefix: /ws
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 3600s
+
+    # All other routes -> Web SPA Knative service
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-web.homechef.svc.cluster.local
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 30s
+---
+# --- Vendor Portal (vendors.fe3dr.com) - Chef/vendor dashboard ---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: homechef-vendor-portal
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+    app.kubernetes.io/component: vendor-portal
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - vendors.fe3dr.com
+  http:
+    # BFF auth routes -> Auth BFF (customer Keycloak realm)
+    - match:
+        - uri:
+            prefix: /bff/
+      rewrite:
+        uri: /
+      headers:
+        request:
+          set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
+            x-forwarded-host: vendors.fe3dr.com
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://fe3dr.com"
+          - exact: "https://www.fe3dr.com"
+          - exact: "https://vendors.fe3dr.com"
+          - exact: "https://admin.fe3dr.com"
+          - exact: "https://delivery.fe3dr.com"
+          - exact: "https://analytics.fe3dr.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+          - x-auth-context
+          - x-csrf-token
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # Auth callback route -> Auth BFF (Keycloak redirects back here)
+    - match:
+        - uri:
+            prefix: /auth/
+      headers:
+        request:
+          set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
+            x-forwarded-host: vendors.fe3dr.com
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+
+    # API routes
+    - match:
+        - uri:
+            prefix: /api
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://fe3dr.com"
+          - exact: "https://www.fe3dr.com"
+          - exact: "https://vendors.fe3dr.com"
+          - exact: "https://admin.fe3dr.com"
+          - exact: "https://delivery.fe3dr.com"
+          - exact: "https://analytics.fe3dr.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+          - x-auth-context
+          - x-csrf-token
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # WebSocket routes
+    - match:
+        - uri:
+            prefix: /ws
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 3600s
+
+    # All other routes -> Vendor Portal SPA
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-vendor-portal.homechef.svc.cluster.local
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 30s
+---
+# --- Admin Portal (admin.fe3dr.com) - App owner admin panel ---
+# Uses INTERNAL Keycloak realm (tesserix-internal) via internal-identity.fe3dr.com
+# This is separate from the customer/vendor auth at identity.fe3dr.com
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: homechef-admin-portal
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+    app.kubernetes.io/component: admin-portal
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - admin.fe3dr.com
+  http:
+    # BFF auth routes -> Auth BFF (INTERNAL Keycloak realm)
+    # x-forwarded-host set to admin.fe3dr.com so BFF detects this as an admin host
+    # and uses the internal Keycloak realm (tesserix-internal) for authentication
+    - match:
+        - uri:
+            prefix: /bff/
+      rewrite:
+        uri: /
+      headers:
+        request:
+          set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
+            x-forwarded-host: admin.fe3dr.com
+            x-forwarded-proto: https
+            x-auth-context: admin
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://fe3dr.com"
+          - exact: "https://www.fe3dr.com"
+          - exact: "https://vendors.fe3dr.com"
+          - exact: "https://admin.fe3dr.com"
+          - exact: "https://delivery.fe3dr.com"
+          - exact: "https://analytics.fe3dr.com"
+          - exact: "https://internal-identity.fe3dr.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+          - x-auth-context
+          - x-csrf-token
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # Auth callback route -> Auth BFF (internal realm)
+    - match:
+        - uri:
+            prefix: /auth/
+      headers:
+        request:
+          set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
+            x-forwarded-host: admin.fe3dr.com
+            x-forwarded-proto: https
+            x-auth-context: admin
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+
+    # API routes
+    - match:
+        - uri:
+            prefix: /api
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+
+    # All other routes -> Admin Portal SPA
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-admin-portal.homechef.svc.cluster.local
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 30s
+---
+# --- Delivery Portal (delivery.fe3dr.com) - Delivery partner dashboard ---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: homechef-delivery-portal
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+    app.kubernetes.io/component: delivery-portal
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - delivery.fe3dr.com
+  http:
+    # BFF auth routes -> Auth BFF (internal Keycloak realm, same as admin)
+    - match:
+        - uri:
+            prefix: /bff/
+      rewrite:
+        uri: /
+      headers:
+        request:
+          set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
+            x-forwarded-host: delivery.fe3dr.com
+            x-forwarded-proto: https
+            x-auth-context: admin
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://fe3dr.com"
+          - exact: "https://www.fe3dr.com"
+          - exact: "https://vendors.fe3dr.com"
+          - exact: "https://admin.fe3dr.com"
+          - exact: "https://delivery.fe3dr.com"
+          - exact: "https://analytics.fe3dr.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+          - x-auth-context
+          - x-csrf-token
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # Driver BFF auth routes -> Auth BFF (customer Keycloak realm)
+    # Unlike /bff/ which uses x-auth-context: admin (internal realm),
+    # /driver-bff/ omits x-auth-context so the BFF defaults to the customer realm (homechef)
+    - match:
+        - uri:
+            prefix: /driver-bff/
+      rewrite:
+        uri: /
+      headers:
+        request:
+          set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
+            x-forwarded-host: delivery.fe3dr.com
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://fe3dr.com"
+          - exact: "https://www.fe3dr.com"
+          - exact: "https://vendors.fe3dr.com"
+          - exact: "https://admin.fe3dr.com"
+          - exact: "https://delivery.fe3dr.com"
+          - exact: "https://analytics.fe3dr.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+          - x-auth-context
+          - x-csrf-token
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # Auth callback route -> Auth BFF (internal realm)
+    - match:
+        - uri:
+            prefix: /auth/
+      headers:
+        request:
+          set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
+            x-forwarded-host: delivery.fe3dr.com
+            x-forwarded-proto: https
+            x-auth-context: admin
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+
+    # API routes
+    - match:
+        - uri:
+            prefix: /api
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://fe3dr.com"
+          - exact: "https://www.fe3dr.com"
+          - exact: "https://vendors.fe3dr.com"
+          - exact: "https://admin.fe3dr.com"
+          - exact: "https://delivery.fe3dr.com"
+          - exact: "https://analytics.fe3dr.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+          - x-auth-context
+          - x-csrf-token
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # WebSocket routes (for delivery tracking)
+    - match:
+        - uri:
+            prefix: /ws
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 3600s
+
+    # All other routes -> Delivery Portal SPA
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-delivery-portal.homechef.svc.cluster.local
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 30s
+---
+# --- API Direct (api.fe3dr.com) - Direct API access ---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: homechef-api-direct
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+    app.kubernetes.io/component: api
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - api.fe3dr.com
+  http:
+    # WebSocket routes
+    - match:
+        - uri:
+            prefix: /ws
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 3600s
+
+    # All API routes
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://fe3dr.com"
+          - exact: "https://www.fe3dr.com"
+          - exact: "https://vendors.fe3dr.com"
+          - exact: "https://admin.fe3dr.com"
+          - exact: "https://delivery.fe3dr.com"
+          - exact: "https://analytics.fe3dr.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+          - x-auth-context
+          - x-csrf-token
+        allowCredentials: true
+        maxAge: "86400s"
+---
+# --- Identity (identity.fe3dr.com) - Keycloak auth (customer realm) ---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: homechef-identity
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+    app.kubernetes.io/component: identity
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - identity.fe3dr.com
+  http:
+    # All routes -> Auth BFF Knative service
+    # NOTE: No retry policy — auth callbacks consume state on first read (non-idempotent).
+    # Retrying causes invalid_state errors because the state is deleted after retrieval.
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
+            x-forwarded-host: identity.fe3dr.com
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://fe3dr.com"
+          - exact: "https://www.fe3dr.com"
+          - exact: "https://vendors.fe3dr.com"
+          - exact: "https://admin.fe3dr.com"
+          - exact: "https://delivery.fe3dr.com"
+          - exact: "https://analytics.fe3dr.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+          - x-auth-context
+          - x-csrf-token
+        allowCredentials: true
+        maxAge: "86400s"
+---
+# --- Analytics (analytics.fe3dr.com) - Analytics dashboard ---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: homechef-analytics
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+    app.kubernetes.io/component: analytics
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - analytics.fe3dr.com
+  http:
+    # BFF auth routes -> Auth BFF (customer Keycloak realm)
+    - match:
+        - uri:
+            prefix: /bff/
+      rewrite:
+        uri: /
+      headers:
+        request:
+          set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
+            x-forwarded-host: analytics.fe3dr.com
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://fe3dr.com"
+          - exact: "https://www.fe3dr.com"
+          - exact: "https://vendors.fe3dr.com"
+          - exact: "https://admin.fe3dr.com"
+          - exact: "https://delivery.fe3dr.com"
+          - exact: "https://analytics.fe3dr.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+          - x-auth-context
+          - x-csrf-token
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # Auth callback route -> Auth BFF (Keycloak redirects back here)
+    - match:
+        - uri:
+            prefix: /auth/
+      headers:
+        request:
+          set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
+            x-forwarded-host: analytics.fe3dr.com
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+
+    # API routes
+    - match:
+        - uri:
+            prefix: /api
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+
+    # All other routes -> Analytics Portal SPA
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-analytics.homechef.svc.cluster.local
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 30s
+
+# NOTE: internal-identity.fe3dr.com is handled by the identity-internal Keycloak
+# VirtualService (in identity-internal namespace), NOT by the homechef BFF.
+# The admin portal auth flow uses admin.fe3dr.com/bff/* -> auth-bff -> Keycloak.
+# The browser then visits internal-identity.fe3dr.com/realms/* for login pages.

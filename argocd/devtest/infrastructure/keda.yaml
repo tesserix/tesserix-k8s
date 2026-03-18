@@ -1,0 +1,91 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keda
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: autoscaling
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://kedacore.github.io/charts
+    chart: keda
+    targetRevision: 2.16.0
+    helm:
+      releaseName: keda
+      values: |
+        # KEDA Operator configuration
+        operator:
+          replicaCount: 2
+
+        # Metrics Server configuration
+        metricsServer:
+          replicaCount: 1
+
+        # Prometheus integration
+        prometheus:
+          metricServer:
+            enabled: true
+            port: 9022
+          operator:
+            enabled: true
+            port: 8080
+
+        # Resource configuration
+        resources:
+          operator:
+            limits:
+              memory: 512Mi
+            requests:
+              memory: 128Mi
+          metricsServer:
+            limits:
+              memory: 256Mi
+            requests:
+              memory: 64Mi
+          webhooks:
+            limits:
+              memory: 128Mi
+            requests:
+              memory: 64Mi
+
+        # Pod Disruption Budget
+        podDisruptionBudget:
+          operator:
+            minAvailable: 1
+          metricsServer:
+            minAvailable: 1
+
+        # Logging
+        logging:
+          operator:
+            level: info
+          metricsServer:
+            level: "0"
+
+        # Service Account
+        serviceAccount:
+          create: true
+          name: keda-operator
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keda
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

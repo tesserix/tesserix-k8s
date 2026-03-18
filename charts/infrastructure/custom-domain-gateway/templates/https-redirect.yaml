@@ -1,0 +1,40 @@
+{{- /*
+HTTPS Redirect VirtualService
+Redirects HTTP traffic to HTTPS while allowing ACME challenges through.
+
+How ACME HTTP-01 challenges work with this setup:
+1. When a Certificate is created, cert-manager starts HTTP-01 challenge
+2. Cert-manager creates a temporary Pod, Service, and VirtualService
+3. The cert-manager VirtualService has an EXACT path match for the token
+4. Istio routing precedence: exact match > prefix match
+5. Challenge traffic goes to cert-manager's solver, other traffic redirects
+
+This VirtualService uses a prefix "/" match, so cert-manager's exact
+path match for "/.well-known/acme-challenge/<TOKEN>" takes precedence.
+*/ -}}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: custom-domain-https-redirect
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    app.kubernetes.io/name: custom-domain-https-redirect
+    app.kubernetes.io/component: virtualservice
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  gateways:
+    - {{ .Values.gateway.namespace }}/{{ .Values.gateway.name }}
+  hosts:
+    - "*"  # Catch-all for any custom domain
+  http:
+    # =================================================================
+    # HTTPS Redirect
+    # =================================================================
+    # Redirects all HTTP traffic to HTTPS with 301 permanent redirect.
+    # Cert-manager's exact-path VirtualService for ACME challenges
+    # takes precedence due to Istio's routing specificity rules.
+    # =================================================================
+    - name: https-redirect
+      redirect:
+        scheme: https
+        redirectCode: 301

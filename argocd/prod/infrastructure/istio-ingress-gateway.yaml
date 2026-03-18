@@ -1,0 +1,145 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-ingress-gateway
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: infrastructure
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: gateway
+    targetRevision: 1.24.0
+    helm:
+      releaseName: istio-ingress
+      values: |
+        # Platform Gateway for mark8ly.com
+        # =================================================================
+        # SERVICE TYPE: ClusterIP (private access only)
+        # =================================================================
+        # Cloudflare Tunnel mode is active:
+        # - All platform traffic routes through cloudflared tunnel
+        # - DNS managed via Cloudflare Tunnel (CNAME to tunnel)
+        # - No public IP exposed, reduced attack surface
+        # - Only custom-ingressgateway has external LoadBalancer IP
+        # =================================================================
+        name: istio-ingressgateway
+
+        # Revision for canary upgrades
+        revision: ""
+
+        # Service configuration
+        service:
+          type: ClusterIP
+
+          # Ports configuration
+          ports:
+            - name: status-port
+              port: 15021
+              protocol: TCP
+              targetPort: 15021
+            - name: http2
+              port: 80
+              protocol: TCP
+              targetPort: 80
+            - name: https
+              port: 443
+              protocol: TCP
+              targetPort: 443
+            - name: tcp
+              port: 31400
+              protocol: TCP
+              targetPort: 31400
+            - name: tls
+              port: 15443
+              protocol: TCP
+              targetPort: 15443
+
+          # No annotations needed for ClusterIP mode (Cloudflare Tunnel)
+          annotations: {}
+
+        # Resource configuration (required for AKS Azure Policy)
+        resources:
+          requests:
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+
+        # Auto-scaling configuration
+        autoscaling:
+          enabled: true
+          minReplicas: 2
+          maxReplicas: 5
+          targetCPUUtilizationPercentage: 80
+
+        # Pod disruption budget
+        # Use maxUnavailable instead of minAvailable to allow node drains with single replica
+        podDisruptionBudget:
+          maxUnavailable: 1
+
+        # Service account
+        serviceAccount:
+          create: true
+          name: istio-ingressgateway
+          annotations:
+            iam.gke.io/gcp-service-account: istio-gw-cr-invoker-sa@tesseracthub-480811.iam.gserviceaccount.com
+
+        # Pod annotations
+        podAnnotations:
+          # Prometheus scraping
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "15020"
+          prometheus.io/path: "/stats/prometheus"
+
+        # Security context
+        securityContext:
+          runAsUser: 1337
+          runAsGroup: 1337
+          runAsNonRoot: true
+
+        # Container security context
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+
+        # Labels for the gateway pods
+        labels:
+          app: istio-ingressgateway
+          istio: ingressgateway
+
+        # Topology spread constraints for HA
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: topology.kubernetes.io/zone
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app: istio-ingressgateway
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-ingress
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    managedNamespaceMetadata:
+      labels:
+        istio-injection: enabled
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

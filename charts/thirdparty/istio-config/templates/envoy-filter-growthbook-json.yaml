@@ -1,0 +1,44 @@
+# EnvoyFilter to set Content-Type: application/json for GrowthBook _next/data responses
+# This fixes the issue where Istio's directResponse returns text/plain instead of application/json
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: growthbook-json-content-type
+  namespace: istio-ingress
+spec:
+  workloadSelector:
+    labels:
+      istio: ingressgateway
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.lua
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            inlineCode: |
+              function envoy_on_request(request_handle)
+                local path = request_handle:headers():get(":path")
+                if path and string.match(path, "^/_next/data/.*%.json$") then
+                  request_handle:streamInfo():dynamicMetadata():set("lua", "is_next_data", "true")
+                end
+              end
+              function envoy_on_response(response_handle)
+                local is_next_data = response_handle:streamInfo():dynamicMetadata():get("lua")
+                if is_next_data and is_next_data["is_next_data"] == "true" then
+                  response_handle:headers():replace("content-type", "application/json")
+                  -- Add cache-busting headers to prevent browser from caching old HTML responses
+                  response_handle:headers():replace("cache-control", "no-cache, no-store, must-revalidate")
+                  response_handle:headers():replace("pragma", "no-cache")
+                  response_handle:headers():replace("expires", "0")
+                end
+              end

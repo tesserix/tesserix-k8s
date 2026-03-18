@@ -1,0 +1,64 @@
+{{- if .Values.knative.enabled }}
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: {{ include "tickets-service.fullname" . }}
+  labels:
+    {{- include "tickets-service.labels" . | nindent 4 }}
+    networking.knative.dev/visibility: cluster-local
+  annotations:
+    networking.knative.dev/disableAutoTLS: "true"
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: {{ .Values.knative.minScale | default "1" | quote }}
+        autoscaling.knative.dev/max-scale: {{ .Values.knative.maxScale | default "5" | quote }}
+        autoscaling.knative.dev/target: {{ .Values.knative.concurrencyTarget | default "100" | quote }}
+        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+        traffic.sidecar.istio.io/excludeOutboundPorts: "5432,4222,6379"
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "tickets-service.labels" . | nindent 8 }}
+    spec:
+      containerConcurrency: {{ .Values.knative.containerConcurrency | default 100 }}
+      timeoutSeconds: {{ .Values.knative.timeoutSeconds | default 30 }}
+      imagePullSecrets:
+        - name: ghcr-secret
+      serviceAccountName: {{ include "tickets-service.serviceAccountName" . }}
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default "latest" }}"
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: {{ include "tickets-service.fullname" . }}-config
+                optional: true
+            - secretRef:
+                name: {{ include "tickets-service.fullname" . }}-secrets
+                optional: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            failureThreshold: 3
+{{- end }}

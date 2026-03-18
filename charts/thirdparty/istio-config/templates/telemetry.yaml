@@ -1,0 +1,45 @@
+# Enable Istio standard metrics (istio_requests_total, istio_request_duration, etc.)
+# for traffic-based autoscaling with KEDA + Prometheus
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: mesh-metrics
+  namespace: istio-system
+spec:
+  # Apply to all workloads in the mesh
+  metrics:
+    - providers:
+        - name: prometheus
+      overrides:
+        # Enable all standard metrics
+        - match:
+            metric: ALL_METRICS
+            mode: CLIENT_AND_SERVER
+          disabled: false
+        # Ensure request totals are recorded for KEDA scaling
+        - match:
+            metric: REQUEST_COUNT
+            mode: SERVER
+          disabled: false
+          tagOverrides:
+            destination_service_name:
+              operation: UPSERT
+              value: "destination.service.name"
+            destination_service_namespace:
+              operation: UPSERT
+              value: "destination.service.namespace"
+---
+# Namespace-specific telemetry for marketplace
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: marketplace-metrics
+  namespace: marketplace
+spec:
+  metrics:
+    - providers:
+        - name: prometheus
+      overrides:
+        - match:
+            metric: ALL_METRICS
+          disabled: false

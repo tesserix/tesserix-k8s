@@ -1,0 +1,166 @@
+name: GKE DevTest Cluster Control
+
+on:
+  # Schedule disabled - uncomment to enable auto-stop
+  # schedule:
+  #   # Scheduled: 4 AM AEST daily (18:00 UTC previous day)
+  #   - cron: '0 18 * * *'
+
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'start'
+        type: choice
+        options:
+          - start
+          - stop
+
+env:
+  PROJECT_ID: tesseracthub-480811
+  CLUSTER_NAME: tesseract-devtest-gke
+  CLUSTER_REGION: australia-southeast1
+  NODE_POOL: optimized
+
+jobs:
+  manage-cluster:
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Determine action
+        id: action
+        run: |
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            echo "action=stop" >> $GITHUB_OUTPUT
+          else
+            echo "action=${{ github.event.inputs.action }}" >> $GITHUB_OUTPUT
+          fi
+          echo "Performing action: ${{ github.event.inputs.action || 'stop' }}"
+
+      - name: Wait for any running operations
+        run: |
+          echo "Checking for running operations..."
+          for i in {1..30}; do
+            RUNNING_OP=$(gcloud container operations list \
+              --region ${{ env.CLUSTER_REGION }} \
+              --filter="status=RUNNING AND targetLink~${{ env.CLUSTER_NAME }}" \
+              --format="value(name)" | head -1)
+            if [ -z "$RUNNING_OP" ]; then
+              echo "No running operations, proceeding..."
+              break
+            fi
+            echo "Waiting for operation $RUNNING_OP to complete... (attempt $i/30)"
+            sleep 60
+          done
+
+      - name: Stop GKE DevTest Cluster
+        if: steps.action.outputs.action == 'stop'
+        run: |
+          echo "### Stopping GKE DevTest Cluster" >> $GITHUB_STEP_SUMMARY
+          echo "Time: $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check current node count
+          CURRENT_NODES=$(gcloud container node-pools describe ${{ env.NODE_POOL }} \
+            --cluster ${{ env.CLUSTER_NAME }} \
+            --region ${{ env.CLUSTER_REGION }} \
+            --format="value(initialNodeCount)" 2>/dev/null || echo "1")
+
+          if [ "$CURRENT_NODES" == "0" ]; then
+            echo "✅ **Cluster already stopped (0 nodes)**" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          # Disable autoscaling first (regional cluster uses --region)
+          gcloud container clusters update ${{ env.CLUSTER_NAME }} \
+            --no-enable-autoscaling \
+            --node-pool ${{ env.NODE_POOL }} \
+            --region ${{ env.CLUSTER_REGION }} \
+            --quiet || true
+
+          # Scale node pool to 0 (async to avoid timeout)
+          gcloud container clusters resize ${{ env.CLUSTER_NAME }} \
+            --node-pool ${{ env.NODE_POOL }} \
+            --num-nodes 0 \
+            --region ${{ env.CLUSTER_REGION }} \
+            --quiet \
+            --async
+
+          echo "✅ **GKE DevTest cluster stop initiated**" >> $GITHUB_STEP_SUMMARY
+          echo "> Node pool resize is running in background. Nodes will be removed within 5-10 minutes." >> $GITHUB_STEP_SUMMARY
+
+      - name: Start GKE DevTest Cluster
+        if: steps.action.outputs.action == 'start'
+        run: |
+          echo "### Starting GKE DevTest Cluster" >> $GITHUB_STEP_SUMMARY
+          echo "Time: $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Scale node pool to 1 (async to avoid timeout)
+          gcloud container clusters resize ${{ env.CLUSTER_NAME }} \
+            --node-pool ${{ env.NODE_POOL }} \
+            --num-nodes 1 \
+            --region ${{ env.CLUSTER_REGION }} \
+            --quiet \
+            --async
+
+          echo "✅ **GKE DevTest cluster start initiated**" >> $GITHUB_STEP_SUMMARY
+          echo "> Nodes will be ready within 5-10 minutes. Autoscaling will be enabled once nodes are up." >> $GITHUB_STEP_SUMMARY
+
+      - name: Enable autoscaling after start
+        if: steps.action.outputs.action == 'start'
+        run: |
+          # Wait for resize operation to complete before enabling autoscaling
+          echo "Waiting for resize operation to complete..."
+          for i in {1..30}; do
+            RUNNING_OP=$(gcloud container operations list \
+              --region ${{ env.CLUSTER_REGION }} \
+              --filter="status=RUNNING AND targetLink~${{ env.CLUSTER_NAME }}" \
+              --format="value(name)" | head -1)
+            if [ -z "$RUNNING_OP" ]; then
+              echo "Resize complete, enabling autoscaling..."
+              break
+            fi
+            echo "Waiting for operation to complete... (attempt $i/30)"
+            sleep 60
+          done
+
+          # Re-enable autoscaling
+          gcloud container clusters update ${{ env.CLUSTER_NAME }} \
+            --enable-autoscaling \
+            --min-nodes 1 \
+            --max-nodes 6 \
+            --node-pool ${{ env.NODE_POOL }} \
+            --region ${{ env.CLUSTER_REGION }} \
+            --quiet
+
+          echo "Autoscaling enabled (1-6 nodes)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Summary
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Cluster | \`${{ env.CLUSTER_NAME }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Region | \`${{ env.CLUSTER_REGION }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Action | \`${{ steps.action.outputs.action }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Triggered by | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY

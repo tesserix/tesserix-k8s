@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devtest-apps
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    environment: devtest
+    component: apps
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: argocd/devtest/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  ignoreDifferences:
+    # Ignore status and operation fields on child Applications - these change constantly
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /status
+        - /operation
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,52 @@
+# Platform namespace: allow ingress gateway + specific cross-namespace calls
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-gateway
+  namespace: tesserix
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["istio-system"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-marketplace-to-auth-bff
+  namespace: tesserix
+spec:
+  selector:
+    matchLabels:
+      serving.knative.dev/service: auth-bff
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["marketplace"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-shared-to-platform
+  namespace: tesserix
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["shared"]
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-platform-internal
+  namespace: tesserix
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["tesserix"]

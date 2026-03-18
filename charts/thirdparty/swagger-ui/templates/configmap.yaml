@@ -1,0 +1,4084 @@
+# OpenAPI Specification ConfigMap
+# Production-ready API documentation for Tesserix Platform
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "swagger-ui.fullname" . }}-spec
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "swagger-ui.labels" . | nindent 4 }}
+data:
+  openapi.yaml: |
+    openapi: 3.0.3
+    info:
+      title: Tesserix Platform API
+      description: |
+        # Tesserix E-Commerce Platform API
+
+        Unified API documentation for the Tesserix multi-tenant e-commerce platform.
+        All APIs are accessible through the unified API gateway.
+
+        ## Authentication
+
+        Most endpoints require JWT Bearer token authentication. Obtain tokens via the `/api/v1/auth/login` endpoint.
+
+        ```bash
+        curl -X POST https://api.tesserix.app/api/v1/auth/login \
+          -H "Content-Type: application/json" \
+          -d '{"email": "user@example.com", "password": "your-password"}'
+        ```
+
+        ## Multi-Tenancy
+
+        Include the `X-Tenant-ID` header with your tenant UUID for all tenant-scoped requests.
+        Alternatively, use `X-Tenant-Slug` with your tenant's URL-friendly identifier.
+
+        | Header | Description | Example |
+        |--------|-------------|---------|
+        | X-Tenant-ID | Tenant UUID | `550e8400-e29b-41d4-a716-446655440000` |
+        | X-Tenant-Slug | Tenant slug | `awesome-store` |
+
+        ## Rate Limiting
+
+        APIs are rate-limited per IP address. Rate limit headers are included in all responses:
+
+        - `X-RateLimit-Limit`: Maximum requests allowed per window
+        - `X-RateLimit-Remaining`: Remaining requests in current window
+        - `X-RateLimit-Reset`: Unix timestamp when limit resets
+
+        ## Error Handling
+
+        All errors follow a consistent format:
+
+        ```json
+        {
+          "error": "error_code",
+          "message": "Human readable message",
+          "details": {}
+        }
+        ```
+
+      version: 1.0.0
+      termsOfService: https://tesserix.app/terms
+      contact:
+        name: Tesserix API Support
+        email: api-support@tesserix.app
+        url: https://docs.tesserix.app
+      license:
+        name: Proprietary
+        url: https://tesserix.app/license
+
+    externalDocs:
+      description: Full API Documentation
+      url: https://docs.tesserix.app/api
+
+    servers:
+      {{- range .Values.openapi.servers }}
+      - url: {{ .url }}
+        description: {{ .description }}
+      {{- end }}
+
+    tags:
+      - name: Authentication
+        description: |
+          User authentication, registration, and session management.
+          Supports JWT-based authentication with refresh tokens.
+      - name: Tenants
+        description: |
+          Tenant management for multi-tenant operations.
+          Each tenant represents a separate store/business.
+      - name: Products
+        description: |
+          Product catalog management including variants, images, and inventory.
+      - name: Categories
+        description: |
+          Hierarchical product category management.
+      - name: Orders
+        description: |
+          Order lifecycle management from creation to fulfillment.
+      - name: Cart
+        description: |
+          Shopping cart operations for guest and authenticated users.
+      - name: Customers
+        description: |
+          Customer profile and address management.
+      - name: Payments
+        description: |
+          Payment processing and gateway integration.
+          Supports multiple payment providers.
+      - name: Shipping
+        description: |
+          Shipping rate calculation, carrier integration, and tracking.
+      - name: Inventory
+        description: |
+          Stock management, warehouse tracking, and inventory alerts.
+      - name: Coupons
+        description: |
+          Discount codes, promotions, and pricing rules.
+      - name: Reviews
+        description: |
+          Product reviews and ratings management.
+      - name: Settings
+        description: |
+          Store configuration and feature settings.
+      - name: Staff
+        description: |
+          Staff user management and role-based access control.
+      - name: Vendors
+        description: |
+          Multi-vendor marketplace management.
+      - name: Storefronts
+        description: |
+          Storefront configuration and resolution.
+      - name: Notifications
+        description: |
+          Push notifications, email alerts, and in-app messaging.
+      - name: Analytics
+        description: |
+          Business analytics, reports, and dashboards.
+      - name: Documents
+        description: |
+          Document generation and management (invoices, receipts).
+      - name: Tickets
+        description: |
+          Customer support ticket management.
+      - name: Location
+        description: |
+          Address validation and geolocation services.
+      - name: Tax
+        description: |
+          Tax calculation and compliance.
+      - name: Health
+        description: |
+          API health and status endpoints.
+
+    paths:
+      # ===========================================
+      # Health Check Endpoints
+      # ===========================================
+      /api/health:
+        get:
+          tags: [Health]
+          summary: API health check
+          description: Returns the health status of the API gateway
+          operationId: healthCheck
+          responses:
+            '200':
+              description: API is healthy
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/HealthResponse'
+                  example:
+                    status: "ok"
+                    timestamp: "2024-01-15T10:30:00Z"
+                    version: "1.0.0"
+
+      # ===========================================
+      # Authentication Endpoints
+      # ===========================================
+      /api/v1/auth/login:
+        post:
+          tags: [Authentication]
+          summary: User login
+          description: |
+            Authenticate user with email and password.
+            Returns JWT access token and refresh token.
+          operationId: login
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/LoginRequest'
+                example:
+                  email: "user@example.com"
+                  password: "SecureP@ss123"
+          responses:
+            '200':
+              description: Login successful
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/AuthResponse'
+            '400':
+              description: Invalid request body
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Error'
+            '401':
+              description: Invalid credentials
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Error'
+                  example:
+                    error: "invalid_credentials"
+                    message: "Email or password is incorrect"
+            '429':
+              description: Too many login attempts
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Error'
+
+      /api/v1/auth/register:
+        post:
+          tags: [Authentication]
+          summary: Register new user
+          description: Create a new user account with email verification
+          operationId: register
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/RegisterRequest'
+          responses:
+            '201':
+              description: User registered successfully
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/User'
+            '400':
+              description: Invalid input or validation error
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ValidationError'
+            '409':
+              description: Email already registered
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Error'
+
+      /api/v1/auth/refresh:
+        post:
+          tags: [Authentication]
+          summary: Refresh access token
+          description: Exchange a valid refresh token for a new access token
+          operationId: refreshToken
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [refresh_token]
+                  properties:
+                    refresh_token:
+                      type: string
+                      description: Valid refresh token
+          responses:
+            '200':
+              description: Token refreshed successfully
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/AuthResponse'
+            '401':
+              description: Invalid or expired refresh token
+
+      /api/v1/auth/logout:
+        post:
+          tags: [Authentication]
+          summary: Logout user
+          description: Invalidate current session and refresh token
+          operationId: logout
+          security:
+            - bearerAuth: []
+          responses:
+            '200':
+              description: Logged out successfully
+            '401':
+              description: Not authenticated
+
+      /api/v1/auth/me:
+        get:
+          tags: [Authentication]
+          summary: Get current user
+          description: Retrieve the authenticated user's profile
+          operationId: getCurrentUser
+          security:
+            - bearerAuth: []
+          responses:
+            '200':
+              description: User profile
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/User'
+            '401':
+              description: Not authenticated
+
+      /api/v1/auth/password/forgot:
+        post:
+          tags: [Authentication]
+          summary: Request password reset
+          description: Send password reset email to user
+          operationId: forgotPassword
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [email]
+                  properties:
+                    email:
+                      type: string
+                      format: email
+          responses:
+            '200':
+              description: Reset email sent (if account exists)
+
+      /api/v1/auth/password/reset:
+        post:
+          tags: [Authentication]
+          summary: Reset password
+          description: Reset password using token from email
+          operationId: resetPassword
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [token, password]
+                  properties:
+                    token:
+                      type: string
+                    password:
+                      type: string
+                      minLength: 8
+          responses:
+            '200':
+              description: Password reset successful
+            '400':
+              description: Invalid or expired token
+
+      # ===========================================
+      # Tenants Endpoints
+      # ===========================================
+      /api/v1/tenants:
+        get:
+          tags: [Tenants]
+          summary: List user's tenants
+          description: Get all tenants the authenticated user has access to
+          operationId: listTenants
+          security:
+            - bearerAuth: []
+          responses:
+            '200':
+              description: Tenants list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/TenantList'
+
+      /api/v1/tenants/{id}:
+        get:
+          tags: [Tenants]
+          summary: Get tenant by ID
+          description: Retrieve tenant details
+          operationId: getTenant
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Tenant details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Tenant'
+            '404':
+              description: Tenant not found
+
+      # ===========================================
+      # Products Endpoints
+      # ===========================================
+      /api/v1/products:
+        get:
+          tags: [Products]
+          summary: List products
+          description: Get paginated list of products with filtering options
+          operationId: listProducts
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PageParam'
+            - $ref: '#/components/parameters/LimitParam'
+            - name: category_id
+              in: query
+              description: Filter by category
+              schema:
+                type: string
+                format: uuid
+            - name: vendor_id
+              in: query
+              description: Filter by vendor
+              schema:
+                type: string
+                format: uuid
+            - name: status
+              in: query
+              description: Filter by status
+              schema:
+                type: string
+                enum: [draft, active, archived]
+            - name: search
+              in: query
+              description: Search in name and description
+              schema:
+                type: string
+            - name: min_price
+              in: query
+              schema:
+                type: number
+            - name: max_price
+              in: query
+              schema:
+                type: number
+            - name: sort
+              in: query
+              description: Sort field
+              schema:
+                type: string
+                enum: [created_at, price, name, popularity]
+            - name: order
+              in: query
+              schema:
+                type: string
+                enum: [asc, desc]
+                default: desc
+          responses:
+            '200':
+              description: Products list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ProductList'
+        post:
+          tags: [Products]
+          summary: Create product
+          description: Create a new product in the catalog
+          operationId: createProduct
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ProductCreate'
+          responses:
+            '201':
+              description: Product created
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Product'
+            '400':
+              description: Validation error
+            '401':
+              description: Not authenticated
+            '403':
+              description: Insufficient permissions
+
+      /api/v1/products/{id}:
+        get:
+          tags: [Products]
+          summary: Get product by ID
+          description: Retrieve full product details including variants
+          operationId: getProduct
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Product details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Product'
+            '404':
+              description: Product not found
+        put:
+          tags: [Products]
+          summary: Update product
+          description: Update an existing product
+          operationId: updateProduct
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ProductUpdate'
+          responses:
+            '200':
+              description: Product updated
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Product'
+            '400':
+              description: Validation error
+            '404':
+              description: Product not found
+        delete:
+          tags: [Products]
+          summary: Delete product
+          description: Soft delete a product (can be restored)
+          operationId: deleteProduct
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '204':
+              description: Product deleted
+            '404':
+              description: Product not found
+
+      /api/v1/products/{id}/variants:
+        get:
+          tags: [Products]
+          summary: List product variants
+          description: Get all variants for a product
+          operationId: listProductVariants
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Variants list
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProductVariant'
+        post:
+          tags: [Products]
+          summary: Create product variant
+          description: Add a new variant to a product
+          operationId: createProductVariant
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ProductVariantCreate'
+          responses:
+            '201':
+              description: Variant created
+
+      # ===========================================
+      # Categories Endpoints
+      # ===========================================
+      /api/v1/categories:
+        get:
+          tags: [Categories]
+          summary: List categories
+          description: Get hierarchical category tree
+          operationId: listCategories
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - name: parent_id
+              in: query
+              description: Filter by parent category
+              schema:
+                type: string
+                format: uuid
+            - name: flat
+              in: query
+              description: Return flat list instead of tree
+              schema:
+                type: boolean
+                default: false
+          responses:
+            '200':
+              description: Categories list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/CategoryList'
+        post:
+          tags: [Categories]
+          summary: Create category
+          description: Create a new product category
+          operationId: createCategory
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/CategoryCreate'
+          responses:
+            '201':
+              description: Category created
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Category'
+
+      /api/v1/categories/{id}:
+        get:
+          tags: [Categories]
+          summary: Get category by ID
+          operationId: getCategory
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Category details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Category'
+        put:
+          tags: [Categories]
+          summary: Update category
+          operationId: updateCategory
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/CategoryUpdate'
+          responses:
+            '200':
+              description: Category updated
+        delete:
+          tags: [Categories]
+          summary: Delete category
+          operationId: deleteCategory
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '204':
+              description: Category deleted
+
+      # ===========================================
+      # Orders Endpoints
+      # ===========================================
+      /api/v1/orders:
+        get:
+          tags: [Orders]
+          summary: List orders
+          description: Get paginated list of orders with filtering
+          operationId: listOrders
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PageParam'
+            - $ref: '#/components/parameters/LimitParam'
+            - name: status
+              in: query
+              schema:
+                type: string
+                enum: [pending, confirmed, processing, shipped, delivered, cancelled, refunded]
+            - name: customer_id
+              in: query
+              schema:
+                type: string
+                format: uuid
+            - name: date_from
+              in: query
+              schema:
+                type: string
+                format: date
+            - name: date_to
+              in: query
+              schema:
+                type: string
+                format: date
+          responses:
+            '200':
+              description: Orders list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/OrderList'
+        post:
+          tags: [Orders]
+          summary: Create order
+          description: Create a new order from cart or direct items
+          operationId: createOrder
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/OrderCreate'
+          responses:
+            '201':
+              description: Order created
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Order'
+
+      /api/v1/orders/{id}:
+        get:
+          tags: [Orders]
+          summary: Get order by ID
+          description: Retrieve order details including items and history
+          operationId: getOrder
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Order details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Order'
+            '404':
+              description: Order not found
+        patch:
+          tags: [Orders]
+          summary: Update order status
+          description: Update order status or details
+          operationId: updateOrder
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/OrderUpdate'
+          responses:
+            '200':
+              description: Order updated
+
+      /api/v1/orders/{id}/cancel:
+        post:
+          tags: [Orders]
+          summary: Cancel order
+          description: Cancel an order (if cancellable)
+          operationId: cancelOrder
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    reason:
+                      type: string
+          responses:
+            '200':
+              description: Order cancelled
+            '400':
+              description: Order cannot be cancelled
+
+      # ===========================================
+      # Cart Endpoints
+      # ===========================================
+      /api/v1/cart:
+        get:
+          tags: [Cart]
+          summary: Get cart
+          description: Retrieve current shopping cart contents
+          operationId: getCart
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/GuestSessionHeader'
+          responses:
+            '200':
+              description: Cart contents
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Cart'
+        delete:
+          tags: [Cart]
+          summary: Clear cart
+          description: Remove all items from cart
+          operationId: clearCart
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/GuestSessionHeader'
+          responses:
+            '204':
+              description: Cart cleared
+
+      /api/v1/cart/items:
+        post:
+          tags: [Cart]
+          summary: Add item to cart
+          description: Add a product to the shopping cart
+          operationId: addToCart
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/GuestSessionHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/CartItemAdd'
+          responses:
+            '200':
+              description: Item added
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Cart'
+
+      /api/v1/cart/items/{id}:
+        put:
+          tags: [Cart]
+          summary: Update cart item
+          description: Update quantity of cart item
+          operationId: updateCartItem
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+            - $ref: '#/components/parameters/GuestSessionHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    quantity:
+                      type: integer
+                      minimum: 1
+          responses:
+            '200':
+              description: Item updated
+        delete:
+          tags: [Cart]
+          summary: Remove cart item
+          description: Remove an item from cart
+          operationId: removeCartItem
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+            - $ref: '#/components/parameters/GuestSessionHeader'
+          responses:
+            '204':
+              description: Item removed
+
+      # ===========================================
+      # Customers Endpoints
+      # ===========================================
+      /api/v1/customers:
+        get:
+          tags: [Customers]
+          summary: List customers
+          description: Get paginated list of customers
+          operationId: listCustomers
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PageParam'
+            - $ref: '#/components/parameters/LimitParam'
+            - name: search
+              in: query
+              schema:
+                type: string
+          responses:
+            '200':
+              description: Customers list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/CustomerList'
+
+      /api/v1/customers/{id}:
+        get:
+          tags: [Customers]
+          summary: Get customer by ID
+          operationId: getCustomer
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Customer details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Customer'
+        put:
+          tags: [Customers]
+          summary: Update customer
+          operationId: updateCustomer
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/CustomerUpdate'
+          responses:
+            '200':
+              description: Customer updated
+
+      /api/v1/customers/{id}/addresses:
+        get:
+          tags: [Customers]
+          summary: List customer addresses
+          operationId: listCustomerAddresses
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Addresses list
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Address'
+        post:
+          tags: [Customers]
+          summary: Add customer address
+          operationId: addCustomerAddress
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/AddressCreate'
+          responses:
+            '201':
+              description: Address added
+
+      # ===========================================
+      # Payments Endpoints
+      # ===========================================
+      /api/v1/payments:
+        post:
+          tags: [Payments]
+          summary: Create payment
+          description: Initiate a payment for an order
+          operationId: createPayment
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/PaymentCreate'
+          responses:
+            '200':
+              description: Payment initiated
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/PaymentResponse'
+
+      /api/v1/payments/{id}:
+        get:
+          tags: [Payments]
+          summary: Get payment by ID
+          operationId: getPayment
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Payment details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Payment'
+
+      /api/v1/payments/{id}/confirm:
+        post:
+          tags: [Payments]
+          summary: Confirm payment
+          description: Confirm a pending payment
+          operationId: confirmPayment
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    payment_method_id:
+                      type: string
+          responses:
+            '200':
+              description: Payment confirmed
+
+      /api/v1/payments/{id}/refund:
+        post:
+          tags: [Payments]
+          summary: Refund payment
+          description: Process a refund for a completed payment
+          operationId: refundPayment
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    amount:
+                      type: number
+                      description: Partial refund amount (omit for full refund)
+                    reason:
+                      type: string
+          responses:
+            '200':
+              description: Refund processed
+
+      /api/v1/payment-methods:
+        get:
+          tags: [Payments]
+          summary: List payment methods
+          description: Get available payment methods for tenant
+          operationId: listPaymentMethods
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '200':
+              description: Payment methods list
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PaymentMethod'
+
+      /api/v1/gateways:
+        get:
+          tags: [Payments]
+          summary: List payment gateways
+          description: Get configured payment gateways
+          operationId: listGateways
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '200':
+              description: Gateways list
+
+      # ===========================================
+      # Shipping Endpoints
+      # ===========================================
+      /api/v1/shipping/rates:
+        post:
+          tags: [Shipping]
+          summary: Calculate shipping rates
+          description: Get available shipping rates for cart/order
+          operationId: calculateShippingRates
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ShippingRateRequest'
+          responses:
+            '200':
+              description: Shipping rates
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ShippingRate'
+
+      /api/v1/shipping/carriers:
+        get:
+          tags: [Shipping]
+          summary: List shipping carriers
+          description: Get configured shipping carriers
+          operationId: listCarriers
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '200':
+              description: Carriers list
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ShippingCarrier'
+
+      /api/v1/shipping/tracking/{tracking_number}:
+        get:
+          tags: [Shipping]
+          summary: Track shipment
+          description: Get tracking information for a shipment
+          operationId: trackShipment
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - name: tracking_number
+              in: path
+              required: true
+              schema:
+                type: string
+          responses:
+            '200':
+              description: Tracking information
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ShipmentTracking'
+
+      /api/v1/shipping/labels:
+        post:
+          tags: [Shipping]
+          summary: Create shipping label
+          description: Generate a shipping label for an order
+          operationId: createShippingLabel
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ShippingLabelCreate'
+          responses:
+            '201':
+              description: Label created
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ShippingLabel'
+
+      # ===========================================
+      # Inventory Endpoints
+      # ===========================================
+      /api/v1/inventory:
+        get:
+          tags: [Inventory]
+          summary: List inventory
+          description: Get inventory levels for products
+          operationId: listInventory
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PageParam'
+            - $ref: '#/components/parameters/LimitParam'
+            - name: product_id
+              in: query
+              schema:
+                type: string
+                format: uuid
+            - name: warehouse_id
+              in: query
+              schema:
+                type: string
+                format: uuid
+            - name: low_stock
+              in: query
+              description: Filter low stock items
+              schema:
+                type: boolean
+          responses:
+            '200':
+              description: Inventory list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/InventoryList'
+
+      /api/v1/inventory/{id}:
+        get:
+          tags: [Inventory]
+          summary: Get inventory item
+          operationId: getInventoryItem
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Inventory item
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/InventoryItem'
+        put:
+          tags: [Inventory]
+          summary: Update inventory
+          description: Update stock levels
+          operationId: updateInventory
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/InventoryUpdate'
+          responses:
+            '200':
+              description: Inventory updated
+
+      /api/v1/inventory/adjustments:
+        post:
+          tags: [Inventory]
+          summary: Create inventory adjustment
+          description: Record stock adjustment with reason
+          operationId: createInventoryAdjustment
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/InventoryAdjustment'
+          responses:
+            '201':
+              description: Adjustment recorded
+
+      # ===========================================
+      # Coupons Endpoints
+      # ===========================================
+      /api/v1/coupons:
+        get:
+          tags: [Coupons]
+          summary: List coupons
+          description: Get all discount coupons
+          operationId: listCoupons
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PageParam'
+            - $ref: '#/components/parameters/LimitParam'
+            - name: active
+              in: query
+              schema:
+                type: boolean
+          responses:
+            '200':
+              description: Coupons list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/CouponList'
+        post:
+          tags: [Coupons]
+          summary: Create coupon
+          description: Create a new discount coupon
+          operationId: createCoupon
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/CouponCreate'
+          responses:
+            '201':
+              description: Coupon created
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Coupon'
+
+      /api/v1/coupons/validate:
+        post:
+          tags: [Coupons]
+          summary: Validate coupon code
+          description: Check if a coupon code is valid
+          operationId: validateCoupon
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [code]
+                  properties:
+                    code:
+                      type: string
+                    cart_total:
+                      type: number
+          responses:
+            '200':
+              description: Coupon validation result
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/CouponValidation'
+
+      /api/v1/coupons/{id}:
+        get:
+          tags: [Coupons]
+          summary: Get coupon by ID
+          operationId: getCoupon
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Coupon details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Coupon'
+        put:
+          tags: [Coupons]
+          summary: Update coupon
+          operationId: updateCoupon
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/CouponUpdate'
+          responses:
+            '200':
+              description: Coupon updated
+        delete:
+          tags: [Coupons]
+          summary: Delete coupon
+          operationId: deleteCoupon
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '204':
+              description: Coupon deleted
+
+      # ===========================================
+      # Reviews Endpoints
+      # ===========================================
+      /api/v1/reviews:
+        get:
+          tags: [Reviews]
+          summary: List reviews
+          description: Get product reviews
+          operationId: listReviews
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PageParam'
+            - $ref: '#/components/parameters/LimitParam'
+            - name: product_id
+              in: query
+              schema:
+                type: string
+                format: uuid
+            - name: rating
+              in: query
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 5
+            - name: status
+              in: query
+              schema:
+                type: string
+                enum: [pending, approved, rejected]
+          responses:
+            '200':
+              description: Reviews list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ReviewList'
+        post:
+          tags: [Reviews]
+          summary: Create review
+          description: Submit a product review
+          operationId: createReview
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/ReviewCreate'
+          responses:
+            '201':
+              description: Review submitted
+
+      /api/v1/reviews/{id}:
+        get:
+          tags: [Reviews]
+          summary: Get review by ID
+          operationId: getReview
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Review details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Review'
+        patch:
+          tags: [Reviews]
+          summary: Update review status
+          description: Approve or reject a review
+          operationId: updateReviewStatus
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    status:
+                      type: string
+                      enum: [approved, rejected]
+          responses:
+            '200':
+              description: Review updated
+        delete:
+          tags: [Reviews]
+          summary: Delete review
+          operationId: deleteReview
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '204':
+              description: Review deleted
+
+      # ===========================================
+      # Settings Endpoints
+      # ===========================================
+      /api/v1/settings:
+        get:
+          tags: [Settings]
+          summary: Get store settings
+          description: Retrieve all store configuration settings
+          operationId: getSettings
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '200':
+              description: Store settings
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/StoreSettings'
+        put:
+          tags: [Settings]
+          summary: Update store settings
+          description: Update store configuration
+          operationId: updateSettings
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/StoreSettingsUpdate'
+          responses:
+            '200':
+              description: Settings updated
+
+      /api/v1/settings/features:
+        get:
+          tags: [Settings]
+          summary: Get feature flags
+          description: Get enabled features for tenant
+          operationId: getFeatureFlags
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '200':
+              description: Feature flags
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    additionalProperties:
+                      type: boolean
+
+      # ===========================================
+      # Staff Endpoints
+      # ===========================================
+      /api/v1/staff:
+        get:
+          tags: [Staff]
+          summary: List staff members
+          description: Get all staff users for tenant
+          operationId: listStaff
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PageParam'
+            - $ref: '#/components/parameters/LimitParam'
+          responses:
+            '200':
+              description: Staff list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/StaffList'
+        post:
+          tags: [Staff]
+          summary: Invite staff member
+          description: Send invitation to new staff member
+          operationId: inviteStaff
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/StaffInvite'
+          responses:
+            '201':
+              description: Invitation sent
+
+      /api/v1/staff/{id}:
+        get:
+          tags: [Staff]
+          summary: Get staff member
+          operationId: getStaffMember
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Staff member details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/StaffMember'
+        put:
+          tags: [Staff]
+          summary: Update staff member
+          operationId: updateStaffMember
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/StaffUpdate'
+          responses:
+            '200':
+              description: Staff member updated
+        delete:
+          tags: [Staff]
+          summary: Remove staff member
+          operationId: removeStaffMember
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '204':
+              description: Staff member removed
+
+      /api/v1/roles:
+        get:
+          tags: [Staff]
+          summary: List roles
+          description: Get all roles with permissions
+          operationId: listRoles
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '200':
+              description: Roles list
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Role'
+        post:
+          tags: [Staff]
+          summary: Create role
+          description: Create a new role with permissions
+          operationId: createRole
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/RoleCreate'
+          responses:
+            '201':
+              description: Role created
+
+      # ===========================================
+      # Vendors Endpoints
+      # ===========================================
+      /api/v1/vendors:
+        get:
+          tags: [Vendors]
+          summary: List vendors
+          description: Get all vendors in marketplace
+          operationId: listVendors
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PageParam'
+            - $ref: '#/components/parameters/LimitParam'
+            - name: status
+              in: query
+              schema:
+                type: string
+                enum: [pending, active, suspended]
+          responses:
+            '200':
+              description: Vendors list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/VendorList'
+        post:
+          tags: [Vendors]
+          summary: Create vendor
+          description: Register a new vendor
+          operationId: createVendor
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/VendorCreate'
+          responses:
+            '201':
+              description: Vendor created
+
+      /api/v1/vendors/{id}:
+        get:
+          tags: [Vendors]
+          summary: Get vendor by ID
+          operationId: getVendor
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Vendor details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Vendor'
+        put:
+          tags: [Vendors]
+          summary: Update vendor
+          operationId: updateVendor
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/VendorUpdate'
+          responses:
+            '200':
+              description: Vendor updated
+
+      # ===========================================
+      # Storefronts Endpoints
+      # ===========================================
+      /api/v1/storefronts/resolve:
+        get:
+          tags: [Storefronts]
+          summary: Resolve storefront
+          description: Resolve storefront by domain or slug
+          operationId: resolveStorefront
+          parameters:
+            - name: domain
+              in: query
+              description: Custom domain
+              schema:
+                type: string
+            - name: slug
+              in: query
+              description: Storefront slug
+              schema:
+                type: string
+          responses:
+            '200':
+              description: Storefront configuration
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Storefront'
+            '404':
+              description: Storefront not found
+
+      /api/v1/storefronts:
+        get:
+          tags: [Storefronts]
+          summary: List storefronts
+          description: Get all storefronts for tenant
+          operationId: listStorefronts
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '200':
+              description: Storefronts list
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Storefront'
+
+      /api/v1/storefronts/{id}:
+        get:
+          tags: [Storefronts]
+          summary: Get storefront by ID
+          operationId: getStorefront
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Storefront details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Storefront'
+
+      # ===========================================
+      # Notifications Endpoints
+      # ===========================================
+      /api/v1/notifications:
+        get:
+          tags: [Notifications]
+          summary: List notifications
+          description: Get user notifications
+          operationId: listNotifications
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PageParam'
+            - $ref: '#/components/parameters/LimitParam'
+            - name: read
+              in: query
+              schema:
+                type: boolean
+          responses:
+            '200':
+              description: Notifications list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/NotificationList'
+
+      /api/v1/notifications/{id}/read:
+        post:
+          tags: [Notifications]
+          summary: Mark notification as read
+          operationId: markNotificationRead
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Notification marked as read
+
+      /api/v1/notifications/read-all:
+        post:
+          tags: [Notifications]
+          summary: Mark all notifications as read
+          operationId: markAllNotificationsRead
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '200':
+              description: All notifications marked as read
+
+      /api/v1/notifications/ws:
+        get:
+          tags: [Notifications]
+          summary: WebSocket connection
+          description: Establish WebSocket for real-time notifications
+          operationId: notificationsWebSocket
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '101':
+              description: Switching protocols
+
+      /api/v1/notifications/stream:
+        get:
+          tags: [Notifications]
+          summary: SSE stream
+          description: Server-sent events for real-time notifications
+          operationId: notificationsStream
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '200':
+              description: SSE stream established
+
+      # ===========================================
+      # Analytics Endpoints
+      # ===========================================
+      /api/v1/analytics/dashboard:
+        get:
+          tags: [Analytics]
+          summary: Get dashboard stats
+          description: Get overview statistics for dashboard
+          operationId: getDashboardStats
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - name: period
+              in: query
+              schema:
+                type: string
+                enum: [today, week, month, year]
+                default: month
+          responses:
+            '200':
+              description: Dashboard statistics
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/DashboardStats'
+
+      /api/v1/analytics/sales:
+        get:
+          tags: [Analytics]
+          summary: Get sales analytics
+          description: Get detailed sales data and trends
+          operationId: getSalesAnalytics
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - name: date_from
+              in: query
+              required: true
+              schema:
+                type: string
+                format: date
+            - name: date_to
+              in: query
+              required: true
+              schema:
+                type: string
+                format: date
+            - name: group_by
+              in: query
+              schema:
+                type: string
+                enum: [day, week, month]
+          responses:
+            '200':
+              description: Sales analytics
+
+      /api/v1/analytics/products:
+        get:
+          tags: [Analytics]
+          summary: Get product analytics
+          description: Get product performance metrics
+          operationId: getProductAnalytics
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - name: limit
+              in: query
+              schema:
+                type: integer
+                default: 10
+          responses:
+            '200':
+              description: Product analytics
+
+      /api/v1/analytics/customers:
+        get:
+          tags: [Analytics]
+          summary: Get customer analytics
+          description: Get customer acquisition and retention metrics
+          operationId: getCustomerAnalytics
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '200':
+              description: Customer analytics
+
+      /api/v1/analytics/reports:
+        get:
+          tags: [Analytics]
+          summary: List reports
+          description: Get available report types
+          operationId: listReports
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '200':
+              description: Reports list
+
+      /api/v1/analytics/reports/{type}/export:
+        post:
+          tags: [Analytics]
+          summary: Export report
+          description: Generate and download a report
+          operationId: exportReport
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - name: type
+              in: path
+              required: true
+              schema:
+                type: string
+                enum: [sales, orders, customers, products, inventory]
+          requestBody:
+            content:
+              application/json:
+                schema:
+                  type: object
+                  properties:
+                    date_from:
+                      type: string
+                      format: date
+                    date_to:
+                      type: string
+                      format: date
+                    format:
+                      type: string
+                      enum: [csv, xlsx, pdf]
+          responses:
+            '200':
+              description: Report file
+              content:
+                application/octet-stream:
+                  schema:
+                    type: string
+                    format: binary
+
+      # ===========================================
+      # Documents Endpoints
+      # ===========================================
+      /api/v1/documents:
+        get:
+          tags: [Documents]
+          summary: List documents
+          description: Get generated documents (invoices, receipts)
+          operationId: listDocuments
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PageParam'
+            - $ref: '#/components/parameters/LimitParam'
+            - name: type
+              in: query
+              schema:
+                type: string
+                enum: [invoice, receipt, packing_slip, credit_note]
+            - name: order_id
+              in: query
+              schema:
+                type: string
+                format: uuid
+          responses:
+            '200':
+              description: Documents list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/DocumentList'
+
+      /api/v1/documents/{id}:
+        get:
+          tags: [Documents]
+          summary: Get document
+          description: Retrieve document details
+          operationId: getDocument
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Document details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Document'
+
+      /api/v1/documents/{id}/download:
+        get:
+          tags: [Documents]
+          summary: Download document
+          description: Download document as PDF
+          operationId: downloadDocument
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: PDF file
+              content:
+                application/pdf:
+                  schema:
+                    type: string
+                    format: binary
+
+      /api/v1/documents/generate:
+        post:
+          tags: [Documents]
+          summary: Generate document
+          description: Generate invoice or other document for order
+          operationId: generateDocument
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [order_id, type]
+                  properties:
+                    order_id:
+                      type: string
+                      format: uuid
+                    type:
+                      type: string
+                      enum: [invoice, receipt, packing_slip, credit_note]
+          responses:
+            '201':
+              description: Document generated
+
+      # ===========================================
+      # Tickets Endpoints
+      # ===========================================
+      /api/v1/tickets:
+        get:
+          tags: [Tickets]
+          summary: List tickets
+          description: Get support tickets
+          operationId: listTickets
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PageParam'
+            - $ref: '#/components/parameters/LimitParam'
+            - name: status
+              in: query
+              schema:
+                type: string
+                enum: [open, in_progress, pending, resolved, closed]
+            - name: priority
+              in: query
+              schema:
+                type: string
+                enum: [low, medium, high, urgent]
+          responses:
+            '200':
+              description: Tickets list
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/TicketList'
+        post:
+          tags: [Tickets]
+          summary: Create ticket
+          description: Submit a new support ticket
+          operationId: createTicket
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/TicketCreate'
+          responses:
+            '201':
+              description: Ticket created
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Ticket'
+
+      /api/v1/tickets/{id}:
+        get:
+          tags: [Tickets]
+          summary: Get ticket by ID
+          operationId: getTicket
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Ticket details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/Ticket'
+        patch:
+          tags: [Tickets]
+          summary: Update ticket
+          description: Update ticket status or details
+          operationId: updateTicket
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/TicketUpdate'
+          responses:
+            '200':
+              description: Ticket updated
+
+      /api/v1/tickets/{id}/messages:
+        get:
+          tags: [Tickets]
+          summary: List ticket messages
+          description: Get conversation history for ticket
+          operationId: listTicketMessages
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          responses:
+            '200':
+              description: Messages list
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TicketMessage'
+        post:
+          tags: [Tickets]
+          summary: Add ticket message
+          description: Reply to a support ticket
+          operationId: addTicketMessage
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - $ref: '#/components/parameters/PathId'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [message]
+                  properties:
+                    message:
+                      type: string
+          responses:
+            '201':
+              description: Message added
+
+      # ===========================================
+      # Location Endpoints
+      # ===========================================
+      /api/v1/location/autocomplete:
+        get:
+          tags: [Location]
+          summary: Address autocomplete
+          description: Get address suggestions for input
+          operationId: autocompleteAddress
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+            - name: query
+              in: query
+              required: true
+              schema:
+                type: string
+            - name: country
+              in: query
+              schema:
+                type: string
+                description: ISO country code
+          responses:
+            '200':
+              description: Address suggestions
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AddressSuggestion'
+
+      /api/v1/location/validate:
+        post:
+          tags: [Location]
+          summary: Validate address
+          description: Validate and standardize an address
+          operationId: validateAddress
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/AddressValidationRequest'
+          responses:
+            '200':
+              description: Validation result
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/AddressValidationResult'
+
+      /api/v1/location/geocode:
+        post:
+          tags: [Location]
+          summary: Geocode address
+          description: Convert address to coordinates
+          operationId: geocodeAddress
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  type: object
+                  required: [address]
+                  properties:
+                    address:
+                      type: string
+          responses:
+            '200':
+              description: Geocoding result
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/GeocodingResult'
+
+      # ===========================================
+      # Tax Endpoints
+      # ===========================================
+      /api/v1/tax/calculate:
+        post:
+          tags: [Tax]
+          summary: Calculate tax
+          description: Calculate tax for order or cart
+          operationId: calculateTax
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          requestBody:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/TaxCalculationRequest'
+          responses:
+            '200':
+              description: Tax calculation result
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/TaxCalculationResult'
+
+      /api/v1/tax/rates:
+        get:
+          tags: [Tax]
+          summary: List tax rates
+          description: Get configured tax rates
+          operationId: listTaxRates
+          security:
+            - bearerAuth: []
+          parameters:
+            - $ref: '#/components/parameters/TenantHeader'
+          responses:
+            '200':
+              description: Tax rates
+              content:
+                application/json:
+                  schema:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaxRate'
+
+    # ===========================================
+    # Components
+    # ===========================================
+    components:
+      securitySchemes:
+        bearerAuth:
+          type: http
+          scheme: bearer
+          bearerFormat: JWT
+          description: |
+            JWT token obtained from `/api/v1/auth/login`.
+            Include in Authorization header: `Bearer <token>`
+
+      parameters:
+        TenantHeader:
+          name: X-Tenant-ID
+          in: header
+          description: Tenant UUID for multi-tenant requests
+          required: false
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+
+        GuestSessionHeader:
+          name: X-Guest-Session-ID
+          in: header
+          description: Guest session ID for unauthenticated cart operations
+          required: false
+          schema:
+            type: string
+            format: uuid
+
+        PathId:
+          name: id
+          in: path
+          description: Resource ID
+          required: true
+          schema:
+            type: string
+            format: uuid
+
+        PageParam:
+          name: page
+          in: query
+          description: Page number (1-indexed)
+          schema:
+            type: integer
+            default: 1
+            minimum: 1
+
+        LimitParam:
+          name: limit
+          in: query
+          description: Items per page
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+
+      schemas:
+        # Common Schemas
+        Error:
+          type: object
+          properties:
+            error:
+              type: string
+              description: Error code
+            message:
+              type: string
+              description: Human-readable message
+            details:
+              type: object
+              description: Additional error details
+
+        ValidationError:
+          type: object
+          properties:
+            error:
+              type: string
+              example: "validation_error"
+            message:
+              type: string
+            errors:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  message:
+                    type: string
+
+        Pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+            total_pages:
+              type: integer
+
+        HealthResponse:
+          type: object
+          properties:
+            status:
+              type: string
+              enum: [ok, degraded, unhealthy]
+            timestamp:
+              type: string
+              format: date-time
+            version:
+              type: string
+
+        # Auth Schemas
+        LoginRequest:
+          type: object
+          required: [email, password]
+          properties:
+            email:
+              type: string
+              format: email
+            password:
+              type: string
+              format: password
+              minLength: 8
+
+        RegisterRequest:
+          type: object
+          required: [email, password, name]
+          properties:
+            email:
+              type: string
+              format: email
+            password:
+              type: string
+              minLength: 8
+            name:
+              type: string
+            phone:
+              type: string
+
+        AuthResponse:
+          type: object
+          properties:
+            access_token:
+              type: string
+            refresh_token:
+              type: string
+            expires_in:
+              type: integer
+              description: Token expiry in seconds
+            token_type:
+              type: string
+              example: "Bearer"
+            user:
+              $ref: '#/components/schemas/User'
+
+        User:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+              format: email
+            name:
+              type: string
+            phone:
+              type: string
+            avatar_url:
+              type: string
+              format: uri
+            email_verified:
+              type: boolean
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+        # Tenant Schemas
+        Tenant:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            slug:
+              type: string
+            status:
+              type: string
+              enum: [active, suspended, pending]
+            plan:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+
+        TenantList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Tenant'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+
+        # Product Schemas
+        Product:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            slug:
+              type: string
+            description:
+              type: string
+            short_description:
+              type: string
+            price:
+              type: number
+              format: float
+            compare_at_price:
+              type: number
+              format: float
+            sku:
+              type: string
+            barcode:
+              type: string
+            status:
+              type: string
+              enum: [draft, active, archived]
+            inventory_quantity:
+              type: integer
+            images:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProductImage'
+            category:
+              $ref: '#/components/schemas/Category'
+            vendor:
+              $ref: '#/components/schemas/Vendor'
+            variants:
+              type: array
+              items:
+                $ref: '#/components/schemas/ProductVariant'
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+        ProductCreate:
+          type: object
+          required: [name, price]
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+            price:
+              type: number
+            compare_at_price:
+              type: number
+            sku:
+              type: string
+            barcode:
+              type: string
+            category_id:
+              type: string
+              format: uuid
+            vendor_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+              enum: [draft, active]
+              default: draft
+            images:
+              type: array
+              items:
+                type: string
+                format: uri
+
+        ProductUpdate:
+          type: object
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+            price:
+              type: number
+            compare_at_price:
+              type: number
+            sku:
+              type: string
+            status:
+              type: string
+              enum: [draft, active, archived]
+            category_id:
+              type: string
+              format: uuid
+
+        ProductList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Product'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+
+        ProductImage:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            url:
+              type: string
+              format: uri
+            alt_text:
+              type: string
+            position:
+              type: integer
+
+        ProductVariant:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            sku:
+              type: string
+            price:
+              type: number
+            inventory_quantity:
+              type: integer
+            options:
+              type: object
+              additionalProperties:
+                type: string
+
+        ProductVariantCreate:
+          type: object
+          required: [name, price]
+          properties:
+            name:
+              type: string
+            sku:
+              type: string
+            price:
+              type: number
+            inventory_quantity:
+              type: integer
+            options:
+              type: object
+
+        # Category Schemas
+        Category:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            slug:
+              type: string
+            description:
+              type: string
+            image_url:
+              type: string
+              format: uri
+            parent_id:
+              type: string
+              format: uuid
+            position:
+              type: integer
+            children:
+              type: array
+              items:
+                $ref: '#/components/schemas/Category'
+
+        CategoryCreate:
+          type: object
+          required: [name]
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+            parent_id:
+              type: string
+              format: uuid
+            image_url:
+              type: string
+              format: uri
+
+        CategoryUpdate:
+          type: object
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+            parent_id:
+              type: string
+              format: uuid
+            position:
+              type: integer
+
+        CategoryList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Category'
+
+        # Order Schemas
+        Order:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            order_number:
+              type: string
+            status:
+              type: string
+              enum: [pending, confirmed, processing, shipped, delivered, cancelled, refunded]
+            customer:
+              $ref: '#/components/schemas/Customer'
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/OrderItem'
+            subtotal:
+              type: number
+            tax:
+              type: number
+            shipping:
+              type: number
+            discount:
+              type: number
+            total:
+              type: number
+            currency:
+              type: string
+            shipping_address:
+              $ref: '#/components/schemas/Address'
+            billing_address:
+              $ref: '#/components/schemas/Address'
+            payment_status:
+              type: string
+              enum: [pending, paid, failed, refunded]
+            fulfillment_status:
+              type: string
+              enum: [unfulfilled, partial, fulfilled]
+            notes:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+        OrderCreate:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                required: [product_id, quantity]
+                properties:
+                  product_id:
+                    type: string
+                    format: uuid
+                  variant_id:
+                    type: string
+                    format: uuid
+                  quantity:
+                    type: integer
+                    minimum: 1
+            shipping_address_id:
+              type: string
+              format: uuid
+            billing_address_id:
+              type: string
+              format: uuid
+            shipping_method_id:
+              type: string
+              format: uuid
+            coupon_code:
+              type: string
+            notes:
+              type: string
+
+        OrderUpdate:
+          type: object
+          properties:
+            status:
+              type: string
+            notes:
+              type: string
+
+        OrderItem:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            product:
+              $ref: '#/components/schemas/Product'
+            variant:
+              $ref: '#/components/schemas/ProductVariant'
+            quantity:
+              type: integer
+            unit_price:
+              type: number
+            total:
+              type: number
+
+        OrderList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Order'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+
+        # Cart Schemas
+        Cart:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/CartItem'
+            subtotal:
+              type: number
+            tax:
+              type: number
+            discount:
+              type: number
+            total:
+              type: number
+            currency:
+              type: string
+            item_count:
+              type: integer
+            coupon:
+              $ref: '#/components/schemas/AppliedCoupon'
+
+        CartItem:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            product:
+              $ref: '#/components/schemas/Product'
+            variant:
+              $ref: '#/components/schemas/ProductVariant'
+            quantity:
+              type: integer
+            unit_price:
+              type: number
+            total:
+              type: number
+
+        CartItemAdd:
+          type: object
+          required: [product_id, quantity]
+          properties:
+            product_id:
+              type: string
+              format: uuid
+            variant_id:
+              type: string
+              format: uuid
+            quantity:
+              type: integer
+              minimum: 1
+
+        AppliedCoupon:
+          type: object
+          properties:
+            code:
+              type: string
+            discount_amount:
+              type: number
+            discount_type:
+              type: string
+
+        # Customer Schemas
+        Customer:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            email:
+              type: string
+              format: email
+            first_name:
+              type: string
+            last_name:
+              type: string
+            phone:
+              type: string
+            total_orders:
+              type: integer
+            total_spent:
+              type: number
+            created_at:
+              type: string
+              format: date-time
+
+        CustomerUpdate:
+          type: object
+          properties:
+            first_name:
+              type: string
+            last_name:
+              type: string
+            phone:
+              type: string
+
+        CustomerList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Customer'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+
+        # Address Schemas
+        Address:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            first_name:
+              type: string
+            last_name:
+              type: string
+            company:
+              type: string
+            address_line1:
+              type: string
+            address_line2:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            postal_code:
+              type: string
+            country:
+              type: string
+            phone:
+              type: string
+            is_default:
+              type: boolean
+
+        AddressCreate:
+          type: object
+          required: [first_name, last_name, address_line1, city, postal_code, country]
+          properties:
+            first_name:
+              type: string
+            last_name:
+              type: string
+            company:
+              type: string
+            address_line1:
+              type: string
+            address_line2:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            postal_code:
+              type: string
+            country:
+              type: string
+            phone:
+              type: string
+            is_default:
+              type: boolean
+
+        AddressSuggestion:
+          type: object
+          properties:
+            place_id:
+              type: string
+            description:
+              type: string
+            structured:
+              type: object
+
+        AddressValidationRequest:
+          type: object
+          properties:
+            address_line1:
+              type: string
+            address_line2:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            postal_code:
+              type: string
+            country:
+              type: string
+
+        AddressValidationResult:
+          type: object
+          properties:
+            valid:
+              type: boolean
+            standardized:
+              $ref: '#/components/schemas/Address'
+            suggestions:
+              type: array
+              items:
+                $ref: '#/components/schemas/Address'
+
+        GeocodingResult:
+          type: object
+          properties:
+            latitude:
+              type: number
+            longitude:
+              type: number
+            formatted_address:
+              type: string
+
+        # Payment Schemas
+        Payment:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            order_id:
+              type: string
+              format: uuid
+            amount:
+              type: number
+            currency:
+              type: string
+            status:
+              type: string
+              enum: [pending, processing, succeeded, failed, cancelled, refunded]
+            payment_method:
+              type: string
+            gateway:
+              type: string
+            created_at:
+              type: string
+              format: date-time
+
+        PaymentCreate:
+          type: object
+          required: [order_id, payment_method_id]
+          properties:
+            order_id:
+              type: string
+              format: uuid
+            payment_method_id:
+              type: string
+
+        PaymentResponse:
+          type: object
+          properties:
+            payment_id:
+              type: string
+              format: uuid
+            client_secret:
+              type: string
+            status:
+              type: string
+            redirect_url:
+              type: string
+              format: uri
+
+        PaymentMethod:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            type:
+              type: string
+            icon_url:
+              type: string
+            enabled:
+              type: boolean
+
+        # Shipping Schemas
+        ShippingRate:
+          type: object
+          properties:
+            id:
+              type: string
+            carrier:
+              type: string
+            service:
+              type: string
+            price:
+              type: number
+            currency:
+              type: string
+            estimated_days:
+              type: integer
+            estimated_delivery:
+              type: string
+              format: date
+
+        ShippingRateRequest:
+          type: object
+          required: [destination]
+          properties:
+            destination:
+              $ref: '#/components/schemas/Address'
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  product_id:
+                    type: string
+                  quantity:
+                    type: integer
+                  weight:
+                    type: number
+
+        ShippingCarrier:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            code:
+              type: string
+            services:
+              type: array
+              items:
+                type: string
+            enabled:
+              type: boolean
+
+        ShipmentTracking:
+          type: object
+          properties:
+            tracking_number:
+              type: string
+            carrier:
+              type: string
+            status:
+              type: string
+            estimated_delivery:
+              type: string
+              format: date
+            events:
+              type: array
+              items:
+                type: object
+                properties:
+                  timestamp:
+                    type: string
+                    format: date-time
+                  status:
+                    type: string
+                  location:
+                    type: string
+                  description:
+                    type: string
+
+        ShippingLabelCreate:
+          type: object
+          required: [order_id, carrier, service]
+          properties:
+            order_id:
+              type: string
+              format: uuid
+            carrier:
+              type: string
+            service:
+              type: string
+
+        ShippingLabel:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            tracking_number:
+              type: string
+            label_url:
+              type: string
+              format: uri
+
+        # Inventory Schemas
+        InventoryItem:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            product_id:
+              type: string
+              format: uuid
+            variant_id:
+              type: string
+              format: uuid
+            sku:
+              type: string
+            quantity:
+              type: integer
+            reserved:
+              type: integer
+            available:
+              type: integer
+            warehouse_id:
+              type: string
+              format: uuid
+            low_stock_threshold:
+              type: integer
+            is_low_stock:
+              type: boolean
+
+        InventoryUpdate:
+          type: object
+          properties:
+            quantity:
+              type: integer
+            low_stock_threshold:
+              type: integer
+
+        InventoryAdjustment:
+          type: object
+          required: [inventory_id, quantity_change, reason]
+          properties:
+            inventory_id:
+              type: string
+              format: uuid
+            quantity_change:
+              type: integer
+            reason:
+              type: string
+              enum: [received, returned, damaged, correction, other]
+            notes:
+              type: string
+
+        InventoryList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/InventoryItem'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+
+        # Coupon Schemas
+        Coupon:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            code:
+              type: string
+            description:
+              type: string
+            discount_type:
+              type: string
+              enum: [percentage, fixed, free_shipping]
+            discount_value:
+              type: number
+            minimum_order:
+              type: number
+            max_uses:
+              type: integer
+            used_count:
+              type: integer
+            starts_at:
+              type: string
+              format: date-time
+            expires_at:
+              type: string
+              format: date-time
+            is_active:
+              type: boolean
+            created_at:
+              type: string
+              format: date-time
+
+        CouponCreate:
+          type: object
+          required: [code, discount_type, discount_value]
+          properties:
+            code:
+              type: string
+            description:
+              type: string
+            discount_type:
+              type: string
+              enum: [percentage, fixed, free_shipping]
+            discount_value:
+              type: number
+            minimum_order:
+              type: number
+            max_uses:
+              type: integer
+            starts_at:
+              type: string
+              format: date-time
+            expires_at:
+              type: string
+              format: date-time
+
+        CouponUpdate:
+          type: object
+          properties:
+            description:
+              type: string
+            discount_value:
+              type: number
+            minimum_order:
+              type: number
+            max_uses:
+              type: integer
+            expires_at:
+              type: string
+              format: date-time
+            is_active:
+              type: boolean
+
+        CouponValidation:
+          type: object
+          properties:
+            valid:
+              type: boolean
+            coupon:
+              $ref: '#/components/schemas/Coupon'
+            discount_amount:
+              type: number
+            message:
+              type: string
+
+        CouponList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Coupon'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+
+        # Review Schemas
+        Review:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            product_id:
+              type: string
+              format: uuid
+            customer:
+              $ref: '#/components/schemas/Customer'
+            rating:
+              type: integer
+              minimum: 1
+              maximum: 5
+            title:
+              type: string
+            content:
+              type: string
+            status:
+              type: string
+              enum: [pending, approved, rejected]
+            helpful_count:
+              type: integer
+            created_at:
+              type: string
+              format: date-time
+
+        ReviewCreate:
+          type: object
+          required: [product_id, rating]
+          properties:
+            product_id:
+              type: string
+              format: uuid
+            rating:
+              type: integer
+              minimum: 1
+              maximum: 5
+            title:
+              type: string
+            content:
+              type: string
+
+        ReviewList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Review'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+            average_rating:
+              type: number
+            total_reviews:
+              type: integer
+
+        # Settings Schemas
+        StoreSettings:
+          type: object
+          properties:
+            store_name:
+              type: string
+            store_email:
+              type: string
+            store_phone:
+              type: string
+            address:
+              $ref: '#/components/schemas/Address'
+            currency:
+              type: string
+            timezone:
+              type: string
+            logo_url:
+              type: string
+              format: uri
+            theme:
+              type: object
+
+        StoreSettingsUpdate:
+          type: object
+          properties:
+            store_name:
+              type: string
+            store_email:
+              type: string
+            store_phone:
+              type: string
+            currency:
+              type: string
+            timezone:
+              type: string
+
+        # Staff Schemas
+        StaffMember:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            user:
+              $ref: '#/components/schemas/User'
+            role:
+              $ref: '#/components/schemas/Role'
+            status:
+              type: string
+              enum: [active, invited, suspended]
+            created_at:
+              type: string
+              format: date-time
+
+        StaffInvite:
+          type: object
+          required: [email, role_id]
+          properties:
+            email:
+              type: string
+              format: email
+            role_id:
+              type: string
+              format: uuid
+            name:
+              type: string
+
+        StaffUpdate:
+          type: object
+          properties:
+            role_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+
+        StaffList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/StaffMember'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+
+        Role:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            description:
+              type: string
+            permissions:
+              type: array
+              items:
+                type: string
+            is_system:
+              type: boolean
+
+        RoleCreate:
+          type: object
+          required: [name, permissions]
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+            permissions:
+              type: array
+              items:
+                type: string
+
+        # Vendor Schemas
+        Vendor:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            slug:
+              type: string
+            description:
+              type: string
+            logo_url:
+              type: string
+              format: uri
+            status:
+              type: string
+              enum: [pending, active, suspended]
+            commission_rate:
+              type: number
+            created_at:
+              type: string
+              format: date-time
+
+        VendorCreate:
+          type: object
+          required: [name]
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+            logo_url:
+              type: string
+              format: uri
+            commission_rate:
+              type: number
+
+        VendorUpdate:
+          type: object
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+            status:
+              type: string
+            commission_rate:
+              type: number
+
+        VendorList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Vendor'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+
+        # Storefront Schemas
+        Storefront:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            tenant_id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            slug:
+              type: string
+            domain:
+              type: string
+            theme:
+              type: object
+            settings:
+              type: object
+            is_active:
+              type: boolean
+
+        # Notification Schemas
+        Notification:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            type:
+              type: string
+            title:
+              type: string
+            message:
+              type: string
+            data:
+              type: object
+            read:
+              type: boolean
+            created_at:
+              type: string
+              format: date-time
+
+        NotificationList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Notification'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+            unread_count:
+              type: integer
+
+        # Analytics Schemas
+        DashboardStats:
+          type: object
+          properties:
+            total_revenue:
+              type: number
+            total_orders:
+              type: integer
+            total_customers:
+              type: integer
+            average_order_value:
+              type: number
+            revenue_change:
+              type: number
+              description: Percentage change from previous period
+            orders_change:
+              type: number
+            customers_change:
+              type: number
+            recent_orders:
+              type: array
+              items:
+                $ref: '#/components/schemas/Order'
+            top_products:
+              type: array
+              items:
+                type: object
+                properties:
+                  product:
+                    $ref: '#/components/schemas/Product'
+                  total_sold:
+                    type: integer
+                  revenue:
+                    type: number
+
+        # Document Schemas
+        Document:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            type:
+              type: string
+              enum: [invoice, receipt, packing_slip, credit_note]
+            document_number:
+              type: string
+            order_id:
+              type: string
+              format: uuid
+            status:
+              type: string
+            url:
+              type: string
+              format: uri
+            created_at:
+              type: string
+              format: date-time
+
+        DocumentList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Document'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+
+        # Ticket Schemas
+        Ticket:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            ticket_number:
+              type: string
+            subject:
+              type: string
+            description:
+              type: string
+            status:
+              type: string
+              enum: [open, in_progress, pending, resolved, closed]
+            priority:
+              type: string
+              enum: [low, medium, high, urgent]
+            customer:
+              $ref: '#/components/schemas/Customer'
+            assigned_to:
+              $ref: '#/components/schemas/StaffMember'
+            order_id:
+              type: string
+              format: uuid
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+        TicketCreate:
+          type: object
+          required: [subject, description]
+          properties:
+            subject:
+              type: string
+            description:
+              type: string
+            priority:
+              type: string
+              enum: [low, medium, high, urgent]
+              default: medium
+            order_id:
+              type: string
+              format: uuid
+
+        TicketUpdate:
+          type: object
+          properties:
+            status:
+              type: string
+            priority:
+              type: string
+            assigned_to_id:
+              type: string
+              format: uuid
+
+        TicketMessage:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            message:
+              type: string
+            sender_type:
+              type: string
+              enum: [customer, staff]
+            sender:
+              type: object
+            attachments:
+              type: array
+              items:
+                type: string
+                format: uri
+            created_at:
+              type: string
+              format: date-time
+
+        TicketList:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/Ticket'
+            pagination:
+              $ref: '#/components/schemas/Pagination'
+
+        # Tax Schemas
+        TaxCalculationRequest:
+          type: object
+          required: [items, shipping_address]
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  product_id:
+                    type: string
+                    format: uuid
+                  quantity:
+                    type: integer
+                  price:
+                    type: number
+            shipping_address:
+              $ref: '#/components/schemas/Address'
+            shipping_amount:
+              type: number
+
+        TaxCalculationResult:
+          type: object
+          properties:
+            tax_amount:
+              type: number
+            tax_rate:
+              type: number
+            breakdown:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  rate:
+                    type: number
+                  amount:
+                    type: number
+
+        TaxRate:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            rate:
+              type: number
+            country:
+              type: string
+            state:
+              type: string
+            is_compound:
+              type: boolean

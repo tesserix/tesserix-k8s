@@ -1,0 +1,64 @@
+serviceType: go
+port: 8080
+healthPath: /health
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/tesserix/mp-coupons
+  tag: latest
+
+knative:
+  enabled: false
+  minScale: 0
+  maxScale: 5
+  concurrencyTarget: 100
+  containerConcurrency: 100
+  timeoutSeconds: 30
+
+probes:
+  startup:
+    failureThreshold: 10
+  liveness:
+    initialDelaySeconds: 15
+    periodSeconds: 15
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+db:
+  enabled: true
+  host: postgresql.postgresql-marketplace.svc.cluster.local
+  port: "5432"
+  name: mp_coupons_db
+  user: mp_coupons_user
+  sslmode: require
+  secretKey: mp_coupons-db-password
+
+openfga:
+  enabled: true
+  url: http://openfga.marketplace.svc.cluster.local
+  authMode: mesh
+  apiKeySecret: false
+  storeId: "01KKNQENND85P9T01YCBCTRDHV"
+
+externalSecrets:
+  enabled: true
+  secretStoreRef: gcp-secret-store
+  refreshInterval: 15m
+
+extraSecrets: []
+
+env: {}
+
+gcp:
+  projectId: ""

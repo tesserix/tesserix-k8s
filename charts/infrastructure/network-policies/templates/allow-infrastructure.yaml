@@ -1,0 +1,175 @@
+{{/*
+Infrastructure Services NetworkPolicies
+Allow app namespaces to access shared infrastructure
+*/}}
+
+# =============================================================================
+# NATS Access Rules
+# All app namespaces can access NATS
+# =============================================================================
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-apps-to-nats
+  namespace: nats
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- range .Values.namespaces }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: {{ . }}
+      ports:
+        - protocol: TCP
+          port: 4222
+        - protocol: TCP
+          port: 6222
+        - protocol: TCP
+          port: 8222
+    {{- end }}
+
+{{- range .Values.namespaces }}
+---
+# Egress from {{ . }} to NATS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-nats
+  namespace: {{ . }}
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: nats
+      ports:
+        - protocol: TCP
+          port: 4222
+        - protocol: TCP
+          port: 6222
+{{- end }}
+
+# =============================================================================
+# Typesense Access Rules
+# All app namespaces can access Typesense search
+# =============================================================================
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-apps-to-typesense
+  namespace: typesense
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- range .Values.namespaces }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: {{ . }}
+      ports:
+        - protocol: TCP
+          port: 8108
+    {{- end }}
+
+{{- range .Values.namespaces }}
+---
+# Egress from {{ . }} to Typesense
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-typesense
+  namespace: {{ . }}
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: typesense
+      ports:
+        - protocol: TCP
+          port: 8108
+{{- end }}
+
+# =============================================================================
+# Email (Postal) Access Rules
+# Only global namespace can access email services
+# =============================================================================
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-global-to-email
+  namespace: email
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: {{ .Values.globalNamespace }}
+      ports:
+        # SMTP
+        - protocol: TCP
+          port: 25
+        - protocol: TCP
+          port: 587
+        # HTTP API
+        - protocol: TCP
+          port: 5000
+
+---
+# Egress from global to email
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-email
+  namespace: {{ .Values.globalNamespace }}
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: email
+      ports:
+        - protocol: TCP
+          port: 25
+        - protocol: TCP
+          port: 587
+        - protocol: TCP
+          port: 5000

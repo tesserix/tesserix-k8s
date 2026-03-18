@@ -1,0 +1,150 @@
+# Hospital Management System - Auth Service
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/hospital-management/auth-service
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Istio sidecar configuration - wait for proxy before starting app
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  # Exclude NATS port from Istio sidecar to fix JetStream timeout issues
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  # Prometheus metrics
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+autoscaling:
+  # Workload Identity is always enabled
+  minReplicas: 0
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Environment variables
+env:
+  HMS_SERVER_PORT: "8080"
+  HMS_SERVER_ENVIRONMENT: "devtest"
+  HMS_SERVER_DEVELOPMENT_ENABLED: "true"
+  HMS_LOGGER_LEVEL: "info"
+  # Database
+  HMS_DATABASE_HOST: "postgresql.database.svc.cluster.local"
+  HMS_DATABASE_PORT: "5432"
+  HMS_DATABASE_DBNAME: "hms_auth"
+  HMS_DATABASE_USER: "postgres"
+  HMS_DATABASE_SSLMODE: "disable"
+  # Redis
+  HMS_REDIS_HOST: "redis.redis.svc.cluster.local"
+  HMS_REDIS_PORT: "6379"
+  HMS_REDIS_DB: "0"
+  # NATS
+  HMS_NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+  HMS_NATS_CLUSTER_ID: "hospital-cluster"
+  HMS_NATS_CLIENT_ID: "auth-service"
+  # JWT
+  HMS_JWT_ISSUER: "hospital-management"
+  HMS_JWT_ACCESS_EXPIRY: "24h"
+  HMS_JWT_REFRESH_EXPIRY: "168h"
+
+# Redis configuration
+redis:
+  existingSecret: "redis-password"
+  secretKey: "redis-password"
+
+# Database configuration
+  existingSecret: "jwt-secret"
+  secretKey: "jwt-secret"
+  refreshSecretKey: "jwt-secret"
+
+# Google OAuth configuration
+googleOAuth:
+  existingSecret: "google-oauth-secrets"
+  webClientIdKey: "GOOGLE_WEB_CLIENT_ID"
+  webClientSecretKey: "GOOGLE_WEB_CLIENT_SECRET"
+  androidClientIdKey: "GOOGLE_ANDROID_CLIENT_ID"
+  iosClientIdKey: "GOOGLE_IOS_CLIENT_ID"
+  redirectURL: "https://dev-hms-patient.tesserix.app/api/v1/auth/oauth/callback"
+
+# Health checks
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"  # InPlaceOrRecreate (no-restart), Auto, Recreate, Initial, or Off
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true  # Don't let VPA manage istio-proxy
+
+# GCP Secret Manager configuration
+# When enabled, secrets are fetched from GCP Secret Manager via Workload Identity
+gcp:
+  projectId: ""  # Inherited from global-config.yaml if empty
+  namespace: "hms"  # Override if different from release namespace
+  workloadIdentity:
+    # Workload Identity is always enabled
+    gcpServiceAccount: ""  # e.g., app-secrets-marketplace@project.iam.gserviceaccount.com
+  secretManager:
+    # Workload Identity is always enabled
+    secretPrefix: "devtest"  # Environment prefix: dev, staging, prod

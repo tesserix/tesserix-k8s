@@ -1,0 +1,67 @@
+{{- if .Values.featureSeeding.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "growthbook.fullname" . }}-feature-seed-{{ now | date "20060102150405" }}
+  labels:
+    {{- include "growthbook.labels" . | nindent 4 }}
+    app.kubernetes.io/component: feature-seeding
+  annotations:
+    # ArgoCD sync hooks (replaces Helm hooks for ArgoCD deployments)
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    # Helm hooks for non-ArgoCD deployments
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.featureSeeding.backoffLimit | default 3 }}
+  ttlSecondsAfterFinished: {{ .Values.featureSeeding.ttlSecondsAfterFinished | default 600 }}
+  template:
+    metadata:
+      labels:
+        {{- include "growthbook.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: feature-seeding
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "growthbook.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: feature-seed
+          image: "{{ .Values.featureSeeding.image.repository }}:{{ .Values.featureSeeding.image.tag }}"
+          imagePullPolicy: {{ .Values.featureSeeding.image.pullPolicy | default "IfNotPresent" }}
+          command: ["/bin/sh", "/config/seed.sh"]
+          env:
+            - name: GROWTHBOOK_HOST
+              value: "http://{{ include "growthbook.fullname" . }}:{{ .Values.service.apiPort }}"
+            - name: ADMIN_EMAIL
+              value: {{ .Values.featureSeeding.adminEmail | quote }}
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.featureSeeding.adminPasswordSecret.name | default (printf "%s-admin" (include "growthbook.fullname" .)) }}
+                  key: {{ .Values.featureSeeding.adminPasswordSecret.key | default "password" }}
+            - name: ADMIN_NAME
+              value: {{ .Values.featureSeeding.adminName | default "Admin" | quote }}
+            # Environment variables for SDK key secret creation
+            - name: CREATE_SDK_SECRET
+              value: "{{ .Values.featureSeeding.createSdkSecret | default false }}"
+            - name: SDK_SECRET_NAME
+              value: "{{ .Values.featureSeeding.sdkSecretName | default "growthbook-sdk-key" }}"
+            - name: SDK_SECRET_NAMESPACE
+              value: "{{ .Values.featureSeeding.sdkSecretNamespace | default "marketplace" }}"
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          resources:
+            {{- toYaml .Values.featureSeeding.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "growthbook.fullname" . }}-feature-seed
+            defaultMode: 0755
+{{- end }}

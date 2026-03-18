@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: cluster
+  namespace: argocd
+spec:
+  description: Cluster infrastructure (Istio, ESO, network policies)
+  sourceRepos:
+    - https://github.com/tesserix/tesserix-infra.git
+  destinations:
+    - namespace: "*"
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: security.istio.io
+      kind: "*"
+    - group: networking.istio.io
+      kind: "*"
+    - group: external-secrets.io
+      kind: ClusterSecretStore
+    - group: monitoring.googleapis.com
+      kind: "*"

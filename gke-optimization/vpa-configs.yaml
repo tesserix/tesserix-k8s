@@ -1,0 +1,287 @@
+# =============================================================================
+# Vertical Pod Autoscaler (VPA) Configurations
+# =============================================================================
+# VPA automatically adjusts CPU and memory requests based on actual usage
+# Mode: "Auto" - automatically updates pods, "Off" - just recommends
+# =============================================================================
+
+---
+# VPA for Core Services (Critical - use Auto mode cautiously)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: auth-service-vpa
+  namespace: devtest
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: auth-service
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: auth-service
+        minAllowed:
+          cpu: 25m
+          memory: 64Mi
+        maxAllowed:
+          cpu: 1000m
+          memory: 1Gi
+        controlledResources: ["cpu", "memory"]
+      - containerName: istio-proxy
+        mode: "Off"  # Don't touch istio sidecar
+
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: tenant-service-vpa
+  namespace: devtest
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: tenant-service
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: tenant-service
+        minAllowed:
+          cpu: 25m
+          memory: 64Mi
+        maxAllowed:
+          cpu: 1000m
+          memory: 1Gi
+      - containerName: istio-proxy
+        mode: "Off"
+
+---
+# VPA for Commerce Services
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: orders-service-vpa
+  namespace: devtest
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: orders-service
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: orders-service
+        minAllowed:
+          cpu: 25m
+          memory: 64Mi
+        maxAllowed:
+          cpu: 1000m
+          memory: 1Gi
+      - containerName: istio-proxy
+        mode: "Off"
+
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: products-service-vpa
+  namespace: devtest
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: products-service
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: products-service
+        minAllowed:
+          cpu: 25m
+          memory: 64Mi
+        maxAllowed:
+          cpu: 1000m
+          memory: 1Gi
+      - containerName: istio-proxy
+        mode: "Off"
+
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: payment-service-vpa
+  namespace: devtest
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: payment-service
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: payment-service
+        minAllowed:
+          cpu: 25m
+          memory: 64Mi
+        maxAllowed:
+          cpu: 1000m
+          memory: 1Gi
+      - containerName: istio-proxy
+        mode: "Off"
+
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: inventory-service-vpa
+  namespace: devtest
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: inventory-service
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: inventory-service
+        minAllowed:
+          cpu: 25m
+          memory: 64Mi
+        maxAllowed:
+          cpu: 1000m
+          memory: 1Gi
+      - containerName: istio-proxy
+        mode: "Off"
+
+---
+# VPA for Supporting Services (lower priority)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: notification-service-vpa
+  namespace: devtest
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notification-service
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: notification-service
+        minAllowed:
+          cpu: 20m
+          memory: 48Mi
+        maxAllowed:
+          cpu: 500m
+          memory: 512Mi
+      - containerName: istio-proxy
+        mode: "Off"
+
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: audit-service-vpa
+  namespace: devtest
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: audit-service
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: audit-service
+        minAllowed:
+          cpu: 20m
+          memory: 48Mi
+        maxAllowed:
+          cpu: 500m
+          memory: 512Mi
+      - containerName: istio-proxy
+        mode: "Off"
+
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: search-service-vpa
+  namespace: devtest
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: search-service
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: search-service
+        minAllowed:
+          cpu: 25m
+          memory: 64Mi
+        maxAllowed:
+          cpu: 1000m
+          memory: 1Gi
+      - containerName: istio-proxy
+        mode: "Off"
+
+---
+# VPA for Monitoring (needs more resources)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: prometheus-server-vpa
+  namespace: monitoring
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: prometheus-server
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: prometheus-server
+        minAllowed:
+          cpu: 200m
+          memory: 2Gi
+        maxAllowed:
+          cpu: 2000m
+          memory: 8Gi
+      - containerName: configmap-reload
+        mode: "Off"
+
+---
+# Generic VPA for all hub services (lightweight)
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: categories-hub-vpa
+  namespace: devtest
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: categories-hub
+  updatePolicy:
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: categories-hub
+        minAllowed:
+          cpu: 10m
+          memory: 32Mi
+        maxAllowed:
+          cpu: 200m
+          memory: 256Mi
+      - containerName: istio-proxy
+        mode: "Off"

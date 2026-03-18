@@ -1,0 +1,22 @@
+{{- if and .Values.keda.enabled (not .Values.knative.enabled) }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "homechef-auth-bff.fullname" . }}
+  labels:
+    {{- include "homechef-auth-bff.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "homechef-auth-bff.fullname" . }}
+  pollingInterval: {{ .Values.keda.pollingInterval | default 30 }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod | default 300 }}
+  minReplicaCount: {{ .Values.keda.minReplicaCount | default 1 }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount | default 10 }}
+  triggers:
+    {{- range .Values.keda.triggers }}
+    - type: {{ .type }}
+      metricType: {{ .metricType }}
+      metadata:
+        {{- toYaml .metadata | nindent 8 }}
+    {{- end }}
+{{- end }}

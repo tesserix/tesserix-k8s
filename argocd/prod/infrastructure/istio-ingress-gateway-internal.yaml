@@ -1,0 +1,136 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-ingress-gateway-internal
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: infrastructure
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: gateway
+    targetRevision: 1.24.0
+    helm:
+      releaseName: istio-ingress-internal
+      values: |
+        # Internal Gateway for Cloudflare Tunnel
+        # This gateway receives traffic from cloudflared via private/internal LoadBalancer
+        name: istio-ingressgateway-internal
+
+        # Service configuration
+        service:
+          # Internal LoadBalancer (private IP)
+          type: LoadBalancer
+          # GKE annotation for internal load balancer
+          annotations:
+            networking.gke.io/load-balancer-type: "Internal"
+            # For Azure AKS
+            service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+            service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz/ready
+
+          # Preserve client IP
+          externalTrafficPolicy: Local
+
+          # Ports configuration
+          ports:
+            - name: status-port
+              port: 15021
+              protocol: TCP
+              targetPort: 15021
+            - name: http2
+              port: 80
+              protocol: TCP
+              targetPort: 80
+            - name: https
+              port: 443
+              protocol: TCP
+              targetPort: 443
+
+        # Resource configuration
+        resources:
+          requests:
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+
+        # Auto-scaling configuration
+        autoscaling:
+          enabled: true
+          minReplicas: 2
+          maxReplicas: 5
+          targetCPUUtilizationPercentage: 80
+
+        # Pod disruption budget
+        podDisruptionBudget:
+          maxUnavailable: 1
+
+        # Service account
+        serviceAccount:
+          create: true
+          name: istio-ingressgateway-internal
+
+        # Pod annotations
+        podAnnotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "15020"
+          prometheus.io/path: "/stats/prometheus"
+
+        # Security context
+        securityContext:
+          runAsUser: 1337
+          runAsGroup: 1337
+          runAsNonRoot: true
+
+        # Container security context
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+
+        # Labels for the gateway pods
+        labels:
+          app: istio-ingressgateway-internal
+          istio: ingressgateway-internal
+
+        # Topology spread constraints for HA
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: topology.kubernetes.io/zone
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app: istio-ingressgateway-internal
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-ingress
+  ignoreDifferences:
+    - group: ""
+      kind: Service
+      jsonPointers:
+        - /spec/clusterIP
+        - /spec/clusterIPs
+        - /spec/ports/0/nodePort
+        - /spec/ports/1/nodePort
+        - /spec/ports/2/nodePort
+        - /metadata/finalizers
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,53 @@
+# cert-manager ClusterIssuers configuration
+
+# Let's Encrypt email for certificate notifications
+email: samyak.rout@gmail.com
+
+# Cloudflare DNS-01 challenge configuration
+cloudflare:
+  # Enable DNS-01 challenge with Cloudflare (recommended for wildcard certs)
+  enabled: true
+  # Primary domain to manage certificates for (kept for backward compatibility)
+  domain: tesserix.app
+  # Additional domains to allow DNS-01 challenges for
+  # These are added as extra dnsZones selectors on the ClusterIssuers
+  additionalDomains: []
+  # Name of the secret containing the Cloudflare API token
+  apiTokenSecretName: cloudflare-api-token
+  apiTokenSecretKey: api-token
+  # API token (if provided, will create the secret automatically)
+  # Leave empty to create the secret manually or via external secrets
+  apiToken: ""
+
+# Additional Cloudflare accounts (different zones/tokens)
+# Each entry creates an additional DNS-01 solver on letsencrypt-prod/staging
+additionalCloudflareAccounts: []
+# Example:
+# - name: fanzone
+#   domains:
+#     - fanzonebattleground.com
+#   apiTokenSecretName: cloudflare-fanzone-api-token
+#   apiTokenSecretKey: api-token
+
+# Enable/disable issuers
+letsencryptProd:
+  enabled: true
+
+letsencryptStaging:
+  enabled: true
+
+# HTTP-01 issuer for custom domains (fallback when NS delegation not available)
+letsencryptProdHTTP01:
+  enabled: true
+
+# CNAME Delegation for automatic SSL certificate management
+# Customers add: _acme-challenge.theirdomain.com CNAME theirdomain-com.acme.tesserix.app
+# cert-manager follows the CNAME and creates TXT records in our Cloudflare zone
+cnameDelegation:
+  # Enable CNAME delegation feature
+  enabled: false
+
+  # The zone where ACME challenge records will be created
+  # Customers CNAME to: {sanitized-domain}.{acmeZone}
+  # e.g., store-example-com.acme.tesserix.app
+  acmeZone: "acme.tesserix.app"

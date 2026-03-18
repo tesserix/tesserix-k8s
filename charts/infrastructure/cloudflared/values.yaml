@@ -1,0 +1,146 @@
+# =============================================================================
+# Cloudflare Zero Trust Tunnel Configuration
+# =============================================================================
+# This chart deploys cloudflared to establish a secure tunnel from the cluster
+# to Cloudflare's edge, eliminating the need for a public IP on the ingress.
+# =============================================================================
+
+# Deployment configuration
+replicaCount: 2
+
+image:
+  repository: cloudflare/cloudflared
+  tag: "2026.2.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Tunnel configuration
+tunnel:
+  # The tunnel token is provided via a Kubernetes secret
+  # This secret should be created via ExternalSecrets from GCP Secret Manager
+  existingSecret: "cloudflare-tunnel-token"
+  existingSecretKey: "token"
+
+  # Tunnel metrics port (for Prometheus scraping)
+  metricsPort: 2000
+
+  # Protocol preference (auto, http2, quic)
+  protocol: "auto"
+
+  # Grace period for tunnel shutdown
+  gracePeriod: "30s"
+
+  # Retries for tunnel connection
+  retries: 5
+
+  # Edge IP version preference (auto, 4, 6)
+  edgeIpVersion: "auto"
+
+# Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod annotations
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "2000"
+  prometheus.io/path: "/metrics"
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Resource limits and requests
+resources:
+  limits:
+    memory: 256Mi
+  requests:
+    memory: 128Mi
+
+# Autoscaling configuration
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity - prefer spreading across nodes
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - cloudflared
+          topologyKey: kubernetes.io/hostname
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Service Monitor for Prometheus
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+
+# Health check service (internal)
+healthService:
+  enabled: true
+  port: 2000
+  type: ClusterIP
+
+# Liveness and readiness probes
+livenessProbe:
+  httpGet:
+    path: /ready
+    port: metrics
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: metrics
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# ExternalSecrets configuration
+externalSecrets:
+  enabled: true
+  refreshInterval: "1h"
+  secretStore: "gcp-secret-store"
+  gcpSecretKey: "devtest-cloudflare-tunnel-token"

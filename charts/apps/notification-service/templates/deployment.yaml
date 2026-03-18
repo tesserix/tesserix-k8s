@@ -1,0 +1,129 @@
+{{- if not .Values.knative.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "notification-service.fullname" . }}
+  labels:
+    {{- include "notification-service.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.keda.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "notification-service.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "notification-service.selectorLabels" . | nindent 8 }}
+    spec:
+      imagePullSecrets:
+        {{- if .Values.imagePullSecrets }}
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+        {{- else }}
+        - name: ghcr-secret
+        {{- end }}
+      serviceAccountName: {{ include "notification-service.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.livenessPath }}
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.periodSeconds }}
+            timeoutSeconds: {{ .Values.healthCheck.timeoutSeconds }}
+            failureThreshold: {{ .Values.healthCheck.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.healthCheck.readinessPath }}
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.periodSeconds }}
+            timeoutSeconds: {{ .Values.healthCheck.timeoutSeconds }}
+            failureThreshold: {{ .Values.healthCheck.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            # Non-sensitive environment variables from values
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+
+            # ==============================================
+            # GCP Secret Manager Configuration (REQUIRED)
+            # ==============================================
+            {{- if .Values.gcp.projectId }}
+            - name: GCP_PROJECT_ID
+              value: {{ .Values.gcp.projectId | quote }}
+            {{- end }}
+            - name: GCP_SECRET_PREFIX
+              value: {{ .Values.gcp.secretManager.secretPrefix | quote }}
+            - name: USE_GCP_SECRET_MANAGER
+              value: "true"
+
+                        # Database connection settings
+            - name: DB_HOST
+              value: {{ .Values.database.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+
+            # Database password from GCP Secret Manager
+            - name: DB_PASSWORD_SECRET_NAME
+              value: {{ printf "%s-%s-postgresql-password" .Values.gcp.secretManager.secretPrefix (.Values.gcp.namespace | default .Release.Namespace) | quote }}
+
+            # AWS SES/SNS credentials from GCP Secret Manager
+            - name: AWS_ACCESS_KEY_ID_SECRET_NAME
+              value: {{ printf "%s-ses-smtp-username" .Values.gcp.secretManager.secretPrefix | quote }}
+            - name: AWS_SECRET_ACCESS_KEY_SECRET_NAME
+              value: {{ printf "%s-ses-smtp-password" .Values.gcp.secretManager.secretPrefix | quote }}
+
+            # Postal API key from GCP Secret Manager
+            - name: POSTAL_API_KEY_SECRET_NAME
+              value: {{ printf "%s-postal-api-key" .Values.gcp.secretManager.secretPrefix | quote }}
+
+            # SendGrid API key from GCP Secret Manager
+            - name: SENDGRID_API_KEY_SECRET_NAME
+              value: {{ printf "%s-sendgrid-api-key" .Values.gcp.secretManager.secretPrefix | quote }}
+
+            # VAPID private key for Web Push notifications
+            - name: VAPID_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: vapid-keys
+                  key: VAPID_PRIVATE_KEY
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

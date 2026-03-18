@@ -1,0 +1,31 @@
+# =============================================================================
+# ALLOW ACME HTTP-01 CHALLENGES
+# Required for cert-manager to provision SSL certificates for custom domains
+# Creates policy for each gateway defined in ingressGateways
+# =============================================================================
+
+{{- range .Values.ingressGateways }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-acme-challenge{{ .name }}
+  namespace: {{ .namespace }}
+  labels:
+    app.kubernetes.io/name: authz-policy
+    app.kubernetes.io/component: acme-challenge
+    app.kubernetes.io/part-of: istio-auth-policies
+spec:
+  selector:
+    matchLabels:
+      {{ .labelKey }}: {{ .labelValue }}
+  action: ALLOW
+  rules:
+    # Allow ACME HTTP-01 challenge requests (cert-manager)
+    - to:
+        - operation:
+            paths:
+              - "/.well-known/acme-challenge/*"
+            methods:
+              - GET
+{{- end }}

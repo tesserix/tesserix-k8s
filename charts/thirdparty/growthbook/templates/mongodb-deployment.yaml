@@ -1,0 +1,86 @@
+{{- if .Values.mongodb.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "growthbook.fullname" . }}-mongodb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "growthbook.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mongodb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "growthbook.name" . }}-mongodb
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        # Istio sidecar configuration
+        sidecar.istio.io/inject: "true"
+        # Exclude MongoDB port from Istio sidecar
+        traffic.sidecar.istio.io/excludeInboundPorts: "27017"
+        traffic.sidecar.istio.io/excludeOutboundPorts: "27017"
+        # Exclude GCP metadata server for Workload Identity
+        traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+      labels:
+        app.kubernetes.io/name: {{ include "growthbook.name" . }}-mongodb
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: mongodb
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: mongodb
+          image: "{{ .Values.mongodb.image.repository }}:{{ .Values.mongodb.image.tag }}"
+          imagePullPolicy: {{ .Values.mongodb.image.pullPolicy }}
+          ports:
+            - name: mongodb
+              containerPort: 27017
+              protocol: TCP
+          {{- if .Values.mongodb.auth.enabled }}
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              value: {{ .Values.mongodb.auth.rootUser | quote }}
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "growthbook.fullname" . }}-mongodb
+                  key: mongodb-root-password
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          livenessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            exec:
+              command:
+                - mongosh
+                - --eval
+                - "db.adminCommand('ping')"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.mongodb.resources | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if .Values.mongodb.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "growthbook.fullname" . }}-mongodb
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- end }}

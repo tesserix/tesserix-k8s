@@ -1,0 +1,78 @@
+# Kargo Project Configuration
+project:
+  # Project name - will be used as namespace
+  name: ""
+  # Promotion policies
+  promotionPolicies: []
+  # Example:
+  # - stage: dev
+  #   autoPromotionEnabled: true
+  # - stage: staging
+  #   autoPromotionEnabled: false
+
+# Git repository configuration
+git:
+  # Repository URL
+  repoURL: "https://github.com/tesserix/tesserix-k8s.git"
+  # Branch to watch for changes
+  branch: "main"
+
+# Container registry configuration
+registry:
+  # Registry URL (e.g., ghcr.io)
+  url: "ghcr.io"
+  # Organization/owner
+  owner: "tesserix"
+  # Repository prefix
+  repoPrefix: "marketplace-services"  # Can also be: marketplace-clients, global-services
+
+# ArgoCD configuration
+argocd:
+  # ArgoCD namespace
+  namespace: "argocd"
+
+# Services to manage
+# Each service will get a Warehouse and Stage resources
+services: []
+# Example:
+# - name: products-service
+#   type: backend
+#   namespace: ecommerce
+#   imageRepo: products-service
+#   chartPath: charts/apps/products-service
+# - name: admin
+#   type: frontend
+#   namespace: ecommerce
+#   imageRepo: admin
+#   chartPath: charts/apps/admin
+
+# Stages configuration
+stages:
+  # Dev stage - auto-promotes from warehouse
+  dev:
+    enabled: true
+    autoPromotion: true
+    namespace: "ecommerce"
+  # Staging stage - manual promotion from dev
+  staging:
+    enabled: false
+    autoPromotion: false
+    namespace: "ecommerce-staging"
+  # Production stage - manual promotion from staging
+  production:
+    enabled: false
+    autoPromotion: false
+    namespace: "ecommerce-prod"
+
+# Warehouse configuration
+warehouse:
+  # Polling interval for checking new images
+  freightCreationPolicy: Automatic
+  # Image selection strategy
+  imageSelectionStrategy: SemVer
+  # Allow tags matching pattern
+  allowTags: "^[0-9]+\\.[0-9]+\\.[0-9]+$|^latest$|^[a-f0-9]{7,40}$"
+  # Ignore tags matching pattern
+  ignoreTags: ""
+  # Platform for multi-arch images
+  platform: "linux/amd64"

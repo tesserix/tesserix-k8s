@@ -1,0 +1,269 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: prometheus
+    targetRevision: 25.27.0
+    helm:
+      releaseName: prometheus
+      values: |
+        # Prometheus server configuration
+        server:
+          # Enable persistence on GKE Standard HDD (due to SSD quota limits)
+          persistentVolume:
+            enabled: true
+            size: 20Gi
+            storageClass: standard
+
+          # Resource configuration (required for AKS Azure Policy)
+          resources:
+            requests:
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+
+          # Retention
+          retention: "15d"
+
+          # Global scrape configuration
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
+
+          # Ingress for Prometheus UI
+          ingress:
+            enabled: true
+            ingressClassName: kong
+            annotations:
+              cert-manager.io/cluster-issuer: "letsencrypt-prod"
+              konghq.com/protocols: "https"
+            hosts:
+              - dev-prometheus.tesserix.app
+            path: /
+            pathType: Prefix
+            tls:
+              - secretName: prometheus-tls
+                hosts:
+                  - dev-prometheus.tesserix.app
+
+          # Pod security context (fsGroup at pod level)
+          podSecurityContext:
+            fsGroup: 65534
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+
+          # Container security context (without fsGroup)
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+
+        # Alertmanager configuration
+        alertmanager:
+          enabled: true
+
+          persistentVolume:
+            enabled: true
+            size: 10Gi
+
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+
+          # Pod security context (fsGroup at pod level)
+          podSecurityContext:
+            fsGroup: 65534
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+
+          # Container security context (without fsGroup)
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+
+          # Ingress for Alertmanager
+          ingress:
+            enabled: true
+            className: kong
+            ingressClassName: kong
+            annotations:
+              cert-manager.io/cluster-issuer: "letsencrypt-prod"
+              konghq.com/protocols: "https"
+            hosts:
+              - host: dev-alertmanager.tesserix.app
+                paths:
+                  - path: /
+                    pathType: Prefix
+            tls:
+              - secretName: alertmanager-tls
+                hosts:
+                  - dev-alertmanager.tesserix.app
+
+        # Pushgateway
+        pushgateway:
+          enabled: true
+          resources:
+            requests:
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+
+        # Node exporter for node metrics
+        nodeExporter:
+          enabled: true
+          resources:
+            requests:
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+
+        # Kube state metrics
+        kubeStateMetrics:
+          enabled: true
+
+        # Additional scrape configs for Istio
+        extraScrapeConfigs: |
+          # Istio sidecar metrics from all pods (for istio_requests_total, etc.)
+          - job_name: 'istio-proxy'
+            metrics_path: /stats/prometheus
+            kubernetes_sd_configs:
+              - role: pod
+            relabel_configs:
+              # Only scrape pods with istio-proxy sidecar
+              - source_labels: [__meta_kubernetes_pod_container_name]
+                action: keep
+                regex: 'istio-proxy'
+              # Use port 15090 for Istio metrics
+              - source_labels: [__address__]
+                action: replace
+                regex: ([^:]+)(?::\d+)?
+                replacement: ${1}:15090
+                target_label: __address__
+              # Add pod name label
+              - source_labels: [__meta_kubernetes_pod_name]
+                target_label: pod
+              # Add namespace label
+              - source_labels: [__meta_kubernetes_namespace]
+                target_label: namespace
+              # Add service name from pod labels
+              - source_labels: [__meta_kubernetes_pod_label_app]
+                target_label: app
+              # Add workload label
+              - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+                target_label: workload
+
+          # Istiod control plane metrics
+          - job_name: 'istiod'
+            kubernetes_sd_configs:
+              - role: endpoints
+                namespaces:
+                  names:
+                    - istio-system
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+                action: keep
+                regex: istiod;http-monitoring
+
+          # Istio ingress gateway metrics
+          - job_name: 'istio-ingressgateway'
+            metrics_path: /stats/prometheus
+            kubernetes_sd_configs:
+              - role: pod
+                namespaces:
+                  names:
+                    - istio-ingress
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_label_app]
+                action: keep
+                regex: 'istio-ingressgateway'
+              - source_labels: [__address__]
+                action: replace
+                regex: ([^:]+)(?::\d+)?
+                replacement: ${1}:15090
+                target_label: __address__
+              - source_labels: [__meta_kubernetes_pod_name]
+                target_label: pod
+              - source_labels: [__meta_kubernetes_namespace]
+                target_label: namespace
+
+          # Istio egress gateway metrics
+          - job_name: 'istio-egressgateway'
+            metrics_path: /stats/prometheus
+            kubernetes_sd_configs:
+              - role: pod
+                namespaces:
+                  names:
+                    - istio-egress
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_label_app]
+                action: keep
+                regex: 'istio-egressgateway'
+              - source_labels: [__address__]
+                action: replace
+                regex: ([^:]+)(?::\d+)?
+                replacement: ${1}:15090
+                target_label: __address__
+              - source_labels: [__meta_kubernetes_pod_name]
+                target_label: pod
+              - source_labels: [__meta_kubernetes_namespace]
+                target_label: namespace
+
+        # Service account
+        serviceAccounts:
+          server:
+            create: true
+          alertmanager:
+            create: true
+          pushgateway:
+            create: true
+          nodeExporter:
+            create: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  ignoreDifferences:
+    # Ignore empty resources field added by Helm for configmap-reload sidecars
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/template/spec/containers/0/resources
+    - group: apps
+      kind: DaemonSet
+      jsonPointers:
+        - /spec/template/spec/containers/0/resources
+    # Ignore volumeClaimTemplates apiVersion/kind which are stripped at runtime
+    - group: apps
+      kind: StatefulSet
+      jqPathExpressions:
+        - .spec.volumeClaimTemplates[].apiVersion
+        - .spec.volumeClaimTemplates[].kind
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

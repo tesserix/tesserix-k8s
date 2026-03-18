@@ -1,0 +1,77 @@
+# =============================================================================
+# Network Policies Configuration
+# Multi-namespace architecture with Istio integration
+# =============================================================================
+
+# Application namespaces to apply policies to
+namespaces:
+  - global
+  - marketplace
+  - hms
+  - fanzone
+  - homechef
+  - bookkeeping
+
+# Global namespace that all app namespaces can access
+globalNamespace: global
+
+# System namespaces that should have unrestricted access
+systemNamespaces:
+  - kube-system
+  - istio-system
+  - istio-ingress
+  - istio-egress
+  - monitoring
+  - logging
+  - cert-manager
+
+# Infrastructure namespaces (shared services)
+infrastructureNamespaces:
+  - nats
+  - email
+  - typesense
+  - growthbook
+
+# Database namespaces (per-product isolation)
+databaseNamespaces:
+  - postgresql-global
+  - postgresql-marketplace
+  - postgresql-hms
+  - postgresql-fanzone
+  - postgresql-homechef
+  - postgresql-bookkeeping
+
+# Redis namespaces (per-product isolation)
+redisNamespaces:
+  - redis-global
+  - redis-marketplace
+  - redis-hms
+  - redis-fanzone
+  - redis-homechef
+
+# Identity namespaces
+identityNamespaces:
+  - identity
+  - identity-customer
+  - identity-internal
+
+# Default policy settings
+defaultPolicy:
+  # Deny all ingress by default
+  denyAllIngress: true
+  # Allow egress to DNS
+  allowDnsEgress: true
+  # Allow egress to internet (for external APIs)
+  allowInternetEgress: true
+
+# Product isolation - each product can ONLY access:
+# 1. Its own namespace (same-namespace)
+# 2. Global namespace (shared services)
+# 3. Its own database namespace
+# 4. Its own Redis namespace
+# 5. Infrastructure namespaces (NATS, Typesense)
+#
+# Cross-product communication is BLOCKED:
+# - marketplace CANNOT access hms, fanzone, homechef, bookkeeping
+# - hms CANNOT access marketplace, fanzone, homechef, bookkeeping
+# - etc.
