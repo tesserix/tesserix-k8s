@@ -23,7 +23,7 @@ spec:
         - name: map-downloader
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["/bin/bash", "-c"]
+          command: ["/bin/sh", "-c"]
           args:
             - |
               set -e
@@ -35,9 +35,6 @@ spec:
 
               if [ ! -f "$OSRM_FILE" ]; then
                 echo "Map data not found. Downloading from {{ .Values.osrm.mapDataUrl }}..."
-                # Use curl or wget inside the container if available, or osrm-backend might usually just have basic tools.
-                # The osrm image is based on debian/alpine usually.
-                apt-get update && apt-get install -y wget curl || echo "Skipping apt update"
                 wget -O "$PBF_FILE" "{{ .Values.osrm.mapDataUrl }}"
                 
                 echo "Extracting map data..."
