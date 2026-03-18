@@ -1,0 +1,155 @@
+{{- if .Values.apiVirtualService.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "fanzone-web.fullname" . }}-api
+  labels:
+    {{- include "fanzone-web.labels" . | nindent 4 }}
+spec:
+  hosts:
+    {{- range .Values.apiVirtualService.hosts }}
+    - {{ . | quote }}
+    {{- end }}
+  gateways:
+    - {{ .Values.virtualService.gateway | default "istio-ingress/tesseract-gateway" }}
+  http:
+    # ===========================================
+    # Backend API Routes (same as main VirtualService)
+    # ===========================================
+    {{- if .Values.ingress.backendServices }}
+    {{- range .Values.ingress.backendServices }}
+    - match:
+        - uri:
+            prefix: {{ .path }}
+      {{- if .rewrite }}
+      rewrite:
+        uri: {{ .rewrite }}
+      {{- end }}
+      {{- if .knative }}
+      headers:
+        request:
+          set:
+            Host: {{ .serviceName }}.{{ $.Release.Namespace }}.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      {{- else if .externalHost }}
+      headers:
+        request:
+          set:
+            Host: {{ .externalHost }}
+      route:
+        - destination:
+            host: {{ .externalHost }}
+            port:
+              number: {{ .externalPort | default 443 }}
+      {{- else }}
+      route:
+        - destination:
+            host: {{ .serviceName }}.{{ $.Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .servicePort | default 80 }}
+      {{- end }}
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+    {{- end }}
+    {{- end }}
+
+    # ===========================================
+    # SSE Routes - Server-Sent Events (notifications)
+    # ===========================================
+    {{- if .Values.virtualService.sse }}
+    - match:
+        - uri:
+            prefix: {{ .Values.virtualService.sse.path | default "/events" }}
+      {{- if .Values.virtualService.sse.knative }}
+      headers:
+        request:
+          set:
+            Host: {{ .Values.virtualService.sse.serviceName | default "fanzone-ws" }}.{{ .Release.Namespace }}.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      {{- else }}
+      route:
+        - destination:
+            host: {{ .Values.virtualService.sse.serviceName | default "fanzone-ws" }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.virtualService.sse.servicePort | default 80 }}
+      {{- end }}
+      timeout: 3600s
+    {{- end }}
+
+    # ===========================================
+    # WebSocket Routes - Fanzone WS Service
+    # ===========================================
+    {{- if .Values.virtualService.websocket }}
+    - match:
+        - uri:
+            prefix: {{ .Values.virtualService.websocket.path | default "/ws" }}
+      {{- if .Values.virtualService.websocket.knative }}
+      headers:
+        request:
+          set:
+            Host: {{ .Values.virtualService.websocket.serviceName | default "fanzone-ws" }}.{{ .Release.Namespace }}.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      {{- else }}
+      route:
+        - destination:
+            host: {{ .Values.virtualService.websocket.serviceName | default "fanzone-ws" }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.virtualService.websocket.servicePort | default 80 }}
+      {{- end }}
+      timeout: 3600s
+    {{- end }}
+
+    # ===========================================
+    # Default route to fanzone-api (NOT fanzone-web)
+    # ===========================================
+    - match:
+        - uri:
+            prefix: /
+      {{- if .Values.apiVirtualService.defaultService.knative }}
+      headers:
+        request:
+          set:
+            Host: {{ .Values.apiVirtualService.defaultService.name }}.{{ .Release.Namespace }}.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      {{- else if .Values.apiVirtualService.defaultService.externalHost }}
+      headers:
+        request:
+          set:
+            Host: {{ .Values.apiVirtualService.defaultService.externalHost }}
+      route:
+        - destination:
+            host: {{ .Values.apiVirtualService.defaultService.externalHost }}
+            port:
+              number: {{ .Values.apiVirtualService.defaultService.externalPort | default 443 }}
+      {{- else }}
+      route:
+        - destination:
+            host: {{ .Values.apiVirtualService.defaultService.name }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.apiVirtualService.defaultService.port | default 80 }}
+      {{- end }}
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+{{- end }}

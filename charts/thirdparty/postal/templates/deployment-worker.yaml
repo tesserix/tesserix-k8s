@@ -1,0 +1,200 @@
+{{- if .Values.worker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "postal.fullname" . }}-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "postal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "postal.workerSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "postal.workerSelectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/secret-config.yaml") . | sha256sum }}
+        # Istio sidecar configuration
+        sidecar.istio.io/inject: "true"
+        # Exclude MySQL and RabbitMQ ports from Istio sidecar
+        traffic.sidecar.istio.io/excludeOutboundPorts: "3306,5672"
+        # Exclude GCP metadata server for Workload Identity
+        traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+    spec:
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.relay.enabled }}
+      # hostAliases to make smtp-relay resolve to 127.0.0.1
+      # Required because Postal's DNS resolver (Resolv::DNS) doesn't read /etc/hosts
+      hostAliases:
+        - ip: "127.0.0.1"
+          hostnames:
+            - "smtp-relay"
+            - "postfix-relay"
+      {{- end }}
+      {{- if .Values.relay.enabled }}
+      initContainers:
+        - name: inject-relay-config
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              cp /config-template/postal.yml /config/postal.yml
+              sed -i "s/__SMTP_RELAY_PASSWORD__/$SMTP_RELAY_PASSWORD/g" /config/postal.yml
+              echo "=== Config with SMTP relay ===" && grep smtp_relays /config/postal.yml
+          env:
+            - name: SMTP_RELAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  {{- if eq .Values.relay.provider "ses" }}
+                  name: {{ .Values.relay.ses.existingSecret }}
+                  key: {{ .Values.relay.ses.existingSecretPasswordKey }}
+                  {{- else }}
+                  name: {{ .Values.relay.sendgrid.existingSecret }}
+                  key: {{ .Values.relay.sendgrid.existingSecretPasswordKey }}
+                  {{- end }}
+          volumeMounts:
+            - name: config-template
+              mountPath: /config-template
+            - name: config-runtime
+              mountPath: /config
+      {{- end }}
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["postal", "worker"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "postal.fullname" . }}-env
+          env:
+            # Legacy env vars
+            - name: MAIN_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretPasswordKey }}
+            - name: MESSAGE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.messageDatabase.existingSecret }}
+                  key: {{ .Values.messageDatabase.existingSecretPasswordKey }}
+            - name: POSTAL_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.credentials.existingSecret }}
+                  key: {{ .Values.credentials.secretKeySecretKey }}
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.rabbitmq.existingSecret }}
+                  key: {{ .Values.rabbitmq.existingSecretPasswordKey }}
+            # Postal v3 env vars for passwords
+            - name: POSTAL__MAIN_DB__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretPasswordKey }}
+            - name: POSTAL__MESSAGE_DB__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.messageDatabase.existingSecret }}
+                  key: {{ .Values.messageDatabase.existingSecretPasswordKey }}
+            - name: POSTAL__RABBITMQ__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.rabbitmq.existingSecret }}
+                  key: {{ .Values.rabbitmq.existingSecretPasswordKey }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.relay.enabled }}
+            - name: config-runtime
+              mountPath: /config/postal.yml
+              subPath: postal.yml
+            # Mount the SMTP relay resolver initializer to patch DNS resolution
+            - name: config-template
+              mountPath: /opt/postal/app/config/initializers/smtp_relay_resolver.rb
+              subPath: smtp_relay_resolver.rb
+            {{- else }}
+            - name: config-template
+              mountPath: /config/postal.yml
+              subPath: postal.yml
+            {{- end }}
+            - name: signing-key
+              mountPath: /config/signing.key
+              subPath: signing.key
+            # Mount additional hosts initializer
+            - name: config-template
+              mountPath: /opt/postal/app/config/initializers/additional_hosts.rb
+              subPath: additional_hosts.rb
+        {{- if .Values.relay.enabled }}
+        # Postfix sidecar for authenticated SMTP relay (SES or SendGrid)
+        - name: postfix-relay
+          image: boky/postfix:latest
+          ports:
+            - containerPort: 25
+              name: smtp
+              protocol: TCP
+          env:
+            {{- if eq .Values.relay.provider "ses" }}
+            # AWS SES SMTP relay
+            - name: RELAYHOST
+              value: "[{{ .Values.relay.ses.host }}]:{{ .Values.relay.ses.port }}"
+            - name: RELAYHOST_USERNAME
+              value: {{ .Values.relay.ses.username | quote }}
+            - name: RELAYHOST_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.relay.ses.existingSecret }}
+                  key: {{ .Values.relay.ses.existingSecretPasswordKey }}
+            {{- else }}
+            # SendGrid SMTP relay
+            - name: RELAYHOST
+              value: "[{{ .Values.relay.sendgrid.host }}]:{{ .Values.relay.sendgrid.port }}"
+            - name: RELAYHOST_USERNAME
+              value: {{ .Values.relay.sendgrid.username | quote }}
+            - name: RELAYHOST_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.relay.sendgrid.existingSecret }}
+                  key: {{ .Values.relay.sendgrid.existingSecretPasswordKey }}
+            {{- end }}
+            - name: ALLOW_EMPTY_SENDER_DOMAINS
+              value: "true"
+            - name: POSTFIX_myhostname
+              value: "postal-relay.email.svc.cluster.local"
+            - name: POSTFIX_mynetworks
+              value: "127.0.0.0/8 10.0.0.0/8"
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              memory: 64Mi
+        {{- end }}
+      volumes:
+        - name: config-template
+          secret:
+            secretName: {{ include "postal.fullname" . }}-config
+        {{- if .Values.relay.enabled }}
+        - name: config-runtime
+          emptyDir: {}
+        {{- end }}
+        - name: signing-key
+          secret:
+            secretName: {{ .Values.credentials.existingSecret }}
+            items:
+              - key: {{ .Values.credentials.signingKeySecretKey }}
+                path: signing.key
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

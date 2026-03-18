@@ -1,0 +1,262 @@
+name: Manage GKE Clusters
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster:
+        description: 'Which cluster to manage'
+        required: true
+        type: choice
+        options:
+          - prod
+          - devtest
+          - all
+      action:
+        description: 'Action to perform'
+        required: true
+        type: choice
+        options:
+          - stop
+          - start
+          - status
+
+jobs:
+  manage-prod:
+    if: inputs.cluster == 'prod' || inputs.cluster == 'all'
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write  # Required for Workload Identity Federation
+    env:
+      PROJECT_ID: tesserix
+      CLUSTER_NAME: tesserix-prod-in-gke
+      CLUSTER_ZONE: asia-south1-a
+      NODE_POOL: optimized
+      WIF_PROVIDER: projects/677812215720/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+      SA_EMAIL: github-actions@tesserix.iam.gserviceaccount.com
+
+    steps:
+      - name: Authenticate to Google Cloud (WIF)
+        id: auth_wif
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.SA_EMAIL }}
+          project_id: ${{ env.PROJECT_ID }}
+        continue-on-error: true
+
+      - name: Authenticate to Google Cloud (SA Key Fallback)
+        if: steps.auth_wif.outcome == 'failure'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_PROD_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Wait for any running operations
+        run: |
+          echo "Checking for running operations..."
+          for i in {1..30}; do
+            RUNNING_OP=$(gcloud container operations list \
+              --zone ${{ env.CLUSTER_ZONE }} \
+              --filter="status=RUNNING AND targetLink~${{ env.CLUSTER_NAME }}" \
+              --format="value(name)" | head -1)
+            if [ -z "$RUNNING_OP" ]; then
+              echo "No running operations, proceeding..."
+              break
+            fi
+            echo "Waiting for operation $RUNNING_OP to complete... (attempt $i/30)"
+            sleep 60
+          done
+
+      - name: Get Cluster Status
+        if: inputs.action == 'status'
+        run: |
+          echo "### GKE Prod Cluster Status" >> $GITHUB_STEP_SUMMARY
+          gcloud container clusters describe ${{ env.CLUSTER_NAME }} \
+            --zone ${{ env.CLUSTER_ZONE }} \
+            --format="table(name,status,currentNodeCount)"
+
+      - name: Stop Prod Cluster
+        if: inputs.action == 'stop'
+        run: |
+          echo "### Stopping GKE Prod Cluster" >> $GITHUB_STEP_SUMMARY
+
+          gcloud container clusters update ${{ env.CLUSTER_NAME }} \
+            --no-enable-autoscaling \
+            --node-pool ${{ env.NODE_POOL }} \
+            --zone ${{ env.CLUSTER_ZONE }} \
+            --quiet || true
+
+          gcloud container clusters resize ${{ env.CLUSTER_NAME }} \
+            --node-pool ${{ env.NODE_POOL }} \
+            --num-nodes 0 \
+            --zone ${{ env.CLUSTER_ZONE }} \
+            --quiet \
+            --async
+
+          echo "✅ **Prod cluster stop initiated**" >> $GITHUB_STEP_SUMMARY
+
+      - name: Start Prod Cluster
+        if: inputs.action == 'start'
+        run: |
+          echo "### Starting GKE Prod Cluster" >> $GITHUB_STEP_SUMMARY
+
+          gcloud container clusters resize ${{ env.CLUSTER_NAME }} \
+            --node-pool ${{ env.NODE_POOL }} \
+            --num-nodes 1 \
+            --zone ${{ env.CLUSTER_ZONE }} \
+            --quiet \
+            --async
+
+          echo "✅ **Prod cluster start initiated**" >> $GITHUB_STEP_SUMMARY
+
+      - name: Enable autoscaling after start
+        if: inputs.action == 'start'
+        run: |
+          echo "Waiting for resize operation to complete..."
+          for i in {1..30}; do
+            RUNNING_OP=$(gcloud container operations list \
+              --zone ${{ env.CLUSTER_ZONE }} \
+              --filter="status=RUNNING AND targetLink~${{ env.CLUSTER_NAME }}" \
+              --format="value(name)" | head -1)
+            if [ -z "$RUNNING_OP" ]; then
+              break
+            fi
+            echo "Waiting... (attempt $i/30)"
+            sleep 60
+          done
+
+          gcloud container clusters update ${{ env.CLUSTER_NAME }} \
+            --enable-autoscaling \
+            --min-nodes 1 \
+            --max-nodes 6 \
+            --node-pool ${{ env.NODE_POOL }} \
+            --zone ${{ env.CLUSTER_ZONE }} \
+            --quiet
+
+          echo "Autoscaling enabled"
+
+  manage-devtest:
+    if: inputs.cluster == 'devtest' || inputs.cluster == 'all'
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write  # Required for Workload Identity Federation
+    env:
+      PROJECT_ID: tesseracthub-480811
+      CLUSTER_NAME: tesseract-devtest-gke
+      CLUSTER_REGION: australia-southeast1
+      NODE_POOL: optimized
+      WIF_PROVIDER: projects/849928263410/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+      SA_EMAIL: github-actions@tesseracthub-480811.iam.gserviceaccount.com
+
+    steps:
+      - name: Authenticate to Google Cloud (WIF)
+        id: auth_wif
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.SA_EMAIL }}
+          project_id: ${{ env.PROJECT_ID }}
+        continue-on-error: true
+
+      - name: Authenticate to Google Cloud (SA Key Fallback)
+        if: steps.auth_wif.outcome == 'failure'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_DEVTEST }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Wait for any running operations
+        run: |
+          echo "Checking for running operations..."
+          for i in {1..30}; do
+            RUNNING_OP=$(gcloud container operations list \
+              --region ${{ env.CLUSTER_REGION }} \
+              --filter="status=RUNNING AND targetLink~${{ env.CLUSTER_NAME }}" \
+              --format="value(name)" | head -1)
+            if [ -z "$RUNNING_OP" ]; then
+              echo "No running operations, proceeding..."
+              break
+            fi
+            echo "Waiting for operation $RUNNING_OP to complete... (attempt $i/30)"
+            sleep 60
+          done
+
+      - name: Get Cluster Status
+        if: inputs.action == 'status'
+        run: |
+          echo "### GKE DevTest Cluster Status" >> $GITHUB_STEP_SUMMARY
+          gcloud container clusters describe ${{ env.CLUSTER_NAME }} \
+            --region ${{ env.CLUSTER_REGION }} \
+            --format="table(name,status,currentNodeCount)"
+
+      - name: Stop DevTest Cluster
+        if: inputs.action == 'stop'
+        run: |
+          echo "### Stopping GKE DevTest Cluster" >> $GITHUB_STEP_SUMMARY
+
+          gcloud container clusters update ${{ env.CLUSTER_NAME }} \
+            --no-enable-autoscaling \
+            --node-pool ${{ env.NODE_POOL }} \
+            --region ${{ env.CLUSTER_REGION }} \
+            --quiet || true
+
+          gcloud container clusters resize ${{ env.CLUSTER_NAME }} \
+            --node-pool ${{ env.NODE_POOL }} \
+            --num-nodes 0 \
+            --region ${{ env.CLUSTER_REGION }} \
+            --quiet \
+            --async
+
+          echo "✅ **DevTest cluster stop initiated**" >> $GITHUB_STEP_SUMMARY
+
+      - name: Start DevTest Cluster
+        if: inputs.action == 'start'
+        run: |
+          echo "### Starting GKE DevTest Cluster" >> $GITHUB_STEP_SUMMARY
+
+          gcloud container clusters resize ${{ env.CLUSTER_NAME }} \
+            --node-pool ${{ env.NODE_POOL }} \
+            --num-nodes 1 \
+            --region ${{ env.CLUSTER_REGION }} \
+            --quiet \
+            --async
+
+          echo "✅ **DevTest cluster start initiated**" >> $GITHUB_STEP_SUMMARY
+
+      - name: Enable autoscaling after start
+        if: inputs.action == 'start'
+        run: |
+          echo "Waiting for resize operation to complete..."
+          for i in {1..30}; do
+            RUNNING_OP=$(gcloud container operations list \
+              --region ${{ env.CLUSTER_REGION }} \
+              --filter="status=RUNNING AND targetLink~${{ env.CLUSTER_NAME }}" \
+              --format="value(name)" | head -1)
+            if [ -z "$RUNNING_OP" ]; then
+              break
+            fi
+            echo "Waiting... (attempt $i/30)"
+            sleep 60
+          done
+
+          gcloud container clusters update ${{ env.CLUSTER_NAME }} \
+            --enable-autoscaling \
+            --min-nodes 1 \
+            --max-nodes 6 \
+            --node-pool ${{ env.NODE_POOL }} \
+            --region ${{ env.CLUSTER_REGION }} \
+            --quiet
+
+          echo "Autoscaling enabled"

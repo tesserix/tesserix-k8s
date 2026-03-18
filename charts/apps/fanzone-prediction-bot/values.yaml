@@ -1,0 +1,172 @@
+# =============================================================================
+# FanZone Prediction Bot - AI-Powered Prediction Generation Service
+# Uses Anthropic Claude API to monitor matches and auto-create predictions
+# Single instance only (bot should not run in parallel)
+# =============================================================================
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/FanZone-Battle-Ground/fanzone-prediction-bot
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Exclude PostgreSQL and Anthropic API from Istio sidecar
+  traffic.sidecar.istio.io/excludeOutboundPorts: "5432,443"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  # Istio sidecar configuration
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8088
+
+# Lightweight service — main cost is Anthropic API calls, not compute
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# No autoscaling — single instance bot
+autoscaling:
+  enabled: false
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Graceful shutdown
+terminationGracePeriodSeconds: 30
+
+# Environment configuration
+env:
+  GO_ENV: production
+  LOG_LEVEL: info
+  LOG_FORMAT: json
+
+  # Server config
+  SERVER_PORT: "8088"
+
+  # AI config
+  ANTHROPIC_MODEL: "claude-sonnet-4-5-20250929"
+  AI_TEMPERATURE: "0.7"
+  AI_MAX_TOKENS: "4096"
+
+  # Service URLs (internal mesh)
+  MATCH_SERVICE_URL: "http://sports-data.fanzone.svc.cluster.local"
+  PREDICTION_SERVICE_URL: "https://fanzone-prediction-849928263410.asia-south1.run.app"
+
+  # Scheduling
+  PREDICTION_INTERVAL: "45m"
+  MATCH_POLL_INTERVAL: "5m"
+  CLOSE_CHECK_INTERVAL: "30s"
+
+  # Bot behavior
+  MAX_PREDICTIONS_PER_MATCH: "20"
+  MAX_ACTIVE_PER_MATCH: "12"
+  MIN_HOUSE_EDGE: "0.08"
+  MAX_HOUSE_EDGE: "0.15"
+  DEFAULT_MIN_BET: "25"
+  DEFAULT_MAX_BET_PER_USER: "500"
+  BOT_ADMIN_USER_ID: "00000000-0000-0000-0000-000000000002"
+
+  # Rate limiting
+  AI_MAX_CALLS_PER_MINUTE: "3"
+  AI_MAX_CALLS_PER_HOUR: "15"
+  AI_MAX_TOKENS_PER_DAY: "500000"
+  MAX_CONCURRENT_MATCHES: "3"
+  FAILURE_BACKOFF_BASE: "5m"
+  MAX_FAILURE_BACKOFF: "1h"
+
+# PostgreSQL configuration (fanzone_auth database — same as prediction service)
+database:
+  host: "postgresql.postgresql-fanzone.svc.cluster.local"
+  port: "5432"
+  user: "postgres"
+  name: "fanzone_auth"
+  sslmode: "require"
+  passwordSecretName: "postgresql-fanzone-password"
+  passwordSecretKey: "password"
+
+# Anthropic API Key secret configuration
+anthropic:
+  secretName: "anthropic-api-key"
+  secretKey: "api-key"
+
+# JWT Secret configuration (for bot admin token generation)
+jwt:
+  secretName: "fanzone-jwt-secret"
+  secretKey: "jwt-secret"
+
+# Sports API Key configuration (for match service auth)
+sportsApiKey:
+  secretName: "fanzone-sports-api-key"
+  secretKey: "api-key"
+
+# Knative Serving configuration (when enabled, replaces Deployment + Service)
+knative:
+  enabled: false
+  minScale: 0
+  maxScale: 3
+  scaleDownDelay: "60s"
+  concurrencyTarget: 100
+  containerConcurrency: 0
+  timeoutSeconds: 300
+
+# GCP Secret Manager configuration
+gcp:
+  projectId: ""
+  namespace: "fanzone"
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "devtest"

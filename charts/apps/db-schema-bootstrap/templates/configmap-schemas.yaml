@@ -1,0 +1,20 @@
+{{- range $target := .Values.targets }}
+{{- $schemaDir := printf "schemas/%s/%s" $.Values.app $target.name }}
+{{- $schemas := $.Files.Glob (printf "%s/*.sql" $schemaDir) }}
+{{- if $schemas }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "db-schema-bootstrap.fullname" $ }}-schemas-{{ $target.name }}
+  namespace: {{ include "db-schema-bootstrap.namespace" $ }}
+  labels:
+    {{- include "db-schema-bootstrap.labels" $ | nindent 4 }}
+    app.kubernetes.io/target: {{ $target.name }}
+data:
+  {{- range $path, $_ := $schemas }}
+  {{ base $path }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}

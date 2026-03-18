@@ -1,0 +1,166 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: custom-ingress-gateway
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: infrastructure
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: gateway
+    targetRevision: 1.24.0
+    helm:
+      releaseName: custom-ingress
+      values: |
+        # =================================================================
+        # CUSTOM DOMAIN INGRESS GATEWAY
+        # =================================================================
+        # This gateway handles traffic for custom domains (non-tesserix.app)
+        # - Exposes public LoadBalancer IP for direct A record access
+        # - Separate from default ingress (Cloudflare Tunnel)
+        # - SSL/TLS handled via cert-manager with Let's Encrypt
+        # =================================================================
+
+        # Gateway name - distinct from default ingress
+        name: custom-ingressgateway
+
+        # Image is set to "auto" by the chart and resolved by istiod's mutating webhook
+
+        # Revision for canary upgrades
+        revision: ""
+
+        # Service configuration - LoadBalancer for public access
+        service:
+          type: LoadBalancer
+          # CRITICAL: Preserve client IP - without this, all IPs show as internal cluster IPs
+          externalTrafficPolicy: Local
+
+          # GCP LoadBalancer annotations for security and performance
+          annotations:
+            # GCP Network Tier - PREMIUM for better performance and global LB
+            cloud.google.com/network-tier: "Premium"
+            # Enable GCP Cloud Armor integration (create policy separately)
+            # cloud.google.com/backend-config: '{"default": "custom-domain-backend-config"}'
+            # Enable connection draining for graceful shutdown
+            cloud.google.com/neg: '{"ingress": false}'
+
+          # Ports configuration
+          ports:
+            - name: status-port
+              port: 15021
+              protocol: TCP
+              targetPort: 15021
+            - name: http2
+              port: 80
+              protocol: TCP
+              targetPort: 80
+            - name: https
+              port: 443
+              protocol: TCP
+              targetPort: 443
+
+          # Optional: Restrict source IPs (uncomment to limit access)
+          # loadBalancerSourceRanges:
+          #   - 0.0.0.0/0
+
+        # Resource configuration - sized for production traffic
+        resources:
+          requests:
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+
+        # Auto-scaling configuration
+        autoscaling:
+          enabled: true
+          minReplicas: 2
+          maxReplicas: 10
+          targetCPUUtilizationPercentage: 70
+
+        # Pod disruption budget for HA
+        podDisruptionBudget:
+          maxUnavailable: 1
+
+        # Service account
+        serviceAccount:
+          create: true
+          name: custom-ingressgateway
+
+        # Pod annotations
+        podAnnotations:
+          # Prometheus scraping
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "15020"
+          prometheus.io/path: "/stats/prometheus"
+
+        # Security context - run as non-root
+        securityContext:
+          runAsUser: 1337
+          runAsGroup: 1337
+          runAsNonRoot: true
+          fsGroup: 1337
+
+        # Container security context - hardened
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1337
+
+        # Labels for the gateway pods - IMPORTANT: different selector from default
+        labels:
+          app: custom-ingressgateway
+          istio: custom-ingressgateway
+
+        # Topology spread constraints for HA across zones
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: topology.kubernetes.io/zone
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app: custom-ingressgateway
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app: custom-ingressgateway
+
+        # Affinity rules - spread across nodes
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      app: custom-ingressgateway
+                  topologyKey: kubernetes.io/hostname
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-ingress
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

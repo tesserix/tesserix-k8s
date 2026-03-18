@@ -1,0 +1,166 @@
+# Default values for subscription-service
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/subscription-service
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Istio sidecar configuration - wait for proxy before starting app
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  # Exclude NATS port from Istio sidecar to fix JetStream timeout issues
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+# KEDA ScaledObject configuration
+keda:
+  enabled: true
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  # Prometheus trigger for traffic-based scaling (Istio metrics)
+  prometheus:
+    enabled: true
+    serverAddress: http://prometheus-server.monitoring.svc.cluster.local:80
+    requestRateQuery: sum(rate(istio_requests_total{destination_canonical_service="subscription-service",reporter="destination"}[2m]))
+    requestRateThreshold: "50"
+  # Fallback CPU/Memory triggers
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "80"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "85"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Environment configuration
+env:
+  PORT: "8080"
+  GIN_MODE: "release"
+
+  # NATS for event publishing
+  NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+
+  # Service URLs for inter-service communication
+  TENANT_SERVICE_URL: "http://tenant-service.marketplace.svc.cluster.local:8080"
+
+# Database configuration - used to construct DATABASE_URL
+database:
+  host: "postgresql.database.svc.cluster.local"
+  port: "5432"
+  name: "tesseract_hub"
+  user: "postgres"
+  sslmode: "require"
+
+# Database migrations
+migrations:
+  enabled: true
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true
+
+# External Secrets (disabled by default - enable per environment)
+externalSecrets:
+  enabled: false
+  secretStore: "gcp-secret-store"
+  refreshInterval: "1h"
+  stripe:
+    enabled: false
+
+# GCP Secret Manager configuration
+gcp:
+  projectId: ""
+  namespace: "marketplace"
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "devtest"
+
+knative:
+  enabled: false
+  minScale: 1
+  maxScale: 5
+  concurrencyTarget: 100
+  containerConcurrency: 100
+  timeoutSeconds: 30

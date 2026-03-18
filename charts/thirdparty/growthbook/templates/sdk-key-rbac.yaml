@@ -1,0 +1,37 @@
+{{- if .Values.featureSeeding.enabled }}
+{{- if .Values.featureSeeding.createSdkSecret }}
+# Role to allow creating/updating the SDK key secret in marketplace namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "growthbook.fullname" . }}-sdk-key-creator
+  namespace: {{ .Values.featureSeeding.sdkSecretNamespace | default "marketplace" }}
+  labels:
+    {{- include "growthbook.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "update", "patch", "get"]
+    resourceNames: ["{{ .Values.featureSeeding.sdkSecretName | default "growthbook-sdk-key" }}"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+---
+# RoleBinding to allow the seed job service account to create the secret
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "growthbook.fullname" . }}-sdk-key-creator
+  namespace: {{ .Values.featureSeeding.sdkSecretNamespace | default "marketplace" }}
+  labels:
+    {{- include "growthbook.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "growthbook.fullname" . }}-sdk-key-creator
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "growthbook.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

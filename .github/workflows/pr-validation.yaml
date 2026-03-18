@@ -1,0 +1,173 @@
+# =============================================================================
+# Pull Request Validation Workflow
+# Comprehensive validation for PRs affecting Helm charts or ArgoCD configs
+# =============================================================================
+name: PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'charts/**'
+      - 'argocd/**'
+      - '.github/workflows/**'
+
+env:
+  HELM_VERSION: '3.14.0'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Helm Chart Validation
+  # ---------------------------------------------------------------------------
+  helm-lint:
+    name: Helm Lint
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    if: |
+      contains(github.event.pull_request.changed_files, 'charts/')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files: |
+            charts/apps/**
+
+      - name: Identify changed charts
+        id: changed-charts
+        run: |
+          changed_charts=""
+          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            # Extract chart name from path
+            chart=$(echo "$file" | sed -n 's|charts/apps/\([^/]*\)/.*|\1|p')
+            if [ -n "$chart" ] && [ -d "charts/apps/$chart" ]; then
+              if [[ ! "$changed_charts" =~ "$chart" ]]; then
+                changed_charts="$changed_charts $chart"
+              fi
+            fi
+          done
+          echo "charts=$changed_charts" >> $GITHUB_OUTPUT
+          echo "Changed charts:$changed_charts"
+
+      - name: Lint changed charts
+        run: |
+          for chart in ${{ steps.changed-charts.outputs.charts }}; do
+            echo "Linting charts/apps/$chart..."
+            helm lint "charts/apps/$chart" --strict
+          done
+
+      - name: Template changed charts
+        run: |
+          for chart in ${{ steps.changed-charts.outputs.charts }}; do
+            echo "Templating charts/apps/$chart..."
+            helm template "$chart" "charts/apps/$chart" > /dev/null
+          done
+
+  helm-docs:
+    name: Helm Docs Check
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run helm-docs
+        uses: losisin/helm-docs-github-action@v1
+        with:
+          git-push: false
+
+      - name: Check for documentation drift
+        run: |
+          if git diff --exit-code; then
+            echo "Documentation is up to date"
+          else
+            echo "::warning::Helm documentation needs updating. Run 'helm-docs' locally."
+          fi
+
+  # ---------------------------------------------------------------------------
+  # ArgoCD Validation
+  # ---------------------------------------------------------------------------
+  argocd-validate:
+    name: ArgoCD Validation
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    if: |
+      contains(github.event.pull_request.changed_files, 'argocd/')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate ArgoCD Application manifests
+        run: |
+          # Install kubeconform
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.4/kubeconform-linux-amd64.tar.gz | tar xz
+          chmod +x kubeconform
+          sudo mv kubeconform /usr/local/bin/
+
+          # Download ArgoCD CRD schemas
+          mkdir -p /tmp/schemas
+          curl -sL https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/crds/application-crd.yaml -o /tmp/schemas/application-crd.yaml
+
+          echo "Validating ArgoCD Application manifests..."
+          for file in argocd/**/*.yaml; do
+            echo "Validating $file..."
+            kubeconform -strict -summary "$file" || true
+          done
+
+      - name: Check YAML syntax
+        run: |
+          pip install yamllint
+          yamllint argocd/ -c .github/lintconf.yaml || true
+
+  # ---------------------------------------------------------------------------
+  # Security Scanning
+  # ---------------------------------------------------------------------------
+  security-scan:
+    name: Security Scan
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # ---------------------------------------------------------------------------
+  # Summary
+  # ---------------------------------------------------------------------------
+  pr-summary:
+    name: PR Summary
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    needs: [helm-lint, argocd-validate, security-scan]
+    if: always()
+    steps:
+      - name: Generate PR summary
+        run: |
+          echo "## PR Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Helm Lint | ${{ needs.helm-lint.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ArgoCD Validation | ${{ needs.argocd-validate.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Scan | ${{ needs.security-scan.result || 'skipped' }} |" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,51 @@
+{{- $projectName := include "kargo-project.projectName" . }}
+{{- $root := . }}
+{{- range .Values.services }}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: {{ .name }}-warehouse
+  namespace: {{ $projectName }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    {{- include "kargo-project.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ .name }}
+    service-type: {{ .type | default "backend" }}
+spec:
+  subscriptions:
+    # Subscribe to container image updates
+    - image:
+        {{- if .image }}
+        repoURL: {{ .image.repository }}
+        {{- else }}
+        repoURL: {{ include "kargo-project.imageRepo" (dict "root" $root "service" .) }}
+        {{- end }}
+        {{- if $root.Values.warehouse.imageSelectionStrategy }}
+        imageSelectionStrategy: {{ $root.Values.warehouse.imageSelectionStrategy }}
+        {{- end }}
+        {{- if $root.Values.warehouse.allowTags }}
+        allowTags: {{ $root.Values.warehouse.allowTags | quote }}
+        {{- end }}
+        {{- if $root.Values.warehouse.ignoreTags }}
+        ignoreTags: {{ $root.Values.warehouse.ignoreTags | quote }}
+        {{- end }}
+        {{- if $root.Values.warehouse.platform }}
+        platform: {{ $root.Values.warehouse.platform }}
+        {{- end }}
+    {{- if $root.Values.warehouse.gitSubscription }}
+    # Subscribe to Git repository changes (Helm chart)
+    - git:
+        repoURL: {{ $root.Values.git.repoURL }}
+        branch: {{ $root.Values.git.branch }}
+        {{- if .chartPath }}
+        includePaths:
+          - {{ .chartPath }}/**
+        {{- end }}
+    {{- end }}
+  freightCreationPolicy: {{ $root.Values.warehouse.freightCreationPolicy | default "Automatic" }}
+  {{- if $root.Values.warehouse.interval }}
+  interval: {{ $root.Values.warehouse.interval }}
+  {{- end }}
+{{- end }}

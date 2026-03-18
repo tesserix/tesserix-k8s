@@ -1,0 +1,162 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: elasticsearch
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: logging
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://helm.elastic.co
+    chart: elasticsearch
+    targetRevision: 8.5.1
+    helm:
+      releaseName: elasticsearch
+      values: |
+        # Cluster name
+        clusterName: "elasticsearch"
+
+        # Node roles (single node for dev, scale for production)
+        nodeGroup: "master"
+
+        # Replicas (scaled down to 0 to free node resources)
+        replicas: 0
+
+        # Minimum master nodes
+        minimumMasterNodes: 1
+
+        # Resource configuration (required for AKS Azure Policy)
+        resources:
+          requests:
+            memory: 2Gi
+          limits:
+            memory: 4Gi
+
+        # Persistence - 240GB on GKE Standard SSD (production environment)
+        volumeClaimTemplate:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 240Gi
+          storageClassName: standard-rwo
+
+        # Elasticsearch configuration - Security enabled
+        # NOTE: Do NOT set discovery.type: single-node as helm chart adds cluster.initial_master_nodes which conflicts
+        esConfig:
+          elasticsearch.yml: |
+            cluster.name: "elasticsearch"
+            network.host: 0.0.0.0
+            xpack.security.enabled: true
+
+        # Disable Helm-managed secret (we use ExternalSecrets from GCP Secret Manager)
+        # createCert generates transport SSL certs (separate from API auth credentials)
+        secret:
+          enabled: false
+        createCert: true
+
+        # Environment variables - password from ExternalSecrets
+        # Note: Chart auto-generates xpack.security.* env vars when protocol: https
+        extraEnvs:
+          - name: ELASTIC_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: elastic-credentials
+                key: password
+
+        # Init container resources (required for AKS Azure Policy)
+        initResources:
+          limits:
+            memory: 128Mi
+          requests:
+            memory: 64Mi
+
+        # Security context
+        podSecurityContext:
+          fsGroup: 1000
+          runAsUser: 1000
+
+        securityContext:
+          capabilities:
+            drop:
+              - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+
+        # Anti-affinity (disabled for single node)
+        antiAffinity: "soft"
+
+        # Use more memory for ES
+        esJavaOpts: "-Xmx2g -Xms2g"
+
+        # Use HTTPS protocol (createCert generates self-signed certs)
+        protocol: https
+
+        # Readiness probe
+        readinessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+
+        # Cluster health status for readiness
+        clusterHealthCheckParams: "wait_for_status=yellow&timeout=1s"
+
+        # Service
+        service:
+          type: ClusterIP
+          httpPortName: http
+          transportPortName: transport
+
+        # Ingress disabled - Elasticsearch is internal-only
+        # Accessed by Kibana and Fluent Bit within the logging namespace
+        ingress:
+          enabled: false
+
+        # Lifecycle hooks
+        lifecycle:
+          preStop:
+            exec:
+              command:
+                - bash
+                - -c
+                - |
+                  #!/bin/bash
+                  # Wait for shards to be redistributed
+                  sleep 30
+
+        # Pod disruption budget
+        maxUnavailable: 1
+
+        # Update strategy
+        updateStrategy: RollingUpdate
+
+        # Tolerations for dedicated nodes (optional)
+        # tolerations:
+        #   - key: "elasticsearch"
+        #     operator: "Equal"
+        #     value: "true"
+        #     effect: "NoSchedule"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Replace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

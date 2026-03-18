@@ -1,0 +1,770 @@
+{{/*
+AuthorizationPolicies - Defines access control policies for multi-namespace architecture
+Implements product isolation with shared global services
+
+DISABLED when .Values.features.authorizationPolicies.enabled is false
+*/}}
+
+{{- if .Values.features.authorizationPolicies.enabled }}
+
+# =============================================================================
+# Mesh-Wide Default Policy
+# =============================================================================
+---
+# Default deny all - requires explicit allow rules
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all-default
+  namespace: istio-system
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  # Empty spec means deny all by default when combined with specific allow rules
+  {}
+
+# =============================================================================
+# Global Namespace Policies
+# Shared services accessible by all app namespaces
+# =============================================================================
+---
+# Allow ingress gateway to reach global services
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-global
+  namespace: {{ .Values.appNamespaces.global }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+
+---
+# Allow all app namespaces to access global services
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-apps-to-global
+  namespace: {{ .Values.appNamespaces.global }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    {{- range $key, $ns := .Values.appNamespaces }}
+    - from:
+        - source:
+            namespaces:
+              - {{ $ns }}
+    {{- end }}
+    # Also allow from system namespaces
+    - from:
+        - source:
+            namespaces:
+              - istio-system
+              - monitoring
+              - kube-system
+
+# =============================================================================
+# Marketplace Namespace Policies
+# E-commerce platform isolation
+# =============================================================================
+---
+# Allow ingress gateway to reach marketplace services
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-marketplace
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+
+---
+# Allow internal communication within marketplace namespace
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-internal-marketplace
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.marketplace }}
+    # Allow from global services (callbacks, webhooks)
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.global }}
+    # Allow from tesserix namespace (company website SSR calls to marketplace APIs)
+    - from:
+        - source:
+            namespaces:
+              - tesserix
+    # Allow monitoring
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+    # Allow internal CronJobs without Istio sidecar to access /internal/* endpoints
+    - from:
+        - source:
+            notPrincipals:
+              - "*"
+      to:
+        - operation:
+            paths:
+              - "/internal/*"
+
+---
+# DENY: Block other app namespaces from accessing marketplace
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-cross-product-to-marketplace
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: DENY
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.hms }}
+              - {{ .Values.appNamespaces.fanzone }}
+              - {{ .Values.appNamespaces.homechef }}
+              - {{ .Values.appNamespaces.bookkeeping }}
+
+# =============================================================================
+# HMS Namespace Policies
+# Hospital Management System isolation
+# =============================================================================
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-hms
+  namespace: {{ .Values.appNamespaces.hms }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-internal-hms
+  namespace: {{ .Values.appNamespaces.hms }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.hms }}
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.global }}
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-cross-product-to-hms
+  namespace: {{ .Values.appNamespaces.hms }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: DENY
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.marketplace }}
+              - {{ .Values.appNamespaces.fanzone }}
+              - {{ .Values.appNamespaces.homechef }}
+              - {{ .Values.appNamespaces.bookkeeping }}
+
+# =============================================================================
+# FanZone Namespace Policies
+# Sports/gaming platform isolation
+# =============================================================================
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-fanzone
+  namespace: {{ .Values.appNamespaces.fanzone }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-internal-fanzone
+  namespace: {{ .Values.appNamespaces.fanzone }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.fanzone }}
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.global }}
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-cross-product-to-fanzone
+  namespace: {{ .Values.appNamespaces.fanzone }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: DENY
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.marketplace }}
+              - {{ .Values.appNamespaces.hms }}
+              - {{ .Values.appNamespaces.homechef }}
+              - {{ .Values.appNamespaces.bookkeeping }}
+
+# =============================================================================
+# HomeChef Namespace Policies
+# Food platform isolation
+# =============================================================================
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-homechef
+  namespace: {{ .Values.appNamespaces.homechef }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-internal-homechef
+  namespace: {{ .Values.appNamespaces.homechef }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.homechef }}
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.global }}
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+    - from:
+        - source:
+            namespaces:
+              - knative-serving
+
+---
+# Allow mesh-internal traffic (Knative local gateway routes without mTLS identity)
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-mesh-internal-homechef
+  namespace: {{ .Values.appNamespaces.homechef }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - {}
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-cross-product-to-homechef
+  namespace: {{ .Values.appNamespaces.homechef }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: DENY
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.marketplace }}
+              - {{ .Values.appNamespaces.hms }}
+              - {{ .Values.appNamespaces.fanzone }}
+              - {{ .Values.appNamespaces.bookkeeping }}
+
+# =============================================================================
+# Bookkeeping Namespace Policies
+# Accounting platform isolation
+# =============================================================================
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-bookkeeping
+  namespace: {{ .Values.appNamespaces.bookkeeping }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-internal-bookkeeping
+  namespace: {{ .Values.appNamespaces.bookkeeping }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.bookkeeping }}
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.global }}
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-cross-product-to-bookkeeping
+  namespace: {{ .Values.appNamespaces.bookkeeping }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: DENY
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.marketplace }}
+              - {{ .Values.appNamespaces.hms }}
+              - {{ .Values.appNamespaces.fanzone }}
+              - {{ .Values.appNamespaces.homechef }}
+
+# =============================================================================
+# Database Access Policies
+# Each app namespace can only access its own database namespace
+# =============================================================================
+{{- range $key, $dbNs := .Values.databaseNamespaces }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-{{ $key }}-db-access
+  namespace: {{ $dbNs }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    # Only allow from corresponding app namespace
+    - from:
+        - source:
+            namespaces:
+              - {{ index $.Values.appNamespaces $key }}
+        - source:
+            principals:
+              - "cluster.local/ns/{{ index $.Values.appNamespaces $key }}/sa/*"
+{{- end }}
+
+# =============================================================================
+# Redis Access Policies
+# Each app namespace can only access its own Redis namespace
+# =============================================================================
+{{- range $key, $redisNs := .Values.redisNamespaces }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-{{ $key }}-redis-access
+  namespace: {{ $redisNs }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ index $.Values.appNamespaces $key }}
+        - source:
+            principals:
+              - "cluster.local/ns/{{ index $.Values.appNamespaces $key }}/sa/*"
+{{- end }}
+
+# =============================================================================
+# Infrastructure Service Policies
+# NATS, Typesense, Email accessible by all app namespaces
+# =============================================================================
+---
+# NATS access policy
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-apps-to-nats
+  namespace: nats
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    {{- range $key, $ns := .Values.appNamespaces }}
+    - from:
+        - source:
+            namespaces:
+              - {{ $ns }}
+    {{- end }}
+
+---
+# Typesense access policy
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-apps-to-typesense
+  namespace: typesense
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    {{- range $key, $ns := .Values.appNamespaces }}
+    - from:
+        - source:
+            namespaces:
+              - {{ $ns }}
+    {{- end }}
+
+---
+# Email (Postal) access policy - global, marketplace, internal email, and monitoring
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-global-to-email
+  namespace: email
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.global }}
+              - {{ .Values.appNamespaces.marketplace }}
+              - email
+              - istio-ingress
+              - monitoring
+              - istio-system
+
+# =============================================================================
+# Infrastructure Service Policies
+# Translation, Identity, GrowthBook, Photon
+# =============================================================================
+---
+# Translation namespace access policy
+# LibreTranslate, Bergamot, HuggingFace accessible by marketplace and global
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-apps-to-translation
+  namespace: {{ .Values.infrastructureNamespaces.translation }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    # Allow marketplace (translation-service calls providers)
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.marketplace }}
+              - {{ .Values.appNamespaces.global }}
+    # Allow ingress for external testing
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+    # Allow monitoring
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+
+---
+# Identity (Keycloak) access policy
+# All app namespaces need auth
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-apps-to-identity
+  namespace: {{ .Values.infrastructureNamespaces.identity }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    # Allow from ingress gateway (user login flows)
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+    # Allow all app namespaces (service-to-service auth)
+    {{- range $key, $ns := .Values.appNamespaces }}
+    - from:
+        - source:
+            namespaces:
+              - {{ $ns }}
+    {{- end }}
+    # Allow monitoring
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+
+{{- if index .Values.infrastructureNamespaces "identity-internal" }}
+---
+# Identity Internal (Keycloak) access policy
+# All app namespaces need internal auth (staff/admin login flows)
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-apps-to-identity-internal
+  namespace: {{ index .Values.infrastructureNamespaces "identity-internal" }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    # Allow from ingress gateway (staff login flows)
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+    # Allow all app namespaces (service-to-service auth)
+    {{- range $key, $ns := .Values.appNamespaces }}
+    - from:
+        - source:
+            namespaces:
+              - {{ $ns }}
+    {{- end }}
+    # Allow monitoring
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+{{- end }}
+
+---
+# GrowthBook access policy
+# All app namespaces need feature flags
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-apps-to-growthbook
+  namespace: {{ .Values.infrastructureNamespaces.growthbook }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    # Allow from ingress gateway (admin access)
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+    # Allow all app namespaces (feature flag checks)
+    {{- range $key, $ns := .Values.appNamespaces }}
+    - from:
+        - source:
+            namespaces:
+              - {{ $ns }}
+    {{- end }}
+    # Allow monitoring
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+
+---
+# OpenPanel access policy
+# Ingress gateway needs to reach dashboard and API
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-openpanel
+  namespace: {{ .Values.infrastructureNamespaces.openpanel }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    # Allow from ingress gateway (dashboard + API access)
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+    # Allow internal namespace traffic (data stores)
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.infrastructureNamespaces.openpanel }}
+    # Allow monitoring
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+
+{{- if .Values.infrastructureNamespaces.photon }}
+---
+# Photon (geocoding) access policy
+# Only location-service in marketplace needs this
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-marketplace-to-photon
+  namespace: {{ .Values.infrastructureNamespaces.photon }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    # Allow marketplace namespace (location-service)
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.marketplace }}
+    # Allow ingress for external API access
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+    # Allow monitoring
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+{{- end }}
+
+# =============================================================================
+# Public Endpoints Policy
+# Allow unauthenticated access to health checks, login, etc.
+# =============================================================================
+{{- range $key, $ns := .Values.appNamespaces }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: public-endpoints-{{ $key }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    # Health check endpoints
+    - to:
+        - operation:
+            paths:
+              - "/health"
+              - "/healthz"
+              - "/ready"
+              - "/metrics"
+    # CORS preflight
+    - to:
+        - operation:
+            methods: ["OPTIONS"]
+{{- end }}
+
+{{- end }}

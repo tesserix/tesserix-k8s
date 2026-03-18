@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: ingress
+data:
+  config.yaml: |
+    tunnel: 6a756e3d-b7e6-492b-ab01-7e6f7d727951
+    credentials-file: /etc/cloudflared/credentials/credentials.json
+    metrics: 0.0.0.0:2000
+    no-autoupdate: true
+
+    ingress:
+      # Cluster tools (direct to service, bypasses Istio)
+      - hostname: argocd.tesserix.app
+        service: http://argocd-server.argocd.svc.cluster.local:80
+      # Platform
+      - hostname: tesserix.app
+        service: http://istio-ingressgateway.istio-system.svc.cluster.local:80
+      - hostname: "*.tesserix.app"
+        service: http://istio-ingressgateway.istio-system.svc.cluster.local:80
+
+      # Marketplace
+      - hostname: mark8ly.com
+        service: http://istio-ingressgateway.istio-system.svc.cluster.local:80
+      - hostname: "*.mark8ly.com"
+        service: http://istio-ingressgateway.istio-system.svc.cluster.local:80
+
+      # Catch-all
+      - service: http_status:404

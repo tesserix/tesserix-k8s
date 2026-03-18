@@ -1,0 +1,143 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: growthbook
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: feature-flags
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/growthbook
+    targetRevision: HEAD
+    helm:
+      releaseName: growthbook
+      values: |
+        # GrowthBook configuration for PRODUCTION environment
+        replicaCount: 2
+
+        image:
+          repository: growthbook/growthbook
+          tag: "latest"
+          pullPolicy: Always
+
+        # Service configuration
+        service:
+          type: ClusterIP
+          appPort: 3000
+          apiPort: 3100
+
+        # Resource configuration for production (higher than devtest)
+        resources:
+          requests:
+            memory: 1Gi
+          limits:
+            memory: 2Gi
+
+        # GrowthBook environment configuration
+        config:
+          nodeEnv: "production"
+          appOrigin: "https://growthbook.mark8ly.com"
+          apiHost: "https://growthbook.mark8ly.com:443"
+          uploadMethod: "local"
+          disableTelemetry: true
+          enableOpenFeature: true
+
+        # Secrets reference
+        secrets:
+          jwtSecretName: "growthbook-secrets"
+          jwtSecretKey: "jwt-secret"
+          encryptionKeySecretName: "growthbook-secrets"
+          encryptionKeyKey: "encryption-key"
+
+        # MongoDB configuration
+        mongodb:
+          enabled: true
+          image:
+            repository: mongo
+            tag: "7.0"
+          auth:
+            enabled: false
+          persistence:
+            enabled: true
+            size: 20Gi
+            storageClassName: standard-rwo
+          resources:
+            requests:
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+
+        # Persistence for local uploads
+        persistence:
+          enabled: true
+          size: 10Gi
+          storageClassName: standard-rwo
+
+        # Extra environment variables for self-hosted setup
+        extraEnv:
+          - name: ALLOW_SELF_ORG_CREATION
+            value: "true"
+          - name: IS_MULTI_ORG
+            value: "false"
+          # Explicitly mark as self-hosted (not cloud)
+          - name: IS_CLOUD
+            value: "false"
+          # Allow local authentication without SSO
+          - name: AUTH_TYPE
+            value: "local"
+          # Enable unauthenticated API access for SDK
+          - name: ALLOW_UNAUTHENTICATED_API
+            value: "true"
+
+        # Feature Seeding Configuration
+        # Automatically creates all 34 feature flags on install/upgrade
+        # SAME features as devtest - environment-specific config only
+        featureSeeding:
+          enabled: true
+          environment: "prod"
+          organizationName: "Tesserix"
+          sdkConnectionName: "Tesserix Platform"
+          sdkEnvironment: "production"
+          adminEmail: "admin@mark8ly.com"
+          adminName: "Tesserix Admin"
+          createAdminSecret: false
+          adminPasswordSecret:
+            name: "growthbook-admin-secret"
+            key: "password"
+          sealedSecret:
+            enabled: true
+            # TODO: Generate sealed secret for prod cluster:
+            # echo -n 'PROD_PASSWORD_HERE' | kubeseal --raw --namespace growthbook --name growthbook-admin-secret --controller-namespace sealed-secrets --context prod-cluster
+            encryptedPassword: "REPLACE_WITH_PROD_SEALED_SECRET"
+          image:
+            repository: curlimages/curl
+            tag: "8.5.0"
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: growthbook
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Replace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

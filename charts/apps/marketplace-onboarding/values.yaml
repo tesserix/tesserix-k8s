@@ -1,0 +1,70 @@
+serviceType: nextjs
+port: 3000
+healthPath: /api/health
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/tesserix/marketplace-onboarding
+  tag: latest
+
+knative:
+  enabled: false
+  minScale: 0
+  maxScale: 5
+  concurrencyTarget: 50
+  containerConcurrency: 50
+  timeoutSeconds: 60
+
+probes:
+  startup:
+    failureThreshold: 15
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 20
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+db:
+  enabled: true
+  host: ""
+  port: ""
+  name: ""
+  user: ""
+  sslmode: ""
+  secretKey: mp_onboarding-db-password
+
+openfga:
+  enabled: false
+  url: ""
+  authMode: ""
+  apiKeySecret: false
+  storeId: ""
+
+externalSecrets:
+  enabled: true
+  secretStoreRef: gcp-secret-store
+  refreshInterval: 15m
+
+extraSecrets: []
+
+env:
+  AUTH_BFF_URL: http://auth-bff.marketplace.svc.cluster.local
+  TENANT_SERVICE_URL: http://tenant-service.marketplace.svc.cluster.local
+  LOCATION_SERVICE_URL: http://location-service.marketplace.svc.cluster.local
+  VERIFICATION_SERVICE_URL: http://verification-service.marketplace.svc.cluster.local
+  TENANT_ROUTER_SERVICE_URL: http://tenant-router-service.marketplace.svc.cluster.local
+  CSRF_ALLOWED_DOMAINS: mark8ly.com
+
+gcp:
+  projectId: ""

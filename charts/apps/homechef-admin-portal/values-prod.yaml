@@ -1,0 +1,39 @@
+# Production overrides for homechef-admin-portal
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+# Knative Serving - always-on for admin portal stability
+knative:
+  enabled: true
+  minScale: 1
+  maxScale: 10
+  scaleDownDelay: "60s"
+
+replicaCount: 2
+
+# Production resource allocation
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    memory: 512Mi
+
+# Production environment
+env:
+  NODE_ENV: "production"
+  VITE_BFF_URL: "https://internal-identity.fe3dr.com"
+
+# Disable HPA and KEDA — Knative handles autoscaling
+autoscaling:
+  enabled: false
+
+keda:
+  enabled: false
+
+# Production GCP configuration
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-homechef-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  secretManager:
+    secretPrefix: "prod"

@@ -1,0 +1,68 @@
+{{/*
+Worker Deployment - Event processing worker (port 9999)
+*/}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openpanel.fullname" . }}-worker
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "openpanel.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      annotations:
+        {{- toYaml .Values.podAnnotations | nindent 8 }}
+        traffic.sidecar.istio.io/excludeOutboundPorts: "5432,8123,9000,6379"
+      labels:
+        {{- include "openpanel.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: {{ include "openpanel.serviceAccountName" . }}
+      containers:
+        - name: worker
+          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
+          imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.worker.port }}
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: {{ .Values.config.nodeEnv | quote }}
+            - name: DASHBOARD_URL
+              value: {{ .Values.config.dashboardUrl | quote }}
+            - name: NEXT_PUBLIC_API_URL
+              value: {{ .Values.config.apiUrl | quote }}
+            - name: VITE_SELF_HOSTED
+              value: "true"
+            - name: SELF_HOSTED
+              value: "true"
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.postgresqlPasswordKey }}
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "openpanel.fullname" . }}-postgresql:{{ .Values.postgresql.port }}/{{ .Values.postgresql.database }}"
+            - name: DATABASE_URL_DIRECT
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "openpanel.fullname" . }}-postgresql:{{ .Values.postgresql.port }}/{{ .Values.postgresql.database }}"
+            - name: CLICKHOUSE_URL
+              value: "http://{{ include "openpanel.fullname" . }}-clickhouse:{{ .Values.clickhouse.httpPort }}"
+            - name: REDIS_URL
+              value: "redis://{{ include "openpanel.fullname" . }}-redis:{{ .Values.redis.port }}"
+            - name: COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.cookieSecretKey }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}

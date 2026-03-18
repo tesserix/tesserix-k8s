@@ -1,0 +1,74 @@
+# NATS Configuration
+replicaCount: 1
+
+# Cluster mode (enable for multi-replica HA)
+cluster:
+  enabled: false
+
+image:
+  repository: nats
+  tag: "alpine"  # Uses latest stable alpine version
+  pullPolicy: Always
+
+# Enable JetStream for persistent messaging
+jetstream:
+  enabled: true
+  memoryStore:
+    enabled: true
+    maxSize: 256Mi
+  fileStore:
+    enabled: true
+    size: 1Gi
+    storageClassName: ""  # Use default storage class
+
+# Service configuration
+service:
+  type: ClusterIP
+  # Client port
+  port: 4222
+  # Cluster port (for NATS clustering)
+  clusterPort: 6222
+  # HTTP monitoring port
+  monitorPort: 8222
+
+# Resource limits
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# NATS configuration
+config:
+  # Max payload size (1MB default)
+  maxPayload: 1048576
+  # Max connections
+  maxConnections: 1000
+  # Enable monitoring
+  httpMonitor: true
+  # Debug logging (disable in production)
+  debug: false
+  trace: false
+
+# Persistence for JetStream
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+
+# Internal Load Balancer for Cloud Run VPC access
+ilb:
+  enabled: false
+
+# Node selector, tolerations, affinity
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,182 @@
+{{- if .Values.restore.enabled }}
+{{- $dbHost := default .Values.backup.database.host .Values.restore.database.host }}
+{{- $dbPort := default .Values.backup.database.port .Values.restore.database.port }}
+{{- $dbUser := default .Values.backup.database.user .Values.restore.database.user }}
+{{- $passwordSecretName := default .Values.backup.database.passwordSecretName .Values.restore.database.passwordSecretName }}
+{{- $passwordSecretKey := default .Values.backup.database.passwordSecretKey .Values.restore.database.passwordSecretKey }}
+{{- $sslMode := default .Values.backup.database.sslMode .Values.restore.database.sslMode }}
+{{- $gcsBucket := default .Values.backup.gcs.bucket .Values.restore.gcs.bucket }}
+{{- $targetDb := .Values.restore.targetDatabase }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "postgresql-backup.fullname" . }}-restore
+  labels:
+    {{- include "postgresql-backup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: restore
+  annotations:
+    # Ensure this job is manually triggered and not auto-synced
+    argocd.argoproj.io/hook: Skip
+spec:
+  backoffLimit: {{ .Values.cronJob.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.cronJob.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "postgresql-backup.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: restore
+      annotations:
+        # Disable Istio sidecar for restore jobs
+        sidecar.istio.io/inject: "false"
+    spec:
+      serviceAccountName: {{ include "postgresql-backup.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      restartPolicy: {{ .Values.cronJob.restartPolicy }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: restore
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -eo pipefail
+
+              # Variables
+              BACKUP_FILE="{{ .Values.restore.backupFile }}"
+              GCS_PATH="gs://{{ $gcsBucket }}/${BACKUP_FILE}"
+              LOCAL_FILE="/tmp/$(basename ${BACKUP_FILE})"
+              TARGET_DB="{{ $targetDb }}"
+              PG_HOST="{{ $dbHost }}"
+              PG_PORT="{{ $dbPort }}"
+              PG_USER="{{ $dbUser }}"
+              CREATE_DB="{{ .Values.restore.settings.createDatabase }}"
+
+              echo "========================================"
+              echo "PostgreSQL Restore Job"
+              echo "========================================"
+              echo "WARNING: This will overwrite existing data!"
+              echo "========================================"
+              echo "Target Database: ${TARGET_DB}"
+              echo "Host: ${PG_HOST}:${PG_PORT}"
+              echo "Backup File: ${GCS_PATH}"
+              echo "Create DB if missing: ${CREATE_DB}"
+              echo "========================================"
+
+              # Validate target database is specified
+              if [ -z "${TARGET_DB}" ]; then
+                echo "ERROR: Target database not specified!"
+                echo "Set restore.targetDatabase in values"
+                exit 1
+              fi
+
+              # Download backup from GCS
+              echo ""
+              echo "Downloading backup from GCS..."
+              gsutil cp ${GCS_PATH} ${LOCAL_FILE}
+
+              # Get file size
+              BACKUP_SIZE=$(du -h ${LOCAL_FILE} | cut -f1)
+              echo "Downloaded: $(basename ${BACKUP_FILE}) (${BACKUP_SIZE})"
+
+              # Check if database exists
+              echo ""
+              echo "Checking if database exists..."
+              DB_EXISTS=$(PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+                --host=${PG_HOST} \
+                --port=${PG_PORT} \
+                --username=${PG_USER} \
+                --dbname=postgres \
+                -Atc "SELECT 1 FROM pg_database WHERE datname = '${TARGET_DB}'" 2>/dev/null || echo "")
+
+              if [ "${DB_EXISTS}" != "1" ]; then
+                if [ "${CREATE_DB}" = "true" ]; then
+                  echo "Database ${TARGET_DB} does not exist, creating..."
+                  PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+                    --host=${PG_HOST} \
+                    --port=${PG_PORT} \
+                    --username=${PG_USER} \
+                    --dbname=postgres \
+                    -c "CREATE DATABASE \"${TARGET_DB}\""
+                  echo "Database created successfully"
+                else
+                  echo "ERROR: Database ${TARGET_DB} does not exist and createDatabase is false"
+                  exit 1
+                fi
+              else
+                echo "Database ${TARGET_DB} exists"
+              fi
+
+              # Restore database using pg_restore
+              echo ""
+              echo "Starting pg_restore to ${TARGET_DB}..."
+              PGPASSWORD="${POSTGRES_PASSWORD}" pg_restore \
+                --host=${PG_HOST} \
+                --port=${PG_PORT} \
+                --username=${PG_USER} \
+                --dbname=${TARGET_DB} \
+                {{- if .Values.restore.settings.clean }}
+                --clean \
+                {{- end }}
+                {{- if .Values.restore.settings.ifExists }}
+                --if-exists \
+                {{- end }}
+                --jobs={{ .Values.restore.settings.parallelJobs }} \
+                {{ .Values.restore.settings.extraArgs }} \
+                ${LOCAL_FILE} 2>&1 || true
+
+              # Verify restore
+              echo ""
+              echo "Verifying restore..."
+              TABLE_COUNT=$(PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+                --host=${PG_HOST} \
+                --port=${PG_PORT} \
+                --username=${PG_USER} \
+                --dbname=${TARGET_DB} \
+                -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'" 2>/dev/null || echo "0")
+              echo "Tables in ${TARGET_DB}: ${TABLE_COUNT}"
+
+              # Cleanup local file
+              rm -f ${LOCAL_FILE}
+
+              echo ""
+              echo "========================================"
+              echo "Restore completed!"
+              echo "========================================"
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $passwordSecretName }}
+                  key: {{ $passwordSecretKey }}
+            - name: PGSSLMODE
+              value: {{ $sslMode | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 10Gi
+{{- end }}

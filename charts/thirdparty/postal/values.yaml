@@ -1,0 +1,242 @@
+# Default values for Postal SMTP
+replicaCount: 1
+
+image:
+  repository: ghcr.io/postalserver/postal
+  tag: "latest"
+  pullPolicy: Always
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Postal configuration
+postal:
+  # Main domain for Postal (must match the Virtual Service hostname)
+  webHostname: "dev-postal.tesserix.app"
+  # SMTP hostname
+  smtpHostname: "smtp.tesserix.app"
+  # Additional hosts allowed for API access (cluster-internal hostnames)
+  # These are automatically added: postal-web.email.svc.cluster.local, 127.0.0.1, localhost
+  additionalHosts: []
+  # Secret key for encryption
+  secretKey: ""
+  # Signing key path
+  signingKeyPath: "/opt/postal/config/signing.key"
+  # Default DKIM selector
+  dkimSelector: "postal"
+
+# Database configuration (MySQL required)
+database:
+  host: "mysql.email.svc.cluster.local"
+  port: "3306"
+  database: "postal"
+  username: "postal"
+  existingSecret: "mysql-credentials"
+  existingSecretPasswordKey: "postal-password"
+  poolSize: 5
+
+# Message database (separate from main DB)
+messageDatabase:
+  host: "mysql.email.svc.cluster.local"
+  port: "3306"
+  # Postal automatically appends -server-{id} to create database name: postal-server-1
+  prefix: "postal"
+  username: "postal"
+  existingSecret: "mysql-credentials"
+  existingSecretPasswordKey: "postal-password"
+
+# RabbitMQ configuration
+rabbitmq:
+  host: "rabbitmq.email.svc.cluster.local"
+  port: "5672"
+  vhost: "postal"
+  username: "postal"
+  existingSecret: "rabbitmq-credentials"
+  existingSecretPasswordKey: "password"
+
+# SMTP server configuration
+smtp:
+  enabled: true
+  port: 25
+  tlsPort: 465
+  submissionPort: 587
+  # TLS certificate
+  tlsEnabled: false
+  existingTlsSecret: ""
+
+# DNS configuration
+dns:
+  # MX record hostname
+  mxRecords:
+    - "smtp.tesserix.app"
+  # SPF record
+  spfInclude: "spf.postal.tesserix.app"
+  # Return path domain
+  returnPathDomain: "rp.postal.tesserix.app"
+  # Route domain
+  routeDomain: "routes.postal.tesserix.app"
+  # Tracking domain
+  trackDomain: "track.postal.tesserix.app"
+
+# SMTP relay settings (for outbound email delivery)
+# GCP blocks outbound port 25, so we relay through AWS SES SMTP or SendGrid
+# Provider options: "ses" (AWS SES) or "sendgrid"
+relay:
+  enabled: true
+  # Default provider - can be overridden in environment-specific config
+  provider: "sendgrid"  # "ses" or "sendgrid"
+
+  # AWS SES SMTP Configuration (Mumbai region - ap-south-1)
+  ses:
+    host: "email-smtp.ap-south-1.amazonaws.com"
+    port: 587
+    # SMTP credentials are different from IAM credentials
+    # Generated in AWS SES Console > SMTP Settings > Create SMTP credentials
+    username: "AKIAQ4IPRTELV4NVSHVT"
+    existingSecret: "ses-smtp-credentials"
+    existingSecretPasswordKey: "SES_SMTP_PASSWORD"
+    sealedSecret:
+      enabled: true
+      # kubeseal encrypted SES SMTP password for email namespace
+      # Generate with: echo -n "PASSWORD" | kubeseal --raw --namespace email --name ses-smtp-credentials --controller-name sealed-secrets-controller --controller-namespace sealed-secrets --from-file=/dev/stdin
+      encryptedData:
+        SES_SMTP_PASSWORD: "AgCubfSDz9Jb4YnZH4d+mNmimpf6DIi9lE4FqS/lugm8HRfef/eUb8VDMs7pjz99fIyF2y+nlljfO4dcj3gS1fWIky0lqmuyoWwbEkjHngDc9epHJJedzBAIbNYFnNKpTLcsA3Wt50JaR+3BZb9oKoM7zNypzTp+SHDJlN3Ef5nK0epYLXK12xzJ+mZOWVbUGNW2C+LyV2afM/e6an0Ahp71zyKPF8coPDdp8n8F2OFcrO57FYNA8wWcLrjZ9VIPoQ4Cun8m8jeSIU8IBLXS0fXwk5BuoWcYdJtPxiDnijSJTmFnkF1pMH3x9ozY8jNQmz+GLKigT2OvQ/ObO9Blo3o2EUVaV/2djf/4rKfLp/jwSU3t9RqJamx5gBH9i3kUoLT9iB2K/QfrwnG5Ha8vs8Vl9nOScDbhRKA4Ko8OznTqvdNxIG+J60zSfBMCsEwe6byvqXAstEEI2FRdjiYmJyj7HB5VUc4RFl4yg77z1G4ltYQKWEu0NbqEuVnuWpKaA48/O4vpQImgd6UQ8IreksukFbiqj40yT/NzxcbNwwr0sdBANMyGcgKcm7Fp//MmAaO99AIOEUQpuPGYEx4AElP+620jIt7ZMdt24lqhdsAyXh41HBkQrMxYC6IuNCL3G4gx0qbUWKNqU9dL+tQSQgoq6tUgWKHv2MzVlpcClc8xVLuh1mA3xiCqmHtIFM7JA4LPBMuXgymxCuDrqLkrbASYsz85cKKRjMIAJgj9P4/ee4Bb/+LYMYlC+7RAHw=="
+
+  # SendGrid SMTP Configuration (fallback)
+  sendgrid:
+    host: "smtp.sendgrid.net"
+    port: 587
+    username: "apikey"
+    existingSecret: "sendgrid-credentials"
+    existingSecretPasswordKey: "SENDGRID_API_KEY"
+    sealedSecret:
+      enabled: true
+      encryptedData:
+        SENDGRID_API_KEY: AgB+R7ZtdMyO47qkjfF/qV+CHes1Ph2jHk4S80nF/vo39nPLi4kYQ3Wjn1HZuDONtPygk8HcyL4qGE7sINwUaTKTz9PkOqmT5nyGFyoAw4oyf6dXsOQUxOeyWe9Ujl139XOLKxHYgyyF9+poX4sd8kF3HTVO+PSOOnIFgoR2/wiLFUbqoBS0jw0zNHZ4JSsMVKxgK2t36Vg9YE6gsCl4yNVuxGmFks4Q9aIv+SJal4Gyqq5IEh6LO6z1/ZasVf/Fpc5pyUzTzdvzL9rlOrLEXwd6XJLszvfdBq78xbvSq/sXL6YWC4GQGB2oxIby9lAkd0wlvfIR3YtLmqWnqKU7dmcgQ4kOvETkFDvsufXLCaIeCEkUZaqn76RSJfB+o89JRwaXggQ4FCdpzW/KB95jCC4I/B1UTvKc9yzP2h01QiBzbf4tBuzLxPX5S4e9SNUOt45K3SNDHUB4jI8IdO0sO+NnbZcZKv/gk8peCjcGwyxRnMkkTTGTfBgmQMpGgkcwktlBstVsVQx5eoiqObGHUK1GaiaXHsLLsi9VmSwwJu0akbz0TTv6t6kK8TWYpr+pDbcR7oePYBBt0UF+5WSn0LQwgAKJPQFQNHu6jrQbihxe6yaCmGIO7ufLj64EcTEbloBD5zHvmaTC3Pot30ZeAsobClq7kKCWc0KsqyGL/bEkFVYTtzLMkj354RtfIA1gl7XPZepX2i50iqHBs9ZZopFbAqhVytFxEWt+DpKlJpoRrqdf/NlZENXRoc1jAVSCJ5IJUGjOH+Cg5Y060NlRWy6eHZYhAd4=
+
+# Web interface service
+web:
+  service:
+    type: ClusterIP
+    port: 5000
+
+# SMTP service
+smtpService:
+  type: ClusterIP
+  port: 25
+
+# Credentials sealed secret
+credentials:
+  existingSecret: "postal-credentials"
+  # Keys in the secret
+  secretKeySecretKey: "secret-key"
+  signingKeySecretKey: "signing-key"
+
+# Sealed secret configuration
+sealedSecret:
+  enabled: false
+  secretKey: ""
+  signingKey: ""
+
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    memory: 512Mi
+
+persistence:
+  enabled: true
+  storageClass: "standard-rwo"
+  size: 5Gi
+  accessModes:
+    - ReadWriteOnce
+
+livenessProbe:
+  enabled: true
+  # Use TCP probe since Postal returns 403 until initialized
+  tcpSocket:
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+
+readinessProbe:
+  enabled: true
+  # Use TCP probe since Postal returns 403 until initialized
+  tcpSocket:
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+podAnnotations:
+  # Istio sidecar configuration
+  sidecar.istio.io/inject: "true"
+  # Exclude MySQL and RabbitMQ ports from Istio sidecar
+  traffic.sidecar.istio.io/excludeOutboundPorts: "3306,5672"
+  # Exclude GCP metadata server for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Init container for database setup
+initContainers:
+  enabled: true
+
+# Worker configuration
+worker:
+  enabled: true
+  replicaCount: 1
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      memory: 256Mi
+
+# Cron job configuration
+cron:
+  enabled: true
+
+# Init setup job configuration
+# Automatically creates admin user, organization, server, and API credential
+initSetup:
+  enabled: true
+  admin:
+    email: "admin@tesserix.app"
+    firstName: "Admin"
+    lastName: "User"
+    # Password is loaded from existing secret
+    existingSecret: "postal-admin-credentials"
+    existingSecretPasswordKey: "password"
+    # Sealed secret configuration (generate with kubeseal)
+    sealedSecret:
+      enabled: true
+      # Generate with: echo -n "YourPassword" | kubeseal --raw --namespace email --name postal-admin-credentials
+      encryptedPassword: "AgAbYl+WDL3A3U+dCdUu8/+Ii7Rx1G/1pyAkIrhrjdbl1+Dkmnq2GomPYp3z6fjqw7BHC3ExZyngBGMGKKd/yLzRLRtx6JwIsV0pRAD3zLMr8nvU8furXCIMKoWV5LUiryZF+R4Taj0z9Y66oCC4n6CRG1UyzMwD6fWTZ7B2rIFlJ1/YlcKxizx97KMTCqwns2gCKGIWxh9Wu+DubNFdsahBJrWYIH3WAgSXgqFe6FMlL/e8dmLta0e0Jgwvi1BU5VeG20/1th3NNbL4xwtyre5Wd/P1WPQ7SmpIELz69fvAKJLG6cLCasJz0wpfNmHlk3w7jostcUBeiQMnB/bgx0aLDiRcmoSSr/xx8PWhuQBj2MNzwC5dXkWM8xe5nQBu2SQukSe2mt4KEagowK2euxFRQu4wzFy9bkguK5IFuwsLHO0ZRFxCysJZ9JkFj5hBOQU6nCw2guHILva0FVZOS4Y3Vadw7xtS0czvOI8vWKiW3RJK28DeZWlhRdnrYAr6/qApVtrm1PjDKbga5EnxWyju7TWhcBB5h6IKac2Oua2axWEBxDlSXaBbFjYDiEnibaUvROL3ySO9o8N/RyQX06+MauHMXWaqS3O9N4aRXvo6pKPi05vc+4j3AkjmJkxYBN8nb+mWzOMvTS/u/NlCZC4TAVDZzXGIo99aqATG1RJzM7+wjIqAYd7mbHUUa1hw/n8pVFEXxRkNo7MikgNNgVWlJ61N"
+  organization:
+    name: "Tesserix"
+    permalink: "tesserix"
+  server:
+    name: "Notifications"
+    permalink: "notifications"
+  credential:
+    name: "notification-service"
+    secretName: "postal-api-credential"
+  # Sender domains to configure automatically
+  # These domains will be added to the mail server and can be used as FROM addresses
+  domains:
+    - name: "tesserix.app"
+      # Auto-verify the domain (skip DNS verification)
+      # In production, you should set up proper DNS records
+      autoVerify: true

@@ -1,0 +1,53 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fanzone-web
+  namespace: argocd
+  annotations:
+    kargo.akuity.io/authorized-stage: fanzone--prod:fanzone-web-prod
+  labels:
+    app.kubernetes.io/part-of: fanzone-battle-ground
+    app.kubernetes.io/component: frontend
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: fanzone
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/fanzone-web
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-prod.yaml
+      parameters:
+        - name: image.tag
+          value: "latest"
+        - name: ingress.hosts[0].host
+          value: fanzonebattleground.com
+        - name: ingress.tls[0].hosts[0]
+          value: fanzonebattleground.com
+        - name: env.NEXT_PUBLIC_API_URL
+          value: https://fanzonebattleground.com/api
+        - name: env.NEXT_PUBLIC_WS_URL
+          value: wss://fanzonebattleground.com/ws
+        - name: env.NEXT_PUBLIC_AUTH_URL
+          value: https://fanzonebattleground.com/auth
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fanzone
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

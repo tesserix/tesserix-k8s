@@ -1,0 +1,160 @@
+# =============================================================================
+# Helm Chart Release All Workflow
+# Packages and pushes ALL Helm charts to GHCR (manual trigger only)
+# =============================================================================
+name: Helm Release All Charts
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_suffix:
+        description: 'Version suffix (e.g., rc1, beta1, or leave empty for release)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run (package but do not push)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  HELM_VERSION: '3.14.0'
+  REGISTRY: ghcr.io
+  REGISTRY_USER: ${{ github.repository_owner }}
+
+jobs:
+  list-charts:
+    name: List All Charts
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    outputs:
+      charts: ${{ steps.list.outputs.charts }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: List all charts
+        id: list
+        run: |
+          charts=$(ls -d charts/apps/*/ | xargs -n1 basename | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "Found charts: $charts"
+          echo "charts=$charts" >> $GITHUB_OUTPUT
+
+  package-and-push:
+    name: Package and Push
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    needs: list-charts
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        chart: ${{ fromJson(needs.list-charts.outputs.charts) }}
+      max-parallel: 5
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Log in to GHCR
+        if: ${{ !inputs.dry_run }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get chart version
+        id: version
+        run: |
+          chart_path="charts/apps/${{ matrix.chart }}"
+          base_version=$(grep '^version:' "$chart_path/Chart.yaml" | awk '{print $2}')
+
+          if [ -n "${{ inputs.version_suffix }}" ]; then
+            version="${base_version}-${{ inputs.version_suffix }}"
+          else
+            version="$base_version"
+          fi
+
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "Chart: ${{ matrix.chart }}, Version: $version"
+
+      - name: Lint chart
+        run: |
+          helm lint "charts/apps/${{ matrix.chart }}" --strict
+
+      - name: Package chart
+        run: |
+          helm package "charts/apps/${{ matrix.chart }}" \
+            --version "${{ steps.version.outputs.version }}" \
+            --destination .helm-packages
+
+          echo "Packaged chart:"
+          ls -la .helm-packages/
+
+      - name: Push chart to GHCR
+        if: ${{ !inputs.dry_run }}
+        run: |
+          chart_package=$(ls .helm-packages/${{ matrix.chart }}-*.tgz)
+          echo "Pushing $chart_package to ${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts"
+
+          helm push "$chart_package" "oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts"
+
+      - name: Dry run - Show what would be pushed
+        if: ${{ inputs.dry_run }}
+        run: |
+          chart_package=$(ls .helm-packages/${{ matrix.chart }}-*.tgz)
+          echo "DRY RUN: Would push $chart_package to oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts"
+
+      - name: Upload chart artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-chart-${{ matrix.chart }}
+          path: .helm-packages/${{ matrix.chart }}-*.tgz
+          retention-days: 30
+
+  summary:
+    name: Release Summary
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    needs: [list-charts, package-and-push]
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Helm Chart Release All Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ inputs.dry_run }}" == "true" ]; then
+            echo "**Mode: DRY RUN** - Charts were packaged but not pushed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Mode: RELEASE** - Charts were packaged and pushed to GHCR" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Charts Processed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Chart | Registry URL |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------------|" >> $GITHUB_STEP_SUMMARY
+
+          charts='${{ needs.list-charts.outputs.charts }}'
+          echo "$charts" | jq -r '.[]' | while read chart; do
+            echo "| $chart | oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts/$chart |" >> $GITHUB_STEP_SUMMARY
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pull Commands" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "# Authenticate to GHCR" >> $GITHUB_STEP_SUMMARY
+          echo "helm registry login ${{ env.REGISTRY }} -u <username> -p <token>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Pull a specific chart" >> $GITHUB_STEP_SUMMARY
+          echo "helm pull oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts/<chart-name> --version <version>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Install a chart" >> $GITHUB_STEP_SUMMARY
+          echo "helm install <release-name> oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts/<chart-name> --version <version>" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,65 @@
+knative:
+  enabled: true
+  minScale: 1
+
+# Production overrides for subscription-service
+
+image:
+  repository: ghcr.io/tesserix/subscription-service
+  tag: "1.3.3"
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+replicaCount: 0
+
+# Istio sidecar configuration for NATS connectivity
+podAnnotations:
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432"
+
+# Production resource allocation
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    memory: 256Mi
+
+# Production environment
+env:
+  GIN_MODE: "release"
+  BASE_DOMAIN: "mark8ly.com"
+  CORS_ALLOWED_ORIGINS: "https://*.mark8ly.com,http://localhost:3000,http://localhost:3001"
+
+# Production GCP configuration
+gcp:
+  secretManager:
+    secretPrefix: "prod"
+
+keda:
+  enabled: false
+  minReplicaCount: 0
+  maxReplicaCount: 0
+  pollingInterval: 30
+  cooldownPeriod: 300
+  prometheus:
+    enabled: false
+    serverAddress: "http://prometheus.monitoring.svc.cluster.local:9090"
+    requestRateQuery: "sum(rate(istio_requests_total{destination_service_name=\"subscription-service\"}[2m]))"
+    requestRateThreshold: "30"
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "75"
+
+# Pod Disruption Budget - enabled for production HA
+pdb:
+  enabled: true
+  minAvailable: 1
+
+externalSecrets:
+  enabled: true
+  secretStoreRef: gcp-secret-store

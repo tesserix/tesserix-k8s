@@ -1,0 +1,102 @@
+# Swagger UI Configuration
+replicaCount: 1
+
+image:
+  repository: swaggerapi/swagger-ui
+  tag: "v5.10.3"
+  pullPolicy: IfNotPresent
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8080
+
+# Namespace
+namespace: marketplace
+
+# Resource limits
+resources:
+  limits:
+    memory: 128Mi
+  requests:
+    memory: 64Mi
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# Swagger UI Configuration
+config:
+  # Base URL path where Swagger UI is served
+  basePath: "/api/docs"
+
+  # URL to the OpenAPI specification
+  # This will be served from the same path
+  specUrl: "/api/docs/openapi.yaml"
+
+  # Page title
+  title: "Tesserix Platform API"
+
+  # OAuth2 configuration (if needed)
+  oauth2RedirectUrl: ""
+
+  # Enable "Try it out" by default
+  tryItOutEnabled: true
+
+  # Deep linking for sharing API endpoints
+  deepLinking: true
+
+  # Persist authorization data
+  persistAuthorization: true
+
+  # Display request duration
+  displayRequestDuration: true
+
+  # Syntax highlighting theme
+  syntaxHighlightTheme: "monokai"
+
+  # Validator URL (set to "none" to disable)
+  validatorUrl: "none"
+
+# OpenAPI Specification configuration
+openapi:
+  # Load spec from external URL or embed it
+  # Options: "url", "configmap"
+  source: "configmap"
+
+  # If source is "url", specify the URL
+  url: ""
+
+  # Servers to display in the spec
+  servers:
+    - url: "https://dev-api.tesserix.app"
+      description: "Development/Test Environment"
+    - url: "https://pilot-api.tesserix.app"
+      description: "Pilot/UAT Environment"
+    - url: "https://api.tesserix.app"
+      description: "Production Environment"
+
+# Health check configuration
+# Path should match basePath for proper health checks
+healthCheck:
+  path: /api/docs/
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+
+# Node selector, tolerations, affinity
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Pod annotations
+podAnnotations:
+  prometheus.io/scrape: "false"
+
+# Service Account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}

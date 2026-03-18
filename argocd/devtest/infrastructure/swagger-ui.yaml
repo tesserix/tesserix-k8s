@@ -1,0 +1,105 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: swagger-ui
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: documentation
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/swagger-ui
+    targetRevision: HEAD
+    helm:
+      releaseName: swagger-ui
+      values: |
+        # Swagger UI configuration for devtest environment
+        # Multi-tenant API documentation platform
+        replicaCount: 1
+
+        image:
+          repository: swaggerapi/swagger-ui
+          tag: "v5.10.3"
+          pullPolicy: IfNotPresent
+
+        # Deploy to marketplace namespace
+        namespace: marketplace
+
+        # Service configuration
+        service:
+          type: ClusterIP
+          port: 8080
+
+        # Resource configuration for devtest
+        resources:
+          requests:
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+
+        # Swagger UI Configuration
+        # Served at /api/docs path on tenant API domains (e.g., demo-store-api.tesserix.app/api/docs)
+        config:
+          basePath: "/api/docs"
+          specUrl: "/api/docs/openapi.yaml"
+          title: "Tesserix Platform API - Multi-Tenant Documentation"
+          tryItOutEnabled: true
+          deepLinking: true
+          persistAuthorization: true
+          displayRequestDuration: true
+          syntaxHighlightTheme: "monokai"
+          validatorUrl: "none"
+          # Custom favicon
+          favicon: "/api/docs/favicon-32x32.png"
+
+        # OpenAPI Specification
+        # Multi-tenant: API calls require X-Tenant-ID header
+        openapi:
+          source: "configmap"
+          servers:
+            - url: "https://dev-api.tesserix.app"
+              description: "Development/Test API Gateway"
+            - url: "https://pilot-api.tesserix.app"
+              description: "Pilot/UAT API Gateway"
+            - url: "https://api.tesserix.app"
+              description: "Production API Gateway"
+
+        # Health check configuration
+        healthCheck:
+          path: /api/docs/
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+
+        # Security context
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          fsGroup: 1000
+
+        # Service Account
+        serviceAccount:
+          create: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: marketplace
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - Replace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

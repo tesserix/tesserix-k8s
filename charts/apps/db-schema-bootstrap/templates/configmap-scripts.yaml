@@ -1,0 +1,199 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "db-schema-bootstrap.fullname" . }}-scripts
+  namespace: {{ include "db-schema-bootstrap.namespace" . }}
+  labels:
+    {{- include "db-schema-bootstrap.labels" . | nindent 4 }}
+data:
+  bootstrap.sh: |
+    #!/bin/sh
+    # =============================================================================
+    # DB Schema Bootstrap — idempotent database + schema provisioning
+    # =============================================================================
+    # Behaviour:
+    #   - Creates databases if they don't exist (derived from SQL filenames)
+    #   - Applies DDL with ON_ERROR_STOP=0 so "already exists" is a no-op
+    #   - Exits non-zero ONLY on connectivity failures or CREATE DATABASE failures
+    #   - "already exists" on constraints/triggers/etc is expected & logged as INFO
+    # =============================================================================
+
+    TOTAL_ERRORS=0
+    TOTAL_CREATED=0
+    TOTAL_APPLIED=0
+    TOTAL_SKIPPED=0
+    START_TS=$(date +%s)
+
+    # --- Logging helpers ---
+    log_info()  { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] INFO  $*"; }
+    log_warn()  { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] WARN  $*"; }
+    log_error() { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ERROR $*"; TOTAL_ERRORS=$((TOTAL_ERRORS + 1)); }
+    log_debug() { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] DEBUG $*"; }
+
+    # --- Banner ---
+    log_info "============================================="
+    log_info "DB Schema Bootstrap"
+    log_info "  app:       {{ .Values.app }}"
+    log_info "  schedule:  {{ .Values.schedule }}"
+    log_info "  node:      $(hostname)"
+    log_info "  psql:      $(psql --version 2>/dev/null | head -1)"
+    log_info "============================================="
+
+    {{- range .Values.targets }}
+
+    log_info ""
+    log_info ">>>>> Target: {{ .name }} <<<<<"
+    log_info "  host: {{ .host }}:{{ .port }}"
+    log_info "  user: {{ .user }}"
+
+    # --- Read password ---
+    SECRET_FILE="/secrets/{{ .name }}/password"
+    if [ ! -f "$SECRET_FILE" ]; then
+      log_error "[{{ .name }}] Secret file not found: $SECRET_FILE"
+    else
+    PGPASSWORD=$(cat "$SECRET_FILE")
+    export PGPASSWORD
+    log_debug "[{{ .name }}] Password loaded (${#PGPASSWORD} chars)"
+
+    # --- Connectivity check with retry ---
+    CONNECTED=false
+    for attempt in 1 2 3; do
+      if psql -h {{ .host }} -p {{ .port }} -U {{ .user }} -d postgres \
+           -c "SELECT 1" >/dev/null 2>&1; then
+        CONNECTED=true
+        break
+      fi
+      log_warn "[{{ .name }}] Connection attempt $attempt/3 failed, retrying in 5s..."
+      sleep 5
+    done
+
+    if [ "$CONNECTED" = "false" ]; then
+      log_error "[{{ .name }}] Cannot connect to {{ .host }}:{{ .port }} after 3 attempts"
+    else
+    log_info "[{{ .name }}] Connected successfully"
+
+    # --- Get PostgreSQL version for debug ---
+    PG_VERSION=$(psql -h {{ .host }} -p {{ .port }} -U {{ .user }} -d postgres \
+      -Atc "SELECT version()" 2>/dev/null)
+    log_debug "[{{ .name }}] PostgreSQL: $PG_VERSION"
+
+    # --- List existing databases for debug ---
+    EXISTING_DBS=$(psql -h {{ .host }} -p {{ .port }} -U {{ .user }} -d postgres \
+      -Atc "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname" 2>/dev/null)
+    log_debug "[{{ .name }}] Existing databases: $(echo "$EXISTING_DBS" | tr '\n' ', ')"
+
+    SCHEMA_DIR="/schemas/{{ .name }}"
+    if [ ! -d "$SCHEMA_DIR" ]; then
+      log_warn "[{{ .name }}] Schema directory not found: $SCHEMA_DIR — skipping"
+    else
+
+    SQL_FILES=$(ls "$SCHEMA_DIR"/*.sql 2>/dev/null)
+    if [ -z "$SQL_FILES" ]; then
+      log_warn "[{{ .name }}] No .sql files in $SCHEMA_DIR — skipping"
+    else
+
+    FILE_COUNT=$(echo "$SQL_FILES" | wc -l | tr -d ' ')
+    log_info "[{{ .name }}] Found $FILE_COUNT schema file(s) to process"
+
+    for sql_file in $SQL_FILES; do
+      [ -f "$sql_file" ] || continue
+      db_name=$(basename "$sql_file" .sql)
+      DB_START=$(date +%s)
+
+      log_info "  [$db_name] --- Processing ---"
+      log_debug "  [$db_name] Schema file: $sql_file ($(wc -c < "$sql_file" | tr -d ' ') bytes)"
+
+      # --- Check if database exists ---
+      exists=$(psql -h {{ .host }} -p {{ .port }} -U {{ .user }} -d postgres \
+        -Atc "SELECT 1 FROM pg_database WHERE datname = '$db_name'" 2>/dev/null)
+
+      if [ "$exists" = "1" ]; then
+        log_info "  [$db_name] Database exists"
+      else
+        log_info "  [$db_name] Database does not exist — creating..."
+        create_output=$(psql -h {{ .host }} -p {{ .port }} -U {{ .user }} -d postgres \
+          -c "CREATE DATABASE \"$db_name\"" 2>&1)
+        create_rc=$?
+        if [ $create_rc -eq 0 ]; then
+          TOTAL_CREATED=$((TOTAL_CREATED + 1))
+          log_info "  [$db_name] Database created successfully"
+        else
+          log_error "  [$db_name] Failed to create database (exit=$create_rc): $create_output"
+          continue
+        fi
+      fi
+
+      # --- Apply schema DDL ---
+      log_info "  [$db_name] Applying schema DDL..."
+      output=$(psql -h {{ .host }} -p {{ .port }} -U {{ .user }} -d "$db_name" \
+        -v ON_ERROR_STOP=0 \
+        -f "$sql_file" 2>&1)
+      apply_rc=$?
+
+      # --- Parse psql output for detailed reporting ---
+      total_lines=$(echo "$output" | wc -l | tr -d ' ')
+      error_lines=$(echo "$output" | grep -c "^ERROR:" || true)
+      already_exists=$(echo "$output" | grep -c "already exists" || true)
+      tables_created=$(echo "$output" | grep -c "^CREATE TABLE" || true)
+      indexes_created=$(echo "$output" | grep -c "^CREATE INDEX" || true)
+      sequences_created=$(echo "$output" | grep -c "^CREATE SEQUENCE" || true)
+      functions_created=$(echo "$output" | grep -c "^CREATE FUNCTION" || true)
+      alters_ok=$(echo "$output" | grep -c "^ALTER TABLE" || true)
+      real_errors=$((error_lines - already_exists))
+
+      DB_END=$(date +%s)
+      DB_DURATION=$((DB_END - DB_START))
+
+      log_info "  [$db_name] DDL results (${DB_DURATION}s):"
+      log_info "  [$db_name]   tables:    $tables_created created"
+      log_info "  [$db_name]   indexes:   $indexes_created created"
+      log_info "  [$db_name]   sequences: $sequences_created created"
+      log_info "  [$db_name]   functions: $functions_created created"
+      log_info "  [$db_name]   alters:    $alters_ok applied"
+      log_info "  [$db_name]   skipped:   $already_exists (already exist)"
+
+      if [ "$real_errors" -gt 0 ]; then
+        log_error "  [$db_name] $real_errors unexpected error(s):"
+        echo "$output" | grep "^ERROR:" | grep -v "already exists" | while IFS= read -r errline; do
+          log_error "  [$db_name]   $errline"
+        done
+      else
+        log_info "  [$db_name] OK — no unexpected errors"
+      fi
+
+      TOTAL_APPLIED=$((TOTAL_APPLIED + 1))
+      TOTAL_SKIPPED=$((TOTAL_SKIPPED + already_exists))
+
+      # --- Verify: count tables in database ---
+      table_count=$(psql -h {{ .host }} -p {{ .port }} -U {{ .user }} -d "$db_name" \
+        -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'" 2>/dev/null)
+      log_info "  [$db_name] Verification: $table_count table(s) in public schema"
+
+    done
+
+    fi  # sql files check
+    fi  # schema dir check
+    fi  # connectivity check
+    fi  # secret file check
+    {{- end }}
+
+    END_TS=$(date +%s)
+    TOTAL_DURATION=$((END_TS - START_TS))
+
+    log_info ""
+    log_info "============================================="
+    log_info "SUMMARY"
+    log_info "  Duration:           ${TOTAL_DURATION}s"
+    log_info "  Databases created:  $TOTAL_CREATED"
+    log_info "  Schemas applied:    $TOTAL_APPLIED"
+    log_info "  Already-exist skip: $TOTAL_SKIPPED"
+    log_info "  Errors:             $TOTAL_ERRORS"
+    log_info "============================================="
+
+    if [ "$TOTAL_ERRORS" -gt 0 ]; then
+      log_error "RESULT: FAILED — $TOTAL_ERRORS error(s) occurred"
+      exit 1
+    fi
+
+    log_info "RESULT: SUCCESS — all schemas applied"
+    exit 0

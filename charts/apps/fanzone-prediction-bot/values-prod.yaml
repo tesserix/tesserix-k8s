@@ -1,0 +1,61 @@
+# Production overrides for fanzone-prediction-bot
+# Migrated to Knative Serving (scale-to-zero)
+
+# Knative replaces Deployment
+knative:
+  enabled: true
+  minScale: 0
+  maxScale: 3
+  scaleDownDelay: "60s"
+  concurrencyTarget: 100
+  containerConcurrency: 0
+  timeoutSeconds: 300
+
+# Production resource allocation
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+# Production environment
+env:
+  GO_ENV: production
+  LOG_LEVEL: warn
+  LOG_FORMAT: json
+  SERVER_PORT: "8088"
+  ANTHROPIC_MODEL: "claude-sonnet-4-5-20250929"
+  AI_TEMPERATURE: "0.7"
+  AI_MAX_TOKENS: "4096"
+  MATCH_SERVICE_URL: "http://sports-data.fanzone.svc.cluster.local"
+  PREDICTION_SERVICE_URL: "http://fanzone-prediction.fanzone.svc.cluster.local"
+  PREDICTION_INTERVAL: "45m"
+  MATCH_POLL_INTERVAL: "5m"
+  CLOSE_CHECK_INTERVAL: "30s"
+  MAX_PREDICTIONS_PER_MATCH: "20"
+  MAX_ACTIVE_PER_MATCH: "12"
+  MIN_HOUSE_EDGE: "0.08"
+  MAX_HOUSE_EDGE: "0.15"
+  DEFAULT_MIN_BET: "25"
+  DEFAULT_MAX_BET_PER_USER: "500"
+  BOT_ADMIN_USER_ID: "00000000-0000-0000-0000-000000000002"
+  AI_MAX_CALLS_PER_MINUTE: "3"
+  AI_MAX_CALLS_PER_HOUR: "15"
+  AI_MAX_TOKENS_PER_DAY: "500000"
+  MAX_CONCURRENT_MATCHES: "3"
+  FAILURE_BACKOFF_BASE: "5m"
+  MAX_FAILURE_BACKOFF: "1h"
+
+# Workload Identity annotation for GCP SA binding
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: "app-secrets-fanzone-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+# Production GCP configuration
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-fanzone-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  secretManager:
+    secretPrefix: "prod"

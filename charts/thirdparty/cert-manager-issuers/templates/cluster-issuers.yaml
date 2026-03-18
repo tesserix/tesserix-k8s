@@ -1,0 +1,173 @@
+{{- if .Values.letsencryptProd.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    # Let's Encrypt production server
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ .Values.email }}
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      {{- if .Values.cloudflare.enabled }}
+      # DNS-01 challenge using Cloudflare (primary account)
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: {{ .Values.cloudflare.apiTokenSecretName }}
+              key: {{ .Values.cloudflare.apiTokenSecretKey }}
+        selector:
+          dnsZones:
+            - {{ .Values.cloudflare.domain }}
+            {{- range .Values.cloudflare.additionalDomains }}
+            - {{ . }}
+            {{- end }}
+      {{- end }}
+      {{- range .Values.additionalCloudflareAccounts }}
+      # DNS-01 challenge using Cloudflare ({{ .name }})
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: {{ .apiTokenSecretName }}
+              key: {{ .apiTokenSecretKey }}
+        selector:
+          dnsZones:
+            {{- range .domains }}
+            - {{ . }}
+            {{- end }}
+      {{- end }}
+      {{- if and (not .Values.cloudflare.enabled) (not .Values.additionalCloudflareAccounts) }}
+      # HTTP-01 challenge fallback
+      - http01:
+          ingress:
+            ingressClassName: kong
+      {{- end }}
+{{- end }}
+
+{{- if .Values.letsencryptStaging.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    # Let's Encrypt staging server (for testing)
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: {{ .Values.email }}
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      {{- if .Values.cloudflare.enabled }}
+      # DNS-01 challenge using Cloudflare (primary account)
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: {{ .Values.cloudflare.apiTokenSecretName }}
+              key: {{ .Values.cloudflare.apiTokenSecretKey }}
+        selector:
+          dnsZones:
+            - {{ .Values.cloudflare.domain }}
+            {{- range .Values.cloudflare.additionalDomains }}
+            - {{ . }}
+            {{- end }}
+      {{- end }}
+      {{- range .Values.additionalCloudflareAccounts }}
+      # DNS-01 challenge using Cloudflare ({{ .name }})
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: {{ .apiTokenSecretName }}
+              key: {{ .apiTokenSecretKey }}
+        selector:
+          dnsZones:
+            {{- range .domains }}
+            - {{ . }}
+            {{- end }}
+      {{- end }}
+      {{- if and (not .Values.cloudflare.enabled) (not .Values.additionalCloudflareAccounts) }}
+      # HTTP-01 challenge fallback
+      - http01:
+          ingress:
+            ingressClassName: kong
+      {{- end }}
+{{- end }}
+
+{{- if .Values.letsencryptProdHTTP01.enabled }}
+---
+# HTTP-01 ClusterIssuer for custom domains (fallback when NS delegation not available)
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod-http01
+spec:
+  acme:
+    # Let's Encrypt production server
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ .Values.email }}
+    privateKeySecretRef:
+      name: letsencrypt-prod-http01-account-key
+    solvers:
+      # HTTP-01 challenge using Istio ingress
+      - http01:
+          ingress:
+            class: istio
+            serviceType: ClusterIP
+{{- end }}
+
+{{- if .Values.cnameDelegation.enabled }}
+---
+# DNS-01 ClusterIssuer for CNAME-delegated custom domains
+# Customers add: _acme-challenge.theirdomain.com CNAME theirdomain.com.{{ .Values.cnameDelegation.acmeZone }}
+# cert-manager follows the CNAME and creates TXT records in our Cloudflare zone
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod-cname-delegation
+  labels:
+    app.kubernetes.io/component: certificate-management
+    tesserix.app/solver-type: cname-delegation
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ .Values.email }}
+    privateKeySecretRef:
+      name: letsencrypt-prod-cname-delegation-account-key
+    solvers:
+      - dns01:
+          # Follow CNAME records to find where to create TXT
+          # This allows customers to CNAME _acme-challenge to our zone
+          cnameStrategy: Follow
+          cloudflare:
+            apiTokenSecretRef:
+              name: {{ .Values.cloudflare.apiTokenSecretName }}
+              key: {{ .Values.cloudflare.apiTokenSecretKey }}
+{{- end }}
+
+{{- if .Values.cnameDelegation.enabled }}
+---
+# Staging issuer for testing CNAME delegation
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging-cname-delegation
+  labels:
+    app.kubernetes.io/component: certificate-management
+    tesserix.app/solver-type: cname-delegation
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: {{ .Values.email }}
+    privateKeySecretRef:
+      name: letsencrypt-staging-cname-delegation-account-key
+    solvers:
+      - dns01:
+          cnameStrategy: Follow
+          cloudflare:
+            apiTokenSecretRef:
+              name: {{ .Values.cloudflare.apiTokenSecretName }}
+              key: {{ .Values.cloudflare.apiTokenSecretKey }}
+{{- end }}

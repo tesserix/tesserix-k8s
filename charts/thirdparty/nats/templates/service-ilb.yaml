@@ -1,0 +1,24 @@
+{{- if .Values.ilb.enabled }}
+# Internal LoadBalancer for Cloud Run VPC connector access
+# Provides a stable VPC IP that Cloud Run services can reach via VPC connector
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-ilb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: nats
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    networking.gke.io/load-balancer-type: "Internal"
+spec:
+  type: LoadBalancer
+  ports:
+    - name: client
+      port: {{ .Values.service.port }}
+      targetPort: client
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: nats
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

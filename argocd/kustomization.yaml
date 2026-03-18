@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Root kustomization - references environment-specific directories
+# Each environment has its own app-of-apps that manages apps and infrastructure
+
+resources:
+  # Environment bootstraps - each deploys independently via terraform
+  # The terraform bootstrap selects the correct environment path: argocd/${environment}
+  - devtest/bootstrap.yaml
+  - pilot/bootstrap.yaml
+  - prod/bootstrap.yaml
+
+  # Sealed Secrets ApplicationSet - deploys secrets from sealedsecret/<env>/ directories
+  - sealedsecrets-appset.yaml

@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mautic.fullname" . }}-localphp
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mautic.labels" . | nindent 4 }}
+data:
+  local.php: |
+    <?php
+    $parameters = array(
+        'db_driver' => 'pdo_mysql',
+        'db_host' => getenv('MAUTIC_DB_HOST') ?: '{{ .Values.database.host }}',
+        'db_port' => getenv('MAUTIC_DB_PORT') ?: '{{ .Values.database.port }}',
+        'db_name' => getenv('MAUTIC_DB_DATABASE') ?: '{{ .Values.database.name }}',
+        'db_user' => getenv('MAUTIC_DB_USER') ?: '{{ .Values.database.user }}',
+        'db_password' => getenv('MAUTIC_DB_PASSWORD'),
+        'db_table_prefix' => null,
+        'db_backup_tables' => 1,
+        'db_backup_prefix' => 'bak_',
+        'site_url' => '{{ .Values.mautic.siteUrl }}',
+        'secret_key' => getenv('MAUTIC_SECRET_KEY') ?: 'CHANGE_ME',
+        'rememberme_key' => getenv('MAUTIC_SECRET_KEY') ?: 'CHANGE_ME',
+        'trusted_hosts' => ['{{ .Values.mautic.siteUrl | trimPrefix "https://" | trimPrefix "http://" }}'],
+        'trusted_proxies' => ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', 'REMOTE_ADDR'],
+        // Build mailer_dsn dynamically from environment variables
+        // Format: smtp://user:password@host:port
+        'mailer_dsn' => (function() {
+            $host = '{{ .Values.mautic.mailer.host }}';
+            $port = '{{ .Values.mautic.mailer.port }}';
+            $user = '{{ .Values.mautic.mailer.user }}';
+            $password = getenv('MAUTIC_MAILER_PASSWORD') ?: '';
+
+            if ($user && $password) {
+                return "smtp://{$user}:{$password}@{$host}:{$port}";
+            }
+            return "smtp://{$host}:{$port}";
+        })(),
+        'mailer_from_name' => '{{ .Values.mautic.mailer.fromName }}',
+        'mailer_from_email' => '{{ .Values.mautic.mailer.fromEmail }}',
+    );

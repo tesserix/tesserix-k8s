@@ -1,0 +1,261 @@
+name: GKE Cluster Control (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform on GKE cluster'
+        required: true
+        type: choice
+        options:
+          - start
+          - stop
+          - status
+      cluster_name:
+        description: 'GKE Cluster Name'
+        required: true
+        default: 'tesseract-devtest-gke'
+        type: string
+      region:
+        description: 'GKE Cluster Region'
+        required: true
+        default: 'australia-southeast1'
+        type: string
+
+env:
+  GCP_PROJECT_ID: 'tesseracthub-480811'
+
+jobs:
+  gke-control:
+    name: '${{ github.event.inputs.action }} GKE Cluster'
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Display Configuration
+        run: |
+          echo "=========================================="
+          echo "GKE Cluster Control"
+          echo "=========================================="
+          echo "Action:       ${{ github.event.inputs.action }}"
+          echo "Cluster:      ${{ github.event.inputs.cluster_name }}"
+          echo "Region:       ${{ github.event.inputs.region }}"
+          echo "Project:      ${{ env.GCP_PROJECT_ID }}"
+          echo "Triggered by: ${{ github.actor }}"
+          echo "=========================================="
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Install gke-gcloud-auth-plugin
+        run: |
+          gcloud components install gke-gcloud-auth-plugin --quiet
+
+      - name: Get Cluster Status (Before)
+        id: status_before
+        run: |
+          echo "### Current Cluster Status" >> $GITHUB_STEP_SUMMARY
+
+          # Get cluster info
+          CLUSTER_INFO=$(gcloud container clusters describe ${{ github.event.inputs.cluster_name }} \
+            --region ${{ github.event.inputs.region }} \
+            --format="json" 2>/dev/null || echo "{}")
+
+          if [ "$CLUSTER_INFO" != "{}" ]; then
+            STATUS=$(echo $CLUSTER_INFO | jq -r '.status')
+            NODE_POOLS=$(echo $CLUSTER_INFO | jq -r '.nodePools[].name' | tr '\n' ', ' | sed 's/,$//')
+            CURRENT_NODES=$(echo $CLUSTER_INFO | jq '[.nodePools[].initialNodeCount // 0] | add')
+
+            echo "CLUSTER_STATUS=$STATUS" >> $GITHUB_OUTPUT
+            echo "NODE_POOLS=$NODE_POOLS" >> $GITHUB_OUTPUT
+
+            echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Cluster Status | \`$STATUS\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Node Pools | \`$NODE_POOLS\` |" >> $GITHUB_STEP_SUMMARY
+
+            # Get node pool details
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "#### Node Pool Details" >> $GITHUB_STEP_SUMMARY
+            gcloud container node-pools list \
+              --cluster=${{ github.event.inputs.cluster_name }} \
+              --region=${{ github.event.inputs.region }} \
+              --format="table(name,config.machineType,autoscaling.enabled,autoscaling.minNodeCount,autoscaling.maxNodeCount,status)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Cluster not found or not accessible" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Status Only
+        if: github.event.inputs.action == 'status'
+        run: |
+          echo "### Cluster Status Report" >> $GITHUB_STEP_SUMMARY
+          echo "Cluster is currently: **${{ steps.status_before.outputs.CLUSTER_STATUS }}**" >> $GITHUB_STEP_SUMMARY
+
+          # Get detailed node information
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Active Nodes" >> $GITHUB_STEP_SUMMARY
+          gcloud container clusters get-credentials ${{ github.event.inputs.cluster_name }} \
+            --region ${{ github.event.inputs.region }}
+
+          kubectl get nodes -o wide 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "No nodes available or cluster not accessible" >> $GITHUB_STEP_SUMMARY
+
+      - name: Stop GKE Cluster
+        if: github.event.inputs.action == 'stop'
+        run: |
+          echo "=========================================="
+          echo "Stopping GKE Cluster: ${{ github.event.inputs.cluster_name }}"
+          echo "=========================================="
+
+          # Get all node pools
+          NODE_POOLS=$(gcloud container node-pools list \
+            --cluster=${{ github.event.inputs.cluster_name }} \
+            --region=${{ github.event.inputs.region }} \
+            --format="value(name)")
+
+          echo "### Stopping Cluster" >> $GITHUB_STEP_SUMMARY
+          echo "Scaling down all node pools to 0 nodes..." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Scale each node pool to 0
+          for POOL in $NODE_POOLS; do
+            echo "Scaling node pool: $POOL to 0..."
+            echo "- Scaling \`$POOL\` to 0 nodes..." >> $GITHUB_STEP_SUMMARY
+
+            # Get current autoscaling settings
+            AUTOSCALING=$(gcloud container node-pools describe $POOL \
+              --cluster=${{ github.event.inputs.cluster_name }} \
+              --region=${{ github.event.inputs.region }} \
+              --format="value(autoscaling.enabled)")
+
+            if [ "$AUTOSCALING" == "True" ]; then
+              # For autoscaling pools, set min and max to 0
+              gcloud container clusters resize ${{ github.event.inputs.cluster_name }} \
+                --region ${{ github.event.inputs.region }} \
+                --node-pool $POOL \
+                --num-nodes 0 \
+                --quiet
+
+              # Also update autoscaling to prevent scale-up
+              gcloud container node-pools update $POOL \
+                --cluster=${{ github.event.inputs.cluster_name }} \
+                --region=${{ github.event.inputs.region }} \
+                --enable-autoscaling \
+                --min-nodes=0 \
+                --max-nodes=0 \
+                --quiet 2>/dev/null || true
+            else
+              # For non-autoscaling pools, just resize
+              gcloud container clusters resize ${{ github.event.inputs.cluster_name }} \
+                --region ${{ github.event.inputs.region }} \
+                --node-pool $POOL \
+                --num-nodes 0 \
+                --quiet
+            fi
+
+            echo "  ✅ $POOL scaled to 0"
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Cluster stopped successfully!**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> **Note:** The GKE control plane is still running (free tier). Only worker nodes are stopped." >> $GITHUB_STEP_SUMMARY
+          echo "> To start the cluster again, run this workflow with action: \`start\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Start GKE Cluster
+        if: github.event.inputs.action == 'start'
+        run: |
+          echo "=========================================="
+          echo "Starting GKE Cluster: ${{ github.event.inputs.cluster_name }}"
+          echo "=========================================="
+
+          # Get all node pools
+          NODE_POOLS=$(gcloud container node-pools list \
+            --cluster=${{ github.event.inputs.cluster_name }} \
+            --region=${{ github.event.inputs.region }} \
+            --format="value(name)")
+
+          echo "### Starting Cluster" >> $GITHUB_STEP_SUMMARY
+          echo "Scaling up node pools..." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Scale each node pool back up
+          for POOL in $NODE_POOLS; do
+            echo "Starting node pool: $POOL..."
+            echo "- Starting \`$POOL\`..." >> $GITHUB_STEP_SUMMARY
+
+            # Determine appropriate node count based on pool name
+            # Adjust these values based on your typical usage
+            case $POOL in
+              *default*|*primary*)
+                NODE_COUNT=1
+                MIN_NODES=1
+                MAX_NODES=3
+                ;;
+              *preemptible*|*spot*)
+                NODE_COUNT=0
+                MIN_NODES=0
+                MAX_NODES=5
+                ;;
+              *)
+                NODE_COUNT=1
+                MIN_NODES=1
+                MAX_NODES=3
+                ;;
+            esac
+
+            # Enable autoscaling with appropriate limits
+            gcloud container node-pools update $POOL \
+              --cluster=${{ github.event.inputs.cluster_name }} \
+              --region=${{ github.event.inputs.region }} \
+              --enable-autoscaling \
+              --min-nodes=$MIN_NODES \
+              --max-nodes=$MAX_NODES \
+              --quiet 2>/dev/null || true
+
+            # Resize to initial count
+            if [ $NODE_COUNT -gt 0 ]; then
+              gcloud container clusters resize ${{ github.event.inputs.cluster_name }} \
+                --region ${{ github.event.inputs.region }} \
+                --node-pool $POOL \
+                --num-nodes $NODE_COUNT \
+                --quiet
+            fi
+
+            echo "  ✅ $POOL started with $NODE_COUNT node(s), autoscaling: $MIN_NODES-$MAX_NODES"
+            echo "  - Nodes: $NODE_COUNT, Autoscaling: $MIN_NODES-$MAX_NODES" >> $GITHUB_STEP_SUMMARY
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Cluster started successfully!**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> Nodes may take 2-5 minutes to become ready." >> $GITHUB_STEP_SUMMARY
+
+      - name: Get Cluster Status (After)
+        if: github.event.inputs.action != 'status'
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Final Cluster Status" >> $GITHUB_STEP_SUMMARY
+
+          # Wait a moment for status to update
+          sleep 10
+
+          gcloud container node-pools list \
+            --cluster=${{ github.event.inputs.cluster_name }} \
+            --region=${{ github.event.inputs.region }} \
+            --format="table(name,config.machineType,autoscaling.minNodeCount,autoscaling.maxNodeCount,status)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Post Summary
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Triggered by: @${{ github.actor }} at $(date -u '+%Y-%m-%d %H:%M:%S UTC')*" >> $GITHUB_STEP_SUMMARY

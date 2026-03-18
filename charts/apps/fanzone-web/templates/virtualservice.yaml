@@ -1,0 +1,190 @@
+{{- if .Values.virtualService.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "fanzone-web.fullname" . }}
+  labels:
+    {{- include "fanzone-web.labels" . | nindent 4 }}
+spec:
+  hosts:
+    {{- range .Values.virtualService.hosts }}
+    - {{ . | quote }}
+    {{- end }}
+  gateways:
+    # Internal Istio gateway only - NOT the customer gateway
+    - {{ .Values.virtualService.gateway | default "istio-ingress/tesseract-gateway" }}
+  http:
+    # ===========================================
+    # Auth Routes - Fanzone Auth Service (OAuth endpoints)
+    # Note: /auth/login and /auth/callback are Next.js pages served by fanzone-web
+    # ===========================================
+    {{- if .Values.ingress.backendServices }}
+    {{- range .Values.ingress.backendServices }}
+    - match:
+        - uri:
+            prefix: {{ .path }}
+      {{- if .rewrite }}
+      rewrite:
+        uri: {{ .rewrite }}
+      {{- end }}
+      {{- if .knative }}
+      headers:
+        request:
+          set:
+            Host: {{ .serviceName }}.{{ $.Release.Namespace }}.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      {{- else if .externalHost }}
+      headers:
+        request:
+          set:
+            Host: {{ .externalHost }}
+      route:
+        - destination:
+            host: {{ .externalHost }}
+            port:
+              number: {{ .externalPort | default 443 }}
+      {{- else }}
+      headers:
+        request:
+          set:
+            Host: {{ .serviceName }}.{{ $.Release.Namespace }}.svc.cluster.local
+      route:
+        - destination:
+            host: {{ .serviceName }}.{{ $.Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .servicePort | default 80 }}
+      {{- end }}
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+    {{- end }}
+    {{- end }}
+
+    # ===========================================
+    # WebSocket Routes - Fanzone WS Service
+    # ===========================================
+    {{- if .Values.virtualService }}
+    {{- if .Values.virtualService.sse }}
+    # ===========================================
+    # SSE Routes - Server-Sent Events (notifications)
+    # ===========================================
+    - match:
+        - uri:
+            prefix: {{ .Values.virtualService.sse.path | default "/events" }}
+      {{- if .Values.virtualService.sse.knative }}
+      headers:
+        request:
+          set:
+            Host: {{ .Values.virtualService.sse.serviceName | default "fanzone-ws" }}.{{ .Release.Namespace }}.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      {{- else if .Values.virtualService.sse.externalHost }}
+      headers:
+        request:
+          set:
+            Host: {{ .Values.virtualService.sse.externalHost }}
+      route:
+        - destination:
+            host: {{ .Values.virtualService.sse.externalHost }}
+            port:
+              number: {{ .Values.virtualService.sse.externalPort | default 443 }}
+      {{- else }}
+      route:
+        - destination:
+            host: {{ .Values.virtualService.sse.serviceName | default "fanzone-ws" }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.virtualService.sse.servicePort | default 80 }}
+      {{- end }}
+      timeout: 3600s
+    {{- end }}
+    {{- if .Values.virtualService.websocket }}
+    - match:
+        - uri:
+            prefix: {{ .Values.virtualService.websocket.path | default "/ws" }}
+      {{- if .Values.virtualService.websocket.knative }}
+      headers:
+        request:
+          set:
+            Host: {{ .Values.virtualService.websocket.serviceName | default "fanzone-ws" }}.{{ .Release.Namespace }}.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      {{- else if .Values.virtualService.websocket.externalHost }}
+      headers:
+        request:
+          set:
+            Host: {{ .Values.virtualService.websocket.externalHost }}
+      route:
+        - destination:
+            host: {{ .Values.virtualService.websocket.externalHost }}
+            port:
+              number: {{ .Values.virtualService.websocket.externalPort | default 443 }}
+      {{- else }}
+      route:
+        - destination:
+            host: {{ .Values.virtualService.websocket.serviceName | default "fanzone-ws" }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.virtualService.websocket.servicePort | default 80 }}
+      {{- end }}
+      timeout: 3600s
+    {{- end }}
+    {{- end }}
+
+    # ===========================================
+    # Default route to fanzone-web frontend
+    # ===========================================
+    - match:
+        - uri:
+            prefix: /
+      {{- if .Values.defaultRoute }}
+      {{- if .Values.defaultRoute.knative }}
+      headers:
+        request:
+          set:
+            Host: {{ .Values.defaultRoute.serviceName | default (include "fanzone-web.fullname" .) }}.{{ .Release.Namespace }}.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      {{- else if .Values.defaultRoute.externalHost }}
+      headers:
+        request:
+          set:
+            Host: {{ .Values.defaultRoute.externalHost }}
+      route:
+        - destination:
+            host: {{ .Values.defaultRoute.externalHost }}
+            port:
+              number: {{ .Values.defaultRoute.externalPort | default 443 }}
+      {{- else }}
+      route:
+        - destination:
+            host: {{ include "fanzone-web.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+      {{- end }}
+      {{- else }}
+      route:
+        - destination:
+            host: {{ include "fanzone-web.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+      {{- end }}
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+{{- end }}

@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fanzone-db-schema-bootstrap
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: fanzone
+    app.kubernetes.io/component: database
+    environment: prod
+spec:
+  project: fanzone
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/apps/db-schema-bootstrap
+    targetRevision: HEAD
+    helm:
+      releaseName: fanzone-db-schema-bootstrap
+      values: |
+        app: fanzone
+
+        # Only target fanzone PostgreSQL (no global DB needed)
+        targets:
+          - name: fanzone
+
+        # Disable Istio sidecar for CronJob pods
+        # (already handled by pod label in template)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fanzone
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

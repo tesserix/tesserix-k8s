@@ -1,0 +1,44 @@
+{{- range .Values.namespaces }}
+{{- if ne . $.Values.globalNamespace }}
+---
+# Allow traffic from {{ . }} to global namespace services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-to-global
+  namespace: {{ . }}
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: {{ $.Values.globalNamespace }}
+{{- end }}
+{{- end }}
+---
+# Allow ingress to global namespace from all app namespaces
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-app-namespaces
+  namespace: {{ .Values.globalNamespace }}
+  labels:
+    app.kubernetes.io/name: network-policies
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- range .Values.namespaces }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: {{ . }}
+    {{- end }}

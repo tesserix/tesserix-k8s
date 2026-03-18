@@ -1,0 +1,118 @@
+# Default values for postgresql
+replicaCount: 1
+
+image:
+  repository: postgres
+  pullPolicy: IfNotPresent
+  tag: "16-alpine"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# PostgreSQL configuration
+postgresql:
+  database: tesseract_hub
+  username: postgres
+  # Password should be set via --set or external secret
+  password: ""
+  # Use existing secret for password
+  existingSecret: ""
+  existingSecretKey: "postgresql-password"
+
+# SSL/TLS Configuration
+ssl:
+  enabled: true
+  # Kubernetes secret containing SSL certificates (server.crt, server.key, ca.crt)
+  # Create using: scripts/sync-postgresql-ssl.sh
+  existingSecret: "postgresql-ssl-certs"
+
+# Storage configuration
+persistence:
+  enabled: true
+  storageClass: "standard-rwo"  # GKE Standard SSD (was Azure managed-csi)
+  accessModes:
+    - ReadWriteOnce
+  size: 60Gi
+  annotations: {}
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 5432
+
+# Internal LoadBalancer for Cloud Run VPC connector access
+ilb:
+  enabled: false
+
+# Security context
+podSecurityContext:
+  fsGroup: 999
+
+securityContext:
+  runAsUser: 999
+  runAsGroup: 999
+  runAsNonRoot: true
+
+# Resources
+resources:
+  limits:
+    memory: 4Gi
+  requests:
+    memory: 1Gi
+
+# Liveness and readiness probes
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# PostgreSQL configuration parameters
+config:
+  maxConnections: "200"
+  sharedBuffers: "1GB"
+  effectiveCacheSize: "3GB"
+  maintenanceWorkMem: "256MB"
+  walBuffers: "16MB"
+  checkpointCompletionTarget: "0.9"
+  randomPageCost: "1.1"
+  effectiveIOConcurrency: "200"
+
+# Network policy - Controls database access
+# Requires application namespaces to have label: database-access=allowed
+networkPolicy:
+  enabled: true
+
+# Istio service mesh configuration
+# Required for cross-zone pod-to-pod communication in GKE
+istio:
+  enabled: true
+
+# Database initialization
+# Creates databases after PostgreSQL is ready using a Kubernetes Job
+initdb:
+  enabled: false
+  # List of databases to create
+  databases: []
+  # Custom SQL scripts to run after database creation
+  scripts: ""

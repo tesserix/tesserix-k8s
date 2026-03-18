@@ -1,0 +1,259 @@
+# Default values for tenant-service
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/tenant-service
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Istio sidecar configuration - wait for proxy before starting app
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  # Exclude NATS port from Istio sidecar to fix JetStream timeout issues
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+# KEDA ScaledObject configuration
+keda:
+  enabled: true
+  # Workload Identity is always enabled
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  # Prometheus trigger for traffic-based scaling (Istio metrics)
+  prometheus:
+    enabled: true
+    serverAddress: http://prometheus-server.monitoring.svc.cluster.local:80
+    # Scale based on requests per second to this service
+    requestRateQuery: sum(rate(istio_requests_total{destination_canonical_service="tenant-service",reporter="destination"}[2m]))
+    requestRateThreshold: "50"  # Scale up when RPS > 50 per pod
+  # Fallback CPU/Memory triggers
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "80"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "85"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Environment configuration
+env:
+  PORT: "8080"
+  GIN_MODE: "release"
+
+  # Database config is in database: section below
+
+  # Redis (for draft persistence and verification tokens)
+  REDIS_HOST: "redis.redis-marketplace.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+
+  # NATS (for event-driven architecture)
+  NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+
+  # Verification service (for OTP mode)
+  VERIFICATION_SERVICE_URL: "http://verification-service.marketplace.svc.cluster.local:8080"
+
+  # Email verification configuration
+  # Method: "link" (URL-based, default) or "otp" (6-digit code)
+  VERIFICATION_METHOD: "link"
+  VERIFICATION_TOKEN_EXPIRY_HOURS: "1"
+  ONBOARDING_APP_URL: "https://dev-onboarding.tesserix.app"
+
+  # Notification service (for sending verification emails) - Direct API, no NATS
+  NOTIFICATION_SERVICE_URL: "http://notification-service.marketplace.svc.cluster.local:8090"
+
+  # Vendor service (for creating vendors and storefronts on tenant creation)
+  VENDOR_SERVICE_URL: "http://vendor-service.marketplace.svc.cluster.local:8080"
+
+  # Tenant router service (for creating virtual services/routes for tenants)
+  TENANT_ROUTER_SERVICE_URL: "http://tenant-router-service.marketplace.svc.cluster.local:8089"
+
+  # Staff service (for bootstrapping owner RBAC roles)
+  STAFF_SERVICE_URL: "http://staff-service.marketplace.svc.cluster.local:8080"
+
+  # ============================================================================
+  # DUAL-REALM KEYCLOAK CONFIGURATION
+  # - INTERNAL realm (tesserix-internal): for staff/owner user creation
+  # - CUSTOMER realm (tesserix-customer): for Organizations and customer users
+  # ============================================================================
+  AUTH_VALIDATOR_TYPE: "keycloak"
+
+  # INTERNAL REALM (for staff/owner authentication)
+  # Used by onboarding service to create staff users
+  KEYCLOAK_INTERNAL_BASE_URL: "http://keycloak.identity-internal.svc.cluster.local:8080"
+  KEYCLOAK_INTERNAL_REALM: "tesserix-internal"
+  # Service account client for user management (has manage-users role)
+  KEYCLOAK_INTERNAL_ADMIN_CLIENT_ID: "marketplace-onboarding-admin"
+  # External URL for token validation (tokens are issued with this as issuer)
+  KEYCLOAK_INTERNAL_ISSUER_URL: "https://devtest-internal-idp.tesserix.app/realms/tesserix-internal"
+
+  # CUSTOMER REALM (for Organizations and customer authentication)
+  # Used for Keycloak Organizations, storefront redirect URIs
+  KEYCLOAK_CUSTOMER_BASE_URL: "http://keycloak.identity-customer.svc.cluster.local:8080"
+  KEYCLOAK_CUSTOMER_REALM: "tesserix-customer"
+  # Service account client for Organization management
+  KEYCLOAK_CUSTOMER_ADMIN_CLIENT_ID: "marketplace-onboarding-admin"
+  # External URL for token validation (tokens are issued with this as issuer)
+  KEYCLOAK_CUSTOMER_ISSUER_URL: "https://devtest-customer-idp.tesserix.app/realms/tesserix-customer"
+
+  # Client for auto-login after registration (password grant)
+  KEYCLOAK_PUBLIC_CLIENT_ID: "marketplace-dashboard"
+  # Admin portal client ID for redirect URIs in internal realm
+  KEYCLOAK_ADMIN_PORTAL_CLIENT_ID: "marketplace-dashboard"
+  # Storefront client IDs for redirect URIs in customer realm
+  KEYCLOAK_STOREFRONT_CLIENT_IDS: "storefront-web,web-storefront,mobile-app"
+  # Default role assigned to new staff users during onboarding
+  KEYCLOAK_DEFAULT_ROLE: "store_owner"
+
+  # Legacy aliases (for backward compat during migration)
+  KEYCLOAK_BASE_URL: "http://keycloak.identity-internal.svc.cluster.local:8080"
+  KEYCLOAK_REALM: "tesserix-internal"
+  KEYCLOAK_ADMIN_CLIENT_ID: "marketplace-onboarding-admin"
+
+  # Draft/Session persistence configuration (7-day expiry)
+  DRAFT_EXPIRY_HOURS: "168"
+  DRAFT_REMINDER_INTERVAL_HOURS: "24"
+  DRAFT_MAX_REMINDERS: "7"
+  DRAFT_CLEANUP_INTERVAL_MINS: "60"
+
+  # Custom Domain Gateway configuration
+  # The gateway IP is now dynamically fetched from custom-domain-service
+  # which queries the Kubernetes API for the LoadBalancer IP
+  # This setting is kept as a fallback only (empty = use dynamic fetching)
+  CUSTOM_DOMAIN_GATEWAY_IP: ""
+
+  # Base domain for tenant URLs
+  BASE_DOMAIN: "tesserix.app"
+
+  # Onboarding app domain for Keycloak redirect URI registration at startup
+  ONBOARDING_DOMAIN: "dev-onboarding.tesserix.app"
+
+# Verification service API key
+verificationService:
+  enabled: true
+  existingSecret: "verification-api-key"
+  existingSecretKey: "api-key"
+
+# Redis configuration
+redis:
+  enabled: true
+  existingSecret: "redis"
+  existingSecretKey: "redis-password"
+  # SECURITY: Password fetched from external-secrets/GCP Secret Manager
+  # Do NOT hardcode passwords in values.yaml
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"  # InPlaceOrRecreate (no-restart), Auto, Recreate, Initial, or Off
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true  # Don't let VPA manage istio-proxy
+
+# Database configuration (used by deployment template)
+database:
+  host: "postgresql.postgresql-marketplace.svc.cluster.local"
+  port: "5432"
+  name: "tesseract_hub"
+  user: "postgres"
+  sslmode: "require"
+
+# GCP Secret Manager configuration
+# When enabled, secrets are fetched from GCP Secret Manager via Workload Identity
+gcp:
+  projectId: ""  # Inherited from global-config.yaml if empty
+  namespace: "marketplace"  # Override if different from release namespace
+  workloadIdentity:
+    # Workload Identity is always enabled
+    gcpServiceAccount: ""  # e.g., app-secrets-marketplace@project.iam.gserviceaccount.com
+  secretManager:
+    # Workload Identity is always enabled
+    secretPrefix: "devtest"  # Environment prefix: dev, staging, prod
+
+knative:
+  enabled: false
+  minScale: 1
+  maxScale: 5
+  concurrencyTarget: 100
+  containerConcurrency: 100
+  timeoutSeconds: 30
+
+externalSecrets:
+  enabled: true
+  secretStoreRef: gcp-secret-store

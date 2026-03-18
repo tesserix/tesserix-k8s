@@ -1,0 +1,55 @@
+{{/*
+EnvoyFilter to rewrite Host header for Cloud Run-routed domains.
+Cloud Run requires the Host header to match its *.run.app hostname.
+Without this, requests arriving via Cloudflare Tunnel → Istio with the
+original Host header (e.g., mark8ly.com) are rejected with a 404 by
+Google Frontend because the Host doesn't match any Cloud Run service.
+
+This uses Envoy's auto_host_rewrite to set the Host/:authority header
+to the upstream Cloud Run hostname for each route.
+
+NOTE: Istio VirtualService headers.request.set.authority does NOT work
+for this — it adds a custom header named "authority" instead of
+rewriting the actual HTTP/2 :authority pseudo-header.
+*/}}
+{{- if .Values.cloudRunHostRewrite }}
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: cloudrun-host-rewrite
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  workloadSelector:
+    labels:
+      istio: ingressgateway
+  configPatches:
+    {{- range .Values.cloudRunHostRewrite }}
+    # Rewrite Host header on port 80 routes (Cloudflare Tunnel traffic)
+    - applyTo: HTTP_ROUTE
+      match:
+        context: GATEWAY
+        routeConfiguration:
+          vhost:
+            name: "{{ . }}:80"
+      patch:
+        operation: MERGE
+        value:
+          route:
+            auto_host_rewrite: true
+    # Rewrite Host header on port 443 routes (direct HTTPS traffic)
+    - applyTo: HTTP_ROUTE
+      match:
+        context: GATEWAY
+        routeConfiguration:
+          vhost:
+            name: "{{ . }}:443"
+      patch:
+        operation: MERGE
+        value:
+          route:
+            auto_host_rewrite: true
+    {{- end }}
+{{- end }}

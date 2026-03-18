@@ -1,0 +1,23 @@
+PostgreSQL has been deployed!
+
+Release: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+
+To connect to your database:
+
+1. Get the password:
+   export POSTGRES_PASSWORD=$(kubectl get secret --namespace {{ .Release.Namespace }} {{ include "postgresql.secretName" . }} -o jsonpath="{.data.postgresql-password}" | base64 -d)
+
+2. Connect from within the cluster:
+   Host: {{ include "postgresql.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+   Port: {{ .Values.service.port }}
+   Database: {{ .Values.postgresql.database }}
+   Username: {{ .Values.postgresql.username }}
+
+3. Port-forward for local access:
+   kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "postgresql.fullname" . }} 5432:5432
+
+   Then connect with:
+   PGPASSWORD="$POSTGRES_PASSWORD" psql -h 127.0.0.1 -U {{ .Values.postgresql.username }} -d {{ .Values.postgresql.database }}
+
+Storage: {{ .Values.persistence.size }} ({{ .Values.persistence.storageClass }})

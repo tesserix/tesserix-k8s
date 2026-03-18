@@ -1,0 +1,120 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: identity-customer
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: identity
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: identity
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/identity-customer
+    targetRevision: HEAD
+    helm:
+      releaseName: identity-customer
+      valueFiles:
+        - values.yaml
+      values: |
+        # Production specific overrides
+        baseDomain: "mark8ly.com"
+
+        keycloak:
+          replicaCount: 2
+          # Dynamic hostname: KC_HOSTNAME is NOT set, so Keycloak derives issuer
+          # from the request Host header. This enables product-specific identity domains:
+          #   identity.fanzonebattleground.com  → issuer: identity.fanzonebattleground.com  (marketplace)
+          #   identity.fe3dr.com        → issuer: identity.fe3dr.com        (homechef)
+          #   identity.fanzonebattleground.com → issuer: identity.fanzonebattleground.com (fanzone)
+          # Requires: --hostname-strict=false, KC_PROXY_HEADERS=xforwarded
+          hostname: ""
+
+          # Production resources — Keycloak 26 needs sufficient memory
+          # JVM heap (-Xmx) must be < 60% of memory limit for non-heap headroom
+          javaOpts: "-Xms512m -Xmx1280m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+          resources:
+            requests:
+              memory: 1Gi
+            limits:
+              memory: 2Gi
+
+          autoscaling:
+            enabled: false
+
+        # DISABLED: Using shared PostgreSQL in postgresql-global namespace
+        keycloak-db:
+          enabled: false
+
+        # Database connection - Using shared PostgreSQL
+        database:
+          vendor: postgres
+          host: "postgresql.postgresql-global.svc.cluster.local"
+          port: 5432
+          database: keycloak_customer
+          username: postgres
+          existingSecret: "keycloak-db-credentials"
+          passwordKey: "password"
+
+        # Redis - standalone for prod
+        keycloak-redis:
+          architecture: standalone
+          sentinel:
+            enabled: false
+          master:
+            persistence:
+              size: 2Gi
+            resources:
+              requests:
+                memory: 256Mi
+              limits:
+                memory: 1Gi
+          metrics:
+            enabled: false
+
+        # Admin SSO Configuration
+        adminSSO:
+          enabled: true
+          googleCredentialsSecret: "keycloak-google-sso"
+          facebookCredentialsSecret: "keycloak-facebook-sso"
+          superAdmins:
+            - "unidevidp@gmail.com"
+            - "mahesh.sangawar@gmail.com"
+            - "samyak.rout@gmail.com"
+          disablePasswordLogin: false
+
+        # FanZone realm - separate realm for cricket platform
+        fanzoneRealm:
+          enabled: true
+          domain: "fanzonebattleground.com"
+          mobileScheme: "fanzone"
+
+        # HomeChef realm - separate realm for home-cook tiffin platform
+        homechefRealm:
+          enabled: true
+          domain: "fe3dr.com"
+          mobileScheme: "fe3dr"
+
+        # Twitter/X OAuth credentials
+        twitterCredentialsSecret: "keycloak-twitter-sso"
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: identity-customer
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,284 @@
+{{/*
+Gateway - Defines the entry points for traffic into the mesh
+*/}}
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: tesseract-gateway
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    # HTTP server for platform domains (redirects to HTTPS)
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "{{ .Values.subdomains.admin }}.{{ .Values.domain }}"
+        - "{{ .Values.subdomains.store }}.{{ .Values.domain }}"
+        {{- if .Values.subdomains.onboarding }}
+        - "{{ .Values.subdomains.onboarding }}.{{ .Values.domain }}"
+        {{- else }}
+        - "{{ .Values.domain }}"
+        {{- end }}
+        - "{{ .Values.subdomains.api }}.{{ .Values.domain }}"
+        - "{{ .Values.subdomains.fanzone }}.{{ .Values.domain }}"
+        - "{{ .Values.subdomains.hmsStaff }}.{{ .Values.domain }}"
+        - "{{ .Values.subdomains.hmsPatient }}.{{ .Values.domain }}"
+        - "{{ .Values.subdomains.growthbook }}.{{ .Values.domain }}"
+        {{- if .Values.analyticsHost }}
+        - "{{ .Values.analyticsHost }}"
+        {{- else }}
+        - "{{ .Values.subdomains.analytics }}.{{ .Values.domain }}"
+        {{- end }}
+        - "{{ .Values.subdomains.apiDocs }}.{{ .Values.domain }}"
+        {{- if .Values.subdomains.kibana }}
+        - "{{ .Values.subdomains.kibana }}.{{ .Values.domain }}"
+        {{- end }}
+        - "*.{{ .Values.domain }}"
+      tls:
+        httpsRedirect: true
+
+    # HTTP server for custom domains via Cloudflare Tunnel
+    # Cloudflare handles TLS termination, so NO redirect here
+    # This accepts traffic from the tunnel for customer custom domains
+    {{- if .Values.customDomains.enabled }}
+    - port:
+        number: 80
+        name: http-custom-domains
+        protocol: HTTP
+      hosts:
+        # Wildcard to accept any custom domain
+        # VirtualServices will handle routing based on Host header
+        - "*"
+      # NO httpsRedirect - Cloudflare Tunnel already handled TLS
+    {{- end }}
+
+    # HTTPS server for admin
+    - port:
+        number: 443
+        name: https-admin
+        protocol: HTTPS
+      hosts:
+        - "{{ .Values.subdomains.admin }}.{{ .Values.domain }}"
+      tls:
+        mode: SIMPLE
+        credentialName: admin-tls
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+
+    # HTTPS server for storefront
+    - port:
+        number: 443
+        name: https-store
+        protocol: HTTPS
+      hosts:
+        - "{{ .Values.subdomains.store }}.{{ .Values.domain }}"
+      tls:
+        mode: SIMPLE
+        credentialName: storefront-tls
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+
+    # HTTPS server for onboarding (apex domain in prod, subdomain in devtest)
+    - port:
+        number: 443
+        name: https-onboarding
+        protocol: HTTPS
+      hosts:
+        {{- if .Values.subdomains.onboarding }}
+        - "{{ .Values.subdomains.onboarding }}.{{ .Values.domain }}"
+        {{- else }}
+        - "{{ .Values.domain }}"
+        {{- end }}
+      tls:
+        mode: SIMPLE
+        {{- if .Values.subdomains.onboarding }}
+        credentialName: tenant-onboarding-tls
+        {{- else }}
+        credentialName: apex-domain-tls
+        {{- end }}
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+
+    # HTTPS server for API gateway
+    - port:
+        number: 443
+        name: https-api
+        protocol: HTTPS
+      hosts:
+        - "{{ .Values.subdomains.api }}.{{ .Values.domain }}"
+      tls:
+        mode: SIMPLE
+        credentialName: api-tls
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+
+    # HTTPS server for fanzone
+    - port:
+        number: 443
+        name: https-fanzone
+        protocol: HTTPS
+      hosts:
+        - "{{ .Values.subdomains.fanzone }}.{{ .Values.domain }}"
+      tls:
+        mode: SIMPLE
+        credentialName: fanzone-web-tls
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+
+    # HTTPS server for HMS Staff Portal
+    - port:
+        number: 443
+        name: https-hms-staff
+        protocol: HTTPS
+      hosts:
+        - "{{ .Values.subdomains.hmsStaff }}.{{ .Values.domain }}"
+      tls:
+        mode: SIMPLE
+        credentialName: hms-staff-tls
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+
+    # HTTPS server for HMS Patient Portal
+    - port:
+        number: 443
+        name: https-hms-patient
+        protocol: HTTPS
+      hosts:
+        - "{{ .Values.subdomains.hmsPatient }}.{{ .Values.domain }}"
+      tls:
+        mode: SIMPLE
+        credentialName: hms-patient-tls
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+
+    # HTTPS server for GrowthBook Feature Flags
+    - port:
+        number: 443
+        name: https-growthbook
+        protocol: HTTPS
+      hosts:
+        - "{{ .Values.subdomains.growthbook }}.{{ .Values.domain }}"
+      tls:
+        mode: SIMPLE
+        credentialName: growthbook-tls
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+
+    # HTTPS server for OpenPanel Web Analytics
+    - port:
+        number: 443
+        name: https-analytics
+        protocol: HTTPS
+      hosts:
+        {{- if .Values.analyticsHost }}
+        - "{{ .Values.analyticsHost }}"
+        {{- else }}
+        - "{{ .Values.subdomains.analytics }}.{{ .Values.domain }}"
+        {{- end }}
+      tls:
+        mode: SIMPLE
+        credentialName: analytics-tls
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+
+    # HTTPS server for API Documentation (Swagger UI)
+    - port:
+        number: 443
+        name: https-api-docs
+        protocol: HTTPS
+      hosts:
+        - "{{ .Values.subdomains.apiDocs }}.{{ .Values.domain }}"
+      tls:
+        mode: SIMPLE
+        credentialName: api-docs-tls
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+
+    # HTTPS server for Customer IDP (Keycloak)
+    - port:
+        number: 443
+        name: https-customer-idp
+        protocol: HTTPS
+      hosts:
+        - "{{ .Values.subdomains.customerIdp }}.{{ .Values.domain }}"
+      tls:
+        mode: SIMPLE
+        credentialName: customer-idp-tls
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+
+    # HTTPS server for wildcard storefronts (<slug>.tesserix.app)
+    # This enables multi-tenant subdomain-based storefront routing
+    - port:
+        number: 443
+        name: https-storefront-wildcard
+        protocol: HTTPS
+      hosts:
+        - "*.{{ .Values.domain }}"
+      tls:
+        mode: SIMPLE
+        credentialName: storefront-wildcard-tls
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+
+    {{- if .Values.companyHost }}
+    # HTTPS server for company website (tesserix.app)
+    # Cloud Run only — no GKE deployment, routed via ILB + Istio ServiceEntry
+    - port:
+        number: 443
+        name: https-company
+        protocol: HTTPS
+      hosts:
+        - "{{ .Values.companyHost }}"
+      tls:
+        mode: SIMPLE
+        credentialName: company-tls
+        minProtocolVersion: {{ .Values.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- range .Values.tls.cipherSuites }}
+          - {{ . }}
+          {{- end }}
+    {{- end }}

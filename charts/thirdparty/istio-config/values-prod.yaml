@@ -1,0 +1,115 @@
+# Production overrides for istio-config
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+# Enable Cloud Run routing — VirtualServices route to Cloud Run services
+# instead of K8s internal DNS
+cloudRun:
+  enabled: true
+
+# FanZone services migrated to GKE Knative — route through Knative local gateway
+fanzoneKnative: true
+
+# Cloud Run IAM auth — DISABLED: all services migrated to GKE Knative
+cloudRunAuth:
+  enabled: false
+  audience: ""
+
+# Production uses mark8ly.com as the main domain
+domain: mark8ly.com
+
+# Company website on tesserix.app — DISABLED: migrated to tesserix/tesserix-k8s repo
+companyHost: ""
+
+# Cloud Run Host header rewrite for all platform domains.
+# Cloud Run rejects requests where Host doesn't match *.run.app.
+# This EnvoyFilter applies auto_host_rewrite to fix the Host header.
+# NOTE: K8s-only hosts (customer-idp, growthbook, postal, mautic, search)
+# are NOT included — they don't route to Cloud Run.
+cloudRunHostRewrite:
+  - "mark8ly.com"
+  - "admin.mark8ly.com"
+  - "store.mark8ly.com"
+  - "api.mark8ly.com"
+  - "hms-staff.mark8ly.com"
+  - "hms-patient.mark8ly.com"
+  # fe3dr.com domains removed — HomeChef migrated from Cloud Run to Knative
+
+# Cloudflare Tunnel configuration for custom domains
+# Tunnel: PROD_MARKETLY
+# Customers CNAME their domains to this tunnel endpoint
+customDomains:
+  enabled: true
+  cloudflareTunnelId: "2b78323c-aa85-4b96-b703-c831357e7d33"
+
+# Production subdomain configuration (without dev- prefix)
+# Use empty string for apex domain (e.g., mark8ly.com instead of subdomain.mark8ly.com)
+subdomains:
+  admin: admin
+  store: store
+  onboarding: ""  # Empty = use apex domain mark8ly.com
+  api: api
+  fanzone: fanzone
+  hmsStaff: hms-staff
+  hmsPatient: hms-patient
+  growthbook: growthbook
+  postal: postal
+  mautic: mautic
+  apiDocs: api-docs
+  typesense: search
+  # Identity Provider (Keycloak)
+  customerIdp: customer-idp
+  # Logging Stack (Kibana) - uses tesserix.app domain, not mark8ly.com
+  kibana: kibana
+  # Web Analytics (OpenPanel)
+  analytics: analytics
+
+# Identity Provider Aliases — product-specific domains for shared Keycloak
+# These create VirtualServices routing to keycloak.identity-customer.svc.cluster.local:8080
+identityAliases:
+  - host: identity.fe3dr.com
+    name: identity-fe3dr-vs
+  - host: identity.fanzonebattleground.com
+    name: identity-fanzone-vs
+
+# Internal Identity Provider Aliases — product-specific domains for shared internal Keycloak
+# These create VirtualServices routing to keycloak.identity-internal.svc.cluster.local:8080
+internalIdentityAliases:
+  - host: internal-identity.fe3dr.com
+    name: internal-identity-fe3dr-vs
+  - host: internal-identity.fanzonebattleground.com
+    name: internal-identity-fanzone-vs
+
+# Production CORS configuration
+# Kibana host override - uses tesserix.app in prod (not mark8ly.com)
+kibanaHost: "kibana.tesserix.app"
+
+# Analytics host override - uses tesserix.app in prod (not mark8ly.com)
+analyticsHost: "analytics.tesserix.app"
+
+cors:
+  allowOrigins:
+    - "https://kibana.tesserix.app"
+    - "https://mark8ly.com"
+    - "https://tesserix.app"
+    - "https://admin.mark8ly.com"
+    - "https://store.mark8ly.com"
+    - "https://hms-staff.mark8ly.com"
+    - "https://hms-patient.mark8ly.com"
+    - "https://growthbook.mark8ly.com"
+    - "https://postal.mark8ly.com"
+    - "https://mautic.mark8ly.com"
+    - "https://api-docs.mark8ly.com"
+    - "https://search.mark8ly.com"
+    - "https://identity.fanzonebattleground.com"
+    - "https://analytics.tesserix.app"
+    - "https://fe3dr.com"
+    - "https://www.fe3dr.com"
+    - "https://vendors.fe3dr.com"
+
+# Production mesh configuration
+meshConfig:
+  accessLogFile: "/dev/stdout"
+  enableAutoMtls: true
+  defaultConfig:
+    tracing:
+      sampling: 10  # 10% sampling in production

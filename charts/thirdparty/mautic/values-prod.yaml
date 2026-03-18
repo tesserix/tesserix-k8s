@@ -1,0 +1,32 @@
+# Production overrides for mautic
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+replicaCount: 2
+
+# Production resource allocation
+resources:
+  limits:
+    memory: 2Gi
+  requests:
+    memory: 1Gi
+
+# Production ingress
+ingress:
+  enabled: true
+  className: "kong"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: mautic.tesserix.app
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: mautic-tls
+      hosts:
+        - mautic.tesserix.app
+
+# High availability settings
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

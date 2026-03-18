@@ -1,0 +1,40 @@
+{{- if .Values.stages.dev.enabled }}
+{{- $projectName := include "kargo-project.projectName" . }}
+{{- $root := . }}
+{{- range .Values.services }}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: {{ .name }}-dev
+  namespace: {{ $projectName }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    {{- include "kargo-project.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: {{ .name }}
+    service-type: {{ .type | default "backend" }}
+    stage: dev
+spec:
+  requestedFreight:
+    - origin:
+        kind: Warehouse
+        name: {{ .name }}-warehouse
+      sources:
+        direct: true
+  promotionTemplate:
+    spec:
+      steps:
+        # Update the image tag in ArgoCD Application
+        - uses: argocd-update
+          config:
+            apps:
+              - name: {{ .name }}
+                sources:
+                  - repoURL: {{ $root.Values.git.repoURL }}
+                    helm:
+                      images:
+                        - key: image.tag
+                          value: ${{ "{{" }} imageFrom("{{ include "kargo-project.imageRepo" (dict "root" $root "service" .) }}").Tag {{ "}}" }}
+{{- end }}
+{{- end }}

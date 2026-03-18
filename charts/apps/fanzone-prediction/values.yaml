@@ -1,0 +1,188 @@
+# =============================================================================
+# FanZone Prediction - Prediction Betting Service
+# Manages prediction markets, bets, odds, house pool, and auto-expiry
+# =============================================================================
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/FanZone-Battle-Ground/fanzone-prediction
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Exclude ports from Istio sidecar for proper connectivity
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  # Istio sidecar configuration
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8085
+
+resources:
+  limits:
+    memory: 256Mi
+  requests:
+    memory: 64Mi
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+knative:
+  enabled: false
+  minScale: 0
+  maxScale: 5
+  scaleDownDelay: "60s"
+  concurrencyTarget: 100
+  containerConcurrency: 0
+  timeoutSeconds: 300
+
+autoscaling:
+  enabled: true
+  minReplicas: 0
+  maxReplicas: 12
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - fanzone-prediction
+          topologyKey: kubernetes.io/hostname
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# KEDA ScaledObject configuration
+keda:
+  enabled: true
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 12
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "80"
+
+# Graceful shutdown
+terminationGracePeriodSeconds: 30
+
+# Environment configuration
+env:
+  GO_ENV: production
+  LOG_LEVEL: info
+  LOG_FORMAT: json
+
+  # Server config
+  SERVER_PORT: "8085"
+
+  # Prediction-specific config
+  HOUSE_FEE_PER_BET: "0.75"
+  EXPIRY_CHECK_INTERVAL: "30s"
+
+  # NATS JetStream
+  NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+  NATS_STREAM_NAME: "FANZONE_PREDICTION"
+
+  # Auto-resolve config
+  MATCH_SERVICE_URL: "http://sports-data.fanzone.svc.cluster.local"
+  AUTO_RESOLVE_ENABLED: "true"
+  AUTO_RESOLVE_INTERVAL: "15s"
+
+# PostgreSQL configuration (same database as auth/user service)
+database:
+  host: "postgresql.postgresql-fanzone.svc.cluster.local"
+  port: "5432"
+  user: "postgres"
+  name: "fanzone_auth"
+  sslmode: "require"
+  passwordSecretName: "postgresql-fanzone-password"
+  passwordSecretKey: "password"
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"
+  minAllowed:
+    memory: "32Mi"
+  maxAllowed:
+    memory: "256Mi"
+  excludeIstioProxy: true
+
+# JWT Secret configuration (for token validation)
+jwt:
+  secretName: "fanzone-jwt-secret"
+  secretKey: "jwt-secret"
+
+# GCP Secret Manager configuration
+gcp:
+  projectId: ""
+  namespace: "fanzone"
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "devtest"

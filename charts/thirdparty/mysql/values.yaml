@@ -1,0 +1,84 @@
+# Default values for MySQL
+replicaCount: 1
+
+image:
+  repository: mysql
+  tag: "8.0"
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+# MySQL root password (use sealed secret in production)
+auth:
+  rootPassword: ""
+  existingSecret: "mysql-credentials"
+  existingSecretRootKey: "root-password"
+
+# Additional databases to create
+databases:
+  - postal
+  - mautic
+
+# Additional users to create
+users:
+  - name: postal
+    database: postal
+    existingSecret: "mysql-credentials"
+    existingSecretPasswordKey: "postal-password"
+    # Postal needs CREATE privilege for per-server message databases (postal_*)
+    extraPrivileges:
+      - "GRANT CREATE ON *.* TO 'postal'@'%'"
+      - "GRANT ALL PRIVILEGES ON `postal_%`.* TO 'postal'@'%'"
+  - name: mautic
+    database: mautic
+    existingSecret: "mysql-credentials"
+    existingSecretPasswordKey: "mautic-password"
+
+# Storage configuration
+persistence:
+  enabled: true
+  storageClass: "standard-rwo"
+  size: 10Gi
+  accessModes:
+    - ReadWriteOnce
+
+service:
+  type: ClusterIP
+  port: 3306
+
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    memory: 512Mi
+
+# MySQL configuration
+config:
+  maxConnections: 200
+  characterSetServer: utf8mb4
+  collationServer: utf8mb4_unicode_ci
+
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# MySQL official image requires root to initialize, then drops to mysql user
+# Don't set restrictive security context
+podSecurityContext: {}
+
+securityContext: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

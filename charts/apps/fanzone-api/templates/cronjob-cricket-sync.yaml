@@ -1,0 +1,42 @@
+{{- if .Values.cricketSync }}
+{{- if .Values.cricketSync.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "fanzone-api.fullname" . }}-cricket-sync
+  labels:
+    {{- include "fanzone-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cricket-sync
+spec:
+  schedule: {{ .Values.cricketSync.schedule | default "*/5 * * * *" | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels:
+            {{- include "fanzone-api.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: cricket-sync
+            sidecar.istio.io/inject: "false"
+        spec:
+          containers:
+          - name: cricket-sync
+            image: curlimages/curl:latest
+            command:
+            - curl
+            - -sf
+            - --max-time
+            - "60"
+            - {{ printf "http://%s.%s.svc.cluster.local:%s/api/v1/cricket/sync" (include "fanzone-api.fullname" .) .Release.Namespace (.Values.service.targetPort | default "8080" | toString) }}
+            resources:
+              requests:
+                memory: 16Mi
+              limits:
+                memory: 32Mi
+          restartPolicy: OnFailure
+{{- end }}
+{{- end }}

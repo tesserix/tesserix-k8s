@@ -1,0 +1,23 @@
+{{- if .Values.rbac.rolloutRestart.enabled }}
+{{- $saName := include "company.serviceAccountName" . }}
+{{- $fullname := include "company.fullname" . }}
+{{- $labels := include "company.labels" . }}
+{{- range .Values.rbac.rolloutRestart.namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullname }}-rollout-restart
+  namespace: {{ . }}
+  labels:
+    {{- $labels | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fullname }}-rollout-restart
+subjects:
+  - kind: ServiceAccount
+    name: {{ $saName }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}

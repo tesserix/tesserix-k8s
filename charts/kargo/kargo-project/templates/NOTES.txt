@@ -1,0 +1,48 @@
+Kargo Project has been deployed!
+
+Project Name: {{ include "kargo-project.projectName" . }}
+
+Resources Created:
+{{- $count := len .Values.services }}
+- 1 Kargo Project
+- {{ $count }} Warehouses (one per service)
+{{- if .Values.stages.dev.enabled }}
+- {{ $count }} Dev Stages
+{{- end }}
+{{- if .Values.stages.staging.enabled }}
+- {{ $count }} Staging Stages
+{{- end }}
+{{- if .Values.stages.production.enabled }}
+- {{ $count }} Production Stages
+{{- end }}
+
+Services Managed:
+{{- range .Values.services }}
+- {{ .name }} ({{ .type }})
+{{- end }}
+
+To view your Kargo project:
+  kubectl get projects.kargo.akuity.io -n {{ include "kargo-project.projectName" . }}
+
+To view warehouses:
+  kubectl get warehouses.kargo.akuity.io -n {{ include "kargo-project.projectName" . }}
+
+To view stages:
+  kubectl get stages.kargo.akuity.io -n {{ include "kargo-project.projectName" . }}
+
+To view freight:
+  kubectl get freight.kargo.akuity.io -n {{ include "kargo-project.projectName" . }}
+
+Access Kargo UI:
+  https://dev-kargo.tesserix.app
+
+Promotion Flow:
+{{- if .Values.stages.dev.enabled }}
+  Warehouse → Dev{{ if .Values.stages.dev.autoPromotion }} (auto){{ end }}
+{{- end }}
+{{- if .Values.stages.staging.enabled }}
+  Dev → Staging{{ if .Values.stages.staging.autoPromotion }} (auto){{ else }} (manual){{ end }}
+{{- end }}
+{{- if .Values.stages.production.enabled }}
+  Staging → Production{{ if .Values.stages.production.autoPromotion }} (auto){{ else }} (manual){{ end }}
+{{- end }}

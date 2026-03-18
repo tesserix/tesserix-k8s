@@ -1,0 +1,87 @@
+{{- if .Values.job.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "hms-db-seed.fullname" . }}-{{ now | date "20060102-150405" }}
+  labels:
+    {{- include "hms-db-seed.labels" . | nindent 4 }}
+  annotations:
+    # Run after PostgreSQL is deployed
+    argocd.argoproj.io/sync-wave: "1"
+    # Hook for Helm to run this job
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "hms-db-seed.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Disable Istio sidecar injection for jobs - sidecars prevent job completion
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: {{ .Values.job.restartPolicy }}
+      serviceAccountName: {{ include "hms-db-seed.serviceAccountName" . }}
+      # Init container to fetch password from GCP Secret Manager
+      initContainers:
+        - name: fetch-secrets
+          image: google/cloud-sdk:alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Fetching database password from GCP Secret Manager..."
+              gcloud secrets versions access latest \
+                --secret="{{ printf "%s-%s-postgresql-password" .Values.gcp.secretManager.secretPrefix (.Values.gcp.namespace | default .Release.Namespace) }}" \
+                --project="{{ required "gcp.projectId is required" .Values.gcp.projectId }}" \
+                > /secrets/pgpassword
+              echo "Secret fetched successfully"
+          volumeMounts:
+            - name: secrets
+              mountPath: /secrets
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+      containers:
+        - name: seed
+          image: postgres:15-alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              export PGPASSWORD=$(cat /secrets/pgpassword)
+              chmod +x /scripts/run-seed.sh
+              /scripts/run-seed.sh
+          env:
+            - name: PGHOST
+              value: {{ .Values.database.host | quote }}
+            - name: PGPORT
+              value: {{ .Values.database.port | quote }}
+            - name: PGUSER
+              value: {{ .Values.database.user | quote }}
+            - name: PGSSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ include "hms-db-seed.fullname" . }}-scripts
+            defaultMode: 0755
+        - name: secrets
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+{{- end }}

@@ -1,0 +1,60 @@
+{{- if .Values.virtualService.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "fanzone-auth-bff.fullname" . }}
+  labels:
+    {{- include "fanzone-auth-bff.labels" . | nindent 4 }}
+spec:
+  hosts:
+    {{- range .Values.virtualService.hosts }}
+    - {{ . | quote }}
+    {{- end }}
+  gateways:
+    - {{ .Values.virtualService.gateway | default "istio-ingress/tesseract-gateway" }}
+  http:
+    - match:
+        - uri:
+            prefix: /
+      {{- if .Values.knative.enabled }}
+      headers:
+        request:
+          set:
+            Host: {{ include "fanzone-auth-bff.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      {{- else }}
+      route:
+        - destination:
+            host: {{ include "fanzone-auth-bff.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+      {{- end }}
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy:
+        allowOrigins:
+          {{- range .Values.virtualService.allowedOrigins }}
+          - exact: {{ . | quote }}
+          {{- end }}
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+          - x-fz-auth
+        allowCredentials: true
+        maxAge: "86400s"
+{{- end }}

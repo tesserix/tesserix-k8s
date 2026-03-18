@@ -1,0 +1,127 @@
+# =============================================================================
+# Istio Auth Policies Configuration
+# JWT authentication and authorization for Keycloak-protected services
+# =============================================================================
+
+# Environment name (devtest, pilot, prod)
+environment: devtest
+
+# Istio Ingress Gateway configuration
+# JWT validation happens at the gateway level before routing to services
+# Since Istio WorkloadSelector only supports matchLabels (not matchExpressions),
+# we define each gateway separately and create policies for each
+ingressGateways:
+  # Main gateway - uses Cloudflare tunnel for *.tesserix.app
+  - name: ""                    # Empty string = no suffix in policy names (main gateway)
+    labelKey: istio
+    labelValue: ingressgateway
+    namespace: istio-ingress
+
+  # Custom domain gateway - public LoadBalancer for custom domains
+  - name: "-custom"             # Suffix for policy names
+    labelKey: istio
+    labelValue: custom-ingressgateway
+    namespace: istio-ingress
+
+# Application namespaces where authorization policies are applied
+appNamespaces:
+  global: devtest
+  marketplace: devtest
+  # Add other namespaces as needed
+
+# =============================================================================
+# Keycloak IDP Configuration
+# Dual IDP setup: customer (B2C) and internal (staff/admin)
+# =============================================================================
+keycloak:
+  # Customer IDP - for mobile apps, web storefronts, B2C customers, and tenant staff
+  customer:
+    enabled: true
+    issuer: "https://devtest-customer-idp.tesserix.app/realms/tesserix-customer"
+    jwksUri: "https://devtest-customer-idp.tesserix.app/realms/tesserix-customer/protocol/openid-connect/certs"
+    audiences:
+      - "tesserix-api"
+      - "mobile-app"
+      - "storefront-mobile"
+      - "web-storefront"
+      - "admin-dashboard"
+      - "account"
+
+  # Master realm - for Keycloak admin console access
+  # This allows the Keycloak admin UI to work through Istio ingress
+  # Note: No audience restriction needed - master realm tokens don't include aud claim
+  master:
+    enabled: true
+    issuer: "https://devtest-customer-idp.tesserix.app/realms/master"
+    jwksUri: "https://devtest-customer-idp.tesserix.app/realms/master/protocol/openid-connect/certs"
+    audiences: []
+
+  # Internal IDP - for admin dashboard and staff authentication
+  # Separate realm for stricter security on admin operations
+  internal:
+    enabled: true
+    issuer: "https://devtest-internal-idp.tesserix.app/realms/tesserix-internal"
+    jwksUri: "https://devtest-internal-idp.tesserix.app/realms/tesserix-internal/protocol/openid-connect/certs"
+    audiences:
+      - "admin-web"
+      - "admin-bff"
+      - "marketplace-dashboard"
+      - "marketplace-onboarding-admin"
+
+# =============================================================================
+# Frontend apps configuration
+# These apps serve static content and don't require JWT validation
+# =============================================================================
+frontendApps:
+  - name: storefront
+    label: storefront
+    hosts:
+      - "*.tesserix.app"  # Wildcard for tenant subdomains
+  - name: admin
+    label: admin
+  - name: tenant-onboarding
+    label: tenant-onboarding
+  - name: growthbook
+    label: growthbook
+  - name: idp-customer
+    label: keycloak
+    namespace: identity-customer
+    hosts:
+      - "devtest-customer-idp.tesserix.app"  # Customer Keycloak IDP
+  - name: idp-internal
+    label: keycloak
+    namespace: identity-internal
+    hosts:
+      - "devtest-internal-idp.tesserix.app"  # Internal Keycloak IDP for admin/staff
+# =============================================================================
+# Service mesh configuration
+# =============================================================================
+
+# Principals allowed for internal service-to-service communication
+meshPrincipals:
+  - "cluster.local/ns/devtest/sa/*"
+  - "cluster.local/ns/istio-ingress/sa/*"
+  - "cluster.local/ns/istio-system/sa/*"
+  - "cluster.local/ns/monitoring/sa/*"
+
+# mTLS mode for service-to-service communication
+# STRICT: All traffic must be mTLS encrypted (PCI-DSS compliant)
+# PERMISSIVE: Accept both plaintext and mTLS (migration mode only)
+mtls:
+  mode: STRICT
+
+# =============================================================================
+# Header contract
+# These headers are set by Istio after JWT validation
+# Backend services should trust these headers (no re-validation needed)
+# =============================================================================
+# Headers output by Istio:
+#   x-jwt-claim-sub          - User ID (Keycloak subject)
+#   x-jwt-claim-email        - User email
+#   x-jwt-claim-tenant-id    - Tenant UUID
+#   x-jwt-claim-tenant-slug  - Tenant slug
+#   x-jwt-claim-staff-id     - Staff ID (internal users)
+#   x-jwt-claim-customer-id  - Customer ID (B2C users)
+#   x-jwt-claim-vendor-id    - Vendor ID (vendor users)
+#   x-jwt-claim-roles        - Realm roles (JSON array)
+#   x-jwt-claim-platform-owner - Platform owner flag (cross-tenant access)

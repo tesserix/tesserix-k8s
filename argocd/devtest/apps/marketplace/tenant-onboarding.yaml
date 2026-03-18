@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tenant-onboarding
+  namespace: argocd
+  annotations:
+    kargo.akuity.io/authorized-stage: tesserix-devtest:tenant-onboarding-dev
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: frontend
+    environment: devtest
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/tenant-onboarding
+    helm:
+      valueFiles:
+      - values.yaml
+      - ../global-config.yaml
+      parameters:
+      - name: image.tag
+        value: latest
+      - name: database.host
+        value: postgresql.postgresql-marketplace.svc.cluster.local
+      - name: ingress.hosts[0].host
+        value: dev-onboarding.tesserix.app
+      - name: env.TENANT_SERVICE_URL
+        value: http://tenant-service.marketplace.svc.cluster.local:8080
+      - name: env.LOCATION_SERVICE_URL
+        value: http://location-service.marketplace.svc.cluster.local:8080
+      - name: env.VERIFICATION_SERVICE_URL
+        value: http://verification-service.marketplace.svc.cluster.local:8080
+      - name: env.NEXT_PUBLIC_BASE_DOMAIN
+        value: tesserix.app
+      - name: env.AUTH_BFF_URL
+        value: http://auth-bff.marketplace.svc.cluster.local:8080
+      # OpenPanel Analytics (client ID injected from K8s Secret by openpanel-project-init Job)
+      - name: env.NEXT_PUBLIC_OPENPANEL_ENABLED
+        value: "true"
+      - name: env.NEXT_PUBLIC_OPENPANEL_API_URL
+        value: "https://dev-analytics.tesserix.app"
+      values: |
+        # Disable SealedSecret - use ExternalSecrets instead
+        apiKeySecret:
+          sealedSecret:
+            enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: marketplace
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,101 @@
+{{- /*
+ClusterIssuer for custom domain certificates using Let's Encrypt HTTP-01 challenge
+This issuer works with the custom domain gateway for automatic certificate issuance.
+*/ -}}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-custom-domain
+  labels:
+    app.kubernetes.io/name: letsencrypt-custom-domain
+    app.kubernetes.io/component: certificate
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  acme:
+    # Production Let's Encrypt server
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: {{ .Values.certManager.email | default "admin@tesserix.app" }}
+    privateKeySecretRef:
+      name: letsencrypt-custom-domain-account-key
+    solvers:
+      # HTTP-01 challenge solver for custom domains
+      # Works with Istio by creating temporary VirtualService for challenges
+      - http01:
+          ingress:
+            class: istio
+            serviceType: ClusterIP
+---
+{{- /*
+Self-Signed Issuer for fallback certificate
+*/ -}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: custom-domain-selfsigned
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    app.kubernetes.io/name: custom-domain-selfsigned
+    app.kubernetes.io/component: certificate
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  selfSigned: {}
+---
+{{- /*
+Default Certificate for Custom Domain Gateway
+This is a self-signed fallback certificate for the gateway.
+Actual tenant certificates are created by tenant-router-service via cert-manager with Let's Encrypt.
+*/ -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: custom-domain-default-tls
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    app.kubernetes.io/name: custom-domain-default-tls
+    app.kubernetes.io/component: certificate
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  secretName: custom-domain-default-tls
+  duration: 8760h  # 1 year
+  renewBefore: 720h  # 30 days
+  isCA: false
+  privateKey:
+    algorithm: RSA
+    encoding: PKCS1
+    size: 2048
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+  dnsNames:
+    # Placeholder - this cert is only used if no tenant cert matches
+    - "fallback.custom-domain.internal"
+  issuerRef:
+    name: custom-domain-selfsigned
+    kind: Issuer
+    group: cert-manager.io
+---
+{{- /*
+PeerAuthentication for mTLS within the mesh
+*/ -}}
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: custom-ingress-mtls
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    app.kubernetes.io/name: custom-ingress-mtls
+    app.kubernetes.io/component: security
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  selector:
+    matchLabels:
+      {{- toYaml .Values.gateway.selector | nindent 6 }}
+  mtls:
+    mode: STRICT
+  portLevelMtls:
+    # Allow plaintext on port 80 (HTTP redirect) and 443 (TLS termination)
+    80:
+      mode: DISABLE
+    443:
+      mode: DISABLE

@@ -1,0 +1,461 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hms-db-seed.fullname" . }}-scripts
+  labels:
+    {{- include "hms-db-seed.labels" . | nindent 4 }}
+data:
+  # Schema migration script - runs first to ensure database schema is up to date
+  00-migrations.sql: |
+    -- HMS Database Schema Migrations
+    -- These migrations are idempotent and safe for all environments
+
+    -- ============================================
+    -- HMS AUTH DATABASE MIGRATIONS
+    -- ============================================
+    \c hms_auth
+
+    -- Ensure password_hash column exists
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'users' AND column_name = 'password_hash'
+      ) THEN
+        ALTER TABLE users ADD COLUMN password_hash VARCHAR(255);
+        RAISE NOTICE 'Added password_hash column';
+      END IF;
+    END $$;
+
+    -- ============================================
+    -- HMS TENANT DATABASE MIGRATIONS
+    -- ============================================
+    \c hms_tenant
+
+    -- Ensure slug column exists in hospitals
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'hospitals' AND column_name = 'slug'
+      ) THEN
+        ALTER TABLE hospitals ADD COLUMN slug VARCHAR(100);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_hospitals_slug ON hospitals(slug) WHERE slug IS NOT NULL;
+        RAISE NOTICE 'Added slug column to hospitals';
+      END IF;
+    END $$;
+
+    -- Ensure status column exists in hospitals
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'hospitals' AND column_name = 'status'
+      ) THEN
+        ALTER TABLE hospitals ADD COLUMN status VARCHAR(20) DEFAULT 'active';
+        RAISE NOTICE 'Added status column to hospitals';
+      END IF;
+    END $$;
+
+    -- Create user_hospital_memberships table if not exists
+    CREATE TABLE IF NOT EXISTS user_hospital_memberships (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL,
+      hospital_id UUID NOT NULL REFERENCES hospitals(id) ON DELETE CASCADE,
+      tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+      role VARCHAR(50) NOT NULL,
+      permissions TEXT[] DEFAULT '{}',
+      is_default BOOLEAN DEFAULT false,
+      is_active BOOLEAN DEFAULT true,
+      invited_by UUID,
+      invited_at TIMESTAMP WITH TIME ZONE,
+      accepted_at TIMESTAMP WITH TIME ZONE,
+      last_access_at TIMESTAMP WITH TIME ZONE,
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      UNIQUE(user_id, hospital_id)
+    );
+
+    -- Create indexes for user_hospital_memberships
+    CREATE INDEX IF NOT EXISTS idx_uhm_user_id ON user_hospital_memberships(user_id);
+    CREATE INDEX IF NOT EXISTS idx_uhm_hospital_id ON user_hospital_memberships(hospital_id);
+    CREATE INDEX IF NOT EXISTS idx_uhm_tenant_id ON user_hospital_memberships(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_uhm_user_default ON user_hospital_memberships(user_id, is_default) WHERE is_default = true;
+
+    -- ============================================
+    -- HMS PATIENT DATABASE MIGRATIONS
+    -- ============================================
+    \c hms_patient
+
+    -- Add emergency_contact_relationship column if not exists
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'patients' AND column_name = 'emergency_contact_relationship'
+      ) THEN
+        ALTER TABLE patients ADD COLUMN emergency_contact_relationship VARCHAR(50);
+        RAISE NOTICE 'Added emergency_contact_relationship column';
+      END IF;
+    END $$;
+
+    -- Create emergency_contacts table for multiple contacts per patient
+    CREATE TABLE IF NOT EXISTS emergency_contacts (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      patient_id UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+      tenant_id UUID NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      phone VARCHAR(20) NOT NULL,
+      relationship VARCHAR(50) NOT NULL,
+      is_primary BOOLEAN DEFAULT false,
+      address VARCHAR(500),
+      notes TEXT,
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+    );
+
+    -- Create index for emergency contacts lookup
+    CREATE INDEX IF NOT EXISTS idx_emergency_contacts_patient ON emergency_contacts(patient_id);
+    CREATE INDEX IF NOT EXISTS idx_emergency_contacts_tenant ON emergency_contacts(tenant_id);
+
+    -- Create audit log table for patient data changes (production compliance)
+    CREATE TABLE IF NOT EXISTS patient_audit_log (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      patient_id UUID NOT NULL,
+      tenant_id UUID NOT NULL,
+      action VARCHAR(20) NOT NULL,
+      changed_by VARCHAR(255),
+      changed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      old_data JSONB,
+      new_data JSONB,
+      ip_address VARCHAR(45),
+      user_agent TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_patient_audit_patient ON patient_audit_log(patient_id);
+    CREATE INDEX IF NOT EXISTS idx_patient_audit_tenant ON patient_audit_log(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_patient_audit_time ON patient_audit_log(changed_at);
+
+    SELECT 'Schema migrations completed successfully' AS status;
+
+  # Base seed script - always runs (production-safe minimal data)
+  01-base-seed.sql: |
+    -- HMS Database Seed Script - Multi-Tenant Base Data
+    -- This script is idempotent and safe for all environments
+
+    -- ============================================
+    -- HMS TENANT DATABASE - Organizations & Hospitals
+    -- ============================================
+    \c hms_tenant
+
+    -- Seed tenants (organizations)
+    {{- range .Values.seed.tenants }}
+    INSERT INTO tenants (id, name, slug, domain, settings, status, created_at, updated_at)
+    VALUES (
+      '{{ .id }}',
+      '{{ .name }}',
+      '{{ .subdomain }}',
+      '{{ .subdomain }}.localhost',
+      jsonb_build_object(
+        'plan', '{{ .plan }}',
+        'contact_email', '{{ .contactEmail }}',
+        'contact_phone', '{{ .contactPhone }}',
+        'timezone', '{{ .timezone | default "Asia/Kolkata" }}',
+        'currency', '{{ .currency | default "INR" }}',
+        'features', ARRAY[{{- range $i, $f := .features }}{{ if $i }},{{ end }}'{{ $f }}'{{ end }}]
+      ),
+      '{{ .status }}',
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      slug = EXCLUDED.slug,
+      domain = EXCLUDED.domain,
+      settings = EXCLUDED.settings,
+      status = EXCLUDED.status,
+      updated_at = NOW();
+    {{- end }}
+
+    -- Seed hospitals
+    {{- range .Values.seed.hospitals }}
+    INSERT INTO hospitals (id, tenant_id, name, slug, code, type, status, registration_number, email, phone, address_line1, city, state, pincode, country, timezone, bed_capacity, is_active, created_at, updated_at)
+    VALUES (
+      '{{ .id }}',
+      '{{ .tenantId }}',
+      '{{ .name }}',
+      '{{ .slug }}',
+      '{{ .code }}',
+      '{{ .type }}',
+      '{{ .status }}',
+      '{{ .registrationNumber }}',
+      '{{ .email }}',
+      '{{ .phone }}',
+      '{{ .addressLine1 }}',
+      '{{ .city }}',
+      '{{ .state }}',
+      '{{ .pincode }}',
+      '{{ .country }}',
+      '{{ .timezone }}',
+      {{ .bedCapacity }},
+      true,
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      slug = EXCLUDED.slug,
+      code = EXCLUDED.code,
+      type = EXCLUDED.type,
+      status = EXCLUDED.status,
+      bed_capacity = EXCLUDED.bed_capacity,
+      updated_at = NOW();
+    {{- end }}
+
+    -- ============================================
+    -- HMS AUTH DATABASE - Users
+    -- ============================================
+    \c hms_auth
+
+    -- Seed users with hashed passwords (bcrypt hash of the plain passwords)
+    {{- range .Values.seed.users }}
+    INSERT INTO users (id, tenant_id, email, password_hash, first_name, last_name, phone, role, status, email_verified, created_at, updated_at)
+    VALUES (
+      '{{ .id }}',
+      '{{ .tenantId }}',
+      '{{ .email }}',
+      '$2a$10$N9qo8uLOickgx2ZMRZoMy.MRPc6KQ7H6pX5kgE6RGJIJ/1L.tF.lC', -- Pre-hashed password (will be overwritten)
+      '{{ .firstName }}',
+      '{{ .lastName }}',
+      '{{ .phone }}',
+      '{{ .role }}',
+      '{{ .status }}',
+      true,
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      email = EXCLUDED.email,
+      first_name = EXCLUDED.first_name,
+      last_name = EXCLUDED.last_name,
+      phone = EXCLUDED.phone,
+      role = EXCLUDED.role,
+      status = EXCLUDED.status,
+      updated_at = NOW();
+    {{- end }}
+
+    -- ============================================
+    -- HMS TENANT DATABASE - User Hospital Memberships
+    -- ============================================
+    \c hms_tenant
+
+    -- Seed user-hospital memberships (multi-tenant access)
+    {{- range .Values.seed.userHospitalMemberships }}
+    INSERT INTO user_hospital_memberships (id, user_id, hospital_id, tenant_id, role, permissions, is_default, is_active, created_at, updated_at)
+    VALUES (
+      gen_random_uuid(),
+      '{{ .userId }}',
+      '{{ .hospitalId }}',
+      '{{ .tenantId }}',
+      '{{ .role }}',
+      ARRAY[{{- range $i, $p := .permissions }}{{ if $i }},{{ end }}'{{ $p }}'{{ end }}],
+      {{ .isDefault }},
+      true,
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (user_id, hospital_id) DO UPDATE SET
+      role = EXCLUDED.role,
+      permissions = EXCLUDED.permissions,
+      is_default = EXCLUDED.is_default,
+      updated_at = NOW();
+    {{- end }}
+
+    -- ============================================
+    -- HMS PATIENT DATABASE - Hospitals
+    -- ============================================
+    \c hms_patient
+
+    -- Seed hospitals in patient database
+    {{- range .Values.seed.hospitals }}
+    INSERT INTO hospitals (id, tenant_id, name, code, type, registration_number, email, phone, address_line1, city, state, pincode, country, timezone, is_active, created_at, updated_at)
+    VALUES (
+      '{{ .id }}',
+      '{{ .tenantId }}',
+      '{{ .name }}',
+      '{{ .code }}',
+      '{{ .type }}',
+      '{{ .registrationNumber }}',
+      '{{ .email }}',
+      '{{ .phone }}',
+      '{{ .addressLine1 }}',
+      '{{ .city }}',
+      '{{ .state }}',
+      '{{ .pincode }}',
+      '{{ .country }}',
+      '{{ .timezone }}',
+      true,
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      code = EXCLUDED.code,
+      type = EXCLUDED.type,
+      updated_at = NOW();
+    {{- end }}
+
+    -- Seed MRN sequences for each hospital
+    {{- range .Values.seed.hospitals }}
+    INSERT INTO mrn_sequences (tenant_id, hospital_id, prefix, current_number, padding_length)
+    VALUES (
+      '{{ .tenantId }}',
+      '{{ .id }}',
+      '{{ .code | substr 0 3 }}',
+      0,
+      8
+    )
+    ON CONFLICT (tenant_id, hospital_id) DO NOTHING;
+    {{- end }}
+
+    SELECT 'Base seed completed successfully' AS status;
+
+  {{- if .Values.developmentEnabled }}
+  # Development seed script - only runs when developmentEnabled=true
+  02-development-seed.sql: |
+    -- HMS Database Seed Script - Development Data
+    -- This script seeds dummy data for testing (DEV/TEST environments only)
+
+    -- ============================================
+    -- HMS TENANT DATABASE - Departments
+    -- ============================================
+    \c hms_tenant
+
+    -- Seed departments
+    {{- range .Values.seed.departments }}
+    INSERT INTO departments (id, tenant_id, hospital_id, name, code, type, description, floor, is_active, created_at, updated_at)
+    VALUES (
+      '{{ .id }}',
+      (SELECT tenant_id FROM hospitals WHERE id = '{{ .hospitalId }}'),
+      '{{ .hospitalId }}',
+      '{{ .name }}',
+      '{{ .code }}',
+      '{{ .type }}',
+      '{{ .description }}',
+      '{{ .floor }}',
+      true,
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      code = EXCLUDED.code,
+      description = EXCLUDED.description,
+      updated_at = NOW();
+    {{- end }}
+
+    -- ============================================
+    -- HMS PATIENT DATABASE - Patients
+    -- ============================================
+    \c hms_patient
+
+    -- Seed demo patients
+    {{- range $idx, $patient := .Values.seed.patients }}
+    INSERT INTO patients (id, tenant_id, hospital_id, mrn, first_name, last_name, gender, date_of_birth, mobile, email, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, status, created_at, updated_at)
+    VALUES (
+      '{{ $patient.id }}',
+      (SELECT tenant_id FROM hospitals WHERE id = '{{ $patient.hospitalId }}'),
+      '{{ $patient.hospitalId }}',
+      '{{ $patient.mrn }}',
+      '{{ $patient.firstName }}',
+      '{{ $patient.lastName }}',
+      '{{ $patient.gender }}',
+      '{{ $patient.dateOfBirth }}'::date,
+      '{{ $patient.mobile }}',
+      '{{ $patient.email }}',
+      '{{ $patient.emergencyContactName | default "Emergency Contact" }}',
+      '{{ $patient.emergencyContactPhone | default "+91-9999999999" }}',
+      '{{ $patient.emergencyContactRelationship | default "spouse" }}',
+      'active',
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (id) DO UPDATE SET
+      first_name = EXCLUDED.first_name,
+      last_name = EXCLUDED.last_name,
+      mobile = EXCLUDED.mobile,
+      email = EXCLUDED.email,
+      emergency_contact_name = EXCLUDED.emergency_contact_name,
+      emergency_contact_phone = EXCLUDED.emergency_contact_phone,
+      emergency_contact_relationship = EXCLUDED.emergency_contact_relationship,
+      updated_at = NOW();
+
+    -- Add to emergency_contacts table as well
+    INSERT INTO emergency_contacts (patient_id, tenant_id, name, phone, relationship, is_primary, created_at, updated_at)
+    VALUES (
+      '{{ $patient.id }}',
+      (SELECT tenant_id FROM hospitals WHERE id = '{{ $patient.hospitalId }}'),
+      '{{ $patient.emergencyContactName | default "Emergency Contact" }}',
+      '{{ $patient.emergencyContactPhone | default "+91-9999999999" }}',
+      '{{ $patient.emergencyContactRelationship | default "spouse" }}',
+      true,
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT DO NOTHING;
+    {{- end }}
+
+    SELECT 'Development seed completed successfully' AS status;
+  {{- end }}
+
+  # Seed runner script
+  run-seed.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "=========================================="
+    echo "HMS Database Seed - Environment: {{ .Values.environment }}"
+    echo "Development Mode: {{ .Values.developmentEnabled }}"
+    echo "=========================================="
+
+    # Wait for PostgreSQL to be ready
+    echo "Waiting for PostgreSQL..."
+    until pg_isready -h $PGHOST -p $PGPORT -U $PGUSER; do
+      echo "PostgreSQL is not ready yet..."
+      sleep 2
+    done
+    echo "PostgreSQL is ready!"
+
+    # Run schema migrations first (always)
+    echo ""
+    echo "Running schema migrations..."
+    psql -h $PGHOST -p $PGPORT -U $PGUSER -f /scripts/00-migrations.sql
+
+    # Run base seed script (always)
+    echo ""
+    echo "Running base seed script..."
+    psql -h $PGHOST -p $PGPORT -U $PGUSER -f /scripts/01-base-seed.sql
+
+    {{- if .Values.developmentEnabled }}
+    # Run development seed script (only in dev/test)
+    echo ""
+    echo "Running development seed script..."
+    psql -h $PGHOST -p $PGPORT -U $PGUSER -f /scripts/02-development-seed.sql
+    {{- else }}
+    echo ""
+    echo "Skipping development seed (production mode)"
+    {{- end }}
+
+    echo ""
+    echo "=========================================="
+    echo "HMS Database Seed completed successfully!"
+    echo "=========================================="
+    echo ""
+    echo "Organizations seeded: {{ len .Values.seed.tenants }}"
+    echo "Hospitals seeded: {{ len .Values.seed.hospitals }}"
+    echo "Users seeded: {{ len .Values.seed.users }}"
+    echo "User-Hospital memberships: {{ len .Values.seed.userHospitalMemberships }}"
+    {{- if .Values.developmentEnabled }}
+    echo "Departments seeded: {{ len .Values.seed.departments }}"
+    echo "Patients seeded: {{ len .Values.seed.patients }}"
+    {{- end }}

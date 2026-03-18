@@ -1,0 +1,175 @@
+# Default values for auth-bff
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/auth-bff
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1001
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health/live
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health/ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true
+
+# KEDA ScaledObject configuration
+keda:
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  prometheus:
+    enabled: true
+    serverAddress: http://prometheus-server.monitoring.svc.cluster.local:80
+    requestRateQuery: sum(rate(istio_requests_total{destination_canonical_service="auth-bff",reporter="destination"}[2m]))
+    requestRateThreshold: "50"
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "80"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "85"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Environment configuration
+env:
+  PORT: "8080"
+  HOST: "0.0.0.0"
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  TRUST_PROXY: "true"
+
+  # Session configuration
+  SESSION_MAX_AGE: "86400"
+  SESSION_COOKIE_NAME: "bff_session"
+  # Empty domain enables dynamic domain detection based on X-Forwarded-Host
+  # This supports custom domains like admin.yahvismartfarm.com
+  SESSION_COOKIE_DOMAIN: ""
+
+  # Base domain for hostname matching (tesserix.app for staging, mark8ly.com for prod)
+  BASE_DOMAIN: "tesserix.app"
+
+  # Allowed CORS origins - wildcard allows custom domains
+  ALLOWED_ORIGINS: "https://*.tesserix.app,https://*"
+
+  # API Gateway URL (internal Kong)
+  API_GATEWAY_URL: "http://kong-kong-proxy.kong.svc.cluster.local:80"
+
+  # Tenant Service URL (for passkey + TOTP credential storage)
+  TENANT_SERVICE_URL: "http://tenant-service.marketplace.svc.cluster.local:8080"
+
+  # Verification Service URL (for OTP email verification)
+  VERIFICATION_SERVICE_URL: "http://verification-service.marketplace.svc.cluster.local:8080"
+
+# GCP Secret Manager Configuration
+gcp:
+  projectId: ""
+  namespace: "marketplace"
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "devtest"
+
+# External Secrets Configuration
+externalSecrets:
+  enabled: true
+  secretStoreRef: "gcp-secret-store"
+
+# ============================================================================
+# DUAL-REALM KEYCLOAK CONFIGURATION
+# - Internal realm (tesserix-internal): Staff/admin authentication
+# - Customer realm (tesserix-customer): Customer/shopper authentication
+# ============================================================================
+keycloak:
+  # Internal IDP (for admin dashboard/staff)
+  # Staff users authenticate via tesserix-internal realm
+  internal:
+    url: "https://devtest-internal-idp.tesserix.app"
+    internalUrl: "http://keycloak.identity-internal.svc.cluster.local:8080"
+    realm: "tesserix-internal"
+    clientId: "marketplace-dashboard"
+  # Customer IDP (for marketplace/storefront)
+  # End customers authenticate via tesserix-customer realm
+  customer:
+    url: "https://devtest-customer-idp.tesserix.app"
+    internalUrl: "http://keycloak.identity-customer.svc.cluster.local:8080"
+    realm: "tesserix-customer"
+    clientId: "storefront-web"
+
+# Redis configuration
+redis:
+  host: "identity-customer-keycloak-redis-master.identity-customer.svc.cluster.local"
+  port: "6379"
+  # tls: "true"  # Enable TLS for Redis connections (e.g., when using GCP Memorystore with TLS)

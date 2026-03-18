@@ -1,0 +1,18 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ include "yes-hospital.fullname" . }}-vs
+  labels:
+    {{- include "yes-hospital.labels" . | nindent 4 }}
+spec:
+  gateways:
+  - istio-ingress/tesseract-gateway
+  hosts:
+  - {{ (index .Values.ingress.hosts 0).host }}
+  http:
+  - route:
+    - destination:
+        host: {{ include "yes-hospital.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+        port:
+          number: {{ .Values.service.port }}
+    timeout: 30s

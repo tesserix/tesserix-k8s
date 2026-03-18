@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager-issuers
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: security
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/thirdparty/cert-manager-issuers
+    helm:
+      releaseName: cert-manager-issuers
+      values: |
+        # CNAME Delegation for automatic certificate management
+        # Enables DNS-01 challenges for custom domains via Cloudflare DNS
+        # Customers add: _acme-challenge.theirdomain.com CNAME theirdomain-com.acme.tesserix.app
+        cnameDelegation:
+          enabled: true
+          acmeZone: "acme.tesserix.app"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

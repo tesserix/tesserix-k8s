@@ -1,0 +1,59 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager-issuers
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: security
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/thirdparty/cert-manager-issuers
+    helm:
+      releaseName: cert-manager-issuers
+      values: |
+        # Production domain for DNS-01 challenges
+        cloudflare:
+          enabled: true
+          domain: mark8ly.com
+          additionalDomains:
+            - tesserix.app
+          apiTokenSecretName: cloudflare-api-token
+          apiTokenSecretKey: api-token
+
+        # Additional Cloudflare account for FanZone domain
+        additionalCloudflareAccounts:
+          - name: fanzone
+            domains:
+              - fanzonebattleground.com
+            apiTokenSecretName: cloudflare-fanzone-api-token
+            apiTokenSecretKey: api-token
+
+        # CNAME Delegation for automatic certificate management
+        # Enables DNS-01 challenges for custom domains via Cloudflare DNS
+        # Customers add: _acme-challenge.theirdomain.com CNAME theirdomain-com.acme.mark8ly.com
+        cnameDelegation:
+          enabled: true
+          acmeZone: "acme.mark8ly.com"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

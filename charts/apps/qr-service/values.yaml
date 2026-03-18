@@ -1,0 +1,185 @@
+# Default values for qr-service
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/qr-service
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations:
+    # Workload Identity - allows QR service to access GCS without JSON keys
+    iam.gke.io/gcp-service-account: qr-service-sa@tesseracthub-480811.iam.gserviceaccount.com
+  name: ""
+
+podAnnotations:
+  # Exclude ports from Istio sidecar for proper connectivity
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+keda:
+  enabled: true
+  # Workload Identity is always enabled
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  prometheus:
+    enabled: true
+    serverAddress: http://prometheus-server.monitoring.svc.cluster.local:80
+    requestRateQuery: sum(rate(istio_requests_total{destination_canonical_service="qr-service",reporter="destination"}[2m]))
+    requestRateThreshold: "50"
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "80"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "85"
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+env:
+  PORT: "8080"
+  GIN_MODE: "release"
+  LOG_LEVEL: "info"
+
+  # NATS for event publishing
+  NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+
+  # QR Code generation settings
+  QR_DEFAULT_SIZE: "256"
+  QR_MAX_SIZE: "1024"
+  QR_MIN_SIZE: "64"
+  QR_DEFAULT_QUALITY: "medium"
+  # GCS Storage configuration - uses Workload Identity for authentication
+  STORAGE_PROVIDER: "gcs"
+  GCS_BUCKET_NAME: "tesseracthub-devtest-assets"
+  GCS_BASE_PATH: "qr-codes"
+  GCS_PUBLIC_URL: "https://storage.googleapis.com"
+  GOOGLE_CLOUD_PROJECT: "tesseracthub-480811"
+  # Encryption for sensitive QR data (WiFi, Payment, vCard)
+  ENCRYPTION_ENABLED: "true"
+
+
+gcs:
+  # GCS is enabled via Workload Identity - no secret needed
+  enabled: true
+  bucketName: "tesseracthub-devtest-assets"
+  basePath: "qr-codes"
+  publicUrl: "https://storage.googleapis.com"
+
+encryption:
+  enabled: true
+  existingSecret: "qr-service-encryption"
+  existingSecretKey: "encryption-key"
+
+  # Workload Identity is always enabled
+  name: "qr-service-secrets"
+  encryptedData: {}
+
+pdb:
+  enabled: true
+  maxUnavailable: 1
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"  # InPlaceOrRecreate (no-restart), Auto, Recreate, Initial, or Off
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true  # Don't let VPA manage istio-proxy
+
+# Database configuration
+database:
+  host: "postgresql.postgresql-marketplace.svc.cluster.local"
+  port: "5432"
+  name: "qr_db"
+  user: "postgres"
+  sslmode: "require"
+
+# GCP Secret Manager configuration
+# When enabled, secrets are fetched from GCP Secret Manager via Workload Identity
+gcp:
+  projectId: ""  # Inherited from global-config.yaml if empty
+  namespace: "marketplace"  # Override if different from release namespace
+  workloadIdentity:
+    # Workload Identity is always enabled
+    gcpServiceAccount: ""  # e.g., app-secrets-marketplace@project.iam.gserviceaccount.com
+  secretManager:
+    # Workload Identity is always enabled
+    secretPrefix: "devtest"  # Environment prefix: dev, staging, prod
+
+knative:
+  enabled: false
+  minScale: 1
+  maxScale: 5
+  concurrencyTarget: 100
+  containerConcurrency: 100
+  timeoutSeconds: 30

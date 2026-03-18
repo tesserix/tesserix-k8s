@@ -1,0 +1,51 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homechef-auth-bff
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: homechef
+    app.kubernetes.io/component: auth-bff
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: homechef
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/homechef-auth-bff
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-prod.yaml
+      parameters:
+        - name: image.tag
+          value: "latest"
+        - name: env.ALLOWED_ORIGINS
+          value: "fe3dr://,https://fe3dr.com,https://www.fe3dr.com,https://vendors.fe3dr.com,https://admin.fe3dr.com,https://internal-identity.fe3dr.com,https://delivery.fe3dr.com,https://analytics.fe3dr.com"
+        # Redis configuration
+        - name: redis.host
+          value: redis.redis-homechef.svc.cluster.local
+        - name: redis.port
+          value: "6379"
+        # GCP Workload Identity for Secret Manager access
+        - name: gcp.workloadIdentity.gcpServiceAccount
+          value: app-secrets-homechef@tesseracthub-480811.iam.gserviceaccount.com
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homechef
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

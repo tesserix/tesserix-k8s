@@ -1,0 +1,54 @@
+{{- /*
+Custom Domain Gateway
+Handles HTTPS traffic for custom domains with dynamic TLS certificates
+*/ -}}
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.gateway.name }}
+  namespace: {{ .Values.gateway.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.gateway.name }}
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+spec:
+  selector:
+    {{- toYaml .Values.gateway.selector | nindent 4 }}
+  servers:
+    # =================================================================
+    # HTTP Server - For ACME challenges and HTTPS redirect
+    # =================================================================
+    # NOTE: httpsRedirect is handled via VirtualService to allow
+    # ACME HTTP-01 challenges for Let's Encrypt certificate issuance.
+    # The acme-challenge VirtualService handles /.well-known/acme-challenge/*
+    # and the https-redirect VirtualService redirects everything else.
+    # =================================================================
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - "*"  # Accept all custom domains
+
+    # =================================================================
+    # HTTPS Server - Wildcard for custom domains
+    # =================================================================
+    # This server handles all custom domain HTTPS traffic
+    # TLS certificates are managed per-tenant by cert-manager
+    # and stored as secrets in the istio-ingress namespace
+    # =================================================================
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      hosts:
+        - "*"  # Accept all custom domains
+      tls:
+        mode: SIMPLE
+        # credentialName will be set dynamically per VirtualService
+        # This is a fallback - actual certs are specified in tenant VSes
+        credentialName: custom-domain-default-tls
+        minProtocolVersion: {{ .Values.gateway.tls.minProtocolVersion }}
+        cipherSuites:
+          {{- toYaml .Values.gateway.tls.cipherSuites | nindent 10 }}

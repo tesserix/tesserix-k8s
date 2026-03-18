@@ -1,0 +1,63 @@
+# =============================================================================
+# GCP MANAGED PROMETHEUS (free with GKE Autopilot)
+# =============================================================================
+# GKE Autopilot has Google Cloud Managed Service for Prometheus enabled by
+# default. These PodMonitoring resources tell it what to scrape.
+# No need to deploy Prometheus — GKE handles collection and storage.
+# View metrics in Cloud Monitoring → Metrics Explorer → PromQL.
+# =============================================================================
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: istio-proxy
+  namespace: istio-system
+spec:
+  selector:
+    matchLabels:
+      istio: pilot
+  endpoints:
+    - port: 15014
+      interval: 30s
+      path: /metrics
+---
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: knative-services
+  namespace: tesserix
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: tesserix
+  endpoints:
+    - port: 9090
+      interval: 30s
+      path: /metrics
+---
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: knative-services
+  namespace: shared
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: tesserix
+  endpoints:
+    - port: 9090
+      interval: 30s
+      path: /metrics
+---
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: knative-services
+  namespace: marketplace
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: tesserix
+  endpoints:
+    - port: 9090
+      interval: 30s
+      path: /metrics

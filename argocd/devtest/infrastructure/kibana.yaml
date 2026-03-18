@@ -1,0 +1,146 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kibana
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: logging
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://helm.elastic.co
+    chart: kibana
+    targetRevision: 8.5.1
+    helm:
+      releaseName: kibana
+      values: |
+        # Elasticsearch hosts
+        elasticsearchHosts: "https://elasticsearch-master:9200"
+
+        # Replicas
+        replicas: 1
+
+        # Automount token
+        automountToken: false
+
+        # Resource configuration (required for AKS Azure Policy)
+        resources:
+          requests:
+            memory: 512Mi
+          limits:
+            memory: 1Gi
+
+        # Kibana configuration - Security enabled with ES authentication
+        kibanaConfig:
+          kibana.yml: |
+            server.name: kibana
+            server.host: "0.0.0.0"
+            server.publicBaseUrl: "https://kibana-dev.tesserix.app"
+            elasticsearch.hosts: ["https://elasticsearch-master:9200"]
+            elasticsearch.ssl.verificationMode: none
+            monitoring.ui.container.elasticsearch.enabled: true
+            server.ssl.enabled: false
+
+        # Environment variables - encryption keys from ExternalSecrets (GCP Secret Manager)
+        # Note: Chart auto-generates ELASTICSEARCH_HOSTS, ELASTICSEARCH_SERVICEACCOUNTTOKEN,
+        #       and ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES from chart values
+        extraEnvs:
+          - name: XPACK_SECURITY_ENCRYPTIONKEY
+            valueFrom:
+              secretKeyRef:
+                name: kibana-encryption-keys
+                key: encryptionKey
+          - name: XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY
+            valueFrom:
+              secretKeyRef:
+                name: kibana-encryption-keys
+                key: encryptionKey
+          - name: XPACK_REPORTING_ENCRYPTIONKEY
+            valueFrom:
+              secretKeyRef:
+                name: kibana-encryption-keys
+                key: encryptionKey
+
+        # Security context
+        podSecurityContext:
+          fsGroup: 1000
+
+        securityContext:
+          capabilities:
+            drop:
+              - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+
+        # Service
+        service:
+          type: ClusterIP
+          port: 5601
+
+        # Ingress disabled - Kibana accessed via Istio VirtualService through Cloudflare tunnel
+        # URL: https://kibana-dev.tesserix.app
+        ingress:
+          enabled: false
+
+        # Health checks - chart generates HTTPS readiness probe from protocol value
+        readinessProbe:
+          failureThreshold: 3
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+
+        # Lifecycle
+        lifecycle:
+          preStop:
+            exec:
+              command:
+                - bash
+                - -c
+                - sleep 10
+
+        # Protocol: http so chart's readiness probe uses HTTP (matching server.ssl.enabled: false)
+        # Hook script uses elasticsearchHosts (https) directly, not protocol value
+        protocol: http
+
+        # Server host
+        serverHost: "0.0.0.0"
+
+        # Update strategy
+        updateStrategy:
+          type: Recreate
+
+        # Priority class
+        # priorityClassName: ""
+
+        # Affinity
+        affinity: {}
+
+        # Node selector
+        nodeSelector: {}
+
+        # Tolerations
+        tolerations: []
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: logging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

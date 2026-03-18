@@ -1,0 +1,159 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openpanel
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: analytics
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/openpanel
+    targetRevision: HEAD
+    helm:
+      releaseName: openpanel
+      values: |
+        # OpenPanel configuration for devtest environment
+
+        api:
+          replicaCount: 1
+          image:
+            repository: lindesvard/openpanel-api
+            tag: "2.0.1-rc"
+            pullPolicy: IfNotPresent
+          port: 3333
+          resources:
+            requests:
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+
+        dashboard:
+          replicaCount: 1
+          image:
+            repository: lindesvard/openpanel-dashboard
+            tag: "2.0.1-rc"
+            pullPolicy: IfNotPresent
+          port: 3000
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+
+        worker:
+          replicaCount: 1
+          image:
+            repository: lindesvard/openpanel-worker
+            tag: "2.0.1-rc"
+            pullPolicy: IfNotPresent
+          port: 9999
+          resources:
+            requests:
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+
+        postgresql:
+          enabled: true
+          image:
+            repository: postgres
+            tag: "14-alpine"
+          persistence:
+            enabled: true
+            size: 8Gi
+            storageClassName: standard-rwo
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+
+        clickhouse:
+          enabled: true
+          image:
+            repository: clickhouse/clickhouse-server
+            tag: "25.10.2.65"
+          persistence:
+            enabled: true
+            size: 10Gi
+            storageClassName: standard-rwo
+          resources:
+            requests:
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+
+        redis:
+          enabled: true
+          image:
+            repository: redis
+            tag: "7.2.5-alpine"
+          persistence:
+            enabled: true
+            size: 2Gi
+            storageClassName: standard-rwo
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+
+        config:
+          dashboardUrl: "https://dev-analytics.tesserix.app"
+          apiUrl: "https://dev-analytics.tesserix.app"
+          nodeEnv: "production"
+          selfHosted: true
+          allowRegistration: false
+          batchSize: 5000
+          batchInterval: 10000
+          concurrency: 10
+
+        secrets:
+          name: openpanel-secrets
+          cookieSecretKey: cookie-secret
+          postgresqlPasswordKey: postgresql-password
+
+        # Project Init Job — bootstraps projects and writes client IDs to K8s Secret
+        projectInit:
+          enabled: true
+          targetNamespace: "marketplace"
+          secretName: "openpanel-client-ids"
+          adminUser:
+            enabled: true
+          organization:
+            id: "tesserix-analytics"
+            name: "DevTest"
+          apps:
+            admin:
+              projectName: "Tesserix Admin (devtest)"
+              domain: "https://dev-admin.tesserix.app"
+            storefront:
+              projectName: "Tesserix Storefront (devtest)"
+              domain: "https://dev-store.tesserix.app"
+            tenant-onboarding:
+              projectName: "Tesserix Tenant Onboarding (devtest)"
+              domain: "https://dev-onboarding.tesserix.app"
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openpanel
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

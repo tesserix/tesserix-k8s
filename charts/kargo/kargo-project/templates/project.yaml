@@ -1,0 +1,30 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: {{ include "kargo-project.projectName" . }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    {{- include "kargo-project.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.project.promotionPolicies }}
+  promotionPolicies:
+    {{- toYaml .Values.project.promotionPolicies | nindent 4 }}
+  {{- else }}
+  promotionPolicies:
+    {{- /* Create promotion policies for each service stage */}}
+    {{- range .Values.services }}
+    {{- if $.Values.stages.dev.enabled }}
+    - stage: {{ .name }}-dev
+      autoPromotionEnabled: {{ $.Values.stages.dev.autoPromotion }}
+    {{- end }}
+    {{- if $.Values.stages.staging.enabled }}
+    - stage: {{ .name }}-staging
+      autoPromotionEnabled: {{ $.Values.stages.staging.autoPromotion }}
+    {{- end }}
+    {{- if $.Values.stages.production.enabled }}
+    - stage: {{ .name }}-production
+      autoPromotionEnabled: {{ $.Values.stages.production.autoPromotion }}
+    {{- end }}
+    {{- end }}
+  {{- end }}

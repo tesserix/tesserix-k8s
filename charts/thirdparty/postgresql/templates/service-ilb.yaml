@@ -1,0 +1,22 @@
+{{- if .Values.ilb.enabled }}
+# Internal LoadBalancer for Cloud Run VPC connector access
+# Provides a stable VPC IP that Cloud Run services can reach via VPC connector
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "postgresql.fullname" . }}-ilb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+  annotations:
+    networking.gke.io/load-balancer-type: "Internal"
+spec:
+  type: LoadBalancer
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: tcp-postgresql
+      protocol: TCP
+      name: tcp-postgresql
+  selector:
+    {{- include "postgresql.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -1,0 +1,75 @@
+# =============================================================================
+# External Secrets Operator Configuration
+# =============================================================================
+# Syncs secrets from GCP Secret Manager to Kubernetes Secrets
+# Uses GKE Workload Identity for authentication
+# =============================================================================
+
+# GCP Configuration
+gcp:
+  projectId: "tesseracthub-480811"
+  # Service account for External Secrets Operator
+  # Must have roles/secretmanager.secretAccessor on required secrets
+  # Uses Terraform naming convention: app-secrets-{namespace}
+  serviceAccount:
+    name: "external-secrets"
+    # GCP service account email (created via Terraform app-secrets module)
+    gcpServiceAccount: "app-secrets-ext-secrets-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+# ClusterSecretStore configuration
+clusterSecretStore:
+  enabled: true
+  name: "gcp-secret-store"
+
+# Environment prefix for secret names (matches Terraform convention)
+environment: "devtest"
+
+# External Secrets Operator chart configuration
+external-secrets:
+  installCRDs: true
+
+  # Controller configuration
+  replicaCount: 1
+
+  # Resources
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+  # Service account with Workload Identity
+  serviceAccount:
+    create: true
+    name: "external-secrets"
+    annotations:
+      iam.gke.io/gcp-service-account: "app-secrets-ext-secrets-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+  # Pod annotations for Workload Identity
+  podAnnotations:
+    # Exclude GCP metadata server from Istio for Workload Identity
+    traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+
+  # Webhook configuration
+  webhook:
+    replicaCount: 1
+    resources:
+      requests:
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+
+  # Cert controller for webhook certificates
+  certController:
+    replicaCount: 1
+    resources:
+      requests:
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+
+  # Metrics
+  metrics:
+    service:
+      enabled: true
+      port: 8080

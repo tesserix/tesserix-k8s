@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homechef-db-schema-bootstrap
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: homechef
+    app.kubernetes.io/component: database
+    environment: prod
+spec:
+  project: homechef
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/apps/db-schema-bootstrap
+    targetRevision: HEAD
+    helm:
+      releaseName: homechef-db-schema-bootstrap
+      values: |
+        app: homechef
+
+        # Only target homechef PostgreSQL (no global DB needed)
+        targets:
+          - name: homechef
+            user: homechef
+            secretName: homechef-api-secrets
+            secretKey: DB_PASSWORD
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homechef
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

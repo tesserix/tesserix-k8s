@@ -1,0 +1,77 @@
+# Production overrides for company (Tesserix Homepage & Admin Portal)
+
+image:
+  repository: ghcr.io/tesserix/tesserix-home
+  tag: "latest"
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+replicaCount: 2
+
+# Production resource allocation - handles Next.js SSR
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    memory: 512Mi
+
+# Cloud Run routing — override K8s internal DNS with Cloud Run URLs
+cloudRun:
+  enabled: true
+  frontend:
+    host: marketplace-tesserix-home-un6tyb5opq-el.a.run.app
+    port: 443
+  authBff:
+    host: global-auth-bff-un6tyb5opq-el.a.run.app
+    port: 443
+
+# Production environment
+env:
+  NODE_ENV: "production"
+
+  # Production site URL
+  NEXT_PUBLIC_SITE_URL: "https://tesserix.app"
+
+  # --- Cloud Run Backend Service URLs (override K8s internal DNS) ---
+  AUTH_BFF_URL: "https://global-auth-bff-un6tyb5opq-el.a.run.app"
+  TENANT_SERVICE_URL: "https://global-tenant-service-un6tyb5opq-el.a.run.app"
+  TICKETS_SERVICE_URL: "https://marketplace-tickets-service-un6tyb5opq-el.a.run.app/api/v1"
+  MARKETPLACE_SETTINGS_SERVICE_URL: "https://global-settings-service-un6tyb5opq-el.a.run.app/api/v1"
+  SUBSCRIPTION_SERVICE_URL: "https://global-subscription-service-un6tyb5opq-el.a.run.app"
+  AUDIT_SERVICE_URL: "https://global-audit-service-un6tyb5opq-el.a.run.app/api/v1"
+  STATUS_DASHBOARD_SERVICE_URL: "https://marketplace-status-dashboard-un6tyb5opq-el.a.run.app/api/v1"
+  FEATURE_FLAGS_SERVICE_URL: "https://marketplace-feature-flags-un6tyb5opq-el.a.run.app/api/v1"
+  NOTIFICATION_SERVICE_URL: "https://global-notification-service-un6tyb5opq-el.a.run.app/api/v1"
+  ONBOARDING_SERVICE_URL: "https://marketplace-tenant-onboarding-un6tyb5opq-el.a.run.app"
+  NEXT_PUBLIC_ONBOARDING_SITE_URL: "https://mark8ly.com"
+
+# Production GCP configuration
+gcp:
+  secretManager:
+    secretPrefix: "prod"
+
+# KEDA autoscaling - production
+keda:
+  enabled: true
+  minReplicaCount: 2
+  maxReplicaCount: 8
+  pollingInterval: 30
+  cooldownPeriod: 300
+  prometheus:
+    enabled: false
+    serverAddress: "http://prometheus.monitoring.svc.cluster.local:9090"
+    requestRateQuery: "sum(rate(istio_requests_total{destination_service_name=\"company\"}[2m]))"
+    requestRateThreshold: "50"
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "60"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "75"
+
+# Pod Disruption Budget - enabled for production HA
+pdb:
+  enabled: true
+  minAvailable: 1

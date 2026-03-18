@@ -1,0 +1,102 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-dns
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes-sigs.github.io/external-dns
+    chart: external-dns
+    targetRevision: 1.14.5
+    helm:
+      releaseName: external-dns
+      values: |
+        # Cloudflare provider configuration
+        provider: cloudflare
+
+        # Cloudflare API token from secret
+        env:
+          - name: CF_API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: external-dns-cloudflare
+                key: api-token
+
+        # Domain filter - only manage tesserix.app domain
+        domainFilters:
+          - tesserix.app
+
+        # Policy: sync will create, update and delete records
+        policy: sync
+
+        # Registry to track ownership of DNS records
+        registry: txt
+        txtOwnerId: "gke-devtest"
+        txtPrefix: "_externaldns."
+
+        # Sources to watch for DNS records
+        sources:
+          - service
+          - ingress
+
+        # Resource configuration
+        resources:
+          requests:
+            memory: 64Mi
+          limits:
+            memory: 128Mi
+
+        # Service account
+        serviceAccount:
+          create: true
+          name: external-dns
+
+        # Pod security context (fsGroup goes here)
+        podSecurityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+          fsGroup: 65534
+
+        # Container security context (no fsGroup here)
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534
+
+        # Cloudflare proxy - enable orange cloud (Proxied) instead of DNS Only
+        extraArgs:
+          - --cloudflare-proxied
+
+        # Log level
+        logLevel: info
+        logFormat: text
+
+        # Interval between DNS updates
+        interval: 1m
+
+        # Enable RBAC
+        rbac:
+          create: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-dns
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

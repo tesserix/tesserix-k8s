@@ -1,0 +1,96 @@
+{{- if .Values.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "bookkeeping-report-service.fullname" . }}
+  labels:
+    {{- include "bookkeeping-report-service.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "bookkeeping-report-service.fullname" . }}
+  pollingInterval: {{ .Values.keda.pollingInterval | default 15 }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod | default 300 }}
+  minReplicaCount: {{ .Values.keda.minReplicaCount | default 1 }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount | default 10 }}
+  {{- if .Values.keda.idleReplicaCount }}
+  idleReplicaCount: {{ .Values.keda.idleReplicaCount }}
+  {{- end }}
+  {{- if .Values.keda.fallback }}
+  fallback:
+    failureThreshold: {{ .Values.keda.fallback.failureThreshold | default 3 }}
+    replicas: {{ .Values.keda.fallback.replicas | default 2 }}
+  {{- end }}
+  advanced:
+    restoreToOriginalReplicaCount: {{ .Values.keda.restoreToOriginalReplicaCount | default false }}
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: {{ .Values.keda.scaleDown.stabilizationWindowSeconds | default 300 }}
+          policies:
+            - type: Percent
+              value: {{ .Values.keda.scaleDown.percentValue | default 50 }}
+              periodSeconds: {{ .Values.keda.scaleDown.periodSeconds | default 60 }}
+        scaleUp:
+          stabilizationWindowSeconds: {{ .Values.keda.scaleUp.stabilizationWindowSeconds | default 0 }}
+          policies:
+            - type: Percent
+              value: {{ .Values.keda.scaleUp.percentValue | default 100 }}
+              periodSeconds: {{ .Values.keda.scaleUp.periodSeconds | default 15 }}
+            - type: Pods
+              value: {{ .Values.keda.scaleUp.podsValue | default 4 }}
+              periodSeconds: {{ .Values.keda.scaleUp.periodSeconds | default 15 }}
+          selectPolicy: Max
+  triggers:
+    {{- if .Values.keda.prometheus.enabled }}
+    # Scale based on Istio request rate metrics from Prometheus
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.prometheus.serverAddress | quote }}
+        metricName: istio_requests_per_second
+        query: {{ .Values.keda.prometheus.requestRateQuery | quote }}
+        threshold: {{ .Values.keda.prometheus.requestRateThreshold | quote }}
+    {{- end }}
+    {{- if .Values.keda.prometheus.latencyEnabled }}
+    # Scale based on latency (P99)
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.prometheus.serverAddress | quote }}
+        metricName: istio_request_latency_p99
+        query: {{ .Values.keda.prometheus.latencyQuery | quote }}
+        threshold: {{ .Values.keda.prometheus.latencyThreshold | quote }}
+    {{- end }}
+    {{- if .Values.keda.cpu.enabled }}
+    # Fallback CPU-based scaling
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: {{ .Values.keda.cpu.threshold | default "80" | quote }}
+    {{- end }}
+    {{- if .Values.keda.memory.enabled }}
+    # Fallback Memory-based scaling
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: {{ .Values.keda.memory.threshold | default "80" | quote }}
+    {{- end }}
+    {{- if .Values.keda.nats.enabled }}
+    # NATS queue-based scaling
+    - type: nats-jetstream
+      metadata:
+        natsServerMonitoringEndpoint: {{ .Values.keda.nats.monitoringEndpoint | quote }}
+        account: {{ .Values.keda.nats.account | default "$G" | quote }}
+        stream: {{ .Values.keda.nats.stream | quote }}
+        consumer: {{ .Values.keda.nats.consumer | quote }}
+        lagThreshold: {{ .Values.keda.nats.lagThreshold | default "10" | quote }}
+    {{- end }}
+    {{- range .Values.keda.triggers }}
+    - type: {{ .type }}
+      {{- if .metricType }}
+      metricType: {{ .metricType }}
+      {{- end }}
+      metadata:
+        {{- range $key, $value := .metadata }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+    {{- end }}
+{{- end }}

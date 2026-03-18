@@ -1,0 +1,98 @@
+# Typesense Configuration
+replicaCount: 1
+
+image:
+  repository: typesense/typesense
+  tag: "27.1"
+  pullPolicy: IfNotPresent
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8108
+
+# Resource limits
+resources:
+  limits:
+    memory: 2Gi
+  requests:
+    memory: 512Mi
+
+# Typesense configuration
+config:
+  # Data directory
+  dataDir: /data
+
+  # API port
+  apiPort: 8108
+
+  # Peering port (for clustering)
+  peeringPort: 8107
+
+  # Enable CORS
+  enableCors: true
+
+  # CORS domains (comma-separated)
+  corsDomains: "*"
+
+  # Log level: 0 (silent), 1 (fatal), 2 (error), 3 (warning), 4 (info)
+  logLevel: 3
+
+  # Thread pool size (0 = auto based on CPU cores)
+  threadPoolSize: 0
+
+  # Max memory percentage to use
+  memoryPercentage: 100
+
+# API key secret configuration
+secrets:
+  # Kubernetes secret name containing the API key
+  apiKeySecretName: "typesense-secrets"
+  apiKeySecretKey: "api-key"
+
+# Persistence configuration
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
+
+# Service Account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Pod security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# Health check configuration
+healthCheck:
+  enabled: true
+  path: /health
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Node selector, tolerations, affinity
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Pod annotations
+podAnnotations:
+  # Istio sidecar configuration
+  sidecar.istio.io/inject: "true"
+  # Exclude Typesense ports from Istio sidecar for clustering
+  traffic.sidecar.istio.io/excludeInboundPorts: "8107,8108"
+  traffic.sidecar.istio.io/excludeOutboundPorts: "8107,8108"
+  # Exclude GCP metadata server for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+
+# Extra environment variables
+extraEnv: []

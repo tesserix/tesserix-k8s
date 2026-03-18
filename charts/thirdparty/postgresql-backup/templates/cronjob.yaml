@@ -1,0 +1,253 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "postgresql-backup.fullname" . }}
+  labels:
+    {{- include "postgresql-backup.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: {{ .Values.cronJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.cronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronJob.failedJobsHistoryLimit }}
+  startingDeadlineSeconds: {{ .Values.cronJob.startingDeadlineSeconds }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.cronJob.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.cronJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "postgresql-backup.selectorLabels" . | nindent 12 }}
+          annotations:
+            # Disable Istio sidecar for backup jobs
+            sidecar.istio.io/inject: "false"
+        spec:
+          serviceAccountName: {{ include "postgresql-backup.serviceAccountName" . }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          restartPolicy: {{ .Values.cronJob.restartPolicy }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.image.pullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: backup
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -eo pipefail
+
+                  # Variables
+                  TIMESTAMP=$(date +%Y-%m-%dT%H-%M-%SZ)
+                  PG_HOST="{{ .Values.backup.database.host }}"
+                  PG_PORT="{{ .Values.backup.database.port }}"
+                  PG_USER="{{ .Values.backup.database.user }}"
+                  PG_CONN_DB="{{ .Values.backup.database.name }}"
+                  GCS_BUCKET="gs://{{ .Values.backup.gcs.bucket }}/{{ .Values.backup.gcs.prefix }}"
+                  ALL_DATABASES="{{ .Values.backup.settings.allDatabases }}"
+                  BACKUP_FORMAT="{{ .Values.backup.settings.format }}"
+                  {{- if eq .Values.backup.settings.format "custom" }}
+                  COMPRESSION_OPTS="--compress={{ .Values.backup.settings.compression }}:{{ .Values.backup.settings.compressionLevel }}"
+                  {{- else }}
+                  COMPRESSION_OPTS=""
+                  {{- end }}
+
+                  # Databases to exclude (space-separated)
+                  EXCLUDE_DBS="template0 template1 {{ range .Values.backup.settings.excludeDatabases }}{{ . }} {{ end }}"
+
+                  echo "========================================"
+                  echo "PostgreSQL Backup Job"
+                  echo "========================================"
+                  echo "Host: ${PG_HOST}:${PG_PORT}"
+                  echo "User: ${PG_USER}"
+                  echo "Connection DB: ${PG_CONN_DB}"
+                  echo "All Databases: ${ALL_DATABASES}"
+                  echo "Backup Format: ${BACKUP_FORMAT}"
+                  echo "Timestamp: ${TIMESTAMP}"
+                  echo "GCS Bucket: ${GCS_BUCKET}"
+                  echo "Excluded DBs: ${EXCLUDE_DBS}"
+                  echo "========================================"
+
+                  # Check if password is set
+                  echo ""
+                  echo "Checking environment..."
+                  if [ -z "${POSTGRES_PASSWORD}" ]; then
+                    echo "ERROR: POSTGRES_PASSWORD is not set!"
+                    exit 1
+                  fi
+                  echo "Password is set (length: ${#POSTGRES_PASSWORD})"
+
+                  # Test PostgreSQL connection
+                  echo ""
+                  echo "Testing PostgreSQL connection..."
+                  if ! PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+                    --host="${PG_HOST}" \
+                    --port="${PG_PORT}" \
+                    --username="${PG_USER}" \
+                    --dbname="${PG_CONN_DB}" \
+                    -c "SELECT version();" 2>&1; then
+                    echo "PostgreSQL connection failed!"
+                    exit 1
+                  fi
+                  echo "PostgreSQL connection successful"
+
+                  # Function to check if database should be excluded
+                  is_excluded() {
+                    local db="$1"
+                    for excl in ${EXCLUDE_DBS}; do
+                      if [ "$db" = "$excl" ]; then
+                        return 0
+                      fi
+                    done
+                    return 1
+                  }
+
+                  # Function to backup a single database
+                  backup_database() {
+                    local db_name="$1"
+                    local backup_file="${db_name}-${TIMESTAMP}.dump"
+                    local gcs_path="${GCS_BUCKET}/${backup_file}"
+
+                    echo ""
+                    echo "----------------------------------------"
+                    echo "Backing up database: ${db_name}"
+                    echo "----------------------------------------"
+
+                    # Create backup using pg_dump
+                    if PGPASSWORD="${POSTGRES_PASSWORD}" pg_dump \
+                      --host="${PG_HOST}" \
+                      --port="${PG_PORT}" \
+                      --username="${PG_USER}" \
+                      --dbname="${db_name}" \
+                      --format="${BACKUP_FORMAT}" \
+                      ${COMPRESSION_OPTS} \
+                      {{- range .Values.backup.settings.excludeSchemas }}
+                      --exclude-schema={{ . }} \
+                      {{- end }}
+                      {{ .Values.backup.settings.extraArgs }} \
+                      --file="/tmp/${backup_file}" 2>&1; then
+
+                      # Get file size
+                      local backup_size=$(du -h "/tmp/${backup_file}" | cut -f1)
+                      echo "Backup created: ${backup_file} (${backup_size})"
+
+                      # Upload to GCS
+                      echo "Uploading to GCS..."
+                      if gsutil -q cp "/tmp/${backup_file}" "${gcs_path}"; then
+                        echo "Upload successful: ${gcs_path}"
+                        SUCCESSFUL_BACKUPS=$((SUCCESSFUL_BACKUPS + 1))
+                      else
+                        echo "ERROR: Failed to upload ${backup_file} to GCS"
+                        FAILED_BACKUPS=$((FAILED_BACKUPS + 1))
+                      fi
+
+                      # Cleanup local file
+                      rm -f "/tmp/${backup_file}"
+                    else
+                      echo "ERROR: pg_dump failed for database ${db_name}"
+                      FAILED_BACKUPS=$((FAILED_BACKUPS + 1))
+                    fi
+                  }
+
+                  # Initialize counters
+                  SUCCESSFUL_BACKUPS=0
+                  FAILED_BACKUPS=0
+                  TOTAL_DATABASES=0
+
+                  if [ "${ALL_DATABASES}" = "true" ]; then
+                    # Get list of all databases
+                    echo ""
+                    echo "Fetching list of databases..."
+                    DATABASES=$(PGPASSWORD="${POSTGRES_PASSWORD}" psql \
+                      --host="${PG_HOST}" \
+                      --port="${PG_PORT}" \
+                      --username="${PG_USER}" \
+                      --dbname="${PG_CONN_DB}" \
+                      -At -c "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname")
+
+                    echo "Found databases:"
+                    for db in ${DATABASES}; do
+                      if is_excluded "$db"; then
+                        echo "  - ${db} (excluded)"
+                      else
+                        echo "  - ${db}"
+                        TOTAL_DATABASES=$((TOTAL_DATABASES + 1))
+                      fi
+                    done
+
+                    echo ""
+                    echo "Starting backup of ${TOTAL_DATABASES} database(s)..."
+
+                    # Backup each database
+                    for db in ${DATABASES}; do
+                      if ! is_excluded "$db"; then
+                        backup_database "$db"
+                      fi
+                    done
+                  else
+                    # Backup single database
+                    TOTAL_DATABASES=1
+                    backup_database "${PG_CONN_DB}"
+                  fi
+
+                  # Summary
+                  echo ""
+                  echo "========================================"
+                  echo "Backup Summary"
+                  echo "========================================"
+                  echo "Total databases: ${TOTAL_DATABASES}"
+                  echo "Successful: ${SUCCESSFUL_BACKUPS}"
+                  echo "Failed: ${FAILED_BACKUPS}"
+                  echo "========================================"
+
+                  # List uploaded backups
+                  echo ""
+                  echo "Backups in GCS (latest):"
+                  gsutil ls -l "${GCS_BUCKET}/*-${TIMESTAMP}.dump" 2>/dev/null || echo "No backups found for this timestamp"
+
+                  if [ ${FAILED_BACKUPS} -gt 0 ]; then
+                    echo ""
+                    echo "ERROR: ${FAILED_BACKUPS} backup(s) failed!"
+                    exit 1
+                  fi
+
+                  echo ""
+                  echo "========================================"
+                  echo "All backups completed successfully!"
+                  echo "========================================"
+              env:
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backup.database.passwordSecretName }}
+                      key: {{ .Values.backup.database.passwordSecretKey }}
+                - name: PGSSLMODE
+                  value: {{ .Values.backup.database.sslMode | quote }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 10Gi
+{{- end }}

@@ -1,0 +1,55 @@
+# EnvoyFilter to bypass Istio JWT validation for GrowthBook requests
+# GrowthBook uses local JWT authentication that Istio cannot validate
+# This filter removes the Authorization header for GrowthBook JWTs so Istio won't reject them
+# GrowthBook will fall back to cookie-based session authentication
+# Note: API keys (Bearer secret_...) are preserved for REST API access
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: growthbook-jwt-bypass
+  namespace: istio-ingress
+spec:
+  workloadSelector:
+    labels:
+      istio: ingressgateway
+  configPatches:
+    # Insert Lua filter BEFORE the JWT authn filter to intercept requests early
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.jwt_authn
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.lua.growthbook_jwt_bypass
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            inlineCode: |
+              function envoy_on_request(request_handle)
+                local host = request_handle:headers():get(":authority")
+
+                -- Only process requests to GrowthBook
+                if host and (string.match(host, "growthbook%.") or string.match(host, "%-growthbook%.")) then
+                  local auth_header = request_handle:headers():get("authorization")
+
+                  if auth_header then
+                    -- Keep API keys (start with "Bearer secret_" or "secret_")
+                    -- Remove JWTs (start with "Bearer eyJ") which Istio can't validate
+                    local is_api_key = string.match(auth_header, "^Bearer%s+secret_") or
+                                       string.match(auth_header, "^secret_")
+
+                    if not is_api_key then
+                      -- This is likely a GrowthBook JWT - remove it so Istio doesn't reject it
+                      -- GrowthBook will use session cookies for authentication instead
+                      request_handle:headers():remove("authorization")
+                      -- Store original auth in a custom header for debugging
+                      request_handle:headers():add("x-growthbook-auth-bypassed", "true")
+                    end
+                  end
+                end
+              end

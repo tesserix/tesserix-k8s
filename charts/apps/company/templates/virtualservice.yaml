@@ -1,0 +1,68 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ include "company.fullname" . }}-vs
+  labels:
+    {{- include "company.labels" . | nindent 4 }}
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - {{ (index .Values.ingress.hosts 0).host }}
+  http:
+    # Auth error page — served by Next.js (must be before /auth prefix)
+    - match:
+        - uri:
+            prefix: /auth/error
+      route:
+        - destination:
+            {{- if .Values.cloudRun.enabled }}
+            host: {{ .Values.cloudRun.frontend.host }}
+            port:
+              number: {{ .Values.cloudRun.frontend.port }}
+            {{- else }}
+            host: {{ include "company.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+            {{- end }}
+      timeout: 30s
+
+    # Auth routes (for admin portal login)
+    # X-Auth-Context: admin tells auth-bff to use tesserix-internal realm
+    - match:
+        - uri:
+            prefix: /auth
+      headers:
+        request:
+          set:
+            X-Auth-Context: admin
+      route:
+        - destination:
+            {{- if .Values.cloudRun.enabled }}
+            host: {{ .Values.cloudRun.authBff.host }}
+            port:
+              number: {{ .Values.cloudRun.authBff.port }}
+            {{- else }}
+            host: auth-bff.marketplace.svc.cluster.local
+            port:
+              number: 8080
+            {{- end }}
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 2s
+        retryOn: "connect-failure,refused-stream,unavailable,cancelled"
+
+    # Default route to company frontend
+    - route:
+        - destination:
+            {{- if .Values.cloudRun.enabled }}
+            host: {{ .Values.cloudRun.frontend.host }}
+            port:
+              number: {{ .Values.cloudRun.frontend.port }}
+            {{- else }}
+            host: {{ include "company.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+            {{- end }}
+      timeout: 30s

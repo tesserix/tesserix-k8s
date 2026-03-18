@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "osrm.fullname" . }}
+  labels:
+    {{- include "osrm.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "osrm.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Istio sidecar configuration
+        sidecar.istio.io/inject: "true"
+        # Exclude GCP metadata server for Workload Identity
+        traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+      labels:
+        {{- include "osrm.selectorLabels" . | nindent 8 }}
+    spec:
+      initContainers:
+        - name: map-downloader
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              DATA_DIR="/data"
+              MAP_NAME="{{ .Values.osrm.mapName }}"
+              ALGO="{{ .Values.osrm.algorithm }}"
+              PBF_FILE="$DATA_DIR/$MAP_NAME.osm.pbf"
+              OSRM_FILE="$DATA_DIR/$MAP_NAME.osrm"
+
+              if [ ! -f "$OSRM_FILE" ]; then
+                echo "Map data not found. Downloading from {{ .Values.osrm.mapDataUrl }}..."
+                # Use curl or wget inside the container if available, or osrm-backend might usually just have basic tools.
+                # The osrm image is based on debian/alpine usually.
+                apt-get update && apt-get install -y wget curl || echo "Skipping apt update"
+                wget -O "$PBF_FILE" "{{ .Values.osrm.mapDataUrl }}"
+                
+                echo "Extracting map data..."
+                osrm-extract -p /opt/car.lua "$PBF_FILE"
+                
+                echo "Partitioning map data..."
+                osrm-partition "$OSRM_FILE"
+                
+                echo "Customizing map data..."
+                osrm-customize "$OSRM_FILE"
+                
+                echo "Map processing complete."
+              else
+                echo "Map data already exists. Skipping download."
+              fi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["osrm-routed", "--algorithm", "{{ .Values.osrm.algorithm }}", "/data/{{ .Values.osrm.mapName}}.osrm"]
+          ports:
+            - name: http
+              containerPort: 5000
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: data
+        {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "osrm.fullname" . }}-data
+        {{- else }}
+          emptyDir: {}
+        {{- end }}

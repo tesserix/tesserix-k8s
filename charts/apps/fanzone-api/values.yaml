@@ -1,0 +1,304 @@
+# =============================================================================
+# FanZone API - Go Backend Service
+# Production-ready Helm values with multi-tenancy and horizontal scaling
+# =============================================================================
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/FanZone-Battle-Ground/fanzone-api
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Exclude ports from Istio sidecar for proper connectivity
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  # Istio sidecar configuration
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  # Prometheus scraping
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+  # gRPC port for internal service communication
+  grpc:
+    enabled: true
+    port: 9090
+
+ingress:
+  # Workload Identity is always enabled
+  className: "kong"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    # Kong annotations (converted from nginx)
+    konghq.com/strip-path: "false"
+    konghq.com/protocols: "https"
+    konghq.com/read-timeout: "60000"
+    konghq.com/write-timeout: "60000"
+  hosts:
+    - host: api.fanzone.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: fanzone-api-tls
+      hosts:
+        - api.fanzone.example.com
+
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    memory: 256Mi
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+knative:
+  enabled: false
+  minScale: 0
+  maxScale: 10
+  scaleDownDelay: "60s"
+  concurrencyTarget: 100
+  containerConcurrency: 0
+  timeoutSeconds: 300
+
+autoscaling:
+  enabled: true
+  minReplicas: 0
+  maxReplicas: 50
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+
+nodeSelector: {}
+tolerations: []
+
+# Pod anti-affinity for high availability
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - fanzone-api
+          topologyKey: kubernetes.io/hostname
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# KEDA ScaledObject configuration
+keda:
+  enabled: true
+  # Workload Identity is always enabled
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minreplicaCount: 1
+  maxReplicaCount: 50
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "80"
+
+# Graceful shutdown
+terminationGracePeriodSeconds: 30
+
+# Environment configuration
+env:
+  GO_ENV: production
+  GIN_MODE: release
+  LOG_LEVEL: info
+  LOG_FORMAT: json
+
+  # NATS for event publishing
+  NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+
+  # Server config
+  SERVER_PORT: "8080"
+  GRPC_PORT: "9090"
+  SERVER_READ_TIMEOUT: "30s"
+  SERVER_WRITE_TIMEOUT: "30s"
+  SERVER_IDLE_TIMEOUT: "120s"
+
+  # Multi-tenancy
+  TENANT_MODE: "multi"
+  TENANT_HEADER: "X-Tenant-ID"
+  DEFAULT_TENANT: "default"
+
+  # Internal service URLs
+  AUTH_SERVICE_URL: "http://fanzone-auth.fanzone.svc.cluster.local:80"
+  WS_SERVICE_URL: "http://fanzone-ws.fanzone.svc.cluster.local:80"
+
+  # Database connection pool
+  DATABASE_MAX_OPEN_CONNS: "100"
+  DATABASE_MAX_IDLE_CONNS: "25"
+  DATABASE_CONN_MAX_LIFETIME: "5m"
+
+  # Redis configuration
+  REDIS_HOST: "redis.redis-fanzone.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+
+  # Redis connection pool
+  REDIS_POOL_SIZE: "100"
+  REDIS_MIN_IDLE_CONNS: "10"
+
+  # Rate limiting
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_REQUESTS: "1000"
+  RATE_LIMIT_WINDOW: "1m"
+
+  # Cache settings
+  CACHE_ENABLED: "true"
+  CACHE_TTL: "5m"
+
+  # Host validation
+  API_ALLOWED_HOSTS: "fanzonebattleground.com,www.fanzonebattleground.com,api.fanzonebattleground.com,fanzone-api.fanzone.svc.cluster.local,localhost"
+  API_ALLOWED_ORIGINS: "https://fanzonebattleground.com,https://www.fanzonebattleground.com,https://api.fanzonebattleground.com,http://localhost:3000"
+
+  # Feature flags
+  ENABLE_FANTASY: "true"
+  ENABLE_AUCTION: "true"
+  ENABLE_PREDICTIONS: "true"
+  ENABLE_CHAT: "true"
+
+  # Chat moderation
+  CHAT_MODERATION_ENABLED: "true"
+  CHAT_MODERATION_LEVEL: "medium"
+  CHAT_ENCRYPTION_ENABLED: "true"
+
+# PostgreSQL configuration (database: fanzone)
+database:
+  host: "postgresql.postgresql-fanzone.svc.cluster.local"
+  port: "5432"
+  user: "postgres"
+  name: "fanzone"
+  sslmode: "require"
+  passwordSecretName: "postgresql-fanzone-password"
+  passwordSecretKey: "password"
+
+# Redis configuration
+redis:
+  enabled: true
+  passwordSecretName: "redis-fanzone-password"
+  passwordSecretKey: "password"
+
+# Service Monitor for Prometheus
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  path: /metrics
+  port: http
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"  # InPlaceOrRecreate (no-restart), Auto, Recreate, Initial, or Off
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true  # Don't let VPA manage istio-proxy
+
+# CricketData.org API configuration (for match service)
+cricketData:
+  apiKeySecretName: "fanzone-cricketdata-api-key"
+  apiKeySecretKey: "api-key"
+
+# Cricket data sync CronJob
+cricketSync:
+  enabled: false
+  schedule: "*/5 * * * *"
+
+# API Docs key (fetched via ExternalSecret from GCP Secret Manager)
+docsApiKey:
+  enabled: true
+  secretStore: "gcp-secret-store"
+  gcpSecretKey: "prod-fanzone-api-docs-key"
+  refreshInterval: "1h"
+
+# GCP Secret Manager configuration
+# When enabled, secrets are fetched from GCP Secret Manager via Workload Identity
+gcp:
+  projectId: ""  # Inherited from global-config.yaml if empty
+  namespace: "fanzone"  # Override if different from release namespace
+  workloadIdentity:
+    # Workload Identity is always enabled
+    gcpServiceAccount: ""  # e.g., app-secrets-marketplace@project.iam.gserviceaccount.com
+  secretManager:
+    # Workload Identity is always enabled
+    secretPrefix: "devtest"  # Environment prefix: dev, staging, prod

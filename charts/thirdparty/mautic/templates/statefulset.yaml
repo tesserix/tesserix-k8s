@@ -1,0 +1,273 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "mautic.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "mautic.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "mautic.fullname" . }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "mautic.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mautic.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/localphp: {{ include (print $.Template.BasePath "/configmap-localphp.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # Copy Mautic files to persistent volume if empty
+        - name: init-mautic
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              # Check if Mautic files exist in the persistent volume
+              if [ ! -f /mautic-data/docroot/index.php ]; then
+                echo "First run detected, copying Mautic files to persistent volume..."
+                cp -a /var/www/html/. /mautic-data/
+                chown -R www-data:www-data /mautic-data
+                echo "Mautic files copied successfully."
+              else
+                echo "Mautic files already exist, skipping copy."
+              fi
+              # Always ensure local.php is writable for config updates
+              chmod 644 /mautic-data/config/local.php 2>/dev/null || true
+          volumeMounts:
+            - name: data
+              mountPath: /mautic-data
+        # Initialize database schema and admin user
+        - name: init-database
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+              echo "[init-database] Starting Mautic database initialization..."
+
+              # Wait for MySQL to be ready
+              echo "[init-database] Waiting for MySQL to be ready..."
+              MAX_RETRIES=60
+              RETRY=0
+              while ! php -r "new PDO('mysql:host=${MAUTIC_DB_HOST};port=${MAUTIC_DB_PORT}', '${MAUTIC_DB_USER}', '${MAUTIC_DB_PASSWORD}');" 2>/dev/null; do
+                RETRY=$((RETRY + 1))
+                if [ $RETRY -ge $MAX_RETRIES ]; then
+                  echo "[init-database] ERROR: MySQL not ready after ${MAX_RETRIES} attempts"
+                  exit 1
+                fi
+                echo "[init-database] MySQL not ready, waiting... ($RETRY/$MAX_RETRIES)"
+                sleep 2
+              done
+              echo "[init-database] MySQL is ready!"
+
+              # Check if database has tables (beyond just migrations table)
+              TABLE_COUNT=$(php -r "
+                \$pdo = new PDO('mysql:host=${MAUTIC_DB_HOST};port=${MAUTIC_DB_PORT};dbname=${MAUTIC_DB_NAME}', '${MAUTIC_DB_USER}', '${MAUTIC_DB_PASSWORD}');
+                \$result = \$pdo->query(\"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '${MAUTIC_DB_NAME}'\");
+                echo \$result->fetchColumn();
+              " 2>/dev/null || echo "0")
+
+              echo "[init-database] Found $TABLE_COUNT tables in database"
+
+              # If database has less than 50 tables, it needs initialization
+              if [ "$TABLE_COUNT" -lt 50 ]; then
+                echo "[init-database] Database needs initialization (only $TABLE_COUNT tables found)"
+
+                # Create schema
+                echo "[init-database] Creating database schema..."
+                cd /var/www/html
+                php bin/console doctrine:schema:create --no-interaction 2>&1 || {
+                  echo "[init-database] Schema may already exist, continuing..."
+                }
+
+                # Run migrations
+                echo "[init-database] Running database migrations..."
+                php bin/console doctrine:migrations:migrate --no-interaction 2>&1 || {
+                  echo "[init-database] Some migrations may have failed, continuing..."
+                }
+
+                echo "[init-database] Database schema created successfully!"
+              else
+                echo "[init-database] Database already initialized ($TABLE_COUNT tables), skipping schema creation"
+              fi
+
+              # Check if admin user exists
+              USER_EXISTS=$(php -r "
+                \$pdo = new PDO('mysql:host=${MAUTIC_DB_HOST};port=${MAUTIC_DB_PORT};dbname=${MAUTIC_DB_NAME}', '${MAUTIC_DB_USER}', '${MAUTIC_DB_PASSWORD}');
+                \$result = \$pdo->query(\"SELECT COUNT(*) FROM users WHERE username = '${MAUTIC_ADMIN_USERNAME}'\");
+                echo \$result->fetchColumn();
+              " 2>/dev/null || echo "0")
+
+              if [ "$USER_EXISTS" -eq 0 ]; then
+                echo "[init-database] Creating admin user '${MAUTIC_ADMIN_USERNAME}'..."
+
+                # Generate password hash
+                PASSWORD_HASH=$(php -r "echo password_hash('${MAUTIC_ADMIN_PASSWORD}', PASSWORD_BCRYPT);")
+
+                # Ensure admin role exists
+                php -r "
+                  \$pdo = new PDO('mysql:host=${MAUTIC_DB_HOST};port=${MAUTIC_DB_PORT};dbname=${MAUTIC_DB_NAME}', '${MAUTIC_DB_USER}', '${MAUTIC_DB_PASSWORD}');
+                  \$result = \$pdo->query('SELECT COUNT(*) FROM roles WHERE is_admin = 1');
+                  if (\$result->fetchColumn() == 0) {
+                    \$pdo->exec(\"INSERT INTO roles (name, description, is_admin, is_published, date_added, readable_permissions) VALUES ('Administrator', 'Full system access', 1, 1, NOW(), '{}')\");
+                    echo 'Admin role created\n';
+                  }
+                "
+
+                # Create admin user
+                php -r "
+                  \$pdo = new PDO('mysql:host=${MAUTIC_DB_HOST};port=${MAUTIC_DB_PORT};dbname=${MAUTIC_DB_NAME}', '${MAUTIC_DB_USER}', '${MAUTIC_DB_PASSWORD}');
+                  \$roleResult = \$pdo->query('SELECT id FROM roles WHERE is_admin = 1 LIMIT 1');
+                  \$roleId = \$roleResult->fetchColumn();
+                  \$stmt = \$pdo->prepare('INSERT INTO users (role_id, username, password, first_name, last_name, email, is_published, date_added, timezone, locale) VALUES (?, ?, ?, ?, ?, ?, 1, NOW(), \"UTC\", \"en_US\")');
+                  \$stmt->execute([\$roleId, '${MAUTIC_ADMIN_USERNAME}', '$PASSWORD_HASH', 'Admin', 'User', '${MAUTIC_ADMIN_EMAIL}']);
+                  echo 'Admin user created successfully\n';
+                "
+
+                echo "[init-database] Admin user '${MAUTIC_ADMIN_USERNAME}' created!"
+              else
+                echo "[init-database] Admin user '${MAUTIC_ADMIN_USERNAME}' already exists"
+              fi
+
+              echo "[init-database] Mautic database initialization complete!"
+          env:
+            - name: MAUTIC_DB_HOST
+              value: {{ .Values.database.host | quote }}
+            - name: MAUTIC_DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: MAUTIC_DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: MAUTIC_DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: MAUTIC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretPasswordKey }}
+            - name: MAUTIC_ADMIN_USERNAME
+              value: {{ .Values.mautic.adminUsername | quote }}
+            - name: MAUTIC_ADMIN_EMAIL
+              value: {{ .Values.mautic.adminEmail | quote }}
+            - name: MAUTIC_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mautic.existingSecret }}
+                  key: {{ .Values.mautic.existingSecretAdminPasswordKey }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/www/html
+            - name: local-php
+              mountPath: /var/www/html/config/local.php
+              subPath: local.php
+      containers:
+        - name: mautic
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "mautic.fullname" . }}-config
+          env:
+            - name: MAUTIC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.existingSecret }}
+                  key: {{ .Values.database.existingSecretPasswordKey }}
+            - name: MAUTIC_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mautic.existingSecret }}
+                  key: {{ .Values.mautic.existingSecretAdminPasswordKey }}
+            # Secret key for encryption (from sealed secret)
+            - name: MAUTIC_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mautic.existingSecret }}
+                  key: {{ .Values.mautic.existingSecretKeyField }}
+            {{- if .Values.mautic.mailer.existingSecret }}
+            # SMTP password for Postal
+            - name: MAUTIC_MAILER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mautic.mailer.existingSecret }}
+                  key: {{ .Values.mautic.mailer.existingSecretPasswordKey }}
+            {{- end }}
+            # Enable built-in cron job processing
+            - name: MAUTIC_RUN_CRON_JOBS
+              value: "true"
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/www/html
+            # Mount local.php from ConfigMap to override entrypoint-generated config
+            - name: local-php
+              mountPath: /var/www/html/config/local.php
+              subPath: local.php
+      volumes:
+        - name: local-php
+          configMap:
+            name: {{ include "mautic.fullname" . }}-localphp
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ .Values.persistence.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}

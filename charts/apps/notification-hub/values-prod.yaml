@@ -1,0 +1,60 @@
+# Production overrides for notification-hub
+
+image:
+  repository: ghcr.io/tesserix/global-services/notification-hub
+  tag: "latest"
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+replicaCount: 1
+
+# Istio sidecar configuration for NATS connectivity
+podAnnotations:
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432"
+
+# Production resource allocation - handles WebSocket connections
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    memory: 256Mi
+
+# Production environment
+env:
+  GIN_MODE: "release"
+
+# KEDA autoscaling - enabled for production
+# Production GCP configuration
+gcp:
+  secretManager:
+    secretPrefix: "prod"
+
+keda:
+  enabled: false
+  minReplicaCount: 0
+  maxReplicaCount: 0
+  pollingInterval: 30
+  cooldownPeriod: 300
+  prometheus:
+    enabled: false
+    serverAddress: "http://prometheus.monitoring.svc.cluster.local:9090"
+    requestRateQuery: "sum(rate(istio_requests_total{destination_service_name=\"notification-hub\"}[2m]))"
+    requestRateThreshold: "50"
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "75"
+
+# Pod Disruption Budget - enabled for production HA
+pdb:
+  enabled: true
+  minAvailable: 1
+
+knative:
+  enabled: true
+  minScale: 1

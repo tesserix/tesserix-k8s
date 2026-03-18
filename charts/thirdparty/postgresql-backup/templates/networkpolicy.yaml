@@ -1,0 +1,59 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "postgresql-backup.fullname" . }}
+  labels:
+    {{- include "postgresql-backup.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "postgresql-backup.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  # Deny all ingress - backup jobs don't need incoming connections
+  ingress: []
+  egress:
+    # Allow DNS resolution to kube-system namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow connections to PostgreSQL namespaces
+    {{- range .Values.networkPolicy.allowedPostgresqlNamespaces }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- end }}
+    # Allow egress to GCS and GCP metadata server (for Workload Identity)
+    # GCP metadata server: 169.254.169.254
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 80
+    # Allow HTTPS egress for GCS (storage.googleapis.com)
+    # Using 0.0.0.0/0 for simplicity as GCS IPs change frequently
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              # Block private networks except what we explicitly allow above
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}

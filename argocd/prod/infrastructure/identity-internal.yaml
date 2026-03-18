@@ -1,0 +1,131 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: identity-internal
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: identity
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: identity
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/identity-internal
+    targetRevision: HEAD
+    helm:
+      releaseName: identity-internal
+      valueFiles:
+        - values.yaml
+      values: |
+        # Production specific overrides
+        keycloak:
+          replicaCount: 2
+          hostname: "internal-identity.fe3dr.com"
+
+          # Production resources — Keycloak 26 needs ~1.5GB minimum
+          # JVM heap (-Xmx) must be < 60% of memory limit for non-heap headroom
+          javaOpts: "-Xms384m -Xmx768m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+          resources:
+            requests:
+              memory: 768Mi
+            limits:
+              memory: 1536Mi
+
+          # Kong ingress for external access
+          ingress:
+            enabled: true
+            className: "kong"
+            clusterIssuer: "letsencrypt-prod"
+            hosts:
+              - host: internal-identity.fe3dr.com
+                paths:
+                  - path: /
+                    pathType: Prefix
+            tls:
+              - secretName: internal-idp-tls
+                hosts:
+                  - internal-identity.fe3dr.com
+
+          # Disable autoscaling for internal (always fixed)
+          autoscaling:
+            enabled: false
+
+          # External Secrets — use dev GCP secret names
+          externalSecrets:
+            enabled: true
+            secrets:
+              adminBffClientSecret: "dev-keycloak-admin-bff-client-secret"
+              tokenExchangeClientSecret: "dev-keycloak-token-exchange-client-secret"
+              adminClientSecret: "dev-keycloak-internal-admin-client-secret"
+              dashboardClientSecret: "dev-keycloak-internal-dashboard-client-secret"
+              platformClientSecret: "dev-keycloak-platform-client-secret"
+
+        # PostgreSQL - smaller for devtest/internal
+        keycloak-db:
+          primary:
+            persistence:
+              size: 10Gi
+            resources:
+              requests:
+                memory: 256Mi
+              limits:
+                memory: 1Gi
+          readReplicas:
+            replicaCount: 1
+            persistence:
+              size: 10Gi
+          metrics:
+            enabled: false  # Disable until image version is fixed
+
+        # Redis - standalone for devtest/internal
+        keycloak-redis:
+          architecture: standalone  # Use standalone instead of replication
+          sentinel:
+            enabled: false  # Must disable sentinel for standalone mode
+          master:
+            persistence:
+              size: 1Gi
+            resources:
+              requests:
+                memory: 128Mi
+              limits:
+                memory: 512Mi
+          metrics:
+            enabled: false  # Disable until image version is fixed
+
+        # Admin SSO Configuration
+        adminSSO:
+          enabled: true
+          googleCredentialsSecret: "keycloak-google-sso"
+          superAdmins:
+            - "unidevidp@gmail.com"
+            - "mahesh.sangawar@gmail.com"
+            - "samyak.rout@gmail.com"
+          disablePasswordLogin: false  # Keep password as break-glass
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: identity-internal
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /status
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

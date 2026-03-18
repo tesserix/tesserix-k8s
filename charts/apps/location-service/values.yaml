@@ -1,0 +1,219 @@
+# Default values for location-service
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/location-service
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Exclude ports from Istio sidecar for proper connectivity
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432"
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  # Istio sidecar configuration - wait for proxy before starting app
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Database configuration
+database:
+  host: "postgresql.marketplace.svc.cluster.local"
+  port: "5432"
+  user: "postgres"
+  name: "tesseract_hub"
+  sslmode: "require"
+
+# Environment configuration
+env:
+  PORT: "8080"
+  GIN_MODE: "release"
+
+  # Database (DB_HOST set via database.host to avoid duplicates)
+  DB_SCHEMA: "location"
+
+  # NATS for event publishing
+  NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+
+  # Geo provider (mock, maxmind, ipapi, ip-api)
+  # ip-api.com - Free tier 45 requests/min, accurate geolocation (RECOMMENDED)
+  # ipapi.co - Free tier 1000 requests/day, less accurate for some ISPs
+  # maxmind - Best for production with local GeoIP database
+  GEO_PROVIDER: "ip-api"
+  # Optional: Custom geo provider URL (for providers that support URL override)
+  # GEO_PROVIDER_URL: "http://ip-api.com/json"
+
+  # Address provider with failover chain: Mapbox → Photon → LocationIQ → OpenStreetMap → Google
+  # The service automatically tries providers in order until one succeeds
+  # Free providers are prioritized, Google (pay-per-use) is always last
+  ADDRESS_PROVIDER: "failover"
+
+  # GeoTag Caching Configuration
+  # Enables database caching for address lookups (geocode, reverse, autocomplete)
+  # Reduces external API calls by ~80% after cache warm-up
+  ADDRESS_CACHE_ENABLED: "true"
+
+  # Cache TTL for geocode and reverse geocode results (in days)
+  # Addresses don't change often, 30 days is a safe default
+  ADDRESS_CACHE_GEOCODE_TTL_DAYS: "30"
+
+  # Cache TTL for autocomplete suggestions (in days)
+  # Shorter TTL since autocomplete can be more dynamic
+  ADDRESS_CACHE_AUTOCOMPLETE_TTL_DAYS: "7"
+
+  # Enable permanent storage of geocoded places in 'places' table
+  # Builds an internal geotag database for future use
+  GEOTAG_STORE_PLACES: "true"
+
+  # Interval for cache cleanup worker (in hours)
+  # Removes expired cache entries to keep database size manageable
+  ADDRESS_CACHE_CLEANUP_INTERVAL_HOURS: "1"
+
+  # Keycloak configuration (for token validation)
+  # Auth validator type: "keycloak" (RS256 only), "hybrid" (both RS256 and HS256), "legacy" (HS256 only)
+  AUTH_VALIDATOR_TYPE: "keycloak"
+  KEYCLOAK_ISSUER_URL: "https://devtest-customer-idp.tesserix.app/realms/tesserix-customer"
+
+# Address Lookup Provider Configuration
+# Failover chain: Mapbox → Photon → LocationIQ → OpenStreetMap → Google
+# Supports: Mapbox, Photon (Komoot), LocationIQ, OpenStreetMap (Nominatim), Google Places
+addressProvider:
+  # Photon - Self-hosted geocoding service in Kubernetes
+  # Uses internal cluster DNS for faster and more reliable access
+  # Fallback to public Komoot instance if self-hosted is unavailable
+  photon:
+    # Self-hosted Photon in photon namespace (recommended for production)
+    url: "http://photon.photon.svc.cluster.local:2322"
+    # Public fallback: "https://photon.komoot.io"
+
+  # LocationIQ - Free tier: 5k requests/day
+  locationiq:
+    existingSecret: "location-service-locationiq-secrets"
+    secretKey: "LOCATIONIQ_API_KEY"
+
+  # Mapbox - Default provider (100k free requests/month, good accuracy)
+  mapbox:
+    enabled: true
+    existingSecret: "location-service-address-secrets"
+    secretKey: "MAPBOX_ACCESS_TOKEN"
+
+  # Google Places - Best accuracy, higher cost (~$2.83/1000 requests)
+  google:
+    # Workload Identity is always enabled
+    existingSecret: "location-service-google-secrets"
+    secretKey: "GOOGLE_MAPS_API_KEY"
+
+  # Here Maps - Good for high volume (250k free/month)
+  here:
+    # Workload Identity is always enabled
+    existingSecret: "location-service-here-secrets"
+    secretKey: "HERE_API_KEY"
+
+  # Google Places API Key (disabled by default, enable when needed)
+  google:
+    # Workload Identity is always enabled
+    name: "location-service-google-secrets"
+    encryptedData: {}
+      # GOOGLE_MAPS_API_KEY: "AgBY..." # Add encrypted key when switching to Google
+
+  # Here Maps API Key (disabled by default, enable when needed)
+  here:
+    # Workload Identity is always enabled
+    name: "location-service-here-secrets"
+    encryptedData: {}
+      # HERE_API_KEY: "AgBY..." # Add encrypted key when switching to Here
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"  # InPlaceOrRecreate (no-restart), Auto, Recreate, Initial, or Off
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true  # Don't let VPA manage istio-proxy
+
+# GCP Secret Manager configuration
+# When enabled, secrets are fetched from GCP Secret Manager via Workload Identity
+gcp:
+  projectId: ""  # Inherited from global-config.yaml if empty
+  namespace: "marketplace"  # Override if different from release namespace
+  workloadIdentity:
+    # Workload Identity is always enabled
+    gcpServiceAccount: ""  # e.g., app-secrets-marketplace@project.iam.gserviceaccount.com
+  secretManager:
+    # Workload Identity is always enabled
+    secretPrefix: "devtest"  # Environment prefix: dev, staging, prod
+
+knative:
+  enabled: false
+  minScale: 1
+  maxScale: 5
+  concurrencyTarget: 100
+  containerConcurrency: 100
+  timeoutSeconds: 30
+
+externalSecrets:
+  enabled: true
+  secretStoreRef: gcp-secret-store

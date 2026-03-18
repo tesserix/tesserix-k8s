@@ -1,0 +1,51 @@
+# Production overrides for hms-appointment-service
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+replicaCount: 2
+
+# Production resource allocation
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+# Production environment
+env:
+  HMS_SERVER_ENVIRONMENT: "production"
+  HMS_LOGGER_LEVEL: "warn"
+
+# Autoscaling - enabled for production
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+# KEDA autoscaling - enabled for production
+# Production GCP configuration
+gcp:
+  secretManager:
+    secretPrefix: "prod"
+
+keda:
+  enabled: true
+  minReplicaCount: 2
+  maxReplicaCount: 10
+  pollingInterval: 30
+  cooldownPeriod: 300
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "75"
+
+# Pod Disruption Budget - enabled for production HA
+pdb:
+  enabled: true
+  minAvailable: 1

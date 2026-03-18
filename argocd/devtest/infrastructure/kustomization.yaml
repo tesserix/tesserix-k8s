@@ -1,0 +1,105 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# DevTest Infrastructure - all ArgoCD Application manifests for infrastructure components
+resources:
+  # Certificate Management
+  - cert-manager.yaml
+  - cert-manager-issuers.yaml
+
+  # External Secrets Operator - Syncs secrets from GCP Secret Manager
+  - external-secrets.yaml
+  # External Secrets Resources - Creates all secrets from GCP Secret Manager
+  - external-secrets-resources.yaml
+
+  # DNS Management
+  - external-dns.yaml
+
+  # # Service Mesh (Istio)
+  - istio-base.yaml
+  - istio-istiod.yaml
+  - istio-ingress-gateway.yaml
+  - istio-egress-gateway.yaml
+  - istio-config.yaml
+  - istio-auth-policies.yaml  # JWT authentication at ingress gateway
+  - kiali.yaml
+
+  # Custom Domain Ingress Gateway (external IP for custom domains)
+  - custom-ingress-gateway.yaml
+  - custom-domain-config.yaml
+
+  # Cloudflare Zero Trust Tunnel (secure ingress via CF network)
+  - cloudflared.yaml
+
+  # Database - Global PostgreSQL for shared services (including Keycloak)
+  - postgresql-global.yaml
+  # Database - Marketplace specific PostgreSQL
+  - postgresql-marketplace.yaml
+  # Database Backups - Automated PostgreSQL backups to GCS (db-backup-and-restore namespace)
+  # Network policies restrict egress to only PostgreSQL namespaces + GCS
+  - postgresql-global-backup.yaml
+  - postgresql-marketplace-backup.yaml
+  # PostgreSQL for other applications
+  - postgresql-fanzone.yaml
+  - postgresql-hms.yaml
+  - postgresql-homechef.yaml
+  - postgresql-bookkeeping.yaml
+
+  # Identity Platform (Keycloak for Customers)
+  # See: docs/architecture/identity-platform.md
+  - identity-customer.yaml    # Customer IDP: auth.tesserix.app
+  - identity-internal.yaml
+
+  # MongoDB - FanZone chat message persistence
+  - mongodb-fanzone.yaml
+
+  # Caching - Redis instances per namespace
+  - redis-global.yaml
+  - redis-marketplace.yaml
+  - redis-hms.yaml
+  - redis-fanzone.yaml
+  - redis-homechef.yaml
+
+  # Messaging (NATS)
+  - nats.yaml
+
+  # Monitoring Stack
+  - prometheus-operator-crds.yaml  # CRDs for ServiceMonitor, etc.
+  - prometheus.yaml
+  # - grafana.yaml
+
+  # Autoscaling (KEDA)
+  - keda.yaml
+
+  # Logging Stack (removed — unused, all components were scaled to 0)
+  # - elasticsearch.yaml
+  # - kibana.yaml
+  # - fluent-bit.yaml
+
+  # Feature Flags (GrowthBook)
+  - growthbook.yaml
+
+  # Web Analytics (OpenPanel) — removed to save ~3.5 vCPU / 7 Gi / 75 Gi disk
+  # - openpanel.yaml
+
+  # Search Engine (Typesense)
+  - typesense.yaml
+
+  # OSRM (Open Source Routing Machine)
+  - osrm.yaml
+
+  # Photon (Geocoding Service for OpenStreetMap)
+  # DISABLED: High network cost for planet data download (~120GB)
+  # - photon.yaml
+
+  # Email Infrastructure (Postal + Mautic)
+  - mysql.yaml
+  - rabbitmq.yaml
+  - postal.yaml
+  - mautic.yaml
+
+  # Translation Infrastructure (LibreTranslate)
+  - libretranslate.yaml
+
+  # API Documentation (Swagger UI)
+  - swagger-ui.yaml

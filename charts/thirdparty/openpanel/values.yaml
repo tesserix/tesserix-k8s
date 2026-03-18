@@ -1,0 +1,163 @@
+# OpenPanel configuration values (devtest defaults)
+
+# API service (Fastify)
+api:
+  replicaCount: 1
+  image:
+    repository: lindesvard/openpanel-api
+    tag: "2.0.1-rc"
+    pullPolicy: IfNotPresent
+  port: 3333
+  resources:
+    requests:
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
+# Dashboard service (Next.js)
+dashboard:
+  replicaCount: 1
+  image:
+    repository: lindesvard/openpanel-dashboard
+    tag: "2.0.1-rc"
+    pullPolicy: IfNotPresent
+  port: 3000
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# Worker service
+worker:
+  replicaCount: 1
+  image:
+    repository: lindesvard/openpanel-worker
+    tag: "2.0.1-rc"
+    pullPolicy: IfNotPresent
+  port: 9999
+  resources:
+    requests:
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
+# PostgreSQL
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "14-alpine"
+    pullPolicy: IfNotPresent
+  port: 5432
+  database: openpanel
+  username: postgres
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClassName: standard-rwo
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# ClickHouse
+clickhouse:
+  enabled: true
+  image:
+    repository: clickhouse/clickhouse-server
+    tag: "25.10.2.65"
+    pullPolicy: IfNotPresent
+  httpPort: 8123
+  nativePort: 9000
+  database: openpanel
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClassName: standard-rwo
+  resources:
+    requests:
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+# Redis
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: "7.2.5-alpine"
+    pullPolicy: IfNotPresent
+  port: 6379
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClassName: standard-rwo
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      memory: 256Mi
+
+# Application configuration
+config:
+  dashboardUrl: "https://dev-analytics.tesserix.app"
+  apiUrl: "https://dev-analytics.tesserix.app"
+  nodeEnv: "production"
+  selfHosted: true
+  allowRegistration: false
+  batchSize: 5000
+  batchInterval: 10000
+  concurrency: 10
+
+# Secrets (created by ExternalSecrets)
+secrets:
+  name: openpanel-secrets
+  cookieSecretKey: cookie-secret
+  postgresqlPasswordKey: postgresql-password
+
+# Service Account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Pod annotations
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+
+# =============================================================================
+# Project Init Job
+# Automatically bootstraps OpenPanel projects for frontend apps
+# and writes client IDs to a K8s Secret in the target namespace.
+# =============================================================================
+projectInit:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "14-alpine"
+  # Namespace where frontend apps run (Secret is created here)
+  targetNamespace: "marketplace"
+  # K8s Secret name that holds the client IDs
+  secretName: "openpanel-client-ids"
+  # Organization to create in OpenPanel
+  organization:
+    id: "tesserix-analytics"
+    name: "DevTest"
+  # Admin user for dashboard login (credentials from openpanel-secrets)
+  adminUser:
+    enabled: true
+  # Frontend apps — each gets a project + write client
+  # cors: optional comma-separated list of allowed origins (defaults to domain)
+  apps:
+    admin:
+      projectName: "Tesserix Admin"
+      domain: "https://dev-admin.tesserix.app"
+    storefront:
+      projectName: "Tesserix Storefront"
+      domain: "https://dev-store.tesserix.app"
+      cors: "https://dev-store.tesserix.app,https://*.tesserix.app"
+    tenant-onboarding:
+      projectName: "Tesserix Tenant Onboarding"
+      domain: "https://dev-onboarding.tesserix.app"

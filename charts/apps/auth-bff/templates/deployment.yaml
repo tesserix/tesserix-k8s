@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "auth-bff.fullname" . }}
+  labels:
+    {{- include "auth-bff.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "auth-bff.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "auth-bff.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "auth-bff.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port | default 8080 }}
+              protocol: TCP
+          envFrom:
+            {{- if .Values.externalSecrets.enabled }}
+            - secretRef:
+                name: {{ include "auth-bff.fullname" . }}-secrets
+            {{- end }}
+            {{- if .Values.secretRef }}
+            - secretRef:
+                name: {{ .Values.secretRef }}
+            {{- end }}
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            # GCP Secret Manager Configuration
+            {{- if .Values.gcp.projectId }}
+            - name: GCP_PROJECT_ID
+              value: {{ .Values.gcp.projectId | quote }}
+            {{- end }}
+            - name: GCP_SECRET_PREFIX
+              value: {{ .Values.gcp.secretManager.secretPrefix | quote }}
+            - name: USE_GCP_SECRET_MANAGER
+              value: "true"
+            # Keycloak - Internal IDP (for staff/admin authentication)
+            - name: KEYCLOAK_INTERNAL_URL
+              value: {{ .Values.keycloak.internal.url | quote }}
+            {{- if .Values.keycloak.internal.internalUrl }}
+            - name: KEYCLOAK_INTERNAL_INTERNAL_URL
+              value: {{ .Values.keycloak.internal.internalUrl | quote }}
+            {{- end }}
+            - name: KEYCLOAK_INTERNAL_REALM
+              value: {{ .Values.keycloak.internal.realm | quote }}
+            - name: KEYCLOAK_INTERNAL_CLIENT_ID
+              value: {{ .Values.keycloak.internal.clientId | quote }}
+            - name: KEYCLOAK_INTERNAL_CLIENT_SECRET_NAME
+              value: {{ .Values.gcp.secretManager.keycloakInternalClientSecret | default (printf "%s-keycloak-internal-dashboard-client-secret" .Values.gcp.secretManager.secretPrefix) | quote }}
+            # Keycloak - Customer IDP
+            - name: KEYCLOAK_CUSTOMER_URL
+              value: {{ .Values.keycloak.customer.url | quote }}
+            {{- if .Values.keycloak.customer.internalUrl }}
+            - name: KEYCLOAK_CUSTOMER_INTERNAL_URL
+              value: {{ .Values.keycloak.customer.internalUrl | quote }}
+            {{- end }}
+            - name: KEYCLOAK_CUSTOMER_REALM
+              value: {{ .Values.keycloak.customer.realm | quote }}
+            - name: KEYCLOAK_CUSTOMER_CLIENT_ID
+              value: {{ .Values.keycloak.customer.clientId | quote }}
+            - name: KEYCLOAK_CUSTOMER_CLIENT_SECRET_NAME
+              value: {{ .Values.gcp.secretManager.keycloakCustomerClientSecret | default (printf "%s-keycloak-customer-dashboard-client-secret" .Values.gcp.secretManager.secretPrefix) | quote }}
+            # Session secrets from GCP Secret Manager
+            - name: SESSION_SECRET_NAME
+              value: {{ .Values.gcp.secretManager.sessionSecret | default (printf "%s-encryption-key" .Values.gcp.secretManager.secretPrefix) | quote }}
+            - name: CSRF_SECRET_NAME
+              value: {{ .Values.gcp.secretManager.csrfSecret | default (printf "%s-jwt-secret" .Values.gcp.secretManager.secretPrefix) | quote }}
+            # Redis
+            - name: REDIS_HOST
+              value: {{ .Values.redis.host | quote }}
+            - name: REDIS_PORT
+              value: {{ .Values.redis.port | quote }}
+            {{- if .Values.redis.tls }}
+            - name: REDIS_TLS
+              value: {{ .Values.redis.tls | quote }}
+            {{- end }}
+            - name: REDIS_PASSWORD_SECRET_NAME
+              value: {{ .Values.gcp.secretManager.redisPassword | default (printf "%s-marketplace-redis-password" .Values.gcp.secretManager.secretPrefix) | quote }}
+            # Verification Service
+            - name: VERIFICATION_SERVICE_API_KEY_SECRET_NAME
+              value: {{ .Values.gcp.secretManager.verificationApiKey | default (printf "%s-marketplace-api-key" .Values.gcp.secretManager.secretPrefix) | quote }}
+          {{- if .Values.livenessProbe }}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.livenessProbe.httpGet.path | default "/health/live" }}
+              port: http
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds | default 10 }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds | default 30 }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold | default 3 }}
+          {{- end }}
+          {{- end }}
+          {{- if .Values.readinessProbe }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.readinessProbe.httpGet.path | default "/health/ready" }}
+              port: http
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold | default 3 }}
+          {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,32 @@
+# Production overrides for swagger-ui
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+replicaCount: 2
+
+# Production resource allocation
+resources:
+  limits:
+    memory: 256Mi
+  requests:
+    memory: 64Mi
+
+# Production ingress
+ingress:
+  enabled: true
+  className: "kong"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: api-docs.tesserix.app
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: swagger-ui-tls
+      hosts:
+        - api-docs.tesserix.app
+
+# High availability settings
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

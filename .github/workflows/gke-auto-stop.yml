@@ -1,0 +1,195 @@
+name: GKE Auto-Stop (Scheduled)
+
+on:
+  # Schedule disabled - uncomment to enable auto-stop
+  # schedule:
+  #   # Run at 12:00 AM UTC every day
+  #   # Adjust timezone as needed - this is UTC
+  #   # For Australia/Sydney (AEST/AEDT), 12 AM AEST = 2 PM UTC (previous day) or 1 PM UTC during daylight saving
+  #   # Using 14:00 UTC to approximate 12 AM AEST
+  #   - cron: '0 14 * * *'
+
+  # Allow manual trigger for testing
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (show what would happen without making changes)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  GCP_PROJECT_ID: 'tesseracthub-480811'
+  CLUSTER_NAME: 'tesseract-devtest-gke'
+  CLUSTER_REGION: 'australia-southeast1'
+
+jobs:
+  auto-stop:
+    name: 'Auto-Stop GKE Cluster'
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Display Configuration
+        run: |
+          echo "=========================================="
+          echo "GKE Auto-Stop Scheduled Job"
+          echo "=========================================="
+          echo "Cluster:      ${{ env.CLUSTER_NAME }}"
+          echo "Region:       ${{ env.CLUSTER_REGION }}"
+          echo "Project:      ${{ env.GCP_PROJECT_ID }}"
+          echo "Trigger:      ${{ github.event_name }}"
+          echo "Dry Run:      ${{ github.event.inputs.dry_run || 'false' }}"
+          echo "Time (UTC):   $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "=========================================="
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Check Current Cluster Status
+        id: check_status
+        run: |
+          echo "### GKE Auto-Stop Report" >> $GITHUB_STEP_SUMMARY
+          echo "*Scheduled shutdown at $(date -u '+%Y-%m-%d %H:%M:%S UTC')*" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Get cluster info
+          CLUSTER_INFO=$(gcloud container clusters describe ${{ env.CLUSTER_NAME }} \
+            --region ${{ env.CLUSTER_REGION }} \
+            --format="json" 2>/dev/null || echo "{}")
+
+          if [ "$CLUSTER_INFO" == "{}" ]; then
+            echo "❌ Cluster not found or not accessible" >> $GITHUB_STEP_SUMMARY
+            echo "CLUSTER_EXISTS=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "CLUSTER_EXISTS=true" >> $GITHUB_OUTPUT
+
+          # Check if any node pools have nodes
+          TOTAL_NODES=$(gcloud container node-pools list \
+            --cluster=${{ env.CLUSTER_NAME }} \
+            --region=${{ env.CLUSTER_REGION }} \
+            --format="value(autoscaling.maxNodeCount)" | awk '{s+=$1} END {print s+0}')
+
+          echo "TOTAL_MAX_NODES=$TOTAL_NODES" >> $GITHUB_OUTPUT
+
+          if [ "$TOTAL_NODES" -eq 0 ]; then
+            echo "#### Status: Already Stopped" >> $GITHUB_STEP_SUMMARY
+            echo "Cluster node pools are already scaled to 0. No action needed." >> $GITHUB_STEP_SUMMARY
+            echo "ALREADY_STOPPED=true" >> $GITHUB_OUTPUT
+          else
+            echo "#### Status: Running" >> $GITHUB_STEP_SUMMARY
+            echo "Cluster has active node pools. Proceeding with shutdown..." >> $GITHUB_STEP_SUMMARY
+            echo "ALREADY_STOPPED=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Current Node Pools" >> $GITHUB_STEP_SUMMARY
+          gcloud container node-pools list \
+            --cluster=${{ env.CLUSTER_NAME }} \
+            --region=${{ env.CLUSTER_REGION }} \
+            --format="table(name,config.machineType,autoscaling.minNodeCount,autoscaling.maxNodeCount,status)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Stop GKE Cluster (Dry Run)
+        if: github.event.inputs.dry_run == 'true' && steps.check_status.outputs.CLUSTER_EXISTS == 'true' && steps.check_status.outputs.ALREADY_STOPPED == 'false'
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Dry Run Mode" >> $GITHUB_STEP_SUMMARY
+          echo "The following actions would be performed:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          NODE_POOLS=$(gcloud container node-pools list \
+            --cluster=${{ env.CLUSTER_NAME }} \
+            --region=${{ env.CLUSTER_REGION }} \
+            --format="value(name)")
+
+          for POOL in $NODE_POOLS; do
+            echo "- Would scale \`$POOL\` to 0 nodes" >> $GITHUB_STEP_SUMMARY
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **No changes made (dry run)**" >> $GITHUB_STEP_SUMMARY
+
+      - name: Stop GKE Cluster
+        if: (github.event.inputs.dry_run != 'true' || github.event_name == 'schedule') && steps.check_status.outputs.CLUSTER_EXISTS == 'true' && steps.check_status.outputs.ALREADY_STOPPED == 'false'
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Stopping Cluster" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Get all node pools
+          NODE_POOLS=$(gcloud container node-pools list \
+            --cluster=${{ env.CLUSTER_NAME }} \
+            --region=${{ env.CLUSTER_REGION }} \
+            --format="value(name)")
+
+          # Scale each node pool to 0
+          for POOL in $NODE_POOLS; do
+            echo "Scaling down node pool: $POOL..."
+            echo "- Scaling \`$POOL\` to 0..." >> $GITHUB_STEP_SUMMARY
+
+            # Update autoscaling to 0-0 to prevent scale-up
+            gcloud container node-pools update $POOL \
+              --cluster=${{ env.CLUSTER_NAME }} \
+              --region=${{ env.CLUSTER_REGION }} \
+              --enable-autoscaling \
+              --min-nodes=0 \
+              --max-nodes=0 \
+              --quiet 2>/dev/null || true
+
+            # Resize to 0 nodes
+            gcloud container clusters resize ${{ env.CLUSTER_NAME }} \
+              --region ${{ env.CLUSTER_REGION }} \
+              --node-pool $POOL \
+              --num-nodes 0 \
+              --quiet 2>/dev/null || true
+
+            echo "  ✅ $POOL stopped"
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Cluster stopped successfully!**" >> $GITHUB_STEP_SUMMARY
+
+      - name: Final Status
+        if: steps.check_status.outputs.CLUSTER_EXISTS == 'true'
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Final Status" >> $GITHUB_STEP_SUMMARY
+
+          # Wait for status to update
+          sleep 5
+
+          gcloud container node-pools list \
+            --cluster=${{ env.CLUSTER_NAME }} \
+            --region=${{ env.CLUSTER_REGION }} \
+            --format="table(name,autoscaling.minNodeCount,autoscaling.maxNodeCount,status)" >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "#### Cost Savings Info" >> $GITHUB_STEP_SUMMARY
+          echo "- GKE control plane (Autopilot/Standard): Free tier available" >> $GITHUB_STEP_SUMMARY
+          echo "- Worker nodes: **\$0/hour** when scaled to 0" >> $GITHUB_STEP_SUMMARY
+          echo "- Persistent disks: Still incur charges (consider snapshots for long-term savings)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> **To start the cluster:** Run the \`GKE Cluster Control (Manual)\` workflow with action: \`start\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Send Notification (Optional)
+        if: always() && steps.check_status.outputs.ALREADY_STOPPED == 'false'
+        run: |
+          # You can add Slack/Discord/Email notification here
+          # Example with Slack webhook:
+          # curl -X POST -H 'Content-type: application/json' \
+          #   --data '{"text":"GKE cluster '${{ env.CLUSTER_NAME }}' has been stopped to save costs."}' \
+          #   ${{ secrets.SLACK_WEBHOOK_URL }}
+
+          echo "Cluster shutdown complete. Add notification webhook for alerts."

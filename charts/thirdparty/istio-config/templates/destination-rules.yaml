@@ -1,0 +1,1045 @@
+{{/*
+DestinationRules - Defines traffic policies and load balancing for services
+Multi-namespace architecture with product isolation
+
+DISABLED when .Values.features.destinationRules.enabled is false
+*/}}
+
+{{- if .Values.features.destinationRules.enabled }}
+
+# =============================================================================
+# Global Namespace DestinationRules
+# Services: auth, tenant, notification, verification, settings, etc.
+# =============================================================================
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: global-services-dr
+  namespace: {{ .Values.appNamespaces.global }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.appNamespaces.global }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+---
+# NOTE: auth-service-dr removed - auth is now handled by Keycloak + auth-bff in marketplace
+# auth-bff is covered by the wildcard marketplace-services-dr
+
+---
+# Tenant service - deployed in MARKETPLACE namespace (not global)
+# This DestinationRule provides routing-critical traffic policies
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: tenant-service-dr
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: tenant-service.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    loadBalancer:
+      simple: LEAST_REQUEST
+    connectionPool:
+      tcp:
+        maxConnections: 200
+        connectTimeout: 10s
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 200
+        http2MaxRequests: 2000
+        maxRetries: 5
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 30
+
+# =============================================================================
+# Marketplace Namespace DestinationRules
+# E-commerce platform services
+# =============================================================================
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: marketplace-services-dr
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+---
+# Notification hub - WebSocket + SSE support
+# CRITICAL: Must use DO_NOT_UPGRADE because WebSocket requires HTTP/1.1 upgrade semantics
+# h2UpgradePolicy: UPGRADE strips Connection/Upgrade headers, breaking WebSocket handshake
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: notification-hub-dr
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: notification-hub.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 0
+        maxRetries: 3
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+---
+# Tenant router service - NO Istio sidecar, handles VirtualService provisioning
+# CRITICAL: Must use DO_NOT_UPGRADE because tenant-router-service doesn't have Istio sidecar
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: tenant-router-service-dr
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: tenant-router-service.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 10s
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 100
+        maxRetries: 3
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 30
+
+---
+# Products service - high traffic
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: products-service-dr
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: products-service.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    loadBalancer:
+      simple: LEAST_REQUEST
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+---
+# Orders service
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: orders-service-dr
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: orders-service.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    loadBalancer:
+      simple: ROUND_ROBIN
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 500
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+---
+# =============================================================================
+# PCI-DSS COMPLIANT: Payment service - enhanced security
+# Handles sensitive payment data, requires stricter security controls
+# =============================================================================
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: payment-service-dr
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+    pci-compliance: required
+spec:
+  host: payment-service.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+  trafficPolicy:
+    # ALWAYS use mTLS for payment service (PCI-DSS requirement)
+    tls:
+      mode: ISTIO_MUTUAL
+    loadBalancer:
+      simple: ROUND_ROBIN
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 10s
+      http:
+        h2UpgradePolicy: UPGRADE
+        # Lower limits for payment service to prevent overload attacks
+        http1MaxPendingRequests: 25
+        http2MaxRequests: 100
+        maxRequestsPerConnection: 5
+        maxRetries: 2
+    # Stricter circuit breaker for payment service
+    outlierDetection:
+      consecutive5xxErrors: 2
+      interval: 10s
+      baseEjectionTime: 60s
+      maxEjectionPercent: 50
+      minHealthPercent: 50
+
+# =============================================================================
+# HMS Namespace DestinationRules
+# Hospital Management System services
+# =============================================================================
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: hms-services-dr
+  namespace: {{ .Values.appNamespaces.hms }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.appNamespaces.hms }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+# =============================================================================
+# Knative Local Gateway DestinationRule
+# CRITICAL: Uses useClientProtocol to mirror the downstream HTTP version.
+# The knative-local-gateway K8s service port is named "http2", causing Istio
+# to force HTTP/2 for all upstream connections. WebSocket upgrade requires
+# HTTP/1.1 — useClientProtocol lets HTTP/1.1 WS handshakes pass through
+# while keeping HTTP/2 for regular API calls.
+# =============================================================================
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: knative-local-gateway-dr
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: knative-local-gateway.istio-ingress.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 200
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+        useClientProtocol: true
+        http1MaxPendingRequests: 200
+        http2MaxRequests: 2000
+        maxRequestsPerConnection: 0
+
+# =============================================================================
+# FanZone Namespace DestinationRules
+# Sports/gaming platform services
+# Uses auto-mTLS (no explicit tls.mode) so Knative services work correctly.
+# Knative revision services route to the activator (knative-serving ns, no
+# sidecar), and ISTIO_MUTUAL would force TLS to a non-TLS endpoint.
+# Auto-mTLS uses mTLS when sidecars are present, plaintext when absent.
+# =============================================================================
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: fanzone-services-dr
+  namespace: {{ .Values.appNamespaces.fanzone }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.appNamespaces.fanzone }}.svc.cluster.local"
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+# =============================================================================
+# HomeChef Namespace DestinationRules
+# Food platform services
+# =============================================================================
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: homechef-services-dr
+  namespace: {{ .Values.appNamespaces.homechef }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.appNamespaces.homechef }}.svc.cluster.local"
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+# =============================================================================
+# Bookkeeping Namespace DestinationRules
+# Accounting platform services
+# =============================================================================
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: bookkeeping-services-dr
+  namespace: {{ .Values.appNamespaces.bookkeeping }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.appNamespaces.bookkeeping }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+# =============================================================================
+# Tesserix Namespace DestinationRules
+# Company website (frontend only, no database/redis)
+# =============================================================================
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: tesserix-services-dr
+  namespace: {{ .Values.appNamespaces.tesserix }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.appNamespaces.tesserix }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 500
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+# =============================================================================
+# Cross-Namespace Communication Rules
+# Allow app namespaces to communicate with global services
+# =============================================================================
+{{- $globalNs := .Values.appNamespaces.global }}
+{{- range $key, $ns := .Values.appNamespaces }}
+{{- if ne $ns $globalNs }}
+---
+# {{ $ns }} -> global namespace communication
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $ns }}-to-global-dr
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: "*.{{ $globalNs }}.svc.cluster.local"
+  exportTo:
+    - "."
+  trafficPolicy:
+    tls:
+      mode: {{ if eq $.Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 500
+{{- end }}
+{{- end }}
+
+# =============================================================================
+# Database DestinationRules
+# DISABLE mTLS for databases (use native PostgreSQL SSL)
+# =============================================================================
+{{- range $key, $dbNs := .Values.databaseNamespaces }}
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $key }}-postgresql-dr
+  namespace: {{ $dbNs }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: postgresql.{{ $dbNs }}.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+{{- end }}
+
+# =============================================================================
+# Redis DestinationRules
+# DISABLE mTLS for Redis (use native Redis AUTH)
+# =============================================================================
+{{- range $key, $redisNs := .Values.redisNamespaces }}
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $key }}-redis-dr
+  namespace: {{ $redisNs }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: redis-master.{{ $redisNs }}.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 10s
+{{- end }}
+
+# =============================================================================
+# App Namespace to Database DestinationRules
+# CRITICAL: Apps need DestinationRules in their OWN namespace to access databases
+# =============================================================================
+{{- range $key, $ns := .Values.appNamespaces }}
+{{- $dbNs := index $.Values.databaseNamespaces $key }}
+{{- if $dbNs }}
+---
+# {{ $ns }} -> database (postgresql) namespace - DISABLE mTLS
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $key }}-to-postgresql-dr
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: postgresql.{{ $dbNs }}.svc.cluster.local
+  exportTo:
+    - "."
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+{{- end }}
+{{- $redisNs := index $.Values.redisNamespaces $key }}
+{{- if $redisNs }}
+---
+# {{ $ns }} -> redis namespace - DISABLE mTLS
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $key }}-to-redis-dr
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: redis.{{ $redisNs }}.svc.cluster.local
+  exportTo:
+    - "."
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 10s
+{{- end }}
+{{- end }}
+
+# =============================================================================
+# Infrastructure Namespace to Database DestinationRules
+# CRITICAL: Infrastructure services (Keycloak, GrowthBook) need access to databases
+# =============================================================================
+{{- if .Values.infrastructureDatabaseMapping }}
+{{- range $key, $dbNs := .Values.infrastructureDatabaseMapping }}
+{{- $infraNs := index $.Values.infrastructureNamespaces $key }}
+{{- if $infraNs }}
+---
+# {{ $infraNs }} -> database ({{ $dbNs }}) namespace - DISABLE mTLS
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $key }}-to-postgresql-dr
+  namespace: {{ $infraNs }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: postgresql.{{ $dbNs }}.svc.cluster.local
+  exportTo:
+    - "."
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+{{- end }}
+{{- end }}
+{{- end }}
+
+# =============================================================================
+# External Services DestinationRules
+# NATS, Typesense, Email services
+# =============================================================================
+---
+# NATS - DISABLE mTLS
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: nats-dr
+  namespace: {{ .Values.appNamespaces.global }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: nats.nats.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+
+---
+# Typesense - DISABLE mTLS (external search)
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: typesense-dr
+  namespace: {{ .Values.appNamespaces.global }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: typesense.typesense.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 30s
+
+# =============================================================================
+# Infrastructure Namespace DestinationRules
+# Translation, Identity, GrowthBook, Photon, Email
+# =============================================================================
+---
+# Translation namespace services
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: translation-services-dr
+  namespace: {{ .Values.infrastructureNamespaces.translation }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.infrastructureNamespaces.translation }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 60s
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 200
+        maxRetries: 3
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+---
+# Identity (Keycloak) - critical auth service
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: identity-dr
+  namespace: {{ .Values.infrastructureNamespaces.identity }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.infrastructureNamespaces.identity }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    loadBalancer:
+      simple: LEAST_REQUEST
+    connectionPool:
+      tcp:
+        maxConnections: 200
+        connectTimeout: 10s
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 200
+        http2MaxRequests: 2000
+        maxRetries: 3
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 30
+
+{{- if index .Values.infrastructureNamespaces "identity-internal" }}
+---
+# Identity Internal (Keycloak) - internal auth service
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: identity-internal-dr
+  namespace: {{ index .Values.infrastructureNamespaces "identity-internal" }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ index .Values.infrastructureNamespaces "identity-internal" }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    loadBalancer:
+      simple: LEAST_REQUEST
+    connectionPool:
+      tcp:
+        maxConnections: 200
+        connectTimeout: 10s
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 200
+        http2MaxRequests: 2000
+        maxRetries: 3
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 30
+{{- end }}
+
+---
+# GrowthBook - feature flags
+# NOTE: h2UpgradePolicy is DO_NOT_UPGRADE because GrowthBook only supports HTTP/1.1
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: growthbook-dr
+  namespace: {{ .Values.infrastructureNamespaces.growthbook }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.infrastructureNamespaces.growthbook }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 500
+        maxRetries: 3
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+---
+# OpenPanel - web analytics
+# NOTE: h2UpgradePolicy is DO_NOT_UPGRADE because OpenPanel only supports HTTP/1.1
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: openpanel-dr
+  namespace: {{ .Values.infrastructureNamespaces.openpanel }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.infrastructureNamespaces.openpanel }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 500
+        maxRetries: 3
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+
+{{- if .Values.infrastructureNamespaces.photon }}
+---
+# Photon - geocoding service
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: photon-dr
+  namespace: {{ .Values.infrastructureNamespaces.photon }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.infrastructureNamespaces.photon }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: UPGRADE
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 500
+        maxRetries: 3
+    {{- if .Values.circuitBreaker.enabled }}
+    outlierDetection:
+      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
+      interval: {{ .Values.circuitBreaker.interval }}
+      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
+      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
+    {{- end }}
+{{- end }}
+
+---
+# Email services (Postal, Mautic, MySQL, RabbitMQ) - DISABLE mTLS
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: email-dr
+  namespace: {{ .Values.infrastructureNamespaces.email }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.infrastructureNamespaces.email }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 30s
+
+# =============================================================================
+# Cross-Namespace Communication Rules for Infrastructure
+# Allow app namespaces to communicate with infrastructure services
+# =============================================================================
+{{- range $key, $ns := .Values.appNamespaces }}
+---
+# {{ $ns }} -> translation namespace
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $ns }}-to-translation-dr
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: "*.{{ $.Values.infrastructureNamespaces.translation }}.svc.cluster.local"
+  exportTo:
+    - "."
+  trafficPolicy:
+    tls:
+      mode: {{ if eq $.Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 20
+        connectTimeout: 60s
+      http:
+        http1MaxPendingRequests: 20
+        http2MaxRequests: 100
+
+---
+# {{ $ns }} -> identity namespace
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $ns }}-to-identity-dr
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: "*.{{ $.Values.infrastructureNamespaces.identity }}.svc.cluster.local"
+  exportTo:
+    - "."
+  trafficPolicy:
+    tls:
+      mode: {{ if eq $.Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 10s
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 500
+
+{{- if index $.Values.infrastructureNamespaces "identity-internal" }}
+---
+# {{ $ns }} -> identity-internal namespace
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $ns }}-to-identity-internal-dr
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: "*.{{ index $.Values.infrastructureNamespaces "identity-internal" }}.svc.cluster.local"
+  exportTo:
+    - "."
+  trafficPolicy:
+    tls:
+      mode: {{ if eq $.Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 50
+        connectTimeout: 10s
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 500
+{{- end }}
+
+---
+# {{ $ns }} -> growthbook namespace
+# NOTE: h2UpgradePolicy is DO_NOT_UPGRADE because GrowthBook only supports HTTP/1.1
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $ns }}-to-growthbook-dr
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: "*.{{ $.Values.infrastructureNamespaces.growthbook }}.svc.cluster.local"
+  exportTo:
+    - "."
+  trafficPolicy:
+    tls:
+      mode: {{ if eq $.Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 20
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+        http1MaxPendingRequests: 20
+        http2MaxRequests: 100
+
+---
+# {{ $ns }} -> openpanel namespace
+# NOTE: h2UpgradePolicy is DO_NOT_UPGRADE because OpenPanel only supports HTTP/1.1
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $ns }}-to-openpanel-dr
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: "*.{{ $.Values.infrastructureNamespaces.openpanel }}.svc.cluster.local"
+  exportTo:
+    - "."
+  trafficPolicy:
+    tls:
+      mode: {{ if eq $.Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
+    connectionPool:
+      tcp:
+        maxConnections: 20
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+        http1MaxPendingRequests: 20
+        http2MaxRequests: 100
+{{- end }}
+
+{{- end }}

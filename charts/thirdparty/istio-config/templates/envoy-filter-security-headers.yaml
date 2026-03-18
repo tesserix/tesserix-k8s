@@ -1,0 +1,111 @@
+{{/*
+EnvoyFilter to add PCI-DSS compliant security headers
+These headers protect against common web vulnerabilities and are required for PCI compliance
+*/}}
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: security-headers
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pci-compliance
+spec:
+  workloadSelector:
+    labels:
+      istio: ingressgateway
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.lua
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            inlineCode: |
+              function envoy_on_response(response_handle)
+                -- HSTS: Enforce HTTPS for 1 year, include subdomains
+                response_handle:headers():add("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+
+                -- Prevent MIME type sniffing
+                response_handle:headers():add("X-Content-Type-Options", "nosniff")
+
+                -- Prevent clickjacking (allow same origin only)
+                response_handle:headers():add("X-Frame-Options", "SAMEORIGIN")
+
+                -- XSS Protection (legacy browsers)
+                response_handle:headers():add("X-XSS-Protection", "1; mode=block")
+
+                -- Referrer Policy: Don't leak referrer to cross-origin requests
+                response_handle:headers():add("Referrer-Policy", "strict-origin-when-cross-origin")
+
+                -- Permissions Policy: Restrict browser features (allow geolocation & microphone for onboarding/commentary)
+                response_handle:headers():add("Permissions-Policy", "geolocation=(self), microphone=(self), camera=()")
+
+                -- Remove server identification headers
+                response_handle:headers():remove("Server")
+                response_handle:headers():remove("X-Powered-By")
+              end
+---
+# Security headers for custom domain gateway
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: security-headers-custom
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pci-compliance
+spec:
+  workloadSelector:
+    labels:
+      istio: custom-ingressgateway
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter:
+                name: envoy.filters.http.router
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.lua
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+            inlineCode: |
+              function envoy_on_response(response_handle)
+                -- HSTS: Enforce HTTPS for 1 year, include subdomains
+                response_handle:headers():add("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+
+                -- Prevent MIME type sniffing
+                response_handle:headers():add("X-Content-Type-Options", "nosniff")
+
+                -- Prevent clickjacking (allow same origin only)
+                response_handle:headers():add("X-Frame-Options", "SAMEORIGIN")
+
+                -- XSS Protection (legacy browsers)
+                response_handle:headers():add("X-XSS-Protection", "1; mode=block")
+
+                -- Referrer Policy: Don't leak referrer to cross-origin requests
+                response_handle:headers():add("Referrer-Policy", "strict-origin-when-cross-origin")
+
+                -- Permissions Policy: Restrict browser features (allow geolocation & microphone for onboarding/commentary)
+                response_handle:headers():add("Permissions-Policy", "geolocation=(self), microphone=(self), camera=()")
+
+                -- Remove server identification headers
+                response_handle:headers():remove("Server")
+                response_handle:headers():remove("X-Powered-By")
+              end

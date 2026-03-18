@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homechef-web
+  namespace: argocd
+  annotations:
+    kargo.akuity.io/authorized-stage: homechef--prod:homechef-web-prod
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+    app.kubernetes.io/component: frontend
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: homechef
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/homechef-web
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-prod.yaml
+      parameters:
+        - name: image.tag
+          value: "latest"
+        - name: ingress.hosts[0].host
+          value: fe3dr.com
+        - name: env.VITE_API_URL
+          value: https://fe3dr.com/api/v1
+        - name: env.VITE_WS_URL
+          value: wss://fe3dr.com/ws
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homechef
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

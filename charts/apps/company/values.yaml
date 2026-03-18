@@ -1,0 +1,210 @@
+# Default values for company (Tesserix Homepage & Admin Portal)
+replicaCount: 1
+
+# Cloud Run routing — when enabled, VirtualService routes to Cloud Run
+# instead of K8s services. Set in values-prod.yaml.
+cloudRun:
+  enabled: false
+  frontend:
+    host: ""
+    port: 443
+  authBff:
+    host: ""
+    port: 443
+
+image:
+  repository: ghcr.io/tesserix/tesserix-home
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  # Istio sidecar configuration - wait for proxy before starting app
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  # Exclude GCP metadata server from Istio for Workload Identity
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1001
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+ingress:
+  className: "kong"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: company.tesserix.app
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: company-tls
+      hosts:
+        - company.tesserix.app
+
+  # Backend services exposed via ingress (if needed)
+  backendServices: []
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 256Mi
+
+livenessProbe:
+  enabled: false
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: false
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# KEDA ScaledObject configuration
+keda:
+  enabled: true
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "80"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Environment configuration
+env:
+  NODE_ENV: production
+  NEXT_TELEMETRY_DISABLED: "1"
+  PORT: "3000"
+  HOSTNAME: "0.0.0.0"
+
+  # Site URL
+  NEXT_PUBLIC_SITE_URL: "https://company.tesserix.app"
+
+  # Auth BFF (for admin portal login)
+  AUTH_BFF_URL: "http://auth-bff.marketplace.svc.cluster.local:8080"
+
+  # Tenant Service (for admin portal tenant management)
+  TENANT_SERVICE_URL: "http://tenant-service.marketplace.svc.cluster.local:8080"
+
+  # Tickets Service (for admin portal tickets)
+  TICKETS_SERVICE_URL: "http://tickets-service.marketplace.svc.cluster.local:8080/api/v1"
+
+  # Marketplace Settings Service (for admin portal content management)
+  MARKETPLACE_SETTINGS_SERVICE_URL: "http://settings-service.marketplace.svc.cluster.local:8085/api/v1"
+
+  # Subscription Service (for subscription billing management)
+  SUBSCRIPTION_SERVICE_URL: "http://subscription-service.marketplace.svc.cluster.local:8080"
+
+  # Audit Service (for audit log viewer)
+  AUDIT_SERVICE_URL: "http://audit-service.marketplace.svc.cluster.local:8080/api/v1"
+
+  # Status Dashboard Service (for system health monitoring)
+  STATUS_DASHBOARD_SERVICE_URL: "http://status-dashboard-service.marketplace.svc.cluster.local:8097/api/v1"
+
+  # Feature Flags Service (for feature flag management)
+  FEATURE_FLAGS_SERVICE_URL: "http://feature-flags-service.marketplace.svc.cluster.local:8096/api/v1"
+
+  # Notification Service (for email template management)
+  NOTIFICATION_SERVICE_URL: "http://notification-service.marketplace.svc.cluster.local:8090/api/v1"
+
+  # Tenant Onboarding Service (for onboarding content management)
+  ONBOARDING_SERVICE_URL: "http://tenant-onboarding.marketplace.svc.cluster.local:80"
+
+  # Public onboarding URL (for "Start your free year" CTA)
+  NEXT_PUBLIC_ONBOARDING_SITE_URL: "https://dev-onboarding.tesserix.app"
+
+  # ArgoCD (for release management sync)
+  ARGOCD_API_URL: "http://argocd-server.argocd.svc.cluster.local"
+
+  # Trust K8s cluster CA for in-cluster API calls
+  NODE_EXTRA_CA_CERTS: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+# External Secrets Configuration (GCP Secret Manager → K8s Secrets)
+externalSecrets:
+  enabled: true
+  secretStoreRef: "gcp-secret-store"
+
+# ConfigMap for additional configuration
+configMap:
+  data: {}
+
+# Vertical Pod Autoscaler configuration
+vpa:
+  enabled: true
+  updateMode: "InPlaceOrRecreate"
+  minAllowed:
+    memory: "64Mi"
+  maxAllowed:
+    memory: "1Gi"
+  excludeIstioProxy: true
+
+# GCP Secret Manager configuration
+gcp:
+  projectId: ""  # Inherited from global-config.yaml if empty
+  namespace: "tesserix"
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "devtest"
+
+# RBAC for cross-namespace operations
+rbac:
+  rolloutRestart:
+    enabled: true
+    namespaces:
+      - marketplace
+      - tesserix

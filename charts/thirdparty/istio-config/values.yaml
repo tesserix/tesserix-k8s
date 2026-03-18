@@ -1,0 +1,400 @@
+# Istio configuration values
+
+# Cloud Run routing — when enabled, VirtualService routes to Cloud Run
+# instead of K8s services. Override in values-prod.yaml.
+cloudRun:
+  enabled: false
+
+# FanZone Knative routing — when enabled, FanZone routes use Knative local gateway
+fanzoneKnative: false
+
+# Cloud Run IAM auth token injection — when enabled, the Istio gateway fetches
+# GCP identity tokens via Workload Identity and injects X-Serverless-Authorization
+# header. Required when Cloud Run services have allow_unauthenticated = false.
+cloudRunAuth:
+  enabled: false
+  audience: ""
+
+# Domain configuration
+domain: tesserix.app
+
+# Company website host (tesserix.app) — when set, creates a dedicated
+# gateway server, certificate, and VirtualService for the company site.
+# Empty in devtest (company chart handles its own routing).
+companyHost: ""
+
+# Cloud Run Host header rewrite — list of hostnames whose routes go to
+# Cloud Run services and need auto_host_rewrite. Cloud Run rejects
+# requests where the Host header doesn't match *.run.app.
+# Only list hosts with Cloud Run destinations — K8s-only hosts (e.g.,
+# customer-idp, growthbook, postal, mautic) must NOT be included.
+# NOTE: Per-tenant dynamic subdomains (e.g., hello-store.mark8ly.com)
+# currently route to K8s services and don't need this. When they migrate
+# to Cloud Run, add "*.mark8ly.com" to this list.
+cloudRunHostRewrite: []
+
+# =============================================================================
+# Custom Domains Configuration (via Cloudflare Tunnel)
+# =============================================================================
+# When enabled, the Gateway accepts HTTP traffic for ANY domain
+# This is used for customer custom domains where:
+# 1. Customer CNAMEs their domain to <tunnel-id>.cfargotunnel.com
+# 2. Cloudflare Tunnel terminates TLS and forwards HTTP to Istio
+# 3. VirtualServices route based on Host header to correct tenant
+customDomains:
+  enabled: true
+  # Cloudflare Tunnel ID - customers CNAME to this
+  cloudflareTunnelId: "30a5a0e4-f621-4082-9dde-34f1eed8e8ab"
+subdomains:
+  admin: dev-admin
+  store: dev-store
+  onboarding: dev-onboarding
+  api: dev-api
+  fanzone: dev-fanzone
+  # Hospital Management System
+  hmsStaff: dev-hms-staff
+  hmsPatient: dev-hms-patient
+  # Feature Flags
+  growthbook: dev-growthbook
+  # Email Infrastructure (Web UIs only - APIs are internal)
+  postal: dev-postal
+  mautic: dev-mautic
+  # API Documentation (Swagger UI) - Multi-tenant
+  apiDocs: dev-api-docs
+  # Search Engine (Typesense)
+  typesense: dev-search
+  # Identity Provider (Keycloak)
+  customerIdp: dev-customer-idp
+  # Logging Stack (Kibana)
+  kibana: kibana-dev
+  # Web Analytics (OpenPanel)
+  analytics: dev-analytics
+
+# Identity Provider Aliases
+# Additional domains that should route to the same Keycloak identity-customer service
+# Used when multiple products share the same Keycloak instance but need product-specific URLs
+# Each entry creates a VirtualService routing to keycloak.identity-customer.svc.cluster.local:8080
+identityAliases: []
+# Example:
+#   - host: identity.fe3dr.com
+#     name: identity-fe3dr-vs
+#   - host: identity.fanzonebattleground.com
+#     name: identity-fanzone-vs
+
+# Internal Identity Provider Aliases
+# Additional domains that should route to the same Keycloak identity-internal service
+# Each entry creates a VirtualService routing to keycloak.identity-internal.svc.cluster.local:8080
+internalIdentityAliases: []
+# Example:
+#   - host: internal-identity.fe3dr.com
+#     name: internal-identity-fe3dr-vs
+#   - host: internal-identity.fanzonebattleground.com
+#     name: internal-identity-fanzone-vs
+
+# Kibana host override - when set, overrides subdomains.kibana + domain
+# Used in prod where Kibana uses tesserix.app instead of mark8ly.com
+kibanaHost: ""
+
+# Analytics host override - when set, overrides subdomains.analytics + domain
+# Used in prod where OpenPanel uses tesserix.app instead of mark8ly.com
+analyticsHost: ""
+
+# =============================================================================
+# Feature Flags - Enable/Disable Istio Features
+# =============================================================================
+# Production hardening: all security features enabled
+features:
+  # Authorization policies (access control)
+  # SECURITY NOTE: Authorization policies MUST be enabled for PCI-DSS compliance.
+  # Implements zero-trust access control between services.
+  authorizationPolicies:
+    enabled: true  # ENABLED - Required for PCI-DSS and SOC2 compliance
+  # Destination rules (traffic policies, TLS, circuit breakers)
+  destinationRules:
+    enabled: true  # ENABLED for production security
+  # Peer authentication (mTLS)
+  peerAuthentication:
+    enabled: true  # ENABLED for production security
+  # Network policies (Kubernetes native, defense in depth)
+  networkPolicies:
+    enabled: true  # ENABLED for production security
+
+# mTLS configuration
+mtls:
+  # Mode: STRICT, PERMISSIVE, or DISABLE
+  # STRICT: All traffic must be mTLS encrypted (production recommended)
+  # PERMISSIVE: Accept both plaintext and mTLS (migration mode only)
+  mode: STRICT
+
+# =============================================================================
+# Namespace Architecture (Multi-Product Multi-Tenant)
+# =============================================================================
+# Application namespaces - each product has its own namespace
+appNamespaces:
+  global: global           # Shared platform services (auth, tenant, notification)
+  marketplace: marketplace # E-commerce platform (Tesseract Hub)
+  tesserix: tesserix       # Company website (tesserix-home, no database/redis)
+  hms: hms                # Hospital Management System
+  fanzone: fanzone        # Sports/gaming platform
+  homechef: homechef      # Food platform
+  bookkeeping: bookkeeping # Accounting platform
+
+# Infrastructure service namespaces
+# NOTE: keys must be lowercase with hyphens only (RFC 1123 compliant)
+infrastructureNamespaces:
+  translation: translation           # Translation services (LibreTranslate, Bergamot, HuggingFace)
+  identity: identity-customer        # Customer identity (Keycloak)
+  identity-internal: identity-internal # Internal identity (Keycloak)
+  growthbook: growthbook             # Feature flags (GrowthBook)
+  # photon: photon                   # DISABLED: High network cost for planet data download
+  email: email                       # Email infrastructure (Postal, Mautic)
+  typesense: typesense               # Search engine
+  nats: nats                         # Messaging
+  logging: logging                   # Logging stack (Elasticsearch, Kibana, Fluent Bit)
+  openpanel: openpanel               # Web analytics (OpenPanel)
+
+# Infrastructure namespace to database namespace mapping
+# Maps infrastructure services to their database backends
+# NOTE: keys must be lowercase with hyphens only (RFC 1123 compliant)
+infrastructureDatabaseMapping:
+  identity: postgresql-global        # Keycloak customer uses postgresql-global
+  identity-internal: postgresql-global # Keycloak internal uses postgresql-global
+  growthbook: postgresql-global      # GrowthBook uses postgresql-global
+
+# Cross-product database access
+# Allows specific app namespaces to access other product databases for shared services
+# Use case: marketplace services need global DB for tenant, auth, etc.
+crossProductDatabaseAccess:
+  # marketplace needs access to postgresql-global for shared services
+  marketplace:
+    - postgresql-global              # Shared services: tenant_db, auth_db, verification_db
+
+# Cross-product Redis access
+# Allows specific app namespaces to access other product's Redis for shared services
+# Use case: global services need redis-marketplace for caching
+crossProductRedisAccess:
+  # global namespace needs access to redis-marketplace for shared caching
+  global:
+    - redis-marketplace              # Shared caching for auth, notification, etc.
+
+# Backup namespace configuration
+# Backup namespaces need access to ALL database namespaces for backup/restore operations
+backupNamespaces:
+  - db-backup-and-restore            # Automated database backup/restore jobs
+
+# Database namespaces - each product has isolated database
+databaseNamespaces:
+  global: postgresql-global
+  marketplace: postgresql-marketplace
+  hms: postgresql-hms
+  fanzone: postgresql-fanzone
+  homechef: postgresql-homechef
+  bookkeeping: postgresql-bookkeeping
+
+# Redis namespaces - each product has isolated cache
+# Only deploy when product is active
+redisNamespaces:
+  marketplace: redis-marketplace     # Active - marketplace caching
+  # global: redis-global             # Enable when global namespace needs Redis
+  # hms: redis-hms                   # Enable when HMS is deployed
+  fanzone: redis-fanzone             # FanZone caching (enabled for prod)
+  homechef: redis-homechef           # HomeChef session store + caching
+  # bookkeeping: redis-bookkeeping   # Enable when Bookkeeping needs Redis
+
+# MongoDB namespaces - product-specific document stores
+mongoNamespaces:
+  fanzone: mongodb-fanzone           # FanZone chat message persistence
+
+# External CIDR blocks allowed to access databases via ILB (e.g., Cloud Run VPC connector)
+# Key must match the corresponding namespace key; value is a list of CIDRs
+databaseExternalAccess:
+  fanzone:
+    - 10.10.16.0/28   # Cloud Run VPC connector (fz-prod-vpc-connector)
+    - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
+  marketplace:
+    - 10.10.16.16/28  # Cloud Run VPC connector (mp-prod-vpc-connector)
+    - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
+  global:
+    - 10.10.16.32/28  # Cloud Run VPC connector (gl-prod-vpc-connector)
+    - 10.10.16.16/28  # Cloud Run VPC connector (mp-prod-vpc-connector) — marketplace services access global DB
+    - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
+
+redisExternalAccess:
+  fanzone:
+    - 10.10.16.0/28   # Cloud Run VPC connector (fz-prod-vpc-connector)
+    - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
+  marketplace:
+    - 10.10.16.16/28  # Cloud Run VPC connector (mp-prod-vpc-connector)
+    - 10.10.16.32/28  # Cloud Run VPC connector (gl-prod-vpc-connector) — global services use marketplace Redis
+    - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
+
+mongoExternalAccess:
+  fanzone:
+    - 10.10.16.0/28   # Cloud Run VPC connector (fz-prod-vpc-connector)
+    - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
+
+# Namespaces to enable sidecar injection
+sidecarInjection:
+  namespaces:
+    # Application namespaces
+    - global
+    - marketplace
+    - tesserix
+    - hms
+    - fanzone
+    - homechef
+    - bookkeeping
+    # Infrastructure namespaces
+    - translation
+    - identity
+    - identity-customer
+    - identity-internal
+    - growthbook
+    - openpanel
+    # - photon  # DISABLED: High network cost for planet data download
+    - email
+    # - nats           # DISABLED: NATS handles its own TLS and doesn't need Istio sidecar
+    - typesense
+    # Database namespaces (for mTLS)
+    - postgresql-global
+    - postgresql-marketplace
+    - postgresql-hms
+    - postgresql-fanzone
+    - postgresql-homechef
+    - postgresql-bookkeeping
+    # Redis namespaces - DISABLED: Redis doesn't need sidecar, causes connectivity issues
+    # - redis-marketplace
+  # Namespaces that need database access (adds database-access=allowed label for NetworkPolicy)
+  databaseAccessNamespaces:
+    - postgresql-global
+    - postgresql-marketplace
+    - postgresql-hms
+    - postgresql-fanzone
+    - postgresql-homechef
+    - postgresql-bookkeeping
+    - marketplace
+    - global
+    - hms
+    - fanzone
+    - homechef
+    - bookkeeping
+    - identity
+    - identity-internal
+    - identity-customer
+    - growthbook
+    - openpanel
+    - email
+    - db-backup-and-restore
+    - monitoring
+  # Namespaces where sidecar injection should be explicitly disabled
+  disabledNamespaces:
+    - nats
+    - redis-marketplace
+    - redis-global
+    - redis-hms
+    - redis-fanzone
+    - redis-homechef
+    - redis-bookkeeping
+    - mongodb-fanzone                 # MongoDB doesn't need sidecar
+    - db-backup-and-restore        # Backup jobs don't need sidecar
+
+# Rate limiting configuration
+rateLimiting:
+  enabled: true
+  requestsPerSecond: 100
+  burstSize: 200
+
+# Circuit breaker configuration
+circuitBreaker:
+  enabled: true
+  consecutive5xxErrors: 5
+  interval: 30s
+  baseEjectionTime: 30s
+  maxEjectionPercent: 50
+
+# Retry policy
+retryPolicy:
+  enabled: true
+  attempts: 3
+  perTryTimeout: 2s
+  retryOn: "connect-failure,refused-stream,unavailable,cancelled,retriable-4xx,reset"
+
+# Timeout configuration
+timeout:
+  default: 30s
+  api: 60s
+
+# CORS configuration
+cors:
+  enabled: true
+  allowOrigins:
+    - "https://kibana-dev.tesserix.app"
+    - "https://dev-admin.tesserix.app"
+    - "https://dev-store.tesserix.app"
+    - "https://dev-onboarding.tesserix.app"
+    - "https://company.tesserix.app"
+    - "https://dev-hms-staff.tesserix.app"
+    - "https://dev-hms-patient.tesserix.app"
+    - "https://dev-growthbook.tesserix.app"
+    - "https://dev-postal.tesserix.app"
+    - "https://dev-mautic.tesserix.app"
+    - "https://dev-api-docs.tesserix.app"
+    - "https://dev-search.tesserix.app"
+    - "https://dev-analytics.tesserix.app"
+  allowMethods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+    - OPTIONS
+  allowHeaders:
+    - authorization
+    - content-type
+    - x-request-id
+    - x-tenant-id
+    - x-tenant-slug
+    - x-user-id
+    - x-vendor-id
+    - x-storefront-id
+    - x-guest-session-id
+  exposeHeaders:
+    - x-request-id
+    - x-tenant-id
+    - x-tenant-slug
+    - x-vendor-id
+    - x-storefront-id
+  maxAge: 86400s
+  allowCredentials: true
+
+# TLS configuration
+tls:
+  # Cert-manager cluster issuer
+  clusterIssuer: letsencrypt-prod
+  # Minimum TLS version
+  minProtocolVersion: TLSV1_2
+  # Cipher suites
+  cipherSuites:
+    - ECDHE-RSA-AES256-GCM-SHA384
+    - ECDHE-RSA-AES128-GCM-SHA256
+
+# Observability
+observability:
+  # Access logging
+  accessLogging:
+    enabled: true
+  # Metrics
+  metrics:
+    enabled: true
+  # Tracing
+  tracing:
+    enabled: true
+    samplingRate: 100
+
+# =============================================================================
+# JWT Authentication
+# =============================================================================
+# NOTE: JWT authentication is now handled by the istio-auth-policies chart
+# which configures Keycloak-based RequestAuthentication policies.
+# See: charts/infrastructure/istio-auth-policies/
+# =============================================================================

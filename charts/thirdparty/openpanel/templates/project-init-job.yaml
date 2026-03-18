@@ -1,0 +1,358 @@
+{{- if .Values.projectInit.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "openpanel.fullname" . }}-project-init
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: project-init
+  annotations:
+    # ArgoCD hook: run after all resources are synced
+    argocd.argoproj.io/hook: PostSync
+    # Delete previous Job before creating a new one (idempotent re-runs)
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "openpanel.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: project-init
+      annotations:
+        # Disable Istio sidecar — Job must exit cleanly
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "openpanel.fullname" . }}-project-init
+      containers:
+        - name: init
+          image: "{{ .Values.projectInit.image.repository }}:{{ .Values.projectInit.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DB_HOST
+              value: "{{ include "openpanel.fullname" . }}-postgresql.{{ .Release.Namespace }}.svc.cluster.local"
+            - name: DB_USER
+              value: "{{ .Values.postgresql.username }}"
+            - name: DB_NAME
+              value: "{{ .Values.postgresql.database }}"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.postgresqlPasswordKey }}
+            - name: TARGET_NAMESPACE
+              value: "{{ .Values.projectInit.targetNamespace }}"
+            - name: SECRET_NAME
+              value: "{{ .Values.projectInit.secretName }}"
+            - name: ORG_ID
+              value: "{{ .Values.projectInit.organization.id }}"
+            - name: ORG_NAME
+              value: "{{ .Values.projectInit.organization.name }}"
+            {{- if .Values.projectInit.adminUser.enabled }}
+            - name: ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: admin-email
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: admin-password
+            {{- end }}
+            # App configurations as JSON-encoded env vars
+            {{- range $app, $config := .Values.projectInit.apps }}
+            - name: "APP_{{ $app | upper | replace "-" "_" }}_DOMAIN"
+              value: "{{ $config.domain }}"
+            - name: "APP_{{ $app | upper | replace "-" "_" }}_NAME"
+              value: "{{ $config.projectName }}"
+            {{- if $config.cors }}
+            - name: "APP_{{ $app | upper | replace "-" "_" }}_CORS"
+              value: "{{ $config.cors }}"
+            {{- end }}
+            {{- end }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              echo "=== OpenPanel Project Init ==="
+              echo "Target namespace: $TARGET_NAMESPACE"
+              echo "Secret name: $SECRET_NAME"
+
+              # --- Install curl (K8s API calls) and argon2 (password hashing) ---
+              apk add --no-cache curl argon2 >/dev/null 2>&1
+
+              PSQL="psql -h $DB_HOST -U $DB_USER -d $DB_NAME -t -A -q"
+
+              # --- Wait for PostgreSQL readiness ---
+              echo "[1/6] Waiting for PostgreSQL..."
+              for i in $(seq 1 30); do
+                if $PSQL -c "SELECT 1" >/dev/null 2>&1; then
+                  echo "  PostgreSQL is ready."
+                  break
+                fi
+                echo "  Waiting... ($i/30)"
+                sleep 2
+              done
+
+              # Enable pgcrypto extension (needed for gen_random_bytes in root client secret)
+              $PSQL -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;" 2>/dev/null || true
+
+              # --- Register ClickHouse code migrations (idempotent) ---
+              echo "  Registering ClickHouse code migrations..."
+              $PSQL <<EOSQL
+              INSERT INTO __code_migrations (name, "createdAt", "updatedAt") VALUES
+                ('1-settings.ts', NOW(), NOW()),
+                ('2-accounts.ts', NOW(), NOW()),
+                ('3-init-ch.ts', NOW(), NOW()),
+                ('4-add-sessions.ts', NOW(), NOW()),
+                ('5-add-imports-table.ts', NOW(), NOW()),
+                ('6-add-revenue-column.ts', NOW(), NOW()),
+                ('7-migrate-events-to-series.ts', NOW(), NOW()),
+                ('8-order-keys.ts', NOW(), NOW())
+              ON CONFLICT (name) DO NOTHING;
+              EOSQL
+
+              # --- Create Organization ---
+              echo "[2/6] Creating organization: $ORG_NAME"
+              $PSQL <<EOSQL
+              INSERT INTO organizations (id, name)
+              VALUES ('$ORG_ID', '$ORG_NAME')
+              ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name;
+              EOSQL
+
+              # --- Create Projects and Write Clients ---
+              echo "[3/6] Creating projects and write clients..."
+
+              create_project_and_client() {
+                local project_id="$1"
+                local project_name="$2"
+                local domain="$3"
+                local app_key="$4"
+                local cors_csv="$5"  # Optional comma-separated CORS origins
+
+                echo "  Creating project: $project_name ($project_id)"
+
+                # Build PostgreSQL text[] literal from CORS origins (or default to domain)
+                local cors_literal
+                if [ -n "$cors_csv" ]; then
+                  cors_literal=$(echo "$cors_csv" | awk -F',' '{for(i=1;i<=NF;i++){if(i>1) printf ","; printf "%s", $i}}')
+                  cors_literal="{${cors_literal}}"
+                else
+                  cors_literal="{${domain}}"
+                fi
+
+                # Upsert project
+                $PSQL <<EOSQL
+              INSERT INTO projects (id, name, domain, cors, types, "organizationId")
+              VALUES (
+                '$project_id',
+                '$project_name',
+                '$domain',
+                '${cors_literal}'::text[],
+                ARRAY['website']::"ProjectType"[],
+                '$ORG_ID'
+              )
+              ON CONFLICT (id) DO UPDATE SET
+                name = EXCLUDED.name,
+                domain = EXCLUDED.domain,
+                cors = EXCLUDED.cors;
+              EOSQL
+
+                # Create write client if one doesn't exist for this project
+                local existing_client
+                existing_client=$($PSQL -c "SELECT id FROM clients WHERE \"projectId\" = '$project_id' AND type = 'write'::\"ClientType\" LIMIT 1;")
+
+                if [ -z "$existing_client" ]; then
+                  $PSQL -c "INSERT INTO clients (name, type, \"organizationId\", \"projectId\") VALUES ('${app_key}-write', 'write'::\"ClientType\", '$ORG_ID', '$project_id');"
+                  existing_client=$($PSQL -c "SELECT id FROM clients WHERE \"projectId\" = '$project_id' AND type = 'write'::\"ClientType\" LIMIT 1;")
+                  echo "  Created write client: $existing_client"
+                else
+                  echo "  Existing write client: $existing_client"
+                fi
+
+                # Export for later use
+                eval "CLIENT_ID_${app_key}=$existing_client"
+              }
+
+              {{- range $app, $config := .Values.projectInit.apps }}
+              create_project_and_client \
+                "tesserix-{{ $app }}" \
+                "$APP_{{ $app | upper | replace "-" "_" }}_NAME" \
+                "$APP_{{ $app | upper | replace "-" "_" }}_DOMAIN" \
+                "{{ $app | replace "-" "_" }}" \
+                "${APP_{{ $app | upper | replace "-" "_" }}_CORS:-}"
+              {{- end }}
+
+              # --- Create Root Client (for future API management) ---
+              echo "[4/6] Ensuring root client exists..."
+              ROOT_EXISTS=$($PSQL -c "SELECT id FROM clients WHERE type = 'root'::\"ClientType\" AND \"organizationId\" = '$ORG_ID' LIMIT 1;")
+              if [ -z "$ROOT_EXISTS" ]; then
+                $PSQL -c "INSERT INTO clients (name, type, \"organizationId\", secret) VALUES ('api-root', 'root'::\"ClientType\", '$ORG_ID', 'sec_' || encode(gen_random_bytes(32), 'hex'));"
+                ROOT_EXISTS=$($PSQL -c "SELECT id FROM clients WHERE type = 'root'::\"ClientType\" AND \"organizationId\" = '$ORG_ID' LIMIT 1;")
+                echo "  Created root client: $ROOT_EXISTS"
+              else
+                echo "  Root client exists: $ROOT_EXISTS"
+              fi
+
+              # --- Create Admin User (for dashboard login) ---
+              {{- if .Values.projectInit.adminUser.enabled }}
+              echo "[5/6] Creating admin user for dashboard..."
+
+              # Generate Argon2id hash (matching Oslo/OpenPanel format)
+              SALT=$(head -c 16 /dev/urandom | base64 | tr -d '=+/' | head -c 16)
+              ADMIN_HASH=$(echo -n "$ADMIN_PASSWORD" | argon2 "$SALT" -id -k 19456 -t 2 -p 1 -l 32 -e)
+
+              EXISTING_USER=$($PSQL -c "SELECT id FROM users WHERE email = '$ADMIN_EMAIL' LIMIT 1;")
+
+              if [ -z "$EXISTING_USER" ]; then
+                # Create user (OpenPanel uses 'user_' prefix for IDs)
+                USER_ID="user_$(head -c 16 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=' | head -c 20)"
+                $PSQL <<EOSQL
+              INSERT INTO users (id, email, "firstName", "lastName", "createdAt", "updatedAt")
+              VALUES (
+                '$USER_ID',
+                '$ADMIN_EMAIL',
+                'Admin',
+                '',
+                NOW(),
+                NOW()
+              );
+              EOSQL
+                EXISTING_USER="$USER_ID"
+                echo "  Created user: $EXISTING_USER"
+              else
+                echo "  User already exists: $EXISTING_USER"
+              fi
+
+              # Create account with Argon2id password (idempotent)
+              EXISTING_ACCOUNT=$($PSQL -c "SELECT id FROM accounts WHERE \"userId\" = '$EXISTING_USER' AND provider = 'email' LIMIT 1;")
+              if [ -z "$EXISTING_ACCOUNT" ]; then
+                $PSQL <<EOSQL
+              INSERT INTO accounts (id, "userId", provider, password, email, "createdAt", "updatedAt")
+              VALUES (
+                gen_random_uuid()::text,
+                '$EXISTING_USER',
+                'email',
+                '$ADMIN_HASH',
+                '$ADMIN_EMAIL',
+                NOW(),
+                NOW()
+              );
+              EOSQL
+                echo "  Created account with password"
+              else
+                # Update password on re-run (in case password was rotated in GCP SM)
+                $PSQL -c "UPDATE accounts SET password = '$ADMIN_HASH', \"updatedAt\" = NOW() WHERE id = '$EXISTING_ACCOUNT';"
+                echo "  Updated existing account password"
+              fi
+
+              # Create membership (org:admin role)
+              EXISTING_MEMBER=$($PSQL -c "SELECT id FROM members WHERE \"userId\" = '$EXISTING_USER' AND \"organizationId\" = '$ORG_ID' LIMIT 1;")
+              if [ -z "$EXISTING_MEMBER" ]; then
+                $PSQL <<EOSQL
+              INSERT INTO members (role, email, "userId", "organizationId", "createdAt", "updatedAt")
+              VALUES (
+                'org:admin',
+                '$ADMIN_EMAIL',
+                '$EXISTING_USER',
+                '$ORG_ID',
+                NOW(),
+                NOW()
+              );
+              EOSQL
+                echo "  Created org:admin membership"
+              else
+                echo "  Membership already exists"
+              fi
+
+              # Update organization createdByUserId
+              $PSQL -c "UPDATE organizations SET \"createdByUserId\" = '$EXISTING_USER' WHERE id = '$ORG_ID' AND \"createdByUserId\" IS NULL;" 2>/dev/null || true
+              {{- else }}
+              echo "[5/6] Admin user creation skipped (disabled)"
+              {{- end }}
+
+              # --- Create K8s Secret in target namespace ---
+              echo "[6/6] Writing client IDs to K8s Secret: $TARGET_NAMESPACE/$SECRET_NAME"
+
+              TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+              CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              API="https://kubernetes.default.svc"
+
+              # Collect client IDs
+              {{- $apps := list }}
+              {{- range $app, $config := .Values.projectInit.apps }}
+              {{- $apps = append $apps $app }}
+              {{- end }}
+
+              # Build stringData JSON dynamically
+              STRING_DATA="{"
+              {{- range $i, $app := (keys .Values.projectInit.apps | sortAlpha) }}
+              CLIENT_VAR="CLIENT_ID_{{ $app | replace "-" "_" }}"
+              CLIENT_VAL=$(eval echo "\$$CLIENT_VAR")
+              {{ if $i }}STRING_DATA="$STRING_DATA,"{{ end }}
+              STRING_DATA="$STRING_DATA\"{{ $app }}-client-id\":\"$CLIENT_VAL\""
+              {{- end }}
+              STRING_DATA="$STRING_DATA}"
+
+              SECRET_JSON=$(cat <<EOJSON
+              {
+                "apiVersion": "v1",
+                "kind": "Secret",
+                "metadata": {
+                  "name": "$SECRET_NAME",
+                  "namespace": "$TARGET_NAMESPACE",
+                  "labels": {
+                    "app.kubernetes.io/managed-by": "openpanel-init",
+                    "app.kubernetes.io/part-of": "tesseract-hub"
+                  }
+                },
+                "type": "Opaque",
+                "stringData": $STRING_DATA
+              }
+              EOJSON
+              )
+
+              # Try create (POST), if exists (409) then replace (PUT)
+              HTTP_CODE=$(curl -s -o /tmp/k8s-response.json -w "%{http_code}" \
+                --cacert "$CA" \
+                -H "Authorization: Bearer $TOKEN" \
+                -H "Content-Type: application/json" \
+                -X POST \
+                -d "$SECRET_JSON" \
+                "$API/api/v1/namespaces/$TARGET_NAMESPACE/secrets")
+
+              if [ "$HTTP_CODE" = "409" ]; then
+                echo "  Secret already exists, updating..."
+                HTTP_CODE=$(curl -s -o /tmp/k8s-response.json -w "%{http_code}" \
+                  --cacert "$CA" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -X PUT \
+                  -d "$SECRET_JSON" \
+                  "$API/api/v1/namespaces/$TARGET_NAMESPACE/secrets/$SECRET_NAME")
+              fi
+
+              if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
+                echo "  Secret created/updated successfully (HTTP $HTTP_CODE)"
+              else
+                echo "  ERROR: Failed to create/update secret (HTTP $HTTP_CODE)"
+                cat /tmp/k8s-response.json 2>/dev/null
+                exit 1
+              fi
+
+              echo ""
+              echo "=== OpenPanel Project Init Complete ==="
+              echo "Client IDs written to Secret: $TARGET_NAMESPACE/$SECRET_NAME"
+              {{- range $app, $config := .Values.projectInit.apps }}
+              echo "  {{ $app }}: $(eval echo \$CLIENT_ID_{{ $app | replace "-" "_" }})"
+              {{- end }}
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+{{- end }}

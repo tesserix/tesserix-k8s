@@ -1,0 +1,48 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: openfga
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "10"
+        autoscaling.knative.dev/target: "100"
+        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+        traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+        traffic.sidecar.istio.io/excludeOutboundPorts: "5432"
+    spec:
+      serviceAccountName: openfga
+      imagePullSecrets:
+        - name: ghcr-secret
+      containerConcurrency: 200
+      timeoutSeconds: 300
+      containers:
+        - name: openfga
+          image: openfga/openfga:v1.8.2
+          args: ["run"]
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: "postgres"
+            - name: OPENFGA_AUTHN_METHOD
+              value: "preshared"
+          envFrom:
+            - secretRef:
+                name: openfga-secrets
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 10

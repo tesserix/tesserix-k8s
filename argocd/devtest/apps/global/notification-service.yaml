@@ -1,0 +1,69 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: notification-service
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: notification-service
+    app.kubernetes.io/part-of: tesserix
+    environment: devtest
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/notification-service
+    helm:
+      valueFiles:
+      - values.yaml
+      - ../global-config.yaml
+      values: "# DevTest environment overrides\nreplicaCount: 1\n\nimage:\n  repository:\
+        \ ghcr.io/tesserix/global-services/notification-service\n  tag: latest\n\
+        \n# Database configuration\nenv:\n  SERVER_PORT: \"8090\"\n  ENVIRONMENT:\
+        \ \"devtest\"\n\n  # Database\n  DB_HOST: \"postgresql.postgresql-marketplace.svc.cluster.local\"\
+        \n  DB_PORT: \"5432\"\n  DB_NAME: \"tesseract_hub\"\n  DB_SSLMODE: \"disable\"\
+        \n  DB_USER: \"postgres\"\n\n  # NATS\n  NATS_URL: \"nats://nats.nats.svc.cluster.local:4222\"\
+        \n\n  # AWS Configuration (Mumbai, India region) - SES email + SNS SMS\n\
+        \  AWS_REGION: \"ap-south-1\"\n\n  # Email: SES (primary) -> Postal (fallback)\
+        \ -> SendGrid\n  AWS_SES_FROM: \"noreply@mark8ly.com\"\n\
+        \  EMAIL_FAILOVER_ENABLED: \"true\"\n  POSTAL_API_URL: \"http://postal-web.email.svc.cluster.local:5000\"\
+        \n  POSTAL_FROM: \"noreply@mark8ly.com\"\n  POSTAL_FROM_NAME: \"mark8ly\"\n  SENDGRID_FROM: \"noreply@mark8ly.com\"\n\n  # SMS failover: SNS\
+        \ -> Twilio\n  SMS_FAILOVER_ENABLED: \"true\"\n\n  # Twilio Verify (devtest\
+        \ mode - OTP only to test phone)\n  TWILIO_DEVTEST_ENABLED: \"true\"\n  TWILIO_TEST_PHONE:\
+        \ \"+17744896582\"\n  TWILIO_OTP_EXPIRY_MINUTES: \"10\"\n  TWILIO_OTP_LENGTH:\
+        \ \"6\"\n\n# Sealed secrets for devtest\nsealedSecrets:\n  # Database credentials\
+        \ from shared PostgreSQL secret\n  database:\n    enabled: true\n    existingSecret:\
+        \ \"postgresql-password\"\n    userSecretKey: \"\"\n    passwordSecretKey:\
+        \ \"postgresql-password\"\n\n  # AWS credentials (SES email + SNS SMS)\n\
+        \  aws:\n    enabled:\
+        \ false\n\n  # Postal HTTP API credentials (sealed for devtest)\n  postal:\n\
+        \    enabled: true\n    sealedSecret:\n      # Postal API key (re-sealed for\
+        \ global namespace)\n      POSTAL_API_KEY: AgAj3FDb7tith11/kj1NmzvUhjSnF9DhfUfocosnjTbYajq9GxWnIDiwTj84YOZgpVb7Gf1hUkXZcbcDQE+uECOmNThqrumOq37tvP49KqSfnRkk2kgV+p5lPGnnz/yVfncPdZAlCeXcywezy1mQnMt/J0jMau3UA2kdvCEO48ZA52L6dapaCoAQt67CFSqhxpiAUPrZVWG6Dnx8FDa6vbGahX3VeYORUAvArXfCbZ3AwX+FxqumBqB3iHIC6ZhMIZRuEDaA9ia2UBipmyrUorhcrgz/JC8ORnlNsqqkVmLZTZUR+E93ajcAnh6wzWKC5v/vXqYaGf0IfwVkri+ui7Oru2rF9oYL4VwDVU1wDM+46VmRRNSH7OIFJ9iJQFMLm0LieiRRX9U6itFu6t/q33S2YMhOki47VjJIi36SJpWwYQZXaib5vHUm2YFCFPbU5yooqOeVz9yY9eD4fNp1DDnoUFW+4EC0KLqGF22ESh3XJhFe8YUemkGrp8fklkjXyz4ildu2sk7sYiPNfBGwB17rlVvXs2KW+oEpjMBA1/QlEgCtdX8hR8clC9U04flzLQenW1EkOx8SClnNaUEFCHvitTuz12pEGdzeFE4lpEbUiaTJWbdu1MzsYGclbI2NI1upxA2zsE21buvIvOyLbmMxTiP7fLso9D4A1wzrVbmnMO9GMInldNCExnxHQsuAy4uSDagK1Nv7NtCpPTshAiKaBZrVzwdVjvc=\n\
+        \    apiKeySecretKey: \"POSTAL_API_KEY\"\n\n  # SendGrid (fallback email provider)\
+        \ - disabled for now\n  sendgrid:\n    enabled: false\n    sealedSecret:\n\
+        \      SENDGRID_API_KEY: \"\"\n    apiKeySecretKey: \"SENDGRID_API_KEY\"\n\
+        \n  # Twilio Verify (OTP) - disabled until credentials provided\n  twilioVerify:\n\
+        \    enabled: false\n\n# KEDA and PDB disabled for devtest (use values-prod.yaml\
+        \ for production)\n"
+      parameters:
+      - name: gcp.workloadIdentity.gcpServiceAccount
+        value: app-secrets-marketplace@tesseracthub-480811.iam.gserviceaccount.com
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: marketplace
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+    - CreateNamespace=true
+    - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

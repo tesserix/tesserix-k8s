@@ -1,0 +1,45 @@
+# Production overrides for fanzone-prediction
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+knative:
+  enabled: true
+  minScale: 0
+  maxScale: 7
+  scaleDownDelay: "60s"
+
+# Disable KEDA and HPA — Knative handles autoscaling
+keda:
+  enabled: false
+
+autoscaling:
+  enabled: false
+
+# Production resource allocation
+resources:
+  limits:
+    memory: 256Mi
+  requests:
+    memory: 128Mi
+
+# Production environment
+env:
+  GO_ENV: production
+  LOG_LEVEL: warn
+  LOG_FORMAT: json
+  SERVER_PORT: "8085"
+  HOUSE_FEE_PER_BET: "0.75"
+  EXPIRY_CHECK_INTERVAL: "30s"
+  MATCH_SERVICE_URL: "http://sports-data.fanzone.svc.cluster.local"
+  AUTO_RESOLVE_ENABLED: "true"
+  AUTO_RESOLVE_INTERVAL: "15s"
+  NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+  NATS_STREAM_NAME: "FANZONE_PREDICTION"
+
+# Production GCP configuration
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-fanzone-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  secretManager:
+    secretPrefix: "prod"

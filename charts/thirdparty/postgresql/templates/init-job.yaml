@@ -1,0 +1,101 @@
+{{- if .Values.initdb.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "postgresql.fullname" . }}-init
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+  annotations:
+    # Hook to run after install/upgrade
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        {{- include "postgresql.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: init
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: init-databases
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: PGHOST
+              value: {{ include "postgresql.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: {{ .Values.postgresql.username | quote }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "postgresql.secretName" . }}
+                  key: {{ .Values.postgresql.existingSecretKey }}
+            - name: PGDATABASE
+              value: {{ .Values.postgresql.database | quote }}
+            {{- if .Values.ssl.enabled }}
+            - name: PGSSLMODE
+              value: "require"
+            {{- end }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Waiting for PostgreSQL to be ready..."
+
+              # Wait for PostgreSQL to be ready (max 5 minutes)
+              MAX_RETRIES=60
+              RETRY_COUNT=0
+              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                if pg_isready -h $PGHOST -p $PGPORT -U $PGUSER; then
+                  echo "PostgreSQL is ready!"
+                  break
+                fi
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                echo "Waiting for PostgreSQL... ($RETRY_COUNT/$MAX_RETRIES)"
+                sleep 5
+              done
+
+              if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                echo "ERROR: PostgreSQL did not become ready in time"
+                exit 1
+              fi
+
+              echo "Creating databases..."
+
+              # Create each database if it doesn't exist
+              {{- range .Values.initdb.databases }}
+              echo "Creating database: {{ . }}"
+              psql -h $PGHOST -U $PGUSER -d $PGDATABASE -tc "SELECT 1 FROM pg_database WHERE datname = '{{ . }}'" | grep -q 1 || \
+                psql -h $PGHOST -U $PGUSER -d $PGDATABASE -c "CREATE DATABASE {{ . }};"
+              {{- end }}
+
+              echo "All databases created successfully!"
+
+              # Run custom init scripts if provided
+              {{- if .Values.initdb.scripts }}
+              echo "Running custom init scripts..."
+              psql -h $PGHOST -U $PGUSER -d $PGDATABASE <<'EOSQL'
+{{ .Values.initdb.scripts | indent 14 }}
+              EOSQL
+              {{- end }}
+
+              echo "Database initialization complete!"
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+{{- end }}

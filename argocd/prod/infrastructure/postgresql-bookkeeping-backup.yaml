@@ -1,0 +1,88 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgresql-bookkeeping-backup
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesseract-platform
+    app.kubernetes.io/component: backup
+    target-namespace: db-backup-and-restore
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: data
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/postgresql-backup
+    targetRevision: HEAD
+    helm:
+      releaseName: postgresql-bookkeeping-backup
+      values: |
+        backup:
+          enabled: true
+          # Twice daily: 00:00 and 12:00 UTC
+          schedule: "0 0,12 * * *"
+
+          # Database connection
+          database:
+            host: postgresql.postgresql-bookkeeping.svc.cluster.local
+            port: 5432
+            name: postgres  # Connection database (not the backup target)
+            user: postgres
+            passwordSecretName: postgresql-bookkeeping-password
+            passwordSecretKey: postgresql-password
+            sslMode: require
+
+          # Backup settings - backup ALL databases
+          settings:
+            allDatabases: true
+            excludeDatabases:
+              - postgres  # Exclude the default system database
+            format: custom
+            compression: zstd
+            compressionLevel: 5
+
+          # GCS Configuration - PROD specific prefix
+          gcs:
+            bucket: tesseract-database-backups
+            prefix: prod/postgresql-bookkeeping
+
+        # Network Policy - disabled as it causes DNS issues
+        networkPolicy:
+          enabled: false
+
+        # Istio - disable mTLS since backup pods don't have sidecars
+        istio:
+          disableMtls: true
+
+        # Service Account with Workload Identity
+        serviceAccount:
+          create: true
+          name: postgres-backup
+          annotations:
+            iam.gke.io/gcp-service-account: postgres-backup-sa@tesseracthub-480811.iam.gserviceaccount.com
+
+        # Resources for backup job
+        resources:
+          requests:
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: db-backup-and-restore
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

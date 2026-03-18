@@ -1,0 +1,76 @@
+# =============================================================================
+# ALLOW ALL TRAFFIC TO FRONTEND APPLICATIONS
+# These are public-facing websites that customers access directly
+# Creates policies for each gateway defined in ingressGateways
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Gateway-level policy: Allow traffic to frontend apps at the ingress gateway
+# This is essential because other policies require JWT authentication,
+# but frontend apps need to be accessible without auth for initial page load
+# -----------------------------------------------------------------------------
+{{- $hasHosts := false }}
+{{- range .Values.frontendApps }}
+{{- if .hosts }}
+{{- $hasHosts = true }}
+{{- end }}
+{{- end }}
+
+{{- if $hasHosts }}
+{{- range $.Values.ingressGateways }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-frontend-apps-public{{ .name }}
+  namespace: {{ .namespace }}
+  labels:
+    app.kubernetes.io/name: authz-policy
+    app.kubernetes.io/component: frontend-access
+    app.kubernetes.io/part-of: istio-auth-policies
+spec:
+  selector:
+    matchLabels:
+      {{ .labelKey }}: {{ .labelValue }}
+  action: ALLOW
+  rules:
+    {{- range $.Values.frontendApps }}
+    {{- if .hosts }}
+    {{- range .hosts }}
+    - to:
+        - operation:
+            hosts:
+              - {{ . | quote }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}
+
+# -----------------------------------------------------------------------------
+# Pod-level policies: Allow all traffic to frontend pods (after gateway)
+# Applied in the app namespace where frontend pods are deployed
+# Only created if the frontend app has a namespace specified
+# These don't need to be duplicated per gateway - they apply to the pods
+# -----------------------------------------------------------------------------
+{{- range .Values.frontendApps }}
+{{- if .namespace }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-{{ .name }}-public
+  namespace: {{ .namespace }}
+  labels:
+    app.kubernetes.io/name: authz-policy
+    app.kubernetes.io/component: frontend-access
+    app.kubernetes.io/part-of: istio-auth-policies
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .label }}
+  action: ALLOW
+  rules:
+    - {}  # Allow all traffic (static content, no auth required)
+{{- end }}
+{{- end }}

@@ -1,0 +1,47 @@
+{{/*
+Namespace labels for sidecar injection
+This template patches existing namespaces with the istio-injection label
+and adds the 'name' label required for NetworkPolicy namespace matching
+*/}}
+{{- $dbAccessNamespaces := .Values.sidecarInjection.databaseAccessNamespaces | default list }}
+{{- range .Values.sidecarInjection.namespaces }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ . }}
+  labels:
+    # Istio sidecar injection
+    istio-injection: enabled
+    # K8s built-in namespace name label
+    kubernetes.io/metadata.name: {{ . }}
+    # Custom name label for NetworkPolicy namespaceSelector matching
+    name: {{ . }}
+    {{- if has . $dbAccessNamespaces }}
+    # Allow database access through NetworkPolicy
+    database-access: "allowed"
+    {{- end }}
+{{- end }}
+
+{{/*
+Namespaces where sidecar injection is explicitly disabled
+This is for services that don't need Istio (e.g., Redis, NATS) or handle their own TLS
+*/}}
+{{- range .Values.sidecarInjection.disabledNamespaces }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ . }}
+  labels:
+    # Istio sidecar injection explicitly disabled
+    istio-injection: disabled
+    # K8s built-in namespace name label
+    kubernetes.io/metadata.name: {{ . }}
+    # Custom name label for NetworkPolicy namespaceSelector matching
+    name: {{ . }}
+    {{- if has . $dbAccessNamespaces }}
+    # Allow database access through NetworkPolicy
+    database-access: "allowed"
+    {{- end }}
+{{- end }}
