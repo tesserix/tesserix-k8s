@@ -2121,8 +2121,8 @@ kong_replicas           = 2  # HA for production
 # ArgoCD
 install_argocd              = true
 argocd_namespace            = "argocd"
-argocd_chart_version        = "5.51.6"
-argocd_image_tag            = "v2.9.3"
+argocd_chart_version        = "7.7.23"
+argocd_image_tag            = "v2.13.4"
 argocd_server_insecure      = true
 argocd_server_replicas      = 2  # HA for production
 argocd_controller_replicas  = 2
