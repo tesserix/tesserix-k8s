@@ -51,19 +51,35 @@ hotfix/short-description
 
 ## GitHub Actions & CI/CD
 
-### Public/Private Repo Toggle for Builds
+### Public/Private Repo Toggle for Builds (MUST FOLLOW)
 
-The `tesserix` GitHub org has limited Actions minutes for private repos. When triggering CI:
+The `tesserix` GitHub org has **limited Actions minutes** for private repos.
+Every CI build requires a **public→build→private** cycle. This is **mandatory** for every push.
 
-1. **Make repo public** before pushing/triggering CI:
-   ```bash
-   gh repo edit tesserix/<repo> --visibility public --accept-visibility-change-consequences
-   ```
-2. **Wait for CI to complete.**
-3. **Make repo private** after CI passes:
-   ```bash
-   gh repo edit tesserix/<repo> --visibility private --accept-visibility-change-consequences
-   ```
+```bash
+# Step 1: Make repo public BEFORE pushing
+gh repo edit tesserix/<repo> --visibility public --accept-visibility-change-consequences
+
+# Step 2: Push code (triggers CI) or trigger manually
+git push origin main
+# OR for manual trigger:
+gh workflow run ci.yml --repo tesserix/<repo> --ref main
+
+# Step 3: Wait and monitor CI — do NOT make private until green
+gh run list --repo tesserix/<repo> --limit 3
+gh run view <run-id> --repo tesserix/<repo>
+# To see step details:
+gh run view --job=<job-id> --repo tesserix/<repo>
+
+# Step 4: Once CI is fully green, make repo private
+gh repo edit tesserix/<repo> --visibility private --accept-visibility-change-consequences
+```
+
+**Rules:**
+- Never leave repos public after CI completes
+- If CI fails, fix the issue, push again (repo stays public), wait for green, then make private
+- Always check all steps are green before switching to private
+- The visibility change takes a few seconds — if push fails with "repo disabled", wait 5s and retry
 
 ### CI Workflow Pattern (Next.js apps)
 
