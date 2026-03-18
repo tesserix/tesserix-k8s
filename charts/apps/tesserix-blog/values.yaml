@@ -1,0 +1,202 @@
+# Default values for tesserix-blog
+# Environment: dev
+replicaCount: 1
+
+# =============================================================================
+# Deployment Target
+# =============================================================================
+cloudRun:
+  enabled: false
+
+# =============================================================================
+# Domain Configuration
+# =============================================================================
+domains:
+  primary: dev-blog.tesserix.app
+
+# =============================================================================
+# Container Image
+# =============================================================================
+image:
+  repository: ghcr.io/tesserix/tesserix-blog
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+# =============================================================================
+# Pod Configuration
+# =============================================================================
+podAnnotations:
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1001
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+# =============================================================================
+# Ingress (GKE mode)
+# =============================================================================
+ingress:
+  className: "kong"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: dev-blog.tesserix.app
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: blog-tls
+      hosts:
+        - dev-blog.tesserix.app
+  backendServices: []
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+# =============================================================================
+# Health Probes
+# =============================================================================
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+keda:
+  enabled: true
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "80"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  NODE_ENV: production
+  NEXT_TELEMETRY_DISABLED: "1"
+  PORT: "3000"
+  HOSTNAME: "0.0.0.0"
+
+  # Blog URL
+  NEXT_PUBLIC_BLOG_URL: "https://dev-blog.tesserix.app"
+  NEXT_PUBLIC_BLOG_NAME: "Tesserix Blog"
+
+  # MongoDB (dev) - dedicated instance in mongodb-blog namespace
+  MONGODB_URI: "mongodb://blog_app:$(MONGO_PASSWORD)@mongodb-blog.mongodb-blog.svc.cluster.local:27017/tesserix_blog?authSource=admin"
+
+  # Keycloak (via Identity Internal)
+  KEYCLOAK_ISSUER: "http://keycloak.identity-internal.svc.cluster.local:8080/realms/tesserix"
+  KEYCLOAK_CLIENT_ID: "tesserix-blog"
+
+  # Allowed authors
+  ALLOWED_AUTHORS: "samyak.rout@gmail.com,mahesh.sangawar@gmail.com"
+
+  # GCS public bucket for blog images (10yr+ retention)
+  GCS_BLOG_BUCKET: "tesserix-blog-assets"
+  GCP_PROJECT_ID: "tesseracthub-480811"
+
+  # Trust K8s cluster CA
+  NODE_EXTRA_CA_CERTS: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+# =============================================================================
+# External Secrets (GCP Secret Manager -> K8s Secrets)
+# =============================================================================
+externalSecrets:
+  enabled: true
+  secretStoreRef: "gcp-secret-store"
+
+# ConfigMap
+configMap:
+  data: {}
+
+# =============================================================================
+# VPA
+# =============================================================================
+vpa:
+  enabled: false
+
+# =============================================================================
+# GCP Configuration
+# =============================================================================
+gcp:
+  projectId: ""
+  namespace: "tesserix"
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "dev"

@@ -1,0 +1,118 @@
+# Default deny all ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-default-deny
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []
+
+---
+# Allow ingress from Istio and monitoring
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-allow-ingress
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # From Istio ingress gateway
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+    # From monitoring (Prometheus scraping)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    # From Istio system
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+    # From same namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tesserix
+
+---
+# Allow egress for DNS, MongoDB, Keycloak, GCS, GCP metadata
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-allow-egress
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "common.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+
+    # MongoDB (internal or external)
+    - to: []
+      ports:
+        - port: 27017
+          protocol: TCP
+
+    # Keycloak (identity-internal namespace)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: identity-internal
+      ports:
+        - port: 8080
+          protocol: TCP
+
+    # GCP metadata server (Workload Identity)
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - port: 80
+          protocol: TCP
+
+    # GKE metadata
+    - to:
+        - ipBlock:
+            cidr: 169.254.0.0/16
+
+    # External HTTPS (GCS, Google OAuth, Keycloak external)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
