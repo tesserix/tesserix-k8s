@@ -660,4 +660,177 @@ data:
       ]
     }
 {{- end }}
+{{- if .Values.blogRealm.enabled }}
+  blog-realm.json: |
+    {
+      "realm": "blog",
+      "enabled": true,
+      "displayName": "Tesserix Blog",
+      "displayNameHtml": "<strong>Tesserix</strong> Blog",
+      "registrationAllowed": true,
+      "registrationEmailAsUsername": true,
+      "rememberMe": true,
+      "verifyEmail": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "resetPasswordAllowed": true,
+      "editUsernameAllowed": false,
+      "bruteForceProtected": true,
+      "permanentLockout": false,
+      "maxFailureWaitSeconds": 900,
+      "minimumQuickLoginWaitSeconds": 60,
+      "waitIncrementSeconds": 60,
+      "quickLoginCheckMilliSeconds": 1000,
+      "maxDeltaTimeSeconds": 43200,
+      "failureFactor": 5,
+      "sslRequired": "external",
+      "accessTokenLifespan": 900,
+      "accessTokenLifespanForImplicitFlow": 900,
+      "ssoSessionIdleTimeout": 3600,
+      "ssoSessionMaxLifespan": 86400,
+      "offlineSessionIdleTimeout": 2592000,
+      "accessCodeLifespan": 60,
+      "accessCodeLifespanUserAction": 300,
+      "accessCodeLifespanLogin": 1800,
+      "internationalizationEnabled": false,
+      "eventsEnabled": true,
+      "eventsListeners": ["jboss-logging"],
+      "enabledEventTypes": ["LOGIN", "LOGIN_ERROR", "LOGOUT", "REGISTER", "REGISTER_ERROR"],
+      "adminEventsEnabled": true,
+      "adminEventsDetailsEnabled": true,
+      "attributes": {
+        "userProfileEnabled": "true"
+      },
+      "roles": {
+        "realm": [
+          {
+            "name": "reader",
+            "description": "Default blog reader - can comment, like, and review"
+          },
+          {
+            "name": "author",
+            "description": "Blog author - can create and manage posts"
+          }
+        ]
+      },
+      "defaultRoles": ["reader"],
+      "clients": [
+        {
+          "clientId": "blog-web",
+          "name": "Tesserix Blog",
+          "description": "Public blog web application - reader login for comments and likes",
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "protocol": "openid-connect",
+          "rootUrl": "https://{{ .Values.blogRealm.domain }}",
+          "baseUrl": "https://{{ .Values.blogRealm.domain }}",
+          "redirectUris": [
+            "https://{{ .Values.blogRealm.domain }}/*",
+            "http://localhost:3003/*"
+          ],
+          "webOrigins": ["+"],
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": "https://{{ .Values.blogRealm.domain }}/*##http://localhost:3003/*"
+          },
+          "defaultClientScopes": ["openid", "email", "profile", "roles"],
+          "optionalClientScopes": ["offline_access"]
+        },
+        {
+          "clientId": "blog-bff",
+          "name": "Blog Backend",
+          "description": "Blog Next.js server - handles OIDC flow for both readers and authors",
+          "enabled": true,
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "standardFlowEnabled": true,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "protocol": "openid-connect",
+          "redirectUris": [
+            "https://{{ .Values.blogRealm.domain }}/api/auth/callback",
+            "http://localhost:3003/api/auth/callback"
+          ],
+          "webOrigins": [
+            "https://{{ .Values.blogRealm.domain }}",
+            "http://localhost:3003"
+          ],
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": "https://{{ .Values.blogRealm.domain }}/*##http://localhost:3003/*",
+            "backchannel.logout.session.required": "true",
+            "backchannel.logout.revoke.offline.tokens": "false"
+          },
+          "defaultClientScopes": ["openid", "email", "profile", "roles"],
+          "optionalClientScopes": ["offline_access"]
+        }
+      ],
+      "identityProviders": [
+        {
+          "alias": "google",
+          "providerId": "google",
+          "enabled": true,
+          "updateProfileFirstLoginMode": "on",
+          "trustEmail": true,
+          "storeToken": false,
+          "addReadTokenRoleOnCreate": false,
+          "authenticateByDefault": false,
+          "linkOnly": false,
+          "firstBrokerLoginFlowAlias": "first broker login",
+          "config": {
+            "syncMode": "IMPORT",
+            "clientId": "${GOOGLE_CLIENT_ID}",
+            "clientSecret": "${GOOGLE_CLIENT_SECRET}",
+            "defaultScope": "openid email profile",
+            "useJwksUrl": "true"
+          }
+        },
+        {
+          "alias": "facebook",
+          "providerId": "facebook",
+          "enabled": true,
+          "updateProfileFirstLoginMode": "on",
+          "trustEmail": true,
+          "storeToken": false,
+          "addReadTokenRoleOnCreate": false,
+          "authenticateByDefault": false,
+          "linkOnly": false,
+          "firstBrokerLoginFlowAlias": "first broker login",
+          "config": {
+            "syncMode": "IMPORT",
+            "clientId": "${FACEBOOK_CLIENT_ID}",
+            "clientSecret": "${FACEBOOK_CLIENT_SECRET}",
+            "defaultScope": "email,public_profile"
+          }
+        }
+      ],
+      "identityProviderMappers": [
+        {
+          "name": "google-email",
+          "identityProviderAlias": "google",
+          "identityProviderMapper": "hardcoded-attribute-idp-mapper",
+          "config": {
+            "syncMode": "INHERIT",
+            "attribute": "emailVerified",
+            "attribute.value": "true"
+          }
+        },
+        {
+          "name": "facebook-email",
+          "identityProviderAlias": "facebook",
+          "identityProviderMapper": "hardcoded-attribute-idp-mapper",
+          "config": {
+            "syncMode": "INHERIT",
+            "attribute": "emailVerified",
+            "attribute.value": "true"
+          }
+        }
+      ]
+    }
+{{- end }}
 {{- end }}
