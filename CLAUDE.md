@@ -20,6 +20,19 @@ git config user.email "samyak.rout@gmail.com"
 
 ---
 
+## No Manual kubectl Patches or Applies
+
+**NEVER** run `kubectl apply`, `kubectl patch`, `kubectl edit`, `kubectl set`, or any manual kubectl mutation commands against the cluster.
+
+All Kubernetes changes **must** be:
+1. Persisted as Helm chart changes in `charts/apps/<service>/`
+2. Committed and pushed to this repo (`tesserix-k8s`)
+3. Synced via ArgoCD (`argocd app sync <app-name>` or wait for auto-sync)
+
+Manual patches drift from git state and will be overwritten by ArgoCD self-heal. If you need an urgent change, make it in the Helm chart and force-sync.
+
+---
+
 ## Repository Conventions
 
 ### Commit Messages
