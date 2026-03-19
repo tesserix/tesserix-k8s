@@ -133,19 +133,26 @@ spec:
   gateways:
     - istio-ingress/tesseract-gateway
   http:
-    # Resolve tenant from subdomain slug (public endpoint for storefront middleware)
+    # Resolve tenant from subdomain slug via public endpoint (no auth required)
     - match:
         - uri:
             prefix: /api/v1/storefronts/resolve
+      rewrite:
+        uri: /api/v1/public/storefronts/resolve/by-slug
       route:
         - destination:
             host: mp-vendors-direct.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
             port:
               number: 8080
-      headers:
-        request:
-          set:
-            X-Internal-Service: "storefront-resolver"
+      timeout: {{ .Values.timeout.api }}
+    - match:
+        - uri:
+            prefix: /api/v1/public/storefronts
+      route:
+        - destination:
+            host: mp-vendors-direct.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+            port:
+              number: 8080
       timeout: {{ .Values.timeout.api }}
     # Default route — serve storefront Next.js app
     - route:
