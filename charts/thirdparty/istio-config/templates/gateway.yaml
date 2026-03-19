@@ -13,51 +13,16 @@ spec:
   selector:
     istio: ingressgateway
   servers:
-    # HTTP server for platform domains (redirects to HTTPS)
+    # HTTP server for all traffic (platform + custom domains)
+    # Cloudflare Tunnel terminates TLS, so NO redirect here
+    # VirtualServices handle routing based on Host header
     - port:
         number: 80
         name: http
         protocol: HTTP
       hosts:
-        - "{{ .Values.subdomains.admin }}.{{ .Values.domain }}"
-        - "{{ .Values.subdomains.store }}.{{ .Values.domain }}"
-        {{- if .Values.subdomains.onboarding }}
-        - "{{ .Values.subdomains.onboarding }}.{{ .Values.domain }}"
-        {{- else }}
-        - "{{ .Values.domain }}"
-        {{- end }}
-        - "{{ .Values.subdomains.api }}.{{ .Values.domain }}"
-        - "{{ .Values.subdomains.fanzone }}.{{ .Values.domain }}"
-        - "{{ .Values.subdomains.hmsStaff }}.{{ .Values.domain }}"
-        - "{{ .Values.subdomains.hmsPatient }}.{{ .Values.domain }}"
-        - "{{ .Values.subdomains.growthbook }}.{{ .Values.domain }}"
-        {{- if .Values.analyticsHost }}
-        - "{{ .Values.analyticsHost }}"
-        {{- else }}
-        - "{{ .Values.subdomains.analytics }}.{{ .Values.domain }}"
-        {{- end }}
-        - "{{ .Values.subdomains.apiDocs }}.{{ .Values.domain }}"
-        {{- if .Values.subdomains.kibana }}
-        - "{{ .Values.subdomains.kibana }}.{{ .Values.domain }}"
-        {{- end }}
-        - "*.{{ .Values.domain }}"
-      tls:
-        httpsRedirect: true
-
-    # HTTP server for custom domains via Cloudflare Tunnel
-    # Cloudflare handles TLS termination, so NO redirect here
-    # This accepts traffic from the tunnel for customer custom domains
-    {{- if .Values.customDomains.enabled }}
-    - port:
-        number: 80
-        name: http-custom-domains
-        protocol: HTTP
-      hosts:
-        # Wildcard to accept any custom domain
-        # VirtualServices will handle routing based on Host header
         - "*"
-      # NO httpsRedirect - Cloudflare Tunnel already handled TLS
-    {{- end }}
+      # NO httpsRedirect - all traffic arrives via Cloudflare Tunnel (TLS already terminated)
 
     # HTTPS server for admin
     - port:
