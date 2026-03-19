@@ -81,8 +81,63 @@ spec:
   selector:
     serving.knative.dev/service: verification-service
 ---
-# Admin VirtualService - Main admin dashboard (dev-admin.tesserix.app)
-# For multi-tenant subdomain routing ({slug}-admin.tesserix.app), see admin-wildcard-vs below
+# =============================================================================
+# Multi-Tenant Wildcard VirtualServices
+# Route {slug}.mark8ly.com → mp-storefront (customer-facing store)
+# Route {slug}-admin.mark8ly.com → marketplace-admin (vendor admin dashboard)
+# =============================================================================
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: storefront-wildcard-vs
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - "*.{{ .Values.domain }}"
+  gateways:
+    - istio-ingress/tesseract-gateway
+  http:
+    # Resolve tenant from subdomain slug
+    - match:
+        - uri:
+            prefix: /api/v1/storefronts/resolve
+      route:
+        - destination:
+            host: mp-vendors-direct.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+            port:
+              number: 8080
+      timeout: {{ .Values.timeout.api }}
+    # Default route — serve storefront Next.js app
+    - route:
+        - destination:
+            host: mp-storefront-direct.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+            port:
+              number: 80
+      timeout: {{ .Values.timeout.default }}
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: admin-wildcard-vs
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - "*-admin.{{ .Values.domain }}"
+  gateways:
+    - istio-ingress/tesseract-gateway
+  http:
+    - route:
+        - destination:
+            host: marketplace-admin-direct.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+            port:
+              number: 80
+      timeout: {{ .Values.timeout.default }}
+---
+# Admin VirtualService - Main admin dashboard (admin.mark8ly.com)
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
