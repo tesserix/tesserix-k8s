@@ -64,6 +64,23 @@ spec:
   selector:
     serving.knative.dev/service: mp-storefront
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: verification-service-direct
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    serving.knative.dev/service: verification-service
+---
 # Admin VirtualService - Main admin dashboard (dev-admin.tesserix.app)
 # For multi-tenant subdomain routing ({slug}-admin.tesserix.app), see admin-wildcard-vs below
 apiVersion: networking.istio.io/v1
@@ -297,9 +314,9 @@ spec:
             prefix: /api/v1/tenants
       route:
         - destination:
-            host: tenant-service.marketplace.svc.cluster.local
+            host: tenant-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # User's tenant memberships - for tenant switcher
@@ -308,9 +325,9 @@ spec:
             prefix: /api/v1/users/me/tenants
       route:
         - destination:
-            host: tenant-service.marketplace.svc.cluster.local
+            host: tenant-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -318,9 +335,9 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -348,9 +365,9 @@ spec:
             prefix: /api/v1/verification
       route:
         - destination:
-            host: verification-service.marketplace.svc.cluster.local
+            host: verification-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # ===========================================
@@ -876,9 +893,9 @@ spec:
             prefix: /api/v1/tenants
       route:
         - destination:
-            host: tenant-service.marketplace.svc.cluster.local
+            host: tenant-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # ===========================================
@@ -1084,9 +1101,9 @@ spec:
             prefix: /api/v1/onboarding
       route:
         - destination:
-            host: tenant-service.marketplace.svc.cluster.local
+            host: tenant-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -1094,9 +1111,9 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -1104,9 +1121,9 @@ spec:
             prefix: /api/v1/verification
       route:
         - destination:
-            host: verification-service.marketplace.svc.cluster.local
+            host: verification-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # SSE events endpoint - route directly to backend with long timeout (bypass Next.js proxy)
@@ -1115,9 +1132,9 @@ spec:
             regex: /api/onboarding/[^/]+/events
       route:
         - destination:
-            host: tenant-service.marketplace.svc.cluster.local
+            host: tenant-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: 3600s
       retries:
         attempts: 0
@@ -1128,7 +1145,7 @@ spec:
             prefix: /api/onboarding
       route:
         - destination:
-            host: marketplace-onboarding.marketplace.svc.cluster.local
+            host: marketplace-onboarding-direct.marketplace.svc.cluster.local
             port:
               number: 80
       timeout: {{ .Values.timeout.api }}
@@ -1139,9 +1156,9 @@ spec:
             prefix: /api/v1/countries
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -1149,9 +1166,9 @@ spec:
             prefix: /api/v1/states
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -1159,9 +1176,9 @@ spec:
             prefix: /api/v1/address
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -1169,9 +1186,9 @@ spec:
             prefix: /api/v1/currencies
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -1179,9 +1196,9 @@ spec:
             prefix: /api/v1/timezones
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -1189,9 +1206,9 @@ spec:
             prefix: /api/v1/geotag
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # Auth BFF routes - enables OAuth flows (e.g., Google login) on the onboarding domain
@@ -1698,9 +1715,9 @@ spec:
             prefix: /api/v1/countries
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -1708,9 +1725,9 @@ spec:
             prefix: /api/v1/states
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -1718,9 +1735,9 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -1728,9 +1745,9 @@ spec:
             prefix: /api/v1/currencies
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -1738,9 +1755,9 @@ spec:
             prefix: /api/v1/timezones
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -1748,9 +1765,9 @@ spec:
             prefix: /api/v1/address
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # ===========================================
@@ -2701,9 +2718,9 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -2711,9 +2728,9 @@ spec:
             prefix: /api/v1/countries
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -2721,9 +2738,9 @@ spec:
             prefix: /api/v1/states
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -2731,9 +2748,9 @@ spec:
             prefix: /api/v1/currencies
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -2741,9 +2758,9 @@ spec:
             prefix: /api/v1/timezones
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     - match:
@@ -2751,9 +2768,9 @@ spec:
             prefix: /api/v1/address
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # ===========================================
@@ -3024,9 +3041,9 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # Countries list
@@ -3035,9 +3052,9 @@ spec:
             prefix: /api/v1/countries
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # States/Provinces list
@@ -3046,9 +3063,9 @@ spec:
             prefix: /api/v1/states
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # Currencies list
@@ -3057,9 +3074,9 @@ spec:
             prefix: /api/v1/currencies
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # Timezones list
@@ -3068,9 +3085,9 @@ spec:
             prefix: /api/v1/timezones
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # Address autocomplete and geocoding
@@ -3079,9 +3096,9 @@ spec:
             prefix: /api/v1/address
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # ===========================================
@@ -3476,9 +3493,9 @@ spec:
             exact: /health
       route:
         - destination:
-            host: tenant-service.marketplace.svc.cluster.local
+            host: tenant-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.default }}
 
     # ===========================================
@@ -3732,9 +3749,9 @@ spec:
             prefix: /api/v1/users/me/tenants
       route:
         - destination:
-            host: tenant-service.marketplace.svc.cluster.local
+            host: tenant-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # ===========================================
@@ -3745,9 +3762,9 @@ spec:
             prefix: /api/v1/tenants
       route:
         - destination:
-            host: tenant-service.marketplace.svc.cluster.local
+            host: tenant-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # ===========================================
@@ -3794,9 +3811,9 @@ spec:
             prefix: /api/v1/notifications
       route:
         - destination:
-            host: notification-service.marketplace.svc.cluster.local
+            host: notification-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # ===========================================
@@ -3820,9 +3837,9 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # ===========================================
@@ -3846,9 +3863,9 @@ spec:
             prefix: /api/v1/verification
       route:
         - destination:
-            host: verification-service.marketplace.svc.cluster.local
+            host: verification-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: {{ .Values.timeout.api }}
 
     # ===========================================
@@ -3974,9 +3991,9 @@ spec:
             exact: /api/health
       route:
         - destination:
-            host: tenant-service.marketplace.svc.cluster.local
+            host: tenant-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: 10s
 
     # ===========================================
@@ -4238,9 +4255,9 @@ spec:
             prefix: /api/v1/users/me/tenants
       route:
         - destination:
-            host: tenant-service.marketplace.svc.cluster.local
+            host: tenant-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       corsPolicy: *mobile-cors
       timeout: 30s
 
@@ -4253,9 +4270,9 @@ spec:
             prefix: /api/v1/tenants
       route:
         - destination:
-            host: tenant-service.marketplace.svc.cluster.local
+            host: tenant-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       corsPolicy: *mobile-cors
       timeout: 30s
 
@@ -4307,9 +4324,9 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service.marketplace.svc.cluster.local
+            host: location-service-direct.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       corsPolicy: *mobile-cors
       timeout: 30s
 
