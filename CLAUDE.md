@@ -3,6 +3,14 @@
 This file is the single source of truth for Claude when working on any Tesserix repository.
 Always read this before making any changes.
 
+## Cluster Access
+
+```bash
+export KUBECONFIG=~/.kube/gke-prod
+```
+
+Always set this before running any kubectl or argocd commands.
+
 ---
 
 ## Git Identity
