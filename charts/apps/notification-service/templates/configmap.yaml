@@ -8,17 +8,16 @@ metadata:
 data:
   ENVIRONMENT: "production"
   GCP_PROJECT_ID: {{ .Values.gcp.projectId | default "tesseracthub-480811" | quote }}
-  DB_HOST: "postgresql.postgresql-marketplace.svc.cluster.local"
-  DB_PORT: "5432"
-  DB_NAME: "notifications_db"
-  DB_USER: "postgres"
-  DB_SSL_MODE: "require"
+  DB_HOST: {{ .Values.database.host | quote }}
+  DB_PORT: {{ .Values.database.port | default "5432" | quote }}
+  DB_NAME: {{ .Values.database.name | default "notifications_db" | quote }}
+  DB_USER: {{ .Values.database.user | default "postgres" | quote }}
+  DB_SSL_MODE: {{ .Values.database.sslmode | default "require" | quote }}
   PORT: "8090"
-  SENDGRID_FROM: "noreply@mark8ly.com"
-  SENDGRID_FROM_NAME: "Mark8ly"
-  ADMIN_EMAIL: "admin@mark8ly.com"
-  SUPPORT_EMAIL: "support@mark8ly.com"
-  PUBSUB_ENABLED: "true"
-  PUBSUB_PROJECT_ID: "tesseracthub-480811"
   SKIP_MIGRATIONS: "true"
+  PUBSUB_ENABLED: "true"
+  PUBSUB_PROJECT_ID: {{ .Values.gcp.projectId | default "tesseracthub-480811" | quote }}
+  {{- range $key, $val := .Values.env }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end }}
 {{- end }}

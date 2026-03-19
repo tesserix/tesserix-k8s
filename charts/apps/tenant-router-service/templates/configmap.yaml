@@ -8,13 +8,14 @@ metadata:
 data:
   ENVIRONMENT: "production"
   GCP_PROJECT_ID: {{ .Values.gcp.projectId | default "tesseracthub-480811" | quote }}
-  DB_HOST: "postgresql.postgresql-marketplace.svc.cluster.local"
-  DB_PORT: "5432"
-  DB_NAME: "tenant_router_db"
-  DB_USER: "postgres"
-  DB_SSLMODE: "require"
-  DB_SSL_MODE: "require"
+  DB_HOST: {{ .Values.database.host | quote }}
+  DB_PORT: {{ .Values.database.port | default "5432" | quote }}
+  DB_NAME: {{ .Values.database.name | default "tenant_router_db" | quote }}
+  DB_USER: {{ .Values.database.user | default "postgres" | quote }}
+  DB_SSLMODE: {{ .Values.database.sslmode | default "require" | quote }}
+  DB_SSL_MODE: {{ .Values.database.sslmode | default "require" | quote }}
   PORT: "8089"
-  NOTIFICATION_SERVICE_URL: "http://notification-service.marketplace.svc.cluster.local"
-  AUDIT_SERVICE_URL: "http://audit-service.marketplace.svc.cluster.local"
+  {{- range $key, $val := .Values.env }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end }}
 {{- end }}
