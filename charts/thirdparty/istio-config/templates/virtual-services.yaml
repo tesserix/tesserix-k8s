@@ -1152,12 +1152,17 @@ spec:
       timeout: {{ .Values.timeout.api }}
 
     # Default route to tenant-onboarding frontend (Knative)
-    # Route directly to Knative revision service to avoid ExternalName mTLS issues
+    # Host header rewrite required: ExternalName service routes through knative-local-gateway
+    # which needs the internal hostname to match its VirtualService
     - route:
         - destination:
             host: marketplace-onboarding.marketplace.svc.cluster.local
             port:
               number: 80
+      headers:
+        request:
+          set:
+            Host: marketplace-onboarding.marketplace.svc.cluster.local
       timeout: {{ .Values.timeout.default }}
       {{- if .Values.cors.enabled }}
       corsPolicy:
