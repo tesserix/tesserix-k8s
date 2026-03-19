@@ -8,14 +8,19 @@ metadata:
 data:
   ENVIRONMENT: "production"
   GCP_PROJECT_ID: {{ .Values.gcp.projectId | default "tesseracthub-480811" | quote }}
-  DB_HOST: "postgresql.postgresql-marketplace.svc.cluster.local"
-  DB_PORT: "5432"
-  DB_NAME: "tenants_db"
-  DB_USER: "postgres"
-  DB_SSLMODE: "require"
-  DB_SSL_MODE: "require"
+  DB_HOST: {{ .Values.database.host | quote }}
+  DB_PORT: {{ .Values.database.port | default "5432" | quote }}
+  DB_NAME: {{ .Values.database.name | default "tenants_db" | quote }}
+  DB_USER: {{ .Values.database.user | default "postgres" | quote }}
+  DB_SSLMODE: {{ .Values.database.sslmode | default "require" | quote }}
+  DB_SSL_MODE: {{ .Values.database.sslmode | default "require" | quote }}
   PORT: "8080"
-  OPENFGA_URL: "http://openfga.marketplace.svc.cluster.local"
-  OPENFGA_AUTH_MODE: "mesh"
-  REDIS_URL: "redis://redis.redis-marketplace.svc.cluster.local:6379"
+  OPENFGA_URL: {{ .Values.env.OPENFGA_URL | default "http://openfga.marketplace.svc.cluster.local" | quote }}
+  OPENFGA_AUTH_MODE: {{ .Values.env.OPENFGA_AUTH_MODE | default "mesh" | quote }}
+  REDIS_URL: {{ .Values.env.REDIS_URL | default "redis://redis.redis-marketplace.svc.cluster.local:6379" | quote }}
+  {{- range $key, $val := .Values.env }}
+  {{- if and (ne $key "OPENFGA_URL") (ne $key "OPENFGA_AUTH_MODE") (ne $key "REDIS_URL") }}
+  {{ $key }}: {{ $val | quote }}
+  {{- end }}
+  {{- end }}
 {{- end }}
