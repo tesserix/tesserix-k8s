@@ -15,7 +15,10 @@ spec:
     name: {{ include "marketplace-common.fullname" . }}-secrets
     creationPolicy: Owner
   data:
-    {{- $prefix := .Values.gcp.secretManager.secretPrefix | default "devtest" }}
+    {{- $prefix := "devtest" }}
+    {{- if and .Values.gcp .Values.gcp.secretManager .Values.gcp.secretManager.secretPrefix }}
+    {{- $prefix = .Values.gcp.secretManager.secretPrefix }}
+    {{- end }}
     {{- if .Values.db.enabled }}
     - secretKey: DB_PASSWORD
       remoteRef:
