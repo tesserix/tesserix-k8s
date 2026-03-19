@@ -1152,11 +1152,11 @@ spec:
       timeout: {{ .Values.timeout.api }}
 
     # Default route to tenant-onboarding frontend (Knative)
-    # Host header rewrite required: ExternalName service routes through knative-local-gateway
-    # which needs the internal hostname to match its VirtualService
+    # Route directly to knative-local-gateway, bypassing Knative ExternalName service.
+    # Host header set to internal Knative hostname so the local gateway can route to the right revision.
     - route:
         - destination:
-            host: marketplace-onboarding.marketplace.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
               number: 80
       headers:
