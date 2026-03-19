@@ -43,7 +43,7 @@ spec:
               containerPort: {{ .Values.service.targetPort | default 3000 }}
               protocol: TCP
           env:
-            {{- $secretKeys := list "MONGODB_URI" "KEYCLOAK_CLIENT_SECRET" "SESSION_SECRET" }}
+            {{- $secretKeys := list "MONGODB_URI" "KEYCLOAK_CLIENT_SECRET" "SESSION_SECRET" "SENDGRID_API_KEY" }}
             {{- range $key, $value := .Values.env }}
             {{- if not (and $.Values.externalSecrets.enabled (has $key $secretKeys)) }}
             - name: {{ $key }}
@@ -76,6 +76,12 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-secrets
                   key: SESSION_SECRET
+                  optional: true
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: SENDGRID_API_KEY
                   optional: true
             {{- end }}
           {{- if .Values.livenessProbe.enabled }}
