@@ -360,6 +360,25 @@ spec:
   trafficPolicy:
     tls:
       mode: DISABLE
+# Knative Backend Service DRs - Disable mTLS for Knative services
+# The knative-local-gateway connects to these but the mTLS handshake
+# fails due to Knative queue-proxy port interception. Disable TLS
+# so the gateway connects directly to the queue-proxy (port 8012).
+{{- range $name := list "marketplace-onboarding" "marketplace-admin" "mp-storefront" "tenant-service" "location-service" "verification-service" "document-service" "tickets-service" "notification-hub" "notification-service" "analytics-service" "feature-flags-service" "mp-products" "mp-categories" "mp-orders" "mp-coupons" "mp-staff" "mp-reviews" "mp-vendors" "mp-tax" "mp-payments" "mp-shipping" "mp-customers" "mp-inventory" "mp-content" "mp-connector" "mp-approvals" "mp-marketing" "mp-gift-cards" "tenant-router-service" "qr-service" "status-service" "audit-service" "subscription-service" "openfga" }}
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: knative-{{ $name }}-dr
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: {{ $name }}.marketplace.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+{{- end }}
 
 # =============================================================================
 # Knative Local Gateway DestinationRule
