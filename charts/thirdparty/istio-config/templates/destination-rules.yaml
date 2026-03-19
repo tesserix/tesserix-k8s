@@ -315,6 +315,53 @@ spec:
     {{- end }}
 
 # =============================================================================
+# Knative Frontend ExternalName Service DestinationRules
+# CRITICAL: Knative creates ExternalName services that point to knative-local-gateway.
+# The wildcard marketplace DR applies ISTIO_MUTUAL, but the ExternalName service
+# resolves to knative-local-gateway which doesn't accept mTLS inbound.
+# These specific DRs override the wildcard to disable TLS for ExternalName services.
+# =============================================================================
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: marketplace-onboarding-dr
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: marketplace-onboarding.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: marketplace-admin-dr
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: marketplace-admin.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: mp-storefront-dr
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: mp-storefront.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+
+# =============================================================================
 # Knative Local Gateway DestinationRule
 # CRITICAL: Uses useClientProtocol to mirror the downstream HTTP version.
 # The knative-local-gateway K8s service port is named "http2", causing Istio
