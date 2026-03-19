@@ -1153,16 +1153,14 @@ spec:
 
     # Default route to tenant-onboarding frontend (Knative)
     # Route directly to knative-local-gateway, bypassing Knative ExternalName service.
-    # Host header set to internal Knative hostname so the local gateway can route to the right revision.
-    - route:
+    # Authority rewrite required so knative-local-gateway can match its internal VS.
+    - rewrite:
+        authority: marketplace-onboarding.marketplace.svc.cluster.local
+      route:
         - destination:
             host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
               number: 80
-      headers:
-        request:
-          set:
-            Host: marketplace-onboarding.marketplace.svc.cluster.local
       timeout: {{ .Values.timeout.default }}
       {{- if .Values.cors.enabled }}
       corsPolicy:
