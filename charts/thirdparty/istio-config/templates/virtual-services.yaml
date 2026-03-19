@@ -81,6 +81,40 @@ spec:
   selector:
     serving.knative.dev/service: verification-service
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mp-vendors-direct
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    serving.knative.dev/service: mp-vendors
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mp-staff-direct
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    serving.knative.dev/service: mp-staff
+---
 # =============================================================================
 # Multi-Tenant Wildcard VirtualServices
 # Route {slug}.mark8ly.com → mp-storefront (customer-facing store)
@@ -99,7 +133,7 @@ spec:
   gateways:
     - istio-ingress/tesseract-gateway
   http:
-    # Resolve tenant from subdomain slug
+    # Resolve tenant from subdomain slug (public endpoint for storefront middleware)
     - match:
         - uri:
             prefix: /api/v1/storefronts/resolve
@@ -108,6 +142,10 @@ spec:
             host: mp-vendors-direct.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
             port:
               number: 8080
+      headers:
+        request:
+          set:
+            X-Internal-Service: "storefront-resolver"
       timeout: {{ .Values.timeout.api }}
     # Default route — serve storefront Next.js app
     - route:
