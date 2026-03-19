@@ -10,6 +10,60 @@ Multi-Tenant Routing Strategy:
 - Next.js middleware extracts tenant slug from subdomain
 */}}
 ---
+# Direct ClusterIP Services for Knative frontends
+# These bypass Knative's ExternalName → knative-local-gateway chain
+# which has mTLS compatibility issues with the Istio ingress gateway.
+apiVersion: v1
+kind: Service
+metadata:
+  name: marketplace-onboarding-direct
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8012
+      protocol: TCP
+      name: http
+  selector:
+    serving.knative.dev/service: marketplace-onboarding
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: marketplace-admin-direct
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8012
+      protocol: TCP
+      name: http
+  selector:
+    serving.knative.dev/service: marketplace-admin
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mp-storefront-direct
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8012
+      protocol: TCP
+      name: http
+  selector:
+    serving.knative.dev/service: mp-storefront
+---
 # Admin VirtualService - Main admin dashboard (dev-admin.tesserix.app)
 # For multi-tenant subdomain routing ({slug}-admin.tesserix.app), see admin-wildcard-vs below
 apiVersion: networking.istio.io/v1
@@ -1151,14 +1205,11 @@ spec:
               number: 80
       timeout: {{ .Values.timeout.api }}
 
-    # Default route to tenant-onboarding frontend (Knative)
-    # Route directly to knative-local-gateway, bypassing Knative ExternalName service.
-    # Authority rewrite required so knative-local-gateway can match its internal VS.
-    - rewrite:
-        authority: marketplace-onboarding.marketplace.svc.cluster.local
-      route:
+    # Default route to tenant-onboarding frontend
+    # Uses direct ClusterIP service to bypass Knative ExternalName routing
+    - route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: marketplace-onboarding-direct.marketplace.svc.cluster.local
             port:
               number: 80
       timeout: {{ .Values.timeout.default }}
