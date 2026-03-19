@@ -15,21 +15,22 @@ spec:
     name: {{ include "marketplace-common.fullname" . }}-secrets
     creationPolicy: Owner
   data:
+    {{- $prefix := .Values.gcp.secretManager.secretPrefix | default "devtest" }}
     {{- if .Values.db.enabled }}
     - secretKey: DB_PASSWORD
       remoteRef:
-        key: {{ .Values.db.secretKey }}
+        key: {{ printf "%s-%s" $prefix .Values.db.secretKey }}
         version: latest
     {{- end }}
     {{- if and .Values.openfga.enabled .Values.openfga.apiKeySecret }}
     - secretKey: OPENFGA_API_KEY
       remoteRef:
-        key: openfga-preshared-key
+        key: {{ printf "%s-mp-openfga-preshared-key" $prefix }}
         version: latest
     {{- end }}
     - secretKey: INTERNAL_SERVICE_KEY
       remoteRef:
-        key: shared-internal-service-key
+        key: {{ printf "%s-mp-shared-internal-service-key" $prefix }}
         version: latest
     {{- range .Values.extraSecrets }}
     - secretKey: {{ .secretKey }}
