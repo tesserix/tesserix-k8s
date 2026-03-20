@@ -1,0 +1,82 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: marketplace-auth-bff
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: marketplace
+    app.kubernetes.io/component: auth
+    environment: prod
+spec:
+  project: marketplace
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/apps/auth-bff
+    targetRevision: HEAD
+    helm:
+      releaseName: marketplace-auth-bff
+      values: |
+        fullnameOverride: "auth-bff"
+
+        image:
+          repository: ghcr.io/tesserix/auth-bff
+          tag: "1.3.6"
+
+        replicaCount: 1
+
+        serviceAccount:
+          annotations:
+            iam.gke.io/gcp-service-account: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
+
+        env:
+          GIN_MODE: "release"
+          APP_ENV: "production"
+          ENVIRONMENT: "production"
+          BASE_DOMAIN: "mark8ly.com"
+          ALLOWED_ORIGINS: "https://*.mark8ly.com,https://*"
+          PORT: "8080"
+          SERVICE_AUTH_MODE: "mesh"
+          GCP_PROJECT_ID: "tesseracthub-480811"
+          GIP_TENANT_ID: "Platform-9bu14"
+          TENANT_SERVICE_URL: "http://tenant-service-direct.marketplace.svc.cluster.local:8080"
+          VERIFICATION_SERVICE_URL: "http://verification-service-direct.marketplace.svc.cluster.local:8080"
+          REDIS_URL: "redis://redis.redis-marketplace.svc.cluster.local:6379"
+          RATE_LIMIT_RPM: "300"
+          WEBAUTHN_RP_ID: "mark8ly.com"
+          WEBAUTHN_RP_NAME: "Mark8ly"
+
+        gcp:
+          projectId: tesseracthub-480811
+          secretManager:
+            secretPrefix: "prod"
+
+        keycloak:
+          internal:
+            url: "https://internal-idp.mark8ly.com"
+            realm: "tesserix-internal"
+          customer:
+            url: "https://identity.fanzonebattleground.com"
+            realm: "tesserix-customer"
+
+        keda:
+          enabled: false
+
+        externalSecrets:
+          enabled: true
+          secretStoreRef: gcp-secret-store
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: marketplace
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
