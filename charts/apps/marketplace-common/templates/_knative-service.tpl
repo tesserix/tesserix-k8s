@@ -18,6 +18,9 @@ spec:
         autoscaling.knative.dev/target: {{ .Values.knative.concurrencyTarget | quote }}
         autoscaling.knative.dev/minScale: {{ .Values.knative.minScale | quote }}
         autoscaling.knative.dev/maxScale: {{ .Values.knative.maxScale | quote }}
+        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+        traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+        traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432,6379"
       labels:
         {{- include "marketplace-common.labels" . | nindent 8 }}
     spec:
