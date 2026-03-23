@@ -15,6 +15,15 @@ spec:
   high-availability:
     replicas: {{ .Values.highAvailability.replicas }}
 
+  # PodDisruptionBudget override — default 80% minAvailable blocks
+  # node drains when replicas=2 (80% of 2 rounds to 2, allowing 0 disruptions).
+  # maxUnavailable=1 allows draining one pod at a time.
+  podDisruptionBudgets:
+    - name: activator-pdb
+      maxUnavailable: 1
+    - name: webhook-pdb
+      maxUnavailable: 1
+
   # ConfigMap overrides for production tuning
   config:
     # Istio integration — point local gateway to istio-ingress namespace
