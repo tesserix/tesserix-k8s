@@ -64,6 +64,16 @@ spec:
                   key: {{ .Values.database.passwordSecretKey | default "password" }}
             - name: DATABASE_URL
               value: "postgres://{{ .Values.database.user }}:$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslmode }}"
+            {{- if .Values.sportMonks }}
+            {{- if .Values.sportMonks.apiTokenSecretName }}
+            - name: SPORTMONKS_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sportMonks.apiTokenSecretName }}
+                  key: {{ .Values.sportMonks.apiTokenSecretKey | default "api-token" }}
+                  optional: true
+            {{- end }}
+            {{- end }}
             {{- if .Values.cricketData }}
             {{- if .Values.cricketData.apiKeySecretName }}
             - name: CRICKETDATA_API_KEY
