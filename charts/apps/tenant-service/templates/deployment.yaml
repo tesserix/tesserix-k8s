@@ -96,9 +96,14 @@ spec:
             # Legacy aliases (for backward compat)
             - name: KEYCLOAK_ADMIN_CLIENT_SECRET_NAME
               value: {{ printf "%s-keycloak-internal-admin-client-secret" .Values.gcp.secretManager.secretPrefix | quote }}
-            # Verification service API key from GCP Secret Manager (for welcome emails)
-            - name: VERIFICATION_API_KEY_SECRET_NAME
-              value: {{ printf "%s-%s-api-key" .Values.gcp.secretManager.secretPrefix (.Values.gcp.namespace | default .Release.Namespace) | quote }}
+            # Verification API key from ExternalSecret (for service-to-service auth)
+            {{- if .Values.externalSecrets.enabled }}
+            - name: VERIFICATION_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tenant-service.fullname" . }}-secrets
+                  key: VERIFICATION_API_KEY
+            {{- end }}
           {{- if .Values.livenessProbe }}
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
