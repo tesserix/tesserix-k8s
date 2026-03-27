@@ -24,7 +24,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CERT_DIR="${SCRIPT_DIR}/../.ssl-certs"
 
 # PostgreSQL namespaces that need unique certificates
-NAMESPACES=("postgresql-marketplace" "postgresql-global" "postgresql-bookkeeping")
+NAMESPACES=("postgresql-marketplace" "postgresql-global" "postgresql-bookkeeping" "postgresql-fanzone" "postgresql-homechef")
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }

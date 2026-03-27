@@ -19,7 +19,7 @@ ENVIRONMENT=""
 PROJECT_ID=""
 
 # Namespace to suffix mapping (bash 3.2 compatible)
-NAMESPACES="postgresql-marketplace:marketplace postgresql-global:global postgresql-bookkeeping:bookkeeping"
+NAMESPACES="postgresql-marketplace:marketplace postgresql-global:global postgresql-bookkeeping:bookkeeping postgresql-fanzone:fanzone postgresql-homechef:homechef"
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }

@@ -1,0 +1,152 @@
+# ValidatingAdmissionPolicy to prevent accidental deletion of
+# database, cache, messaging, and application namespaces.
+# To delete a protected namespace, first remove the
+# "tesserix.io/protected: true" label from the namespace.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: prevent-protected-namespace-deletion
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["DELETE"]
+        resources: ["namespaces"]
+  matchConditions:
+    - name: is-protected
+      expression: "has(object.metadata.labels) && 'tesserix.io/protected' in object.metadata.labels && object.metadata.labels['tesserix.io/protected'] == 'true'"
+  validations:
+    - expression: "false"
+      message: "Namespace is protected from deletion. Remove the 'tesserix.io/protected: true' label first."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: prevent-protected-namespace-deletion
+spec:
+  policyName: prevent-protected-namespace-deletion
+  validationActions:
+    - Deny
+---
+# Protected namespaces — database, cache, messaging, and fanzone app
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgresql-fanzone
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: database
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgresql-homechef
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: database
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgresql-marketplace
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: database
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgresql-global
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: database
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgresql-bookkeeping
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: database
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgresql-hms
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: database
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mongodb-fanzone
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: database
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redis-fanzone
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: cache
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redis-homechef
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: cache
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redis-marketplace
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: cache
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redis-global
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: cache
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: redis-hms
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: cache
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nats
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: messaging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: fanzone
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: application
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: db-backup-and-restore
+  labels:
+    tesserix.io/protected: "true"
+    tesserix.io/tier: backup
