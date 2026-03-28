@@ -1,0 +1,105 @@
+# MongoDB Backup and Restore Configuration
+# Both backup and restore are disabled by default for safety
+# Enable them explicitly in ArgoCD applications
+
+# =============================================================================
+# Backup Configuration
+# =============================================================================
+backup:
+  # Enable/disable backup CronJob (default: false)
+  enabled: false
+
+  # Cron schedule (twice daily by default: 00:00 and 12:00 UTC)
+  schedule: "0 0,12 * * *"
+
+  # MongoDB connection
+  database:
+    host: ""  # Required: e.g., mongodb-blog.mongodb-blog.svc.cluster.local
+    port: 27017
+    authDatabase: "admin"  # Authentication database
+    user: admin
+    # Set to false for MongoDB instances without authentication (e.g., fanzone)
+    authEnabled: true
+    # Secret containing the MongoDB password (only used when authEnabled: true)
+    passwordSecretName: ""  # Required when authEnabled: secret name containing password
+    passwordSecretKey: "mongodb-password"
+
+  # Backup settings
+  settings:
+    # Backup all databases on the server (recommended)
+    # When true: backs up all databases (excluding admin, local, config)
+    # When false: backs up only the databases listed in 'databases'
+    allDatabases: true
+    # Specific databases to backup (only when allDatabases: false)
+    databases: []
+    # Databases to exclude from backup (only when allDatabases: true)
+    excludeDatabases:
+      - admin
+      - local
+      - config
+    # Extra mongodump arguments
+    extraArgs: ""
+
+  # GCS Configuration
+  gcs:
+    bucket: tesseract-database-backups
+    prefix: ""  # e.g., prod/mongodb-blog
+
+# =============================================================================
+# CronJob/Job Settings
+# =============================================================================
+cronJob:
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 3600
+  activeDeadlineSeconds: 7200  # 2 hour timeout
+  backoffLimit: 3
+  restartPolicy: OnFailure
+
+# Container image - official MongoDB image (has mongodump/mongosh)
+# gsutil is installed at runtime
+image:
+  repository: mongo
+  tag: "7.0"
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# Resources
+resources:
+  requests:
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+# Service Account
+serviceAccount:
+  create: true
+  name: mongodb-backup
+  annotations: {}
+
+# Pod settings
+podSecurityContext:
+  runAsNonRoot: false
+  runAsUser: 0
+  fsGroup: 0
+
+# Security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  runAsNonRoot: false
+  runAsUser: 0
+
+# Istio configuration
+istio:
+  disableMtls: true
+
+# Network Policy
+networkPolicy:
+  enabled: false
+
+# Node selection
+nodeSelector: {}
+tolerations: []
+affinity: {}

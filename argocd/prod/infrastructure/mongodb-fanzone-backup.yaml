@@ -1,0 +1,83 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mongodb-fanzone-backup
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesseract-platform
+    app.kubernetes.io/component: backup
+    target-namespace: db-backup-and-restore
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: data
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/mongodb-backup
+    targetRevision: HEAD
+    helm:
+      releaseName: mongodb-fanzone-backup
+      values: |
+        backup:
+          enabled: true
+          # Twice daily: 00:00 and 12:00 UTC
+          schedule: "0 0,12 * * *"
+
+          # Database connection (fanzone MongoDB has no auth)
+          database:
+            host: mongodb-fanzone.mongodb-fanzone.svc.cluster.local
+            port: 27017
+            authEnabled: false
+
+          # Backup settings - backup ALL databases
+          settings:
+            allDatabases: true
+            excludeDatabases:
+              - admin
+              - local
+              - config
+
+          # GCS Configuration
+          gcs:
+            bucket: tesseract-database-backups
+            prefix: prod/mongodb-fanzone
+
+        # Network Policy - disabled
+        networkPolicy:
+          enabled: false
+
+        # Istio - disable mTLS since backup pods don't have sidecars
+        istio:
+          disableMtls: true
+
+        # Service Account with Workload Identity
+        serviceAccount:
+          create: true
+          name: mongodb-backup
+          annotations:
+            iam.gke.io/gcp-service-account: postgres-backup-sa@tesseracthub-480811.iam.gserviceaccount.com
+
+        # Resources for backup job
+        resources:
+          requests:
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: db-backup-and-restore
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
