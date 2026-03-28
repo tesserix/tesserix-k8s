@@ -713,7 +713,42 @@ spec:
   hosts:
     - identity.fe3dr.com
   http:
-    # All routes -> Auth BFF Knative service
+    # Keycloak realm endpoints — must go DIRECTLY to Keycloak (not BFF)
+    # Browser visits these for login pages, token exchange, OIDC discovery
+    - match:
+        - uri:
+            prefix: /realms/
+      headers:
+        request:
+          set:
+            x-forwarded-host: identity.fe3dr.com
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: keycloak.identity-customer.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 60s
+    # Keycloak resources (JS, CSS, images for login pages)
+    - match:
+        - uri:
+            prefix: /resources/
+      route:
+        - destination:
+            host: keycloak.identity-customer.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
+    # Keycloak robots.txt
+    - match:
+        - uri:
+            exact: /robots.txt
+      route:
+        - destination:
+            host: keycloak.identity-customer.svc.cluster.local
+            port:
+              number: 8080
+    # Auth BFF routes — handles /auth/*, /bff/* for OIDC redirect flows
     # NOTE: No retry policy — auth callbacks consume state on first read (non-idempotent).
     # Retrying causes invalid_state errors because the state is deleted after retrieval.
     - match:
