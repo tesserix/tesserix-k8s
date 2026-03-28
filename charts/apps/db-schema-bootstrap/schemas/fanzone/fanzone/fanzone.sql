@@ -1133,11 +1133,13 @@ CREATE TABLE IF NOT EXISTS quiz_challenge_questions (
     question_order INT NOT NULL
 );
 
+DROP TABLE IF EXISTS quiz_user_question_history CASCADE;
 CREATE TABLE IF NOT EXISTS quiz_user_question_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL,
     question_id UUID NOT NULL REFERENCES quiz_questions(id),
-    asked_at TIMESTAMPTZ DEFAULT NOW(),
+    times_seen INT DEFAULT 1,
+    last_seen_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(user_id, question_id)
 );
 CREATE INDEX IF NOT EXISTS idx_quiz_hist_user ON quiz_user_question_history(user_id);
