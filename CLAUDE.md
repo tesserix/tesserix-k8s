@@ -28,16 +28,22 @@ git config user.email "samyak.rout@gmail.com"
 
 ---
 
-## No Manual kubectl Patches or Applies
+## No Manual kubectl apply — ArgoCD Only
 
-**NEVER** run `kubectl apply`, `kubectl patch`, `kubectl edit`, `kubectl set`, or any manual kubectl mutation commands against the cluster.
+**NEVER** use `kubectl apply`, `kubectl create`, `kubectl patch`, `kubectl edit`, or `kubectl set` to deploy or modify cluster resources directly. All changes must go through ArgoCD:
 
-All Kubernetes changes **must** be:
-1. Persisted as Helm chart changes in `charts/apps/<service>/`
-2. Committed and pushed to this repo (`tesserix-k8s`)
-3. Synced via ArgoCD (`argocd app sync <app-name>` or wait for auto-sync)
+1. Make changes in this repo (Helm charts, values, external-secrets, ArgoCD app definitions)
+2. Commit and push to `main`
+3. ArgoCD auto-syncs (or trigger manually: `kubectl patch app <name> -n argocd --type merge -p '{"operation":{"sync":{"syncStrategy":{"apply":{"force":false}}}}}'`)
 
-Manual patches drift from git state and will be overwritten by ArgoCD self-heal. If you need an urgent change, make it in the Helm chart and force-sync.
+**Why:** Manual applies drift from Git state, get overwritten by ArgoCD self-heal, and are not auditable. The only exception is emergency debugging (e.g., `kubectl logs`, `kubectl describe`, `kubectl exec` for read-only investigation).
+
+**Key ArgoCD patterns:**
+- **Helm charts:** `charts/apps/<service>/` — templates + values
+- **ArgoCD apps:** `argocd/prod/apps/<project>/` — app-of-apps pattern
+- **External Secrets:** `external-secrets/prod/<namespace>/` — GHCR secrets, DB passwords via GCP Secret Manager
+- **Istio config:** `charts/thirdparty/istio-config/` — namespace labels, mTLS, gateway config
+- **Namespace labels** (e.g., `istio-injection=enabled`): managed by `istio-config` chart, not manual `kubectl label`
 
 ---
 
