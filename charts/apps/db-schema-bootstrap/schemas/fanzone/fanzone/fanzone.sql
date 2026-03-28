@@ -1,4 +1,55 @@
 -- ============================================================
+-- CROSS-DB USER VIEW
+-- The admin panel queries fanzone.users but real users live in
+-- fanzone_auth.users. Create a foreign data wrapper + view so
+-- the fanzone-api can read auth users transparently.
+-- ============================================================
+CREATE EXTENSION IF NOT EXISTS postgres_fdw;
+CREATE EXTENSION IF NOT EXISTS dblink;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_foreign_server WHERE srvname = 'fanzone_auth_server') THEN
+    CREATE SERVER fanzone_auth_server FOREIGN DATA WRAPPER postgres_fdw
+      OPTIONS (host 'localhost', port '5432', dbname 'fanzone_auth');
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_user_mappings WHERE srvname = 'fanzone_auth_server' AND usename = 'postgres') THEN
+    CREATE USER MAPPING FOR postgres SERVER fanzone_auth_server
+      OPTIONS (user 'postgres', password 'tesserix-dev-2024');
+  END IF;
+END $$;
+
+-- Import the users table from fanzone_auth as a foreign table
+DROP FOREIGN TABLE IF EXISTS auth_users;
+CREATE FOREIGN TABLE auth_users (
+    id              UUID,
+    username        VARCHAR(255),
+    email           VARCHAR(255),
+    phone           VARCHAR(20),
+    password_hash   VARCHAR(255),
+    name            VARCHAR(255),
+    avatar_url      TEXT,
+    provider        VARCHAR(50),
+    provider_id     VARCHAR(255),
+    email_verified  BOOLEAN,
+    phone_verified  BOOLEAN,
+    role            VARCHAR(50),
+    is_active       BOOLEAN,
+    login_count     INTEGER,
+    signup_source   VARCHAR(50),
+    created_at      TIMESTAMPTZ,
+    updated_at      TIMESTAMPTZ,
+    last_login_at   TIMESTAMPTZ
+) SERVER fanzone_auth_server OPTIONS (schema_name 'public', table_name 'users');
+
+-- Create or replace the users view that the fanzone-api reads from
+-- This transparently reads from fanzone_auth.users
+DROP VIEW IF EXISTS users CASCADE;
+CREATE VIEW users AS SELECT * FROM auth_users;
+
+-- ============================================================
 -- FAN CONNECT SERVICE - Initial Schema
 -- Managed by k8s db-schema-bootstrap CronJob
 -- ============================================================
