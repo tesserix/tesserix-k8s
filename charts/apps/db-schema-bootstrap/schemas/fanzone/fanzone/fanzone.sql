@@ -1151,6 +1151,57 @@ CREATE TABLE IF NOT EXISTS quiz_user_question_history (
 CREATE INDEX IF NOT EXISTS idx_quiz_hist_user ON quiz_user_question_history(user_id);
 
 -- ============================================================
+-- CRICKET QUIZ SEED QUESTIONS
+-- ============================================================
+INSERT INTO quiz_questions (difficulty, category, question_type, question, options, correct_index, explanation) VALUES
+('easy','general','multiple_choice','How many players are there in a cricket team?','["9","10","11","12"]',2,'A cricket team consists of 11 players.'),
+('easy','general','multiple_choice','What is the maximum number of overs in a T20 match per side?','["15","18","20","25"]',2,'T20 stands for Twenty20.'),
+('easy','general','multiple_choice','Which country won the first Cricket World Cup in 1975?','["Australia","England","West Indies","India"]',2,'West Indies won the inaugural World Cup.'),
+('easy','general','multiple_choice','What does LBW stand for?','["Left Before Wicket","Leg Before Wicket","Last Ball Won","Long Ball Wide"]',1,'LBW stands for Leg Before Wicket.'),
+('easy','general','multiple_choice','How many runs is a six worth?','["2","4","6","8"]',2,'A six is scored when the ball clears the boundary without bouncing.'),
+('easy','general','multiple_choice','How many stumps are there at each end?','["2","3","4","5"]',1,'There are 3 stumps at each end.'),
+('easy','general','multiple_choice','What is scoring 100 runs called?','["Half-century","Century","Double century","Triple century"]',1,'Scoring 100 runs is a century.'),
+('easy','general','multiple_choice','Which is NOT a way to get out?','["Caught","Bowled","Offside","Run out"]',2,'Offside is a field position, not a dismissal.'),
+('easy','general','multiple_choice','What color ball is used in Test cricket?','["White","Red","Pink","Yellow"]',1,'Red ball is used in Test cricket.'),
+('easy','ipl','multiple_choice','What does IPL stand for?','["Indian Premier League","International Premier League","Indian Professional League","Indo-Pacific League"]',0,'IPL = Indian Premier League.'),
+('easy','records','multiple_choice','Who is the God of Cricket?','["Virat Kohli","MS Dhoni","Sachin Tendulkar","Kapil Dev"]',2,'Sachin Tendulkar is the God of Cricket.'),
+('easy','general','multiple_choice','In which country did cricket originate?','["India","Australia","England","South Africa"]',2,'Cricket originated in England.'),
+('easy','general','multiple_choice','What is a hat-trick?','["3 sixes","3 wickets in 3 balls","3 catches","3 run-outs"]',1,'3 wickets on 3 consecutive deliveries.'),
+('easy','general','multiple_choice','What is the length of a cricket pitch?','["20 yards","22 yards","24 yards","26 yards"]',1,'A pitch is 22 yards long.'),
+('easy','general','multiple_choice','How many bails sit on the stumps?','["1","2","3","4"]',1,'Two bails rest on three stumps.'),
+('medium','rules','multiple_choice','What is DLS method used for?','["Run rate","Rain-affected targets","Toss outcomes","Power plays"]',1,'DLS recalculates targets in rain-affected matches.'),
+('medium','records','multiple_choice','Most Test wickets ever?','["Shane Warne","Anil Kumble","Muttiah Muralitharan","James Anderson"]',2,'Muralitharan: 800 Test wickets.'),
+('medium','records','multiple_choice','Most runs in international cricket?','["Ponting","Sangakkara","Sachin Tendulkar","Kallis"]',2,'Sachin: 34,357 international runs.'),
+('medium','ipl','multiple_choice','Most IPL titles?','["CSK","Mumbai Indians","KKR","RCB"]',1,'Mumbai Indians have the most titles.'),
+('medium','general','multiple_choice','What is a googly?','["Fast bouncer","Leg-spin turning other way","Slow full toss","Underarm delivery"]',1,'A googly turns from off to leg for right-handers.'),
+('medium','records','multiple_choice','Fastest ODI century (31 balls)?','["Chris Gayle","AB de Villiers","Shahid Afridi","Corey Anderson"]',1,'AB de Villiers in 31 balls vs West Indies 2015.'),
+('medium','general','multiple_choice','What is a yorker?','["Ball at batsman feet","Ball over head","Round the wicket ball","Slow ball"]',0,'A yorker lands at or near the batsman feet.'),
+('medium','ipl','multiple_choice','First IPL season year?','["2006","2007","2008","2009"]',2,'First IPL was in 2008.'),
+('medium','general','multiple_choice','What is a nightwatchman?','["Security guard","Lower-order bat sent near close","Last batsman","Night fielder"]',1,'Protects top-order near end of day play.'),
+('medium','rules','multiple_choice','DRS reviews per Test innings?','["1","2","3","Unlimited"]',1,'2 DRS reviews per innings in Tests.'),
+('medium','records','multiple_choice','Most Cricket World Cups won?','["India","West Indies","Australia","England"]',2,'Australia: 6 ODI World Cup titles.'),
+('medium','general','multiple_choice','What is Mankading?','["Underarm bowling","Running out non-striker early","LBW appeal","Sledging"]',1,'Running out non-striker before delivery.'),
+('medium','rules','multiple_choice','T20I bouncers per over?','["1","2","3","Unlimited"]',0,'1 bouncer per over in T20I.'),
+('medium','general','multiple_choice','What is a doosra?','["Off-spin turning opposite","Fast inswinger","Leg-break","Slower ball"]',0,'Off-spin that turns from leg to off.'),
+('medium','general','multiple_choice','What is declaration in Tests?','["End innings voluntarily","Umpire ends day","No-ball declared","Pitch unfit"]',0,'Batting team voluntarily ends innings.'),
+('hard','records','multiple_choice','First ODI double century?','["Sehwag","Sachin Tendulkar","Rohit Sharma","Gayle"]',1,'Sachin: 200* vs South Africa 2010.'),
+('hard','records','multiple_choice','Highest Test batting average (min 20 inn)?','["Bradman","Steve Smith","Tendulkar","Lara"]',0,'Don Bradman: 99.94 average.'),
+('hard','records','multiple_choice','Lowest Test team total?','["26","30","35","42"]',0,'New Zealand: 26 all out vs England 1955.'),
+('hard','records','multiple_choice','First tied Test match?','["Ashes 2005","India vs Aus 1986","Aus vs WI 1960","Eng vs SA 1999"]',2,'Australia vs West Indies, Brisbane 1960.'),
+('hard','rules','multiple_choice','What is the free hit rule?','["After every wide","Cannot be out except run out after no-ball","Bonus delivery","Extra ball after wicket"]',1,'After front-foot no-ball, batsman can only be run out.'),
+('hard','records','multiple_choice','Most Test catches (non-keeper)?','["Dravid","Kallis","Ponting","Jayawardene"]',0,'Rahul Dravid: 210 catches.'),
+('hard','records','multiple_choice','Most Test matches played?','["Sachin Tendulkar","Ponting","Steve Waugh","Kallis"]',0,'Sachin played 200 Tests.'),
+('hard','records','multiple_choice','Fastest ball ever bowled (approx)?','["148 km/h","155 km/h","161 km/h","170 km/h"]',2,'Shoaib Akhtar: 161.3 km/h in 2003.'),
+('hard','general','multiple_choice','What is Bazball?','["Spin bowling type","England aggressive Test approach","Fielding formation","DRS technology"]',1,'England ultra-aggressive Test batting under Stokes/McCullum.'),
+('hard','records','multiple_choice','Hat-trick in World Cup final?','["No one has","Chaminda Vaas","Brett Lee","Starc"]',0,'No bowler has taken a hat-trick in a WC final.'),
+('hard','rules','multiple_choice','Min overs for completed ODI result?','["10","15","20","25"]',2,'Minimum 20 overs per side for a result.'),
+('hard','rules','multiple_choice','Max days in a Test match?','["3","4","5","No limit"]',2,'Modern Tests are scheduled for 5 days.'),
+('hard','records','multiple_choice','First to hit 6 sixes in an ODI over?','["Herschelle Gibbs","Yuvraj Singh","Kieron Pollard","Gayle"]',0,'Herschelle Gibbs vs Netherlands 2007.'),
+('hard','general','multiple_choice','What was the Supersub rule?','["12th player bats","Replace player mid-match","Extra powerplay","Bonus runs"]',1,'Allowed mid-match player replacement (2005-2006.'),
+('hard','rules','multiple_choice','WTC points for a win?','["8","10","12","15"]',2,'12 points per win in the World Test Championship.')
+ON CONFLICT DO NOTHING;
+
+-- ============================================================
 -- BOOK CRICKET SERVICE SCHEMA
 -- ============================================================
 
