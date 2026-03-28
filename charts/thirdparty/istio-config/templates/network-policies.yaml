@@ -484,6 +484,16 @@ spec:
       ports:
         - protocol: TCP
           port: 27017
+    # Allow backup namespace (db-backup-and-restore) for mongodump
+    {{- if $.Values.infrastructureNamespaces.dbBackup }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.infrastructureNamespaces.dbBackup }}
+      ports:
+        - protocol: TCP
+          port: 27017
+    {{- end }}
     # Allow monitoring (for metrics only)
     - from:
         - namespaceSelector:
@@ -973,7 +983,7 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Allow egress to ALL database namespaces
+    # Allow egress to ALL PostgreSQL database namespaces
     {{- range $key, $dbNs := $.Values.databaseNamespaces }}
     - to:
         - namespaceSelector:
@@ -982,6 +992,18 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    {{- end }}
+    # Allow egress to ALL MongoDB namespaces
+    {{- if $.Values.backupMongoNamespaces }}
+    {{- range $mongoNs := $.Values.backupMongoNamespaces }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $mongoNs }}
+      ports:
+        - protocol: TCP
+          port: 27017
+    {{- end }}
     {{- end }}
     # Allow GCP metadata server for Workload Identity (169.254.169.254)
     - to:
