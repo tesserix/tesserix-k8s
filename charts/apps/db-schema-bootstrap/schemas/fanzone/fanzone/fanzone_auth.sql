@@ -383,3 +383,86 @@ CREATE TABLE IF NOT EXISTS bot_daily_stories (
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- =============================================================================
+-- PREDICTION SERVICE TABLES (prediction service connects to fanzone_auth)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS prediction_markets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id VARCHAR(100) NOT NULL,
+    question VARCHAR(500) NOT NULL,
+    description TEXT,
+    market_type VARCHAR(50) NOT NULL,
+    status VARCHAR(50) DEFAULT 'open',
+    min_bet FLOAT NOT NULL DEFAULT 1.0,
+    max_bet_per_user FLOAT,
+    total_pool FLOAT DEFAULT 0,
+    house_pool FLOAT DEFAULT 0,
+    winning_option_id UUID,
+    created_by UUID NOT NULL,
+    resolved_by UUID,
+    auto_resolve BOOLEAN DEFAULT false,
+    resolution_rule JSONB,
+    closes_at TIMESTAMPTZ NOT NULL,
+    resolved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pred_markets_match ON prediction_markets(match_id);
+CREATE INDEX IF NOT EXISTS idx_pred_markets_status ON prediction_markets(status);
+
+CREATE TABLE IF NOT EXISTS prediction_options (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    market_id UUID NOT NULL REFERENCES prediction_markets(id) ON DELETE CASCADE,
+    label VARCHAR(255) NOT NULL,
+    odds_multiplier FLOAT NOT NULL,
+    total_bets INT DEFAULT 0,
+    total_amount FLOAT DEFAULT 0,
+    display_order INT DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pred_options_market ON prediction_options(market_id);
+
+CREATE TABLE IF NOT EXISTS prediction_bets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    market_id UUID NOT NULL REFERENCES prediction_markets(id),
+    option_id UUID NOT NULL REFERENCES prediction_options(id),
+    user_id UUID NOT NULL,
+    amount FLOAT NOT NULL,
+    house_fee FLOAT DEFAULT 0,
+    odds_at_bet FLOAT NOT NULL,
+    potential_payout FLOAT NOT NULL,
+    status VARCHAR(50) DEFAULT 'active',
+    actual_payout FLOAT,
+    idempotency_key VARCHAR(255) UNIQUE,
+    placed_at TIMESTAMPTZ DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_pred_bets_market ON prediction_bets(market_id);
+CREATE INDEX IF NOT EXISTS idx_pred_bets_user ON prediction_bets(user_id);
+CREATE INDEX IF NOT EXISTS idx_pred_bets_status ON prediction_bets(status);
+
+CREATE TABLE IF NOT EXISTS prediction_house_pool (
+    id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    total_fees FLOAT DEFAULT 0,
+    total_bets_count INT DEFAULT 0,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+INSERT INTO prediction_house_pool (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- =============================================================================
+-- USER SERVICE TABLES (user service connects to fanzone_auth)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS user_badges (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    badge_id VARCHAR(100) NOT NULL,
+    badge_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    icon VARCHAR(255),
+    metadata JSONB,
+    earned_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, badge_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges(user_id);

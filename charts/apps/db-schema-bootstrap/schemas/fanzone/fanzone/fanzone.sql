@@ -986,3 +986,146 @@ INSERT INTO bot_config (key, value) VALUES
     ('prediction_interval_minutes', '5'::jsonb),
     ('max_active_per_match', '3'::jsonb)
 ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================
+-- USER FOLLOWS (fan-connect service)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS user_follows (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    follower_id UUID NOT NULL,
+    following_id UUID NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_follows UNIQUE (follower_id, following_id),
+    CONSTRAINT chk_not_self_follow CHECK (follower_id != following_id)
+);
+CREATE INDEX IF NOT EXISTS idx_follows_follower ON user_follows(follower_id);
+CREATE INDEX IF NOT EXISTS idx_follows_following ON user_follows(following_id);
+
+-- ============================================================
+-- MATCHES TABLE (cleanup service reads this)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS matches (
+    id VARCHAR(100) PRIMARY KEY,
+    status VARCHAR(50) DEFAULT 'scheduled',
+    started_at TIMESTAMPTZ,
+    ended_at TIMESTAMPTZ,
+    cleaned_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_matches_status ON matches(status);
+
+-- ============================================================
+-- CRICKET QUIZ SERVICE SCHEMA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS quiz_questions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    question TEXT NOT NULL,
+    options JSONB NOT NULL,
+    correct_option INT NOT NULL,
+    difficulty VARCHAR(50) NOT NULL DEFAULT 'easy',
+    category VARCHAR(100) DEFAULT '',
+    explanation TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_q_difficulty ON quiz_questions(difficulty);
+
+CREATE TABLE IF NOT EXISTS quiz_tournaments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    username VARCHAR(255) NOT NULL DEFAULT '',
+    difficulty VARCHAR(50) NOT NULL DEFAULT 'easy',
+    current_level INT NOT NULL DEFAULT 1,
+    status VARCHAR(50) NOT NULL DEFAULT 'in_progress',
+    entry_fee FLOAT DEFAULT 0,
+    level_fees FLOAT DEFAULT 0,
+    total_earned FLOAT DEFAULT 0,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_tourn_user ON quiz_tournaments(user_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_tourn_status ON quiz_tournaments(status);
+
+CREATE TABLE IF NOT EXISTS quiz_tournament_questions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tournament_id UUID NOT NULL REFERENCES quiz_tournaments(id) ON DELETE CASCADE,
+    question_id UUID NOT NULL REFERENCES quiz_questions(id),
+    level INT NOT NULL,
+    question_order INT NOT NULL,
+    UNIQUE(tournament_id, question_id)
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_tq_tournament ON quiz_tournament_questions(tournament_id);
+
+CREATE TABLE IF NOT EXISTS quiz_level_progress (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tournament_id UUID NOT NULL REFERENCES quiz_tournaments(id) ON DELETE CASCADE,
+    level INT NOT NULL,
+    correct_count INT DEFAULT 0,
+    wrong_count INT DEFAULT 0,
+    total_questions INT NOT NULL,
+    max_wrong INT NOT NULL,
+    status VARCHAR(50) DEFAULT 'in_progress',
+    points_earned FLOAT DEFAULT 0,
+    started_at TIMESTAMPTZ DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+    UNIQUE(tournament_id, level)
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_lp_tournament ON quiz_level_progress(tournament_id);
+
+CREATE TABLE IF NOT EXISTS quiz_answers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tournament_id UUID NOT NULL REFERENCES quiz_tournaments(id) ON DELETE CASCADE,
+    question_id UUID NOT NULL REFERENCES quiz_questions(id),
+    level INT NOT NULL,
+    selected_option INT NOT NULL,
+    is_correct BOOLEAN NOT NULL,
+    time_taken_ms INT DEFAULT 0,
+    answered_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_ans_tournament ON quiz_answers(tournament_id);
+
+CREATE TABLE IF NOT EXISTS quiz_challenges (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    creator_id UUID NOT NULL,
+    creator_username VARCHAR(255) DEFAULT '',
+    difficulty VARCHAR(50) NOT NULL DEFAULT 'easy',
+    wager_points FLOAT DEFAULT 0,
+    status VARCHAR(50) DEFAULT 'pending',
+    winner_id UUID,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '24 hours'
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_ch_creator ON quiz_challenges(creator_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_ch_status ON quiz_challenges(status);
+
+CREATE TABLE IF NOT EXISTS quiz_challenge_participants (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    challenge_id UUID NOT NULL REFERENCES quiz_challenges(id) ON DELETE CASCADE,
+    user_id UUID,
+    username VARCHAR(255) NOT NULL DEFAULT '',
+    tournament_id UUID REFERENCES quiz_tournaments(id),
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    external_claim_token VARCHAR(255),
+    invited_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    responded_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_cp_challenge ON quiz_challenge_participants(challenge_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_cp_user ON quiz_challenge_participants(user_id);
+
+CREATE TABLE IF NOT EXISTS quiz_challenge_questions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    challenge_id UUID NOT NULL REFERENCES quiz_challenges(id) ON DELETE CASCADE,
+    question_id UUID NOT NULL REFERENCES quiz_questions(id),
+    question_order INT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS quiz_user_question_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    question_id UUID NOT NULL REFERENCES quiz_questions(id),
+    asked_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, question_id)
+);
+CREATE INDEX IF NOT EXISTS idx_quiz_hist_user ON quiz_user_question_history(user_id);
