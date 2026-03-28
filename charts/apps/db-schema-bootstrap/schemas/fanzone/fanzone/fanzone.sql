@@ -1020,13 +1020,25 @@ CREATE INDEX IF NOT EXISTS idx_matches_status ON matches(status);
 -- CRICKET QUIZ SERVICE SCHEMA
 -- ============================================================
 
+-- Drop and recreate quiz_questions to fix column names (correct_option→correct_index, add question_type)
+DROP TABLE IF EXISTS quiz_user_question_history CASCADE;
+DROP TABLE IF EXISTS quiz_challenge_questions CASCADE;
+DROP TABLE IF EXISTS quiz_answers CASCADE;
+DROP TABLE IF EXISTS quiz_tournament_questions CASCADE;
+DROP TABLE IF EXISTS quiz_level_progress CASCADE;
+DROP TABLE IF EXISTS quiz_challenge_participants CASCADE;
+DROP TABLE IF EXISTS quiz_challenges CASCADE;
+DROP TABLE IF EXISTS quiz_tournaments CASCADE;
+DROP TABLE IF EXISTS quiz_questions CASCADE;
+
 CREATE TABLE IF NOT EXISTS quiz_questions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    question TEXT NOT NULL,
-    options JSONB NOT NULL,
-    correct_option INT NOT NULL,
     difficulty VARCHAR(50) NOT NULL DEFAULT 'easy',
     category VARCHAR(100) DEFAULT '',
+    question_type VARCHAR(50) DEFAULT 'multiple_choice',
+    question TEXT NOT NULL,
+    options JSONB NOT NULL,
+    correct_index INT NOT NULL DEFAULT 0,
     explanation TEXT DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
