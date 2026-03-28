@@ -170,3 +170,166 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     version     INT PRIMARY KEY,
     applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- ============================================================
+-- COMMENTARY SERVICE SCHEMA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS supported_languages (
+    code    VARCHAR(5) PRIMARY KEY,
+    label   VARCHAR(50) NOT NULL,
+    flag    VARCHAR(10) NOT NULL DEFAULT '',
+    region  VARCHAR(50) NOT NULL DEFAULT '',
+    active  BOOLEAN NOT NULL DEFAULT true
+);
+
+INSERT INTO supported_languages (code, label, flag, region) VALUES
+    ('en', 'English', '🇬🇧', 'Global'),
+    ('hi', 'Hindi', '🇮🇳', 'India'),
+    ('ta', 'Tamil', '🇮🇳', 'India'),
+    ('te', 'Telugu', '🇮🇳', 'India'),
+    ('kn', 'Kannada', '🇮🇳', 'India'),
+    ('bn', 'Bengali', '🇮🇳', 'India'),
+    ('mr', 'Marathi', '🇮🇳', 'India'),
+    ('pa', 'Punjabi', '🇮🇳', 'India')
+ON CONFLICT (code) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS match_commentary_config (
+    match_id UUID PRIMARY KEY,
+    nominations_open_at TIMESTAMPTZ NOT NULL,
+    nominations_close_at TIMESTAMPTZ NOT NULL,
+    lottery_run_at TIMESTAMPTZ,
+    max_commentators_per_lang SMALLINT DEFAULT 3,
+    min_commentators_per_lang SMALLINT DEFAULT 1,
+    max_nominations_per_lang INT DEFAULT 50,
+    status VARCHAR(20) DEFAULT 'open',
+    voting_close_at TIMESTAMPTZ,
+    selection_method VARCHAR(10) DEFAULT 'vote',
+    cleaned_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS commentary_nominations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+    username VARCHAR(100) NOT NULL DEFAULT '',
+    language_code VARCHAR(5) NOT NULL,
+    nominated_at TIMESTAMPTZ DEFAULT now(),
+    status VARCHAR(20) DEFAULT 'nominated',
+    voice_clip_url TEXT DEFAULT '',
+    voice_clip_duration_secs INT DEFAULT 0,
+    nomination_reason TEXT DEFAULT '',
+    avatar_url TEXT DEFAULT '',
+    nominated_by UUID,
+    nominated_by_username VARCHAR(100) DEFAULT '',
+    UNIQUE(match_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nominations_match_lang ON commentary_nominations(match_id, language_code);
+CREATE INDEX IF NOT EXISTS idx_nominations_status ON commentary_nominations(match_id, status);
+
+CREATE TABLE IF NOT EXISTS match_commentators (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+    username VARCHAR(100) NOT NULL DEFAULT '',
+    avatar_url TEXT DEFAULT '',
+    language_code VARCHAR(5) NOT NULL,
+    selected_at TIMESTAMPTZ DEFAULT now(),
+    joined_at TIMESTAMPTZ,
+    left_at TIMESTAMPTZ,
+    status VARCHAR(20) DEFAULT 'selected',
+    replacement_for UUID REFERENCES match_commentators(id),
+    sfu_room_id VARCHAR(255) DEFAULT '',
+    sfu_participant_id VARCHAR(255) DEFAULT '',
+    UNIQUE(match_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_commentators_match_lang ON match_commentators(match_id, language_code);
+CREATE INDEX IF NOT EXISTS idx_commentators_status ON match_commentators(match_id, status);
+
+CREATE TABLE IF NOT EXISTS commentator_ratings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id UUID NOT NULL,
+    commentator_user_id UUID NOT NULL,
+    rater_user_id UUID NOT NULL,
+    rating SMALLINT CHECK (rating BETWEEN 1 AND 5),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(match_id, commentator_user_id, rater_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ratings_commentator ON commentator_ratings(commentator_user_id);
+
+CREATE TABLE IF NOT EXISTS commentator_stats (
+    user_id UUID PRIMARY KEY,
+    total_sessions INT DEFAULT 0,
+    total_minutes FLOAT DEFAULT 0,
+    avg_rating FLOAT DEFAULT 0,
+    total_ratings INT DEFAULT 0,
+    total_listeners INT DEFAULT 0,
+    badges JSONB DEFAULT '[]',
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS commentary_listeners (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+    language_code VARCHAR(5) NOT NULL,
+    joined_at TIMESTAMPTZ DEFAULT now(),
+    left_at TIMESTAMPTZ,
+    total_listen_seconds INT DEFAULT 0,
+    points_awarded FLOAT DEFAULT 0,
+    UNIQUE(match_id, user_id, language_code)
+);
+CREATE INDEX IF NOT EXISTS idx_listeners_match ON commentary_listeners(match_id);
+CREATE INDEX IF NOT EXISTS idx_listeners_user ON commentary_listeners(user_id, match_id);
+
+CREATE TABLE IF NOT EXISTS nomination_votes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id UUID NOT NULL,
+    nomination_id UUID NOT NULL REFERENCES commentary_nominations(id) ON DELETE CASCADE,
+    language_code VARCHAR(5) NOT NULL,
+    voter_user_id UUID NOT NULL,
+    voter_username VARCHAR(100) NOT NULL DEFAULT '',
+    voted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(match_id, voter_user_id, language_code)
+);
+CREATE INDEX IF NOT EXISTS idx_votes_nomination ON nomination_votes(nomination_id);
+CREATE INDEX IF NOT EXISTS idx_votes_match_lang ON nomination_votes(match_id, language_code);
+
+CREATE TABLE IF NOT EXISTS commentary_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id UUID NOT NULL,
+    commentator_user_id UUID NOT NULL,
+    commentator_username VARCHAR(100) DEFAULT '',
+    reporter_user_id UUID NOT NULL,
+    reporter_username VARCHAR(100) DEFAULT '',
+    reason_category VARCHAR(30) NOT NULL,
+    reason_detail TEXT DEFAULT '',
+    status VARCHAR(20) DEFAULT 'pending',
+    admin_note TEXT DEFAULT '',
+    resolved_by UUID,
+    resolved_by_username VARCHAR(100) DEFAULT '',
+    resolved_at TIMESTAMPTZ,
+    resolution VARCHAR(20),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(match_id, commentator_user_id, reporter_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_commentary_reports_status ON commentary_reports(status);
+CREATE INDEX IF NOT EXISTS idx_commentary_reports_created ON commentary_reports(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS commentary_bans (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL UNIQUE,
+    username VARCHAR(100) DEFAULT '',
+    banned_by UUID NOT NULL,
+    banned_by_username VARCHAR(100) DEFAULT '',
+    reason TEXT NOT NULL DEFAULT '',
+    is_permanent BOOLEAN NOT NULL DEFAULT false,
+    expires_at TIMESTAMPTZ,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    unbanned_by UUID,
+    unbanned_by_username VARCHAR(100) DEFAULT '',
+    unbanned_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_commentary_bans_active ON commentary_bans(user_id) WHERE is_active = true;
