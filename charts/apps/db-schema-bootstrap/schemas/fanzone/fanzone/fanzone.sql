@@ -49,6 +49,37 @@ CREATE FOREIGN TABLE auth_users (
 DROP VIEW IF EXISTS users CASCADE;
 CREATE VIEW users AS SELECT * FROM auth_users;
 
+-- Admin users view used by the fanzone-api admin panel
+-- Maps fanzone_auth.users columns to the format expected by the API
+DROP VIEW IF EXISTS vw_admin_users CASCADE;
+CREATE VIEW vw_admin_users AS
+SELECT
+    id,
+    username,
+    email,
+    name AS display_name,
+    avatar_url,
+    role,
+    is_active,
+    created_at,
+    last_login_at
+FROM auth_users;
+
+-- Admin stats view for dashboard cards (Total Users, Active Today, etc.)
+DROP VIEW IF EXISTS admin_stats CASCADE;
+CREATE VIEW admin_stats AS
+SELECT
+    (SELECT COUNT(*) FROM auth_users) AS total_users,
+    (SELECT COUNT(*) FROM auth_users WHERE last_login_at >= CURRENT_DATE) AS active_today,
+    (SELECT COUNT(*) FROM auth_users WHERE last_login_at >= CURRENT_DATE - INTERVAL '7 days') AS active_this_week,
+    (SELECT COUNT(*) FROM auth_users WHERE created_at >= CURRENT_DATE - INTERVAL '7 days') AS new_this_week,
+    0::bigint AS messages_today,
+    0::bigint AS messages_this_week,
+    0::bigint AS live_matches,
+    0::bigint AS completed_today,
+    0::bigint AS upcoming_24h,
+    0::bigint AS pending_reports;
+
 -- ============================================================
 -- FAN CONNECT SERVICE - Initial Schema
 -- Managed by k8s db-schema-bootstrap CronJob
