@@ -9,18 +9,13 @@ RUN apk add --no-cache \
     curl \
     gzip \
     zstd \
-    python3
+    python3 \
+    gcompat
 
-# MongoDB tools (mongodump, mongorestore)
+# MongoDB tools (mongodump, mongorestore) + mongosh
 RUN apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
-    mongodb-tools
-
-# mongosh binary
-RUN curl -fsSL https://downloads.mongodb.com/compass/mongosh-2.5.0-linux-x64.tgz \
-    | tar -xz -C /tmp \
-    && mv /tmp/mongosh-*/bin/mongosh /usr/local/bin/mongosh \
-    && chmod +x /usr/local/bin/mongosh \
-    && rm -rf /tmp/mongosh-*
+    mongodb-tools \
+    mongosh
 
 # Copy gsutil and gcloud from the official cloud-sdk image
 COPY --from=gcloud /usr/lib/google-cloud-sdk /usr/lib/google-cloud-sdk
