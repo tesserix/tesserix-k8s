@@ -115,6 +115,57 @@ spec:
   selector:
     serving.knative.dev/service: mp-staff
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tenant-service-direct
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    serving.knative.dev/service: tenant-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: location-service-direct
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    serving.knative.dev/service: location-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tenant-router-service-direct
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8089
+      targetPort: 8089
+      protocol: TCP
+      name: http
+  selector:
+    serving.knative.dev/service: tenant-router-service
+---
 # =============================================================================
 # Multi-Tenant Wildcard VirtualServices
 # Route {slug}.mark8ly.com → mp-storefront (customer-facing store)
