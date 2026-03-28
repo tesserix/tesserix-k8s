@@ -907,3 +907,82 @@ CREATE TABLE IF NOT EXISTS user_badges (
     UNIQUE(user_id, badge_id)
 );
 CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges(user_id);
+
+-- ============================================================
+-- PREDICTION BOT SERVICE SCHEMA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS bot_monitored_matches (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id VARCHAR(100) NOT NULL UNIQUE,
+    match_status VARCHAR(50) NOT NULL DEFAULT 'live',
+    team1_name VARCHAR(100) NOT NULL DEFAULT '',
+    team2_name VARCHAR(100) NOT NULL DEFAULT '',
+    match_type VARCHAR(50) NOT NULL DEFAULT '',
+    series_id VARCHAR(100) DEFAULT '',
+    monitoring_started_at TIMESTAMPTZ DEFAULT NOW(),
+    last_checked_at TIMESTAMPTZ DEFAULT NOW(),
+    last_prediction_at TIMESTAMPTZ,
+    predictions_created INT DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    match_context JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bot_matches_active ON bot_monitored_matches(is_active);
+
+CREATE TABLE IF NOT EXISTS bot_predictions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    market_id UUID NOT NULL,
+    match_id VARCHAR(100) NOT NULL,
+    prediction_type VARCHAR(50) NOT NULL,
+    ai_reasoning TEXT DEFAULT '',
+    ai_confidence FLOAT DEFAULT 0,
+    suggested_odds JSONB DEFAULT '{}',
+    final_odds JSONB DEFAULT '{}',
+    house_edge_pct FLOAT DEFAULT 0,
+    close_condition VARCHAR(50) DEFAULT '',
+    close_trigger_data JSONB DEFAULT '{}',
+    status VARCHAR(50) DEFAULT 'active',
+    closed_reason VARCHAR(255) DEFAULT '',
+    closed_at TIMESTAMPTZ,
+    match_state_at_creation JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bot_preds_match ON bot_predictions(match_id);
+CREATE INDEX IF NOT EXISTS idx_bot_preds_status ON bot_predictions(status);
+CREATE INDEX IF NOT EXISTS idx_bot_preds_market ON bot_predictions(market_id);
+
+CREATE TABLE IF NOT EXISTS bot_ai_audit_log (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id VARCHAR(100) NOT NULL,
+    prompt_type VARCHAR(50) NOT NULL,
+    prompt_hash VARCHAR(64) DEFAULT '',
+    prompt_tokens INT DEFAULT 0,
+    response_tokens INT DEFAULT 0,
+    total_tokens INT DEFAULT 0,
+    model_used VARCHAR(100) DEFAULT '',
+    predictions_generated INT DEFAULT 0,
+    predictions_accepted INT DEFAULT 0,
+    predictions_rejected INT DEFAULT 0,
+    rejection_reasons JSONB DEFAULT '[]',
+    latency_ms INT DEFAULT 0,
+    error TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bot_audit_match ON bot_ai_audit_log(match_id);
+CREATE INDEX IF NOT EXISTS idx_bot_audit_created ON bot_ai_audit_log(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS bot_config (
+    key VARCHAR(100) PRIMARY KEY,
+    value JSONB NOT NULL DEFAULT '{}',
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Seed default bot config (enabled by default)
+INSERT INTO bot_config (key, value) VALUES
+    ('bot_enabled', 'true'::jsonb),
+    ('max_predictions_per_match', '10'::jsonb),
+    ('prediction_interval_minutes', '5'::jsonb),
+    ('max_active_per_match', '3'::jsonb)
+ON CONFLICT (key) DO NOTHING;
