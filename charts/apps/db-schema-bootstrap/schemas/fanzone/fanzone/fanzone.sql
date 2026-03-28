@@ -333,3 +333,485 @@ CREATE TABLE IF NOT EXISTS commentary_bans (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_commentary_bans_active ON commentary_bans(user_id) WHERE is_active = true;
+
+-- supported_countries (commentary languages page)
+CREATE TABLE IF NOT EXISTS supported_countries (
+    code VARCHAR(5) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    flag VARCHAR(50) DEFAULT '',
+    common_languages TEXT[] DEFAULT '{}',
+    active BOOLEAN DEFAULT true,
+    sort_order INT DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_countries_active ON supported_countries(active);
+
+INSERT INTO supported_countries (code, name, flag, common_languages, sort_order) VALUES
+    ('IN', 'India', '🇮🇳', ARRAY['hi','en','ta','te','kn','bn','mr','pa'], 1),
+    ('US', 'United States', '🇺🇸', ARRAY['en'], 2),
+    ('GB', 'United Kingdom', '🇬🇧', ARRAY['en'], 3),
+    ('AU', 'Australia', '🇦🇺', ARRAY['en'], 4),
+    ('NZ', 'New Zealand', '🇳🇿', ARRAY['en'], 5),
+    ('ZA', 'South Africa', '🇿🇦', ARRAY['en'], 6),
+    ('PK', 'Pakistan', '🇵🇰', ARRAY['en'], 7),
+    ('BD', 'Bangladesh', '🇧🇩', ARRAY['bn','en'], 8),
+    ('LK', 'Sri Lanka', '🇱🇰', ARRAY['en'], 9),
+    ('AE', 'UAE', '🇦🇪', ARRAY['en','hi'], 10)
+ON CONFLICT (code) DO NOTHING;
+
+-- country_states (commentary region picker)
+CREATE TABLE IF NOT EXISTS country_states (
+    id SERIAL PRIMARY KEY,
+    country_code VARCHAR(5) NOT NULL REFERENCES supported_countries(code),
+    state_code VARCHAR(10) NOT NULL,
+    state_name VARCHAR(100) NOT NULL,
+    languages TEXT[] DEFAULT '{}',
+    sort_order INT DEFAULT 0,
+    UNIQUE(country_code, state_code)
+);
+CREATE INDEX IF NOT EXISTS idx_country_states_country ON country_states(country_code);
+
+-- ============================================================
+-- NOTIFICATION SERVICE SCHEMA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    data JSONB,
+    read BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_read_user ON notifications(user_id, read);
+
+CREATE TABLE IF NOT EXISTS push_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    token VARCHAR(500) NOT NULL,
+    platform VARCHAR(50) NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, token)
+);
+CREATE INDEX IF NOT EXISTS idx_push_tokens_user ON push_tokens(user_id);
+
+CREATE TABLE IF NOT EXISTS match_reminders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    match_id VARCHAR(100) NOT NULL,
+    reminded_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, match_id)
+);
+CREATE INDEX IF NOT EXISTS idx_match_reminders_user ON match_reminders(user_id);
+CREATE INDEX IF NOT EXISTS idx_match_reminders_pending ON match_reminders(reminded_at) WHERE reminded_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS broadcast_notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type VARCHAR(50) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    data JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_broadcast_created ON broadcast_notifications(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS broadcast_notification_reads (
+    id SERIAL PRIMARY KEY,
+    user_id UUID NOT NULL,
+    notification_id UUID NOT NULL REFERENCES broadcast_notifications(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, notification_id)
+);
+CREATE INDEX IF NOT EXISTS idx_broadcast_reads_user ON broadcast_notification_reads(user_id);
+
+-- ============================================================
+-- PREDICTION SERVICE SCHEMA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS prediction_markets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id VARCHAR(100) NOT NULL,
+    question VARCHAR(500) NOT NULL,
+    description TEXT,
+    market_type VARCHAR(50) NOT NULL,
+    status VARCHAR(50) DEFAULT 'open',
+    min_bet FLOAT NOT NULL DEFAULT 1.0,
+    max_bet_per_user FLOAT,
+    total_pool FLOAT DEFAULT 0,
+    house_pool FLOAT DEFAULT 0,
+    winning_option_id UUID,
+    created_by UUID NOT NULL,
+    resolved_by UUID,
+    auto_resolve BOOLEAN DEFAULT false,
+    resolution_rule JSONB,
+    closes_at TIMESTAMPTZ NOT NULL,
+    resolved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pred_markets_match ON prediction_markets(match_id);
+CREATE INDEX IF NOT EXISTS idx_pred_markets_status ON prediction_markets(status);
+CREATE INDEX IF NOT EXISTS idx_pred_markets_closes ON prediction_markets(closes_at);
+
+CREATE TABLE IF NOT EXISTS prediction_options (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    market_id UUID NOT NULL REFERENCES prediction_markets(id) ON DELETE CASCADE,
+    label VARCHAR(255) NOT NULL,
+    odds_multiplier FLOAT NOT NULL,
+    total_bets INT DEFAULT 0,
+    total_amount FLOAT DEFAULT 0,
+    display_order INT DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pred_options_market ON prediction_options(market_id);
+
+CREATE TABLE IF NOT EXISTS prediction_bets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    market_id UUID NOT NULL REFERENCES prediction_markets(id),
+    option_id UUID NOT NULL REFERENCES prediction_options(id),
+    user_id UUID NOT NULL,
+    amount FLOAT NOT NULL,
+    house_fee FLOAT DEFAULT 0,
+    odds_at_bet FLOAT NOT NULL,
+    potential_payout FLOAT NOT NULL,
+    status VARCHAR(50) DEFAULT 'active',
+    actual_payout FLOAT,
+    idempotency_key VARCHAR(255) UNIQUE,
+    placed_at TIMESTAMPTZ DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_pred_bets_market ON prediction_bets(market_id);
+CREATE INDEX IF NOT EXISTS idx_pred_bets_user ON prediction_bets(user_id);
+CREATE INDEX IF NOT EXISTS idx_pred_bets_status ON prediction_bets(status);
+
+CREATE TABLE IF NOT EXISTS prediction_house_pool (
+    id INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    total_fees FLOAT DEFAULT 0,
+    total_bets_count INT DEFAULT 0,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+INSERT INTO prediction_house_pool (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================
+-- MICRO-PREDICTION SERVICE SCHEMA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS micro_predictions (
+    id VARCHAR(36) PRIMARY KEY,
+    match_id VARCHAR(100) NOT NULL,
+    ball_number INT,
+    over_number INT,
+    prediction_type VARCHAR(50) NOT NULL,
+    options TEXT[],
+    correct_option VARCHAR(100),
+    status VARCHAR(50) DEFAULT 'open',
+    window_start TIMESTAMPTZ NOT NULL,
+    window_end TIMESTAMPTZ NOT NULL,
+    points_pool INT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_micro_pred_match ON micro_predictions(match_id);
+CREATE INDEX IF NOT EXISTS idx_micro_pred_status ON micro_predictions(status);
+
+CREATE TABLE IF NOT EXISTS micro_bets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    prediction_id VARCHAR(36) NOT NULL REFERENCES micro_predictions(id),
+    user_id UUID NOT NULL,
+    chosen_option VARCHAR(100) NOT NULL,
+    points_wagered INT NOT NULL,
+    streak_multiplier FLOAT DEFAULT 1.0,
+    won BOOLEAN,
+    points_won INT DEFAULT 0,
+    reaction_time_ms INT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_micro_bets_pred ON micro_bets(prediction_id);
+CREATE INDEX IF NOT EXISTS idx_micro_bets_user ON micro_bets(user_id);
+
+CREATE TABLE IF NOT EXISTS prediction_streaks (
+    user_id UUID PRIMARY KEY,
+    current_streak INT DEFAULT 0,
+    max_streak INT DEFAULT 0,
+    correct_streak INT DEFAULT 0,
+    incorrect_streak INT DEFAULT 0,
+    streak_tier VARCHAR(50) DEFAULT 'bronze',
+    multiplier FLOAT DEFAULT 1.0,
+    last_prediction_at TIMESTAMPTZ,
+    streak_started_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS streak_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    streak_type VARCHAR(50),
+    streak_count INT,
+    event_type VARCHAR(50),
+    match_id VARCHAR(100),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_streak_events_user ON streak_events(user_id);
+
+CREATE TABLE IF NOT EXISTS cricket_iq (
+    user_id UUID PRIMARY KEY,
+    overall_rating INT DEFAULT 1000,
+    batting_rating INT DEFAULT 1000,
+    bowling_rating INT DEFAULT 1000,
+    strategy_rating INT DEFAULT 1000,
+    scout_rating INT DEFAULT 1000,
+    total_predictions INT DEFAULT 0,
+    correct_predictions INT DEFAULT 0,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_cricket_iq_overall ON cricket_iq(overall_rating DESC);
+
+CREATE TABLE IF NOT EXISTS cricket_iq_history (
+    id VARCHAR(36) PRIMARY KEY,
+    user_id UUID NOT NULL,
+    category VARCHAR(50) NOT NULL,
+    old_rating INT,
+    new_rating INT,
+    delta INT,
+    reason VARCHAR(255),
+    match_id VARCHAR(100),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_cricket_iq_history_user ON cricket_iq_history(user_id);
+
+CREATE TABLE IF NOT EXISTS crowd_energy (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    match_id VARCHAR(100) NOT NULL UNIQUE,
+    energy_level FLOAT DEFAULT 0.5,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS match_reaction_stats (
+    id SERIAL PRIMARY KEY,
+    match_id VARCHAR(100) NOT NULL,
+    reaction_type VARCHAR(100) NOT NULL,
+    count INT DEFAULT 1,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(match_id, reaction_type)
+);
+
+CREATE TABLE IF NOT EXISTS match_pulse_events (
+    id VARCHAR(36) PRIMARY KEY,
+    match_id VARCHAR(100) NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    intensity INT,
+    payload JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pulse_events_match ON match_pulse_events(match_id);
+
+-- ============================================================
+-- QUEST SERVICE SCHEMA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS clans (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    tag VARCHAR(10) NOT NULL UNIQUE,
+    description TEXT,
+    badge_url VARCHAR(500),
+    region VARCHAR(50),
+    team_affiliation VARCHAR(100),
+    owner_id UUID NOT NULL,
+    max_members INT DEFAULT 50,
+    total_points INT DEFAULT 0,
+    wars_won INT DEFAULT 0,
+    wars_lost INT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_clans_owner ON clans(owner_id);
+CREATE INDEX IF NOT EXISTS idx_clans_points ON clans(total_points DESC);
+
+CREATE TABLE IF NOT EXISTS clan_members (
+    id VARCHAR(36) PRIMARY KEY,
+    clan_id VARCHAR(36) NOT NULL REFERENCES clans(id),
+    user_id UUID NOT NULL,
+    role VARCHAR(50) DEFAULT 'member',
+    points_contributed INT DEFAULT 0,
+    joined_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(clan_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_clan_members_clan ON clan_members(clan_id);
+CREATE INDEX IF NOT EXISTS idx_clan_members_user ON clan_members(user_id);
+
+CREATE TABLE IF NOT EXISTS clan_wars (
+    id VARCHAR(36) PRIMARY KEY,
+    clan_a_id VARCHAR(36) NOT NULL REFERENCES clans(id),
+    clan_b_id VARCHAR(36) NOT NULL REFERENCES clans(id),
+    match_id VARCHAR(100) NOT NULL,
+    status VARCHAR(50) DEFAULT 'active',
+    clan_a_score INT DEFAULT 0,
+    clan_b_score INT DEFAULT 0,
+    winner_clan_id VARCHAR(36) REFERENCES clans(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_clan_wars_status ON clan_wars(status);
+
+CREATE TABLE IF NOT EXISTS quest_definitions (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    quest_type VARCHAR(50) NOT NULL,
+    category VARCHAR(100),
+    target_metric VARCHAR(100) NOT NULL,
+    target_value INT NOT NULL,
+    reward_points INT DEFAULT 0,
+    reward_xp INT DEFAULT 0,
+    reward_badge_id VARCHAR(100),
+    icon VARCHAR(255),
+    difficulty VARCHAR(50),
+    is_active BOOLEAN DEFAULT true,
+    sort_order INT DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_quests_type ON quest_definitions(quest_type);
+CREATE INDEX IF NOT EXISTS idx_quests_active ON quest_definitions(is_active);
+
+CREATE TABLE IF NOT EXISTS user_quest_progress (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    quest_id VARCHAR(36) NOT NULL REFERENCES quest_definitions(id),
+    period_key VARCHAR(50) NOT NULL,
+    current_value INT DEFAULT 0,
+    target_value INT NOT NULL,
+    is_completed BOOLEAN DEFAULT false,
+    completed_at TIMESTAMPTZ,
+    reward_claimed BOOLEAN DEFAULT false,
+    claimed_at TIMESTAMPTZ,
+    UNIQUE(user_id, quest_id, period_key)
+);
+CREATE INDEX IF NOT EXISTS idx_quest_progress_user ON user_quest_progress(user_id);
+
+CREATE TABLE IF NOT EXISTS prediction_duels (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    challenger_id UUID NOT NULL,
+    defender_id UUID,
+    match_id VARCHAR(100) NOT NULL,
+    wager_points INT NOT NULL,
+    status VARCHAR(50) DEFAULT 'pending',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_duels_challenger ON prediction_duels(challenger_id);
+CREATE INDEX IF NOT EXISTS idx_duels_status ON prediction_duels(status);
+
+CREATE TABLE IF NOT EXISTS prediction_squads (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) NOT NULL,
+    invite_code VARCHAR(20) NOT NULL UNIQUE,
+    captain_id UUID NOT NULL,
+    max_members INT DEFAULT 10,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS squad_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    squad_id UUID NOT NULL REFERENCES prediction_squads(id),
+    user_id UUID NOT NULL,
+    role VARCHAR(50) DEFAULT 'member',
+    joined_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(squad_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS squad_challenges (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    challenger_squad_id UUID NOT NULL REFERENCES prediction_squads(id),
+    defender_squad_id UUID NOT NULL REFERENCES prediction_squads(id),
+    match_id VARCHAR(100) NOT NULL,
+    status VARCHAR(50) DEFAULT 'active',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS trivia_questions (
+    id VARCHAR(36) PRIMARY KEY,
+    question TEXT NOT NULL,
+    options TEXT[],
+    correct_answer VARCHAR(500),
+    difficulty VARCHAR(50),
+    used_count INT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS user_trivia_answers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    question_id VARCHAR(36) NOT NULL REFERENCES trivia_questions(id),
+    selected_option VARCHAR(500),
+    is_correct BOOLEAN,
+    points_earned INT DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS shop_items (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    cost_points INT NOT NULL,
+    is_active BOOLEAN DEFAULT true
+);
+
+CREATE TABLE IF NOT EXISTS user_purchases (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    item_id VARCHAR(36) NOT NULL REFERENCES shop_items(id),
+    cost_points INT NOT NULL,
+    expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS seasons (
+    id VARCHAR(36) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    total_tiers INT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS season_tiers (
+    id VARCHAR(36) PRIMARY KEY,
+    season_id VARCHAR(36) NOT NULL REFERENCES seasons(id),
+    tier_number INT NOT NULL,
+    name VARCHAR(100),
+    required_xp INT,
+    free_rewards JSONB,
+    premium_rewards JSONB,
+    UNIQUE(season_id, tier_number)
+);
+
+CREATE TABLE IF NOT EXISTS user_season_progress (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    season_id VARCHAR(36) NOT NULL REFERENCES seasons(id),
+    current_xp INT DEFAULT 0,
+    daily_xp_earned INT DEFAULT 0,
+    current_tier INT DEFAULT 1,
+    is_premium BOOLEAN DEFAULT false,
+    rewards_claimed BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, season_id)
+);
+
+-- ============================================================
+-- USER SERVICE SCHEMA (fanzone DB tables)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS user_badges (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    badge_id VARCHAR(100) NOT NULL,
+    badge_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    icon VARCHAR(255),
+    metadata JSONB,
+    earned_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(user_id, badge_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_badges_user ON user_badges(user_id);
