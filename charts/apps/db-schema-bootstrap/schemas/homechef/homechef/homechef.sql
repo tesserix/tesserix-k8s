@@ -216,9 +216,191 @@ FROM (VALUES
   ('cuisine', 'street-food',    'Street Food',    60),
   ('cuisine', 'fusion',         'Fusion',         61),
   ('cuisine', 'bakery',         'Bakery & Desserts', 62),
-  ('cuisine', 'healthy',        'Healthy & Diet', 63)
+  ('cuisine', 'healthy',        'Healthy & Diet', 63),
+  -- Allergies
+  ('allergy', 'peanut',         'Peanut',         1),
+  ('allergy', 'tree-nut',       'Tree Nut',       2),
+  ('allergy', 'shellfish',      'Shellfish',       3),
+  ('allergy', 'fish',           'Fish',            4),
+  ('allergy', 'dairy',          'Dairy',           5),
+  ('allergy', 'egg',            'Egg',             6),
+  ('allergy', 'sesame',         'Sesame',          7),
+  ('allergy', 'soy',            'Soy',             8),
+  ('allergy', 'gluten',         'Gluten',          9),
+  ('allergy', 'mustard',        'Mustard',         10),
+  -- Spice levels
+  ('spice_level', 'mild',       'Mild',            1),
+  ('spice_level', 'low',        'Low',             2),
+  ('spice_level', 'medium',     'Medium',          3),
+  ('spice_level', 'high',       'High',            4),
+  ('spice_level', 'very-high',  'Very High',       5),
+  -- Household size
+  ('household_size', '1',       '1 Person',        1),
+  ('household_size', '2',       '2 People',        2),
+  ('household_size', '3',       '3 People',        3),
+  ('household_size', '4',       '4 People',        4),
+  ('household_size', '5',       '5 People',        5),
+  ('household_size', '6+',      '6+ People',       6)
 ) AS v(category, value, label, sort_order)
 WHERE NOT EXISTS (
   SELECT 1 FROM preference_options po
   WHERE po.category = v.category AND po.value = v.value
 );
+
+-- ---------------------------------------------------------------------------
+-- 6. Seed exchange rates (base: INR)
+--    Model: ExchangeRate { id uuid PK, base_currency, target_currency, rate, fetched_at, created_at }
+--    Unique index: idx_rate_pair (base_currency, target_currency)
+-- ---------------------------------------------------------------------------
+INSERT INTO exchange_rates (id, base_currency, target_currency, rate, fetched_at, created_at)
+VALUES
+  (gen_random_uuid(), 'INR', 'INR', 1.0000,    NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'USD', 0.01190,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'GBP', 0.00940,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'EUR', 0.01090,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'AED', 0.04370,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'SGD', 0.01590,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'AUD', 0.01830,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'CAD', 0.01620,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'MYR', 0.05290,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'PKR', 3.31000,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'BDT', 1.30000,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'NPR', 1.60000,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'LKR', 3.60000,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'IDR', 188.00000, NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'VND', 302.00000, NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'THB', 0.41000,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'PHP', 0.67000,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'JPY', 1.78000,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'KRW', 16.30000,  NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'SAR', 0.04460,   NOW(), NOW()),
+  (gen_random_uuid(), 'INR', 'NZD', 0.01980,   NOW(), NOW())
+ON CONFLICT (base_currency, target_currency) DO UPDATE SET rate = EXCLUDED.rate, fetched_at = NOW();
+
+-- ---------------------------------------------------------------------------
+-- 7. Seed major Indian cities with delivery zones
+--    Cities need state_id FK — look up by state code
+-- ---------------------------------------------------------------------------
+-- Major cities
+INSERT INTO cities (id, state_id, name, is_major, latitude, longitude, is_active, created_at)
+SELECT gen_random_uuid(), s.id, v.name, v.is_major, v.lat, v.lng, true, NOW()
+FROM (VALUES
+  ('KA', 'Bangalore',       true,  12.9716, 77.5946),
+  ('KA', 'Mysore',          false, 12.2958, 76.6394),
+  ('MH', 'Mumbai',          true,  19.0760, 72.8777),
+  ('MH', 'Pune',            true,  18.5204, 73.8567),
+  ('MH', 'Nagpur',          false, 21.1458, 79.0882),
+  ('DL', 'New Delhi',       true,  28.6139, 77.2090),
+  ('TN', 'Chennai',         true,  13.0827, 80.2707),
+  ('TN', 'Coimbatore',      false, 11.0168, 76.9558),
+  ('KL', 'Kochi',           true,  9.9312,  76.2673),
+  ('KL', 'Thiruvananthapuram', false, 8.5241, 76.9366),
+  ('TS', 'Hyderabad',       true,  17.3850, 78.4867),
+  ('AP', 'Visakhapatnam',   false, 17.6868, 83.2185),
+  ('WB', 'Kolkata',         true,  22.5726, 88.3639),
+  ('GJ', 'Ahmedabad',       true,  23.0225, 72.5714),
+  ('GJ', 'Surat',           false, 21.1702, 72.8311),
+  ('RJ', 'Jaipur',          true,  26.9124, 75.7873),
+  ('UP', 'Lucknow',         true,  26.8467, 80.9462),
+  ('UP', 'Noida',           false, 28.5355, 77.3910),
+  ('UP', 'Varanasi',        false, 25.3176, 83.0063),
+  ('OR', 'Bhubaneswar',     true,  20.2961, 85.8245),
+  ('OR', 'Cuttack',         false, 20.4625, 85.8830),
+  ('PB', 'Chandigarh',      true,  30.7333, 76.7794),
+  ('HR', 'Gurugram',        true,  28.4595, 77.0266),
+  ('GA', 'Panaji',          false, 15.4909, 73.8278),
+  ('BR', 'Patna',           false, 25.6093, 85.1376),
+  ('JH', 'Ranchi',          false, 23.3441, 85.3096),
+  ('CT', 'Raipur',          false, 21.2514, 81.6296),
+  ('AS', 'Guwahati',        false, 26.1445, 91.7362),
+  ('CH', 'Chandigarh City', false, 30.7333, 76.7794),
+  ('MP', 'Bhopal',          false, 23.2599, 77.4126),
+  ('MP', 'Indore',          false, 22.7196, 75.8577)
+) AS v(state_code, name, is_major, lat, lng)
+JOIN states s ON s.code = v.state_code
+JOIN countries c ON c.id = s.country_id AND c.code = 'IN'
+WHERE NOT EXISTS (
+  SELECT 1 FROM cities ci WHERE ci.state_id = s.id AND ci.name = v.name
+);
+
+-- ---------------------------------------------------------------------------
+-- 8. Seed delivery zones for major Indian cities
+--    One zone per major city with standard pricing
+-- ---------------------------------------------------------------------------
+INSERT INTO delivery_zones (id, name, city, state, country, tier, currency, base_fare, per_km_rate, minimum_fare, surge_multiplier, tip_enabled, default_tip_percent, max_tip_amount, driver_payout_percent, is_active, created_at, updated_at)
+SELECT gen_random_uuid(), v.name || ' Zone', v.city, v.state, 'IN', v.tier, 'INR',
+       v.base_fare, v.per_km_rate, v.min_fare, 1.0, true, 10, 500, 100, true, NOW(), NOW()
+FROM (VALUES
+  ('Bangalore Metro',    'Bangalore',    'Karnataka',       'metro',    25, 8, 35),
+  ('Mumbai Metro',       'Mumbai',       'Maharashtra',     'metro',    30, 10, 40),
+  ('Delhi NCR',          'New Delhi',    'Delhi',           'metro',    25, 9, 35),
+  ('Chennai Metro',      'Chennai',      'Tamil Nadu',      'metro',    22, 7, 30),
+  ('Hyderabad Metro',    'Hyderabad',    'Telangana',       'metro',    22, 7, 30),
+  ('Kolkata Metro',      'Kolkata',      'West Bengal',     'metro',    20, 6, 28),
+  ('Pune City',          'Pune',         'Maharashtra',     'mid_tier', 20, 7, 28),
+  ('Ahmedabad City',     'Ahmedabad',    'Gujarat',         'mid_tier', 18, 6, 25),
+  ('Jaipur City',        'Jaipur',       'Rajasthan',       'mid_tier', 18, 6, 25),
+  ('Lucknow City',       'Lucknow',      'Uttar Pradesh',   'mid_tier', 18, 6, 25),
+  ('Kochi City',         'Kochi',        'Kerala',          'mid_tier', 20, 7, 28),
+  ('Bhubaneswar City',   'Bhubaneswar',  'Odisha',          'standard', 15, 5, 22),
+  ('Noida City',         'Noida',        'Uttar Pradesh',   'mid_tier', 22, 8, 30),
+  ('Gurugram City',      'Gurugram',     'Haryana',         'mid_tier', 22, 8, 30),
+  ('Coimbatore City',    'Coimbatore',   'Tamil Nadu',      'standard', 15, 5, 22),
+  ('Surat City',         'Surat',        'Gujarat',         'standard', 15, 5, 22),
+  ('Indore City',        'Indore',       'Madhya Pradesh',  'standard', 15, 5, 22),
+  ('Mysore City',        'Mysore',       'Karnataka',       'standard', 15, 5, 22)
+) AS v(name, city, state, tier, base_fare, per_km_rate, min_fare)
+WHERE NOT EXISTS (
+  SELECT 1 FROM delivery_zones dz WHERE dz.city = v.city AND dz.country = 'IN' AND dz.deleted_at IS NULL
+);
+
+-- ---------------------------------------------------------------------------
+-- 9. Seed platform settings (subscription plans, tax rates, system config)
+--    These are the key-value pairs that the billing engine and admin dashboard read
+-- ---------------------------------------------------------------------------
+INSERT INTO platform_settings (id, key, value, type, updated_at)
+VALUES
+  -- India chef subscription plans (INR)
+  (gen_random_uuid(), 'subscription.IN.chef.monthly_price',     '499',   'number', NOW()),
+  (gen_random_uuid(), 'subscription.IN.chef.quarterly_price',   '1299',  'number', NOW()),
+  (gen_random_uuid(), 'subscription.IN.chef.yearly_price',      '4499',  'number', NOW()),
+  (gen_random_uuid(), 'subscription.IN.chef.trial_days',        '30',    'number', NOW()),
+  (gen_random_uuid(), 'subscription.IN.chef.currency',          'INR',   'string', NOW()),
+  -- India driver subscription plans (INR)
+  (gen_random_uuid(), 'subscription.IN.driver.monthly_price',   '299',   'number', NOW()),
+  (gen_random_uuid(), 'subscription.IN.driver.quarterly_price', '799',   'number', NOW()),
+  (gen_random_uuid(), 'subscription.IN.driver.yearly_price',    '2699',  'number', NOW()),
+  (gen_random_uuid(), 'subscription.IN.driver.trial_days',      '14',    'number', NOW()),
+  (gen_random_uuid(), 'subscription.IN.driver.currency',        'INR',   'string', NOW()),
+  (gen_random_uuid(), 'subscription.IN.driver.earnings_threshold', '3000', 'number', NOW()),
+  -- Global settings
+  (gen_random_uuid(), 'subscription.grace_period_days',         '7',     'number', NOW()),
+  (gen_random_uuid(), 'platform.service_fee_percent',           '5',     'number', NOW()),
+  (gen_random_uuid(), 'platform.tax_rate.IN',                   '18',    'number', NOW()),
+  (gen_random_uuid(), 'platform.tax_rate.AE',                   '5',     'number', NOW()),
+  (gen_random_uuid(), 'platform.tax_rate.SG',                   '9',     'number', NOW()),
+  (gen_random_uuid(), 'platform.tax_rate.AU',                   '10',    'number', NOW()),
+  (gen_random_uuid(), 'platform.tax_rate.PK',                   '17',    'number', NOW()),
+  (gen_random_uuid(), 'platform.tax_rate.BD',                   '15',    'number', NOW()),
+  (gen_random_uuid(), 'platform.tax_rate.LK',                   '8',     'number', NOW()),
+  (gen_random_uuid(), 'platform.tax_rate.NP',                   '13',    'number', NOW()),
+  (gen_random_uuid(), 'platform.tax_rate.MY',                   '6',     'number', NOW()),
+  (gen_random_uuid(), 'platform.tax_rate.default',              '0',     'number', NOW()),
+  -- Featured ad pricing (INR for India)
+  (gen_random_uuid(), 'promotion.IN.chef.featured_monthly_price', '499', 'number', NOW()),
+  (gen_random_uuid(), 'promotion.default.chef.featured_monthly_price', '9.99', 'number', NOW()),
+  -- Order settings
+  (gen_random_uuid(), 'order.max_items_per_order',              '50',    'number', NOW()),
+  (gen_random_uuid(), 'order.default_prep_time_minutes',        '30',    'number', NOW()),
+  (gen_random_uuid(), 'order.cancellation_window_minutes',      '5',     'number', NOW()),
+  -- Chef settings
+  (gen_random_uuid(), 'chef.max_menu_items',                    '200',   'number', NOW()),
+  (gen_random_uuid(), 'chef.max_categories',                    '20',    'number', NOW()),
+  (gen_random_uuid(), 'chef.max_images_per_item',               '5',     'number', NOW()),
+  -- Customer settings
+  (gen_random_uuid(), 'customer.max_favorites',                 '7',     'number', NOW()),
+  (gen_random_uuid(), 'customer.max_addresses',                 '10',    'number', NOW()),
+  -- Support settings
+  (gen_random_uuid(), 'support.auto_close_days',                '7',     'number', NOW()),
+  (gen_random_uuid(), 'support.sla_response_hours',             '24',    'number', NOW())
+ON CONFLICT (key) DO NOTHING;
