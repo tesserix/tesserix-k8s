@@ -1,25 +1,29 @@
-FROM google/cloud-sdk:slim AS gcloud
+FROM google/cloud-sdk:slim
 
-FROM alpine:3.20
+# PostgreSQL 16 client
+RUN apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends \
+       wget gnupg lsb-release \
+    && echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+       > /etc/apt/sources.list.d/pgdg.list \
+    && wget -qO- https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add - \
+    && apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends postgresql-client-16 \
+    && rm -rf /var/lib/apt/lists/*
 
-# PostgreSQL 16 client tools
-RUN apk add --no-cache \
-    postgresql16-client \
-    bash \
-    curl \
-    gzip \
-    zstd \
-    python3 \
-    gcompat
+# MongoDB tools (mongodump, mongorestore, mongosh)
+RUN wget -qO- https://www.mongodb.org/static/pgp/server-7.0.asc | apt-key add - \
+    && echo "deb [ arch=amd64 ] https://repo.mongodb.org/apt/debian $(lsb_release -cs)/mongodb-org/7.0 main" \
+       > /etc/apt/sources.list.d/mongodb-org-7.0.list \
+    && apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends \
+       mongodb-database-tools \
+       mongodb-mongosh \
+    && rm -rf /var/lib/apt/lists/*
 
-# MongoDB tools (mongodump, mongorestore) + mongosh
-RUN apk add --no-cache --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
-    mongodb-tools \
-    mongosh
-
-# Copy gsutil and gcloud from the official cloud-sdk image
-COPY --from=gcloud /usr/lib/google-cloud-sdk /usr/lib/google-cloud-sdk
-RUN ln -s /usr/lib/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil \
-    && ln -s /usr/lib/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud
+# zstd for PostgreSQL backup compression
+RUN apt-get update -qq \
+    && apt-get install -y -qq --no-install-recommends zstd \
+    && rm -rf /var/lib/apt/lists/*
 
 ENTRYPOINT ["/bin/bash"]
