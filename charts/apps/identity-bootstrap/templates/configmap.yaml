@@ -114,7 +114,41 @@ data:
             log(f"  Client '{cid}': {'created' if code == 201 else f'FAILED ({code})'}")
             return "created" if code == 201 else "failed"
 
+        def ensure_auto_link_flow(self, realm):
+            """Create an 'auto-link-by-email' first broker login flow that silently
+            links accounts sharing the same verified email — no Keycloak UI shown."""
+            flow_alias = "auto-link-by-email"
+            code, flows = self.get(f"/admin/realms/{realm}/authentication/flows")
+            if code == 200 and any(f.get("alias") == flow_alias for f in flows):
+                log(f"  Auth flow '{flow_alias}': exists")
+                return flow_alias
+            # Create top-level flow
+            code, _ = self.post(f"/admin/realms/{realm}/authentication/flows", {
+                "alias": flow_alias, "providerId": "basic-flow",
+                "description": "Auto-link accounts by verified email", "topLevel": True, "builtIn": False,
+            })
+            if code not in (201, 409):
+                log(f"  Auth flow '{flow_alias}': FAILED to create ({code})")
+                return "first broker login"
+            # Add 'idp-create-user-if-unique' execution
+            self.post(f"/admin/realms/{realm}/authentication/flows/{flow_alias}/executions/execution",
+                       {"provider": "idp-create-user-if-unique"})
+            # Add 'idp-auto-link' execution (auto-links when email matches)
+            self.post(f"/admin/realms/{realm}/authentication/flows/{flow_alias}/executions/execution",
+                       {"provider": "idp-auto-link"})
+            # Set both to ALTERNATIVE requirement
+            code, execs = self.get(f"/admin/realms/{realm}/authentication/flows/{flow_alias}/executions")
+            if code == 200:
+                for ex in execs:
+                    if ex.get("requirement") != "ALTERNATIVE":
+                        ex["requirement"] = "ALTERNATIVE"
+                        self.put(f"/admin/realms/{realm}/authentication/executions/{ex['id']}", ex)
+            log(f"  Auth flow '{flow_alias}': created")
+            return flow_alias
+
         def ensure_idp(self, realm, alias, provider_id, display_name, client_id, client_secret, scope):
+            # Ensure auto-link flow exists so users never see the Keycloak "Account already exists" page
+            flow_alias = self.ensure_auto_link_flow(realm)
             code, existing = self.get(f"/admin/realms/{realm}/identity-provider/instances/{alias}")
             idp_config = {
                 "alias": alias,
@@ -123,7 +157,7 @@ data:
                 "enabled": True,
                 "trustEmail": True,
                 "storeToken": False,
-                "firstBrokerLoginFlowAlias": "first broker login",
+                "firstBrokerLoginFlowAlias": flow_alias,
                 "config": {
                     "clientId": client_id,
                     "clientSecret": client_secret,
