@@ -1141,3 +1141,69 @@ CREATE TABLE IF NOT EXISTS quiz_user_question_history (
     UNIQUE(user_id, question_id)
 );
 CREATE INDEX IF NOT EXISTS idx_quiz_hist_user ON quiz_user_question_history(user_id);
+
+-- ============================================================
+-- BOOK CRICKET SERVICE SCHEMA
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS bc_rooms (
+    id UUID PRIMARY KEY,
+    code VARCHAR(10) NOT NULL UNIQUE,
+    host_user_id UUID NOT NULL,
+    format VARCHAR(20) NOT NULL DEFAULT 'T20',
+    status VARCHAR(20) NOT NULL DEFAULT 'waiting',
+    is_vs_ai BOOLEAN DEFAULT FALSE,
+    ai_difficulty VARCHAR(20) DEFAULT 'medium',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_bc_rooms_code ON bc_rooms(code);
+CREATE INDEX IF NOT EXISTS idx_bc_rooms_status ON bc_rooms(status);
+
+CREATE TABLE IF NOT EXISTS bc_players (
+    id UUID PRIMARY KEY,
+    room_id UUID NOT NULL REFERENCES bc_rooms(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL,
+    username VARCHAR(255) NOT NULL DEFAULT '',
+    avatar_url TEXT DEFAULT '',
+    player_index INT NOT NULL DEFAULT 0,
+    is_ai BOOLEAN DEFAULT FALSE,
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bc_players_room ON bc_players(room_id);
+CREATE INDEX IF NOT EXISTS idx_bc_players_user ON bc_players(user_id);
+
+CREATE TABLE IF NOT EXISTS bc_match_results (
+    id UUID PRIMARY KEY,
+    room_id UUID NOT NULL REFERENCES bc_rooms(id) ON DELETE CASCADE,
+    winner_user_id UUID,
+    winner_idx INT,
+    result_text TEXT DEFAULT '',
+    innings1_score INT DEFAULT 0,
+    innings1_wickets INT DEFAULT 0,
+    innings1_overs FLOAT DEFAULT 0,
+    innings2_score INT DEFAULT 0,
+    innings2_wickets INT DEFAULT 0,
+    innings2_overs FLOAT DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bc_results_room ON bc_match_results(room_id);
+
+CREATE TABLE IF NOT EXISTS bc_player_results (
+    id UUID PRIMARY KEY,
+    room_id UUID NOT NULL REFERENCES bc_rooms(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL,
+    player_index INT NOT NULL,
+    team_json JSONB DEFAULT '{}',
+    points_earned FLOAT DEFAULT 0,
+    is_winner BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bc_presults_room ON bc_player_results(room_id);
+CREATE INDEX IF NOT EXISTS idx_bc_presults_user ON bc_player_results(user_id);
+
+-- ============================================================
+-- ADD cleaned_at TO matches TABLE (cleanup service)
+-- ============================================================
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS cleaned_at TIMESTAMPTZ;
