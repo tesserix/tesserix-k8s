@@ -1,0 +1,247 @@
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "mongodb-backup.fullname" . }}
+  labels:
+    {{- include "mongodb-backup.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: {{ .Values.cronJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.cronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronJob.failedJobsHistoryLimit }}
+  startingDeadlineSeconds: {{ .Values.cronJob.startingDeadlineSeconds }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.cronJob.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.cronJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "mongodb-backup.selectorLabels" . | nindent 12 }}
+          annotations:
+            # Disable Istio sidecar for backup jobs
+            sidecar.istio.io/inject: "false"
+        spec:
+          serviceAccountName: {{ include "mongodb-backup.serviceAccountName" . }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          restartPolicy: {{ .Values.cronJob.restartPolicy }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: backup
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -eo pipefail
+
+                  # Install Google Cloud SDK for gsutil
+                  echo "Installing Google Cloud SDK..."
+                  apt-get update -qq && apt-get install -y -qq apt-transport-https ca-certificates gnupg curl >/dev/null 2>&1
+                  curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+                  echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" > /etc/apt/sources.list.d/google-cloud-sdk.list
+                  apt-get update -qq && apt-get install -y -qq google-cloud-cli >/dev/null 2>&1
+                  echo "Google Cloud SDK installed"
+
+                  # Variables
+                  TIMESTAMP=$(date +%Y-%m-%dT%H-%M-%SZ)
+                  MONGO_HOST="{{ .Values.backup.database.host }}"
+                  MONGO_PORT="{{ .Values.backup.database.port }}"
+                  MONGO_USER="{{ .Values.backup.database.user }}"
+                  MONGO_AUTH_DB="{{ .Values.backup.database.authDatabase }}"
+                  GCS_BUCKET="gs://{{ .Values.backup.gcs.bucket }}/{{ .Values.backup.gcs.prefix }}"
+                  ALL_DATABASES="{{ .Values.backup.settings.allDatabases }}"
+                  AUTH_ENABLED="{{ .Values.backup.database.authEnabled }}"
+
+                  # Databases to exclude (space-separated)
+                  EXCLUDE_DBS="{{ range .Values.backup.settings.excludeDatabases }}{{ . }} {{ end }}"
+
+                  echo "========================================"
+                  echo "MongoDB Backup Job"
+                  echo "========================================"
+                  echo "Host: ${MONGO_HOST}:${MONGO_PORT}"
+                  echo "User: ${MONGO_USER}"
+                  echo "Auth Enabled: ${AUTH_ENABLED}"
+                  echo "All Databases: ${ALL_DATABASES}"
+                  echo "Timestamp: ${TIMESTAMP}"
+                  echo "GCS Bucket: ${GCS_BUCKET}"
+                  echo "Excluded DBs: ${EXCLUDE_DBS}"
+                  echo "========================================"
+
+                  # Build connection args based on auth
+                  AUTH_ARGS=""
+                  if [ "${AUTH_ENABLED}" = "true" ]; then
+                    echo ""
+                    echo "Checking credentials..."
+                    if [ -z "${MONGO_PASSWORD}" ]; then
+                      echo "ERROR: MONGO_PASSWORD is not set!"
+                      exit 1
+                    fi
+                    echo "Password is set (length: ${#MONGO_PASSWORD})"
+                    MONGO_URI="mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_AUTH_DB}"
+                    AUTH_ARGS="--username=${MONGO_USER} --password=${MONGO_PASSWORD} --authenticationDatabase=${MONGO_AUTH_DB}"
+                  else
+                    echo "No authentication configured"
+                    MONGO_URI="mongodb://${MONGO_HOST}:${MONGO_PORT}"
+                  fi
+
+                  # Test MongoDB connection
+                  echo ""
+                  echo "Testing MongoDB connection..."
+                  if ! mongosh "${MONGO_URI}" --quiet --eval "db.runCommand({ ping: 1 })" 2>&1; then
+                    echo "MongoDB connection failed!"
+                    exit 1
+                  fi
+                  echo "MongoDB connection successful"
+
+                  # Function to check if database should be excluded
+                  is_excluded() {
+                    local db="$1"
+                    for excl in ${EXCLUDE_DBS}; do
+                      if [ "$db" = "$excl" ]; then
+                        return 0
+                      fi
+                    done
+                    return 1
+                  }
+
+                  # Function to backup a single database
+                  backup_database() {
+                    local db_name="$1"
+                    local archive_file="/tmp/${db_name}-${TIMESTAMP}.archive.gz"
+                    local gcs_path="${GCS_BUCKET}/${db_name}-${TIMESTAMP}.archive.gz"
+
+                    echo ""
+                    echo "----------------------------------------"
+                    echo "Backing up database: ${db_name}"
+                    echo "----------------------------------------"
+
+                    # Create backup using mongodump
+                    if mongodump \
+                      --host="${MONGO_HOST}" \
+                      --port="${MONGO_PORT}" \
+                      ${AUTH_ARGS} \
+                      --db="${db_name}" \
+                      --archive="${archive_file}" \
+                      --gzip \
+                      {{ .Values.backup.settings.extraArgs }} 2>&1; then
+
+                      # Get file size
+                      local backup_size=$(du -h "${archive_file}" | cut -f1)
+                      echo "Backup created: ${db_name}-${TIMESTAMP}.archive.gz (${backup_size})"
+
+                      # Upload to GCS
+                      echo "Uploading to GCS..."
+                      if gsutil -q cp "${archive_file}" "${gcs_path}"; then
+                        echo "Upload successful: ${gcs_path}"
+                        SUCCESSFUL_BACKUPS=$((SUCCESSFUL_BACKUPS + 1))
+                      else
+                        echo "ERROR: Failed to upload ${db_name} backup to GCS"
+                        FAILED_BACKUPS=$((FAILED_BACKUPS + 1))
+                      fi
+
+                      # Cleanup local file
+                      rm -f "${archive_file}"
+                    else
+                      echo "ERROR: mongodump failed for database ${db_name}"
+                      FAILED_BACKUPS=$((FAILED_BACKUPS + 1))
+                    fi
+                  }
+
+                  # Initialize counters
+                  SUCCESSFUL_BACKUPS=0
+                  FAILED_BACKUPS=0
+                  TOTAL_DATABASES=0
+
+                  if [ "${ALL_DATABASES}" = "true" ]; then
+                    # Get list of all databases
+                    echo ""
+                    echo "Fetching list of databases..."
+                    DATABASES=$(mongosh "${MONGO_URI}" --quiet --eval "db.adminCommand('listDatabases').databases.map(d => d.name).join('\n')")
+
+                    echo "Found databases:"
+                    for db in ${DATABASES}; do
+                      if is_excluded "$db"; then
+                        echo "  - ${db} (excluded)"
+                      else
+                        echo "  - ${db}"
+                        TOTAL_DATABASES=$((TOTAL_DATABASES + 1))
+                      fi
+                    done
+
+                    echo ""
+                    echo "Starting backup of ${TOTAL_DATABASES} database(s)..."
+
+                    # Backup each database
+                    for db in ${DATABASES}; do
+                      if ! is_excluded "$db"; then
+                        backup_database "$db"
+                      fi
+                    done
+                  else
+                    # Backup specific databases
+                    {{- range .Values.backup.settings.databases }}
+                    TOTAL_DATABASES=$((TOTAL_DATABASES + 1))
+                    backup_database "{{ . }}"
+                    {{- end }}
+                  fi
+
+                  # Summary
+                  echo ""
+                  echo "========================================"
+                  echo "Backup Summary"
+                  echo "========================================"
+                  echo "Total databases: ${TOTAL_DATABASES}"
+                  echo "Successful: ${SUCCESSFUL_BACKUPS}"
+                  echo "Failed: ${FAILED_BACKUPS}"
+                  echo "========================================"
+
+                  # List uploaded backups
+                  echo ""
+                  echo "Backups in GCS (latest):"
+                  gsutil ls -l "${GCS_BUCKET}/*-${TIMESTAMP}.archive.gz" 2>/dev/null || echo "No backups found for this timestamp"
+
+                  if [ ${FAILED_BACKUPS} -gt 0 ]; then
+                    echo ""
+                    echo "ERROR: ${FAILED_BACKUPS} backup(s) failed!"
+                    exit 1
+                  fi
+
+                  echo ""
+                  echo "========================================"
+                  echo "All backups completed successfully!"
+                  echo "========================================"
+              env:
+                {{- if .Values.backup.database.authEnabled }}
+                - name: MONGO_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backup.database.passwordSecretName }}
+                      key: {{ .Values.backup.database.passwordSecretKey }}
+                {{- end }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 10Gi
+{{- end }}
