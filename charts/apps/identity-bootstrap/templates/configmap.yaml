@@ -93,7 +93,7 @@ data:
             log(f"  Realm '{name}': {'created' if code == 201 else f'FAILED ({code})'}")
             return "created" if code == 201 else "failed"
 
-        def ensure_client(self, realm, config):
+        def ensure_client(self, realm, config, client_secret=None):
             cid = config["clientId"]
             code, clients = self.get(f"/admin/realms/{realm}/clients?clientId={cid}")
             if code == 200 and clients:
@@ -110,6 +110,8 @@ data:
                 "redirectUris": config.get("redirectUris", []),
                 "webOrigins": config.get("webOrigins", []),
             }
+            if client_secret and not config.get("publicClient", True):
+                payload["secret"] = client_secret
             code, _ = self.post(f"/admin/realms/{realm}/clients", payload)
             log(f"  Client '{cid}': {'created' if code == 201 else f'FAILED ({code})'}")
             return "created" if code == 201 else "failed"
@@ -277,7 +279,9 @@ data:
 
             # Clients
             for client_def in target.get("clients", []):
-                result = kc.ensure_client(realm_name, client_def)
+                cid = client_def["clientId"]
+                csecret = read_secret(f"/secrets/client/{cid}-secret")
+                result = kc.ensure_client(realm_name, client_def, csecret or None)
                 stats["clients"] += 1
                 if result == "failed":
                     stats["errors"] += 1
