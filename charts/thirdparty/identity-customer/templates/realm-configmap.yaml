@@ -440,7 +440,22 @@ data:
             "backchannel.logout.revoke.offline.tokens": "false"
           },
           "defaultClientScopes": ["openid", "email", "profile", "roles"],
-          "optionalClientScopes": ["offline_access", "phone"]
+          "optionalClientScopes": ["offline_access", "phone"],
+          "protocolMappers": [
+            {
+              "name": "picture-mapper",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-attribute-mapper",
+              "config": {
+                "user.attribute": "picture",
+                "claim.name": "picture",
+                "jsonType.label": "String",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true"
+              }
+            }
+          ]
         },
         {
           "clientId": "fanzone-mobile",
@@ -467,6 +482,54 @@ data:
           },
           "defaultClientScopes": ["openid", "email", "profile", "roles", "offline_access"],
           "optionalClientScopes": []
+        }
+      ],
+      "identityProviders": [
+        {
+          "alias": "google",
+          "providerId": "google",
+          "enabled": true,
+          "trustEmail": true,
+          "firstBrokerLoginFlowAlias": "auto-link-by-email",
+          "config": {
+            "clientId": "{{ .Values.fanzoneRealm.googleClientId }}",
+            "clientSecret": "{{ .Values.fanzoneRealm.googleClientSecret }}",
+            "defaultScope": "openid email profile",
+            "syncMode": "FORCE"
+          }
+        }
+      ],
+      "identityProviderMappers": [
+        {
+          "name": "google-picture",
+          "identityProviderAlias": "google",
+          "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+          "config": {
+            "syncMode": "FORCE",
+            "claim": "picture",
+            "user.attribute": "picture"
+          }
+        }
+      ],
+      "authenticationFlows": [
+        {
+          "alias": "auto-link-by-email",
+          "description": "Auto-link accounts by verified email",
+          "providerId": "basic-flow",
+          "topLevel": true,
+          "builtIn": false,
+          "authenticationExecutions": [
+            {
+              "authenticator": "idp-create-user-if-unique",
+              "requirement": "ALTERNATIVE",
+              "priority": 0
+            },
+            {
+              "authenticator": "idp-auto-link",
+              "requirement": "ALTERNATIVE",
+              "priority": 1
+            }
+          ]
         }
       ]
     }
