@@ -1065,7 +1065,7 @@ CREATE TABLE IF NOT EXISTS quiz_tournament_questions (
     tournament_id UUID NOT NULL REFERENCES quiz_tournaments(id) ON DELETE CASCADE,
     question_id UUID NOT NULL REFERENCES quiz_questions(id),
     level INT NOT NULL,
-    question_order INT NOT NULL,
+    question_index INT NOT NULL,
     UNIQUE(tournament_id, question_id)
 );
 CREATE INDEX IF NOT EXISTS idx_quiz_tq_tournament ON quiz_tournament_questions(tournament_id);
@@ -1074,12 +1074,16 @@ CREATE TABLE IF NOT EXISTS quiz_level_progress (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tournament_id UUID NOT NULL REFERENCES quiz_tournaments(id) ON DELETE CASCADE,
     level INT NOT NULL,
-    correct_count INT DEFAULT 0,
-    wrong_count INT DEFAULT 0,
+    correct_answers INT DEFAULT 0,
+    wrong_answers INT DEFAULT 0,
     total_questions INT NOT NULL,
     max_wrong INT NOT NULL,
+    reward_points FLOAT DEFAULT 0,
+    level_fee FLOAT DEFAULT 0,
     status VARCHAR(50) DEFAULT 'in_progress',
-    points_earned FLOAT DEFAULT 0,
+    current_question_index INT DEFAULT 0,
+    question_served_at TIMESTAMPTZ,
+    total_tab_switches INT DEFAULT 0,
     started_at TIMESTAMPTZ DEFAULT NOW(),
     completed_at TIMESTAMPTZ,
     UNIQUE(tournament_id, level)
@@ -1091,9 +1095,11 @@ CREATE TABLE IF NOT EXISTS quiz_answers (
     tournament_id UUID NOT NULL REFERENCES quiz_tournaments(id) ON DELETE CASCADE,
     question_id UUID NOT NULL REFERENCES quiz_questions(id),
     level INT NOT NULL,
-    selected_option INT NOT NULL,
+    selected_index INT NOT NULL,
     is_correct BOOLEAN NOT NULL,
-    time_taken_ms INT DEFAULT 0,
+    timed_out BOOLEAN DEFAULT FALSE,
+    tab_switches INT DEFAULT 0,
+    answer_time_ms INT DEFAULT 0,
     answered_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_quiz_ans_tournament ON quiz_answers(tournament_id);
