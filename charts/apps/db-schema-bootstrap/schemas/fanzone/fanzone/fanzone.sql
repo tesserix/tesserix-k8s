@@ -194,8 +194,18 @@ INSERT INTO supported_languages (code, label, flag, region) VALUES
     ('pa', 'Punjabi', '🇮🇳', 'India')
 ON CONFLICT (code) DO NOTHING;
 
+-- Fix: commentary tables were created with UUID match_id but sports data uses string IDs (sm_69476).
+-- Drop and recreate with VARCHAR(100). Safe — these tables are empty on fresh DB.
+DROP TABLE IF EXISTS nomination_votes CASCADE;
+DROP TABLE IF EXISTS commentary_reports CASCADE;
+DROP TABLE IF EXISTS commentary_listeners CASCADE;
+DROP TABLE IF EXISTS commentator_ratings CASCADE;
+DROP TABLE IF EXISTS match_commentators CASCADE;
+DROP TABLE IF EXISTS commentary_nominations CASCADE;
+DROP TABLE IF EXISTS match_commentary_config CASCADE;
+
 CREATE TABLE IF NOT EXISTS match_commentary_config (
-    match_id UUID PRIMARY KEY,
+    match_id VARCHAR(100) PRIMARY KEY,
     nominations_open_at TIMESTAMPTZ NOT NULL,
     nominations_close_at TIMESTAMPTZ NOT NULL,
     lottery_run_at TIMESTAMPTZ,
@@ -211,7 +221,7 @@ CREATE TABLE IF NOT EXISTS match_commentary_config (
 
 CREATE TABLE IF NOT EXISTS commentary_nominations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    match_id UUID NOT NULL,
+    match_id VARCHAR(100) NOT NULL,
     user_id UUID NOT NULL,
     username VARCHAR(100) NOT NULL DEFAULT '',
     language_code VARCHAR(5) NOT NULL,
@@ -230,7 +240,7 @@ CREATE INDEX IF NOT EXISTS idx_nominations_status ON commentary_nominations(matc
 
 CREATE TABLE IF NOT EXISTS match_commentators (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    match_id UUID NOT NULL,
+    match_id VARCHAR(100) NOT NULL,
     user_id UUID NOT NULL,
     username VARCHAR(100) NOT NULL DEFAULT '',
     avatar_url TEXT DEFAULT '',
@@ -249,7 +259,7 @@ CREATE INDEX IF NOT EXISTS idx_commentators_status ON match_commentators(match_i
 
 CREATE TABLE IF NOT EXISTS commentator_ratings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    match_id UUID NOT NULL,
+    match_id VARCHAR(100) NOT NULL,
     commentator_user_id UUID NOT NULL,
     rater_user_id UUID NOT NULL,
     rating SMALLINT CHECK (rating BETWEEN 1 AND 5),
@@ -271,7 +281,7 @@ CREATE TABLE IF NOT EXISTS commentator_stats (
 
 CREATE TABLE IF NOT EXISTS commentary_listeners (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    match_id UUID NOT NULL,
+    match_id VARCHAR(100) NOT NULL,
     user_id UUID NOT NULL,
     language_code VARCHAR(5) NOT NULL,
     joined_at TIMESTAMPTZ DEFAULT now(),
@@ -285,7 +295,7 @@ CREATE INDEX IF NOT EXISTS idx_listeners_user ON commentary_listeners(user_id, m
 
 CREATE TABLE IF NOT EXISTS nomination_votes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    match_id UUID NOT NULL,
+    match_id VARCHAR(100) NOT NULL,
     nomination_id UUID NOT NULL REFERENCES commentary_nominations(id) ON DELETE CASCADE,
     language_code VARCHAR(5) NOT NULL,
     voter_user_id UUID NOT NULL,
@@ -298,7 +308,7 @@ CREATE INDEX IF NOT EXISTS idx_votes_match_lang ON nomination_votes(match_id, la
 
 CREATE TABLE IF NOT EXISTS commentary_reports (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    match_id UUID NOT NULL,
+    match_id VARCHAR(100) NOT NULL,
     commentator_user_id UUID NOT NULL,
     commentator_username VARCHAR(100) DEFAULT '',
     reporter_user_id UUID NOT NULL,
