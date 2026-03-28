@@ -444,7 +444,7 @@ buckets = [
     iam_bindings = []
   },
   # Database Backups Bucket (Australia) — PostgreSQL CronJob dumps
-  # Backups run every 12h for 6 DBs. Keep only 2 days, then delete.
+  # Backups run every 12h for 6 DBs. Keep 3 days (6 backups per DB), then delete.
   {
     name                        = "tesseract-database-backups"
     location                    = "australia-southeast1"
@@ -464,7 +464,7 @@ buckets = [
           type = "Delete"
         }
         condition = {
-          age = 2
+          age = 3
         }
       }
     ]
