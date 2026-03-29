@@ -166,6 +166,23 @@ spec:
   selector:
     serving.knative.dev/service: tenant-router-service
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfga-direct
+  namespace: {{ .Values.appNamespaces.marketplace }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    serving.knative.dev/service: openfga
+---
 # Direct ClusterIP Services for Knative backend services
 # These allow Next.js frontends to reach Go backends without
 # going through Knative's ExternalName → knative-local-gateway chain.
