@@ -1,0 +1,41 @@
+# Production overrides for gameverse-shell
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+# Knative Serving - always-on for SPA stability
+knative:
+  enabled: true
+  minScale: 1
+  maxScale: 5
+  scaleDownDelay: "60s"
+
+replicaCount: 2
+
+# Production resource allocation
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    memory: 512Mi
+
+# Production environment
+env:
+  NODE_ENV: "production"
+  AUTH_URL: "https://stayandplays.com"
+  AUTH_TRUST_HOST: "true"
+
+# Disable HPA and KEDA — Knative handles autoscaling
+autoscaling:
+  enabled: false
+
+keda:
+  enabled: false
+
+# Production GCP configuration
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-homechef-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  secretManager:
+    enabled: true
+    secretPrefix: "prod"
