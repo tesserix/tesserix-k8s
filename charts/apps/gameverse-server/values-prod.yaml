@@ -1,0 +1,52 @@
+# Production overrides for gameverse-server
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+# Knative Serving - always-on for WebSocket stability
+knative:
+  enabled: true
+  minScale: 1
+  maxScale: 10
+  scaleDownDelay: "60s"
+
+replicaCount: 2
+
+# Production resource allocation
+resources:
+  limits:
+    memory: 2Gi
+  requests:
+    memory: 512Mi
+
+# Production environment
+env:
+  LOG_LEVEL: "warn"
+
+# Disable HPA and KEDA — Knative handles autoscaling
+autoscaling:
+  enabled: false
+
+keda:
+  enabled: false
+
+# Production GCP configuration
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-homechef-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  secretManager:
+    enabled: true
+    secretPrefix: "prod"
+
+# Production database
+database:
+  host: "postgresql.postgresql-gameverse.svc.cluster.local"
+  port: "5432"
+  user: "gameverse"
+  name: "gameverse_db"
+  sslmode: "require"
+
+# Production Redis
+redis:
+  host: "redis.redis-gameverse.svc.cluster.local"
+  port: "6379"

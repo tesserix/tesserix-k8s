@@ -1,0 +1,53 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gameverse-shell
+  namespace: argocd
+  annotations:
+    kargo.akuity.io/authorized-stage: gameverse--prod:gameverse-shell-prod
+  labels:
+    app.kubernetes.io/part-of: gameverse-platform
+    app.kubernetes.io/component: frontend
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: gameverse
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/gameverse-shell
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-prod.yaml
+      parameters:
+        - name: image.tag
+          value: "latest"
+        - name: "podAnnotations.client\\.knative\\.dev/updateTimestamp"
+          value: "2026-03-27T00:00:00Z"
+        - name: ingress.hosts[0].host
+          value: stayandplays.com
+        - name: env.NEXT_PUBLIC_WS_URL
+          value: wss://stayandplays.com/ws
+        - name: env.NEXT_PUBLIC_API_URL
+          value: https://stayandplays.com
+        - name: env.AUTH_URL
+          value: https://stayandplays.com
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gameverse
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
