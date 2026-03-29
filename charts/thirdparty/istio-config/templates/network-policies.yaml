@@ -256,6 +256,66 @@ spec:
 {{- end }}
 
 # =============================================================================
+# GameVerse Namespace Policies
+# Allow from ingress, global, monitoring, knative-serving
+# =============================================================================
+{{- if .Values.appNamespaces.gameverse }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gameverse-ingress
+  namespace: {{ .Values.appNamespaces.gameverse }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from Istio ingress gateway
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+    # Allow internal gameverse traffic
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.appNamespaces.gameverse }}
+    # Allow from global namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.appNamespaces.global }}
+    # Allow from monitoring
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    # Allow from istio-system
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+    # Allow from knative-serving (activator probes and routing)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: knative-serving
+    # Allow DNS (both UDP and TCP)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}
+
+# =============================================================================
 # Database Namespace Policies (STRICT MULTI-TENANT ISOLATION)
 # Each product can ONLY access its own database namespace
 # Cross-product access is DENIED
