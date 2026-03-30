@@ -10,7 +10,7 @@ spec:
   type: ClusterIP
   ports:
     - name: http
-      port: {{ .Values.port }}
+      port: {{ .Values.directServicePort | default .Values.port }}
       protocol: TCP
       targetPort: {{ .Values.port }}
   selector:
