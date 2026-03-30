@@ -1,0 +1,17 @@
+{{- if .Values.knative.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "feature-flags-service.fullname" . }}-direct
+  labels:
+    {{- include "feature-flags-service.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    serving.knative.dev/service: {{ include "feature-flags-service.fullname" . }}
+{{- end }}
