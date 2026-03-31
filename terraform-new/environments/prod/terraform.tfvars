@@ -208,6 +208,47 @@ node_pools = [
     }
     tags   = ["prod", "tesseract", "optimized", "spot"]
     taints = []
+  },
+  # -------------------------------------------------------------------------
+  # GPU Node Pool — T4 Spot for AI inference (vLLM + Llama 3.1 8B)
+  # Cost: ~$80-100/mo when active (Spot), $0 when idle (scales to 0)
+  # -------------------------------------------------------------------------
+  {
+    name                        = "gpu-t4-spot"
+    machine_type                = "n1-standard-8"  # 8 vCPU, 30GB RAM — required for T4 GPU attachment
+    disk_size_gb                = 100
+    disk_type                   = "pd-standard"
+    image_type                  = "COS_CONTAINERD"
+    spot                        = true
+    initial_node_count          = 0                # Start with 0 — autoscaler provisions on demand
+    min_count                   = 0
+    max_count                   = 0
+    total_min_count             = 0                # Scale to zero when no GPU pods pending
+    total_max_count             = 2                # Max 2 T4 GPU nodes
+    location_policy             = "ANY"            # Best Spot availability across zones
+    max_pods_per_node           = 32               # GPU nodes run few large pods
+    auto_repair                 = true
+    auto_upgrade                = true
+    max_surge                   = 1
+    max_unavailable             = 0
+    enable_secure_boot          = false            # GPU driver loading can conflict with secure boot
+    enable_integrity_monitoring = true
+    labels = {
+      workload    = "gpu"
+      accelerator = "t4"
+      environment = "prod"
+      spot        = "true"
+    }
+    tags   = ["prod", "gpu", "t4", "spot"]
+    # Note: GKE auto-adds nvidia.com/gpu=present:NoSchedule taint when accelerators are configured
+    taints = []
+    accelerators = [
+      {
+        type               = "nvidia-tesla-t4"
+        count              = 1
+        gpu_driver_version = "LATEST"
+      }
+    ]
   }
 ]
 

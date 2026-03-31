@@ -1,0 +1,149 @@
+# vLLM Inference Server - Dev defaults
+# Serves DeepSeek-R1 8B (distilled) on T4 GPU via OpenAI-compatible API
+# DeepSeek-R1 excels at step-by-step financial reasoning — ideal for stock analysis
+
+replicaCount: 1
+
+image:
+  repository: vllm/vllm-openai
+  pullPolicy: IfNotPresent
+  tag: "v0.8.0"
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+# vLLM model configuration
+vllm:
+  model: deepseek-ai/DeepSeek-R1-Distill-Llama-8B
+  maxModelLen: 8192
+  gpuMemoryUtilization: "0.90"
+  dtype: half  # T4 does not support bfloat16
+  tensorParallelSize: 1
+  # Secret containing the API key for vLLM endpoint auth
+  apiKey:
+    secretName: vllm-api-key
+    key: API_KEY
+
+# HuggingFace token for gated model downloads
+huggingface:
+  tokenSecretName: vllm-hf-token
+  tokenKey: HF_TOKEN
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+# Pod annotations - Istio sidecar and Prometheus scraping
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8000"
+  prometheus.io/path: "/metrics"
+
+podLabels: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+# Resource requests/limits - dev defaults (GPU node provides resources)
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: 16Gi
+  requests:
+    nvidia.com/gpu: 1
+    memory: 8Gi
+    cpu: 4
+
+# GPU node scheduling
+nodeSelector:
+  workload: gpu
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+affinity: {}
+
+# Deployment strategy - Recreate because GPU cannot do rolling updates
+strategy:
+  type: Recreate
+
+# Startup probe - vLLM model loading can take up to 10 minutes
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 60  # 60 x 10s = 10 minutes max startup
+
+# Liveness probe
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: http
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Readiness probe
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Persistent volume for HuggingFace model cache
+persistence:
+  enabled: true
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 30Gi
+  mountPath: /root/.cache/huggingface
+
+# Shared memory for vLLM (uses /dev/shm)
+sharedMemory:
+  size: 2Gi
+
+# Istio authorization policy
+istioAuth:
+  enabled: true
+  allowedNamespaces:
+    - stockpilot
+
+# Kubernetes network policy
+networkPolicy:
+  enabled: true
+  allowedNamespaces:
+    - stockpilot
+
+# GCP Secret Manager configuration
+gcp:
+  projectId: ""
+  namespace: "ai-inference"
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    enabled: false
+    secretPrefix: "dev"
+    secretStore: gcp-secret-store

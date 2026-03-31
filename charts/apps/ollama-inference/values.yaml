@@ -1,0 +1,85 @@
+# Ollama Inference Server - Qwen 3 8B for tool-calling agents
+# Runs on CPU nodes (no GPU required). Slower but $0 extra cost.
+
+replicaCount: 1
+
+image:
+  repository: ollama/ollama
+  pullPolicy: IfNotPresent
+  tag: "0.6"
+
+service:
+  type: ClusterIP
+  port: 11434
+  targetPort: 11434
+
+# Model to pull and serve on startup
+ollama:
+  model: "qwen3:8b"
+  # API key for bearer token auth (Ollama doesn't support native auth,
+  # so we use an nginx sidecar or skip auth for cluster-internal traffic)
+  # Istio mTLS + AuthorizationPolicy handles security instead.
+
+resources:
+  requests:
+    cpu: "4"
+    memory: 10Gi
+  limits:
+    cpu: "6"
+    memory: 12Gi
+
+# Model cache PVC — avoids re-downloading on restart
+persistence:
+  enabled: true
+  size: 20Gi
+  mountPath: /root/.ollama
+  storageClass: ""
+
+# Startup probe — model download + loading can take 5-10 min on first run
+startupProbe:
+  httpGet:
+    path: /api/tags
+    port: 11434
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 60
+
+livenessProbe:
+  httpGet:
+    path: /api/tags
+    port: 11434
+  initialDelaySeconds: 10
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/tags
+    port: 11434
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+
+# Run on regular CPU nodes (NOT GPU nodes)
+nodeSelector: {}
+tolerations: []
+
+# Istio authorization
+istioAuth:
+  enabled: true
+  allowedNamespaces:
+    - stockpilot
+
+# Network policy
+networkPolicy:
+  enabled: true
+  allowedNamespaces:
+    - stockpilot
