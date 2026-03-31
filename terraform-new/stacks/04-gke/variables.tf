@@ -264,12 +264,6 @@ variable "node_pools" {
       value  = string
       effect = string
     })), [])
-    # GPU accelerator config (optional — only for GPU node pools)
-    accelerators = optional(list(object({
-      type               = string  # e.g., "nvidia-tesla-t4", "nvidia-l4"
-      count              = number  # GPUs per node
-      gpu_driver_version = optional(string, "LATEST")
-    })), [])
   }))
   default = [
     {

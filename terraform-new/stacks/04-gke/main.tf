@@ -245,17 +245,6 @@ resource "google_container_node_pool" "pools" {
       }
     }
 
-    # GPU accelerators (optional — only for GPU node pools like T4, L4, A100)
-    dynamic "guest_accelerator" {
-      for_each = each.value.accelerators
-      content {
-        type               = guest_accelerator.value.type
-        count              = guest_accelerator.value.count
-        gpu_driver_installation_config {
-          gpu_driver_version = guest_accelerator.value.gpu_driver_version
-        }
-      }
-    }
   }
 
   lifecycle {
