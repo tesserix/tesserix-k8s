@@ -1,6 +1,8 @@
 {{- /*
-ClusterIssuer for custom domain certificates using Let's Encrypt HTTP-01 challenge
-This issuer works with the custom domain gateway for automatic certificate issuance.
+ClusterIssuer for custom domain certificates using DNS-01 with CNAME delegation.
+Customers add: _acme-challenge.<domain> CNAME _acme-challenge.<domain>.acme.mark8ly.com
+cert-manager follows the CNAME chain to our Cloudflare zone and solves the challenge.
+This works without the customer pointing their domain to our infrastructure first.
 */ -}}
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -12,18 +14,20 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
 spec:
   acme:
-    # Production Let's Encrypt server
     server: https://acme-v02.api.letsencrypt.org/directory
     email: {{ .Values.certManager.email | default "admin@tesserix.app" }}
     privateKeySecretRef:
       name: letsencrypt-custom-domain-account-key
     solvers:
-      # HTTP-01 challenge solver for custom domains
-      # Works with Istio by creating temporary VirtualService for challenges
-      - http01:
-          ingress:
-            class: istio
-            serviceType: ClusterIP
+      # DNS-01 with CNAME delegation — works for any custom domain
+      # Customer adds _acme-challenge CNAME pointing to our zone
+      # cert-manager follows the CNAME and creates TXT record via Cloudflare API
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token
+          cnameStrategy: Follow
 ---
 {{- /*
 Self-Signed Issuer for fallback certificate
