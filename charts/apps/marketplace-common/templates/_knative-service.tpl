@@ -16,8 +16,8 @@ spec:
         autoscaling.knative.dev/class: kpa.autoscaling.knative.dev
         autoscaling.knative.dev/metric: concurrency
         autoscaling.knative.dev/target: {{ .Values.knative.concurrencyTarget | quote }}
-        autoscaling.knative.dev/minScale: {{ .Values.knative.minScale | quote }}
-        autoscaling.knative.dev/maxScale: {{ .Values.knative.maxScale | quote }}
+        autoscaling.knative.dev/min-scale: {{ .Values.knative.minScale | quote }}
+        autoscaling.knative.dev/max-scale: {{ .Values.knative.maxScale | quote }}
         autoscaling.knative.dev/scale-to-zero-pod-retention-period: {{ .Values.knative.scaleToZeroDelay | default "0s" | quote }}
         autoscaling.knative.dev/window: {{ .Values.knative.stableWindow | default "60s" | quote }}
         autoscaling.knative.dev/initial-scale: {{ .Values.knative.initialScale | default "1" | quote }}
