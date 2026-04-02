@@ -20,8 +20,8 @@ spec:
       labels:
         {{- include "opencost.selectorLabels" . | nindent 8 }}
       annotations:
-        # Exclude Prometheus scrape port from Istio proxy
         traffic.sidecar.istio.io/excludeInboundPorts: "9003"
+        traffic.sidecar.istio.io/excludeOutboundIPRanges: "10.30.0.1/32"
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       securityContext:
@@ -104,7 +104,12 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            - name: var-www
+              mountPath: /var/www
 
       volumes:
         - name: tmp
+          emptyDir: {}
+        - name: var-www
           emptyDir: {}
