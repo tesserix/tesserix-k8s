@@ -1,0 +1,91 @@
+# OpenCost + OAuth2 Proxy configuration
+# Dev defaults — override with values-prod.yaml for production
+
+namespace: opencost
+
+# OpenCost configuration
+opencost:
+  image:
+    repository: ghcr.io/opencost/opencost
+    tag: "1.113.0"
+    pullPolicy: IfNotPresent
+  ui:
+    image:
+      repository: ghcr.io/opencost/opencost-ui
+      tag: "1.113.0"
+      pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    opencost:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+    ui:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 64Mi
+  prometheus:
+    # Internal Prometheus server URL
+    serverEndpoint: http://prometheus-server.monitoring.svc.cluster.local
+  # GCP billing integration
+  cloudCost:
+    enabled: false
+    # GCP billing export BigQuery table (set in prod if billing export is configured)
+    # bigQueryTable: "tesseracthub-480811.billing_export.gcp_billing_export_v1"
+
+# OAuth2 Proxy configuration (Google SSO)
+oauth2Proxy:
+  image:
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    tag: "v7.7.1"
+    pullPolicy: IfNotPresent
+  replicas: 1
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+  # Google OAuth2 provider
+  provider: google
+  # Restrict to specific email domains (empty = allow all Google accounts)
+  emailDomains:
+    - "*"
+  # Allowed emails (leave empty to allow all from emailDomains)
+  allowedEmails: []
+  # Redirect URL (must match Google OAuth2 app redirect URI)
+  redirectUrl: https://costestimator.tesserix.app/oauth2/callback
+  # Upstream (OpenCost UI)
+  upstream: http://localhost:9090
+  # Cookie settings
+  cookie:
+    name: _opencost_oauth2
+    secure: true
+    expire: 168h
+    refresh: 1h
+
+# External Secrets (GCP Secret Manager)
+externalSecret:
+  enabled: true
+  secretStore: gcp-secret-store
+  refreshInterval: 1h
+  secrets:
+    googleClientId: dev-opencost-google-client-id
+    googleClientSecret: dev-opencost-google-client-secret
+    cookieSecret: dev-opencost-cookie-secret
+
+# Istio VirtualService
+virtualService:
+  enabled: true
+  host: costestimator.tesserix.app
+  gateway: istio-ingress/tesseract-gateway
+
+# Service Account
+serviceAccount:
+  create: true
+  name: opencost
+  annotations: {}
