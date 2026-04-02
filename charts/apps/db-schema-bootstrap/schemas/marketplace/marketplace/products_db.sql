@@ -372,3 +372,18 @@ ALTER TABLE ONLY public.product_variants
 --
 
 
+
+-- SEO and OpenGraph columns (added for admin product creation form)
+ALTER TABLE products ADD COLUMN IF NOT EXISTS seo_title varchar(255);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS seo_description text;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS seo_keywords text;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS meta_title varchar(255);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS meta_description text;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS og_image varchar(500);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS og_title varchar(255);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS og_description text;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS canonical_url varchar(500);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS robots varchar(100);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS structured_data jsonb;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS focus_keyword varchar(255);
+ALTER TABLE products ADD COLUMN IF NOT EXISTS seo_score integer DEFAULT 0;
