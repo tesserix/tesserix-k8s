@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "opencost.labels" . | nindent 4 }}
+    app.kubernetes.io/component: auth
+spec:
+  replicas: {{ .Values.oauth2Proxy.replicas }}
+  selector:
+    matchLabels:
+      {{- include "oauth2-proxy.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "oauth2-proxy.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+      containers:
+        - name: oauth2-proxy
+          image: "{{ .Values.oauth2Proxy.image.repository }}:{{ .Values.oauth2Proxy.image.tag }}"
+          imagePullPolicy: {{ .Values.oauth2Proxy.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 4180
+              protocol: TCP
+          args:
+            - --provider={{ .Values.oauth2Proxy.provider }}
+            - --http-address=0.0.0.0:4180
+            - --upstream={{ .Values.oauth2Proxy.upstream }}
+            - --redirect-url={{ .Values.oauth2Proxy.redirectUrl }}
+            - --cookie-name={{ .Values.oauth2Proxy.cookie.name }}
+            - --cookie-secure={{ .Values.oauth2Proxy.cookie.secure }}
+            - --cookie-expire={{ .Values.oauth2Proxy.cookie.expire }}
+            - --cookie-refresh={{ .Values.oauth2Proxy.cookie.refresh }}
+            - --cookie-samesite=lax
+            - --reverse-proxy=true
+            - --set-xauthrequest=true
+            - --skip-provider-button=true
+            {{- range .Values.oauth2Proxy.emailDomains }}
+            - --email-domain={{ . }}
+            {{- end }}
+            {{- range .Values.oauth2Proxy.allowedEmails }}
+            - --authenticated-emails-file=/etc/oauth2-proxy/authenticated-emails.txt
+            {{- end }}
+          env:
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: opencost-oauth2-secrets
+                  key: client-id
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: opencost-oauth2-secrets
+                  key: client-secret
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: opencost-oauth2-secrets
+                  key: cookie-secret
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.oauth2Proxy.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.oauth2Proxy.allowedEmails }}
+            - name: authenticated-emails
+              mountPath: /etc/oauth2-proxy
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.oauth2Proxy.allowedEmails }}
+        - name: authenticated-emails
+          configMap:
+            name: oauth2-proxy-emails
+        {{- end }}
+---
+{{- if .Values.oauth2Proxy.allowedEmails }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: oauth2-proxy-emails
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "opencost.labels" . | nindent 4 }}
+data:
+  authenticated-emails.txt: |
+    {{- range .Values.oauth2Proxy.allowedEmails }}
+    {{ . }}
+    {{- end }}
+{{- end }}

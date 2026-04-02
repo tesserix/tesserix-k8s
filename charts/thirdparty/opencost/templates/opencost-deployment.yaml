@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opencost
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "opencost.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.opencost.replicas }}
+  selector:
+    matchLabels:
+      {{- include "opencost.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "opencost.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Exclude Prometheus scrape port from Istio proxy
+        traffic.sidecar.istio.io/excludeInboundPorts: "9003"
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        # OpenCost API server
+        - name: opencost
+          image: "{{ .Values.opencost.image.repository }}:{{ .Values.opencost.image.tag }}"
+          imagePullPolicy: {{ .Values.opencost.image.pullPolicy }}
+          ports:
+            - name: api
+              containerPort: 9003
+              protocol: TCP
+          env:
+            - name: PROMETHEUS_SERVER_ENDPOINT
+              value: {{ .Values.opencost.prometheus.serverEndpoint | quote }}
+            - name: CLOUD_PROVIDER_API_KEY
+              value: ""
+            - name: CLUSTER_ID
+              value: "tesseract-prod-in-gke"
+            {{- if .Values.opencost.cloudCost.enabled }}
+            - name: CLOUD_COST_ENABLED
+              value: "true"
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: api
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.opencost.resources.opencost | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+        # OpenCost UI
+        - name: opencost-ui
+          image: "{{ .Values.opencost.ui.image.repository }}:{{ .Values.opencost.ui.image.tag }}"
+          imagePullPolicy: {{ .Values.opencost.ui.image.pullPolicy }}
+          ports:
+            - name: ui
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: API_PORT
+              value: "9003"
+            - name: UI_PORT
+              value: "9090"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: ui
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: ui
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.opencost.resources.ui | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+
+      volumes:
+        - name: tmp
+          emptyDir: {}

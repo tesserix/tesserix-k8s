@@ -1,0 +1,25 @@
+{{- if .Values.virtualService.enabled }}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: opencost-vs
+  namespace: istio-ingress
+  labels:
+    {{- include "opencost.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.virtualService.host | quote }}
+  gateways:
+    - {{ .Values.virtualService.gateway }}
+  http:
+    # Route all traffic through OAuth2 Proxy (handles auth + proxies to OpenCost UI)
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: oauth2-proxy.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: 4180
+      timeout: 30s
+{{- end }}
