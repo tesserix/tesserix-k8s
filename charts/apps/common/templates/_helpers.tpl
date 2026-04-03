@@ -76,7 +76,7 @@ proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
 {{- if .Values.istio.excludeOutboundPorts }}
 traffic.sidecar.istio.io/excludeOutboundPorts: {{ .Values.istio.excludeOutboundPorts | quote }}
 {{- else }}
-traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432,6379"
+traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432,6379,8080"
 {{- end }}
 {{- with .Values.podAnnotations }}
 {{ toYaml . }}
