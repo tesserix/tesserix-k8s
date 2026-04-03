@@ -30,13 +30,16 @@ spec:
       securityContext:
         fsGroup: 1000
       containers:
-        # Kubecost Cost Model (backend)
+        # Kubecost Cost Model (backend + web UI on 9003 and 9090)
         - name: cost-model
           image: "{{ .Values.kubecost.costModel.image.repository }}:{{ .Values.kubecost.costModel.image.tag }}"
           imagePullPolicy: {{ .Values.kubecost.costModel.image.pullPolicy }}
           ports:
             - name: api
               containerPort: 9003
+              protocol: TCP
+            - name: web
+              containerPort: 9090
               protocol: TCP
           env:
             - name: PROMETHEUS_SERVER_ENDPOINT
@@ -74,25 +77,22 @@ spec:
             - name: configs
               mountPath: /var/configs
 
-        # Kubecost Frontend
+        # Kubecost Frontend (nginx reverse proxy to cost-model)
         - name: frontend
           image: "{{ .Values.kubecost.frontend.image.repository }}:{{ .Values.kubecost.frontend.image.tag }}"
           imagePullPolicy: {{ .Values.kubecost.frontend.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: 9090
+              containerPort: 80
               protocol: TCP
-          env:
-            - name: API_PORT
-              value: "9003"
-            - name: BASE_URL
-              value: "/kubecost"
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /
               port: http
             initialDelaySeconds: 10
             periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 10
           resources:
             {{- toYaml .Values.kubecost.frontend.resources | nindent 12 }}
           volumeMounts:
