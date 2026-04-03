@@ -42,9 +42,13 @@ spec:
             - name: PROMETHEUS_SERVER_ENDPOINT
               value: {{ .Values.opencost.prometheus.serverEndpoint | quote }}
             - name: CLOUD_PROVIDER_API_KEY
-              value: ""
+              value: "REDACTED_GCP_API_KEY"
             - name: CLUSTER_ID
               value: "tesseract-prod-in-gke"
+            - name: CLOUD_PROVIDER
+              value: "GCP"
+            - name: GCP_PROJECT_ID
+              value: "tesseracthub-480811"
             {{- if .Values.opencost.cloudCost.enabled }}
             - name: CLOUD_COST_ENABLED
               value: "true"
@@ -107,9 +111,17 @@ spec:
           volumeMounts:
             - name: var-www
               mountPath: /var/www
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+            - name: nginx-tmp
+              mountPath: /tmp
 
       volumes:
         - name: tmp
           emptyDir: {}
         - name: var-www
+          emptyDir: {}
+        - name: nginx-conf
+          emptyDir: {}
+        - name: nginx-tmp
           emptyDir: {}
