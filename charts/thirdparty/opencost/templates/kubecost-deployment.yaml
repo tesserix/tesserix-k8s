@@ -21,6 +21,24 @@ data:
         add_header Cache-Control "max-age=300";
         listen 9090;
 
+        # Stub endpoints for Kubecost frontend license/config checks
+        location = /model/getProductKey {
+            default_type application/json;
+            return 200 '{"success":true,"productKey":{"key":"free-tier","plan":"free"}}';
+        }
+        location = /model/getConfigs {
+            proxy_pass http://model/getConfigs;
+            proxy_redirect off;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+        }
+        location = /model/getClusterInfo {
+            proxy_pass http://model/clusterInfo;
+            proxy_redirect off;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+        }
+
         location /api/ {
             proxy_pass http://api/;
             proxy_redirect off;
