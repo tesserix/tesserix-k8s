@@ -21,13 +21,10 @@ spec:
         {{- include "opencost.selectorLabels" . | nindent 8 }}
       annotations:
         traffic.sidecar.istio.io/excludeInboundPorts: "9003"
-        traffic.sidecar.istio.io/excludeOutboundIPRanges: "10.30.0.1/32"
+        traffic.sidecar.istio.io/excludeOutboundIPRanges: "10.30.0.1/32,10.30.6.245/32"
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
         fsGroup: 1000
       containers:
         # OpenCost API server
@@ -72,6 +69,9 @@ spec:
           resources:
             {{- toYaml .Values.opencost.resources.opencost | nindent 12 }}
           securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             capabilities:
@@ -114,17 +114,21 @@ spec:
           volumeMounts:
             - name: var-www
               mountPath: /var/www
-            - name: nginx-conf
-              mountPath: /etc/nginx/conf.d
             - name: nginx-tmp
               mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
 
       volumes:
         - name: tmp
           emptyDir: {}
         - name: var-www
           emptyDir: {}
-        - name: nginx-conf
-          emptyDir: {}
         - name: nginx-tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
           emptyDir: {}
