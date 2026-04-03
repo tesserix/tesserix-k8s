@@ -95,12 +95,22 @@ resources:
 # =============================================================================
 # Health Probes
 # =============================================================================
+# Startup probe gates liveness/readiness — gives Next.js + Istio sidecar time to boot
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /api/health
+    port: http
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 12   # 12 × 5s = 60s max startup time
+
 livenessProbe:
   enabled: true
   httpGet:
     path: /api/health
     port: http
-  initialDelaySeconds: 10
+  initialDelaySeconds: 0  # startup probe handles the delay
   periodSeconds: 30
   timeoutSeconds: 3
   failureThreshold: 3
@@ -110,7 +120,7 @@ readinessProbe:
   httpGet:
     path: /api/health
     port: http
-  initialDelaySeconds: 5
+  initialDelaySeconds: 0  # startup probe handles the delay
   periodSeconds: 10
   timeoutSeconds: 3
   failureThreshold: 3
