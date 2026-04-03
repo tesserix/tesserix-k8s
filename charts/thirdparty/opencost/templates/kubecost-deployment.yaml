@@ -148,23 +148,12 @@ spec:
           volumeMounts:
             - name: nginx-conf
               mountPath: /etc/nginx/conf.d
-            - name: var-www
-              mountPath: /var/www
             - name: nginx-tmp
               mountPath: /tmp
             - name: nginx-cache
               mountPath: /var/cache/nginx
             - name: nginx-run
               mountPath: /var/run
-
-      initContainers:
-        # Copy static frontend assets to shared volume before nginx starts
-        - name: frontend-assets
-          image: "{{ .Values.kubecost.frontend.image.repository }}:{{ .Values.kubecost.frontend.image.tag }}"
-          command: ["sh", "-c", "cp -r /var/www/* /mnt/www/ 2>/dev/null; cp -r /opt/ui/dist/* /mnt/www/ 2>/dev/null; ls /mnt/www/ || true"]
-          volumeMounts:
-            - name: var-www
-              mountPath: /mnt/www
 
       volumes:
         - name: tmp
@@ -174,8 +163,6 @@ spec:
         - name: nginx-conf
           configMap:
             name: kubecost-nginx-conf
-        - name: var-www
-          emptyDir: {}
         - name: nginx-tmp
           emptyDir: {}
         - name: nginx-cache
