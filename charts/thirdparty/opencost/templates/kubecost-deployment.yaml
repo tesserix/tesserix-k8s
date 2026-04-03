@@ -1,4 +1,63 @@
 {{- if .Values.kubecost.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubecost-nginx-conf
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "opencost.labels" . | nindent 4 }}
+data:
+  nginx.conf: |
+    upstream api {
+        server localhost:9003;
+    }
+    upstream model {
+        server localhost:9003;
+    }
+    server {
+        server_name _;
+        root /var/www;
+        index index.html;
+        add_header Cache-Control "max-age=300";
+        listen 9090;
+
+        location /api/ {
+            proxy_pass http://api/;
+            proxy_redirect off;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_set_header  X-Real-IP  $remote_addr;
+            proxy_set_header  X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+        location /model/ {
+            proxy_pass http://model/;
+            proxy_redirect off;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+        }
+        location /allocation {
+            proxy_pass http://model/allocation;
+            proxy_redirect off;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+        }
+        location /assets {
+            proxy_pass http://model/assets;
+            proxy_redirect off;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+        }
+        location /savings {
+            proxy_pass http://api/savings;
+            proxy_redirect off;
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+        }
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,13 +89,13 @@ spec:
       securityContext:
         fsGroup: 1000
       containers:
-        # Kubecost Cost Analyzer — combined frontend + backend
-        - name: cost-analyzer
-          image: "{{ .Values.kubecost.image.repository }}:{{ .Values.kubecost.image.tag }}"
-          imagePullPolicy: {{ .Values.kubecost.image.pullPolicy }}
+        # Kubecost Cost Model (API backend on port 9003)
+        - name: cost-model
+          image: "{{ .Values.kubecost.costModel.image.repository }}:{{ .Values.kubecost.costModel.image.tag }}"
+          imagePullPolicy: IfNotPresent
           ports:
-            - name: http
-              containerPort: 9090
+            - name: api
+              containerPort: 9003
               protocol: TCP
           env:
             - name: PROMETHEUS_SERVER_ENDPOINT
@@ -52,33 +111,75 @@ spec:
               value: "GCP"
             - name: KUBECOST_NAMESPACE
               value: {{ .Values.namespace | quote }}
-            - name: RELEASE_NAME
-              value: "kubecost"
-            - name: KUBECOST_TOKEN
-              value: ""
+            - name: CONFIG_PATH
+              value: "/var/configs/"
           startupProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: api
             initialDelaySeconds: 30
             periodSeconds: 15
             failureThreshold: 40
-          readinessProbe:
-            httpGet:
-              path: /healthz
-              port: http
-            initialDelaySeconds: 10
-            periodSeconds: 10
           resources:
-            {{- toYaml .Values.kubecost.resources | nindent 12 }}
+            {{- toYaml .Values.kubecost.costModel.resources | nindent 12 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
             - name: configs
               mountPath: /var/configs
+
+        # Kubecost Frontend (nginx serves UI on port 9090, proxies API to cost-model)
+        - name: frontend
+          image: "{{ .Values.kubecost.frontend.image.repository }}:{{ .Values.kubecost.frontend.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9090
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 20
+          resources:
+            {{- toYaml .Values.kubecost.frontend.resources | nindent 12 }}
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d
+            - name: var-www
+              mountPath: /var/www
+            - name: nginx-tmp
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+
+      initContainers:
+        # Copy static frontend assets to shared volume before nginx starts
+        - name: frontend-assets
+          image: "{{ .Values.kubecost.frontend.image.repository }}:{{ .Values.kubecost.frontend.image.tag }}"
+          command: ["sh", "-c", "cp -r /var/www/* /mnt/www/ 2>/dev/null; cp -r /opt/ui/dist/* /mnt/www/ 2>/dev/null; ls /mnt/www/ || true"]
+          volumeMounts:
+            - name: var-www
+              mountPath: /mnt/www
+
       volumes:
         - name: tmp
           emptyDir: {}
         - name: configs
+          emptyDir: {}
+        - name: nginx-conf
+          configMap:
+            name: kubecost-nginx-conf
+        - name: var-www
+          emptyDir: {}
+        - name: nginx-tmp
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
           emptyDir: {}
 {{- end }}
