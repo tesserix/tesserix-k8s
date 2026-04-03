@@ -21,26 +21,47 @@ spec:
       values: |
         # Prometheus server configuration
         server:
-          # Enable persistence on GKE Standard HDD (due to SSD quota limits)
+          # SSD storage for fast WAL replay and compaction
+          # Standard HDD causes 2-3h WAL replays on restart
           persistentVolume:
             enabled: true
             size: 20Gi
-            storageClass: standard
+            storageClass: premium-rwo
 
-          # Resource configuration (required for AKS Azure Policy)
+          # Resource configuration — 2Gi needed for WAL replay with large cardinality
           resources:
             requests:
-              memory: 1Gi
+              cpu: 250m
+              memory: 2Gi
             limits:
               memory: 4Gi
 
-          # Retention
-          retention: "15d"
+          # Retention — 7d reduces WAL/block volume significantly
+          retention: "7d"
+          retentionSize: "15GB"
 
-          # Global scrape configuration
+          # WAL compression — reduces WAL size by ~50%, much faster replay
+          extraFlags:
+            - --storage.tsdb.wal-compression
+            - --storage.tsdb.min-block-duration=2h
+            - --storage.tsdb.max-block-duration=6h
+
+          # Startup probe — give Prometheus up to 30 min for WAL replay
+          # without being killed by liveness probe
+          startupProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 120
+            timeoutSeconds: 10
+
+          # Global scrape configuration — 30s reduces WAL volume by 50% vs 15s
+          # while still providing sufficient resolution for cost monitoring
           global:
-            scrape_interval: 15s
-            evaluation_interval: 15s
+            scrape_interval: 30s
+            evaluation_interval: 30s
 
           # Ingress for Prometheus UI
           ingress:
@@ -141,7 +162,9 @@ spec:
         # Additional scrape configs for Istio
         extraScrapeConfigs: |
           # Istio sidecar metrics from all pods (for istio_requests_total, etc.)
+          # 60s interval — Istio sidecars produce high cardinality, this reduces WAL volume
           - job_name: 'istio-proxy'
+            scrape_interval: 60s
             metrics_path: /stats/prometheus
             kubernetes_sd_configs:
               - role: pod
@@ -244,6 +267,8 @@ spec:
       kind: Deployment
       jsonPointers:
         - /spec/template/spec/containers/0/resources
+      jqPathExpressions:
+        - .status.terminatingReplicas
     - group: apps
       kind: DaemonSet
       jsonPointers:
