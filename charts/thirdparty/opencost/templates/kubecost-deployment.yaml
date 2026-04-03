@@ -76,6 +76,15 @@ data:
             proxy_http_version 1.1;
             proxy_set_header Connection "";
         }
+        # Clear stale localStorage on page load and inject correct API URL
+        location = /override.js {
+            default_type application/javascript;
+            return 200 'localStorage.removeItem("container");';
+        }
+        # Inject override script into index.html
+        sub_filter '</head>' '<script src="/override.js"></script></head>';
+        sub_filter_once on;
+
         location / {
             try_files $uri $uri/ /index.html;
         }
