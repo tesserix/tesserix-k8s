@@ -1,0 +1,121 @@
+{{- if .Values.kubecost.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubecost
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "opencost.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kubecost
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubecost
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: kubecost
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      securityContext:
+        fsGroup: 1000
+      containers:
+        # Kubecost Cost Model (backend)
+        - name: cost-model
+          image: "{{ .Values.kubecost.costModel.image.repository }}:{{ .Values.kubecost.costModel.image.tag }}"
+          imagePullPolicy: {{ .Values.kubecost.costModel.image.pullPolicy }}
+          ports:
+            - name: api
+              containerPort: 9003
+              protocol: TCP
+          env:
+            - name: PROMETHEUS_SERVER_ENDPOINT
+              value: {{ .Values.opencost.prometheus.serverEndpoint | quote }}
+            - name: CLOUD_PROVIDER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: opencost-oauth2-secrets
+                  key: gcp-pricing-api-key
+            - name: CLUSTER_ID
+              value: "tesseract-prod-in-gke"
+            - name: CLOUD_PROVIDER
+              value: "GCP"
+            - name: GCP_PROJECT_ID
+              value: "tesseracthub-480811"
+            - name: KUBECOST_NAMESPACE
+              value: {{ .Values.namespace | quote }}
+            - name: CONFIG_PATH
+              value: "/var/configs/"
+            - name: RELEASE_NAME
+              value: "kubecost"
+            - name: KUBECOST_TOKEN
+              value: ""
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: api
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.kubecost.costModel.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: configs
+              mountPath: /var/configs
+
+        # Kubecost Frontend
+        - name: frontend
+          image: "{{ .Values.kubecost.frontend.image.repository }}:{{ .Values.kubecost.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.kubecost.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: API_PORT
+              value: "9003"
+            - name: BASE_URL
+              value: "/kubecost"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.kubecost.frontend.resources | nindent 12 }}
+          volumeMounts:
+            - name: nginx-var
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+            - name: var-www
+              mountPath: /var/www
+            - name: nginx-tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: configs
+          emptyDir: {}
+        - name: nginx-var
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+        - name: var-www
+          emptyDir: {}
+        - name: nginx-tmp
+          emptyDir: {}
+{{- end }}
