@@ -84,12 +84,21 @@ spec:
                   key: SENDGRID_API_KEY
                   optional: true
             {{- end }}
+          {{- if .Values.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.startupProbe.httpGet.path | default "/api/health" }}
+              port: http
+            periodSeconds: {{ .Values.startupProbe.periodSeconds | default 5 }}
+            timeoutSeconds: {{ .Values.startupProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold | default 12 }}
+          {{- end }}
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
             httpGet:
               path: {{ .Values.livenessProbe.httpGet.path | default "/api/health" }}
               port: http
-            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds | default 10 }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds | default 0 }}
             periodSeconds: {{ .Values.livenessProbe.periodSeconds | default 30 }}
             timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds | default 3 }}
             failureThreshold: {{ .Values.livenessProbe.failureThreshold | default 3 }}
@@ -99,7 +108,7 @@ spec:
             httpGet:
               path: {{ .Values.readinessProbe.httpGet.path | default "/api/health" }}
               port: http
-            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds | default 5 }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds | default 0 }}
             periodSeconds: {{ .Values.readinessProbe.periodSeconds | default 10 }}
             timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds | default 3 }}
             failureThreshold: {{ .Values.readinessProbe.failureThreshold | default 3 }}
