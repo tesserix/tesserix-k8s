@@ -17,10 +17,17 @@ resources:
   requests:
     memory: 128Mi
 
+# Production service account with Workload Identity
+serviceAccount:
+  create: true
+  annotations:
+    iam.gke.io/gcp-service-account: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
+
 # Database - use global PostgreSQL
 database:
   host: "postgresql.postgresql-global.svc.cluster.local"
   name: "tenant_router_db"
+  sslmode: "require"
 
 # Production environment
 env:
@@ -33,10 +40,16 @@ env:
   CLOUDFLARE_ACCOUNT_ID: "6fe6e1aa18c221b529ce76c9631ba4e0"
   CLOUDFLARE_KV_NAMESPACE_ID: "1e14da3d238548fd8fa50982395d538d"
   CLOUDFLARE_ZONE_ID: "396425160cf0c851c83dd9f8699c502c"
+  # OpenFGA authorization
+  OPENFGA_URL: "http://openfga.marketplace.svc.cluster.local:8080"
+  OPENFGA_AUTH_MODE: "preshared"
+  OPENFGA_MARKETPLACE_STORE_ID: "01KMS970NNJPJP97MR7XNZSVD3"
 
 # KEDA autoscaling - enabled for production
 # Production GCP configuration
 gcp:
+  projectId: "tesseracthub-480811"
+  namespace: "global"
   secretManager:
     secretPrefix: "prod"
 

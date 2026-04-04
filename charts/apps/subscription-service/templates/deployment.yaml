@@ -64,6 +64,12 @@ spec:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
+          envFrom:
+            {{- if .Values.externalSecrets.enabled }}
+            - secretRef:
+                name: {{ include "subscription-service.fullname" . }}-secrets
+                optional: true
+            {{- end }}
           env:
             {{- range $key, $value := .Values.env }}
             - name: {{ $key }}
@@ -92,6 +98,10 @@ spec:
             - name: DB_NAME
               value: {{ .Values.database.name | quote }}
             - name: DB_SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: DB_SSL_MODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: PGSSLMODE
               value: {{ .Values.database.sslmode | quote }}
 
             # Database password from GCP Secret Manager

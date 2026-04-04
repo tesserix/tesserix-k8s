@@ -14,6 +14,7 @@ replicaCount: 1
 
 # Workload Identity — GCP SA for Firebase/GIP, Secret Manager, Pub/Sub
 serviceAccount:
+  create: true
   annotations:
     iam.gke.io/gcp-service-account: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
 
@@ -28,10 +29,11 @@ resources:
 database:
   host: "postgresql.postgresql-global.svc.cluster.local"
   name: "tenants_db"
+  sslmode: "require"
 
 # Production environment
 env:
-  SERVICE_AUTH_MODE: "key"
+  SERVICE_AUTH_MODE: "mesh"
   NOTIFICATION_SERVICE_URL: "http://notification-service.marketplace.svc.cluster.local:8090"
   VERIFICATION_SERVICE_URL: "http://verification-service.marketplace.svc.cluster.local:8080"
   STAFF_SERVICE_URL: "http://mp-staff.marketplace.svc.cluster.local:8080"
@@ -57,10 +59,16 @@ env:
   GIP_TENANT_ID: "MP-Internal-e986p"
 
   # Custom Domain Gateway IP is fetched from Redis (populated by tenant-router-service)
+  # OpenFGA authorization
+  OPENFGA_URL: "http://openfga.marketplace.svc.cluster.local:8080"
+  OPENFGA_AUTH_MODE: "preshared"
+  OPENFGA_MARKETPLACE_STORE_ID: "01KMS970NNJPJP97MR7XNZSVD3"
 
 # KEDA autoscaling - enabled for production
 # Production GCP configuration
 gcp:
+  projectId: "tesseracthub-480811"
+  namespace: "global"
   secretManager:
     secretPrefix: "prod"
 

@@ -58,6 +58,12 @@ spec:
             failureThreshold: {{ .Values.healthCheck.failureThreshold }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          envFrom:
+            {{- if .Values.externalSecrets.enabled }}
+            - secretRef:
+                name: {{ include "notification-service.fullname" . }}-secrets
+                optional: true
+            {{- end }}
           env:
             # Non-sensitive environment variables from values
             {{- range $key, $value := .Values.env }}
@@ -77,7 +83,7 @@ spec:
             - name: USE_GCP_SECRET_MANAGER
               value: "true"
 
-                        # Database connection settings
+            # Database connection settings
             - name: DB_HOST
               value: {{ .Values.database.host | quote }}
             - name: DB_PORT
@@ -87,6 +93,10 @@ spec:
             - name: DB_NAME
               value: {{ .Values.database.name | quote }}
             - name: DB_SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: DB_SSL_MODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: PGSSLMODE
               value: {{ .Values.database.sslmode | quote }}
 
             # Database password from GCP Secret Manager

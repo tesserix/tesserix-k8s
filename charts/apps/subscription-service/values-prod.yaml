@@ -27,15 +27,28 @@ env:
   GIN_MODE: "release"
   BASE_DOMAIN: "mark8ly.com"
   CORS_ALLOWED_ORIGINS: "https://*.mark8ly.com,http://localhost:3000,http://localhost:3001"
+  # OpenFGA authorization
+  OPENFGA_URL: "http://openfga.marketplace.svc.cluster.local:8080"
+  OPENFGA_AUTH_MODE: "preshared"
+  OPENFGA_MARKETPLACE_STORE_ID: "01KMS970NNJPJP97MR7XNZSVD3"
+  SERVICE_AUTH_MODE: "mesh"
 
-# Production database configuration
+# Production service account with Workload Identity
+serviceAccount:
+  create: true
+  annotations:
+    iam.gke.io/gcp-service-account: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
+
+# Production database configuration — subscriptions_db lives on global PostgreSQL
 database:
-  host: "postgresql.postgresql-marketplace.svc.cluster.local"
+  host: "postgresql.postgresql-global.svc.cluster.local"
   name: "subscriptions_db"
+  sslmode: "require"
 
 # Production GCP configuration
 gcp:
   projectId: "tesseracthub-480811"
+  namespace: "global"
   secretManager:
     secretPrefix: "prod"
 

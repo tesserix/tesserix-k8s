@@ -17,14 +17,25 @@ resources:
   requests:
     memory: 256Mi
 
+# Production database configuration
+database:
+  host: "postgresql.postgresql-marketplace.svc.cluster.local"
+  name: "document_db"
+  sslmode: "require"
+
 # Production service account - needs GCS write access for image uploads
 serviceAccount:
+  create: true
   annotations:
     iam.gke.io/gcp-service-account: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
 
 # Production environment
 env:
   GIN_MODE: "release"
+  OPENFGA_URL: "http://openfga.marketplace.svc.cluster.local:8080"
+  OPENFGA_AUTH_MODE: "preshared"
+  OPENFGA_MARKETPLACE_STORE_ID: "01KMS970NNJPJP97MR7XNZSVD3"
+  SERVICE_AUTH_MODE: "mesh"
   # Auth disabled at service level - handled by Istio AuthorizationPolicies
   ENABLE_AUTH: "false"
 
