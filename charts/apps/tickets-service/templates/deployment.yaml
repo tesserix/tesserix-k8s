@@ -41,6 +41,12 @@ spec:
             - name: http
               containerPort: {{ .Values.service.port | default .Values.service.targetPort | default 8080 }}
               protocol: TCP
+          envFrom:
+            {{- if .Values.externalSecrets.enabled }}
+            - secretRef:
+                name: {{ include "tickets-service.fullname" . }}-secrets
+                optional: true
+            {{- end }}
           env:
             {{- range $key, $value := .Values.env }}
             - name: {{ $key }}
@@ -55,7 +61,7 @@ spec:
               value: {{ .Values.gcp.secretManager.secretPrefix | quote }}
             - name: USE_GCP_SECRET_MANAGER
               value: "true"
-                        # Database connection settings
+            # Database connection settings
             - name: DB_HOST
               value: {{ .Values.database.host | quote }}
             - name: DB_PORT
@@ -65,6 +71,10 @@ spec:
             - name: DB_NAME
               value: {{ .Values.database.name | quote }}
             - name: DB_SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: DB_SSL_MODE
+              value: {{ .Values.database.sslmode | quote }}
+            - name: PGSSLMODE
               value: {{ .Values.database.sslmode | quote }}
 
             # Database password from GCP Secret Manager
