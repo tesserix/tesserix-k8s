@@ -10,454 +10,6 @@ Multi-Tenant Routing Strategy:
 - Next.js middleware extracts tenant slug from subdomain
 */}}
 ---
-# Direct ClusterIP Services for Knative frontends
-# These bypass Knative's ExternalName → knative-local-gateway chain
-# which has mTLS compatibility issues with the Istio ingress gateway.
-apiVersion: v1
-kind: Service
-metadata:
-  name: marketplace-onboarding-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 80
-      targetPort: 8012
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: marketplace-onboarding
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: marketplace-admin-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 80
-      targetPort: 8012
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: marketplace-admin
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-storefront-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 80
-      targetPort: 8012
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-storefront
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: verification-service-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: verification-service
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-vendors-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-vendors
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-staff-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-staff
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: tenant-service-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: tenant-service
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: location-service-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: location-service
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: tenant-router-service-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8089
-      targetPort: 8089
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: tenant-router-service
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: openfga-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: openfga
----
-# Direct ClusterIP Services for Knative backend services
-# These allow Next.js frontends to reach Go backends without
-# going through Knative's ExternalName → knative-local-gateway chain.
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-products-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-products
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-orders-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-orders
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-customers-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-customers
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-categories-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-categories
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-coupons-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-coupons
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-inventory-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-inventory
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-payments-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-payments
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-reviews-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-reviews
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-shipping-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-shipping
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: mp-marketing-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: mp-marketing
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: analytics-service-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: analytics-service
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: document-service-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: document-service
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: notification-service-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8090
-      targetPort: 8090
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: notification-service
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: notification-hub-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: notification-hub
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: feature-flags-service-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: feature-flags-service
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: subscription-service-direct
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  type: ClusterIP
-  ports:
-    - port: 8080
-      targetPort: 8080
-      protocol: TCP
-      name: http
-  selector:
-    serving.knative.dev/service: subscription-service
----
 # =============================================================================
 # Multi-Tenant Wildcard VirtualServices
 # Route {slug}.mark8ly.com → mp-storefront (customer-facing store)
@@ -484,7 +36,7 @@ spec:
         uri: /api/v1/public/storefronts/resolve/by-slug
       route:
         - destination:
-            host: mp-vendors-direct.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+            host: mp-vendors.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -493,16 +45,16 @@ spec:
             prefix: /api/v1/public/storefronts
       route:
         - destination:
-            host: mp-vendors-direct.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+            host: mp-vendors.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
     # Default route — serve storefront Next.js app
     - route:
         - destination:
-            host: mp-storefront-direct.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+            host: mp-storefront.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
             port:
-              number: 80
+              number: 3000
       timeout: {{ .Values.timeout.default }}
 ---
 apiVersion: networking.istio.io/v1
@@ -520,9 +72,9 @@ spec:
   http:
     - route:
         - destination:
-            host: marketplace-admin-direct.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+            host: marketplace-admin.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
             port:
-              number: 80
+              number: 3000
       timeout: {{ .Values.timeout.default }}
 ---
 # Admin VirtualService - Main admin dashboard (admin.mark8ly.com)
@@ -757,7 +309,7 @@ spec:
             prefix: /api/v1/tenants
       route:
         - destination:
-            host: tenant-service-direct.marketplace.svc.cluster.local
+            host: tenant-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -768,7 +320,7 @@ spec:
             prefix: /api/v1/users/me/tenants
       route:
         - destination:
-            host: tenant-service-direct.marketplace.svc.cluster.local
+            host: tenant-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -778,7 +330,7 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -808,7 +360,7 @@ spec:
             prefix: /api/v1/verification
       route:
         - destination:
-            host: verification-service-direct.marketplace.svc.cluster.local
+            host: verification-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -1336,7 +888,7 @@ spec:
             prefix: /api/v1/tenants
       route:
         - destination:
-            host: tenant-service-direct.marketplace.svc.cluster.local
+            host: tenant-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -1544,7 +1096,7 @@ spec:
             prefix: /api/v1/onboarding
       route:
         - destination:
-            host: tenant-service-direct.marketplace.svc.cluster.local
+            host: tenant-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -1554,7 +1106,7 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -1564,7 +1116,7 @@ spec:
             prefix: /api/v1/verification
       route:
         - destination:
-            host: verification-service-direct.marketplace.svc.cluster.local
+            host: verification-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -1575,7 +1127,7 @@ spec:
             regex: /api/onboarding/[^/]+/events
       route:
         - destination:
-            host: tenant-service-direct.marketplace.svc.cluster.local
+            host: tenant-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: 3600s
@@ -1588,9 +1140,9 @@ spec:
             prefix: /api/onboarding
       route:
         - destination:
-            host: marketplace-onboarding-direct.marketplace.svc.cluster.local
+            host: marketplace-onboarding.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 3000
       timeout: {{ .Values.timeout.api }}
 
     # Location service routes (countries, states, address, etc.)
@@ -1599,7 +1151,7 @@ spec:
             prefix: /api/v1/countries
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -1609,7 +1161,7 @@ spec:
             prefix: /api/v1/states
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -1619,7 +1171,7 @@ spec:
             prefix: /api/v1/address
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -1629,7 +1181,7 @@ spec:
             prefix: /api/v1/currencies
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -1639,7 +1191,7 @@ spec:
             prefix: /api/v1/timezones
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -1649,7 +1201,7 @@ spec:
             prefix: /api/v1/geotag
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -1666,12 +1218,11 @@ spec:
       timeout: {{ .Values.timeout.api }}
 
     # Default route to tenant-onboarding frontend
-    # Uses direct ClusterIP service to bypass Knative ExternalName routing
     - route:
         - destination:
-            host: marketplace-onboarding-direct.marketplace.svc.cluster.local
+            host: marketplace-onboarding.marketplace.svc.cluster.local
             port:
-              number: 80
+              number: 3000
       timeout: {{ .Values.timeout.default }}
       {{- if .Values.cors.enabled }}
       corsPolicy:
@@ -2158,7 +1709,7 @@ spec:
             prefix: /api/v1/countries
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -2168,7 +1719,7 @@ spec:
             prefix: /api/v1/states
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -2178,7 +1729,7 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -2188,7 +1739,7 @@ spec:
             prefix: /api/v1/currencies
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -2198,7 +1749,7 @@ spec:
             prefix: /api/v1/timezones
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -2208,7 +1759,7 @@ spec:
             prefix: /api/v1/address
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3161,7 +2712,7 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3171,7 +2722,7 @@ spec:
             prefix: /api/v1/countries
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3181,7 +2732,7 @@ spec:
             prefix: /api/v1/states
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3191,7 +2742,7 @@ spec:
             prefix: /api/v1/currencies
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3201,7 +2752,7 @@ spec:
             prefix: /api/v1/timezones
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3211,7 +2762,7 @@ spec:
             prefix: /api/v1/address
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3484,7 +3035,7 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3495,7 +3046,7 @@ spec:
             prefix: /api/v1/countries
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3506,7 +3057,7 @@ spec:
             prefix: /api/v1/states
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3517,7 +3068,7 @@ spec:
             prefix: /api/v1/currencies
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3528,7 +3079,7 @@ spec:
             prefix: /api/v1/timezones
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3539,7 +3090,7 @@ spec:
             prefix: /api/v1/address
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -3936,7 +3487,7 @@ spec:
             exact: /health
       route:
         - destination:
-            host: tenant-service-direct.marketplace.svc.cluster.local
+            host: tenant-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.default }}
@@ -4192,7 +3743,7 @@ spec:
             prefix: /api/v1/users/me/tenants
       route:
         - destination:
-            host: tenant-service-direct.marketplace.svc.cluster.local
+            host: tenant-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -4205,7 +3756,7 @@ spec:
             prefix: /api/v1/tenants
       route:
         - destination:
-            host: tenant-service-direct.marketplace.svc.cluster.local
+            host: tenant-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -4254,7 +3805,7 @@ spec:
             prefix: /api/v1/notifications
       route:
         - destination:
-            host: notification-service-direct.marketplace.svc.cluster.local
+            host: notification-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -4280,7 +3831,7 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -4306,7 +3857,7 @@ spec:
             prefix: /api/v1/verification
       route:
         - destination:
-            host: verification-service-direct.marketplace.svc.cluster.local
+            host: verification-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: {{ .Values.timeout.api }}
@@ -4434,7 +3985,7 @@ spec:
             exact: /api/health
       route:
         - destination:
-            host: tenant-service-direct.marketplace.svc.cluster.local
+            host: tenant-service.marketplace.svc.cluster.local
             port:
               number: 8080
       timeout: 10s
@@ -4698,7 +4249,7 @@ spec:
             prefix: /api/v1/users/me/tenants
       route:
         - destination:
-            host: tenant-service-direct.marketplace.svc.cluster.local
+            host: tenant-service.marketplace.svc.cluster.local
             port:
               number: 8080
       corsPolicy: *mobile-cors
@@ -4713,7 +4264,7 @@ spec:
             prefix: /api/v1/tenants
       route:
         - destination:
-            host: tenant-service-direct.marketplace.svc.cluster.local
+            host: tenant-service.marketplace.svc.cluster.local
             port:
               number: 8080
       corsPolicy: *mobile-cors
@@ -4767,7 +4318,7 @@ spec:
             prefix: /api/v1/location
       route:
         - destination:
-            host: location-service-direct.marketplace.svc.cluster.local
+            host: location-service.marketplace.svc.cluster.local
             port:
               number: 8080
       corsPolicy: *mobile-cors
