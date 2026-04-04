@@ -1,3 +1,9 @@
+serviceType: nextjs
+port: 3000
+healthPath: /api/health
+nameOverride: ""
+fullnameOverride: ""
+
 replicaCount: 1
 
 image:
@@ -6,6 +12,23 @@ image:
 
 knative:
   enabled: false
+  minScale: 0
+  maxScale: 5
+  concurrencyTarget: 50
+  containerConcurrency: 50
+  timeoutSeconds: 60
+
+probes:
+  startup:
+    failureThreshold: 15
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 20
+
+serviceAccount:
+  create: true
+  annotations:
+    iam.gke.io/gcp-service-account: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
 
 resources:
   requests:
@@ -13,14 +36,26 @@ resources:
   limits:
     memory: 512Mi
 
-serviceAccount:
-  annotations:
-    iam.gke.io/gcp-service-account: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
+db:
+  enabled: true
+  host: ""
+  port: ""
+  name: ""
+  user: ""
+  sslmode: ""
+  secretKey: mp-onboarding-db-password
 
-gcp:
-  projectId: tesseracthub-480811
-  secretManager:
-    secretPrefix: prod
+openfga:
+  enabled: false
+  url: ""
+  authMode: ""
+  apiKeySecret: false
+  storeId: "01KMS970NNJPJP97MR7XNZSVD3"
+
+externalSecrets:
+  enabled: true
+  secretStoreRef: gcp-secret-store
+  refreshInterval: 15m
 
 extraSecrets:
   - secretKey: CONTENT_DB_PASSWORD
@@ -40,3 +75,10 @@ env:
   VERIFICATION_SERVICE_URL: http://verification-service.marketplace.svc.cluster.local:8080
   TENANT_ROUTER_SERVICE_URL: http://tenant-router-service.marketplace.svc.cluster.local:8089
   INTERNAL_SERVICE_KEY_SECRET_NAME: prod-internal-service-key
+  CSRF_ALLOWED_DOMAINS: mark8ly.com
+
+gcp:
+  projectId: tesseracthub-480811
+  secretManager:
+    secretPrefix: prod
+directServicePort: 80
