@@ -1,21 +1,67 @@
+serviceType: go
+port: 8080
+healthPath: /health
+nameOverride: ""
+fullnameOverride: ""
+
 replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/mark8ly-tax
+  tag: "latest"
+
 knative:
   enabled: false
+  minScale: 0
+  maxScale: 5
+  concurrencyTarget: 100
+  containerConcurrency: 100
+  timeoutSeconds: 30
+
+probes:
+  startup:
+    failureThreshold: 10
+  liveness:
+    initialDelaySeconds: 15
+    periodSeconds: 15
+
+serviceAccount:
+  create: true
+  annotations:
+    iam.gke.io/gcp-service-account: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
+
 resources:
   requests:
     memory: 128Mi
   limits:
     memory: 512Mi
-serviceAccount:
-  annotations:
-    iam.gke.io/gcp-service-account: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
+
+db:
+  enabled: true
+  host: postgresql.postgresql-marketplace.svc.cluster.local
+  port: "5432"
+  name: tax_db
+  user: postgres
+  sslmode: require
+  secretKey: mp-tax-db-password
+
+openfga:
+  enabled: true
+  url: http://openfga.marketplace.svc.cluster.local:8080
+  authMode: preshared
+  apiKeySecret: true
+  storeId: "01KMS970NNJPJP97MR7XNZSVD3"
+
+externalSecrets:
+  enabled: true
+  secretStoreRef: gcp-secret-store
+  refreshInterval: 15m
+
+extraSecrets: []
+
+env: {}
+
 gcp:
   projectId: tesseracthub-480811
   secretManager:
     secretPrefix: "prod"
-db:
-  name: tax_db
-  user: postgres
-image:
-  repository: ghcr.io/tesserix/mark8ly-tax
-  tag: "latest"

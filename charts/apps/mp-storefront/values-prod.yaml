@@ -1,3 +1,9 @@
+serviceType: nextjs
+port: 3000
+healthPath: /api/health
+nameOverride: ""
+fullnameOverride: ""
+
 replicaCount: 1
 
 image:
@@ -6,6 +12,23 @@ image:
 
 knative:
   enabled: false
+  minScale: 1
+  maxScale: 5
+  concurrencyTarget: 50
+  containerConcurrency: 50
+  timeoutSeconds: 60
+
+probes:
+  startup:
+    failureThreshold: 15
+  liveness:
+    initialDelaySeconds: 30
+    periodSeconds: 20
+
+serviceAccount:
+  create: true
+  annotations:
+    iam.gke.io/gcp-service-account: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
 
 resources:
   requests:
@@ -13,14 +36,28 @@ resources:
   limits:
     memory: 768Mi
 
-serviceAccount:
-  annotations:
-    iam.gke.io/gcp-service-account: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
+db:
+  enabled: false
+  host: ""
+  port: ""
+  name: ""
+  user: ""
+  sslmode: ""
+  secretKey: ""
 
-gcp:
-  projectId: tesseracthub-480811
-  secretManager:
-    secretPrefix: "prod"
+openfga:
+  enabled: false
+  url: ""
+  authMode: ""
+  apiKeySecret: false
+  storeId: "01KMS970NNJPJP97MR7XNZSVD3"
+
+externalSecrets:
+  enabled: false
+  secretStoreRef: gcp-secret-store
+  refreshInterval: 15m
+
+extraSecrets: []
 
 env:
   CSRF_SECRET: "sf-csrf-8b6d4f2a9e3c7d1b5f0a2e4c6d8b0f3a5c7e9d1b3f5a7c9e1d3b5f7a9c0e2d"
@@ -33,6 +70,7 @@ env:
   ORDERS_SERVICE_URL: "http://mp-orders.marketplace.svc.cluster.local:8080"
   REVIEWS_SERVICE_URL: "http://mp-reviews.marketplace.svc.cluster.local:8080"
   VENDORS_SERVICE_URL: "http://mp-vendors.marketplace.svc.cluster.local:8080/api/v1"
+  AUTH_BFF_URL: http://auth-bff.marketplace.svc.cluster.local
   TENANT_SERVICE_URL: "http://tenant-service.marketplace.svc.cluster.local:8080"
   TENANT_ROUTER_SERVICE_URL: "http://tenant-router-service.marketplace.svc.cluster.local:8089"
   NOTIFICATION_SERVICE_URL: "http://notification-service.marketplace.svc.cluster.local:8090"
@@ -47,3 +85,9 @@ env:
   MARKETING_SERVICE_URL: "http://mp-marketing.marketplace.svc.cluster.local:8080"
   SEARCH_SERVICE_URL: "http://mp-products.marketplace.svc.cluster.local:8080"
   GIN_MODE: "release"
+
+gcp:
+  projectId: tesseracthub-480811
+  secretManager:
+    secretPrefix: "prod"
+directServicePort: 80
