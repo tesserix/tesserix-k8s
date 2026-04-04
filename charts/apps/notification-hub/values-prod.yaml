@@ -20,12 +20,23 @@ resources:
   requests:
     memory: 256Mi
 
+# Production database configuration
+database:
+  host: "postgresql.postgresql-marketplace.svc.cluster.local"
+  name: "notification_db"
+  sslmode: "require"
+
 # Production environment
 env:
   GIN_MODE: "release"
+  OPENFGA_URL: "http://openfga.marketplace.svc.cluster.local:8080"
+  OPENFGA_AUTH_MODE: "preshared"
+  OPENFGA_MARKETPLACE_STORE_ID: "01KMS970NNJPJP97MR7XNZSVD3"
+  SERVICE_AUTH_MODE: "mesh"
 
 # Production service account with Workload Identity
 serviceAccount:
+  create: true
   annotations:
     iam.gke.io/gcp-service-account: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
 
@@ -61,6 +72,10 @@ keda:
 pdb:
   enabled: false
   minAvailable: 0
+
+externalSecrets:
+  enabled: true
+  secretStoreRef: gcp-secret-store
 
 knative:
   enabled: false
