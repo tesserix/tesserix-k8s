@@ -7,6 +7,7 @@ metadata:
     {{- include "marketplace-common.labels" . | nindent 4 }}
 data:
   {{- if eq .Values.serviceType "go" }}
+  PORT: {{ .Values.port | quote }}
   ENVIRONMENT: "production"
   {{- if .Values.gcp.projectId }}
   GCP_PROJECT_ID: {{ .Values.gcp.projectId | quote }}
