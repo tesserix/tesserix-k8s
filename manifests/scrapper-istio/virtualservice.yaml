@@ -1,0 +1,87 @@
+##############################################################################
+# Social Media Scrapper Istio VirtualService Configuration
+# Routes: social-scrapper.tesserix.app → scrapper-api / scrapper-web
+# Plain Kubernetes Deployments with ClusterIP Services
+##############################################################################
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: scrapper-platform
+  namespace: scrapper
+  labels:
+    app.kubernetes.io/part-of: social-media-scrapper
+    app.kubernetes.io/component: routing
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - social-scrapper.tesserix.app
+  http:
+    # API routes → scrapper-api service
+    - match:
+        - uri:
+            prefix: /api
+      route:
+        - destination:
+            host: scrapper-api.scrapper.svc.cluster.local
+            port:
+              number: 8000
+      timeout: 120s
+      retries:
+        attempts: 3
+        perTryTimeout: 30s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy: &scrapper-cors
+        allowOrigins:
+          - exact: "https://social-scrapper.tesserix.app"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # WebSocket chat → scrapper-api service
+    - match:
+        - uri:
+            prefix: /api/ws
+      route:
+        - destination:
+            host: scrapper-api.scrapper.svc.cluster.local
+            port:
+              number: 8000
+      timeout: 3600s
+
+    # SSE event streams → scrapper-api service
+    - match:
+        - uri:
+            regex: "/api/jobs/.*/stream"
+      route:
+        - destination:
+            host: scrapper-api.scrapper.svc.cluster.local
+            port:
+              number: 8000
+      timeout: 300s
+
+    # All other routes → scrapper-web frontend
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: scrapper-web.scrapper.svc.cluster.local
+            port:
+              number: 3000
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
