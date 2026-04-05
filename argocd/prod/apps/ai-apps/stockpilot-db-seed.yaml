@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: stockpilot-db-schema-bootstrap
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: stockpilot
+    app.kubernetes.io/component: database
+    environment: prod
+spec:
+  project: stockpilot
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/apps/db-schema-bootstrap
+    targetRevision: HEAD
+    helm:
+      releaseName: stockpilot-db-schema-bootstrap
+      values: |
+        app: stockpilot
+
+        targets:
+          - name: stockpilot
+            host: postgresql.postgresql-stockpilot.svc.cluster.local
+            port: 5432
+            user: stockpilot
+            secretName: postgresql-stockpilot-password
+            secretKey: password
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: stockpilot
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
