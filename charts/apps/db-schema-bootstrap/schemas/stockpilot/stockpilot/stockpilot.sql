@@ -435,6 +435,26 @@ CREATE TABLE IF NOT EXISTS price_alerts (
 CREATE INDEX IF NOT EXISTS idx_price_alerts_user ON price_alerts (user_id, is_triggered);
 
 -- ============================================================
+-- WEEKLY PREDICTIONS
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS weekly_predictions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    week_start TIMESTAMPTZ NOT NULL,
+    week_end TIMESTAMPTZ NOT NULL,
+    market_id TEXT NOT NULL,
+    top_performers JSONB NOT NULL DEFAULT '[]',
+    undervalued JSONB NOT NULL DEFAULT '[]',
+    market_summary TEXT,
+    risk_assessment TEXT,
+    full_analysis JSONB,
+    model_used TEXT,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_weekly_predictions_week ON weekly_predictions (week_start, market_id);
+
+-- ============================================================
 -- SCHEMA VERSION TRACKING
 -- ============================================================
 
@@ -446,6 +466,10 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 INSERT INTO schema_migrations (version, description) VALUES
     ('001', 'Initial schema: users, markets, stocks, prices, portfolios, trades, watchlists, agents, alerts')
+ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO schema_migrations (version, description) VALUES
+    ('002', 'Add weekly_predictions table for AI prediction reports')
 ON CONFLICT (version) DO NOTHING;
 
 -- ============================================================
