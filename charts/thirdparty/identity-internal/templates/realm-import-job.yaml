@@ -43,8 +43,9 @@ spec:
               # =================================================================
               echo "Preparing realm configuration with secrets..."
 
-              # Copy realm config to writable location and substitute secrets
+              # Copy realm configs to writable location and substitute secrets
               cp /realm-config/tesserix-internal-realm.json /tmp/realm.json
+              cp /realm-config/stockpilot-realm.json /tmp/stockpilot-realm.json
 
               # Substitute client secrets from environment variables
               sed -i "s|%%ADMIN_BFF_CLIENT_SECRET%%|${ADMIN_BFF_CLIENT_SECRET}|g" /tmp/realm.json
@@ -53,6 +54,11 @@ spec:
               sed -i "s|%%DASHBOARD_CLIENT_SECRET%%|${DASHBOARD_CLIENT_SECRET}|g" /tmp/realm.json
               sed -i "s|%%GOOGLE_CLIENT_ID%%|${GOOGLE_CLIENT_ID}|g" /tmp/realm.json
               sed -i "s|%%GOOGLE_CLIENT_SECRET%%|${GOOGLE_CLIENT_SECRET}|g" /tmp/realm.json
+
+              # Substitute secrets in stockpilot realm
+              sed -i "s|%%STOCKPILOT_WEB_CLIENT_SECRET%%|${STOCKPILOT_WEB_CLIENT_SECRET}|g" /tmp/stockpilot-realm.json
+              sed -i "s|%%GOOGLE_CLIENT_ID%%|${GOOGLE_CLIENT_ID}|g" /tmp/stockpilot-realm.json
+              sed -i "s|%%GOOGLE_CLIENT_SECRET%%|${GOOGLE_CLIENT_SECRET}|g" /tmp/stockpilot-realm.json
 
               echo "Realm configuration prepared with secrets"
 
@@ -128,6 +134,31 @@ spec:
               else
                 echo "Failed to import realm. Response: $IMPORT_BODY"
                 exit 1
+              fi
+
+              # =================================================================
+              # Step 4b: Import stockpilot realm
+              # =================================================================
+              echo "Checking stockpilot realm..."
+
+              SP_REALM_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                -H "Authorization: Bearer $TOKEN" \
+                "$KEYCLOAK_URL/admin/realms/stockpilot")
+
+              if [ "$SP_REALM_STATUS" = "200" ]; then
+                echo "Realm stockpilot already exists, skipping import"
+              elif [ "$SP_REALM_STATUS" = "404" ]; then
+                echo "Importing stockpilot realm..."
+                SP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$KEYCLOAK_URL/admin/realms" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d @/tmp/stockpilot-realm.json)
+                SP_STATUS=$(echo "$SP_RESPONSE" | tail -n1)
+                if [ "$SP_STATUS" = "201" ] || [ "$SP_STATUS" = "204" ]; then
+                  echo "StockPilot realm imported successfully!"
+                else
+                  echo "Warning: Failed to import stockpilot realm (status: $SP_STATUS)"
+                fi
               fi
 
               # =================================================================
@@ -340,6 +371,11 @@ spec:
                 secretKeyRef:
                   name: keycloak-client-secrets
                   key: dashboard-client-secret
+            - name: STOCKPILOT_WEB_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-client-secrets
+                  key: stockpilot-web-client-secret
             # Google OAuth credentials for Google Sign-In IDP
             - name: GOOGLE_CLIENT_ID
               valueFrom:
@@ -361,6 +397,8 @@ spec:
               value: "change-me-admin-client"
             - name: DASHBOARD_CLIENT_SECRET
               value: "change-me-dashboard-client"
+            - name: STOCKPILOT_WEB_CLIENT_SECRET
+              value: "change-me-stockpilot-web-secret"
             - name: GOOGLE_CLIENT_ID
               value: "change-me-google-client-id"
             - name: GOOGLE_CLIENT_SECRET
