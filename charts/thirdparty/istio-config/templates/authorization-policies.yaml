@@ -428,6 +428,88 @@ spec:
               - {{ .Values.appNamespaces.homechef }}
 
 # =============================================================================
+# StockPilot Namespace Policies
+# AI stock analysis platform
+# =============================================================================
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-stockpilot
+  namespace: {{ .Values.appNamespaces.stockpilot }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-internal-stockpilot
+  namespace: {{ .Values.appNamespaces.stockpilot }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.stockpilot }}
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+
+# =============================================================================
+# Scrapper Namespace Policies
+# Social media scrapper platform
+# =============================================================================
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-scrapper
+  namespace: {{ .Values.appNamespaces.scrapper }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-internal-scrapper
+  namespace: {{ .Values.appNamespaces.scrapper }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.scrapper }}
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+
+# =============================================================================
 # Database Access Policies
 # Each app namespace can only access its own database namespace
 # =============================================================================
