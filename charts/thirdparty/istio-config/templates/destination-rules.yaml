@@ -518,6 +518,58 @@ spec:
     {{- end }}
 
 # =============================================================================
+# StockPilot Namespace DestinationRules
+# AI stock analysis platform
+# =============================================================================
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: stockpilot-services-dr
+  namespace: {{ .Values.appNamespaces.stockpilot }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.appNamespaces.stockpilot }}.svc.cluster.local"
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+
+# =============================================================================
+# Scrapper Namespace DestinationRules
+# Social media scrapper platform
+# =============================================================================
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: scrapper-services-dr
+  namespace: {{ .Values.appNamespaces.scrapper }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: "*.{{ .Values.appNamespaces.scrapper }}.svc.cluster.local"
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+
+# =============================================================================
 # Tesserix Namespace DestinationRules
 # Company website (frontend only, no database/redis)
 # =============================================================================
