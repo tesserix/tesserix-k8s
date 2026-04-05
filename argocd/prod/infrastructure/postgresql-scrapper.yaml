@@ -1,0 +1,71 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgresql-scrapper
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: social-media-scrapper
+    app.kubernetes.io/component: database
+    target-namespace: scrapper
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: data
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/postgresql
+    targetRevision: HEAD
+    helm:
+      releaseName: postgresql
+      values: |
+        postgresql:
+          database: scrapper_db
+          username: scrapper
+          existingSecret: "postgresql-password"
+          existingSecretKey: "postgresql-password"
+
+        architecture: standalone
+
+        persistence:
+          enabled: true
+          storageClass: "standard-rwo-retain"
+          size: 20Gi
+
+        resources:
+          requests:
+            memory: 512Mi
+          limits:
+            memory: 2Gi
+
+        config:
+          maxConnections: "200"
+          sharedBuffers: "256MB"
+          effectiveCacheSize: "1GB"
+          maintenanceWorkMem: "128MB"
+          walBuffers: "8MB"
+
+        service:
+          type: ClusterIP
+          port: 5432
+
+        metrics:
+          enabled: false
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: postgresql-scrapper
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
