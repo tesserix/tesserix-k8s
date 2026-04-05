@@ -1,0 +1,87 @@
+##############################################################################
+# StockPilot Istio VirtualService Configuration
+# Routes: stockpilot.tesserix.app → stockpilot-api / stockpilot-web
+# Plain Kubernetes Deployments with ClusterIP Services
+##############################################################################
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: stockpilot-platform
+  namespace: stockpilot
+  labels:
+    app.kubernetes.io/part-of: stock-analysis
+    app.kubernetes.io/component: routing
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - stockpilot.tesserix.app
+  http:
+    # Health check → stockpilot-api
+    - match:
+        - uri:
+            exact: /health
+      route:
+        - destination:
+            host: stockpilot-api.stockpilot.svc.cluster.local
+            port:
+              number: 8000
+      timeout: 10s
+
+    # WebSocket agent chat → stockpilot-api
+    - match:
+        - uri:
+            prefix: /api/agents/ws
+      route:
+        - destination:
+            host: stockpilot-api.stockpilot.svc.cluster.local
+            port:
+              number: 8000
+      timeout: 3600s
+
+    # API routes → stockpilot-api service
+    - match:
+        - uri:
+            prefix: /api
+      route:
+        - destination:
+            host: stockpilot-api.stockpilot.svc.cluster.local
+            port:
+              number: 8000
+      timeout: 120s
+      retries:
+        attempts: 3
+        perTryTimeout: 30s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy: &stockpilot-cors
+        allowOrigins:
+          - exact: "https://stockpilot.tesserix.app"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # All other routes → stockpilot-web frontend
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: stockpilot-web.stockpilot.svc.cluster.local
+            port:
+              number: 3000
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
