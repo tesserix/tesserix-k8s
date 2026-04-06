@@ -27,13 +27,14 @@ spec:
             size: 20Gi
             storageClass: standard
 
-          # Resource configuration — 2Gi needed for WAL replay with large cardinality
+          # Resource configuration — 8Gi limit needed for WAL replay with 500+ segments
+          # Can reduce back to 4Gi once WAL compacts under 7d retention
           resources:
             requests:
               cpu: 250m
               memory: 2Gi
             limits:
-              memory: 4Gi
+              memory: 8Gi
 
           # Retention — 7d reduces WAL/block volume significantly
           retention: "7d"
@@ -45,16 +46,16 @@ spec:
             - --storage.tsdb.min-block-duration=2h
             - --storage.tsdb.max-block-duration=6h
 
-          # Startup probe — give Prometheus up to 30 min for WAL replay
+          # Startup probe — give Prometheus up to 60 min for WAL replay
           # without being killed by liveness probe
           startupProbe:
             httpGet:
               path: /-/ready
               port: 9090
-            initialDelaySeconds: 30
+            initialDelaySeconds: 60
             periodSeconds: 15
-            failureThreshold: 120
-            timeoutSeconds: 10
+            failureThreshold: 240
+            timeoutSeconds: 15
 
           # Global scrape configuration — 30s reduces WAL volume by 50% vs 15s
           # while still providing sufficient resolution for cost monitoring
