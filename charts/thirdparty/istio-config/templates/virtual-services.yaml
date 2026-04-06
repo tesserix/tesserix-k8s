@@ -76,6 +76,18 @@ spec:
   gateways:
     - istio-ingress/tesseract-gateway
   http:
+    # Route WebSocket/SSE notification paths directly to notification-hub (Next.js cannot proxy WebSocket)
+    - match:
+        - uri:
+            prefix: /api/v1/notifications/ws
+        - uri:
+            prefix: /api/v1/notifications/sse
+      route:
+        - destination:
+            host: notification-hub.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 3600s
     - route:
         - destination:
             host: marketplace-admin.{{ .Values.appNamespaces.marketplace }}.svc.cluster.local
