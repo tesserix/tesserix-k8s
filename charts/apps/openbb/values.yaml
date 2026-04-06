@@ -1,0 +1,59 @@
+# OpenBB API Server — values
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/stock-analysis/openbb-api
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 6900
+  targetPort: 6900
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+env:
+  OPENBB_AUTO_BUILD: "false"
+  OPENBB_API_AUTH: "false"
+  OPENBB_DEBUG_MODE: "false"
+
+# API keys resolved from K8s secrets (populated by ExternalSecrets)
+secretEnv:
+  FMP_API_KEY:
+    secretName: openbb-api-keys
+    secretKey: FMP_API_KEY
+  FINNHUB_API_KEY:
+    secretName: openbb-api-keys
+    secretKey: FINNHUB_API_KEY
+
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-global-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 100m
+  limits:
+    memory: 1536Mi
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  proxy.istio.io/config: |
+    holdApplicationUntilProxyStarts: true
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+
+podLabels: {}
