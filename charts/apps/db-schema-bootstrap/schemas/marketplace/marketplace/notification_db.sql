@@ -387,3 +387,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_user_tenant ON public.notification_prefere
 --
 
 
+-- Migration: Change user_id from UUID to TEXT for GIP/Firebase string user IDs
+-- Idempotent — safe to run repeatedly
+DO $$ BEGIN
+  -- notifications.user_id
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'notifications' AND column_name = 'user_id' AND data_type = 'uuid'
+  ) THEN
+    ALTER TABLE notifications ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+  END IF;
+
+  -- notification_preferences.user_id
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'notification_preferences' AND column_name = 'user_id' AND data_type = 'uuid'
+  ) THEN
+    ALTER TABLE notification_preferences ALTER COLUMN user_id TYPE TEXT USING user_id::TEXT;
+  END IF;
+END $$;
+
