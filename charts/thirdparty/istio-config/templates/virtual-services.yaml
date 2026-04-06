@@ -5076,3 +5076,66 @@ spec:
         maxAge: {{ .Values.cors.maxAge }}
         allowCredentials: {{ .Values.cors.allowCredentials }}
       {{- end }}
+
+---
+# =============================================================================
+# Monitoring VirtualServices
+# Route grafana/prometheus/alertmanager.tesserix.app to monitoring namespace
+# Traffic flow: Cloudflare Tunnel → Istio Gateway (port 80) → VirtualService → Service
+# =============================================================================
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: grafana-vs
+  namespace: monitoring
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - "grafana.tesserix.app"
+  gateways:
+    - istio-ingress/tesseract-gateway
+  http:
+    - route:
+        - destination:
+            host: grafana.monitoring.svc.cluster.local
+            port:
+              number: 80
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: prometheus-vs
+  namespace: monitoring
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - "prometheus.tesserix.app"
+  gateways:
+    - istio-ingress/tesseract-gateway
+  http:
+    - route:
+        - destination:
+            host: prometheus-server.monitoring.svc.cluster.local
+            port:
+              number: 80
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: alertmanager-vs
+  namespace: monitoring
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - "alertmanager.tesserix.app"
+  gateways:
+    - istio-ingress/tesseract-gateway
+  http:
+    - route:
+        - destination:
+            host: prometheus-alertmanager.monitoring.svc.cluster.local
+            port:
+              number: 9093
