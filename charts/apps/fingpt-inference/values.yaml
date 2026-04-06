@@ -1,0 +1,56 @@
+# FinGPT Inference — Ollama on CPU
+# Runs quantized financial LLM for sentiment analysis and stock prediction.
+# Slow (~10-30s/call) but functional. Upgrade to GPU node for <2s latency.
+
+replicaCount: 1
+
+image:
+  repository: ollama/ollama
+  pullPolicy: IfNotPresent
+  tag: "0.6.2"
+
+nameOverride: ""
+fullnameOverride: "fingpt-inference"
+
+service:
+  type: ClusterIP
+  port: 11434
+  targetPort: 11434
+
+# Ollama model to pull on startup — small quantized model for CPU
+# phi3:mini (3.8B Q4) is fast on CPU, good at classification tasks
+model:
+  name: "phi3:mini"
+  # Custom Modelfile for FinGPT financial sentiment (created via init container)
+  fingptSentimentModelfile: |
+    FROM phi3:mini
+    PARAMETER temperature 0.1
+    PARAMETER top_p 0.9
+    PARAMETER num_predict 20
+    SYSTEM You are FinGPT, a financial sentiment classifier. Given a financial news headline, classify its sentiment as exactly one word: positive, negative, or neutral. Do not explain. Respond with only one word.
+
+  fingptForecasterModelfile: |
+    FROM phi3:mini
+    PARAMETER temperature 0.2
+    PARAMETER top_p 0.9
+    PARAMETER num_predict 100
+    SYSTEM You are FinGPT Forecaster, a financial AI that predicts stock price movements. Given stock information including recent prices, news headlines, and technical indicators, predict whether the stock will go UP or DOWN on the next trading day. Start your response with either 'up' or 'down', then provide a brief rationale.
+
+resources:
+  requests:
+    memory: 4Gi
+    cpu: 2000m
+  limits:
+    memory: 6Gi
+    cpu: 4000m
+
+# Persistent volume for model storage (don't re-download on restart)
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: "standard-rwo"
+
+podAnnotations:
+  sidecar.istio.io/inject: "false"  # No Istio needed for internal inference
+
+podLabels: {}
