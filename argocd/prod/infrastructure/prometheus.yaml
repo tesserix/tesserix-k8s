@@ -27,14 +27,12 @@ spec:
             size: 20Gi
             storageClass: standard
 
-          # Resource configuration — 8Gi limit needed for WAL replay with 500+ segments
-          # Can reduce back to 4Gi once WAL compacts under 7d retention
+          # No memory limits — Prometheus self-regulates and needs uncapped
+          # memory during WAL replay (500+ segments from prior 15d retention)
           resources:
             requests:
               cpu: 250m
               memory: 2Gi
-            limits:
-              memory: 8Gi
 
           # Retention — 7d reduces WAL/block volume significantly
           retention: "7d"
@@ -285,7 +283,7 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
