@@ -1,0 +1,36 @@
+{{- if .Values.primary.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nemoclaw.fullname" . }}
+  labels:
+    {{- include "nemoclaw.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.primary.service.type }}
+  ports:
+    - port: {{ .Values.primary.service.port }}
+      targetPort: {{ .Values.primary.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "nemoclaw.selectorLabels" . | nindent 4 }}
+{{- end }}
+---
+{{- if .Values.secondary.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nemoclaw.secondaryFullname" . }}
+  labels:
+    {{- include "nemoclaw.labels" . | nindent 4 }}
+    app.kubernetes.io/component: qwen-coder
+spec:
+  type: {{ .Values.secondary.service.type }}
+  ports:
+    - port: {{ .Values.secondary.service.port }}
+      targetPort: {{ .Values.secondary.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "nemoclaw.secondarySelectorLabels" . | nindent 4 }}
+{{- end }}

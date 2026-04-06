@@ -1,0 +1,137 @@
+# NemoClaw GPU Inference — vLLM serving Nemotron 3 Super 120B
+# Runs on GKE GPU node pool (L4/A100). Exposes OpenAI-compatible API.
+# DevAI agents connect via: http://nemoclaw-inference.devai.svc.cluster.local:8000/v1
+
+# --- Primary Model: Nemotron 3 Super 120B (MoE, 12B active) ---
+primary:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: vllm/vllm-openai
+    tag: "v0.8.5"
+    pullPolicy: IfNotPresent
+
+  model:
+    name: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16"
+    # Quantized variant for single GPU (GPTQ-Int4)
+    quantized: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-GPTQ-Int4"
+    # Use quantized by default for single A100 80GB
+    useQuantized: true
+    maxModelLen: 32768
+    tensorParallelSize: 1  # Set to 2 for multi-GPU
+
+  service:
+    type: ClusterIP
+    port: 8000
+    targetPort: 8000
+
+  resources:
+    requests:
+      memory: 40Gi
+      cpu: 4000m
+      nvidia.com/gpu: "1"
+    limits:
+      memory: 80Gi
+      cpu: 8000m
+      nvidia.com/gpu: "1"
+
+  # GPU node scheduling
+  nodeSelector:
+    cloud.google.com/gke-accelerator: nvidia-l4
+    # For A100: cloud.google.com/gke-accelerator: nvidia-tesla-a100
+
+  tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Equal"
+      value: "present"
+      effect: "NoSchedule"
+
+  # Model cache PVC — avoids re-downloading 40GB+ model on restart
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: "standard-rwo"
+
+  # HuggingFace token for gated models
+  huggingfaceToken:
+    secretName: nemoclaw-hf-token
+    gcpSecretKey: prod-devai-hf-token
+
+# --- Secondary Model: Qwen2.5-Coder-32B (fast code generation) ---
+secondary:
+  enabled: false  # Enable when second GPU is available
+  replicaCount: 1
+
+  image:
+    repository: vllm/vllm-openai
+    tag: "v0.8.5"
+    pullPolicy: IfNotPresent
+
+  model:
+    name: "Qwen/Qwen2.5-Coder-32B-Instruct"
+    maxModelLen: 32768
+    tensorParallelSize: 1
+
+  service:
+    type: ClusterIP
+    port: 8001
+    targetPort: 8000
+
+  resources:
+    requests:
+      memory: 40Gi
+      cpu: 4000m
+      nvidia.com/gpu: "1"
+    limits:
+      memory: 80Gi
+      cpu: 8000m
+      nvidia.com/gpu: "1"
+
+  nodeSelector:
+    cloud.google.com/gke-accelerator: nvidia-l4
+
+  tolerations:
+    - key: "nvidia.com/gpu"
+      operator: "Equal"
+      value: "present"
+      effect: "NoSchedule"
+
+  persistence:
+    enabled: true
+    size: 80Gi
+    storageClass: "standard-rwo"
+
+# --- KEDA Autoscaling ---
+keda:
+  enabled: true
+  pollingInterval: 30
+  cooldownPeriod: 900  # 15 min idle before scale-down
+  minReplicaCount: 0   # Scale to zero when no inference traffic
+  maxReplicaCount: 1
+  prometheus:
+    enabled: true
+    serverAddress: "http://prometheus-server.monitoring.svc.cluster.local:80"
+    # Scale up when DevAI pipeline or chat sends requests
+    requestRateQuery: 'sum(rate(vllm:request_success_total{namespace="devai"}[5m]))'
+    requestRateThreshold: "0.05"
+
+# --- Shared ---
+namespace: devai
+
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-devai-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+serviceAccount:
+  create: true
+  name: nemoclaw-inference
+
+podAnnotations:
+  sidecar.istio.io/inject: "false"  # No Istio for internal inference
+
+podLabels:
+  app.kubernetes.io/part-of: devai
+  app.kubernetes.io/component: gpu-inference

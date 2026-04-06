@@ -1,0 +1,31 @@
+{{- if and .Values.primary.enabled .Values.primary.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "nemoclaw.fullname" . }}-models
+  labels:
+    {{- include "nemoclaw.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.primary.persistence.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.primary.persistence.size }}
+{{- end }}
+---
+{{- if and .Values.secondary.enabled .Values.secondary.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "nemoclaw.secondaryFullname" . }}-models
+  labels:
+    {{- include "nemoclaw.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.secondary.persistence.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.secondary.persistence.size }}
+{{- end }}

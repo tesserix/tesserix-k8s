@@ -1,0 +1,110 @@
+{{- if .Values.primary.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nemoclaw.fullname" . }}
+  labels:
+    {{- include "nemoclaw.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.primary.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "nemoclaw.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "nemoclaw.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.primary.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.primary.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vllm
+          image: "{{ .Values.primary.image.repository }}:{{ .Values.primary.image.tag }}"
+          imagePullPolicy: {{ .Values.primary.image.pullPolicy }}
+          args:
+            - "--model"
+            - {{ if .Values.primary.model.useQuantized }}{{ .Values.primary.model.quantized | quote }}{{ else }}{{ .Values.primary.model.name | quote }}{{ end }}
+            - "--max-model-len"
+            - {{ .Values.primary.model.maxModelLen | quote }}
+            - "--tensor-parallel-size"
+            - {{ .Values.primary.model.tensorParallelSize | quote }}
+            - "--gpu-memory-utilization"
+            - "0.92"
+            - "--enable-auto-tool-choice"
+            - "--tool-call-parser"
+            - "hermes"
+            - "--served-model-name"
+            - "nvidia/nemotron-3-super-120b-a12b"
+            - "--download-dir"
+            - "/models"
+          ports:
+            - name: http
+              containerPort: {{ .Values.primary.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.primary.huggingfaceToken.secretName }}
+                  key: HF_TOKEN
+            - name: VLLM_LOGGING_LEVEL
+              value: "INFO"
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: shm
+              mountPath: /dev/shm
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            failureThreshold: 10
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 90
+            periodSeconds: 15
+            timeoutSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 30
+            timeoutSeconds: 10
+          resources:
+            {{- toYaml .Values.primary.resources | nindent 12 }}
+      volumes:
+        - name: models
+          {{- if .Values.primary.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "nemoclaw.fullname" . }}-models
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+{{- end }}
