@@ -1,0 +1,33 @@
+# Modelfiles for creating FinGPT custom models in Ollama
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fingpt.fullname" . }}-modelfiles
+  labels:
+    {{- include "fingpt.labels" . | nindent 4 }}
+data:
+  Modelfile.sentiment: |
+    {{- .Values.model.fingptSentimentModelfile | nindent 4 }}
+  Modelfile.forecaster: |
+    {{- .Values.model.fingptForecasterModelfile | nindent 4 }}
+  setup.sh: |
+    #!/bin/sh
+    set -e
+    echo "[FinGPT] Waiting for Ollama to start..."
+    until curl -s http://localhost:11434/api/tags > /dev/null 2>&1; do
+      sleep 2
+    done
+    echo "[FinGPT] Ollama is ready. Pulling base model..."
+
+    # Pull base model if not already present
+    ollama pull {{ .Values.model.name }} || true
+
+    echo "[FinGPT] Creating fingpt-sentiment model..."
+    ollama create fingpt-sentiment -f /modelfiles/Modelfile.sentiment || true
+
+    echo "[FinGPT] Creating fingpt-forecaster model..."
+    ollama create fingpt-forecaster -f /modelfiles/Modelfile.forecaster || true
+
+    echo "[FinGPT] Models ready:"
+    ollama list
+    echo "[FinGPT] Setup complete."
