@@ -1,0 +1,162 @@
+{{- if eq (include "stockpilot-api.name" .) "stockpilot-api" }}
+# Istio AuthorizationPolicy — controls who can call stockpilot-api
+# All traffic within the mesh uses mTLS STRICT (auto-provisioned certs)
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: stockpilot-api-authz
+  namespace: stockpilot
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stockpilot-api
+  action: ALLOW
+  rules:
+    # Rule 1: Allow Istio ingress gateway (external traffic via VirtualService)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway"]
+    # Rule 2: Allow stockpilot-web (frontend SSR calls)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/stockpilot/sa/stockpilot-web"]
+    # Rule 3: Allow OpenBB sidecar (data provider)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/stockpilot/sa/openbb"]
+    # Rule 4: Allow self (A2A inter-agent communication within same pod)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/stockpilot/sa/stockpilot-api"]
+    # Rule 5: Allow Prometheus scraping from monitoring namespace
+    - from:
+        - source:
+            namespaces: ["monitoring"]
+      to:
+        - operation:
+            paths: ["/metrics"]
+            methods: ["GET"]
+    # Rule 6: Allow health checks from any source (Istio probes)
+    - to:
+        - operation:
+            paths: ["/health"]
+            methods: ["GET"]
+    # Rule 7: Allow A2A discovery (public, per A2A spec)
+    - to:
+        - operation:
+            paths: ["/.well-known/agent.json"]
+            methods: ["GET"]
+---
+# NetworkPolicy — L3/L4 firewall (defense in depth with Istio L7)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: stockpilot-api-netpol
+  namespace: stockpilot
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: stockpilot-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from Istio ingress gateway
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - port: 8000
+          protocol: TCP
+    # Allow from pods in stockpilot namespace (web, openbb, fingpt)
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 8000
+          protocol: TCP
+    # Allow from monitoring namespace (Prometheus)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8000
+          protocol: TCP
+  egress:
+    # Allow to TimescaleDB
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: timescaledb
+      ports:
+        - port: 5432
+          protocol: TCP
+    # Allow to Redis
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: redis
+      ports:
+        - port: 6379
+          protocol: TCP
+    # Allow to NATS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nats
+      ports:
+        - port: 4222
+          protocol: TCP
+    # Allow to OpenBB sidecar (same namespace)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fingpt-inference
+      ports:
+        - port: 11434
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbb
+      ports:
+        - port: 6900
+          protocol: TCP
+    # Allow to Keycloak (identity namespace)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: identity-internal
+      ports:
+        - port: 8080
+          protocol: TCP
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Allow external HTTPS (LLM APIs, data providers)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+    # Allow GCP metadata server (Workload Identity)
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP
+{{- end }}
