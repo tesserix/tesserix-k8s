@@ -17,10 +17,28 @@ env:
   CORS_ORIGINS: "https://stockpilot.tesserix.app"
 
 autoscaling:
-  enabled: false
+  enabled: false  # Replaced by KEDA
   minReplicas: 1
   maxReplicas: 3
   targetMemoryUtilizationPercentage: 80
+
+keda:
+  enabled: true
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  prometheus:
+    enabled: true
+    serverAddress: "http://prometheus-server.monitoring.svc.cluster.local:80"
+    requestRateQuery: 'sum(rate(istio_requests_total{destination_canonical_service="stockpilot-api",reporter="destination"}[2m]))'
+    requestRateThreshold: "10"
+  cpu:
+    enabled: true
+    threshold: "80"
+  memory:
+    enabled: true
+    threshold: "80"
 
 gcp:
   projectId: "tesseracthub-480811"

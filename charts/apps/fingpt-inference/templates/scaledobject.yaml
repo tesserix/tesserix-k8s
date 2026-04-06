@@ -1,0 +1,40 @@
+{{- if .Values.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "fingpt.fullname" . }}
+  labels:
+    {{- include "fingpt.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "fingpt.fullname" . }}
+  pollingInterval: {{ .Values.keda.pollingInterval | default 30 }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod | default 600 }}
+  minReplicaCount: {{ .Values.keda.minReplicaCount | default 0 }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount | default 1 }}
+  advanced:
+    restoreToOriginalReplicaCount: false
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 60
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 30
+  triggers:
+    {{- if .Values.keda.prometheus.enabled }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.prometheus.serverAddress | quote }}
+        metricName: fingpt_request_rate
+        query: {{ .Values.keda.prometheus.requestRateQuery | quote }}
+        threshold: {{ .Values.keda.prometheus.requestRateThreshold | quote }}
+    {{- end }}
+{{- end }}
