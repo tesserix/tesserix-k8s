@@ -1,6 +1,6 @@
-# FinGPT Inference — Ollama with NVIDIA L4 GPU
+# FinGPT Inference — Ollama on CPU (GPU L4 node pool ready, enable when Spot available)
 # Runs quantized financial LLM for sentiment analysis and stock prediction.
-# GPU mode: <2s latency. Scales to zero when idle via KEDA.
+# CPU mode: ~10-30s/call. GPU mode (uncomment nodeSelector/tolerations): <2s latency.
 
 replicaCount: 1
 
@@ -39,30 +39,29 @@ model:
 resources:
   requests:
     memory: 4Gi
-    cpu: 1000m
-    nvidia.com/gpu: "1"
+    cpu: 2000m
   limits:
-    memory: 8Gi
-    cpu: 3000m
-    nvidia.com/gpu: "1"
+    memory: 6Gi
+    cpu: 4000m
 
-# GPU node scheduling
-nodeSelector:
-  gpu: l4
+# GPU node scheduling — uncomment when Spot L4 capacity is available
+# nodeSelector:
+#   gpu: l4
+# tolerations:
+#   - key: "nvidia.com/gpu"
+#     operator: "Equal"
+#     value: "present"
+#     effect: "NoSchedule"
+# Add to resources when enabling GPU:
+#   nvidia.com/gpu: "1"
 
-tolerations:
-  - key: "nvidia.com/gpu"
-    operator: "Equal"
-    value: "present"
-    effect: "NoSchedule"
-
-# KEDA autoscaling — scale to zero when no inference traffic
+# KEDA autoscaling
 keda:
   enabled: true
   pollingInterval: 30
   cooldownPeriod: 600       # 10 min idle before scale-down
-  minReplicaCount: 0        # Scale to zero
-  maxReplicaCount: 1        # Single GPU node, max 1 replica
+  minReplicaCount: 1        # Keep running
+  maxReplicaCount: 1
   # Scale based on stockpilot-api traffic (fingpt has no Istio sidecar)
   prometheus:
     enabled: true
