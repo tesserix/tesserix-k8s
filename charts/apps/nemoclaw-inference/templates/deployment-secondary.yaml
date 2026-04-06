@@ -1,0 +1,103 @@
+{{- if .Values.secondary.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nemoclaw.secondaryFullname" . }}
+  labels:
+    {{- include "nemoclaw.labels" . | nindent 4 }}
+    app.kubernetes.io/component: qwen-coder
+spec:
+  replicas: {{ .Values.secondary.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "nemoclaw.secondarySelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "nemoclaw.secondarySelectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      {{- with .Values.secondary.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.secondary.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vllm
+          image: "{{ .Values.secondary.image.repository }}:{{ .Values.secondary.image.tag }}"
+          imagePullPolicy: {{ .Values.secondary.image.pullPolicy }}
+          args:
+            - "--model"
+            - {{ .Values.secondary.model.name | quote }}
+            - "--max-model-len"
+            - {{ .Values.secondary.model.maxModelLen | quote }}
+            - "--tensor-parallel-size"
+            - {{ .Values.secondary.model.tensorParallelSize | quote }}
+            - "--gpu-memory-utilization"
+            - "0.92"
+            - "--enable-auto-tool-choice"
+            - "--tool-call-parser"
+            - "hermes"
+            - "--served-model-name"
+            - "qwen2.5-coder-32b"
+            - "--download-dir"
+            - "/models"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: VLLM_LOGGING_LEVEL
+              value: "INFO"
+          volumeMounts:
+            - name: models
+              mountPath: /models
+            - name: shm
+              mountPath: /dev/shm
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            failureThreshold: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 90
+            periodSeconds: 15
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 20
+          resources:
+            {{- toYaml .Values.secondary.resources | nindent 12 }}
+      volumes:
+        - name: models
+          {{- if .Values.secondary.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "nemoclaw.secondaryFullname" . }}-models
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+{{- end }}
