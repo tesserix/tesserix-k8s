@@ -136,10 +136,12 @@ CREATE INDEX IF NOT EXISTS idx_category_audit_timestamp ON public.category_audit
 
 
 --
--- Name: idx_tenant_slug; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_categories_tenant_slug; Type: INDEX; Schema: public; Owner: -
+-- Tenant-scoped slug uniqueness for multi-tenant isolation
 --
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_tenant_slug ON public.categories USING btree (slug);
+DROP INDEX IF EXISTS idx_tenant_slug;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_tenant_slug ON public.categories USING btree (tenant_id, slug) WHERE (deleted_at IS NULL);
 
 
 --

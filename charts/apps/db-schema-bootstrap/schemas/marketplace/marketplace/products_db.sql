@@ -56,6 +56,8 @@ SET default_table_access_method = heap;
 CREATE TABLE IF NOT EXISTS public.product_variants (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     product_id uuid NOT NULL,
+    tenant_id text,
+    vendor_id text,
     sku text NOT NULL,
     name text NOT NULL,
     price text NOT NULL,
@@ -175,12 +177,8 @@ ALTER TABLE ONLY public.search_analytics
     ADD CONSTRAINT search_analytics_pkey PRIMARY KEY (id);
 
 
---
--- Name: product_variants uni_product_variants_sku; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.product_variants
-    ADD CONSTRAINT uni_product_variants_sku UNIQUE (sku);
+-- NOTE: Global unique constraint on product_variants.sku was removed.
+-- Tenant-scoped uniqueness is enforced by idx_product_variants_tenant_sku below.
 
 
 --
@@ -198,10 +196,11 @@ CREATE INDEX IF NOT EXISTS idx_product_variants_product_id ON public.product_var
 
 
 --
--- Name: idx_product_variants_sku; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_product_variants_tenant_sku; Type: INDEX; Schema: public; Owner: -
+-- Tenant-scoped SKU uniqueness for multi-tenant isolation
 --
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_product_variants_sku ON public.product_variants USING btree (sku) WHERE (deleted_at IS NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_product_variants_tenant_sku ON public.product_variants USING btree (tenant_id, sku) WHERE (deleted_at IS NULL);
 
 
 --
@@ -232,11 +231,8 @@ CREATE INDEX IF NOT EXISTS idx_products_deleted_at ON public.products USING btre
 CREATE INDEX IF NOT EXISTS idx_products_search_vector ON public.products USING gin (search_vector);
 
 
---
--- Name: idx_products_sku; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sku ON public.products USING btree (sku) WHERE (deleted_at IS NULL);
+-- NOTE: Global unique index idx_products_sku was removed.
+-- Tenant-scoped uniqueness is enforced by idx_products_tenant_sku below.
 
 
 --
@@ -285,7 +281,7 @@ CREATE INDEX IF NOT EXISTS idx_products_tenant_inventory ON public.products USIN
 -- Name: idx_products_tenant_sku; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_products_tenant_sku ON public.products USING btree (tenant_id, sku);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_tenant_sku ON public.products USING btree (tenant_id, sku) WHERE (deleted_at IS NULL);
 
 
 --
@@ -372,6 +368,25 @@ ALTER TABLE ONLY public.product_variants
 --
 
 
+
+-- Fix: Drop legacy global unique constraints that conflict with tenant-scoped ones.
+-- These must be dropped AFTER the tenant-scoped indexes are created above.
+-- Idempotent — safe to run repeatedly.
+ALTER TABLE products DROP CONSTRAINT IF EXISTS products_sku_key;
+ALTER TABLE products DROP CONSTRAINT IF EXISTS products_slug_key;
+ALTER TABLE product_variants DROP CONSTRAINT IF EXISTS product_variants_sku_key;
+ALTER TABLE product_variants DROP CONSTRAINT IF EXISTS uni_product_variants_sku;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_products_sku' AND tablename = 'products') THEN
+    DROP INDEX idx_products_sku;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_products_slug' AND tablename = 'products') THEN
+    DROP INDEX idx_products_slug;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_product_variants_sku' AND tablename = 'product_variants') THEN
+    DROP INDEX idx_product_variants_sku;
+  END IF;
+END $$;
 
 -- SEO and OpenGraph columns (added for admin product creation form)
 ALTER TABLE products ADD COLUMN IF NOT EXISTS seo_title varchar(255);
