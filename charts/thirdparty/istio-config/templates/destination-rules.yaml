@@ -543,6 +543,25 @@ spec:
         maxRequestsPerConnection: 10
         maxRetries: 3
 
+---
+# StockPilot -> NATS: DISABLE mTLS (NATS has mTLS disabled via PeerAuthentication)
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: stockpilot-to-nats-dr
+  namespace: {{ .Values.appNamespaces.stockpilot }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  host: nats.nats.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+
 # =============================================================================
 # Scrapper Namespace DestinationRules
 # Social media scrapper platform
