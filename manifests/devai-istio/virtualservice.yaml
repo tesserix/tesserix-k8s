@@ -1,0 +1,196 @@
+##############################################################################
+# DevAI Istio VirtualService Configuration
+# Routes: devai.tesserix.app → devai-api / devai-dashboard
+#         sre.tesserix.app   → devai-sre / devai-sre-dashboard
+##############################################################################
+
+# ALM Platform: devai.tesserix.app
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: devai-platform
+  namespace: devai
+  labels:
+    app.kubernetes.io/part-of: devai
+    app.kubernetes.io/component: routing
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - devai.tesserix.app
+  http:
+    # Health checks → devai-api
+    - match:
+        - uri:
+            exact: /healthz
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 10s
+
+    - match:
+        - uri:
+            exact: /readyz
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 10s
+
+    # GitHub webhook → devai-api
+    - match:
+        - uri:
+            prefix: /webhook
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 60s
+
+    # Chat WebSocket → devai-api (long-lived)
+    - match:
+        - uri:
+            prefix: /chat/ws
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 3600s
+
+    # Chat API (REST + SSE) → devai-api
+    - match:
+        - uri:
+            prefix: /chat
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 300s
+
+    # API routes → devai-api
+    - match:
+        - uri:
+            prefix: /api
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 120s
+      retries:
+        attempts: 3
+        perTryTimeout: 30s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy: &devai-cors
+        allowOrigins:
+          - exact: "https://devai.tesserix.app"
+          - exact: "https://sre.tesserix.app"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # All other routes → devai-dashboard frontend
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: devai-dashboard.devai.svc.cluster.local
+            port:
+              number: 3100
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+---
+# SRE Platform: sre.tesserix.app
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: devai-sre-platform
+  namespace: devai
+  labels:
+    app.kubernetes.io/part-of: devai
+    app.kubernetes.io/component: routing
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - sre.tesserix.app
+  http:
+    # Health checks → devai-sre
+    - match:
+        - uri:
+            exact: /healthz
+      route:
+        - destination:
+            host: devai-sre.devai.svc.cluster.local
+            port:
+              number: 8090
+      timeout: 10s
+
+    # SRE API routes → devai-sre
+    - match:
+        - uri:
+            prefix: /api
+      route:
+        - destination:
+            host: devai-sre.devai.svc.cluster.local
+            port:
+              number: 8090
+      timeout: 120s
+      retries:
+        attempts: 3
+        perTryTimeout: 30s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://sre.tesserix.app"
+          - exact: "https://devai.tesserix.app"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # All other routes → devai-sre-dashboard frontend
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: devai-sre-dashboard.devai.svc.cluster.local
+            port:
+              number: 3200
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
