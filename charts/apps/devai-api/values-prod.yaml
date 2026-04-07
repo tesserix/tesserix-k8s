@@ -1,0 +1,48 @@
+# Production overrides for devai-api
+
+replicaCount: 1
+
+resources:
+  requests:
+    memory: 1Gi
+  limits:
+    memory: 2Gi
+
+autoscaling:
+  enabled: false
+
+keda:
+  enabled: true
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  prometheus:
+    enabled: true
+    serverAddress: "http://prometheus-server.monitoring.svc.cluster.local:80"
+    requestRateQuery: 'sum(rate(istio_requests_total{destination_canonical_service="devai-api",reporter="destination"}[2m]))'
+    requestRateThreshold: "10"
+  cpu:
+    enabled: false
+  memory:
+    enabled: true
+    threshold: "80"
+
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-devai-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+database:
+  host: "postgresql.postgresql-devai.svc.cluster.local"
+  port: "5432"
+  user: "devai"
+  name: "devai_db"
+
+redis:
+  host: "redis.redis-devai.svc.cluster.local"
+  port: "6379"
+
+nats:
+  url: "nats://nats.nats.svc.cluster.local:4222"

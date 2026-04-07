@@ -1,0 +1,91 @@
+# Default values for devai-api
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/devai
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+env:
+  DEVAI_HOST: "0.0.0.0"
+  DEVAI_PORT: "8080"
+  DEVAI_LOG_LEVEL: "info"
+  DEVAI_SCM_PROVIDER: "github"
+  DEVAI_SCM_AUTH_METHOD: "github_app"
+  DEVAI_GITHUB_ORG: "tesserix"
+  DEVAI_AUTH_PROVIDER: "keycloak"
+  DEVAI_KEYCLOAK_URL: "https://internal-identity.tesserix.app"
+  DEVAI_KEYCLOAK_REALM: "tesserix-internal"
+  DEVAI_KEYCLOAK_CLIENT_ID: "devai-dashboard"
+  DEVAI_CLAUDE_MODEL: "claude-sonnet-4-20250514"
+  DEVAI_OPENAI_MODEL: "o3"
+  DEVAI_GROQ_MODEL: "llama-3.3-70b-versatile"
+  DEVAI_NEMOCLAW_ENDPOINT: "http://nemoclaw-inference.devai.svc.cluster.local:8000/v1"
+  DEVAI_NEMOCLAW_MODEL: "nvidia/nemotron-3-super-120b-a12b"
+  DEVAI_NEMOCLAW_FALLBACK_TO_GROQ: "true"
+  DEVAI_LANGCHAIN_TRACING_V2: "true"
+  DEVAI_LANGCHAIN_PROJECT: "devai"
+  DEVAI_PIPELINE_LABEL: "devai:automate"
+  DEVAI_MAX_REVIEW_ITERATIONS: "3"
+  DEVAI_DASHBOARD_BASE_URL: "https://devai.tesserix.app"
+
+database:
+  host: "postgresql.postgresql.svc.cluster.local"
+  port: "5432"
+  user: "devai"
+  name: "devai_db"
+
+redis:
+  host: "redis.redis.svc.cluster.local"
+  port: "6379"
+
+nats:
+  url: "nats://nats.nats.svc.cluster.local:4222"
+
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetMemoryUtilizationPercentage: 80
+
+keda:
+  enabled: false
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  proxy.istio.io/config: |
+    holdApplicationUntilProxyStarts: true
+  traffic.sidecar.istio.io/excludeOutboundPorts: "5432,6379,4222"
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+
+podLabels: {}

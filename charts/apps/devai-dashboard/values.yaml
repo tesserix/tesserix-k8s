@@ -1,0 +1,51 @@
+# Default values for devai-dashboard
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/devai-dashboard
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 3100
+  targetPort: 3100
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+env:
+  NODE_ENV: "production"
+  NEXT_PUBLIC_API_URL: "http://devai-api:8080"
+
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  proxy.istio.io/config: |
+    holdApplicationUntilProxyStarts: true
+
+podLabels: {}

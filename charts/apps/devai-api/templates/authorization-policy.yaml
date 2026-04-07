@@ -1,0 +1,151 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: devai-api-authz
+  namespace: devai
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: devai-api
+  action: ALLOW
+  rules:
+    # Allow Istio ingress gateway (external traffic via VirtualService)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway"]
+    # Allow devai-dashboard (frontend SSR calls)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-dashboard"]
+    # Allow devai-sre (inter-service communication)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-sre"]
+    # Allow self
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-api"]
+    # Allow Prometheus scraping
+    - from:
+        - source:
+            namespaces: ["monitoring"]
+      to:
+        - operation:
+            paths: ["/metrics"]
+            methods: ["GET"]
+    # Allow health checks
+    - to:
+        - operation:
+            paths: ["/healthz", "/readyz"]
+            methods: ["GET"]
+    # Allow GitHub webhook
+    - to:
+        - operation:
+            paths: ["/webhook/github"]
+            methods: ["POST"]
+---
+# NetworkPolicy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: devai-api-netpol
+  namespace: devai
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: devai-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from Istio ingress gateway
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - port: 8080
+          protocol: TCP
+    # Allow from pods in devai namespace (dashboard, sre)
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 8080
+          protocol: TCP
+    # Allow from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    # Allow to PostgreSQL
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgresql-devai
+      ports:
+        - port: 5432
+          protocol: TCP
+    # Allow to Redis
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: redis-devai
+      ports:
+        - port: 6379
+          protocol: TCP
+    # Allow to NATS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nats
+      ports:
+        - port: 4222
+          protocol: TCP
+    # Allow to NemoClaw inference (same namespace)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nemoclaw-inference
+      ports:
+        - port: 8000
+          protocol: TCP
+    # Allow to Keycloak (identity-internal namespace)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: identity-internal
+      ports:
+        - port: 8080
+          protocol: TCP
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Allow external HTTPS (LLM APIs: OpenAI, Anthropic, Groq, GitHub API)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
+    # Allow GCP metadata server (Workload Identity)
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP
