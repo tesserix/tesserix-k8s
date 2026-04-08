@@ -3,6 +3,10 @@
 # =============================================================================
 # Single set per namespace group, all watching main branch.
 # Adding a new service = adding a directory in k8s/apps/<namespace>/<service>.
+#
+# Legacy mark8ly's `shared-services` and `marketplace-services` AppSets were
+# removed when the legacy stack was retired. The new mark8ly v2 stack lives
+# under its own `mark8ly-*` AppSet — see argocd/prod/apps/mark8ly/.
 # =============================================================================
 
 # ---------------------------------------------------------------------------
@@ -33,81 +37,6 @@ spec:
       destination:
         server: https://kubernetes.default.svc
         namespace: tesserix
-      syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-        syncOptions:
-          - ServerSideApply=true
----
-# ---------------------------------------------------------------------------
-# Shared services
-# ---------------------------------------------------------------------------
-apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: shared-services
-  namespace: argocd
-spec:
-  goTemplate: true
-  generators:
-    - git:
-        repoURL: https://github.com/tesserix/tesserix-k8s.git
-        revision: main
-        directories:
-          - path: k8s/apps/shared/*
-    - git:
-        repoURL: https://github.com/tesserix/tesserix-k8s.git
-        revision: main
-        directories:
-          - path: k8s/apps/stateless/*
-  template:
-    metadata:
-      name: "{{ .path.basename }}"
-    spec:
-      project: shared
-      source:
-        repoURL: https://github.com/tesserix/tesserix-k8s.git
-        targetRevision: main
-        path: "{{ .path.path }}"
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: shared
-      syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-        syncOptions:
-          - ServerSideApply=true
----
-# ---------------------------------------------------------------------------
-# Marketplace services
-# ---------------------------------------------------------------------------
-apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: marketplace-services
-  namespace: argocd
-spec:
-  goTemplate: true
-  generators:
-    - git:
-        repoURL: https://github.com/tesserix/tesserix-k8s.git
-        revision: main
-        directories:
-          - path: k8s/apps/marketplace/*
-  template:
-    metadata:
-      name: "{{ .path.basename }}"
-    spec:
-      project: marketplace
-      source:
-        repoURL: https://github.com/tesserix/tesserix-k8s.git
-        targetRevision: main
-        path: "{{ .path.path }}"
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: marketplace
       syncPolicy:
         automated:
           prune: true
