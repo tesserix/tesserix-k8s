@@ -30,34 +30,76 @@ spec:
           ports:
             - containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
-          envFrom:
-            - configMapRef:
-                name: devai-auth-bff-config
-            - secretRef:
-                name: devai-auth-bff-secrets
+          env:
+            {{- range $key, $val := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            # Keycloak - Customer/ALM realm (devai.tesserix.app)
+            - name: KEYCLOAK_CUSTOMER_URL
+              value: {{ .Values.keycloak.customer.url | quote }}
+            {{- if .Values.keycloak.customer.internalUrl }}
+            - name: KEYCLOAK_CUSTOMER_INTERNAL_URL
+              value: {{ .Values.keycloak.customer.internalUrl | quote }}
+            {{- end }}
+            - name: KEYCLOAK_CUSTOMER_REALM
+              value: {{ .Values.keycloak.customer.realm | quote }}
+            - name: KEYCLOAK_CUSTOMER_CLIENT_ID
+              value: {{ .Values.keycloak.customer.clientId | quote }}
+            # Keycloak - Internal/SRE realm (sre.tesserix.app)
+            - name: KEYCLOAK_INTERNAL_URL
+              value: {{ .Values.keycloak.internal.url | quote }}
+            {{- if .Values.keycloak.internal.internalUrl }}
+            - name: KEYCLOAK_INTERNAL_INTERNAL_URL
+              value: {{ .Values.keycloak.internal.internalUrl | quote }}
+            {{- end }}
+            - name: KEYCLOAK_INTERNAL_REALM
+              value: {{ .Values.keycloak.internal.realm | quote }}
+            - name: KEYCLOAK_INTERNAL_CLIENT_ID
+              value: {{ .Values.keycloak.internal.clientId | quote }}
+            # Redis
+            - name: REDIS_URL
+              value: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: devai-auth-bff-secrets
+                  key: REDIS_PASSWORD
+                  optional: true
+            # Keycloak client secrets
+            - name: KEYCLOAK_CUSTOMER_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: devai-auth-bff-secrets
+                  key: KEYCLOAK_CUSTOMER_CLIENT_SECRET
+            - name: KEYCLOAK_INTERNAL_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: devai-auth-bff-secrets
+                  key: KEYCLOAK_INTERNAL_CLIENT_SECRET
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: devai-auth-bff-secrets
+                  key: SESSION_SECRET
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: {{ .Values.service.targetPort }}
             initialDelaySeconds: 10
-            periodSeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: {{ .Values.service.targetPort }}
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: devai-auth-bff-config
-data:
-  {{- range $key, $val := .Values.env }}
-  {{ $key }}: {{ $val | quote }}
-  {{- end }}
 ---
 apiVersion: v1
 kind: Service

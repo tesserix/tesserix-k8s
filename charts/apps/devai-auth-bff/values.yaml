@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/tesserix/auth-bff
+  repository: ghcr.io/tesseract-nexus/global-services/auth-bff
   pullPolicy: Always
   tag: "latest"
 
@@ -17,35 +17,47 @@ serviceAccount:
   create: true
   name: devai-auth-bff
 
+# General config
 env:
   PORT: "8090"
+  HOST: "0.0.0.0"
   NODE_ENV: "production"
   LOG_LEVEL: "info"
-  SESSION_COOKIE_NAME: "devai_session"
+  TRUST_PROXY: "true"
   SESSION_MAX_AGE: "86400"
-  COOKIE_DOMAIN: ".tesserix.app"
-  COOKIE_SECURE: "true"
-  COOKIE_SAMESITE: "lax"
+  SESSION_COOKIE_NAME: "devai_session"
+  SESSION_COOKIE_DOMAIN: ""
+  SESSION_COOKIE_SECURE: "true"
+  SESSION_COOKIE_HTTPONLY: "true"
+  SESSION_COOKIE_SAMESITE: "lax"
+  BASE_DOMAIN: "tesserix.app"
+  ALLOWED_ORIGINS: "https://devai.tesserix.app,https://sre.tesserix.app,https://*.tesserix.app"
 
-  # Keycloak — DevAI realm (ALM dashboard)
-  KEYCLOAK_DEVAI_URL: "https://identity-devai.tesserix.app"
-  KEYCLOAK_DEVAI_INTERNAL_URL: "http://keycloak.identity-internal.svc.cluster.local:8080"
-  KEYCLOAK_DEVAI_REALM: "devai"
-  KEYCLOAK_DEVAI_CLIENT_ID: "devai-bff"
+# DUAL-REALM KEYCLOAK CONFIGURATION
+# - Customer realm (devai): ALM dashboard authentication
+# - Internal realm (devai-sre): SRE dashboard authentication
+# Both realms live on the identity-internal Keycloak instance
+keycloak:
+  customer:
+    url: "https://identity-devai.tesserix.app"
+    internalUrl: "http://keycloak.identity-internal.svc.cluster.local:8080"
+    realm: "devai"
+    clientId: "devai-bff"
+  internal:
+    url: "https://identity-sre.tesserix.app"
+    internalUrl: "http://keycloak.identity-internal.svc.cluster.local:8080"
+    realm: "devai-sre"
+    clientId: "devai-sre-bff"
 
-  # Keycloak — DevAI SRE realm (SRE dashboard)
-  KEYCLOAK_SRE_URL: "https://identity-sre.tesserix.app"
-  KEYCLOAK_SRE_INTERNAL_URL: "http://keycloak.identity-internal.svc.cluster.local:8080"
-  KEYCLOAK_SRE_REALM: "devai-sre"
-  KEYCLOAK_SRE_CLIENT_ID: "devai-sre-bff"
+# Redis for sessions
+redis:
+  host: "redis-master.redis-devai.svc.cluster.local"
+  port: "6379"
 
-  # Redis for sessions
-  REDIS_HOST: "redis.redis-devai.svc.cluster.local"
-  REDIS_PORT: "6379"
-  REDIS_DB: "1"
-
-  # Realm routing: x-forwarded-host → realm mapping
-  REALM_MAP: '{"devai.tesserix.app":"devai","sre.tesserix.app":"devai-sre"}'
+# External Secrets
+externalSecrets:
+  enabled: true
+  secretStoreRef: "gcp-secret-store"
 
 resources:
   requests:
