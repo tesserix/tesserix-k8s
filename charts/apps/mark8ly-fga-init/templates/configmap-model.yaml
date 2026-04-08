@@ -1,0 +1,161 @@
+# Authorization model for the mark8ly-platform OpenFGA store.
+# MUST be kept in lockstep with mark8ly/infra/openfga/model.fga and
+# mark8ly/infra/dev/seed/fga-init.sh. If you change one, change all three.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-model
+  namespace: {{ .Values.namespace }}
+data:
+  model.json: |
+    {
+      "schema_version": "1.1",
+      "type_definitions": [
+        { "type": "user" },
+        {
+          "type": "tenant",
+          "relations": {
+            "owner":  { "this": {} },
+            "admin":  { "this": {} },
+            "staff":  { "this": {} },
+            "viewer": { "this": {} },
+            "member": {
+              "union": {
+                "child": [
+                  { "computedUserset": { "relation": "owner"  } },
+                  { "computedUserset": { "relation": "admin"  } },
+                  { "computedUserset": { "relation": "staff"  } },
+                  { "computedUserset": { "relation": "viewer" } }
+                ]
+              }
+            },
+            "can_view_settings": {
+              "union": {
+                "child": [
+                  { "computedUserset": { "relation": "owner"  } },
+                  { "computedUserset": { "relation": "admin"  } },
+                  { "computedUserset": { "relation": "staff"  } },
+                  { "computedUserset": { "relation": "viewer" } }
+                ]
+              }
+            },
+            "can_edit_settings": {
+              "union": {
+                "child": [
+                  { "computedUserset": { "relation": "owner" } },
+                  { "computedUserset": { "relation": "admin" } }
+                ]
+              }
+            },
+            "can_invite_members": {
+              "union": {
+                "child": [
+                  { "computedUserset": { "relation": "owner" } },
+                  { "computedUserset": { "relation": "admin" } }
+                ]
+              }
+            },
+            "can_manage_stores": {
+              "union": {
+                "child": [
+                  { "computedUserset": { "relation": "owner" } },
+                  { "computedUserset": { "relation": "admin" } }
+                ]
+              }
+            }
+          },
+          "metadata": {
+            "relations": {
+              "owner":  { "directly_related_user_types": [{ "type": "user" }] },
+              "admin":  { "directly_related_user_types": [{ "type": "user" }] },
+              "staff":  { "directly_related_user_types": [{ "type": "user" }] },
+              "viewer": { "directly_related_user_types": [{ "type": "user" }] }
+            }
+          }
+        },
+        {
+          "type": "store",
+          "relations": {
+            "parent":  { "this": {} },
+            "owner":   { "this": {} },
+            "manager": { "this": {} },
+            "staff":   { "this": {} },
+            "viewer":  { "this": {} },
+            "tenant_admin": {
+              "tupleToUserset": {
+                "tupleset": { "relation": "parent" },
+                "computedUserset": { "relation": "admin" }
+              }
+            },
+            "tenant_owner": {
+              "tupleToUserset": {
+                "tupleset": { "relation": "parent" },
+                "computedUserset": { "relation": "owner" }
+              }
+            },
+            "member": {
+              "union": {
+                "child": [
+                  { "computedUserset": { "relation": "owner" } },
+                  { "computedUserset": { "relation": "manager" } },
+                  { "computedUserset": { "relation": "staff" } },
+                  { "computedUserset": { "relation": "viewer" } },
+                  {
+                    "tupleToUserset": {
+                      "tupleset": { "relation": "parent" },
+                      "computedUserset": { "relation": "member" }
+                    }
+                  }
+                ]
+              }
+            },
+            "can_view_store": {
+              "union": {
+                "child": [
+                  { "computedUserset": { "relation": "owner" } },
+                  { "computedUserset": { "relation": "manager" } },
+                  { "computedUserset": { "relation": "staff" } },
+                  { "computedUserset": { "relation": "viewer" } },
+                  {
+                    "tupleToUserset": {
+                      "tupleset": { "relation": "parent" },
+                      "computedUserset": { "relation": "member" }
+                    }
+                  }
+                ]
+              }
+            },
+            "can_edit_store_settings": {
+              "union": {
+                "child": [
+                  { "computedUserset": { "relation": "owner" } },
+                  { "computedUserset": { "relation": "manager" } },
+                  { "computedUserset": { "relation": "tenant_owner" } },
+                  { "computedUserset": { "relation": "tenant_admin" } }
+                ]
+              }
+            },
+            "can_manage_catalog": {
+              "union": {
+                "child": [
+                  { "computedUserset": { "relation": "owner" } },
+                  { "computedUserset": { "relation": "manager" } },
+                  { "computedUserset": { "relation": "staff" } },
+                  { "computedUserset": { "relation": "tenant_owner" } },
+                  { "computedUserset": { "relation": "tenant_admin" } }
+                ]
+              }
+            }
+          },
+          "metadata": {
+            "relations": {
+              "parent":  { "directly_related_user_types": [{ "type": "tenant" }] },
+              "owner":   { "directly_related_user_types": [{ "type": "user" }] },
+              "manager": { "directly_related_user_types": [{ "type": "user" }] },
+              "staff":   { "directly_related_user_types": [{ "type": "user" }] },
+              "viewer":  { "directly_related_user_types": [{ "type": "user" }] }
+            }
+          }
+        }
+      ]
+    }

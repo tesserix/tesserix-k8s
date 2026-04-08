@@ -1,0 +1,33 @@
+# Single VirtualService for the *.mark8ly.com wildcard. Istio merges VSes for
+# the same host poorly — to avoid that, admin and storefront both live in this
+# one VS and are split by an authority-header regex match. The admin rule must
+# come first so its regex wins before the catch-all route.
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: mark8ly-wildcard
+  namespace: {{ .Values.namespace }}
+spec:
+  hosts:
+    - "*.mark8ly.com"
+  gateways:
+    - istio-system/tesserix-gateway
+  http:
+    # {slug}-admin.mark8ly.com → admin
+    - match:
+        - headers:
+            ":authority":
+              regex: "^[^.]+-admin\\.mark8ly\\.com$"
+      route:
+        - destination:
+            host: {{ .Values.adminServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.adminServicePort }}
+      timeout: 30s
+    # Everything else under *.mark8ly.com → storefront
+    - route:
+        - destination:
+            host: {{ .Values.name }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+      timeout: 30s

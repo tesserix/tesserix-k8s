@@ -1,0 +1,40 @@
+# OpenFGA ships schema migrations as a subcommand on the same image.
+# We run them as an ArgoCD PreSync hook so the Deployment only starts against
+# a schema that matches the image version.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name }}-migrate
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/component: migrate
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ .Values.name }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          args:
+            - migrate
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: password
+            - name: OPENFGA_DATASTORE_URI
+              value: "postgres://$(DB_USER):$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode=require"

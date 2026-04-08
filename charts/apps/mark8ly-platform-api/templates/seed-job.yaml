@@ -1,0 +1,40 @@
+{{- if .Values.seed.enabled }}
+# One-shot seed Job. Populates reference data (countries, states, currencies,
+# timezones). Idempotent — safe to re-run. ArgoCD PostSync hook ensures it
+# runs AFTER the Deployment is healthy (so migrations are already applied).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name }}-seed
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/component: seed
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "true"
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ .Values.name }}
+      imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 8 }}
+      containers:
+        - name: seed
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command: ["/seed"]
+          env:
+{{ include "mark8ly-platform-api.dbEnv" . | indent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+{{- end }}

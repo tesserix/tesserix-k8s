@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: backend
+spec:
+  # Replicas controlled by KEDA ScaledObject when enabled.
+  {{- if not .Values.keda.enabled }}
+  replicas: 1
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.name }}
+        app.kubernetes.io/part-of: mark8ly
+      annotations:
+        sidecar.istio.io/inject: "true"
+        proxy.istio.io/config: |
+          holdApplicationUntilProxyStarts: true
+        traffic.sidecar.istio.io/excludeOutboundPorts: "5432"
+    spec:
+      serviceAccountName: {{ .Values.name }}
+      imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 8 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+
+      # Migrations run every pod startup. Server refuses to boot on schema
+      # mismatch, so a failed migrate container blocks the rollout (by design).
+      initContainers:
+        - name: migrate
+          image: "{{ .Values.image.migrateTarget }}:{{ .Values.image.tag }}"
+          command: ["/migrate"]
+          env:
+{{ include "mark8ly-platform-api.dbEnv" . | indent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+
+      containers:
+        - name: server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          env:
+            - name: ENV
+              value: "prod"
+            - name: HTTP_PORT
+              value: {{ .Values.service.port | quote }}
+{{ include "mark8ly-platform-api.dbEnv" . | indent 12 }}
+            - name: FGA_API_URL
+              value: {{ .Values.openfga.apiUrl | quote }}
+            - name: FGA_STORE_ID
+              value: {{ .Values.openfga.storeId | quote }}
+            - name: ADMIN_BASE_URL_TEMPLATE
+              value: {{ .Values.adminBaseUrlTemplate | quote }}
+            - name: STOREFRONT_BASE_URL_TEMPLATE
+              value: {{ .Values.storefrontBaseUrlTemplate | quote }}
+            - name: EMAIL_FROM
+              value: {{ .Values.emailFrom | quote }}
+            - name: GCS_BUCKET
+              value: {{ .Values.gcsBucket | quote }}
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-sendgrid
+                  key: SENDGRID_API_KEY
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

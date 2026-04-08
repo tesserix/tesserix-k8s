@@ -1,0 +1,18 @@
+# Only platform-api and auth-bff are allowed to call the OpenFGA service.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-openfga-callers
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-platform-api"
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-auth-bff"
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-fga-init"
