@@ -40,11 +40,12 @@ spec:
             - name: model
               mountPath: /models
           securityContext:
-            # curlimages/curl ships with non-root UID 100 baked in.
-            runAsNonRoot: true
-            runAsUser: 100
+            # alpine apk-add at runtime requires root + writable rootfs.
+            # Acceptable tradeoff for this one-shot init Job — see values.yaml.
+            runAsNonRoot: false
+            runAsUser: 0
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
+            readOnlyRootFilesystem: false
             capabilities:
               drop: ["ALL"]
       volumes:
