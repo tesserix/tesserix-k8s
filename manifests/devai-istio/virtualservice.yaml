@@ -1,7 +1,18 @@
 ##############################################################################
 # DevAI Istio VirtualService Configuration
-# Routes: devai.tesserix.app → devai-api / devai-dashboard
-#         sre.tesserix.app   → devai-sre / devai-sre-dashboard
+#
+# PUBLIC routes (through Istio gateway → internet):
+#   - devai.tesserix.app/           → devai-dashboard (ALM UI)
+#   - devai.tesserix.app/webhook/*  → devai-api (GitHub/GitLab/ADO webhooks)
+#   - sre.tesserix.app/             → devai-sre-dashboard (SRE UI)
+#
+# INTERNAL routes (cluster-only, no gateway):
+#   - devai-api.devai.svc.cluster.local:8080  → all API endpoints
+#   - devai-sre.devai.svc.cluster.local:8090  → all SRE API endpoints
+#
+# API endpoints (/api/*, /chat/*, /healthz, /readyz, /dashboard/api/*)
+# are NOT exposed through the gateway. Dashboards call APIs via internal
+# K8s service DNS using server-side rendering.
 ##############################################################################
 
 # ALM Platform: devai.tesserix.app
@@ -19,28 +30,7 @@ spec:
   hosts:
     - devai.tesserix.app
   http:
-    # Health checks → devai-api
-    - match:
-        - uri:
-            exact: /healthz
-      route:
-        - destination:
-            host: devai-api.devai.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 10s
-
-    - match:
-        - uri:
-            exact: /readyz
-      route:
-        - destination:
-            host: devai-api.devai.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 10s
-
-    # GitHub webhook → devai-api
+    # GitHub/GitLab/ADO webhook → devai-api (must be public for SCM providers)
     - match:
         - uri:
             prefix: /webhook
@@ -50,61 +40,6 @@ spec:
             port:
               number: 8080
       timeout: 60s
-
-    # Chat WebSocket → devai-api (long-lived)
-    - match:
-        - uri:
-            prefix: /chat/ws
-      route:
-        - destination:
-            host: devai-api.devai.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 3600s
-
-    # Chat API (REST + SSE) → devai-api
-    - match:
-        - uri:
-            prefix: /chat
-      route:
-        - destination:
-            host: devai-api.devai.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 300s
-
-    # API routes → devai-api
-    - match:
-        - uri:
-            prefix: /api
-      route:
-        - destination:
-            host: devai-api.devai.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 120s
-      retries:
-        attempts: 3
-        perTryTimeout: 30s
-        retryOn: gateway-error,connect-failure,refused-stream
-      corsPolicy: &devai-cors
-        allowOrigins:
-          - exact: "https://devai.tesserix.app"
-          - exact: "https://sre.tesserix.app"
-        allowMethods:
-          - GET
-          - POST
-          - PUT
-          - DELETE
-          - PATCH
-          - OPTIONS
-        allowHeaders:
-          - content-type
-          - authorization
-          - accept
-          - x-request-id
-        allowCredentials: true
-        maxAge: "86400s"
 
     # All other routes → devai-dashboard frontend
     - match:
@@ -121,6 +56,74 @@ spec:
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
 ---
+# Internal-only VirtualService for devai-api (mesh traffic, no gateway)
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: devai-api-internal
+  namespace: devai
+  labels:
+    app.kubernetes.io/part-of: devai
+    app.kubernetes.io/component: routing
+spec:
+  # No gateway — mesh-only (internal K8s service traffic)
+  hosts:
+    - devai-api.devai.svc.cluster.local
+  http:
+    # Chat WebSocket (long-lived connections from dashboard)
+    - match:
+        - uri:
+            prefix: /chat/ws
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 3600s
+
+    # Chat API (REST + SSE)
+    - match:
+        - uri:
+            prefix: /chat
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 300s
+
+    # Dashboard API
+    - match:
+        - uri:
+            prefix: /dashboard/api
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 120s
+
+    # Health/readiness probes
+    - match:
+        - uri:
+            exact: /healthz
+        - uri:
+            exact: /readyz
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 10s
+
+    # Catch-all for API
+    - route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 120s
+---
 # SRE Platform: sre.tesserix.app
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
@@ -136,51 +139,7 @@ spec:
   hosts:
     - sre.tesserix.app
   http:
-    # Health checks → devai-sre
-    - match:
-        - uri:
-            exact: /healthz
-      route:
-        - destination:
-            host: devai-sre.devai.svc.cluster.local
-            port:
-              number: 8090
-      timeout: 10s
-
-    # SRE API routes → devai-sre
-    - match:
-        - uri:
-            prefix: /api
-      route:
-        - destination:
-            host: devai-sre.devai.svc.cluster.local
-            port:
-              number: 8090
-      timeout: 120s
-      retries:
-        attempts: 3
-        perTryTimeout: 30s
-        retryOn: gateway-error,connect-failure,refused-stream
-      corsPolicy:
-        allowOrigins:
-          - exact: "https://sre.tesserix.app"
-          - exact: "https://devai.tesserix.app"
-        allowMethods:
-          - GET
-          - POST
-          - PUT
-          - DELETE
-          - PATCH
-          - OPTIONS
-        allowHeaders:
-          - content-type
-          - authorization
-          - accept
-          - x-request-id
-        allowCredentials: true
-        maxAge: "86400s"
-
-    # All other routes → devai-sre-dashboard frontend
+    # All routes → devai-sre-dashboard frontend
     - match:
         - uri:
             prefix: /
@@ -194,3 +153,23 @@ spec:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
+---
+# Internal-only VirtualService for devai-sre (mesh traffic, no gateway)
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: devai-sre-internal
+  namespace: devai
+  labels:
+    app.kubernetes.io/part-of: devai
+    app.kubernetes.io/component: routing
+spec:
+  hosts:
+    - devai-sre.devai.svc.cluster.local
+  http:
+    - route:
+        - destination:
+            host: devai-sre.devai.svc.cluster.local
+            port:
+              number: 8090
+      timeout: 120s

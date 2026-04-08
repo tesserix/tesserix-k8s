@@ -1,0 +1,68 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "devai-api.fullname" . }}-cluster-reader
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+rules:
+  # ArgoCD Application CRDs — read sync/health, trigger sync
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications", "applicationsets", "appprojects"]
+    verbs: ["get", "list", "watch", "patch"]
+
+  # Core resources — read-only for SRE monitoring and discovery
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "services", "configmaps", "events", "nodes"]
+    verbs: ["get", "list", "watch"]
+
+  # Pod logs — for SRE log analysis agent
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+
+  # Deployments, StatefulSets — read for status checks
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+
+  # HPA — capacity planning agent
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+
+  # Cert-manager — certificate expiry checks
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates", "certificaterequests"]
+    verbs: ["get", "list", "watch"]
+
+  # Istio — routing and traffic management
+  - apiGroups: ["networking.istio.io"]
+    resources: ["virtualservices", "destinationrules", "gateways"]
+    verbs: ["get", "list", "watch"]
+
+  # Knative — serving config
+  - apiGroups: ["serving.knative.dev"]
+    resources: ["services", "revisions", "routes"]
+    verbs: ["get", "list", "watch"]
+
+  # Metrics — kubectl top
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "devai-api.fullname" . }}-cluster-reader
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "devai-api.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "devai-api.fullname" . }}-cluster-reader
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

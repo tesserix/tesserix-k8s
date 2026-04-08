@@ -1,0 +1,193 @@
+##############################################################################
+# DevAI NetworkPolicy — L3/L4 firewall (defense in depth with Istio L7)
+#
+# Even if Istio AuthorizationPolicy is misconfigured, the NetworkPolicy
+# ensures the API pods can only receive traffic from expected sources.
+##############################################################################
+
+# --- devai-api NetworkPolicy ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: devai-api-netpol
+  namespace: devai
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: devai-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Istio ingress gateway (webhooks)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - port: 8080
+          protocol: TCP
+    # Pods in devai namespace (dashboards, SRE)
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 8080
+          protocol: TCP
+    # Monitoring (Prometheus)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    # PostgreSQL
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgresql-devai
+      ports:
+        - port: 5432
+          protocol: TCP
+    # Redis
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: redis-devai
+      ports:
+        - port: 6379
+          protocol: TCP
+    # NATS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nats
+      ports:
+        - port: 4222
+          protocol: TCP
+    # ArgoCD (kubectl to ArgoCD Application CRDs)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: argocd
+      ports:
+        - port: 8080
+          protocol: TCP
+    # Keycloak (identity)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: identity-internal
+      ports:
+        - port: 8080
+          protocol: TCP
+    # K8s API server (kubectl for SRE tools + ArgoCD CRDs)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # GCP metadata server (Workload Identity)
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP
+---
+# --- devai-sre NetworkPolicy ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: devai-sre-netpol
+  namespace: devai
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: devai-sre
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Pods in devai namespace (SRE dashboard, ALM API)
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 8090
+          protocol: TCP
+    # Monitoring
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8090
+          protocol: TCP
+  egress:
+    # PostgreSQL
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgresql-devai
+      ports:
+        - port: 5432
+          protocol: TCP
+    # Redis
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: redis-devai
+      ports:
+        - port: 6379
+          protocol: TCP
+    # K8s API server (kubectl for SRE monitoring)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+    # DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # GCP metadata server
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP
+    # External HTTPS (LLM APIs: Groq, GitHub)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP
