@@ -1,0 +1,161 @@
+##############################################################################
+# DevAI AuthorizationPolicy — Istio L7 access control
+#
+# devai-api: Only allow traffic from:
+#   - Istio ingress gateway (for webhooks only — VirtualService limits paths)
+#   - devai-dashboard (frontend SSR → API calls)
+#   - devai-sre-dashboard (SRE frontend → API calls)
+#   - devai-sre (SRE backend → ALM API cross-calls)
+#   - Self (A2A internal communication)
+#   - Monitoring namespace (Prometheus scraping)
+#
+# devai-sre: Only allow traffic from:
+#   - devai-sre-dashboard (frontend SSR → SRE API)
+#   - devai-api (ALM → SRE cross-calls)
+#   - Self (internal)
+#   - Monitoring namespace
+##############################################################################
+
+# --- devai-api Authorization ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: devai-api-authz
+  namespace: devai
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: devai-api
+  action: ALLOW
+  rules:
+    # Rule 1: Istio ingress gateway (webhooks come through here)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway"]
+      to:
+        - operation:
+            paths: ["/webhook/*"]
+            methods: ["POST"]
+
+    # Rule 2: ALM dashboard (SSR API calls)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-dashboard"]
+
+    # Rule 3: SRE dashboard (cross-platform API calls)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-sre-dashboard"]
+
+    # Rule 4: SRE backend (SRE → ALM cross-calls)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-sre"]
+
+    # Rule 5: Self (A2A inter-agent, internal health checks)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-api"]
+
+    # Rule 6: Prometheus scraping
+    - from:
+        - source:
+            namespaces: ["monitoring"]
+      to:
+        - operation:
+            paths: ["/metrics"]
+            methods: ["GET"]
+
+    # Rule 7: Kubelet health probes (no source identity)
+    - to:
+        - operation:
+            paths: ["/healthz", "/readyz"]
+            methods: ["GET"]
+---
+# --- devai-sre Authorization ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: devai-sre-authz
+  namespace: devai
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: devai-sre
+  action: ALLOW
+  rules:
+    # Rule 1: SRE dashboard (SSR API calls)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-sre-dashboard"]
+
+    # Rule 2: ALM backend (ALM → SRE cross-calls)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-api"]
+
+    # Rule 3: Self (internal SRE autonomous scanner)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-sre"]
+
+    # Rule 4: Prometheus scraping
+    - from:
+        - source:
+            namespaces: ["monitoring"]
+      to:
+        - operation:
+            paths: ["/metrics"]
+            methods: ["GET"]
+
+    # Rule 5: Kubelet health probes
+    - to:
+        - operation:
+            paths: ["/healthz", "/readyz"]
+            methods: ["GET"]
+---
+# --- devai-dashboard Authorization (public, but only serves static files) ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: devai-dashboard-authz
+  namespace: devai
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: devai-dashboard
+  action: ALLOW
+  rules:
+    # Allow Istio ingress (public access to dashboard UI)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway"]
+
+    # Kubelet health probes
+    - to:
+        - operation:
+            paths: ["/healthz", "/_next/*", "/"]
+            methods: ["GET"]
+---
+# --- devai-sre-dashboard Authorization (public, static files only) ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: devai-sre-dashboard-authz
+  namespace: devai
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: devai-sre-dashboard
+  action: ALLOW
+  rules:
+    # Allow Istio ingress (public access to SRE dashboard UI)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway"]
+
+    # Kubelet health probes
+    - to:
+        - operation:
+            paths: ["/healthz", "/_next/*", "/"]
+            methods: ["GET"]
