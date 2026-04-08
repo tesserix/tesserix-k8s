@@ -42,22 +42,22 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-            # Database
-            - name: DEVAI_DATABASE_URL
-              value: "postgresql://{{ .Values.database.user }}:$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}"
+            # Database — password must be defined before URL for $(VAR) expansion
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: postgresql-devai-password
                   key: password
-            # Redis
-            - name: DEVAI_REDIS_URL
-              value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            - name: DEVAI_DATABASE_URL
+              value: "postgresql://{{ .Values.database.user }}:$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}"
+            # Redis — password must be defined before URL for $(VAR) expansion
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: redis-devai-password
                   key: password
+            - name: DEVAI_REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
             # GCP project
             - name: GCP_PROJECT
               value: {{ .Values.gcp.projectId | default "" | quote }}
