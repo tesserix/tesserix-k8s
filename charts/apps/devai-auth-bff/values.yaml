@@ -1,0 +1,59 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/auth-bff
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+service:
+  type: ClusterIP
+  port: 8090
+  targetPort: 8090
+
+serviceAccount:
+  create: true
+  name: devai-auth-bff
+
+env:
+  PORT: "8090"
+  NODE_ENV: "production"
+  LOG_LEVEL: "info"
+  SESSION_COOKIE_NAME: "devai_session"
+  SESSION_MAX_AGE: "86400"
+  COOKIE_DOMAIN: ".tesserix.app"
+  COOKIE_SECURE: "true"
+  COOKIE_SAMESITE: "lax"
+
+  # Keycloak — DevAI realm (ALM dashboard)
+  KEYCLOAK_DEVAI_URL: "https://identity-devai.tesserix.app"
+  KEYCLOAK_DEVAI_INTERNAL_URL: "http://keycloak.identity-internal.svc.cluster.local:8080"
+  KEYCLOAK_DEVAI_REALM: "devai"
+  KEYCLOAK_DEVAI_CLIENT_ID: "devai-bff"
+
+  # Keycloak — DevAI SRE realm (SRE dashboard)
+  KEYCLOAK_SRE_URL: "https://identity-sre.tesserix.app"
+  KEYCLOAK_SRE_INTERNAL_URL: "http://keycloak.identity-internal.svc.cluster.local:8080"
+  KEYCLOAK_SRE_REALM: "devai-sre"
+  KEYCLOAK_SRE_CLIENT_ID: "devai-sre-bff"
+
+  # Redis for sessions
+  REDIS_HOST: "redis.redis-devai.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DB: "1"
+
+  # Realm routing: x-forwarded-host → realm mapping
+  REALM_MAP: '{"devai.tesserix.app":"devai","sre.tesserix.app":"devai-sre"}'
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
