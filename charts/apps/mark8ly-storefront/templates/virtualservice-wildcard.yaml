@@ -13,6 +13,20 @@ spec:
   gateways:
     - istio-ingress/tesseract-gateway
   http:
+    # admin.mark8ly.com → admin (canonical sign-in host; this is the
+    # single host registered with Google OAuth as an Authorized JS
+    # Origin, so the sign-in popup works from exactly one place and
+    # the session cookie — scoped to .mark8ly.com — carries across to
+    # every per-tenant subdomain automatically).
+    - match:
+        - authority:
+            exact: "admin.mark8ly.com"
+      route:
+        - destination:
+            host: {{ .Values.adminServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.adminServicePort }}
+      timeout: 30s
     # {slug}-admin.mark8ly.com → admin
     - match:
         - authority:
