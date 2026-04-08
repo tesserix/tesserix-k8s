@@ -57,15 +57,15 @@ spec:
               value: {{ .Values.keycloak.internal.realm | quote }}
             - name: KEYCLOAK_INTERNAL_CLIENT_ID
               value: {{ .Values.keycloak.internal.clientId | quote }}
-            # Redis
-            - name: REDIS_URL
-              value: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            # Redis — password must be defined before URL for $(VAR) expansion
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: devai-auth-bff-secrets
                   key: REDIS_PASSWORD
                   optional: true
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
             # Keycloak client secrets
             - name: KEYCLOAK_CUSTOMER_CLIENT_SECRET
               valueFrom:
