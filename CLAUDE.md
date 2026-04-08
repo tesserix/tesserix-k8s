@@ -15,16 +15,12 @@ Always set this before running any kubectl or argocd commands.
 
 ## Git Identity
 
-**Always** configure git before committing:
-
-```bash
-git config user.name "sam123ben"
-git config user.email "samyak.rout@gmail.com"
-```
+Use whatever git identity is already set on the active user's machine.
+**Do NOT override `git config user.name` / `user.email`** — commits should
+be attributed to the developer who is actually driving the work.
 
 - **NEVER** include `Co-Authored-By: Claude` or any Claude/Anthropic/AI reference in commit messages.
 - **NEVER** mention Claude, Copilot, or any AI tool in commit messages, PR descriptions, or code comments.
-- All commits must appear as authored by `sam123ben <samyak.rout@gmail.com>`.
 
 ---
 

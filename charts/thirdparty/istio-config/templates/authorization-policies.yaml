@@ -71,89 +71,6 @@ spec:
               - kube-system
 
 # =============================================================================
-# Marketplace Namespace Policies
-# E-commerce platform isolation
-# =============================================================================
----
-# Allow ingress gateway to reach marketplace services
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-ingress-to-marketplace
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - istio-ingress
-
----
-# Allow internal communication within marketplace namespace
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-internal-marketplace
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.marketplace }}
-    # Allow from global services (callbacks, webhooks)
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.global }}
-    # Allow from tesserix namespace (company website SSR calls to marketplace APIs)
-    - from:
-        - source:
-            namespaces:
-              - tesserix
-    # Allow monitoring
-    - from:
-        - source:
-            namespaces:
-              - monitoring
-              - istio-system
-    # Allow internal CronJobs without Istio sidecar to access /internal/* endpoints
-    - from:
-        - source:
-            notPrincipals:
-              - "*"
-      to:
-        - operation:
-            paths:
-              - "/internal/*"
-
----
-# DENY: Block other app namespaces from accessing marketplace
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: deny-cross-product-to-marketplace
-  namespace: {{ .Values.appNamespaces.marketplace }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: DENY
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.hms }}
-              - {{ .Values.appNamespaces.fanzone }}
-              - {{ .Values.appNamespaces.homechef }}
-              - {{ .Values.appNamespaces.bookkeeping }}
-
-# =============================================================================
 # HMS Namespace Policies
 # Hospital Management System isolation
 # =============================================================================
@@ -212,7 +129,6 @@ spec:
     - from:
         - source:
             namespaces:
-              - {{ .Values.appNamespaces.marketplace }}
               - {{ .Values.appNamespaces.fanzone }}
               - {{ .Values.appNamespaces.homechef }}
               - {{ .Values.appNamespaces.bookkeeping }}
@@ -276,7 +192,6 @@ spec:
     - from:
         - source:
             namespaces:
-              - {{ .Values.appNamespaces.marketplace }}
               - {{ .Values.appNamespaces.hms }}
               - {{ .Values.appNamespaces.homechef }}
               - {{ .Values.appNamespaces.bookkeeping }}
@@ -358,7 +273,6 @@ spec:
     - from:
         - source:
             namespaces:
-              - {{ .Values.appNamespaces.marketplace }}
               - {{ .Values.appNamespaces.hms }}
               - {{ .Values.appNamespaces.fanzone }}
               - {{ .Values.appNamespaces.bookkeeping }}
@@ -422,7 +336,6 @@ spec:
     - from:
         - source:
             namespaces:
-              - {{ .Values.appNamespaces.marketplace }}
               - {{ .Values.appNamespaces.hms }}
               - {{ .Values.appNamespaces.fanzone }}
               - {{ .Values.appNamespaces.homechef }}
@@ -644,7 +557,6 @@ spec:
         - source:
             namespaces:
               - {{ .Values.appNamespaces.global }}
-              - {{ .Values.appNamespaces.marketplace }}
               - email
               - istio-ingress
               - monitoring
@@ -671,7 +583,6 @@ spec:
     - from:
         - source:
             namespaces:
-              - {{ .Values.appNamespaces.marketplace }}
               - {{ .Values.appNamespaces.global }}
     # Allow ingress for external testing
     - from:
@@ -831,7 +742,6 @@ spec:
     - from:
         - source:
             namespaces:
-              - {{ .Values.appNamespaces.marketplace }}
     # Allow ingress for external API access
     - from:
         - source:
