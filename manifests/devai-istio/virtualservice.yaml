@@ -152,61 +152,9 @@ spec:
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
 ---
-# Keycloak login pages: identity-devai.tesserix.app
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: devai-identity
-  namespace: devai
-  labels:
-    app.kubernetes.io/part-of: devai
-    app.kubernetes.io/component: routing
-spec:
-  gateways:
-    - istio-ingress/tesseract-gateway
-  hosts:
-    - identity-devai.tesserix.app
-    - identity-sre.tesserix.app
-  http:
-    # Keycloak realm endpoints (login pages, OIDC well-known)
-    - match:
-        - uri:
-            prefix: /realms/
-      route:
-        - destination:
-            host: keycloak.identity-internal.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 30s
-
-    # Keycloak resources (CSS, images for login theme)
-    - match:
-        - uri:
-            prefix: /resources/
-      route:
-        - destination:
-            host: keycloak.identity-internal.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 10s
-
-    # Keycloak robots.txt
-    - match:
-        - uri:
-            exact: /robots.txt
-      route:
-        - destination:
-            host: keycloak.identity-internal.svc.cluster.local
-            port:
-              number: 8080
-
-    # Default → Keycloak
-    - route:
-        - destination:
-            host: keycloak.identity-internal.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 30s
+# NOTE: identity-devai.tesserix.app and identity-sre.tesserix.app
+# are routed via the identity-internal Keycloak Helm chart VirtualService
+# (additionalHosts in identity-internal/values.yaml)
 ---
 # Internal-only VirtualService for devai-api (mesh traffic, no gateway)
 apiVersion: networking.istio.io/v1beta1
