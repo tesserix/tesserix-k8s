@@ -4,8 +4,11 @@ name: mark8ly-fga-init
 openfgaUrl: "http://mark8ly-openfga:8080"
 storeName: "mark8ly-platform"
 
-# curlimages/curl ships curl + jq pre-installed and runs as a non-root user.
-# Avoids the apk-add-against-readonly-rootfs trap that the alpine base hit.
+# Plain alpine + apk-add curl/jq at runtime. The Job drops the
+# readOnlyRootFilesystem constraint (see job.yaml) because curlimages/curl
+# does not bundle jq and other curl+jq images don't run rootless cleanly.
+# Acceptable trade-off — this is a one-shot init that only talks HTTP to
+# the in-cluster OpenFGA service.
 image:
-  repository: curlimages/curl
-  tag: "8.5.0"
+  repository: alpine
+  tag: "3.19"
