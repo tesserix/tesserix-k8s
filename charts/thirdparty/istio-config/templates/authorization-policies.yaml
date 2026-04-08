@@ -849,7 +849,9 @@ spec:
 # Public Endpoints Policy
 # Allow unauthenticated access to health checks, login, etc.
 # =============================================================================
+{{- $skipAuthPolicy := $.Values.skipAuthPolicyNamespaces | default list }}
 {{- range $key, $ns := .Values.appNamespaces }}
+{{- if not (has $key $skipAuthPolicy) }}
 ---
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
@@ -873,6 +875,7 @@ spec:
     - to:
         - operation:
             methods: ["OPTIONS"]
+{{- end }}
 {{- end }}
 
 {{- end }}
