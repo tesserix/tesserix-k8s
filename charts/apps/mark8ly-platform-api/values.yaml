@@ -10,14 +10,15 @@ imagePullSecrets:
 service:
   type: ClusterIP
   port: 8086
-# Locked at 1/1 until the outbox drainer gets FOR UPDATE SKIP LOCKED.
-# See mark8ly_deploy_state.md "Locked decisions" for rationale.
+# Outbox drainer now uses SELECT … FOR UPDATE SKIP LOCKED with an in_flight
+# visibility timeout (mark8ly@b3f745b+), so multiple replicas no longer race
+# on the same row. Safe to scale horizontally.
 keda:
   enabled: true
   pollingInterval: 15
   cooldownPeriod: 300
   minReplicaCount: 1
-  maxReplicaCount: 1
+  maxReplicaCount: 5
 resources:
   requests:
     cpu: 50m
