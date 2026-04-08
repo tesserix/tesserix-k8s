@@ -8,8 +8,10 @@ metadata:
   name: {{ .Values.name }}-seed
   namespace: {{ .Values.namespace }}
   annotations:
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    # Regular resource (not PostSync hook) so the deployment rollout doesn't
+    # deadlock waiting on a hook that needs the deployment to be healthy.
+    # Seed binary is idempotent (upserts countries/states/currencies).
+    argocd.argoproj.io/sync-wave: "5"
   labels:
     app.kubernetes.io/name: {{ .Values.name }}
     app.kubernetes.io/component: seed

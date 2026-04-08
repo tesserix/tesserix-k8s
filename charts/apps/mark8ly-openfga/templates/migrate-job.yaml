@@ -7,8 +7,10 @@ metadata:
   name: {{ .Values.name }}-migrate
   namespace: {{ .Values.namespace }}
   annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    # Apply early but don't block the Sync — running it as a regular resource
+    # (with a wave) avoids the BeforeHookCreation/spin loop with Istio strict
+    # mTLS. Migrate is idempotent (current version no-op).
+    argocd.argoproj.io/sync-wave: "-5"
   labels:
     app.kubernetes.io/name: {{ .Values.name }}
     app.kubernetes.io/component: migrate
