@@ -1,18 +1,20 @@
 ##############################################################################
 # DevAI Istio VirtualService Configuration
 #
-# PUBLIC routes (through Istio gateway → internet):
-#   - devai.tesserix.app/           → devai-dashboard (ALM UI)
-#   - devai.tesserix.app/webhook/*  → devai-api (GitHub/GitLab/ADO webhooks)
-#   - sre.tesserix.app/             → devai-sre-dashboard (SRE UI)
+# PUBLIC routes (through Istio gateway):
+#   - devai.tesserix.app/           → devai-dashboard (ALM UI, auth-protected)
+#   - devai.tesserix.app/bff/*      → devai-auth-bff (OIDC auth flows)
+#   - devai.tesserix.app/auth/*     → devai-auth-bff (OIDC callbacks)
+#   - devai.tesserix.app/webhook/*  → devai-api (SCM webhooks)
+#   - sre.tesserix.app/             → devai-sre-dashboard (SRE UI, auth-protected)
+#   - sre.tesserix.app/bff/*        → devai-auth-bff (OIDC auth flows)
+#   - sre.tesserix.app/auth/*       → devai-auth-bff (OIDC callbacks)
+#   - identity-devai.tesserix.app/  → Keycloak (devai realm login pages)
+#   - identity-sre.tesserix.app/    → Keycloak (devai-sre realm login pages)
 #
 # INTERNAL routes (cluster-only, no gateway):
 #   - devai-api.devai.svc.cluster.local:8080  → all API endpoints
 #   - devai-sre.devai.svc.cluster.local:8090  → all SRE API endpoints
-#
-# API endpoints (/api/*, /chat/*, /healthz, /readyz, /dashboard/api/*)
-# are NOT exposed through the gateway. Dashboards call APIs via internal
-# K8s service DNS using server-side rendering.
 ##############################################################################
 
 # ALM Platform: devai.tesserix.app
@@ -30,6 +32,38 @@ spec:
   hosts:
     - devai.tesserix.app
   http:
+    # Auth BFF — OIDC login/logout/callback
+    - match:
+        - uri:
+            prefix: /bff/
+      headers:
+        request:
+          set:
+            x-forwarded-host: devai.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: devai-auth-bff.devai.svc.cluster.local
+            port:
+              number: 8090
+      timeout: 30s
+
+    # Auth callbacks (Keycloak redirects here after login)
+    - match:
+        - uri:
+            prefix: /auth/
+      headers:
+        request:
+          set:
+            x-forwarded-host: devai.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: devai-auth-bff.devai.svc.cluster.local
+            port:
+              number: 8090
+      timeout: 30s
+
     # GitHub/GitLab/ADO webhook → devai-api (must be public for SCM providers)
     - match:
         - uri:
@@ -56,74 +90,6 @@ spec:
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
 ---
-# Internal-only VirtualService for devai-api (mesh traffic, no gateway)
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: devai-api-internal
-  namespace: devai
-  labels:
-    app.kubernetes.io/part-of: devai
-    app.kubernetes.io/component: routing
-spec:
-  # No gateway — mesh-only (internal K8s service traffic)
-  hosts:
-    - devai-api.devai.svc.cluster.local
-  http:
-    # Chat WebSocket (long-lived connections from dashboard)
-    - match:
-        - uri:
-            prefix: /chat/ws
-      route:
-        - destination:
-            host: devai-api.devai.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 3600s
-
-    # Chat API (REST + SSE)
-    - match:
-        - uri:
-            prefix: /chat
-      route:
-        - destination:
-            host: devai-api.devai.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 300s
-
-    # Dashboard API
-    - match:
-        - uri:
-            prefix: /dashboard/api
-      route:
-        - destination:
-            host: devai-api.devai.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 120s
-
-    # Health/readiness probes
-    - match:
-        - uri:
-            exact: /healthz
-        - uri:
-            exact: /readyz
-      route:
-        - destination:
-            host: devai-api.devai.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 10s
-
-    # Catch-all for API
-    - route:
-        - destination:
-            host: devai-api.devai.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 120s
----
 # SRE Platform: sre.tesserix.app
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
@@ -139,7 +105,39 @@ spec:
   hosts:
     - sre.tesserix.app
   http:
-    # All routes → devai-sre-dashboard frontend
+    # Auth BFF — OIDC login/logout/callback
+    - match:
+        - uri:
+            prefix: /bff/
+      headers:
+        request:
+          set:
+            x-forwarded-host: sre.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: devai-auth-bff.devai.svc.cluster.local
+            port:
+              number: 8090
+      timeout: 30s
+
+    # Auth callbacks
+    - match:
+        - uri:
+            prefix: /auth/
+      headers:
+        request:
+          set:
+            x-forwarded-host: sre.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: devai-auth-bff.devai.svc.cluster.local
+            port:
+              number: 8090
+      timeout: 30s
+
+    # All other routes → devai-sre-dashboard frontend
     - match:
         - uri:
             prefix: /
@@ -154,7 +152,125 @@ spec:
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
 ---
-# Internal-only VirtualService for devai-sre (mesh traffic, no gateway)
+# Keycloak login pages: identity-devai.tesserix.app
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: devai-identity
+  namespace: devai
+  labels:
+    app.kubernetes.io/part-of: devai
+    app.kubernetes.io/component: routing
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - identity-devai.tesserix.app
+    - identity-sre.tesserix.app
+  http:
+    # Keycloak realm endpoints (login pages, OIDC well-known)
+    - match:
+        - uri:
+            prefix: /realms/
+      route:
+        - destination:
+            host: keycloak.identity-internal.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
+
+    # Keycloak resources (CSS, images for login theme)
+    - match:
+        - uri:
+            prefix: /resources/
+      route:
+        - destination:
+            host: keycloak.identity-internal.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 10s
+
+    # Keycloak robots.txt
+    - match:
+        - uri:
+            exact: /robots.txt
+      route:
+        - destination:
+            host: keycloak.identity-internal.svc.cluster.local
+            port:
+              number: 8080
+
+    # Default → Keycloak
+    - route:
+        - destination:
+            host: keycloak.identity-internal.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
+---
+# Internal-only VirtualService for devai-api (mesh traffic, no gateway)
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: devai-api-internal
+  namespace: devai
+  labels:
+    app.kubernetes.io/part-of: devai
+    app.kubernetes.io/component: routing
+spec:
+  hosts:
+    - devai-api.devai.svc.cluster.local
+  http:
+    - match:
+        - uri:
+            prefix: /chat/ws
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 3600s
+
+    - match:
+        - uri:
+            prefix: /chat
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 300s
+
+    - match:
+        - uri:
+            prefix: /dashboard/api
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 120s
+
+    - match:
+        - uri:
+            exact: /healthz
+        - uri:
+            exact: /readyz
+      route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 10s
+
+    - route:
+        - destination:
+            host: devai-api.devai.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 120s
+---
+# Internal-only VirtualService for devai-sre
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
