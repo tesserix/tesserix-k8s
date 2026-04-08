@@ -1,0 +1,50 @@
+# CNPG's postInitSQL cannot reference secrets, so we set the openfga role
+# password in a post-install Job that runs once after the cluster is up.
+# The Job is idempotent: re-running it just re-applies the same password.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.clusterName }}-set-openfga-password
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: database-init
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: psql
+          image: ghcr.io/cloudnative-pg/postgresql:16.4
+          env:
+            - name: PGHOST
+              value: "{{ .Values.clusterName }}-rw.{{ .Values.namespace }}.svc.cluster.local"
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bootstrap.primarySecret }}
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bootstrap.primarySecret }}
+                  key: password
+            - name: PGDATABASE
+              value: "postgres"
+            - name: OPENFGA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bootstrap.secondarySecret }}
+                  key: password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              psql -v ON_ERROR_STOP=1 <<SQL
+              ALTER ROLE {{ .Values.bootstrap.secondaryOwner }} WITH PASSWORD '$OPENFGA_PASSWORD';
+              SQL

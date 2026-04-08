@@ -1,0 +1,45 @@
+# Port of mark8ly/infra/dev/seed/fga-init.sh to a K8s Job.
+# Keep the authorization model JSON in lockstep with infra/openfga/model.fga
+# in the mark8ly repo. Idempotent: re-running just upserts the model.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-script
+  namespace: {{ .Values.namespace }}
+data:
+  fga-init.sh: |
+    #!/bin/sh
+    set -eu
+    apk add --no-cache curl jq >/dev/null 2>&1 || true
+
+    OPENFGA_URL="${OPENFGA_URL:-http://mark8ly-openfga:8080}"
+    STORE_NAME="${STORE_NAME:-mark8ly-platform}"
+
+    until curl -fsS "${OPENFGA_URL}/healthz" >/dev/null 2>&1; do
+      echo "fga-init: waiting for openfga..."
+      sleep 2
+    done
+
+    STORE_ID=$(curl -fsS "${OPENFGA_URL}/stores" \
+      | jq -r --arg name "$STORE_NAME" '.stores[] | select(.name == $name) | .id' \
+      | head -n1)
+
+    if [ -z "$STORE_ID" ] || [ "$STORE_ID" = "null" ]; then
+      echo "fga-init: creating store '$STORE_NAME'"
+      STORE_ID=$(curl -fsS -X POST "${OPENFGA_URL}/stores" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\":\"${STORE_NAME}\"}" \
+        | jq -r '.id')
+    fi
+    echo "fga-init: store id = $STORE_ID"
+
+    MODEL_JSON=$(cat /models/model.json)
+
+    echo "fga-init: writing authorization model"
+    MODEL_ID=$(curl -fsS -X POST "${OPENFGA_URL}/stores/${STORE_ID}/authorization-models" \
+      -H "Content-Type: application/json" \
+      -d "$MODEL_JSON" \
+      | jq -r '.authorization_model_id')
+    echo "fga-init: model id = $MODEL_ID"
+    echo "FGA_STORE_ID=$STORE_ID"
+    echo "FGA_MODEL_ID=$MODEL_ID"

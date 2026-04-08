@@ -1,0 +1,37 @@
+# Root "app of apps" that synchronises every mark8ly-* Application.
+# Drop in argocd/prod/apps/mark8ly/ and this root picks them up automatically.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mark8ly
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesseract-platform
+    app.kubernetes.io/component: applications
+    environment: prod
+    product: mark8ly
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: argocd/prod/apps/mark8ly
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

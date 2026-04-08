@@ -1,0 +1,60 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: database
+spec:
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.imageName }}
+
+  # Primary database bootstrap. Secondary database + role are created
+  # by a post-init SQL block below.
+  bootstrap:
+    initdb:
+      database: {{ .Values.bootstrap.primaryDatabase }}
+      owner: {{ .Values.bootstrap.primaryOwner }}
+      secret:
+        name: {{ .Values.bootstrap.primarySecret }}
+      postInitSQL:
+        - "CREATE ROLE {{ .Values.bootstrap.secondaryOwner }} LOGIN"
+        - "CREATE DATABASE {{ .Values.bootstrap.secondaryDatabase }} OWNER {{ .Values.bootstrap.secondaryOwner }}"
+        - "ALTER ROLE {{ .Values.bootstrap.secondaryOwner }} PASSWORD NULL"
+        # Password is applied after bootstrap by the post-init Job
+        # (templates/post-init-job.yaml) which reads from the CNPG basic-auth
+        # secret. We cannot inline the password here because CNPG does not
+        # support variable substitution inside postInitSQL.
+
+  storage:
+    size: {{ .Values.storageSize }}
+    storageClass: {{ .Values.storageClass }}
+
+  resources:
+{{ toYaml .Values.resources | indent 4 }}
+
+  # Drop extra capabilities, non-root UID is enforced by CNPG.
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "256MB"
+      wal_level: "logical"
+
+  {{- if .Values.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.backup.destinationPath | quote }}
+      googleCredentials:
+        gkeEnvironment: true
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+    retentionPolicy: {{ .Values.backup.retentionPolicy | quote }}
+  {{- end }}
+
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: {{ .Values.backup.serviceAccount }}

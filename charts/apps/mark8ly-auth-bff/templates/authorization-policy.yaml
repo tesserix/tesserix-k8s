@@ -1,0 +1,22 @@
+# auth-bff is the front door for the Next.js apps. Ingress gateway and the
+# three Next.js apps may call it; nothing else.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-auth-bff-callers
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["istio-system"]
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-onboarding"
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-admin"
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-storefront"

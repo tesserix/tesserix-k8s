@@ -1,0 +1,17 @@
+# Explicit allowlist for traffic sources into mark8ly.
+# Ingress gateway (istio-system) and intra-namespace calls are permitted.
+# Individual services layer additional service-level policies on top.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-known-sources
+  namespace: {{ .Values.namespace }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+{{- range .Values.allowedSources }}
+              - {{ . | quote }}
+{{- end }}
