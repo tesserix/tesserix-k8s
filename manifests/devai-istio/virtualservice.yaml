@@ -105,7 +105,7 @@ spec:
   hosts:
     - sre.tesserix.app
   http:
-    # Auth BFF — OIDC login/logout/callback
+    # Auth BFF — OIDC login/logout/callback (uses internal/SRE realm)
     - match:
         - uri:
             prefix: /bff/
@@ -114,6 +114,7 @@ spec:
           set:
             x-forwarded-host: sre.tesserix.app
             x-forwarded-proto: https
+            x-auth-context: admin
       route:
         - destination:
             host: devai-auth-bff.devai.svc.cluster.local
@@ -121,7 +122,7 @@ spec:
               number: 8090
       timeout: 30s
 
-    # Auth callbacks
+    # Auth callbacks (uses internal/SRE realm)
     - match:
         - uri:
             prefix: /auth/
@@ -130,6 +131,7 @@ spec:
           set:
             x-forwarded-host: sre.tesserix.app
             x-forwarded-proto: https
+            x-auth-context: admin
       route:
         - destination:
             host: devai-auth-bff.devai.svc.cluster.local
