@@ -1,0 +1,20 @@
+# marketplace-api-admin accepts traffic only from auth-bff and the
+# merchant-facing Next.js apps. Storefront traffic goes to
+# marketplace-api-storefront, which has its own AuthorizationPolicy.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-marketplace-api-admin-callers
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-auth-bff"
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-admin"
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-platform-api"

@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mark8ly-marketplace-api-storefront
+  namespace: argocd
+  annotations:
+    # sync-wave 2 so storefront rolls AFTER admin has finished migrating.
+    # Admin runs the migrate init container on every rollout; storefront
+    # relies on admin having completed before its server-only pods come
+    # up (AssertVersion check in cmd/marketplace-api prevents storefront
+    # from starting on an unmigrated schema).
+    argocd.argoproj.io/sync-wave: "2"
+  labels:
+    product: mark8ly
+    environment: prod
+    component: backend
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/mark8ly-marketplace-api-storefront
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mark8ly
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

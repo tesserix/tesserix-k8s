@@ -1,0 +1,101 @@
+# Idempotent bootstrap Job for the marketplace_api role + database.
+#
+# CNPG's bootstrap.postInitSQL only runs on INITIAL cluster creation —
+# by the time this Job is added, the mark8ly-postgres cluster has
+# already been bootstrapped (platform_api + openfga were created via
+# postInitSQL at that time). This Job creates the tertiary role and
+# database if they don't already exist, then sets the role password
+# from the marketplace-api CNPG secret.
+#
+# Runs as an ArgoCD PostSync hook so it fires whenever the chart syncs.
+# Idempotent: CREATE ROLE / CREATE DATABASE are conditional via DO
+# blocks + \gexec; ALTER ROLE ... PASSWORD is safe to re-run.
+#
+# The trigger for running this is a chart sync, not a schema migration.
+# The marketplace-api application's own migrate init container handles
+# actual schema changes against the database this Job creates.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.clusterName }}-bootstrap-marketplace-api
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: database-init
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: psql
+          image: ghcr.io/cloudnative-pg/postgresql:16.4
+          env:
+            - name: PGHOST
+              value: "{{ .Values.clusterName }}-rw.{{ .Values.namespace }}.svc.cluster.local"
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bootstrap.primarySecret }}
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bootstrap.primarySecret }}
+                  key: password
+            - name: PGDATABASE
+              value: "postgres"
+            - name: MARKETPLACE_API_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-postgres-marketplace-api
+                  key: password
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+
+              # 1. Create the marketplace_api role if it doesn't exist.
+              #    DO block lets us check pg_roles and create conditionally
+              #    inside a single session.
+              psql -v ON_ERROR_STOP=1 <<'SQL'
+              DO $$
+              BEGIN
+                IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'marketplace_api') THEN
+                  CREATE ROLE marketplace_api LOGIN;
+                END IF;
+              END
+              $$;
+              SQL
+
+              # 2. Create the database if it doesn't exist.
+              #    CREATE DATABASE cannot run inside a transaction block,
+              #    so we use psql's \gexec to dynamically issue the
+              #    statement only when the database is missing.
+              psql -v ON_ERROR_STOP=1 <<'SQL'
+              SELECT 'CREATE DATABASE mark8ly_marketplace_api OWNER marketplace_api'
+              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'mark8ly_marketplace_api')\gexec
+              SQL
+
+              # 3. Set the role password from the secret.
+              #    ALTER ROLE is idempotent. Using $MARKETPLACE_API_PASSWORD
+              #    from the environment, NOT from a SQL string literal,
+              #    because psql's variable substitution would require
+              #    escaping the single quotes anyway.
+              psql -v ON_ERROR_STOP=1 -v pw="$MARKETPLACE_API_PASSWORD" <<SQL
+              ALTER ROLE marketplace_api WITH PASSWORD :'pw';
+              SQL
+
+              # 4. Ensure ownership of the database is correct (in case
+              #    a previous bootstrap attempt created the DB under a
+              #    different owner).
+              psql -v ON_ERROR_STOP=1 <<'SQL'
+              ALTER DATABASE mark8ly_marketplace_api OWNER TO marketplace_api;
+              GRANT ALL PRIVILEGES ON DATABASE mark8ly_marketplace_api TO marketplace_api;
+              SQL
+
+              echo "marketplace-api bootstrap complete"
