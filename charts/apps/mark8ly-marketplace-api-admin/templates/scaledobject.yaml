@@ -1,0 +1,26 @@
+{{- if .Values.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+spec:
+  scaleTargetRef:
+    name: {{ .Values.name }}
+  pollingInterval: {{ .Values.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
+  minReplicaCount: {{ .Values.keda.minReplicaCount }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
+  # Admin engine is pinned to maxReplicaCount=1 in slice 1 because the
+  # rate limiter is an in-memory token bucket — a second replica would
+  # silently double the effective limit. A CPU trigger is declared so
+  # KEDA has something to evaluate; it will never fire at this size.
+  # TODO(slice-2): unpin once the Redis-backed rate limiter ships.
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "95"
+{{- end }}
