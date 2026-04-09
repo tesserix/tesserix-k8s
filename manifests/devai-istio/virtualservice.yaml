@@ -75,6 +75,17 @@ spec:
               number: 8080
       timeout: 60s
 
+    # Chat API — proxied through dashboard, needs longer timeout for LLM calls
+    - match:
+        - uri:
+            prefix: /chat/api
+      route:
+        - destination:
+            host: devai-dashboard.devai.svc.cluster.local
+            port:
+              number: 3100
+      timeout: 300s
+
     # All other routes → devai-dashboard frontend
     - match:
         - uri:
@@ -138,6 +149,17 @@ spec:
             port:
               number: 8090
       timeout: 30s
+
+    # Chat API — proxied through dashboard, needs longer timeout for LLM calls
+    - match:
+        - uri:
+            prefix: /api/chat
+      route:
+        - destination:
+            host: devai-sre-dashboard.devai.svc.cluster.local
+            port:
+              number: 3200
+      timeout: 300s
 
     # All other routes → devai-sre-dashboard frontend
     - match:
@@ -233,6 +255,16 @@ spec:
   hosts:
     - devai-sre.devai.svc.cluster.local
   http:
+    - match:
+        - uri:
+            prefix: /api/chat
+      route:
+        - destination:
+            host: devai-sre.devai.svc.cluster.local
+            port:
+              number: 8090
+      timeout: 300s
+
     - route:
         - destination:
             host: devai-sre.devai.svc.cluster.local
