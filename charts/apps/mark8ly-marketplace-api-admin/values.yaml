@@ -1,0 +1,62 @@
+namespace: mark8ly
+name: mark8ly-marketplace-api-admin
+
+# marketplace-api-admin and marketplace-api-storefront deploy from the SAME
+# image (mark8ly-marketplace-api) — one Go binary, two Knative/Deployment
+# instances differentiated by the MODE env var. See spec §14.8.
+image:
+  repository: ghcr.io/tesserix/mark8ly-marketplace-api
+  tag: "sha-92707a4a0000" # overridden per-release by CI bump job (placeholder; first bump lands after this PR merges)
+  pullPolicy: IfNotPresent
+  # Same image, different entrypoint via Dockerfile target. The migrate
+  # init container uses the `migrate` target; the main container uses
+  # the `runtime` target.
+  migrateTarget: ghcr.io/tesserix/mark8ly-marketplace-api
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Slice 1: in-memory rate limiter pinned to a single replica to avoid
+# the per-replica bucket multiplication problem (spec §14.8 + §14.16).
+# TODO(slice-2): unpin once Redis-backed rate limiter ships. Tracking
+# issue: <SLICE2_TICKET_TBD>.
+keda:
+  enabled: true
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+# Postgres connection (CNPG cluster, marketplace_api role)
+#
+# Note on naming: prod uses `mark8ly_marketplace_api` as the database name
+# (matching the platform-api convention of `mark8ly_<service>`). Local dev
+# uses `marketplace_db` via docker-compose. This local/prod divergence
+# mirrors platform-api's `platform_api` → `mark8ly_platform_api` pattern
+# and is documented in services/marketplace-api/README.md.
+database:
+  host: mark8ly-postgres-rw.mark8ly.svc.cluster.local
+  port: 5432
+  name: mark8ly_marketplace_api
+  secretName: mark8ly-postgres-marketplace-api
+  sslmode: require
+
+# MODE selects which Gin engine the binary constructs. See
+# services/marketplace-api/internal/mode and spec §14.8.
+mode: admin

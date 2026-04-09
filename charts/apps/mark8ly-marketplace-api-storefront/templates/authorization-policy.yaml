@@ -1,0 +1,18 @@
+# marketplace-api-storefront accepts traffic only from the customer-facing
+# Next.js storefront app. Admin traffic goes to marketplace-api-admin,
+# which has its own AuthorizationPolicy.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-marketplace-api-storefront-callers
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-storefront"
