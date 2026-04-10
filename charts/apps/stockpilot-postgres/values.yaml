@@ -1,0 +1,47 @@
+namespace: stockpilot
+clusterName: stockpilot-postgres
+
+instances: 3
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+storageSize: 10Gi
+storageClass: standard-rwo-retain
+walStorageSize: 5Gi
+
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+bootstrap:
+  database: stockpilot
+  owner: stockpilot
+  secret: stockpilot-postgres-app-credentials
+  gcpSecretName: prod-stockpilot-postgresql-password
+  postInitSQL: []
+
+postgresql:
+  max_connections: "200"
+  shared_buffers: "256MB"
+  effective_cache_size: "1536MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "128MB"
+  wal_level: "logical"
+  max_replication_slots: "10"
+  max_wal_senders: "10"
+  ssl_min_protocol_version: "TLSv1.3"
+  ssl_max_protocol_version: "TLSv1.3"
+
+backup:
+  enabled: false
+  destinationPath: "gs://tesseract-prod-backups-in/stockpilot-postgres"
+  retentionPolicy: "30d"
+  serviceAccount: "placeholder@tesseracthub-480811.iam.gserviceaccount.com"
+
+monitoring:
+  enablePodMonitor: true
+
+replication:
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
