@@ -404,3 +404,73 @@ VALUES
   (gen_random_uuid(), 'support.auto_close_days',                '7',     'number', NOW()),
   (gen_random_uuid(), 'support.sla_response_hours',             '24',    'number', NOW())
 ON CONFLICT (key) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- 4. Email verification tokens table
+--    Used by the Go API's email verification flow. GORM AutoMigrate also
+--    creates this table at API startup; this DDL is belt-and-suspenders so
+--    the schema exists even before the first API pod starts.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS email_verification_tokens (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token           VARCHAR(255) NOT NULL,
+  used_at         TIMESTAMPTZ,
+  expires_at      TIMESTAMPTZ NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_email_verification_tokens_token
+  ON email_verification_tokens (token);
+
+CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user_id
+  ON email_verification_tokens (user_id);
+
+-- ---------------------------------------------------------------------------
+-- 5. Staff invitations table (if not already created by GORM)
+--    Tracks token-based staff invitations with 7-day expiry and role assignment.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS staff_invitations (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email           VARCHAR(255) NOT NULL,
+  staff_role      VARCHAR(50) NOT NULL DEFAULT 'support',
+  department      VARCHAR(100),
+  title           VARCHAR(100),
+  token           VARCHAR(255) NOT NULL,
+  status          VARCHAR(20) NOT NULL DEFAULT 'pending',
+  message         TEXT,
+  invited_by_id   UUID REFERENCES users(id),
+  accepted_by_id  UUID REFERENCES users(id),
+  expires_at      TIMESTAMPTZ NOT NULL,
+  accepted_at     TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_invitations_token
+  ON staff_invitations (token);
+
+CREATE INDEX IF NOT EXISTS idx_staff_invitations_email
+  ON staff_invitations (email);
+
+-- ---------------------------------------------------------------------------
+-- 6. Staff members table (if not already created by GORM)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS staff_members (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  staff_role      VARCHAR(50) NOT NULL DEFAULT 'support',
+  department      VARCHAR(100),
+  title           VARCHAR(100),
+  is_active       BOOLEAN NOT NULL DEFAULT true,
+  deactivated_at  TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_members_user_id
+  ON staff_members (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_staff_members_role
+  ON staff_members (staff_role);
