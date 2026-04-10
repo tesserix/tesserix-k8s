@@ -26,7 +26,10 @@ metadata:
     app.kubernetes.io/part-of: identity-internal
   annotations:
     helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-weight: "10"
+    # Weight 6 puts this job AFTER realm-import (weight 5) but BEFORE the
+    # devai realm import (weight 10) which is currently flapping. We do not
+    # want a devai-side bug to block the homechef admin login from working.
+    helm.sh/hook-weight: "6"
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 spec:
   ttlSecondsAfterFinished: 300
@@ -171,6 +174,32 @@ spec:
                   echo "ERROR: Failed to create client $CLIENT_ID (status $CREATE_STATUS): $(cat /tmp/create-resp)"
                   exit 1
                 fi
+              fi
+
+              # =================================================================
+              # Step 5: Ensure realm frontendUrl is set to the public URL
+              # =================================================================
+              # The internal Keycloak runs with --hostname-strict=false so the
+              # discovery document URLs are derived from the request Host header.
+              # Without an explicit frontendUrl attribute, the homechef-auth-bff
+              # (which does discovery via the in-cluster service URL) gets back
+              # http://keycloak.identity-internal.svc.cluster.local/... endpoints
+              # and ends up sending browsers to a non-routable hostname. Setting
+              # the realm-level frontendUrl pins discovery to the public URL for
+              # this realm only, leaving devai/marketplace realms unaffected.
+              FRONTEND_URL="https://internal-identity.fe3dr.com"
+              echo "Ensuring realm $REALM frontendUrl is $FRONTEND_URL..."
+              FU_STATUS=$(curl -s -o /tmp/fu-resp -w "%{http_code}" \
+                -X PUT "$KEYCLOAK_URL/admin/realms/$REALM" \
+                -H "Authorization: Bearer $TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{\"realm\":\"$REALM\",\"attributes\":{\"frontendUrl\":\"$FRONTEND_URL\"}}")
+
+              if [ "$FU_STATUS" = "204" ] || [ "$FU_STATUS" = "200" ]; then
+                echo "Realm frontendUrl ensured"
+              else
+                echo "ERROR: Failed to set realm frontendUrl (status $FU_STATUS): $(cat /tmp/fu-resp)"
+                exit 1
               fi
 
               echo "HomeChef admin clients bootstrap complete"
