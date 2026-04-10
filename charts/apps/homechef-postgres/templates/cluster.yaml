@@ -1,0 +1,123 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+    app.kubernetes.io/component: database
+spec:
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.imageName }}
+
+  # =========================================================================
+  # Bootstrap — first-time cluster initialization
+  # =========================================================================
+  bootstrap:
+    initdb:
+      database: {{ .Values.bootstrap.database }}
+      owner: {{ .Values.bootstrap.owner }}
+      encoding: UTF8
+      localeCType: C
+      localeCollate: C
+      secret:
+        name: {{ .Values.bootstrap.secret }}
+      {{- if .Values.bootstrap.postInitSQL }}
+      postInitSQL:
+        {{- range .Values.bootstrap.postInitSQL }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- end }}
+
+  # =========================================================================
+  # Storage — separate data and WAL volumes for I/O isolation
+  # =========================================================================
+  storage:
+    size: {{ .Values.storageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  walStorage:
+    size: {{ .Values.walStorageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  # =========================================================================
+  # Resources
+  # =========================================================================
+  resources:
+{{ toYaml .Values.resources | indent 4 }}
+
+  # =========================================================================
+  # PostgreSQL configuration
+  # =========================================================================
+  postgresql:
+    parameters:
+      {{- range $key, $value := .Values.postgresql }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+
+  # =========================================================================
+  # Replication — synchronous for zero-data-loss
+  # =========================================================================
+  minSyncReplicas: {{ .Values.replication.minSyncReplicas }}
+  maxSyncReplicas: {{ .Values.replication.maxSyncReplicas }}
+
+  # =========================================================================
+  # TLS — auto-managed by CNPG (self-signed CA, auto-rotation)
+  # No manual cert management needed. CNPG generates:
+  #   - Server TLS cert (auto-rotated before expiry)
+  #   - Client CA for mTLS (optional, for future app cert auth)
+  #   - Replication TLS between primary and replicas
+  # =========================================================================
+  enableSuperuserAccess: false
+
+  # =========================================================================
+  # Continuous backup to GCS via Barman Cloud
+  # =========================================================================
+  {{- if .Values.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.backup.destinationPath | quote }}
+      googleCredentials:
+        gkeEnvironment: true
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+    retentionPolicy: {{ .Values.backup.retentionPolicy | quote }}
+    target: prefer-standby
+  {{- end }}
+
+  # =========================================================================
+  # Workload Identity — GCS backup permissions
+  # =========================================================================
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: {{ .Values.backup.serviceAccount }}
+
+  # =========================================================================
+  # Monitoring — built-in Prometheus exporter
+  # =========================================================================
+  monitoring:
+    enablePodMonitor: {{ .Values.monitoring.enablePodMonitor }}
+    disableDefaultQueries: false
+
+  # =========================================================================
+  # Affinity — spread replicas across nodes
+  # =========================================================================
+  affinity:
+    podAntiAffinityType: preferred
+
+  # =========================================================================
+  # Failover
+  # =========================================================================
+  primaryUpdateStrategy: unsupervised
+  failoverDelay: 0
+  switchoverDelay: 3600
+
+  # =========================================================================
+  # PDB — maintain quorum during node drains
+  # =========================================================================
+  enablePDB: true
