@@ -1,0 +1,203 @@
+{{- if .Values.keycloak.enabled }}
+# =============================================================================
+# HomeChef Admin Clients Bootstrap Job
+# =============================================================================
+# Adds the homechef-admin-bff client to the tesserix-internal realm if it
+# does not already exist. Runs on every Helm install/upgrade as a post-hook
+# and is fully idempotent — re-running is a no-op when the client is present.
+#
+# Why this exists:
+#   The realm-import-job is one-shot (skips if the realm already exists), so
+#   any client added to realm-configmap.yaml after the original import never
+#   reaches live Keycloak. This job closes that gap for the homechef-admin-bff
+#   client without requiring a destructive realm reimport.
+#
+# When this can be removed:
+#   Once realm-import-job.yaml is refactored to upsert clients into existing
+#   realms, this bootstrap job becomes redundant.
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: homechef-clients-bootstrap-{{ now | date "20060102150405" }}
+  labels:
+    app.kubernetes.io/name: homechef-clients-bootstrap
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: identity-internal
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: homechef-clients-bootstrap
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ .Values.keycloak.serviceAccount.name | default "keycloak" }}
+      containers:
+        - name: bootstrap
+          image: curlimages/curl:8.5.0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+
+              KEYCLOAK_URL="http://keycloak:8080"
+              REALM="tesserix-internal"
+              MAX_RETRIES=60
+
+              echo "Bootstrapping HomeChef admin clients in realm $REALM..."
+
+              # =================================================================
+              # Step 1: Wait for Keycloak admin API and obtain access token
+              # =================================================================
+              TOKEN=""
+              RETRY_COUNT=0
+              while [ -z "$TOKEN" ] && [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                TOKEN=$(curl -sf -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+                  -H "Content-Type: application/x-www-form-urlencoded" \
+                  -d "username=$KEYCLOAK_ADMIN" \
+                  -d "password=$KEYCLOAK_ADMIN_PASSWORD" \
+                  -d "grant_type=password" \
+                  -d "client_id=admin-cli" 2>/dev/null | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+                if [ -z "$TOKEN" ]; then
+                  echo "Waiting for Keycloak admin API... ($RETRY_COUNT/$MAX_RETRIES)"
+                  sleep 5
+                fi
+              done
+
+              if [ -z "$TOKEN" ]; then
+                echo "ERROR: Failed to authenticate to Keycloak after $MAX_RETRIES attempts"
+                exit 1
+              fi
+              echo "Authenticated to Keycloak admin API"
+
+              # =================================================================
+              # Step 2: Verify the realm exists
+              # =================================================================
+              REALM_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                -H "Authorization: Bearer $TOKEN" \
+                "$KEYCLOAK_URL/admin/realms/$REALM")
+
+              if [ "$REALM_STATUS" != "200" ]; then
+                echo "Realm $REALM does not exist (status $REALM_STATUS) — realm-import job will create it; nothing to do."
+                exit 0
+              fi
+              echo "Realm $REALM exists"
+
+              # =================================================================
+              # Step 3: Validate required client secret is present
+              # =================================================================
+              if [ -z "$HOMECHEF_ADMIN_BFF_CLIENT_SECRET" ] || \
+                 [ "$HOMECHEF_ADMIN_BFF_CLIENT_SECRET" = "change-me-homechef-admin-bff-client" ]; then
+                echo "ERROR: HOMECHEF_ADMIN_BFF_CLIENT_SECRET is not set or still default. Aborting."
+                exit 1
+              fi
+
+              # =================================================================
+              # Step 4: Upsert homechef-admin-bff client (confidential)
+              # =================================================================
+              # Client config mirrors realm-configmap.yaml exactly. If you change
+              # the client config there, update this block too.
+              CLIENT_ID="homechef-admin-bff"
+              echo "Checking client $CLIENT_ID..."
+
+              CLIENT_LOOKUP=$(curl -sf "$KEYCLOAK_URL/admin/realms/$REALM/clients?clientId=$CLIENT_ID" \
+                -H "Authorization: Bearer $TOKEN")
+
+              if echo "$CLIENT_LOOKUP" | grep -q "\"clientId\":\"$CLIENT_ID\""; then
+                echo "Client $CLIENT_ID already exists — no action"
+              else
+                echo "Creating client $CLIENT_ID..."
+                cat > /tmp/homechef-admin-bff.json <<EOF
+              {
+                "clientId": "homechef-admin-bff",
+                "name": "HomeChef Admin BFF",
+                "description": "Confidential client for HomeChef auth BFF admin context",
+                "enabled": true,
+                "publicClient": false,
+                "clientAuthenticatorType": "client-secret",
+                "secret": "${HOMECHEF_ADMIN_BFF_CLIENT_SECRET}",
+                "standardFlowEnabled": true,
+                "implicitFlowEnabled": false,
+                "directAccessGrantsEnabled": false,
+                "serviceAccountsEnabled": true,
+                "protocol": "openid-connect",
+                "redirectUris": [
+                  "https://fe3dr.com/bff/callback",
+                  "https://fe3dr.com/*",
+                  "https://admin.fe3dr.com/bff/callback",
+                  "https://admin.fe3dr.com/*",
+                  "https://delivery.fe3dr.com/bff/callback",
+                  "https://delivery.fe3dr.com/*",
+                  "http://localhost:5173/bff/callback",
+                  "http://localhost:5175/bff/callback",
+                  "http://localhost:8090/bff/callback"
+                ],
+                "webOrigins": [
+                  "https://fe3dr.com",
+                  "https://www.fe3dr.com",
+                  "https://admin.fe3dr.com",
+                  "https://delivery.fe3dr.com"
+                ],
+                "attributes": {
+                  "pkce.code.challenge.method": "S256",
+                  "post.logout.redirect.uris": "https://fe3dr.com/*##https://admin.fe3dr.com/*##https://delivery.fe3dr.com/*##http://localhost:5173/*##http://localhost:5175/*",
+                  "backchannel.logout.session.required": "true"
+                },
+                "defaultClientScopes": ["openid", "email", "profile", "roles"],
+                "optionalClientScopes": ["offline_access"]
+              }
+              EOF
+
+                CREATE_STATUS=$(curl -s -o /tmp/create-resp -w "%{http_code}" \
+                  -X POST "$KEYCLOAK_URL/admin/realms/$REALM/clients" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d @/tmp/homechef-admin-bff.json)
+
+                if [ "$CREATE_STATUS" = "201" ]; then
+                  echo "Client $CLIENT_ID created"
+                else
+                  echo "ERROR: Failed to create client $CLIENT_ID (status $CREATE_STATUS): $(cat /tmp/create-resp)"
+                  exit 1
+                fi
+              fi
+
+              echo "HomeChef admin clients bootstrap complete"
+          env:
+            - name: KEYCLOAK_ADMIN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.admin.existingSecret }}
+                  key: {{ .Values.keycloak.admin.usernameKey }}
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.keycloak.admin.existingSecret }}
+                  key: {{ .Values.keycloak.admin.passwordKey }}
+            {{- if .Values.keycloak.externalSecrets.enabled }}
+            - name: HOMECHEF_ADMIN_BFF_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-client-secrets
+                  key: homechef-admin-bff-client-secret
+            {{- else }}
+            - name: HOMECHEF_ADMIN_BFF_CLIENT_SECRET
+              value: "change-me-homechef-admin-bff-client"
+            {{- end }}
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+{{- end }}
