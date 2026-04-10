@@ -331,6 +331,90 @@ spec:
               add_or_update_mapper "google-last-name"  "family_name" "lastName"  "INHERIT"
               add_or_update_mapper "google-picture"    "picture"     "picture"   "FORCE"
 
+              # =================================================================
+              # Step 7: Upsert Facebook identity provider
+              # =================================================================
+              if [ -n "$FACEBOOK_APP_ID" ] && [ -n "$FACEBOOK_APP_SECRET" ]; then
+                echo "Ensuring Facebook IdP..."
+                TOKEN=$(curl -sf -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+                  -H "Content-Type: application/x-www-form-urlencoded" \
+                  -d "username=$KEYCLOAK_ADMIN" -d "password=$KEYCLOAK_ADMIN_PASSWORD" \
+                  -d "grant_type=password" -d "client_id=admin-cli" 2>/dev/null \
+                  | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+
+                cat > /tmp/fb-idp.json <<FBEOF
+              {
+                "alias": "facebook",
+                "providerId": "facebook",
+                "enabled": true,
+                "trustEmail": true,
+                "storeToken": false,
+                "addReadTokenRoleOnCreate": false,
+                "linkOnly": false,
+                "firstBrokerLoginFlowAlias": "$FLOW_ALIAS",
+                "config": {
+                  "clientId": "$FACEBOOK_APP_ID",
+                  "clientSecret": "$FACEBOOK_APP_SECRET",
+                  "defaultScope": "email,public_profile",
+                  "syncMode": "FORCE",
+                  "guiOrder": "2"
+                }
+              }
+              FBEOF
+
+                FB_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  "$KEYCLOAK_URL/admin/realms/$REALM/identity-provider/instances/facebook")
+
+                if [ "$FB_STATUS" = "200" ]; then
+                  UP=$(curl -s -o /tmp/fb-resp -w "%{http_code}" \
+                    -X PUT "$KEYCLOAK_URL/admin/realms/$REALM/identity-provider/instances/facebook" \
+                    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+                    -d @/tmp/fb-idp.json)
+                  echo "  updated facebook IdP: $UP"
+                else
+                  CR=$(curl -s -o /tmp/fb-resp -w "%{http_code}" \
+                    -X POST "$KEYCLOAK_URL/admin/realms/$REALM/identity-provider/instances" \
+                    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+                    -d @/tmp/fb-idp.json)
+                  echo "  created facebook IdP: $CR"
+                fi
+
+                # Facebook mappers (use facebook-user-attribute-mapper, not oidc)
+                TOKEN=$(curl -sf -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+                  -H "Content-Type: application/x-www-form-urlencoded" \
+                  -d "username=$KEYCLOAK_ADMIN" -d "password=$KEYCLOAK_ADMIN_PASSWORD" \
+                  -d "grant_type=password" -d "client_id=admin-cli" 2>/dev/null \
+                  | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+
+                FB_MAPPERS=$(curl -sf "$KEYCLOAK_URL/admin/realms/$REALM/identity-provider/instances/facebook/mappers" \
+                  -H "Authorization: Bearer $TOKEN" 2>/dev/null || echo "[]")
+
+                add_fb_mapper() {
+                  local NAME="$1" FIELD="$2" ATTR="$3" SYNC="$4"
+                  if echo "$FB_MAPPERS" | grep -q "\"name\":\"$NAME\""; then
+                    echo "  fb mapper $NAME exists"; return 0
+                  fi
+                  TOKEN=$(curl -sf -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+                    -H "Content-Type: application/x-www-form-urlencoded" \
+                    -d "username=$KEYCLOAK_ADMIN" -d "password=$KEYCLOAK_ADMIN_PASSWORD" \
+                    -d "grant_type=password" -d "client_id=admin-cli" 2>/dev/null \
+                    | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+                  MS=$(curl -s -o /dev/null -w "%{http_code}" \
+                    -X POST "$KEYCLOAK_URL/admin/realms/$REALM/identity-provider/instances/facebook/mappers" \
+                    -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+                    -d "{\"name\":\"$NAME\",\"identityProviderAlias\":\"facebook\",\"identityProviderMapper\":\"facebook-user-attribute-mapper\",\"config\":{\"syncMode\":\"$SYNC\",\"jsonField\":\"$FIELD\",\"user.attribute\":\"$ATTR\"}}")
+                  echo "  added fb mapper $NAME: $MS"
+                }
+                add_fb_mapper "fb-email"      "email"            "email"     "INHERIT"
+                add_fb_mapper "fb-first-name" "first_name"       "firstName" "INHERIT"
+                add_fb_mapper "fb-last-name"  "last_name"        "lastName"  "INHERIT"
+                add_fb_mapper "fb-picture"    "picture.data.url" "picture"   "FORCE"
+                echo "Facebook IdP ensured"
+              else
+                echo "Skipping Facebook IdP — FACEBOOK_APP_ID/SECRET not set"
+              fi
+
               echo "homechef realm bootstrap complete"
           env:
             - name: KEYCLOAK_ADMIN
@@ -353,6 +437,16 @@ spec:
                 secretKeyRef:
                   name: keycloak-google-sso
                   key: client-secret
+            - name: FACEBOOK_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-facebook-sso
+                  key: app-id
+            - name: FACEBOOK_APP_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-facebook-sso
+                  key: app-secret
           resources:
             requests:
               memory: 64Mi
