@@ -1,0 +1,63 @@
+namespace: postgresql-homechef
+clusterName: homechef-postgres
+
+# 3 instances: 1 primary + 2 sync replicas for production HA.
+# Automatic failover is handled by the CNPG operator.
+instances: 3
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+# Storage — separate WAL volume for I/O isolation
+storageSize: 60Gi
+storageClass: premium-rwo
+walStorageSize: 10Gi
+
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+# Bootstrap — primary database for the HomeChef Go API
+bootstrap:
+  database: homechef_db
+  owner: homechef
+  # Secret must contain 'username' and 'password' keys (CNPG basic-auth format).
+  # Created by ExternalSecret from GCP Secret Manager.
+  secret: homechef-postgres-app-credentials
+  # Post-init SQL runs once after the cluster is created (idempotent).
+  # Keycloak previously used its own PG (now in postgresql-global); if you
+  # need additional databases, add CREATE DATABASE statements here.
+  postInitSQL: []
+
+# PostgreSQL tuning
+postgresql:
+  max_connections: "300"
+  shared_buffers: "512MB"
+  effective_cache_size: "1536MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "128MB"
+  wal_level: "logical"
+  max_replication_slots: "10"
+  max_wal_senders: "10"
+  ssl_min_protocol_version: "TLSv1.3"
+  ssl_max_protocol_version: "TLSv1.3"
+
+# Continuous backup to GCS via Barman Cloud
+backup:
+  enabled: true
+  destinationPath: "gs://tesseract-prod-backups-in/homechef-postgres"
+  retentionPolicy: "30d"
+  # GCP Service Account for Workload Identity. Must have
+  # roles/storage.objectAdmin on the backup bucket.
+  serviceAccount: "app-secrets-homechef-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+# Monitoring — CNPG built-in Prometheus exporter on port 9187
+monitoring:
+  enablePodMonitor: true
+
+# Replication
+replication:
+  # At least 1 sync replica for zero-data-loss guarantees.
+  # With 3 instances: 1 primary + 1 sync + 1 async = strong durability.
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
