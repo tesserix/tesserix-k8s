@@ -5,7 +5,7 @@ name: mark8ly-marketplace-api-admin
 # instances differentiated by the MODE env var. See spec §14.8.
 image:
   repository: ghcr.io/tesserix/mark8ly-marketplace-api
-  tag: "sha-3f305d29e19a" # overridden per-release by CI bump job (placeholder; first bump lands after this PR merges)
+  tag: "sha-f283882ce7e6"
   pullPolicy: IfNotPresent
   # Same image, different entrypoint via Dockerfile target. The migrate
   # init container uses the `migrate` target; the main container uses
@@ -32,7 +32,10 @@ resources:
     memory: 128Mi
   limits:
     cpu: 500m
+
     memory: 256Mi
+
+    memory: 512Mi
 pdb:
   enabled: true
   minAvailable: 1
@@ -52,3 +55,34 @@ database:
 # MODE selects which Gin engine the binary constructs. See
 # services/marketplace-api/internal/mode and spec §14.8.
 mode: admin
+
+# ── Service discovery ─────────────────────────────────────────────
+# Internal URLs for service-to-service calls.
+fgaApiUrl: "http://mark8ly-openfga.mark8ly.svc.cluster.local:8080"
+platformApiUrl: "http://mark8ly-platform-api.mark8ly.svc.cluster.local:8086"
+authBffUrl: "http://mark8ly-auth-bff.mark8ly.svc.cluster.local:8087"
+
+# ── Secrets (from ExternalSecret) ─────────────────────────────────
+internalAuthSecret:
+  secretName: mark8ly-marketplace-api-internal-auth
+  secretKey: INTERNAL_AUTH_SECRET
+customerSessionSecret:
+  secretName: mark8ly-session
+  secretKey: SESSION_ENCRYPT_KEY
+gipProjectId: "tesseracthub-480811"
+
+# ── P0: Security & encryption ────────────────────────────────────
+encryptionMode: "noop"  # "kms" in production once KMS key is provisioned
+corsAllowedOrigins: "https://*.mark8ly.com"
+
+# ── P1: Observability ────────────────────────────────────────────
+metricsPort: 9090
+sentryDsn:
+  secretName: mark8ly-sentry
+  secretKey: SENTRY_DSN
+
+# ── S3: Stripe Billing ──────────────────────────────────────────
+stripeBilling:
+  secretName: mark8ly-stripe-billing
+  secretKeyKey: STRIPE_BILLING_SECRET_KEY
+  webhookSecretKey: STRIPE_BILLING_WEBHOOK_SECRET
