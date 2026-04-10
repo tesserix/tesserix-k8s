@@ -22,6 +22,12 @@ spec:
       parameters:
         - name: image.tag
           value: "latest"
+        # Bumping this annotation triggers a Knative rollout so the OIDC client
+        # re-initializes against the now-correct internal Keycloak realm. The
+        # previous pod booted before homechef-admin-bff existed and got stuck
+        # with "Outbound connectivity wait timed out — OIDC init may fail".
+        - name: "podAnnotations.client\\.knative\\.dev/updateTimestamp"
+          value: "2026-04-10T00:55:00Z"
         - name: env.ALLOWED_ORIGINS
           value: "fe3dr://,https://fe3dr.com,https://www.fe3dr.com,https://vendors.fe3dr.com,https://admin.fe3dr.com,https://internal-identity.fe3dr.com,https://delivery.fe3dr.com,https://analytics.fe3dr.com"
         # Redis configuration
