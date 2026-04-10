@@ -31,11 +31,14 @@ metadata:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/part-of: identity-customer
   annotations:
-    helm.sh/hook: post-install,post-upgrade
-    # Weight 6 puts this job AFTER the customer realm-import-job (weight 5)
-    # so the homechef realm is guaranteed to exist by the time we run.
-    helm.sh/hook-weight: "6"
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    # Use ArgoCD-native hook annotations (matching admin-sso-job in this same
+    # chart) so we get a deterministic sync-wave instead of relying on the
+    # helm.sh/hook-weight → argocd sync-wave conversion. Sync-wave -1 puts
+    # this job BEFORE the admin-sso-job (default wave 0), so a failing
+    # admin-sso-job in this realm cannot block the homechef IdP setup.
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   ttlSecondsAfterFinished: 300
   backoffLimit: 3
