@@ -95,13 +95,36 @@ spec:
               # =================================================================
               # Step 2: Verify the homechef realm exists
               # =================================================================
-              REALM_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-                -H "Authorization: Bearer $TOKEN" \
-                "$KEYCLOAK_URL/admin/realms/$REALM")
-
+              # Retry on 401 for a few attempts — Keycloak admin credentials
+              # are rotated by ESO and there is a small window where the token
+              # we just minted is valid but admin permissions are not yet
+              # propagated. Treat any non-2xx after retries as fatal so we
+              # never silently no-op on a real auth failure.
+              REALM_LOOKUP_RETRIES=10
+              for i in $(seq 1 $REALM_LOOKUP_RETRIES); do
+                REALM_STATUS=$(curl -s -o /tmp/realm-resp -w "%{http_code}" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  "$KEYCLOAK_URL/admin/realms/$REALM")
+                if [ "$REALM_STATUS" = "200" ]; then
+                  break
+                fi
+                if [ "$REALM_STATUS" = "404" ]; then
+                  echo "Realm $REALM does not exist (404) — realm-import job will create it; nothing to do."
+                  exit 0
+                fi
+                echo "GET /admin/realms/$REALM returned $REALM_STATUS, retry $i/$REALM_LOOKUP_RETRIES..."
+                # Re-mint token in case the previous one is no longer valid
+                TOKEN=$(curl -sf -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+                  -H "Content-Type: application/x-www-form-urlencoded" \
+                  -d "username=$KEYCLOAK_ADMIN" \
+                  -d "password=$KEYCLOAK_ADMIN_PASSWORD" \
+                  -d "grant_type=password" \
+                  -d "client_id=admin-cli" 2>/dev/null | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+                sleep 5
+              done
               if [ "$REALM_STATUS" != "200" ]; then
-                echo "Realm $REALM does not exist (status $REALM_STATUS) — realm-import job will create it; nothing to do."
-                exit 0
+                echo "ERROR: Could not read realm $REALM after $REALM_LOOKUP_RETRIES attempts (last status $REALM_STATUS): $(cat /tmp/realm-resp)"
+                exit 1
               fi
               echo "Realm $REALM exists"
 
