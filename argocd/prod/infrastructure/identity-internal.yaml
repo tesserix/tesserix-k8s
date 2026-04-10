@@ -117,6 +117,14 @@ spec:
       kind: StatefulSet
       jsonPointers:
         - /status
+    # Kubernetes 1.31+ added .status.terminatingReplicas to Deployment, which
+    # ArgoCD's structured-merge OpenAPI schema doesn't yet know about. Without
+    # this, every diff fails with "field not declared in schema" and the app
+    # never reaches Synced — blocking the realm-import and bootstrap post-hooks.
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status
   syncPolicy:
     automated:
       prune: false
