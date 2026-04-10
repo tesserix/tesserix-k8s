@@ -162,46 +162,68 @@ spec:
                   echo "ERROR: Failed to create flow (status $CF_STATUS): $(cat /tmp/flow-resp)"
                   exit 1
                 fi
-                # Add idp-create-user-if-unique execution
-                CE1=$(curl -s -o /tmp/exec1-resp -w "%{http_code}" \
-                  -X POST "$KEYCLOAK_URL/admin/realms/$REALM/authentication/flows/$FLOW_ALIAS/executions/execution" \
-                  -H "Authorization: Bearer $TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -d '{"provider":"idp-create-user-if-unique"}')
-                echo "  added idp-create-user-if-unique (status $CE1)"
-                # Add idp-auto-link execution
-                CE2=$(curl -s -o /tmp/exec2-resp -w "%{http_code}" \
-                  -X POST "$KEYCLOAK_URL/admin/realms/$REALM/authentication/flows/$FLOW_ALIAS/executions/execution" \
-                  -H "Authorization: Bearer $TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -d '{"provider":"idp-auto-link"}')
-                echo "  added idp-auto-link (status $CE2)"
-                # Set both executions to ALTERNATIVE
-                EXECS=$(curl -sf "$KEYCLOAK_URL/admin/realms/$REALM/authentication/flows/$FLOW_ALIAS/executions" \
-                  -H "Authorization: Bearer $TOKEN")
-                # Patch each execution: pull id and PUT requirement=ALTERNATIVE
-                # sed-extract id+providerId pairs (ordered by Keycloak)
-                echo "$EXECS" | tr ',' '\n' | grep -E '"(id|providerId)":' \
-                  | sed 's/.*"\(id\|providerId\)":"\([^"]*\)".*/\1=\2/' > /tmp/execs.list || true
-                # Walk pairs and PUT each as ALTERNATIVE
-                CUR_ID=""
-                while IFS= read -r line; do
-                  case "$line" in
-                    id=*) CUR_ID="${line#id=}" ;;
-                    providerId=idp-create-user-if-unique|providerId=idp-auto-link)
-                      if [ -n "$CUR_ID" ]; then
-                        PR=$(curl -s -o /dev/null -w "%{http_code}" \
-                          -X PUT "$KEYCLOAK_URL/admin/realms/$REALM/authentication/flows/$FLOW_ALIAS/executions" \
-                          -H "Authorization: Bearer $TOKEN" \
-                          -H "Content-Type: application/json" \
-                          -d "{\"id\":\"$CUR_ID\",\"requirement\":\"ALTERNATIVE\"}")
-                        echo "  set $CUR_ID -> ALTERNATIVE (status $PR)"
-                      fi
-                      ;;
-                  esac
-                done < /tmp/execs.list
-                echo "Flow $FLOW_ALIAS created with ALTERNATIVE executions"
               fi
+
+              # Always verify and fix executions, even if the flow already existed.
+              # partialImport with ifResourceExists=SKIP can create a flow WITHOUT
+              # its executions, leaving a broken flow that Keycloak falls back from.
+              # Re-mint token because the flow creation may have taken time.
+              TOKEN=$(curl -sf -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+                -H "Content-Type: application/x-www-form-urlencoded" \
+                -d "username=$KEYCLOAK_ADMIN" -d "password=$KEYCLOAK_ADMIN_PASSWORD" \
+                -d "grant_type=password" -d "client_id=admin-cli" 2>/dev/null \
+                | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+
+              EXECS=$(curl -sf "$KEYCLOAK_URL/admin/realms/$REALM/authentication/flows/$FLOW_ALIAS/executions" \
+                -H "Authorization: Bearer $TOKEN" 2>/dev/null || echo "[]")
+
+              # Add idp-create-user-if-unique if missing
+              if ! echo "$EXECS" | grep -q "idp-create-user-if-unique"; then
+                echo "  adding idp-create-user-if-unique..."
+                curl -s -o /dev/null -w "status %{http_code}\n" \
+                  -X POST "$KEYCLOAK_URL/admin/realms/$REALM/authentication/flows/$FLOW_ALIAS/executions/execution" \
+                  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+                  -d '{"provider":"idp-create-user-if-unique"}'
+              fi
+              # Add idp-auto-link if missing
+              if ! echo "$EXECS" | grep -q "idp-auto-link"; then
+                echo "  adding idp-auto-link..."
+                curl -s -o /dev/null -w "status %{http_code}\n" \
+                  -X POST "$KEYCLOAK_URL/admin/realms/$REALM/authentication/flows/$FLOW_ALIAS/executions/execution" \
+                  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+                  -d '{"provider":"idp-auto-link"}'
+              fi
+
+              # Ensure both are ALTERNATIVE (not DISABLED or REQUIRED)
+              TOKEN=$(curl -sf -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+                -H "Content-Type: application/x-www-form-urlencoded" \
+                -d "username=$KEYCLOAK_ADMIN" -d "password=$KEYCLOAK_ADMIN_PASSWORD" \
+                -d "grant_type=password" -d "client_id=admin-cli" 2>/dev/null \
+                | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+              EXECS=$(curl -sf "$KEYCLOAK_URL/admin/realms/$REALM/authentication/flows/$FLOW_ALIAS/executions" \
+                -H "Authorization: Bearer $TOKEN" 2>/dev/null || echo "[]")
+              echo "$EXECS" | tr ',' '\n' | grep -E '"(id|providerId|requirement)":' \
+                | sed 's/.*"\(id\|providerId\|requirement\)":"\([^"]*\)".*/\1=\2/' > /tmp/execs.list || true
+              CUR_ID="" CUR_PROV=""
+              while IFS= read -r line; do
+                case "$line" in
+                  id=*) CUR_ID="${line#id=}" ;;
+                  providerId=*) CUR_PROV="${line#providerId=}" ;;
+                  requirement=*)
+                    CUR_REQ="${line#requirement=}"
+                    if [ "$CUR_PROV" = "idp-create-user-if-unique" ] || [ "$CUR_PROV" = "idp-auto-link" ]; then
+                      if [ "$CUR_REQ" != "ALTERNATIVE" ]; then
+                        echo "  setting $CUR_PROV -> ALTERNATIVE (was $CUR_REQ)..."
+                        curl -s -o /dev/null -w "status %{http_code}\n" \
+                          -X PUT "$KEYCLOAK_URL/admin/realms/$REALM/authentication/flows/$FLOW_ALIAS/executions" \
+                          -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+                          -d "{\"id\":\"$CUR_ID\",\"requirement\":\"ALTERNATIVE\"}"
+                      fi
+                    fi
+                    ;;
+                esac
+              done < /tmp/execs.list
+              echo "Flow $FLOW_ALIAS verified with correct executions"
 
               # =================================================================
               # Step 5: Upsert the google identity provider with real credentials
