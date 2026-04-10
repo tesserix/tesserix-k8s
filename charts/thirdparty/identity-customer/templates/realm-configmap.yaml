@@ -720,6 +720,88 @@ data:
           "defaultClientScopes": ["openid", "email", "profile", "roles"],
           "optionalClientScopes": ["offline_access"]
         }
+      ],
+      "identityProviders": [
+        {
+          "alias": "google",
+          "providerId": "google",
+          "enabled": true,
+          "trustEmail": true,
+          "storeToken": false,
+          "addReadTokenRoleOnCreate": false,
+          "linkOnly": false,
+          "firstBrokerLoginFlowAlias": "auto-link-by-email",
+          "config": {
+            "clientId": "${GOOGLE_CLIENT_ID}",
+            "clientSecret": "${GOOGLE_CLIENT_SECRET}",
+            "defaultScope": "openid email profile",
+            "syncMode": "FORCE",
+            "guiOrder": "1"
+          }
+        }
+      ],
+      "identityProviderMappers": [
+        {
+          "name": "google-email",
+          "identityProviderAlias": "google",
+          "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+          "config": {
+            "syncMode": "INHERIT",
+            "claim": "email",
+            "user.attribute": "email"
+          }
+        },
+        {
+          "name": "google-first-name",
+          "identityProviderAlias": "google",
+          "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+          "config": {
+            "syncMode": "INHERIT",
+            "claim": "given_name",
+            "user.attribute": "firstName"
+          }
+        },
+        {
+          "name": "google-last-name",
+          "identityProviderAlias": "google",
+          "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+          "config": {
+            "syncMode": "INHERIT",
+            "claim": "family_name",
+            "user.attribute": "lastName"
+          }
+        },
+        {
+          "name": "google-picture",
+          "identityProviderAlias": "google",
+          "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+          "config": {
+            "syncMode": "FORCE",
+            "claim": "picture",
+            "user.attribute": "picture"
+          }
+        }
+      ],
+      "authenticationFlows": [
+        {
+          "alias": "auto-link-by-email",
+          "description": "Auto-link IdP accounts to existing users by verified email",
+          "providerId": "basic-flow",
+          "topLevel": true,
+          "builtIn": false,
+          "authenticationExecutions": [
+            {
+              "authenticator": "idp-create-user-if-unique",
+              "requirement": "ALTERNATIVE",
+              "priority": 0
+            },
+            {
+              "authenticator": "idp-auto-link",
+              "requirement": "ALTERNATIVE",
+              "priority": 1
+            }
+          ]
+        }
       ]
     }
 {{- end }}
