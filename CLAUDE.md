@@ -254,6 +254,34 @@ spec:
 
 ---
 
+## CloudNativePG (CNPG) — Database HA Clusters
+
+**Whenever you are creating, modifying, debugging, or migrating PostgreSQL
+databases, READ
+[`docs/cnpg-migration-guide.md`](docs/cnpg-migration-guide.md) FIRST.**
+
+All products use CloudNativePG instead of standalone StatefulSets:
+
+- **Chart pattern:** `charts/apps/{product}-postgres/` — shared templates,
+  per-product `values.yaml`
+- **3-instance HA:** 1 primary + 1 sync replica + 1 async replica
+- **WAL archiving:** Barman Cloud to `gs://tesseract-prod-backups-in/`
+- **Storage:** `standard-rwo-retain` (Retain reclaim policy)
+- **TLS:** Auto-managed, TLS 1.3 only
+- **Service endpoints:** `{product}-postgres-rw` (primary), `-ro` (replicas),
+  `-r` (any) on port 5432
+- **NetworkPolicy:** `cnpg-system` namespace MUST be in the ingress policy for
+  any namespace hosting a CNPG cluster — without it, the operator can't reach
+  pods on port 8000 and replicas won't be created.
+
+**Key files:**
+- Charts: `charts/apps/*-postgres/`
+- ArgoCD apps: `argocd/prod/apps/{product-group}/{product}-postgres.yaml`
+- NetworkPolicy: `charts/thirdparty/istio-config/templates/network-policies.yaml`
+- CNPG operator: `cnpg-system` namespace (v1.24.1)
+
+---
+
 ## Internal Keycloak Admin BFF / SSO / IdP
 
 **Whenever you are debugging or changing admin login, BFF auth, OIDC clients,
