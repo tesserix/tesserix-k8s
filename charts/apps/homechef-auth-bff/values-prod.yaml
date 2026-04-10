@@ -32,7 +32,14 @@ keycloak:
     realm: "homechef"
   internal:
     url: "https://internal-identity.fe3dr.com"
-    internalUrl: "http://keycloak.identity-internal.svc.cluster.local:8080"
+    # Intentionally empty: the internal Keycloak runs with --hostname-strict=false,
+    # so when OIDC discovery is performed via the in-cluster service URL, Keycloak
+    # responds with cluster-local URLs (keycloak.identity-internal.svc.cluster.local)
+    # in the discovery document, including authorization_endpoint. The BFF then
+    # redirects browsers to that internal URL and the user gets DNS_PROBE_FINISHED_NXDOMAIN.
+    # Forcing the BFF to use only the public URL for the internal realm ensures the
+    # discovery document contains internet-routable URLs everywhere.
+    internalUrl: ""
     realm: "tesserix-internal"
 
 # Disable HPA and KEDA — Knative handles autoscaling
