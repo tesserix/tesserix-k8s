@@ -1,5 +1,5 @@
-namespace: homechef
-clusterName: homechef-postgres
+namespace: fanzone
+clusterName: fanzone-postgres
 
 # 3 instances: 1 primary + 2 sync replicas for production HA.
 # Automatic failover is handled by the CNPG operator.
@@ -7,9 +7,10 @@ instances: 3
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
 # Storage — separate WAL volume for I/O isolation
-storageSize: 60Gi
+# Actual data ~33MB, but 10Gi for growth headroom.
+storageSize: 10Gi
 storageClass: standard-rwo-retain
-walStorageSize: 10Gi
+walStorageSize: 5Gi
 
 resources:
   requests:
@@ -17,22 +18,23 @@ resources:
   limits:
     memory: 2Gi
 
-# Bootstrap — primary database for the HomeChef Go API
+# Bootstrap — primary database for the Fanzone namespace
 bootstrap:
-  database: homechef_db
-  owner: homechef
+  database: fanzone
+  owner: fanzone
   # Secret must contain 'username' and 'password' keys (CNPG basic-auth format).
   # Created by ExternalSecret from GCP Secret Manager.
-  secret: homechef-postgres-app-credentials
-  gcpSecretName: prod-homechef-postgresql-password
+  secret: fanzone-postgres-app-credentials
+  gcpSecretName: prod-fanzone-postgresql-password
   # Post-init SQL runs once after the cluster is created (idempotent).
-  # Keycloak previously used its own PG (now in postgresql-global); if you
-  # need additional databases, add CREATE DATABASE statements here.
-  postInitSQL: []
+  # Fanzone uses 3 databases: fanzone (bootstrap) + 2 additional below.
+  postInitSQL:
+    - "CREATE DATABASE fanzone_auth OWNER fanzone"
+    - "CREATE DATABASE fanzone_db OWNER fanzone"
 
 # PostgreSQL tuning
 postgresql:
-  max_connections: "300"
+  max_connections: "1000"
   shared_buffers: "512MB"
   effective_cache_size: "1536MB"
   work_mem: "4MB"
@@ -46,11 +48,11 @@ postgresql:
 # Continuous backup to GCS via Barman Cloud
 backup:
   enabled: true
-  destinationPath: "gs://tesseract-prod-backups-in/homechef-postgres"
+  destinationPath: "gs://tesseract-prod-backups-in/fanzone-postgres"
   retentionPolicy: "30d"
   # GCP Service Account for Workload Identity. Must have
   # roles/storage.objectAdmin on the backup bucket.
-  serviceAccount: "app-secrets-homechef-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  serviceAccount: "app-secrets-fanzone-prod@tesseracthub-480811.iam.gserviceaccount.com"
 
 # Monitoring — CNPG built-in Prometheus exporter on port 9187
 monitoring:
