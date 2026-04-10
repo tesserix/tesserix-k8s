@@ -294,6 +294,32 @@ idempotent; pushing and letting ArgoCD sync is enough.
 
 ---
 
+## Customer Keycloak Social Login (Google / Facebook)
+
+**Whenever you are debugging or changing customer login, signup, Google/Facebook
+sign-in, identity providers, or the first-broker-login flow on the customer
+Keycloak (`identity-customer` namespace, `homechef` realm — used by fe3dr.com
+customers, vendors, delivery partners), READ
+[`docs/customer-keycloak-social-login.md`](docs/customer-keycloak-social-login.md)
+FIRST.**
+
+Key gotchas:
+
+1. **`VITE_BFF_URL` must be same-origin** (`${window.location.origin}/bff`),
+   NOT `https://identity.fe3dr.com`. There were FOUR files in the web app
+   that hardcoded the Keycloak host — all now fixed.
+2. The **realm-import-job does NOT substitute** `${GOOGLE_CLIENT_ID}`
+   placeholders. The `homechef-realm-bootstrap-job.yaml` writes real
+   credentials from the `keycloak-google-sso` K8s secret via admin API.
+3. `partialImport?ifResourceExists=SKIP` can create an authentication flow
+   **without its executions**. Always verify the `auto-link-by-email` flow
+   has BOTH `idp-create-user-if-unique` AND `idp-auto-link` set to
+   `ALTERNATIVE`. The bootstrap job now checks and fixes this.
+4. The **reference for the shared auth-bff image** is `devai-auth-bff` —
+   NOT `mark8ly-auth-bff`.
+
+---
+
 ## Gotchas & Common Pitfalls
 
 ### 1. @tesserix/web package auth
