@@ -58,44 +58,37 @@ spec:
             - -c
             - |
               set -eu
+              # Conditional creates via shell-side existence checks instead
+              # of dollar-quoted DO blocks, because Helm + YAML + heredoc
+              # mangle multi-dollar-sign sequences and produce SQL parse
+              # errors at runtime.
 
-              # 1. Create the marketplace_api role if it doesn't exist.
-              #    DO block lets us check pg_roles and create conditionally
-              #    inside a single session.
-              psql -v ON_ERROR_STOP=1 <<'SQL'
-              DO $$
-              BEGIN
-                IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'marketplace_api') THEN
-                  CREATE ROLE marketplace_api LOGIN;
-                END IF;
-              END
-              $$;
-              SQL
+              ROLE_EXISTS=$(psql -tAc "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'marketplace_api'")
+              if [ -z "$ROLE_EXISTS" ]; then
+                echo "creating role marketplace_api"
+                psql -v ON_ERROR_STOP=1 -c "CREATE ROLE marketplace_api LOGIN"
+              else
+                echo "role marketplace_api already exists"
+              fi
 
-              # 2. Create the database if it doesn't exist.
-              #    CREATE DATABASE cannot run inside a transaction block,
-              #    so we use psql's \gexec to dynamically issue the
-              #    statement only when the database is missing.
-              psql -v ON_ERROR_STOP=1 <<'SQL'
-              SELECT 'CREATE DATABASE mark8ly_marketplace_api OWNER marketplace_api'
-              WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'mark8ly_marketplace_api')\gexec
-              SQL
+              DB_EXISTS=$(psql -tAc "SELECT 1 FROM pg_database WHERE datname = 'mark8ly_marketplace_api'")
+              if [ -z "$DB_EXISTS" ]; then
+                echo "creating database mark8ly_marketplace_api"
+                psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE mark8ly_marketplace_api OWNER marketplace_api"
+              else
+                echo "database mark8ly_marketplace_api already exists"
+              fi
 
-              # 3. Set the role password from the secret.
-              #    ALTER ROLE is idempotent. Using $MARKETPLACE_API_PASSWORD
-              #    from the environment, NOT from a SQL string literal,
-              #    because psql's variable substitution would require
-              #    escaping the single quotes anyway.
-              psql -v ON_ERROR_STOP=1 -v pw="$MARKETPLACE_API_PASSWORD" <<SQL
-              ALTER ROLE marketplace_api WITH PASSWORD :'pw';
-              SQL
+              # Set the role password from the secret. ALTER ROLE is
+              # idempotent. Using psql's :'pw' variable form with a
+              # single-quote wrapper so the password is safely escaped
+              # regardless of which characters it contains.
+              psql -v ON_ERROR_STOP=1 -v pw="$MARKETPLACE_API_PASSWORD" \
+                -c "ALTER ROLE marketplace_api WITH PASSWORD :'pw'"
 
-              # 4. Ensure ownership of the database is correct (in case
-              #    a previous bootstrap attempt created the DB under a
-              #    different owner).
-              psql -v ON_ERROR_STOP=1 <<'SQL'
-              ALTER DATABASE mark8ly_marketplace_api OWNER TO marketplace_api;
-              GRANT ALL PRIVILEGES ON DATABASE mark8ly_marketplace_api TO marketplace_api;
-              SQL
+              # Ensure ownership + privileges (safe to re-run).
+              psql -v ON_ERROR_STOP=1 \
+                -c "ALTER DATABASE mark8ly_marketplace_api OWNER TO marketplace_api" \
+                -c "GRANT ALL PRIVILEGES ON DATABASE mark8ly_marketplace_api TO marketplace_api"
 
               echo "marketplace-api bootstrap complete"
