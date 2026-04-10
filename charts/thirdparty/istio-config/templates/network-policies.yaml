@@ -56,6 +56,17 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ $ns }}
     {{- end }}
+    # Allow from identity namespaces (Keycloak uses global PG for keycloak_customer/internal DBs)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.infrastructureNamespaces.identity }}
+    {{- if index .Values.infrastructureNamespaces "identity-internal" }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ index .Values.infrastructureNamespaces "identity-internal" }}
+    {{- end }}
     # Allow from monitoring
     - from:
         - namespaceSelector:
@@ -66,12 +77,12 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
-    # Allow DNS resolution (both UDP and TCP)
     # Allow from cnpg-system (CloudNativePG operator status checks)
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: cnpg-system
+    # Allow DNS resolution (both UDP and TCP)
     - from:
         - namespaceSelector:
             matchLabels:
