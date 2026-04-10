@@ -105,6 +105,20 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: identity-customer
+  ignoreDifferences:
+    # Kubernetes 1.31+ added .status.terminatingReplicas to Deployment which
+    # the ArgoCD structured-merge OpenAPI schema does not yet know about.
+    # Without this, every diff fails with 'field not declared in schema' and
+    # the app gets stuck — including the homechef realm bootstrap post-hook.
+    # Same fix that unblocked argocd/prod/infrastructure/identity-internal.yaml.
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /status
   syncPolicy:
     automated:
       prune: false
@@ -112,6 +126,7 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
