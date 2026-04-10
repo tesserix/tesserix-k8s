@@ -202,6 +202,153 @@ spec:
                 exit 1
               fi
 
+              # =================================================================
+              # Step 6: Ensure realm role 'admin' exists
+              # =================================================================
+              # The homechef-auth-bff inspects the user's roles claim to decide
+              # whether to grant admin access. Without an 'admin' realm role
+              # the BFF falls back to a tenant-service lookup that is not
+              # configured for HomeChef and the login bounces back.
+              ROLE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                -H "Authorization: Bearer $TOKEN" \
+                "$KEYCLOAK_URL/admin/realms/$REALM/roles/admin")
+
+              if [ "$ROLE_STATUS" = "200" ]; then
+                echo "Realm role 'admin' already exists"
+              else
+                echo "Creating realm role 'admin'..."
+                CR_STATUS=$(curl -s -o /tmp/role-resp -w "%{http_code}" \
+                  -X POST "$KEYCLOAK_URL/admin/realms/$REALM/roles" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d '{"name":"admin","description":"HomeChef platform administrator"}')
+                if [ "$CR_STATUS" = "201" ] || [ "$CR_STATUS" = "409" ]; then
+                  echo "Realm role 'admin' ensured"
+                else
+                  echo "ERROR: Failed to create admin role (status $CR_STATUS): $(cat /tmp/role-resp)"
+                  exit 1
+                fi
+              fi
+
+              # =================================================================
+              # Step 7: Add realm-roles protocol mapper to homechef-admin-bff
+              # =================================================================
+              # The mapper puts the user's realm roles into the 'roles' claim
+              # of the access token, id token, and userinfo response. The BFF
+              # reads this claim to decide admin access without calling out to
+              # an external tenant-service.
+              CLIENT_UUID=$(curl -sf "$KEYCLOAK_URL/admin/realms/$REALM/clients?clientId=$CLIENT_ID" \
+                -H "Authorization: Bearer $TOKEN" \
+                | sed -n 's/.*"id":"\([^"]*\)".*"clientId":"homechef-admin-bff".*/\1/p' \
+                | head -1)
+              if [ -z "$CLIENT_UUID" ]; then
+                CLIENT_UUID=$(curl -sf "$KEYCLOAK_URL/admin/realms/$REALM/clients?clientId=$CLIENT_ID" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  | sed -n 's/^[^"]*"id":"\([^"]*\)".*/\1/p' | head -1)
+              fi
+              echo "Client UUID for $CLIENT_ID: $CLIENT_UUID"
+
+              if [ -n "$CLIENT_UUID" ]; then
+                MAPPERS=$(curl -sf "$KEYCLOAK_URL/admin/realms/$REALM/clients/$CLIENT_UUID/protocol-mappers/models" \
+                  -H "Authorization: Bearer $TOKEN")
+                if echo "$MAPPERS" | grep -q '"name":"realm-roles"'; then
+                  echo "realm-roles mapper already present on $CLIENT_ID"
+                else
+                  echo "Adding realm-roles mapper to $CLIENT_ID..."
+                  cat > /tmp/mapper.json <<'MAPPER'
+              {
+                "name": "realm-roles",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-realm-role-mapper",
+                "config": {
+                  "claim.name": "roles",
+                  "jsonType.label": "String",
+                  "multivalued": "true",
+                  "id.token.claim": "true",
+                  "access.token.claim": "true",
+                  "userinfo.token.claim": "true"
+                }
+              }
+              MAPPER
+                  MS=$(curl -s -o /tmp/mapper-resp -w "%{http_code}" \
+                    -X POST "$KEYCLOAK_URL/admin/realms/$REALM/clients/$CLIENT_UUID/protocol-mappers/models" \
+                    -H "Authorization: Bearer $TOKEN" \
+                    -H "Content-Type: application/json" \
+                    -d @/tmp/mapper.json)
+                  if [ "$MS" = "201" ] || [ "$MS" = "409" ]; then
+                    echo "realm-roles mapper ensured on $CLIENT_ID"
+                  else
+                    echo "ERROR: failed to add mapper (status $MS): $(cat /tmp/mapper-resp)"
+                    exit 1
+                  fi
+                fi
+              fi
+
+              # =================================================================
+              # Step 8: Ensure HomeChef admin users exist with the admin role
+              # =================================================================
+              # Pre-creating these users (matched by email) lets Keycloak's
+              # Google IdP first-broker-login flow link the Google account to
+              # the existing user record on first sign-in, so the resulting
+              # session inherits the admin realm role immediately.
+              ADMIN_EMAILS="samyak.rout@gmail.com mahesh.sangawar@gmail.com unidevidp@gmail.com"
+
+              # Look up the admin role representation once for role mappings
+              ADMIN_ROLE_JSON=$(curl -sf "$KEYCLOAK_URL/admin/realms/$REALM/roles/admin" \
+                -H "Authorization: Bearer $TOKEN")
+              ADMIN_ROLE_ID=$(echo "$ADMIN_ROLE_JSON" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p' | head -1)
+              echo "admin role id: $ADMIN_ROLE_ID"
+
+              for EMAIL in $ADMIN_EMAILS; do
+                echo "--- Ensuring user $EMAIL ---"
+                # Check existence
+                LOOKUP=$(curl -sf "$KEYCLOAK_URL/admin/realms/$REALM/users?email=$EMAIL&exact=true" \
+                  -H "Authorization: Bearer $TOKEN")
+                USER_UUID=$(echo "$LOOKUP" | sed -n 's/^[^"]*"id":"\([^"]*\)".*/\1/p' | head -1)
+
+                if [ -z "$USER_UUID" ]; then
+                  echo "Creating user $EMAIL..."
+                  cat > /tmp/user.json <<EOF
+              {
+                "username": "$EMAIL",
+                "email": "$EMAIL",
+                "emailVerified": true,
+                "enabled": true
+              }
+              EOF
+                  US=$(curl -s -o /tmp/user-resp -w "%{http_code}" \
+                    -X POST "$KEYCLOAK_URL/admin/realms/$REALM/users" \
+                    -H "Authorization: Bearer $TOKEN" \
+                    -H "Content-Type: application/json" \
+                    -d @/tmp/user.json)
+                  if [ "$US" != "201" ] && [ "$US" != "409" ]; then
+                    echo "ERROR: Failed to create $EMAIL (status $US): $(cat /tmp/user-resp)"
+                    exit 1
+                  fi
+                  # Re-fetch to get the UUID
+                  LOOKUP=$(curl -sf "$KEYCLOAK_URL/admin/realms/$REALM/users?email=$EMAIL&exact=true" \
+                    -H "Authorization: Bearer $TOKEN")
+                  USER_UUID=$(echo "$LOOKUP" | sed -n 's/^[^"]*"id":"\([^"]*\)".*/\1/p' | head -1)
+                fi
+                echo "user uuid for $EMAIL: $USER_UUID"
+
+                if [ -n "$USER_UUID" ] && [ -n "$ADMIN_ROLE_ID" ]; then
+                  # Idempotent assignment — Keycloak returns 204 on success or
+                  # 204 again if role is already mapped, no harm in re-posting.
+                  RM_BODY="[{\"id\":\"$ADMIN_ROLE_ID\",\"name\":\"admin\"}]"
+                  RM=$(curl -s -o /tmp/rm-resp -w "%{http_code}" \
+                    -X POST "$KEYCLOAK_URL/admin/realms/$REALM/users/$USER_UUID/role-mappings/realm" \
+                    -H "Authorization: Bearer $TOKEN" \
+                    -H "Content-Type: application/json" \
+                    -d "$RM_BODY")
+                  if [ "$RM" = "204" ] || [ "$RM" = "200" ]; then
+                    echo "admin role assigned to $EMAIL"
+                  else
+                    echo "WARN: role assignment to $EMAIL returned $RM: $(cat /tmp/rm-resp)"
+                  fi
+                fi
+              done
+
               echo "HomeChef admin clients bootstrap complete"
           env:
             - name: KEYCLOAK_ADMIN
