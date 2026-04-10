@@ -24,6 +24,9 @@ spec:
         proxy.istio.io/config: |
           holdApplicationUntilProxyStarts: true
         traffic.sidecar.istio.io/excludeOutboundPorts: "5432"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.metricsPort | quote }}
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: {{ .Values.name }}
       imagePullSecrets:
@@ -63,12 +66,42 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.storefrontKey.secretName }}
                   key: {{ .Values.storefrontKey.secretKey }}
+            # Service discovery
+            - name: MARKETPLACE_FGA_API_URL
+              value: {{ .Values.fgaApiUrl | quote }}
+            - name: MARKETPLACE_PLATFORM_API_URL
+              value: {{ .Values.platformApiUrl | quote }}
+            - name: CUSTOMER_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.customerSessionSecret.secretName }}
+                  key: {{ .Values.customerSessionSecret.secretKey }}
+            # P0: Security
+            - name: CORS_ALLOWED_ORIGINS
+              value: {{ .Values.corsAllowedOrigins | quote }}
+            - name: ENCRYPTION_MODE
+              value: {{ .Values.encryptionMode | quote }}
+            # P1: Observability
+            - name: METRICS_PORT
+              value: {{ .Values.metricsPort | quote }}
+            {{- if .Values.sentryDsn }}
+            - name: SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sentryDsn.secretName }}
+                  key: {{ .Values.sentryDsn.secretKey }}
+                  optional: true
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metricsPort }}
           livenessProbe:
             httpGet:
               path: /health
               port: http
             initialDelaySeconds: 10
             periodSeconds: 30
+            timeoutSeconds: 5
             failureThreshold: 3
           readinessProbe:
             httpGet:
@@ -76,6 +109,7 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
           resources:
 {{ toYaml .Values.resources | indent 12 }}
           securityContext:

@@ -4,7 +4,7 @@ name: mark8ly-marketplace-api-storefront
 # Deployment instances differentiated by MODE. See spec §14.8.
 image:
   repository: ghcr.io/tesserix/mark8ly-marketplace-api
-  tag: "sha-3f305d29e19a" # overridden per-release by CI bump job
+  tag: "sha-f283882ce7e6"
   pullPolicy: IfNotPresent
   migrateTarget: ghcr.io/tesserix/mark8ly-marketplace-api
 imagePullSecrets:
@@ -27,7 +27,12 @@ resources:
     memory: 128Mi
   limits:
     cpu: 500m
+<<<<<<< HEAD
     memory: 256Mi
+=======
+    memory: 512Mi
+
+>>>>>>> b4d24d9 (feat(mark8ly): add P0-P1 env vars, bump image to sha-04746b6bb8cf, add ExternalSecrets)
 pdb:
   enabled: true
   minAvailable: 1
@@ -46,3 +51,20 @@ mode: storefront
 storefrontKey:
   secretName: mark8ly-marketplace-api-storefront-key
   secretKey: STOREFRONT_KEY
+
+# ── Service discovery ─────────────────────────────────────────────
+fgaApiUrl: "http://mark8ly-openfga.mark8ly.svc.cluster.local:8080"
+platformApiUrl: "http://mark8ly-platform-api.mark8ly.svc.cluster.local:8086"
+customerSessionSecret:
+  secretName: mark8ly-session
+  secretKey: SESSION_ENCRYPT_KEY
+
+# ── P0: Security ─────────────────────────────────────────────────
+corsAllowedOrigins: "https://*.mark8ly.com"
+encryptionMode: "noop"
+
+# ── P1: Observability ────────────────────────────────────────────
+metricsPort: 9090
+sentryDsn:
+  secretName: mark8ly-sentry
+  secretKey: SENTRY_DSN
