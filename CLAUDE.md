@@ -254,6 +254,46 @@ spec:
 
 ---
 
+## Internal Keycloak Admin BFF / SSO / IdP
+
+**Whenever you are debugging or changing admin login, BFF auth, OIDC clients,
+Google SSO, identity providers, or anything else touching the internal
+Keycloak (`identity-internal` namespace, `tesserix-internal` realm — used by
+HomeChef admin, DevAI SRE, marketplace admin, etc.), READ
+[`docs/internal-keycloak-admin-bff-fix.md`](docs/internal-keycloak-admin-bff-fix.md)
+FIRST.**
+
+It documents four distinct gotchas that all must be solved together for admin
+login to work, plus an idempotent bootstrap-job pattern that applies them to
+existing realms (the realm import job is one-shot and won't re-import after
+the realm has been created):
+
+1. The `<product>-admin-bff` OIDC client must exist in the live realm with a
+   secret matching the BFF env var.
+2. The realm must have `attributes.frontendUrl` set to the public URL —
+   Keycloak runs with `--hostname-strict=false`, so without this, discovery
+   responses leak in-cluster URLs.
+3. The BFF must use the in-cluster Keycloak service URL for back-channel
+   calls. Cloudflare strips the `Authorization` header on
+   `GET /protocol/openid-connect/userinfo` (only that endpoint!), so any
+   public-path back-channel call dies with "Jwt issuer is not configured".
+4. The OIDC client must have a `realm-roles` protocol mapper, and each
+   allowed admin user must be **pre-created** in the realm with
+   `realmRoles: ["admin"]` so the Google IdP first-broker-login flow links to
+   the existing record. Without this, the BFF falls back to a tenant-service
+   lookup that is not configured for non-marketplace products and the login
+   bounces back to `/login`.
+
+The reference for the shared `ghcr.io/tesseract-nexus/global-services/auth-bff`
+image is `charts/apps/devai-auth-bff/` — **not** `mark8ly-auth-bff`, which is
+a different image with its own database and OpenFGA.
+
+To add a new admin user, edit `realm-configmap.yaml` AND the `ADMIN_EMAILS`
+list in `homechef-clients-bootstrap-job.yaml`. The bootstrap job is
+idempotent; pushing and letting ArgoCD sync is enough.
+
+---
+
 ## Gotchas & Common Pitfalls
 
 ### 1. @tesserix/web package auth
