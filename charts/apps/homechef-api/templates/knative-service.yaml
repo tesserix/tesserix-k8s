@@ -96,6 +96,34 @@ spec:
                   name: {{ include "homechef-api.fullname" . }}-secrets
                   key: EXCHANGERATES_API_KEY
                   optional: true
+            # Razorpay payment secrets from ExternalSecret
+            - name: RAZORPAY_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "homechef-api.fullname" . }}-secrets
+                  key: RAZORPAY_KEY_ID
+                  optional: true
+            - name: RAZORPAY_KEY_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "homechef-api.fullname" . }}-secrets
+                  key: RAZORPAY_KEY_SECRET
+                  optional: true
+            - name: RAZORPAY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "homechef-api.fullname" . }}-secrets
+                  key: RAZORPAY_WEBHOOK_SECRET
+                  optional: true
+            # GCS storage configuration
+            {{- if .Values.gcs }}
+            - name: GCS_PROJECT_ID
+              value: {{ .Values.gcs.projectId | quote }}
+            - name: GCS_PUBLIC_BUCKET
+              value: {{ .Values.gcs.publicBucket | quote }}
+            - name: GCS_PRIVATE_BUCKET
+              value: {{ .Values.gcs.privateBucket | quote }}
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.securityContext }}
