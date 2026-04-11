@@ -4,10 +4,10 @@ clusterName: hms-postgres
 # 3 instances: 1 primary + 2 sync replicas for production HA.
 # Automatic failover is handled by the CNPG operator.
 # Hibernated — scales all pods to 0, preserves PVCs and data.
-# Set to false and push to wake up.
+# Set hibernate to false and instances to 3 to wake up.
 hibernate: true
 
-instances: 3
+instances: 1
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
 # Storage — separate WAL volume for I/O isolation
@@ -81,9 +81,8 @@ pooler:
 monitoring:
   enablePodMonitor: true
 
-# Replication
+# Replication — disabled while hibernated (single instance).
+# Set back to 1/1 when scaling back to 3 instances.
 replication:
-  # At least 1 sync replica for zero-data-loss guarantees.
-  # With 3 instances: 1 primary + 1 sync + 1 async = strong durability.
-  minSyncReplicas: 1
-  maxSyncReplicas: 1
+  minSyncReplicas: 0
+  maxSyncReplicas: 0
