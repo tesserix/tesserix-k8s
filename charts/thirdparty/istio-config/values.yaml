@@ -174,17 +174,16 @@ backupMongoNamespaces:
 # Maps infrastructure services to their database backends
 # NOTE: keys must be lowercase with hyphens only (RFC 1123 compliant)
 infrastructureDatabaseMapping:
-  identity: postgresql-global        # Keycloak customer uses postgresql-global
-  identity-internal: postgresql-global # Keycloak internal uses postgresql-global
-  growthbook: postgresql-global      # GrowthBook uses postgresql-global
+  # CNPG clusters run in app namespaces — identity connects to global namespace directly
+  identity: global
+  identity-internal: global
+  growthbook: global
 
 # Cross-product database access
-# Allows specific app namespaces to access other product databases for shared services
-# Use case: marketplace services need global DB for tenant, auth, etc.
+# CNPG clusters run in app namespaces, so cross-product access targets the app namespace
 crossProductDatabaseAccess:
-  # marketplace needs access to postgresql-global for shared services
   marketplace:
-    - postgresql-global              # Shared services: tenant_db, auth_db, verification_db
+    - global
 
 # Cross-product Redis access
 # Allows specific app namespaces to access other product's Redis for shared services
@@ -274,25 +273,11 @@ sidecarInjection:
     - email
     # - nats           # DISABLED: NATS handles its own TLS and doesn't need Istio sidecar
     - typesense
-    # Database namespaces (for mTLS)
-    - postgresql-global
-    - postgresql-marketplace
-    - postgresql-hms
-    - postgresql-fanzone
-    - postgresql-homechef
-    - postgresql-bookkeeping
-    - postgresql-stockpilot
-    - postgresql-scrapper
+    # Database namespaces removed — CNPG runs in app namespaces (already listed above)
     # Redis namespaces - DISABLED: Redis doesn't need sidecar, causes connectivity issues
     # - redis-marketplace
   # Namespaces that need database access (adds database-access=allowed label for NetworkPolicy)
   databaseAccessNamespaces:
-    - postgresql-global
-    - postgresql-marketplace
-    - postgresql-hms
-    - postgresql-fanzone
-    - postgresql-homechef
-    - postgresql-bookkeeping
     - marketplace
     - global
     - hms
@@ -308,11 +293,8 @@ sidecarInjection:
     - db-backup-and-restore
     - monitoring
     - devai
-    - postgresql-devai
     - stockpilot
     - scrapper
-    - postgresql-stockpilot
-    - postgresql-scrapper
   # Namespaces where sidecar injection should be explicitly disabled
   disabledNamespaces:
     - nats
@@ -325,7 +307,6 @@ sidecarInjection:
     - redis-stockpilot
     - redis-scrapper
     - redis-devai
-    - postgresql-devai
     - mongodb-fanzone                 # MongoDB doesn't need sidecar
     - db-backup-and-restore        # Backup jobs don't need sidecar
 
