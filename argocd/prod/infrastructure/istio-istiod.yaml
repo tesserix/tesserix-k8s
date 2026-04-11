@@ -24,7 +24,11 @@ spec:
           # Enable status port for health checks
           enabled: true
 
-          # Resource configuration (required for AKS Azure Policy)
+          # Enable Ambient mesh mode
+          env:
+            PILOT_ENABLE_AMBIENT: "true"
+
+          # Resource configuration
           resources:
             requests:
               memory: 256Mi
@@ -46,35 +50,15 @@ spec:
 
         # Global mesh configuration
         global:
-          # Default proxy settings
+          # Default proxy settings (used by waypoint proxies in ambient mode)
           proxy:
-            # Resource limits for sidecar proxies
             resources:
               requests:
                 memory: 64Mi
               limits:
                 memory: 256Mi
-
-            # Enable access logging
             accessLogFile: /dev/stdout
             accessLogEncoding: JSON
-
-            # Lifecycle hooks for graceful shutdown
-            lifecycle:
-              preStop:
-                exec:
-                  command:
-                    - /bin/sh
-                    - -c
-                    - sleep 5
-
-          # Proxy init container resources
-          proxy_init:
-            resources:
-              requests:
-                memory: 32Mi
-              limits:
-                memory: 64Mi
 
           # Logging configuration
           logging:
