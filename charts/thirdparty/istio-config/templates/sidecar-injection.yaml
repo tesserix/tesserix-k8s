@@ -1,7 +1,7 @@
 {{/*
-Namespace labels for sidecar injection
-This template patches existing namespaces with the istio-injection label
-and adds the 'name' label required for NetworkPolicy namespace matching
+Namespace labels for Istio Ambient mesh
+Ambient mode uses ztunnel (per-node L4 proxy) instead of sidecar injection.
+Label namespaces with istio.io/dataplane-mode: ambient to enroll them.
 */}}
 {{- $dbAccessNamespaces := .Values.sidecarInjection.databaseAccessNamespaces | default list }}
 {{- range .Values.sidecarInjection.namespaces }}
@@ -11,8 +11,8 @@ kind: Namespace
 metadata:
   name: {{ . }}
   labels:
-    # Istio sidecar injection
-    istio-injection: enabled
+    # Istio Ambient mesh enrollment (replaces sidecar injection)
+    istio.io/dataplane-mode: ambient
     # K8s built-in namespace name label
     kubernetes.io/metadata.name: {{ . }}
     # Custom name label for NetworkPolicy namespaceSelector matching
@@ -24,8 +24,9 @@ metadata:
 {{- end }}
 
 {{/*
-Namespaces where sidecar injection is explicitly disabled
-This is for services that don't need Istio (e.g., Redis, NATS) or handle their own TLS
+Namespaces excluded from Istio mesh (Redis, NATS, MongoDB)
+In ambient mode, these namespaces are simply not labeled — ztunnel
+does not intercept traffic for unlabeled namespaces.
 */}}
 {{- range .Values.sidecarInjection.disabledNamespaces }}
 ---
@@ -34,8 +35,6 @@ kind: Namespace
 metadata:
   name: {{ . }}
   labels:
-    # Istio sidecar injection explicitly disabled
-    istio-injection: disabled
     # K8s built-in namespace name label
     kubernetes.io/metadata.name: {{ . }}
     # Custom name label for NetworkPolicy namespaceSelector matching

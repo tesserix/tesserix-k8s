@@ -68,16 +68,12 @@ http://{{ .serviceName }}.{{ .namespace }}.svc.cluster.local:{{ .port }}
 {{- end -}}
 
 {{/*
-Common pod annotations including Istio configuration.
+Common pod annotations.
+In Ambient mesh mode, sidecar-specific annotations are no longer needed.
+ztunnel handles mTLS and L4 at the node level without per-pod configuration.
 Usage: {{ include "common.podAnnotations" . | nindent 8 }}
 */}}
 {{- define "common.podAnnotations" -}}
-proxy.istio.io/config: '{"holdApplicationUntilProxyStarts": true}'
-{{- if .Values.istio.excludeOutboundPorts }}
-traffic.sidecar.istio.io/excludeOutboundPorts: {{ .Values.istio.excludeOutboundPorts | quote }}
-{{- else }}
-traffic.sidecar.istio.io/excludeOutboundPorts: "4222,5432,6379,8080"
-{{- end }}
 {{- with .Values.podAnnotations }}
 {{ toYaml . }}
 {{- end }}
