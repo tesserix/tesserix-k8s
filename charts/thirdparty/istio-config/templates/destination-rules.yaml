@@ -374,6 +374,48 @@ spec:
 {{- end }}
 
 # =============================================================================
+# CNPG Postgres DestinationRules (in-namespace)
+# DISABLE mTLS for CNPG postgres services — apps use native PostgreSQL SSL
+# (sslmode=require) and the ztunnel/sidecar mTLS causes double-TLS failures
+# =============================================================================
+{{- range $key, $ns := .Values.appNamespaces }}
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $key }}-cnpg-postgres-dr
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: "{{ $key }}-postgres-rw.{{ $ns }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ $key }}-cnpg-postgres-ro-dr
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  host: "{{ $key }}-postgres-ro.{{ $ns }}.svc.cluster.local"
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: 30s
+{{- end }}
+
+# =============================================================================
 # Redis DestinationRules
 # DISABLE mTLS for Redis (use native Redis AUTH)
 # =============================================================================
