@@ -32,6 +32,21 @@ postgresql:
   max_wal_senders: "10"
   ssl_min_protocol_version: "TLSv1.3"
   ssl_max_protocol_version: "TLSv1.3"
+  # Query safety nets
+  idle_in_transaction_session_timeout: "300000"
+  statement_timeout: "120000"
+  # SSD-optimized planner (GKE PD-SSD)
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"
+  # Slow query logging (queries > 1s)
+  log_min_duration_statement: "1000"
+  # Replica query safety
+  hot_standby_feedback: "on"
+  # WAL safety cap — prevent unbounded growth from inactive slots
+  max_slot_wal_keep_size: "10GB"
+  # Performance monitoring (CNPG auto-loads extension)
+  pg_stat_statements.track: "all"
+  pg_stat_statements.max: "10000"
 
 # Continuous backup to GCS via Barman Cloud
 backup:
@@ -41,6 +56,13 @@ backup:
   # GCP Service Account for Workload Identity. Must have
   # roles/storage.objectAdmin on the backup bucket.
   serviceAccount: "app-secrets-stockpilot-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+# PgBouncer connection pooling
+pooler:
+  enabled: true
+  instances: 2
+  maxClientConn: "1000"
+  defaultPoolSize: "20"
 
 monitoring:
   enablePodMonitor: true

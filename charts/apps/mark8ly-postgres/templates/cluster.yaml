@@ -46,6 +46,21 @@ spec:
       max_connections: "100"
       shared_buffers: "256MB"
       wal_level: "logical"
+      ssl_min_protocol_version: "TLSv1.3"
+      ssl_max_protocol_version: "TLSv1.3"
+      # Query safety nets
+      idle_in_transaction_session_timeout: "300000"
+      statement_timeout: "120000"
+      # SSD-optimized planner (GKE PD-SSD)
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      # Slow query logging (queries > 1s)
+      log_min_duration_statement: "1000"
+      # WAL safety cap
+      max_slot_wal_keep_size: "10GB"
+      # Performance monitoring (CNPG auto-loads extension)
+      pg_stat_statements.track: "all"
+      pg_stat_statements.max: "10000"
 
   {{- if .Values.backup.enabled }}
   backup:
@@ -55,8 +70,11 @@ spec:
         gkeEnvironment: true
       wal:
         compression: gzip
+        maxParallel: 2
       data:
         compression: gzip
+        immediateCheckpoint: true
+        jobs: 2
     retentionPolicy: {{ .Values.backup.retentionPolicy | quote }}
   {{- end }}
 

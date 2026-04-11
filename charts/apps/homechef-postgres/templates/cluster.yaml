@@ -64,6 +64,15 @@ spec:
   maxSyncReplicas: {{ .Values.replication.maxSyncReplicas }}
 
   # =========================================================================
+  # HA Replication Slots — survive failover without WAL accumulation
+  # =========================================================================
+  replicationSlots:
+    highAvailability:
+      enabled: true
+      slotPrefix: "_cnpg_"
+    updateInterval: 30
+
+  # =========================================================================
   # TLS — auto-managed by CNPG (self-signed CA, auto-rotation)
   # No manual cert management needed. CNPG generates:
   #   - Server TLS cert (auto-rotated before expiry)
@@ -83,8 +92,11 @@ spec:
         gkeEnvironment: true
       wal:
         compression: gzip
+        maxParallel: 2
       data:
         compression: gzip
+        immediateCheckpoint: true
+        jobs: 2
     retentionPolicy: {{ .Values.backup.retentionPolicy | quote }}
     target: prefer-standby
   {{- end }}
@@ -107,10 +119,10 @@ spec:
     disableDefaultQueries: false
 
   # =========================================================================
-  # Affinity — spread replicas across nodes
+  # Affinity — spread replicas across different nodes (required)
   # =========================================================================
   affinity:
-    podAntiAffinityType: preferred
+    podAntiAffinityType: required
 
   # =========================================================================
   # Failover
