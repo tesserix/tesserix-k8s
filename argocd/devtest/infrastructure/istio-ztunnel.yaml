@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: istio-base
+  name: istio-ztunnel
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -9,23 +9,23 @@ metadata:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: infrastructure
   annotations:
-    argocd.argoproj.io/sync-wave: "-3"
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   project: default
   source:
     repoURL: https://istio-release.storage.googleapis.com/charts
-    chart: base
+    chart: ztunnel
     targetRevision: 1.29.1
     helm:
-      releaseName: istio-base
+      releaseName: ztunnel
       values: |
-        # Install Istio CRDs
-        defaultRevision: default
-
-        # Global settings
-        global:
-          # Enable istio CNI for better pod security
-          istioNamespace: istio-system
+        # ztunnel — per-node L4 proxy for Ambient mesh
+        # Handles mTLS, L4 authorization, and telemetry without sidecars
+        resources:
+          requests:
+            memory: 128Mi
+          limits:
+            memory: 512Mi
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-system
@@ -36,7 +36,6 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-      - Replace=true
     retry:
       limit: 5
       backoff:
