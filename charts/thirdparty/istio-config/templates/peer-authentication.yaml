@@ -38,6 +38,27 @@ metadata:
 spec:
   mtls:
     mode: PERMISSIVE
+{{- end }}
+
+# =============================================================================
+# CNPG Port 8000 mTLS Exception
+# The CNPG operator (cnpg-system) connects to postgres pods on port 8000
+# for health checks. In ambient mode, the ztunnel intercepts this traffic.
+# DISABLE mTLS on port 8000 for CNPG pods so the operator can communicate.
+# =============================================================================
+{{- range $key, $ns := .Values.appNamespaces }}
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: {{ $key }}-cnpg-port-exception
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/podRole: instance
   portLevelMtls:
     8000:
       mode: DISABLE
