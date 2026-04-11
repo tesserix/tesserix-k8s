@@ -3,9 +3,7 @@ hibernate: false
 namespace: fanzone
 clusterName: fanzone-postgres
 
-# 3 instances: 1 primary + 2 sync replicas for production HA.
-# Automatic failover is handled by the CNPG operator.
-instances: 3
+instances: 2
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
 # Storage — separate WAL volume for I/O isolation
@@ -83,8 +81,9 @@ monitoring:
   enablePodMonitor: true
 
 # Replication
+affinity:
+  podAntiAffinityType: preferred
+
 replication:
-  # At least 1 sync replica for zero-data-loss guarantees.
-  # With 3 instances: 1 primary + 1 sync + 1 async = strong durability.
   minSyncReplicas: 1
   maxSyncReplicas: 1
