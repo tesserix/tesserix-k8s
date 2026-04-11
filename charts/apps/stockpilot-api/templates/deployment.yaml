@@ -75,3 +75,31 @@ spec:
             timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+        {{- if and .Values.ibGateway .Values.ibGateway.enabled }}
+        # IB Gateway sidecar — provides IBKR API on localhost:4001
+        - name: ib-gateway
+          image: {{ .Values.ibGateway.image | default "ghcr.io/gnzsnz/ib-gateway:latest" }}
+          ports:
+            - containerPort: {{ .Values.ibGateway.port | default 4001 }}
+              protocol: TCP
+          env:
+            - name: TWS_USERID
+              valueFrom:
+                secretKeyRef:
+                  name: ibkr-credentials
+                  key: TWS_USERID
+            - name: TWS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ibkr-credentials
+                  key: TWS_PASSWORD
+            - name: TRADING_MODE
+              value: "live"
+            - name: TWS_PORT
+              value: {{ .Values.ibGateway.port | default "4001" | quote }}
+          resources:
+            requests:
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+        {{- end }}
