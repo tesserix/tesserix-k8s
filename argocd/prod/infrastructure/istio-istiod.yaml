@@ -126,12 +126,20 @@ spec:
   ignoreDifferences:
     - group: autoscaling
       kind: HorizontalPodAutoscaler
-      jsonPointers:
-        - /status
+      jqPathExpressions:
+        - .status
     - group: apps
       kind: Deployment
-      jsonPointers:
-        - /status
+      jqPathExpressions:
+        - .status
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
   syncPolicy:
     automated:
       prune: false
@@ -140,6 +148,7 @@ spec:
       - CreateNamespace=true
       - ServerSideApply=true
       - RespectIgnoreDifferences=true
+      - SkipDryRunOnMissingResource=true
     retry:
       limit: 5
       backoff:
