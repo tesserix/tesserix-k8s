@@ -561,6 +561,7 @@ spec:
 
 ---
 # Identity (Keycloak) - critical auth service
+# No explicit tls.mode — auto-mTLS detects ambient vs sidecar automatically
 apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
@@ -571,8 +572,6 @@ metadata:
 spec:
   host: "*.{{ .Values.infrastructureNamespaces.identity }}.svc.cluster.local"
   trafficPolicy:
-    tls:
-      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
     loadBalancer:
       simple: LEAST_REQUEST
     connectionPool:
@@ -593,6 +592,7 @@ spec:
 {{- if index .Values.infrastructureNamespaces "identity-internal" }}
 ---
 # Identity Internal (Keycloak) - internal auth service
+# No explicit tls.mode — auto-mTLS detects ambient vs sidecar automatically
 apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
@@ -603,8 +603,6 @@ metadata:
 spec:
   host: "*.{{ index .Values.infrastructureNamespaces "identity-internal" }}.svc.cluster.local"
   trafficPolicy:
-    tls:
-      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
     loadBalancer:
       simple: LEAST_REQUEST
     connectionPool:
@@ -769,7 +767,7 @@ spec:
         http2MaxRequests: 100
 
 ---
-# {{ $ns }} -> identity namespace
+# {{ $ns }} -> identity namespace (auto-mTLS for ambient compatibility)
 apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
@@ -782,8 +780,6 @@ spec:
   exportTo:
     - "."
   trafficPolicy:
-    tls:
-      mode: {{ if eq $.Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
     connectionPool:
       tcp:
         maxConnections: 50
@@ -794,7 +790,7 @@ spec:
 
 {{- if index $.Values.infrastructureNamespaces "identity-internal" }}
 ---
-# {{ $ns }} -> identity-internal namespace
+# {{ $ns }} -> identity-internal namespace (auto-mTLS for ambient compatibility)
 apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
@@ -807,8 +803,6 @@ spec:
   exportTo:
     - "."
   trafficPolicy:
-    tls:
-      mode: {{ if eq $.Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
     connectionPool:
       tcp:
         maxConnections: 50
