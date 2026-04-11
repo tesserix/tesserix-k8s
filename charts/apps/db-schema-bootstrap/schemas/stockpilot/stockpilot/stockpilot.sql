@@ -486,6 +486,115 @@ INSERT INTO schema_migrations (version, description) VALUES
 ON CONFLICT (version) DO NOTHING;
 
 -- ============================================================
+-- USER BROKER COLUMNS (v003)
+-- ============================================================
+
+DO $$ BEGIN
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS polymarket_wallet_address TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS polymarket_configured BOOLEAN DEFAULT FALSE;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
+-- ============================================================
+-- DCA STRATEGY (v003)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS dca_strategies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    portfolio_id UUID NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+    name TEXT DEFAULT 'Monthly Value Investor',
+    monthly_budget NUMERIC(14,2) DEFAULT 1000.00,
+    max_picks_per_month INTEGER DEFAULT 5,
+    min_picks_per_month INTEGER DEFAULT 3,
+    risk_tolerance TEXT DEFAULT 'moderate',
+    market_filter TEXT DEFAULT 'US',
+    strategy_type TEXT DEFAULT 'value_growth',
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS dca_executions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    strategy_id UUID NOT NULL REFERENCES dca_strategies(id) ON DELETE CASCADE,
+    month TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    budget_used NUMERIC(14,2) DEFAULT 0,
+    picks JSONB NOT NULL DEFAULT '[]',
+    screening_summary TEXT,
+    market_regime TEXT,
+    risk_assessment TEXT,
+    candidates_analyzed INTEGER DEFAULT 0,
+    total_candidates INTEGER DEFAULT 0,
+    portfolio_snapshot JSONB,
+    performance_since JSONB,
+    error_message TEXT,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (strategy_id, month)
+);
+
+CREATE INDEX IF NOT EXISTS idx_dca_executions_month ON dca_executions (month);
+
+-- ============================================================
+-- POLYMARKET PREDICTION MARKETS (v003)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS polymarket_strategies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT DEFAULT 'Polymarket AI Bettor',
+    bankroll_usdc NUMERIC(14,2) DEFAULT 130.00,
+    max_bets_per_day INTEGER DEFAULT 5,
+    max_concurrent_positions INTEGER DEFAULT 10,
+    risk_level TEXT DEFAULT 'moderate',
+    min_edge_threshold NUMERIC(4,3) DEFAULT 0.050,
+    kelly_fraction NUMERIC(3,2) DEFAULT 0.25,
+    max_single_bet_pct NUMERIC(3,2) DEFAULT 0.15,
+    min_reserve_pct NUMERIC(3,2) DEFAULT 0.20,
+    auto_execute BOOLEAN DEFAULT false,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS polymarket_bets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    strategy_id UUID NOT NULL REFERENCES polymarket_strategies(id) ON DELETE CASCADE,
+    condition_id TEXT NOT NULL,
+    market_question TEXT,
+    market_slug TEXT,
+    outcome TEXT NOT NULL,
+    token_id TEXT NOT NULL,
+    amount_usdc NUMERIC(14,2) NOT NULL,
+    price NUMERIC(5,4) NOT NULL,
+    shares NUMERIC(14,4),
+    order_type TEXT DEFAULT 'GTC',
+    order_id TEXT,
+    estimated_prob NUMERIC(5,4),
+    edge NUMERIC(5,4),
+    kelly_bet_size NUMERIC(14,2),
+    reasoning TEXT,
+    status TEXT DEFAULT 'pending_approval',
+    pnl_usdc NUMERIC(14,2),
+    market_end_date TIMESTAMPTZ,
+    liquidity NUMERIC(14,2),
+    volume_24h NUMERIC(14,2),
+    scan_metadata JSONB,
+    resolved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_polymarket_bets_status ON polymarket_bets (strategy_id, status);
+
+INSERT INTO schema_migrations (version, description) VALUES
+    ('003', 'Add DCA strategy, Polymarket integration, user polymarket columns')
+ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
 -- DONE
 -- ============================================================
 -- This script is fully idempotent. Running it multiple times
