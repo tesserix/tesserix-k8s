@@ -19,11 +19,24 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT UNIQUE NOT NULL,
     name TEXT,
     avatar_url TEXT,
-    account_mode TEXT DEFAULT 'demo' CHECK (account_mode IN ('demo', 'actual')),
+    account_mode TEXT DEFAULT 'demo',
     demo_balance NUMERIC(14,2) DEFAULT 100000.00,
+    broker_configured BOOLEAN DEFAULT FALSE,
+    alpaca_account_id TEXT,
+    ibkr_account_id TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Migration: add new columns if table already exists (idempotent)
+DO $$ BEGIN
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS broker_configured BOOLEAN DEFAULT FALSE;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS alpaca_account_id TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS ibkr_account_id TEXT;
+    -- Remove old CHECK constraint and allow new modes
+    ALTER TABLE users DROP CONSTRAINT IF EXISTS users_account_mode_check;
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
 
 -- Seed allowed users (skip if they already exist)
 INSERT INTO users (email, name, account_mode) VALUES
