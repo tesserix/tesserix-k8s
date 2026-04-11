@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: istio-base
+  name: istio-cni
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -9,23 +9,29 @@ metadata:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: infrastructure
   annotations:
-    argocd.argoproj.io/sync-wave: "-3"
+    argocd.argoproj.io/sync-wave: "-2"
 spec:
   project: default
   source:
     repoURL: https://istio-release.storage.googleapis.com/charts
-    chart: base
+    chart: cni
     targetRevision: 1.29.1
     helm:
-      releaseName: istio-base
+      releaseName: istio-cni
       values: |
-        # Install Istio CRDs
-        defaultRevision: default
-
-        # Global settings
-        global:
-          # Enable istio CNI for better pod security
-          istioNamespace: istio-system
+        # Istio CNI — required for Ambient mode
+        cni:
+          enabled: true
+          ambient:
+            enabled: true
+          # GKE uses a different CNI bin path
+          cniBinDir: /home/kubernetes/bin
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          privileged: true
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-system
@@ -36,7 +42,6 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-      - Replace=true
     retry:
       limit: 5
       backoff:

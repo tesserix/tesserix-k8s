@@ -111,37 +111,3 @@ spec:
                 request_handle:headers():add("X-Real-Client-IP", remote_ip)
                 request_handle:logInfo("Client IP: " .. remote_ip .. ", Downstream: " .. downstream_ip)
               end
----
-{{/*
-EnvoyFilter for sidecar proxies to preserve X-Forwarded-For header
-This prevents sidecars from overwriting the client IP with their own IP (127.0.0.x)
-Applied to marketplace namespace where our services run
-*/}}
-apiVersion: networking.istio.io/v1alpha3
-kind: EnvoyFilter
-metadata:
-  name: xff-sidecar-preserve
-  namespace: marketplace
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  configPatches:
-    # Configure sidecar inbound listeners to preserve X-Forwarded-For
-    - applyTo: NETWORK_FILTER
-      match:
-        context: SIDECAR_INBOUND
-        listener:
-          filterChain:
-            filter:
-              name: envoy.filters.network.http_connection_manager
-      patch:
-        operation: MERGE
-        value:
-          typed_config:
-            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-            # Don't use remote address for sidecars - trust the X-Forwarded-For from gateway
-            use_remote_address: false
-            # Don't append sidecar's IP to X-Forwarded-For
-            skip_xff_append: true
-            # Trust 2 hops: GKE LB -> Istio Gateway -> Sidecar
-            xff_num_trusted_hops: 2
