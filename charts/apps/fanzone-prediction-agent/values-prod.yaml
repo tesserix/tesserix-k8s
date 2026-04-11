@@ -1,0 +1,50 @@
+image:
+  pullPolicy: IfNotPresent
+
+knative:
+  enabled: true
+  minScale: 1
+  maxScale: 3
+  scaleDownDelay: "60s"
+  concurrencyTarget: 100
+  containerConcurrency: 0
+  timeoutSeconds: 300
+
+resources:
+  limits:
+    memory: 1Gi
+  requests:
+    memory: 256Mi
+
+env:
+  PYTHONUNBUFFERED: "1"
+  LOG_LEVEL: warning
+  SERVER_PORT: "8080"
+  PRIMARY_LLM: anthropic
+  ANTHROPIC_MODEL: "claude-sonnet-4-5-20250929"
+  OPENAI_MODEL: "gpt-4o-mini"
+  GEMINI_MODEL: "gemini-2.0-flash"
+  LLM_TEMPERATURE: "0.7"
+  LLM_MAX_TOKENS: "4096"
+  PREDICTION_SERVICE_URL: "http://fanzone-prediction.fanzone.svc.cluster.local"
+  GENERATION_INTERVAL_MINUTES: "15"
+  RESOLUTION_INTERVAL_MINUTES: "10"
+  DEFAULT_TTL_HOURS: "6"
+  MAX_PREDICTIONS_PER_CYCLE: "5"
+  MIN_PREDICTIONS_PER_CYCLE: "2"
+  DEFAULT_MIN_BET: "25"
+  DEFAULT_MAX_BET_PER_USER: "500"
+  BOT_ADMIN_USER_ID: "00000000-0000-0000-0000-000000000002"
+  MAX_TOKENS_PER_DAY: "500000"
+
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: "app-secrets-fanzone-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-fanzone-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  secretManager:
+    secretPrefix: "prod"

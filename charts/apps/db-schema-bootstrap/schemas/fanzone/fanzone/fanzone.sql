@@ -589,6 +589,36 @@ CREATE TABLE IF NOT EXISTS prediction_house_pool (
 );
 INSERT INTO prediction_house_pool (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
+-- AI prediction agent columns
+ALTER TABLE prediction_markets ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE prediction_markets ADD COLUMN IF NOT EXISTS category TEXT DEFAULT 'sports';
+ALTER TABLE prediction_markets ADD COLUMN IF NOT EXISTS source_url TEXT;
+ALTER TABLE prediction_markets ADD COLUMN IF NOT EXISTS ai_generated BOOLEAN DEFAULT FALSE;
+ALTER TABLE prediction_markets ADD COLUMN IF NOT EXISTS ai_provider TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_pred_markets_category ON prediction_markets(category) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS idx_pred_markets_ai_generated ON prediction_markets(ai_generated) WHERE status = 'open';
+
+-- AI generation run tracking
+CREATE TABLE IF NOT EXISTS ai_generation_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_type TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    prompt_hash TEXT,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    total_tokens INTEGER DEFAULT 0,
+    latency_ms INTEGER DEFAULT 0,
+    predictions_generated INTEGER DEFAULT 0,
+    predictions_published INTEGER DEFAULT 0,
+    predictions_resolved INTEGER DEFAULT 0,
+    error TEXT,
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_gen_runs_created ON ai_generation_runs(created_at DESC);
+
 -- ============================================================
 -- MICRO-PREDICTION SERVICE SCHEMA
 -- ============================================================
