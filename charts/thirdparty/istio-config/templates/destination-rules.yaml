@@ -282,7 +282,10 @@ spec:
 
 # =============================================================================
 # Tesserix Namespace DestinationRules
-# Company website (frontend only, no database/redis)
+# Company website + blog (ambient dataplane, no sidecars)
+# No explicit tls.mode — auto-mTLS handles ambient correctly. Forcing
+# ISTIO_MUTUAL makes the ingress gateway wrap traffic in mTLS direct to the
+# pod port, which serves plaintext under ambient → TLS WRONG_VERSION_NUMBER.
 # =============================================================================
 ---
 apiVersion: networking.istio.io/v1
@@ -295,8 +298,6 @@ metadata:
 spec:
   host: "*.{{ .Values.appNamespaces.tesserix }}.svc.cluster.local"
   trafficPolicy:
-    tls:
-      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
     connectionPool:
       tcp:
         maxConnections: 50
