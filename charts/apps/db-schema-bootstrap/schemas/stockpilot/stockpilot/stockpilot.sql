@@ -550,11 +550,11 @@ CREATE TABLE IF NOT EXISTS polymarket_strategies (
     max_bets_per_day INTEGER DEFAULT 5,
     max_concurrent_positions INTEGER DEFAULT 10,
     risk_level TEXT DEFAULT 'moderate',
-    min_edge_threshold NUMERIC(4,3) DEFAULT 0.050,
+    min_edge_threshold NUMERIC(4,3) DEFAULT 0.020,  -- 2% min edge — small edges count
     kelly_fraction NUMERIC(3,2) DEFAULT 0.25,
-    max_single_bet_pct NUMERIC(3,2) DEFAULT 0.15,
-    min_reserve_pct NUMERIC(3,2) DEFAULT 0.20,
-    auto_execute BOOLEAN DEFAULT false,
+    max_single_bet_pct NUMERIC(3,2) DEFAULT 0.12,   -- 12% max per bet
+    min_reserve_pct NUMERIC(3,2) DEFAULT 0.15,      -- 15% reserve
+    auto_execute BOOLEAN DEFAULT true,              -- fully autonomous by default
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT now(),
     updated_at TIMESTAMPTZ DEFAULT now()
