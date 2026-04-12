@@ -548,7 +548,7 @@ CREATE TABLE IF NOT EXISTS polymarket_strategies (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT DEFAULT 'Polymarket AI Bettor',
     bankroll_usdc NUMERIC(14,2) DEFAULT 130.00,
-    max_bets_per_day INTEGER DEFAULT 5,
+    max_bets_per_day INTEGER DEFAULT 7,
     max_concurrent_positions INTEGER DEFAULT 10,
     risk_level TEXT DEFAULT 'moderate',
     min_edge_threshold NUMERIC(4,3) DEFAULT 0.020,  -- 2% min edge — small edges count
