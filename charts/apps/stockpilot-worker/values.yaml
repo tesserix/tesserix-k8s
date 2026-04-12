@@ -1,0 +1,83 @@
+# Default values for stockpilot-worker — HTTP worker for long LLM tasks
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/stock-analysis/stockpilot-api  # same image as API
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8001
+  targetPort: 8001
+
+# Override the entrypoint to run the HTTP worker instead of the API
+command:
+  - uvicorn
+  - stockpilot.worker_http:app
+  - --host=0.0.0.0
+  - --port=8001
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+env:
+  PYTHONUNBUFFERED: "1"
+  ACCOUNT_MODE: "demo"
+  LLM_PROVIDER: "groq"
+  SKIP_AUTH: "false"
+
+database:
+  host: "timescaledb.timescaledb.svc.cluster.local"
+  port: "5432"
+  user: "stockpilot"
+  name: "stockpilot"
+  sslmode: "require"
+
+redis:
+  host: "redis.redis.svc.cluster.local"
+  port: "6379"
+
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 200m
+  limits:
+    memory: 2Gi
+    cpu: 1000m
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetMemoryUtilizationPercentage: 80
+
+keda:
+  enabled: false
+
+podAnnotations:
+    holdApplicationUntilProxyStarts: true
+
+podLabels: {}
+
+# IB Gateway sidecar — worker doesn't need this
+ibGateway:
+  enabled: false
+  image: ghcr.io/gnzsnz/ib-gateway:latest
+  port: 4001
