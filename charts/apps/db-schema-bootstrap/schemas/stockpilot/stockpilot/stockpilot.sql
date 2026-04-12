@@ -491,6 +491,7 @@ ON CONFLICT (version) DO NOTHING;
 
 DO $$ BEGIN
     ALTER TABLE users ADD COLUMN IF NOT EXISTS polymarket_wallet_address TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS polymarket_funder_address TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS polymarket_configured BOOLEAN DEFAULT FALSE;
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
