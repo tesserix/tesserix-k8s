@@ -15,6 +15,15 @@ spec:
     - Ingress
     - Egress
   ingress:
+    # Istio ambient (HBONE): all mesh traffic tunnels through ztunnel on
+    # port 15008. Without this, ingress rules on app ports (8080, 5432, etc.)
+    # never match because the socket terminates on the node's ztunnel first.
+    - from:
+        - ipBlock:
+            cidr: 10.20.0.0/16  # Pod network (ztunnels live here)
+      ports:
+        - protocol: TCP
+          port: 15008
     # Allow traffic from Istio ingress gateway
     - from:
         - namespaceSelector:
@@ -68,6 +77,18 @@ spec:
         - protocol: TCP
           port: 8080
   egress:
+    # Istio ambient (HBONE): outbound mesh traffic tunnels through
+    # ztunnel at <node-ip>:15008. Without this, Keycloak can't reach
+    # Postgres in global (times out at 10s) or its own peer on 7800
+    # (Infinispan clustering), which causes the ingress to return 500
+    # with "upstream connect error: delayed connect error: Invalid
+    # argument" on /auth and /broker endpoints.
+    - to:
+        - ipBlock:
+            cidr: 10.20.0.0/16  # Pod network (ztunnels live here)
+      ports:
+        - protocol: TCP
+          port: 15008
     # Allow DNS to kube-dns service (ClusterIP and pod network)
     - to:
         - namespaceSelector:
