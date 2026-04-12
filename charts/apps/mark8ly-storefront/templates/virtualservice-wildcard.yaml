@@ -37,6 +37,20 @@ spec:
             port:
               number: {{ .Values.adminServicePort }}
       timeout: 30s
+    # auth.mark8ly.com → auth-bff (customer sign-in/sign-out OAuth
+    # flow). The storefront's lib/auth.ts builds login/logout URLs
+    # that point here; the browser visits auth-bff directly, and the
+    # session cookie (.mark8ly.com scope) carries back to the
+    # storefront on the next request.
+    - match:
+        - authority:
+            exact: "auth.mark8ly.com"
+      route:
+        - destination:
+            host: {{ .Values.authBffServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.authBffServicePort }}
+      timeout: 30s
     # Everything else under *.mark8ly.com → storefront
     - route:
         - destination:
