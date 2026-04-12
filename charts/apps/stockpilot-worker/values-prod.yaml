@@ -1,0 +1,63 @@
+# Production overrides for stockpilot-worker — isolated LLM/AI task processor
+
+replicaCount: 1
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 200m
+  limits:
+    memory: 2Gi
+    cpu: 1000m
+
+env:
+  PYTHONUNBUFFERED: "1"
+  ACCOUNT_MODE: "demo"
+  LLM_PROVIDER: "groq"
+  SKIP_AUTH: "false"
+  ALLOWED_EMAILS: "samyak.rout@gmail.com,mahesh.sangawar@gmail.com"
+  # Worker doesn't serve external requests, no CORS needed
+  # Alpaca Broker API — credentials resolved from GCP SM via Workload Identity
+  ALPACA_BROKER_URL: "https://broker-api.sandbox.alpaca.markets"
+  ALPACA_AUTH_URL: "https://authx.sandbox.alpaca.markets"
+  ALPACA_DATA_URL: "https://data.sandbox.alpaca.markets"
+
+# No IB Gateway sidecar on worker
+ibGateway:
+  enabled: false
+
+# Scale worker horizontally when many users trigger scans simultaneously
+autoscaling:
+  enabled: false  # Replaced by KEDA
+
+keda:
+  enabled: true
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  prometheus:
+    enabled: false  # Worker doesn't serve external traffic
+  cpu:
+    enabled: true
+    threshold: "70"
+  memory:
+    enabled: true
+    threshold: "75"
+
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-global-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+database:
+  host: "stockpilot-postgres-rw.stockpilot.svc.cluster.local"
+  port: "5432"
+  user: "stockpilot"
+  name: "stockpilot"
+  sslmode: "require"
+
+redis:
+  host: "redis.redis-stockpilot.svc.cluster.local"
+  port: "6379"
