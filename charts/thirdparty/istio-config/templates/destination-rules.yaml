@@ -604,6 +604,10 @@ spec:
 ---
 # Identity (Keycloak) - critical auth service
 # No explicit tls.mode — auto-mTLS detects ambient vs sidecar automatically
+# h2UpgradePolicy: DO_NOT_UPGRADE — Keycloak's HTTP listener only serves
+# HTTP/1.1. Forcing an h2 upstream negotiation under ambient/HBONE causes
+# Envoy "delayed connect error: Invalid argument" on the ingress path
+# (identity.<brand>.com → keycloak), which breaks OIDC /auth redirects.
 apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
@@ -621,7 +625,7 @@ spec:
         maxConnections: 200
         connectTimeout: 10s
       http:
-        h2UpgradePolicy: UPGRADE
+        h2UpgradePolicy: DO_NOT_UPGRADE
         http1MaxPendingRequests: 200
         http2MaxRequests: 2000
         maxRetries: 3
@@ -635,6 +639,7 @@ spec:
 ---
 # Identity Internal (Keycloak) - internal auth service
 # No explicit tls.mode — auto-mTLS detects ambient vs sidecar automatically
+# h2UpgradePolicy: DO_NOT_UPGRADE — see note on identity-dr above.
 apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
@@ -652,7 +657,7 @@ spec:
         maxConnections: 200
         connectTimeout: 10s
       http:
-        h2UpgradePolicy: UPGRADE
+        h2UpgradePolicy: DO_NOT_UPGRADE
         http1MaxPendingRequests: 200
         http2MaxRequests: 2000
         maxRetries: 3
