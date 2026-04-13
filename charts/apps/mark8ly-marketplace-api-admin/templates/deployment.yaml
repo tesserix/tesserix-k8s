@@ -140,6 +140,17 @@ spec:
                   key: {{ .Values.stripeBilling.webhookSecretKey }}
                   optional: true
             {{- end }}
+            # Marketing M4 — Campaign email dispatch (SendGrid)
+            {{- if .Values.sendgrid }}
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sendgrid.secretName }}
+                  key: {{ .Values.sendgrid.apiKeyKey }}
+                  optional: true
+            - name: EMAIL_FROM
+              value: {{ .Values.sendgrid.emailFrom | quote }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /health
