@@ -82,6 +82,15 @@ spec:
               value: {{ .Values.gipProjectId | quote }}
             - name: MARKETPLACE_GCS_BUCKET
               value: {{ .Values.gcsBucket | quote }}
+            {{- with .Values.gcpServiceAccount }}
+            # Required on GKE Workload Identity: ADC has no private key,
+            # so the V4-signed upload URL path uses IAM Credentials
+            # SignBlob against this SA. The KSA is bound to the same SA
+            # via iam.gke.io/gcp-service-account; the SA has
+            # roles/iam.serviceAccountTokenCreator on itself.
+            - name: MARKETPLACE_GCS_SIGNER_SA_EMAIL
+              value: {{ . | quote }}
+            {{- end }}
             # Internal auth disabled for now — admin frontend doesn't send
             # X-Internal-Auth yet. Re-enable when admin client is updated.
             - name: MARKETPLACE_INTERNAL_AUTH_SECRET
