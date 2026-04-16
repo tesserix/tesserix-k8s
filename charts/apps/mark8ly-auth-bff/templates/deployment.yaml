@@ -97,6 +97,17 @@ spec:
               value: {{ .Values.openfga.apiUrl | quote }}
             - name: FGA_STORE_ID
               value: {{ .Values.openfga.storeId | quote }}
+            # Cross-service audit emit. URL points at marketplace-api's
+            # admin Knative service; secret is optional (permissive when
+            # empty — ExternalSecret may not be provisioned yet).
+            - name: MARKETPLACE_API_URL
+              value: "http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8086"
+            - name: AUDIT_INGEST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-audit-ingest
+                  key: AUDIT_INGEST_SECRET
+                  optional: true
           livenessProbe:
             httpGet:
               path: /health

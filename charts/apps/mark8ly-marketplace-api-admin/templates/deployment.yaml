@@ -103,6 +103,16 @@ spec:
             # X-Internal-Auth yet. Re-enable when admin client is updated.
             - name: MARKETPLACE_INTERNAL_AUTH_SECRET
               value: ""
+            # Narrow secret gating ONLY /internal/audit-events. When the
+            # ExternalSecret hasn't been provisioned (no GCP SM entry),
+            # the secretKeyRef returns empty thanks to optional: true and
+            # the audit ingest endpoint runs in permissive mode — safe.
+            - name: AUDIT_INGEST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-audit-ingest
+                  key: AUDIT_INGEST_SECRET
+                  optional: true
             - name: CUSTOMER_SESSION_SECRET
               valueFrom:
                 secretKeyRef:

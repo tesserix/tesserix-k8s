@@ -93,6 +93,17 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.gip.webApiKeySecret.name }}
                   key: {{ .Values.gip.webApiKeySecret.key }}
+            # Cross-service audit emit (staff invite/accept/revoke).
+            # MARKETPLACE_API_URL has a sensible default in code; we
+            # only need to mount the optional ingest secret here so the
+            # X-Internal-Auth header gets forwarded once the
+            # ExternalSecret is provisioned in GCP.
+            - name: AUDIT_INGEST_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-audit-ingest
+                  key: AUDIT_INGEST_SECRET
+                  optional: true
           livenessProbe:
             httpGet:
               path: /health
