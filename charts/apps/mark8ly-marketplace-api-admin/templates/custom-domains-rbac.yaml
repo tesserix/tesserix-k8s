@@ -1,0 +1,59 @@
+{{/*
+Custom domain provisioning RBAC.
+
+marketplace-api auto-creates per-domain k8s resources (Certificate,
+Gateway, VirtualService) when a merchant verifies a custom domain.
+This ClusterRole grants the minimum perms needed, bound to both the
+admin and storefront pod ServiceAccounts (both pods run the same
+binary; either may be elected to do provisioning work).
+
+Applied here (rather than in a separate RBAC chart) so the permissions
+follow the service that uses them — removing the marketplace-api
+install also removes its perms.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mark8ly-marketplace-api-custom-domains
+  labels:
+    app.kubernetes.io/name: mark8ly-marketplace-api
+    app.kubernetes.io/part-of: mark8ly
+rules:
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.istio.io"]
+    resources: ["gateways", "virtualservices"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mark8ly-marketplace-api-custom-domains-admin
+  labels:
+    app.kubernetes.io/name: mark8ly-marketplace-api
+    app.kubernetes.io/part-of: mark8ly
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mark8ly-marketplace-api-custom-domains
+subjects:
+  - kind: ServiceAccount
+    name: mark8ly-marketplace-api-admin
+    namespace: {{ .Values.namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mark8ly-marketplace-api-custom-domains-storefront
+  labels:
+    app.kubernetes.io/name: mark8ly-marketplace-api
+    app.kubernetes.io/part-of: mark8ly
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mark8ly-marketplace-api-custom-domains
+subjects:
+  - kind: ServiceAccount
+    name: mark8ly-marketplace-api-storefront
+    namespace: {{ .Values.namespace }}
