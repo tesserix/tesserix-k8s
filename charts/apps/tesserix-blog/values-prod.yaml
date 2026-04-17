@@ -4,7 +4,7 @@ image:
   repository: ghcr.io/tesserix/tesserix-blog
   tag: "0.1.0"
 
-replicaCount: 2
+replicaCount: 3
 
 # =============================================================================
 # Domain Configuration
@@ -14,12 +14,30 @@ domains:
 
 # =============================================================================
 # Resources
+# CPU request/limit are required — KEDA's cpu trigger is configured on the
+# scaledobject, and without requests the HPA shows cpu:<unknown> and autoscaling
+# silently breaks. Request is sized for steady-state Next.js SSR; limit leaves
+# burst headroom so we aren't throttled during cold renders.
 # =============================================================================
 resources:
   limits:
+    cpu: 1000m
     memory: 1Gi
   requests:
+    cpu: 200m
     memory: 512Mi
+
+# =============================================================================
+# Rolling update strategy
+# maxSurge: 1 + maxUnavailable: 0 means a new pod MUST be ready before an old
+# one is killed — eliminates the brief 502 window that users see when CI runs
+# `kubectl rollout restart` and Istio endpoint discovery lags pod termination.
+# =============================================================================
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
 
 livenessProbe:
   enabled: true
@@ -74,8 +92,8 @@ gcp:
 # =============================================================================
 keda:
   enabled: true
-  minReplicaCount: 2
-  maxReplicaCount: 6
+  minReplicaCount: 3
+  maxReplicaCount: 8
   pollingInterval: 30
   cooldownPeriod: 300
   triggers:
@@ -90,7 +108,10 @@ keda:
 
 # =============================================================================
 # Pod Disruption Budget
+# minAvailable: 2 — at least two replicas must stay serving traffic during any
+# voluntary disruption (node drain, rollout, eviction). With minReplicaCount: 3
+# and maxUnavailable: 0 above, this gives us a full N-1 survival guarantee.
 # =============================================================================
 pdb:
   enabled: true
-  minAvailable: 1
+  minAvailable: 2
