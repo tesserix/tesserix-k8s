@@ -64,22 +64,14 @@ service:
   targetPort: 3000
 
 # =============================================================================
-# Ingress (GKE mode)
+# Ingress
 # =============================================================================
-ingress:
-  className: "kong"
-  annotations:
-    cert-manager.io/cluster-issuer: "letsencrypt-prod"
-  hosts:
-    - host: blog.tesserix.app
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: blog-tls
-      hosts:
-        - blog.tesserix.app
-  backendServices: []
+# Intentionally unset. blog.tesserix.app is served via the Cloudflare Tunnel
+# (cloudflared namespace) → custom-ingressgateway → custom-domain-gateway →
+# the tesserix-blog VirtualService in templates/virtualservice.yaml. A Kong
+# Ingress used to exist here, but Kong crash-looped and produced intermittent
+# "upstream connect error … connection termination" at the edge.
+ingress: null
 
 # =============================================================================
 # Resources
