@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "mark8ly-otto.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.keda.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "mark8ly-otto.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mark8ly-otto.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/part-of: mark8ly
+      annotations:
+        sidecar.istio.io/inject: "true"
+        proxy.istio.io/config: |
+          holdApplicationUntilProxyStarts: true
+        # MongoDB traffic is gRPC-ish over TCP; Envoy adds latency but keeps
+        # it in-mesh for audit. Exclude the wire port from outbound capture.
+        traffic.sidecar.istio.io/excludeOutboundPorts: "27017"
+    spec:
+      serviceAccountName: {{ .Values.name }}
+      imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 8 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          env:
+            - name: ENV
+              value: "prod"
+            - name: HTTP_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: MONGO_URL
+              value: {{ .Values.mongo.url | quote }}
+            - name: MONGO_DATABASE
+              value: {{ .Values.mongo.database | quote }}
+            - name: CUSTOMER_SESSION_COOKIE
+              value: {{ .Values.session.cookieName | quote }}
+            - name: CUSTOMER_COOKIE_DOMAIN
+              value: {{ .Values.session.cookieDomain | quote }}
+            - name: CUSTOMER_COOKIE_SECURE
+              value: {{ .Values.session.cookieSecure | quote }}
+            - name: CUSTOMER_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-otto
+                  key: CUSTOMER_SESSION_SECRET
+            - name: INTERNAL_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-otto
+                  key: INTERNAL_AUTH_SECRET
+            - name: CORS_ALLOWED_ORIGINS
+              value: {{ .Values.cors.allowedOrigins | quote }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

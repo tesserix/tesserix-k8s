@@ -1,0 +1,28 @@
+# MongoDB for mark8ly — backs the Otto support-chat service.
+# A single StatefulSet with a PVC is enough for v1 since the service
+# is low-throughput (real-time chat messages, not analytics).
+
+image:
+  repository: mongo
+  tag: "7.0"
+  pullPolicy: IfNotPresent
+
+# v1: no auth (inside the mesh, network-policy gated). Flip to true and
+# add a root password ExternalSecret before exposing outside the cluster.
+auth:
+  enabled: false
+
+resources:
+  requests:
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+persistence:
+  enabled: true
+  storageClassName: premium-rwo
+  size: 20Gi
+
+service:
+  type: ClusterIP
+  port: 27017
