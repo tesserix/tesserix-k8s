@@ -13,6 +13,32 @@ spec:
   gateways:
     - istio-ingress/tesseract-gateway
   http:
+    # Otto support-chat service — matched by path BEFORE the authority
+    # matches so WebSocket upgrades and REST calls bypass the Next.js
+    # apps. Upstream timeout is long to accommodate long-lived WS
+    # sessions; Istio doesn't disconnect idle WebSockets within this
+    # window. The path split keeps customer and staff traffic isolated
+    # at the mesh level — mp-otto enforces the same split internally.
+    {{- if .Values.ottoEnabled }}
+    - match:
+        - uri:
+            prefix: /api/v1/storefront/otto/
+      route:
+        - destination:
+            host: {{ .Values.ottoServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.ottoServicePort }}
+      timeout: 3600s
+    - match:
+        - uri:
+            prefix: /api/v1/admin/otto/
+      route:
+        - destination:
+            host: {{ .Values.ottoServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.ottoServicePort }}
+      timeout: 3600s
+    {{- end }}
     # admin.mark8ly.com → admin (canonical sign-in host; this is the
     # single host registered with Google OAuth as an Authorized JS
     # Origin, so the sign-in popup works from exactly one place and
