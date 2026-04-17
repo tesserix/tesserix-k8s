@@ -308,6 +308,11 @@ spec:
         http2MaxRequests: 500
         maxRequestsPerConnection: 10
         maxRetries: 3
+        # Close idle upstream pool connections before Node's keepAliveTimeout
+        # (70s, set via server-prelude.js in tesserix-blog). Prevents the
+        # Envoy↔Node keep-alive race that surfaces as "upstream connect error
+        # or disconnect/reset before headers … connection termination".
+        idleTimeout: 60s
     {{- if .Values.circuitBreaker.enabled }}
     outlierDetection:
       consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
