@@ -1,0 +1,55 @@
+namespace: mark8ly
+name: mark8ly-otto
+
+image:
+  repository: ghcr.io/tesserix/mark8ly-otto
+  tag: "latest" # overridden per-release by CI bump job
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+service:
+  type: ClusterIP
+  port: 8089
+
+# Real-time chat needs persistent WebSocket connections, so Otto runs as a
+# plain Deployment (not Knative) to avoid scale-to-zero cold starts and
+# preserve long-lived sockets across replicas. A single replica is fine at
+# v1 traffic; KEDA scales on CPU when contention appears.
+replicaCount: 1
+
+keda:
+  enabled: false
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 3
+
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+pdb:
+  enabled: true
+  maxUnavailable: 1
+
+# MongoDB in-cluster. Matches the service created by the mark8ly-mongodb
+# chart installed in the same namespace.
+mongo:
+  url: "mongodb://mark8ly-mongodb.mark8ly.svc.cluster.local:27017"
+  database: "otto"
+
+# Customer-session cookie that binds an anonymous visitor to their own
+# thread. Cookie name + domain match the mark8ly storefront convention.
+session:
+  cookieName: "otto_session"
+  cookieDomain: ".mark8ly.com"
+  cookieSecure: true
+
+cors:
+  # Storefront + admin both call otto directly for WebSocket upgrades.
+  # REST calls go via Next.js same-origin proxies so no browser CORS.
+  allowedOrigins: "https://*.mark8ly.com"
