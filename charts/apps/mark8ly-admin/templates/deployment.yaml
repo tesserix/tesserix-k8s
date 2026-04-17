@@ -64,6 +64,17 @@ spec:
                   key: GIP_WEB_API_KEY
             - name: NEXT_PUBLIC_GOOGLE_CLIENT_ID
               value: {{ .Values.public.googleClientId | quote }}
+            # Otto support-chat: server-side proxy target + shared secret.
+            # The admin /api/admin/otto/* routes forward staff requests to
+            # mp-otto with the X-Internal-Auth header.
+            - name: OTTO_URL
+              value: "http://mark8ly-otto.mark8ly.svc.cluster.local:8089"
+            - name: OTTO_INTERNAL_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-otto
+                  key: INTERNAL_AUTH_SECRET
+                  optional: true
           livenessProbe:
             httpGet:
               path: /

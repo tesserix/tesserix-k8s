@@ -67,6 +67,22 @@ spec:
                 secretKeyRef:
                   name: mark8ly-session
                   key: SESSION_ENCRYPT_KEY
+            # Otto support-chat: server-side proxy target + shared-secret
+            # header the Next.js /api/otto/* routes forward to mp-otto.
+            # Optional — when the secret isn't provisioned, the /api/otto/*
+            # routes still reach otto but without the extra trust header
+            # (otto treats the check as permissive when its own env is
+            # unset too).
+            - name: OTTO_URL
+              value: "http://mark8ly-otto.mark8ly.svc.cluster.local:8089"
+            - name: OTTO_INTERNAL_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-otto
+                  key: INTERNAL_AUTH_SECRET
+                  optional: true
+            - name: OTTO_SESSION_COOKIE
+              value: "otto_session"
           livenessProbe:
             httpGet:
               path: /
