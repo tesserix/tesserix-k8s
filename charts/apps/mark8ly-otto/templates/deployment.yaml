@@ -68,6 +68,26 @@ spec:
                   key: INTERNAL_AUTH_SECRET
             - name: CORS_ALLOWED_ORIGINS
               value: {{ .Values.cors.allowedOrigins | quote }}
+            # OTP email verification — SendGrid key is shared with
+            # marketplace-api. Optional so the pod still starts if the
+            # secret is not yet provisioned; service falls back to a
+            # stdout log mailer and logs a warning.
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-sendgrid
+                  key: SENDGRID_API_KEY
+                  optional: true
+            - name: OTP_FROM_EMAIL
+              value: {{ .Values.otp.fromEmail | quote }}
+            - name: OTP_FROM_NAME
+              value: {{ .Values.otp.fromName | quote }}
+            - name: OTP_CODE_TTL_SECONDS
+              value: {{ .Values.otp.codeTtlSeconds | quote }}
+            - name: OTP_MAX_ATTEMPTS
+              value: {{ .Values.otp.maxAttempts | quote }}
+            - name: OTP_RESEND_COOLDOWN_SECONDS
+              value: {{ .Values.otp.resendCooldownSeconds | quote }}
           livenessProbe:
             httpGet:
               path: /health
