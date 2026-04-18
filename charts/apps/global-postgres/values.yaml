@@ -3,9 +3,12 @@ hibernate: false
 namespace: global
 clusterName: global-postgres
 
-# 3 instances: 1 primary + 2 sync replicas for production HA.
-# Automatic failover is handled by the CNPG operator.
-instances: 3
+# 1 instance: single-primary for low-traffic prod environment.
+# Was 3 (primary + 2 replicas) but replicas could not start on the 5Gi WAL
+# volume due to CNPG's WAL-space pre-flight check requiring ~2× the
+# max_slot_wal_keep_size free. Re-enable replicas once the cluster has real
+# traffic and the WAL volume is sized appropriately (≥ 16Gi).
+instances: 1
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
 # Storage — separate WAL volume for I/O isolation
@@ -66,9 +69,11 @@ postgresql:
   # Replica query safety
   hot_standby_feedback: "on"
   # WAL safety cap — prevent unbounded growth from inactive slots.
-  # Must be < walStorageSize (5Gi), otherwise CNPG refuses to start replicas
-  # with "Detected low-disk space condition".
-  max_slot_wal_keep_size: "2GB"
+  # CNPG's pre-start disk check requires ~2x this value free on the WAL volume
+  # (formula: 2 * walSegmentSize * keep_size_in_segments + margin). For a 5Gi
+  # WAL volume, keep this ≤ 1GB so the threshold (~2GB) stays safely under the
+  # ~4.6G usable capacity. Going higher makes CNPG refuse to start replicas.
+  max_slot_wal_keep_size: "1GB"
   # Performance monitoring (CNPG auto-loads extension)
   pg_stat_statements.track: "all"
   pg_stat_statements.max: "10000"
