@@ -78,69 +78,6 @@ spec:
               - kube-system
 
 # =============================================================================
-# HMS Namespace Policies
-# Hospital Management System isolation
-# =============================================================================
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-ingress-to-hms
-  namespace: {{ .Values.appNamespaces.hms }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - istio-ingress
-
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-internal-hms
-  namespace: {{ .Values.appNamespaces.hms }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.hms }}
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.global }}
-    - from:
-        - source:
-            namespaces:
-              - monitoring
-              - istio-system
-
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: deny-cross-product-to-hms
-  namespace: {{ .Values.appNamespaces.hms }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: DENY
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.fanzone }}
-              - {{ .Values.appNamespaces.homechef }}
-              - {{ .Values.appNamespaces.bookkeeping }}
-
-# =============================================================================
 # FanZone Namespace Policies
 # Sports/gaming platform isolation
 # =============================================================================
@@ -199,7 +136,6 @@ spec:
     - from:
         - source:
             namespaces:
-              - {{ .Values.appNamespaces.hms }}
               - {{ .Values.appNamespaces.homechef }}
               - {{ .Values.appNamespaces.bookkeeping }}
 
@@ -280,7 +216,6 @@ spec:
     - from:
         - source:
             namespaces:
-              - {{ .Values.appNamespaces.hms }}
               - {{ .Values.appNamespaces.fanzone }}
               - {{ .Values.appNamespaces.bookkeeping }}
 
@@ -343,7 +278,6 @@ spec:
     - from:
         - source:
             namespaces:
-              - {{ .Values.appNamespaces.hms }}
               - {{ .Values.appNamespaces.fanzone }}
               - {{ .Values.appNamespaces.homechef }}
 
