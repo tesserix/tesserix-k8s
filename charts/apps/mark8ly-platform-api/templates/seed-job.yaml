@@ -12,6 +12,11 @@ metadata:
     # deadlock waiting on a hook that needs the deployment to be healthy.
     # Seed binary is idempotent (upserts countries/states/currencies).
     argocd.argoproj.io/sync-wave: "5"
+    # Job spec.template is immutable in Kubernetes — any change (e.g. image
+    # tag bump or registry redirect) requires delete + recreate. Replace=true
+    # makes ArgoCD do that instead of attempting an in-place patch which fails
+    # with "field is immutable".
+    argocd.argoproj.io/sync-options: Replace=true
   labels:
     app.kubernetes.io/name: {{ .Values.name }}
     app.kubernetes.io/component: seed
