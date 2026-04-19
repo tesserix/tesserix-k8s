@@ -3,18 +3,32 @@ hibernate: false
 namespace: mark8ly
 clusterName: mark8ly-postgres
 
-# Single instance for v0.1. Bump to 2+ when HA becomes a requirement.
-instances: 1
+# P19 §22.2 / §24 — sync-standby at the 100-merchant tier. One primary +
+# one synchronous standby; synchronous_commit=on waits for the standby
+# fsync before ACKing a write, giving RPO=0 / RTO≤2min per spec. The
+# template wires spec.postgresql.synchronous only when instances>1; at
+# instances=1 the synchronous_commit parameter is inert and the cluster
+# behaves as before.
+#
+# Cost delta: doubles PVC spend + reserves 1 full vCPU per pod. Target
+# tier's storage (200Gi) is 10× the v0.1 value — stage this via ArgoCD
+# staging sync before merging to prod.
+instances: 2
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
-storageSize: 20Gi
+storageSize: 200Gi
 storageClass: standard-rwo-retain
-walStorageSize: 5Gi
+walStorageSize: 20Gi
 
+# §24 staircase — 1 CPU / 4 GiB at the 100-merchant tier. Current ask
+# sizes primary + standby identically so either can serve writes after
+# an auto-failover (liveness-probe-driven, see primaryUpdateStrategy).
 resources:
   requests:
-    memory: 512Mi
+    cpu: "1"
+    memory: 4Gi
   limits:
-    memory: 2Gi
+    cpu: "1"
+    memory: 4Gi
 
 # Databases to create at bootstrap. CNPG's initdb stanza only seeds one
 # db/role directly, so we rely on a post-init SQL script for the second
