@@ -62,24 +62,25 @@ spec:
       # Performance monitoring (CNPG auto-loads extension)
       pg_stat_statements.track: "all"
       pg_stat_statements.max: "10000"
-      # P19 §24 — synchronous commit across the replica. Required for
-      # RPO=0 at the 100-merchant tier. CNPG default is "local" which
-      # does NOT wait for standby ack — switching to "on" means every
-      # commit waits for the synchronous standby to fsync before the
-      # transaction returns. Adds +1–5ms per commit within-zone; this
-      # cost is ACCEPTED per spec §22 (churn risk > latency cost).
-      # Takes effect only when instances ≥ 2 AND a synchronous block
-      # is configured below; at instances=1 the parameter is inert.
-      synchronous_commit: "on"
-    {{- if gt (int .Values.instances) 1 }}
-    # Synchronous replication config — ANY(1, *) meaning any single
-    # standby acknowledging a commit is sufficient. Only wired when
-    # instances > 1; with instances=1 there is no standby to ack and
-    # this block would deadlock every write.
-    synchronous:
-      method: any
-      number: 1
-    {{- end }}
+      # P19 §24 sync commit — TEMPORARILY DISABLED (2026-04-19 incident).
+      # The prior config (synchronous_commit=on + synchronous{method:any,
+      # number:1}) deadlocked writes when postgres-1 was killed for a
+      # resource resize and could not be recreated (PVC filesystem expand
+      # required a running pod). Without a sync standby, every commit
+      # hung waiting for an ack that would never arrive.
+      # Explicitly clear synchronous_standby_names so ANY stray CNPG
+      # default cannot re-enable sync waiting. Re-enable both settings
+      # AFTER postgres-1 is rebuilt as a healthy replica. See
+      # docs/runbooks/cnpg-primary-failover.md (mark8ly repo).
+      synchronous_commit: "local"
+      synchronous_standby_names: ""
+    # Synchronous replication block REMOVED temporarily. Restore once
+    # postgres-1 is healthy. Gate:
+    #   {{ "{{" }}- if gt (int .Values.instances) 1 }}
+    #   synchronous:
+    #     method: any
+    #     number: 1
+    #   {{ "{{" }}- end }}
 
   {{- if .Values.backup.enabled }}
   backup:
