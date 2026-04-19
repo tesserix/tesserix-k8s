@@ -1,0 +1,181 @@
+# =============================================================================
+# SUBSCRIPTION OBSERVABILITY — recording + alert rules
+# =============================================================================
+# Scope: P17 infra-only slice. Rules reference ONLY metrics actually registered
+# by marketplace-api in services/marketplace-api/internal/metrics/registry.go.
+#
+# Metrics referenced (all P4/P5/P6 work — shipped):
+#   http_requests_total{method,path,status}
+#   http_request_duration_seconds_bucket{method,path}
+#   orders_created_total{store_id}
+#   webhook_received_total{provider,event_type}
+#   outbox_events_pending
+#   outbox_events_published_total
+#   mark8ly_trial_signup_anomaly_alerts_total
+#   mark8ly_trial_activation_day30_total
+#   mark8ly_subscription_dunning_emails_sent_total{day}
+#   mark8ly_subscription_payment_action_reminders_sent_total{offset}
+#   mark8ly_subscription_dunning_suppressed_refund_window_total
+#
+# The plan (2026-04-18-p17-observability.md) enumerates a broader metric set
+# (subscription_state_count, webhook_processing_duration_seconds_bucket,
+# subscription_arbitrage_flagged, reconciliation_drift, etc.) that belongs to
+# Tasks 1/2/3/10/11 — deferred to a later round. Rules/alerts that depend on
+# those metrics are intentionally NOT authored here; they will land alongside
+# the Go collectors they reference.
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: subscription-rules
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+    app.kubernetes.io/part-of: subscription-observability
+    app.kubernetes.io/component: monitoring
+    product: mark8ly
+spec:
+  groups:
+    # -----------------------------------------------------------------------
+    # Recording rules — derived series anchored on shipped collectors.
+    # Dashboard panels reference THESE names (not raw metrics) so a rename
+    # forces both files to update in lockstep.
+    # -----------------------------------------------------------------------
+    - name: subscription.recording
+      interval: 30s
+      rules:
+        # Dunning email throughput. Labeled by day (day_5, day_7).
+        - record: subscription:dunning_emails:rate5m
+          expr: |
+            sum by (day) (rate(mark8ly_subscription_dunning_emails_sent_total[5m]))
+
+        # SCA reminder throughput. Labeled by offset (t_minus_14/7/1).
+        - record: subscription:sca_reminders:rate5m
+          expr: |
+            sum by (offset) (rate(mark8ly_subscription_payment_action_reminders_sent_total[5m]))
+
+        # Cumulative refund-window suppressions. Unlabeled counter — expose
+        # the raw total so dashboards can stat-display it and alerts can
+        # rate() over a long window.
+        - record: subscription:refund_window_suppressions:total
+          expr: mark8ly_subscription_dunning_suppressed_refund_window_total
+
+        # 1h rate of refund-window suppressions — alert anchor.
+        - record: subscription:refund_window_suppressions:rate1h
+          expr: rate(mark8ly_subscription_dunning_suppressed_refund_window_total[1h])
+
+        # Trial activation cumulative count (day-30 successes).
+        - record: subscription:trial_activation_day30:total
+          expr: mark8ly_trial_activation_day30_total
+
+        # Daily rate of trial activations — dashboard + absence alert.
+        - record: subscription:trial_activation_day30:rate1d
+          expr: rate(mark8ly_trial_activation_day30_total[1d])
+
+        # Trial signup anomaly alerts cumulative count.
+        - record: subscription:trial_signup_anomalies:total
+          expr: mark8ly_trial_signup_anomaly_alerts_total
+
+        # 24h rate of trial signup anomaly alerts — used by pager alert.
+        - record: subscription:trial_signup_anomalies:rate24h
+          expr: rate(mark8ly_trial_signup_anomaly_alerts_total[24h])
+
+        # Webhook receive rate by event_type. Provider label preserved for
+        # breakdowns in dashboards.
+        - record: webhook:received:rate5m
+          expr: |
+            sum by (provider, event_type) (rate(webhook_received_total[5m]))
+
+        # HTTP request rate by status class (2xx/4xx/5xx).
+        - record: http:requests:rate5m
+          expr: |
+            sum by (status) (rate(http_requests_total[5m]))
+
+        # HTTP error rate — 5xx fraction of total. Anchor for webhook/API
+        # failure alerts given the path-agnostic nature of outbox/webhook
+        # endpoints on marketplace-api.
+        - record: http:error_rate:ratio5m
+          expr: |
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+              / clamp_min(sum(rate(http_requests_total[5m])), 1)
+
+        # Outbox publish throughput.
+        - record: outbox:published:rate5m
+          expr: rate(outbox_events_published_total[5m])
+
+    # -----------------------------------------------------------------------
+    # Alert rules — restricted to the metrics that actually exist today.
+    # Alerts for arbitrage, state transitions, reconciliation drift, webhook
+    # latency histograms, and trial funnel stages are deferred (their metrics
+    # are not yet emitted).
+    # -----------------------------------------------------------------------
+    - name: subscription.alerts
+      interval: 30s
+      rules:
+        # §16.5 refund-window suppression is supposed to fire rarely. A
+        # sustained >0 rate signals either a clock-skew bug or a logic
+        # regression in the dunning ladder.
+        - alert: DunningSuppressedRefundWindowSpike
+          expr: subscription:refund_window_suppressions:rate1h > 0.01
+          for: 30m
+          labels:
+            severity: warning
+            component: subscription
+            runbook: https://runbooks.mark8ly.internal/subscription/refund-window-spike
+          annotations:
+            summary: "Refund-window dunning suppressions firing >1/100s over 1h"
+            description: "Rate: {{ $value }}/s. Expected near-zero — investigate clock skew or §16.5 logic regression."
+
+        # 5xx fraction on the HTTP surface. Also trips when webhook handlers
+        # 500 back to Stripe (they share the http_requests_total counter).
+        - alert: HTTPErrorRateHigh
+          expr: http:error_rate:ratio5m > 0.05
+          for: 15m
+          labels:
+            severity: warning
+            component: api
+          annotations:
+            summary: "HTTP 5xx rate >5% over 15m"
+            description: "Current: {{ $value | humanizePercentage }}. Break down by path via http_requests_total."
+
+        # Dead-man's switch on the dunning cron. P6 emits at least one email
+        # per cycle per tenant in arrears; an absence beyond 48h indicates
+        # the cron is dead or the tenants-in-arrears query broke.
+        - alert: NoDunningEmailsFor48h
+          expr: absent_over_time(mark8ly_subscription_dunning_emails_sent_total[48h])
+          for: 0m
+          labels:
+            severity: warning
+            component: subscription
+            runbook: https://runbooks.mark8ly.internal/subscription/dunning-cron-dead
+          annotations:
+            summary: "No dunning emails emitted in 48h — cron likely dead"
+            description: "mark8ly_subscription_dunning_emails_sent_total is absent. Check P6 dunning CronJob and the tenants-in-arrears query."
+
+        # Dead-man's switch on trial activation counter. Even at low volume
+        # we expect at least one activation every 7d in production.
+        - alert: NoTrialActivationsFor7d
+          expr: absent_over_time(mark8ly_trial_activation_day30_total[7d])
+          for: 0m
+          labels:
+            severity: info
+            component: subscription
+            strategy: "true"
+          annotations:
+            summary: "No trial-to-paid activations in 7d"
+            description: "Either the day-30 counter is not being incremented (P5 bug) or genuinely no-one activated. Check signups volume + activation job logs."
+
+        # Trial abuse signal (P5 Task 13). Any anomaly alert firing in a
+        # 24h window pages security because the threshold logic already
+        # filters noise.
+        - alert: TrialSignupAnomaly
+          expr: subscription:trial_signup_anomalies:rate24h > 0
+          for: 15m
+          labels:
+            severity: warning
+            component: subscription
+            security: "true"
+          annotations:
+            summary: "Trial signup anomaly threshold tripped in 24h window"
+            description: "Rate: {{ $value }}/s. Check arbitrage flags + IP distribution. §5.1 flags >50/day as anomalous at our stage."
