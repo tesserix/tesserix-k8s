@@ -1,0 +1,243 @@
+{
+  "uid": "subscription-health-v1",
+  "title": "Subscription Health",
+  "description": "Dunning, SCA reminders, trial activation, and refund-window suppression for mark8ly marketplace-api. Panels reference Prometheus recording rules defined in tesserix-k8s/k8s/cluster/prometheus/rules/subscription.yaml — update both in lockstep when metric names change. Tenant-scoped filtering is not yet exposed (no tenant_id label on shipped counters); the $tenant variable is a placeholder for when P8/P9 land.",
+  "tags": ["subscription", "business", "mark8ly"],
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-7d", "to": "now"},
+  "timezone": "",
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {"selected": true, "text": "Prometheus", "value": "Prometheus"},
+        "hide": 0
+      },
+      {
+        "name": "tenant",
+        "label": "Tenant (placeholder)",
+        "description": "Placeholder — shipped subscription counters have no tenant_id label yet. Wired for future P8/P9 metrics.",
+        "type": "custom",
+        "query": "all",
+        "current": {"selected": true, "text": "all", "value": "all"},
+        "includeAll": true,
+        "multi": false,
+        "hide": 0
+      }
+    ]
+  },
+  "links": [
+    {"title": "Webhook Pipeline", "url": "/d/webhook-pipeline-v1", "type": "link", "icon": "external link", "targetBlank": false},
+    {"title": "Trial Activation Funnel", "url": "/d/trial-funnel-v1", "type": "link", "icon": "external link", "targetBlank": false},
+    {"title": "Arbitrage Operations", "url": "/d/arbitrage-ops-v1", "type": "link", "icon": "external link", "targetBlank": false}
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Dunning emails — 5m rate by day",
+      "type": "timeseries",
+      "description": "rate(mark8ly_subscription_dunning_emails_sent_total[5m]) broken down by day=day_5|day_7. Stacked to show total throughput.",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "subscription:dunning_emails:rate5m",
+          "refId": "A",
+          "legendFormat": "{{day}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {"drawStyle": "line", "stacking": {"mode": "normal", "group": "A"}, "fillOpacity": 30}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "SCA reminders — 5m rate by offset",
+      "type": "timeseries",
+      "description": "Strong Customer Authentication reminder cadence. Offsets: t_minus_14, t_minus_7, t_minus_1.",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "subscription:sca_reminders:rate5m",
+          "refId": "A",
+          "legendFormat": "{{offset}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {"drawStyle": "line", "stacking": {"mode": "normal", "group": "A"}, "fillOpacity": 30}
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Refund-window suppressions (cumulative)",
+      "type": "stat",
+      "description": "§16.5 past_due→expired ladder steps skipped due to the 14-day refund window. Should grow slowly; any spike is alert-worthy.",
+      "gridPos": {"x": 0, "y": 8, "w": 6, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "subscription:refund_window_suppressions:total",
+          "refId": "A",
+          "legendFormat": "total"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 100},
+              {"color": "red", "value": 1000}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Refund-window suppressions — 1h rate",
+      "type": "timeseries",
+      "description": "Rate anchor for the DunningSuppressedRefundWindowSpike alert. Expected near-zero.",
+      "gridPos": {"x": 6, "y": 8, "w": 12, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "subscription:refund_window_suppressions:rate1h",
+          "refId": "A",
+          "legendFormat": "suppressions/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 0.01}
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Trial activations — day-30 (cumulative)",
+      "type": "stat",
+      "description": "mark8ly_trial_activation_day30_total — counter of trialing stores that reached day 30 with at least one product (P5 Task 14).",
+      "gridPos": {"x": 18, "y": 8, "w": 6, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "subscription:trial_activation_day30:total",
+          "refId": "A",
+          "legendFormat": "activations"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "title": "Trial activations — daily rate",
+      "type": "timeseries",
+      "description": "rate(mark8ly_trial_activation_day30_total[1d]). Dead-man's switch anchor for NoTrialActivationsFor7d.",
+      "gridPos": {"x": 0, "y": 14, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "subscription:trial_activation_day30:rate1d",
+          "refId": "A",
+          "legendFormat": "activations/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ops"},
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Trial signup anomalies — 24h rate",
+      "type": "timeseries",
+      "description": "Non-zero means the anomaly threshold has fired at least once in the rolling 24h window (P5 Task 13). Also triggers TrialSignupAnomaly alert.",
+      "gridPos": {"x": 12, "y": 14, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "subscription:trial_signup_anomalies:rate24h",
+          "refId": "A",
+          "legendFormat": "anomalies/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ops"},
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "HTTP 5xx error rate",
+      "type": "timeseries",
+      "description": "http:error_rate:ratio5m — sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])). Tracks overall API + webhook handler health. Anchors HTTPErrorRateHigh alert.",
+      "gridPos": {"x": 0, "y": 22, "w": 24, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "http:error_rate:ratio5m",
+          "refId": "A",
+          "legendFormat": "5xx ratio"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.03},
+              {"color": "red", "value": 0.05}
+            ]
+          }
+        },
+        "overrides": []
+      }
+    }
+  ]
+}
