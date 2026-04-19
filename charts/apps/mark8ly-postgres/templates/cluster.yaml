@@ -62,6 +62,24 @@ spec:
       # Performance monitoring (CNPG auto-loads extension)
       pg_stat_statements.track: "all"
       pg_stat_statements.max: "10000"
+      # P19 §24 — synchronous commit across the replica. Required for
+      # RPO=0 at the 100-merchant tier. CNPG default is "local" which
+      # does NOT wait for standby ack — switching to "on" means every
+      # commit waits for the synchronous standby to fsync before the
+      # transaction returns. Adds +1–5ms per commit within-zone; this
+      # cost is ACCEPTED per spec §22 (churn risk > latency cost).
+      # Takes effect only when instances ≥ 2 AND a synchronous block
+      # is configured below; at instances=1 the parameter is inert.
+      synchronous_commit: "on"
+    {{- if gt (int .Values.instances) 1 }}
+    # Synchronous replication config — ANY(1, *) meaning any single
+    # standby acknowledging a commit is sufficient. Only wired when
+    # instances > 1; with instances=1 there is no standby to ack and
+    # this block would deadlock every write.
+    synchronous:
+      method: any
+      number: 1
+    {{- end }}
 
   {{- if .Values.backup.enabled }}
   backup:
