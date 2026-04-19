@@ -399,6 +399,22 @@ spec:
               number: 80
       timeout: 60s
 
+    # WebSocket routes -> homechef-api directly (bypass BFF, which can't
+    # proxy WS upgrades). 3600s timeout to keep long-lived connections open.
+    - match:
+        - uri:
+            prefix: /ws
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 3600s
+
     # All other routes -> Admin Portal SPA
     - match:
         - uri:
