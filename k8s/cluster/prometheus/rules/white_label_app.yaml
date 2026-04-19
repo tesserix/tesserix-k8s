@@ -1,0 +1,159 @@
+# =============================================================================
+# WHITE-LABEL APP — recording + alert rules (P15 §13.5, §18.9)
+# =============================================================================
+# Applied by the subscription-observability ApplicationSet via
+# kustomization.yaml in this directory.
+#
+# Metrics referenced (registered by services/marketplace-api at startup
+# — see internal/whitelabel/metrics/metrics.go):
+#   white_label_app_lifecycle_transition_total{from,to}
+#   white_label_app_credential_accessed_total{type}
+#
+# The recording rules up-aggregate for the dashboard; alerts fire when
+# something goes wrong with teardown progress or credential access
+# exceeds baseline. Label vocabularies:
+#
+#   from/to ∈ {active, sunset_scheduled, downloads_blocked, pulled,
+#              firebase_archived, credentials_purged}
+#   type    ∈ {apple-asc-api-key, apple-asc-issuer-id,
+#              apple-asc-key-id, google-play-service-account}
+#
+# Not emitted: tenant_id / store_id (per §21.1 cardinality discipline);
+# those live in logs for forensic correlation only.
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: white-label-app-rules
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+    app.kubernetes.io/part-of: subscription-observability
+    app.kubernetes.io/component: monitoring
+    product: mark8ly
+spec:
+  groups:
+    # ─── Recording rules ──────────────────────────────────────────────
+    - name: white-label-app.recording
+      interval: 30s
+      rules:
+        # 1h rate of lifecycle transitions, summed across from/to — used
+        # as the "is the cron advancing anything?" health signal.
+        - record: white_label_app:lifecycle_transitions:rate1h
+          expr: sum(rate(white_label_app_lifecycle_transition_total[1h]))
+
+        # Per-terminal-step rate — dashboards break these out so ops can
+        # see where teardowns are stalling.
+        - record: white_label_app:downloads_blocked:rate1d
+          expr: |
+            sum(increase(
+              white_label_app_lifecycle_transition_total{to="downloads_blocked"}[1d]
+            ))
+        - record: white_label_app:pulled:rate1d
+          expr: |
+            sum(increase(
+              white_label_app_lifecycle_transition_total{to="pulled"}[1d]
+            ))
+        - record: white_label_app:credentials_purged:rate1d
+          expr: |
+            sum(increase(
+              white_label_app_lifecycle_transition_total{to="credentials_purged"}[1d]
+            ))
+
+        # Credential access rate per type — spike detection baseline.
+        # 1h rolling rate, keyed on cred type.
+        - record: white_label_app:credential_accessed:rate1h
+          expr: |
+            sum by (type) (
+              rate(white_label_app_credential_accessed_total[1h])
+            )
+
+        # 24h median of the same — used as the alert's baseline for
+        # "anomalous spike" comparisons.
+        - record: white_label_app:credential_accessed:median24h
+          expr: |
+            quantile_over_time(0.5,
+              white_label_app:credential_accessed:rate1h[24h])
+
+    # ─── Alert rules ──────────────────────────────────────────────────
+    - name: white-label-app.alerts
+      interval: 30s
+      rules:
+        # Teardown cron stuck: if we have any sunset_scheduled rows due
+        # (counted indirectly — the advancer's Prometheus surface does
+        # not emit a "backlog" gauge; instead we infer "no transitions
+        # for 48h" as a tripwire). False positives: a quiet period
+        # (no sunsets happening) reads the same. Rare enough that an
+        # info-level alert is fine.
+        - alert: WhiteLabelLifecycleQuietFor48h
+          expr: |
+            absent_over_time(
+              white_label_app:lifecycle_transitions:rate1h[48h]
+            )
+          for: 1h
+          labels:
+            severity: info
+            service: marketplace-api
+            product: mark8ly
+          annotations:
+            summary: "white-label app: zero lifecycle transitions in 48h"
+            description: |
+              No sunset_scheduled → downloads_blocked → pulled →
+              firebase_archived → credentials_purged transitions
+              observed in the last 48h. This is usually benign (no
+              sunsets in progress) but can also mask a stuck cron or a
+              bad Apple/Google API state. Check:
+                kubectl logs -n marketplace deploy/marketplace-api \
+                  | grep "P15 white-label lifecycle"
+            runbook_url: "https://github.com/tesserix/mark8ly/blob/main/docs/runbooks/white-label-app-lifecycle.md"
+
+        # Credential access spike — P15 §18.9 security concern. Triggers
+        # when the current 1h rate is >3× the 24h median over 10m
+        # sustained. Noise-tolerant: random doubling is common; a
+        # sustained 3× of median is unusual and warrants investigation.
+        - alert: WhiteLabelCredentialAccessSpike
+          expr: |
+            white_label_app:credential_accessed:rate1h
+              >
+            (3 * ignoring(type) group_left
+              white_label_app:credential_accessed:median24h)
+            and
+            white_label_app:credential_accessed:rate1h > 0.5
+          for: 10m
+          labels:
+            severity: warning
+            security: "true"
+            service: marketplace-api
+            product: mark8ly
+          annotations:
+            summary: "white-label credential access >3× 24h median for 10m"
+            description: |
+              white_label_app_credential_accessed_total{type} is rising
+              sharply vs its 24h baseline. Possible causes: legitimate
+              CI/CD rebuild cycle, credential rotation drill, OR a
+              credential-dump attempt. Cross-reference the audit log:
+                app_credential.read events in last 1h, grouped by actor.
+            runbook_url: "https://github.com/tesserix/mark8ly/blob/main/docs/runbooks/white-label-app-credential-access.md"
+
+        # Day-90 completion success notification (§13.5 CSM hook).
+        # Lower-noise than PagerDuty; goes to #platform-alerts at info
+        # severity so the CSM sees it.
+        - alert: WhiteLabelTeardownCompleted
+          expr: |
+            increase(
+              white_label_app_lifecycle_transition_total{to="credentials_purged"}[1h]
+            ) > 0
+          for: 0m
+          labels:
+            severity: info
+            service: marketplace-api
+            product: mark8ly
+            notify: csm
+          annotations:
+            summary: "white-label app teardown completed (day-90 purge)"
+            description: |
+              One or more merchants reached the credentials_purged
+              terminal state — Firebase project deleted + all four
+              Secret Manager credentials removed. Informational; no
+              action required.
