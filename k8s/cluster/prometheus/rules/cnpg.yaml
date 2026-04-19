@@ -1,0 +1,93 @@
+# =============================================================================
+# CNPG sync-standby observability — alert rules
+# =============================================================================
+# Applied by the `subscription-observability` ArgoCD Application via
+# kustomization.yaml in this directory.
+#
+# Scope: P19 §22.2 guarantee — RPO=0 / RTO≤2min. These alerts fire when
+# the synchronous standby starts falling behind, which means either:
+#   1. Commits will slow (synchronous_commit=on waits for standby ack), or
+#   2. The standby is stuck entirely (no ACK possible, commits will block).
+#
+# The CNPG operator exposes pg_stat_replication values on its
+# per-pod /metrics endpoint. Metric names follow the operator's default
+# naming scheme (cnpg_pg_stat_replication_*). If an operator upgrade
+# renames them (e.g. to cnpg_backends_replication_lag_seconds) the
+# promQL here must be updated in lockstep.
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cnpg-sync-standby-rules
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+    app.kubernetes.io/part-of: subscription-observability
+    app.kubernetes.io/component: monitoring
+    product: mark8ly
+spec:
+  groups:
+    - name: cnpg-sync-standby
+      interval: 30s
+      rules:
+        # ─── Alerts ────────────────────────────────────────────────────
+        - alert: CNPGSyncStandbyLagHigh
+          expr: |
+            max by (cluster)(cnpg_pg_stat_replication_write_lag_seconds{cluster="mark8ly-postgres"}) > 5
+          for: 1m
+          labels:
+            severity: warning
+            service: marketplace-api
+            product: mark8ly
+          annotations:
+            summary: "mark8ly-postgres sync standby write lag > 5s for 1m"
+            description: |
+              The synchronous standby for mark8ly-postgres is falling behind
+              the primary. synchronous_commit=on blocks every commit until the
+              standby acknowledges — sustained high lag means writes are
+              slowing down. If the lag climbs above ~30s, commits can stall
+              entirely.
+
+              Investigate: standby pod resources, PVC IOPS, network latency
+              between AZs. Rollback path (flip to async) is in the runbook.
+            runbook_url: "https://github.com/tesserix/mark8ly/blob/main/docs/runbooks/cnpg-primary-failover.md"
+
+        - alert: CNPGSyncStandbyReplayLagHigh
+          expr: |
+            max by (cluster)(cnpg_pg_stat_replication_replay_lag_seconds{cluster="mark8ly-postgres"}) > 30
+          for: 2m
+          labels:
+            severity: warning
+            service: marketplace-api
+            product: mark8ly
+          annotations:
+            summary: "mark8ly-postgres sync standby replay lag > 30s for 2m"
+            description: |
+              The standby has received the WAL stream but is slow to apply it
+              to the local database. This does NOT block commits (those only
+              wait for write_lag), but means a failover-now would promote a
+              standby missing up to N seconds of applied state. The sustained
+              duration indicates either an I/O bottleneck on the standby PVC
+              or a long-running query holding conflict locks (hot_standby).
+            runbook_url: "https://github.com/tesserix/mark8ly/blob/main/docs/runbooks/cnpg-primary-failover.md"
+
+        - alert: CNPGSyncStandbyMissing
+          expr: |
+            count by (cluster)(cnpg_pg_stat_replication_write_lag_seconds{cluster="mark8ly-postgres"}) < 1
+          for: 5m
+          labels:
+            severity: critical
+            service: marketplace-api
+            product: mark8ly
+          annotations:
+            summary: "mark8ly-postgres has NO synchronous standby for 5m"
+            description: |
+              No synchronous standby is currently streaming from the primary.
+              With instances=2 and synchronous.number=1 this means writes ARE
+              being served but RPO=0 is silently violated — if the primary
+              fails now, data loss is possible. This is the most dangerous
+              state: commits are not blocking (because method=any + number=1
+              degrades to local when no standby exists in CNPG's behaviour),
+              but the DR contract is breached. PAGE ONCALL.
+            runbook_url: "https://github.com/tesserix/mark8ly/blob/main/docs/runbooks/cnpg-primary-failover.md"
