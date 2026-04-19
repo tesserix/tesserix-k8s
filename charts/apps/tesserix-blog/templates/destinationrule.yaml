@@ -1,0 +1,31 @@
+{{- if not (and .Values.cloudRun .Values.cloudRun.enabled) }}
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  host: {{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      http:
+        h2UpgradePolicy: DO_NOT_UPGRADE
+        http1MaxPendingRequests: 100
+        http2MaxRequests: 1000
+        idleTimeout: 30s
+        maxRequestsPerConnection: 0
+        maxRetries: 5
+      tcp:
+        connectTimeout: 10s
+        maxConnections: 200
+        tcpKeepalive:
+          time: 15s
+          interval: 15s
+          probes: 3
+    outlierDetection:
+      baseEjectionTime: 30s
+      consecutive5xxErrors: 5
+      interval: 30s
+      maxEjectionPercent: 50
+{{- end }}
