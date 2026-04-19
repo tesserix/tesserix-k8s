@@ -104,11 +104,62 @@ spec:
         - record: outbox:published:rate5m
           expr: rate(outbox_events_published_total[5m])
 
+        # ---------------------------------------------------------------
+        # P8 / P9 / P10 / P17-Go backfill — all metrics below are now
+        # emitted by marketplace-api. Recording rules + alerts added so
+        # the Grafana dashboards populate and the dead-man's-switches arm.
+        # ---------------------------------------------------------------
+
+        # State-machine transitions — rate by (from, to) so dashboards can
+        # render heatmaps and alerts can spot unexpected fan-out.
+        - record: subscription:state_transitions:rate5m
+          expr: |
+            sum by (from_status, to_status, reason) (rate(mark8ly_subscription_state_transitioned_total[5m]))
+
+        # Webhook processing p95 latency — histogram-derived.
+        - record: subscription:webhook_latency_p95:5m
+          expr: |
+            histogram_quantile(0.95,
+              sum by (event_type, le) (rate(mark8ly_stripe_webhook_processing_duration_seconds_bucket[5m]))
+            )
+
+        # Webhook failure rate by event_type + classified reason.
+        - record: subscription:webhook_failures:rate5m
+          expr: |
+            sum by (event_type, reason) (rate(mark8ly_stripe_webhook_failed_total[5m]))
+
+        # Promo application outcome rate — applied vs each rejection path.
+        - record: subscription:promo_applied:rate5m
+          expr: |
+            sum by (outcome, plan, currency) (rate(mark8ly_subscription_promo_applied_total[5m]))
+
+        # Refund issuance rate by currency. Low-volume — alert anchor.
+        - record: subscription:refunds_issued:rate1h
+          expr: |
+            sum by (currency, reason) (rate(mark8ly_subscription_refund_issued_total[1h]))
+
+        # Arbitrage flag emissions — §8 anti-arbitrage gate (P8).
+        - record: subscription:arbitrage_flagged:rate1h
+          expr: |
+            sum by (reason) (rate(mark8ly_subscription_arbitrage_flagged_total[1h]))
+
+        # Stripe reconciliation drift — P17-Go T10. Zero is expected.
+        - record: subscription:reconciliation_drift:rate1h
+          expr: |
+            sum by (drift_type) (rate(mark8ly_subscription_reconciliation_drift_total[1h]))
+
+        # Billing archive throughput — should track hard-delete cron runs.
+        - record: subscription:billing_archive_created:rate1d
+          expr: rate(mark8ly_billing_archive_created_total[1d])
+
+        # MRR gauge pass-through — dashboard references this name directly.
+        - record: subscription:mrr_usd:sum
+          expr: |
+            sum by (plan, currency) (mark8ly_subscription_mrr_usd)
+
     # -----------------------------------------------------------------------
-    # Alert rules — restricted to the metrics that actually exist today.
-    # Alerts for arbitrage, state transitions, reconciliation drift, webhook
-    # latency histograms, and trial funnel stages are deferred (their metrics
-    # are not yet emitted).
+    # Alert rules — covers the metrics that exist today. Alerts for
+    # new P8/P9/P10/P17-Go counters are included in the second group below.
     # -----------------------------------------------------------------------
     - name: subscription.alerts
       interval: 30s
@@ -179,3 +230,96 @@ spec:
           annotations:
             summary: "Trial signup anomaly threshold tripped in 24h window"
             description: "Rate: {{ $value }}/s. Check arbitrage flags + IP distribution. §5.1 flags >50/day as anomalous at our stage."
+
+    # -----------------------------------------------------------------------
+    # P8 / P10 / P17-Go alerts — metrics just shipped by marketplace-api.
+    # -----------------------------------------------------------------------
+    - name: subscription.alerts.new
+      interval: 30s
+      rules:
+        # Webhook latency regression — p95 above 2s over 15m signals either
+        # a Stripe API slowdown or a handler regression.
+        - alert: StripeWebhookP95LatencyHigh
+          expr: subscription:webhook_latency_p95:5m > 2
+          for: 15m
+          labels:
+            severity: warning
+            component: subscription
+          annotations:
+            summary: "Stripe webhook p95 latency >2s for 15m"
+            description: "event_type={{ $labels.event_type }} p95={{ $value }}s. Check handler + DB contention."
+
+        # Webhook failure rate — any sustained stream of non-CAS errors is
+        # a dispatcher bug.
+        - alert: StripeWebhookFailureRateHigh
+          expr: |
+            sum by (event_type) (subscription:webhook_failures:rate5m{reason!~"cas_conflict|invalid_transition"}) > 0.01
+          for: 15m
+          labels:
+            severity: warning
+            component: subscription
+          annotations:
+            summary: "Stripe webhook failure rate >1/100s (excluding CAS races)"
+            description: "event_type={{ $labels.event_type }} rate={{ $value }}/s. Check handler logs."
+
+        # Reconciliation drift — should be zero in steady state. Any drift
+        # indicates our local status has fallen out of sync with Stripe.
+        - alert: StripeReconciliationDrift
+          expr: subscription:reconciliation_drift:rate1h > 0
+          for: 1h
+          labels:
+            severity: warning
+            component: subscription
+            runbook: https://runbooks.mark8ly.internal/subscription/reconciliation-drift
+          annotations:
+            summary: "Stripe↔local subscription drift detected"
+            description: "drift_type={{ $labels.drift_type }} rate={{ $value }}/s over 1h. Investigate via audit.subscription.reconciliation_drift rows."
+
+        # Arbitrage flag spike — §8. Sustained flagging suggests a fraud
+        # attack or a legitimate traffic pattern that needs policy review.
+        - alert: ArbitrageFlagSpike
+          expr: subscription:arbitrage_flagged:rate1h > 0.01
+          for: 30m
+          labels:
+            severity: warning
+            component: subscription
+            security: "true"
+            runbook: https://runbooks.mark8ly.internal/subscription/arbitrage-spike
+          annotations:
+            summary: "Arbitrage flagging rate >1/100s over 30m"
+            description: "reason={{ $labels.reason }}. §8 triangulation is tripping — review flagged rows in subscription_arbitrage_audit."
+
+        # Billing archive retention gauge — P17-Go T11. Alerts ops to
+        # run the sweeper before rows actually expire.
+        - alert: BillingArchiveExpirySoon
+          expr: mark8ly_billing_archive_expiry_soon > 0
+          for: 1h
+          labels:
+            severity: info
+            component: subscription
+          annotations:
+            summary: "Billing archive rows within 30d of expiry"
+            description: "Count: {{ $value }}. Archive sweeper should handle these on its next run — if count grows, sweeper may be dead."
+
+        - alert: BillingArchiveExpired
+          expr: mark8ly_billing_archive_expired > 0
+          for: 6h
+          labels:
+            severity: warning
+            component: subscription
+            runbook: https://runbooks.mark8ly.internal/subscription/archive-expired
+          annotations:
+            summary: "Billing archive rows past expiry — sweeper may be dead"
+            description: "Count: {{ $value }}. Sweeper runs daily; sustained non-zero indicates cron failure or §23.2 retention misconfiguration."
+
+        # Refund spike — unusual on our scale; any sustained rate flags
+        # potential abuse or a refund-flow regression.
+        - alert: RefundIssuanceSpike
+          expr: sum by (currency) (subscription:refunds_issued:rate1h) > 0.01
+          for: 1h
+          labels:
+            severity: warning
+            component: subscription
+          annotations:
+            summary: "Refund issuance rate >1/100s over 1h"
+            description: "currency={{ $labels.currency }}. Check §8 refund abuse patterns + card-fingerprint reuse."
