@@ -1,0 +1,169 @@
+# =============================================================================
+# ALERTMANAGER ROUTING — subscription observability
+# =============================================================================
+# Route tree (top-to-bottom matching with `continue: true` on security):
+#   1. security="true"         → #security-alerts (continue: true)
+#   2. pagerduty_route=subscription → pagerduty-subscription (10s groupWait, 1h repeat)
+#   3. severity=critical       → pagerduty-platform (10s groupWait, 1h repeat)
+#   4. severity=warning        → #platform-alerts (default 4h repeat)
+#   5. severity=info           → #platform-alerts with 24h repeat
+#   * default                  → #platform-alerts
+#
+# Secrets (synced by ESO from GCP Secret Manager):
+#   - Secret `slack-webhooks` — keys: platform, security
+#   - Secret `pagerduty-keys` — keys: platform, subscription
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: subscription-routes
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/part-of: subscription-observability
+    app.kubernetes.io/component: alerting
+    product: mark8ly
+spec:
+  route:
+    receiver: platform-default
+    groupBy:
+      - alertname
+      - component
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    routes:
+      # --- Security-flagged alerts always page #security-alerts. ------------
+      # `continue: true` lets the alert fall through to the severity tree so
+      # a security+critical event also hits PagerDuty.
+      - matchers:
+          - name: security
+            value: "true"
+        receiver: security-slack
+        continue: true
+
+      # --- Explicit PagerDuty route for subscription-owned criticals. -------
+      - matchers:
+          - name: pagerduty_route
+            value: subscription
+        receiver: pagerduty-subscription
+        groupWait: 10s
+        groupInterval: 5m
+        repeatInterval: 1h
+
+      # --- Generic severity fan-out. ----------------------------------------
+      - matchers:
+          - name: severity
+            value: critical
+        receiver: pagerduty-platform
+        groupWait: 10s
+        groupInterval: 5m
+        repeatInterval: 1h
+
+      - matchers:
+          - name: severity
+            value: warning
+        receiver: platform-slack
+        repeatInterval: 4h
+
+      - matchers:
+          - name: severity
+            value: info
+        receiver: platform-slack
+        repeatInterval: 24h
+
+  receivers:
+    # -----------------------------------------------------------------------
+    # platform-default — catch-all. Mirrors platform-slack formatting so
+    # unlabelled alerts still produce a readable Slack payload.
+    # -----------------------------------------------------------------------
+    - name: platform-default
+      slackConfigs:
+        - apiURL:
+            name: slack-webhooks
+            key: platform
+          channel: "#platform-alerts"
+          sendResolved: true
+          title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+          text: |
+            {{ range .Alerts }}*{{ .Annotations.summary }}*
+            {{ .Annotations.description }}
+            *Severity:* {{ .Labels.severity }} | *Component:* {{ .Labels.component }}
+            {{ if .Labels.runbook }}*Runbook:* {{ .Labels.runbook }}{{ end }}
+            {{ end }}
+
+    # -----------------------------------------------------------------------
+    # platform-slack — #platform-alerts receiver for severity=warning|info.
+    # -----------------------------------------------------------------------
+    - name: platform-slack
+      slackConfigs:
+        - apiURL:
+            name: slack-webhooks
+            key: platform
+          channel: "#platform-alerts"
+          sendResolved: true
+          title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+          text: |
+            {{ range .Alerts }}*{{ .Annotations.summary }}*
+            {{ .Annotations.description }}
+            *Severity:* {{ .Labels.severity }} | *Component:* {{ .Labels.component }}
+            {{ end }}
+
+    # -----------------------------------------------------------------------
+    # security-slack — #security-alerts. Branches on `security=true` label
+    # regardless of severity.
+    # -----------------------------------------------------------------------
+    - name: security-slack
+      slackConfigs:
+        - apiURL:
+            name: slack-webhooks
+            key: security
+          channel: "#security-alerts"
+          sendResolved: true
+          title: '[SECURITY] {{ .CommonLabels.alertname }}'
+          text: |
+            {{ range .Alerts }}*{{ .Annotations.summary }}*
+            {{ .Annotations.description }}
+            *Component:* {{ .Labels.component }} | *Severity:* {{ .Labels.severity }}
+            {{ if .Labels.runbook }}*Runbook:* {{ .Labels.runbook }}{{ end }}
+            {{ end }}
+
+    # -----------------------------------------------------------------------
+    # pagerduty-platform — general platform on-call rotation. Routing key
+    # fetched from the `pagerduty-keys` secret (key: platform).
+    # -----------------------------------------------------------------------
+    - name: pagerduty-platform
+      pagerdutyConfigs:
+        - routingKey:
+            name: pagerduty-keys
+            key: platform
+          sendResolved: true
+          severity: '{{ .CommonLabels.severity }}'
+          description: '{{ .CommonAnnotations.summary }}'
+          details:
+            - key: component
+              value: '{{ .CommonLabels.component }}'
+            - key: runbook
+              value: '{{ .CommonLabels.runbook }}'
+            - key: firing_count
+              value: '{{ len .Alerts.Firing }}'
+
+    # -----------------------------------------------------------------------
+    # pagerduty-subscription — subscription-domain on-call. Fixed critical
+    # severity because this route is gated on pagerduty_route=subscription
+    # which by convention is only set on critical-impact alerts.
+    # -----------------------------------------------------------------------
+    - name: pagerduty-subscription
+      pagerdutyConfigs:
+        - routingKey:
+            name: pagerduty-keys
+            key: subscription
+          sendResolved: true
+          severity: critical
+          description: '{{ .CommonAnnotations.summary }}'
+          details:
+            - key: component
+              value: '{{ .CommonLabels.component }}'
+            - key: runbook
+              value: '{{ .CommonLabels.runbook }}'
+            - key: firing_count
+              value: '{{ len .Alerts.Firing }}'
