@@ -1,0 +1,180 @@
+{
+  "uid": "trial-funnel-v1",
+  "title": "Trial Activation Funnel",
+  "description": "Trial signup → day-30 activation funnel. Only endpoint metrics are shipped today (anomaly counter at signup, day-30 activation counter at exit). Intermediate funnel stages (tax_id validated, first product created, card added) will populate once the Go collectors from P17 Task 1/Task 3 land. Panels labelled 'placeholder' will render empty until then.",
+  "tags": ["subscription", "trial", "growth", "mark8ly"],
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "5m",
+  "time": {"from": "now-30d", "to": "now"},
+  "timezone": "",
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {"selected": true, "text": "Prometheus", "value": "Prometheus"},
+        "hide": 0
+      },
+      {
+        "name": "tenant",
+        "label": "Tenant (placeholder)",
+        "description": "Placeholder — trial counters have no tenant_id label yet.",
+        "type": "custom",
+        "query": "all",
+        "current": {"selected": true, "text": "all", "value": "all"},
+        "includeAll": true,
+        "multi": false,
+        "hide": 0
+      }
+    ]
+  },
+  "links": [
+    {"title": "Subscription Health", "url": "/d/subscription-health-v1", "type": "link", "icon": "external link", "targetBlank": false},
+    {"title": "Webhook Pipeline", "url": "/d/webhook-pipeline-v1", "type": "link", "icon": "external link", "targetBlank": false},
+    {"title": "Arbitrage Operations", "url": "/d/arbitrage-ops-v1", "type": "link", "icon": "external link", "targetBlank": false}
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Funnel coverage",
+      "type": "text",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 4},
+      "options": {
+        "mode": "markdown",
+        "content": "**Funnel stages:** signup → trialing → tax-id validated → first product created → card added → activated.\n\nOnly two end-points are currently instrumented — the **anomaly counter at signup** and the **day-30 activation counter at exit**. Intermediate stages render empty until the P17 Task 1 collectors (`subscription_tax_id_validated_total`, `subscription_trial_product_created_day_30`, `subscription_card_added_during_trial_total`) land in `internal/metrics/registry.go`."
+      }
+    },
+    {
+      "id": 2,
+      "title": "Day-30 activations (cumulative, 30d)",
+      "type": "stat",
+      "description": "increase(mark8ly_trial_activation_day30_total[30d]).",
+      "gridPos": {"x": 0, "y": 4, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "increase(mark8ly_trial_activation_day30_total[30d])",
+          "refId": "A",
+          "legendFormat": "activated"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Signup anomaly alerts (30d)",
+      "type": "stat",
+      "description": "increase(mark8ly_trial_signup_anomaly_alerts_total[30d]) — days in the window where signups tripped the §5.1 anomaly threshold.",
+      "gridPos": {"x": 8, "y": 4, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "increase(mark8ly_trial_signup_anomaly_alerts_total[30d])",
+          "refId": "A",
+          "legendFormat": "anomalies"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 3}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "title": "Trial activations — daily rate",
+      "type": "timeseries",
+      "description": "subscription:trial_activation_day30:rate1d. Dead-man's switch anchor for NoTrialActivationsFor7d.",
+      "gridPos": {"x": 16, "y": 4, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "subscription:trial_activation_day30:rate1d",
+          "refId": "A",
+          "legendFormat": "activations/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ops"},
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Signup anomaly — 24h rate",
+      "type": "timeseries",
+      "description": "subscription:trial_signup_anomalies:rate24h. Security pager trips when non-zero sustained.",
+      "gridPos": {"x": 0, "y": 10, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "subscription:trial_signup_anomalies:rate24h",
+          "refId": "A",
+          "legendFormat": "anomalies/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ops"},
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Daily activations — 1d increase",
+      "type": "timeseries",
+      "description": "increase(mark8ly_trial_activation_day30_total[1d]). Day-over-day activation volume.",
+      "gridPos": {"x": 12, "y": 10, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "increase(mark8ly_trial_activation_day30_total[1d])",
+          "refId": "A",
+          "legendFormat": "activations"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Placeholder — intermediate funnel stages",
+      "type": "text",
+      "gridPos": {"x": 0, "y": 18, "w": 24, "h": 6},
+      "options": {
+        "mode": "markdown",
+        "content": "### Stages pending instrumentation\n\n| Stage | Metric expected | Status |\n|-------|-----------------|--------|\n| Trial started | `subscription_state_transitioned_total{from=\"signup\",to=\"trialing\"}` | deferred (P17 T1) |\n| Tax ID validated | `subscription_tax_id_validated_total` | deferred (P17 T1) |\n| First product created | `subscription_trial_product_created_day_30` | deferred (P17 T1) |\n| Card added | `subscription_card_added_during_trial_total` | deferred (P17 T1) |\n| Day-30 activated | `mark8ly_trial_activation_day30_total` | **shipped (P5 Task 14)** |\n\nThis dashboard's `uid` (`trial-funnel-v1`) stays stable so panels can be appended in place once the upstream collectors land."
+      }
+    }
+  ]
+}
