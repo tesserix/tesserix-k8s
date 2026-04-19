@@ -1,0 +1,187 @@
+{
+  "uid": "white-label-app-v1",
+  "title": "White-Label App Lifecycle",
+  "description": "Operational view of the P15 white-label mobile app add-on: lifecycle transitions (day 7/30/60/90 teardown), credential access from Secret Manager, and day-90 completion rates. Metrics are emitted by marketplace-api at internal/whitelabel/metrics/metrics.go. Cardinality: no tenant_id/store_id labels — those live in the audit log.",
+  "tags": ["subscription", "white-label", "lifecycle", "mark8ly"],
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "1m",
+  "time": {"from": "now-30d", "to": "now"},
+  "timezone": "",
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {"selected": true, "text": "Prometheus", "value": "Prometheus"},
+        "hide": 0
+      }
+    ]
+  },
+  "links": [
+    {"title": "Subscription Health", "url": "/d/subscription-health-v1", "type": "link", "icon": "external link", "targetBlank": false},
+    {"title": "Arbitrage Operations", "url": "/d/arbitrage-ops-v1", "type": "link", "icon": "external link", "targetBlank": false},
+    {"title": "Runbook — credential access", "url": "https://github.com/tesserix/mark8ly/blob/main/docs/runbooks/white-label-app-credential-access.md", "type": "link", "icon": "doc", "targetBlank": true},
+    {"title": "Runbook — lifecycle", "url": "https://github.com/tesserix/mark8ly/blob/main/docs/runbooks/white-label-app-lifecycle.md", "type": "link", "icon": "doc", "targetBlank": true}
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Overview",
+      "type": "text",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 4},
+      "options": {
+        "mode": "markdown",
+        "content": "### Spec §13.5 teardown cadence\n\n- **Day 7** — banner-only tick (no state change)\n- **Day 30** — block downloads (Apple ASC + Google Play)\n- **Day 60** — pull apps + archive Firebase\n- **Day 90** — delete Firebase + purge all four Secret Manager credentials (terminal)\n\nCron runs daily at 05:00 UTC (`WHITE_LABEL_LIFECYCLE_CRON`). Alerts in `white-label-app-rules` fire on sustained zero-transitions, credential access spikes, and day-90 completions."
+      }
+    },
+    {
+      "id": 2,
+      "title": "Lifecycle transitions — 1h rate",
+      "type": "timeseries",
+      "description": "Summed rate(white_label_app_lifecycle_transition_total[1h]). Flat for 48h trips WhiteLabelLifecycleQuietFor48h.",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "white_label_app:lifecycle_transitions:rate1h",
+          "legendFormat": "transitions/hr"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10},
+          "unit": "short"
+        }
+      },
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}}
+    },
+    {
+      "id": 3,
+      "title": "Transitions by destination status (1d increase)",
+      "type": "bargauge",
+      "description": "Count of transitions by their `to` status over the last 24h. downloads_blocked = day-30, pulled = day-60, credentials_purged = day-90.",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "white_label_app:downloads_blocked:rate1d",
+          "legendFormat": "downloads_blocked"
+        },
+        {
+          "refId": "B",
+          "expr": "white_label_app:pulled:rate1d",
+          "legendFormat": "pulled"
+        },
+        {
+          "refId": "C",
+          "expr": "white_label_app:credentials_purged:rate1d",
+          "legendFormat": "credentials_purged (day-90)"
+        }
+      ],
+      "options": {
+        "displayMode": "lcd",
+        "orientation": "horizontal",
+        "reduceOptions": {"calcs": ["lastNotNull"]},
+        "showUnfilled": true
+      },
+      "fieldConfig": {"defaults": {"unit": "short"}}
+    },
+    {
+      "id": 4,
+      "title": "Credential access — 1h rate by type",
+      "type": "timeseries",
+      "description": "white_label_app:credential_accessed:rate1h per CredType. Sustained 3× median trips WhiteLabelCredentialAccessSpike (security-labelled, §18.9).",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "white_label_app:credential_accessed:rate1h",
+          "legendFormat": "{{type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 5},
+          "unit": "reqps"
+        }
+      },
+      "options": {"legend": {"displayMode": "list", "placement": "right"}}
+    },
+    {
+      "id": 5,
+      "title": "Credential access — 24h median baseline",
+      "type": "timeseries",
+      "description": "Reference baseline for the spike-detection alert. When the live rate on panel 4 exceeds 3× this line sustained 10m, the alert fires.",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "white_label_app:credential_accessed:median24h",
+          "legendFormat": "{{type}} (24h median)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"drawStyle": "line", "lineWidth": 1, "fillOpacity": 0, "lineStyle": {"dash": [10, 10]}},
+          "unit": "reqps"
+        }
+      },
+      "options": {"legend": {"displayMode": "list", "placement": "right"}}
+    },
+    {
+      "id": 6,
+      "title": "Day-90 completions (cumulative, 30d)",
+      "type": "stat",
+      "description": "Total credentials_purged transitions over the last 30d. Each one is a merchant whose add-on has fully torn down.",
+      "gridPos": {"x": 0, "y": 20, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(white_label_app_lifecycle_transition_total{to=\"credentials_purged\"}[30d]))"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"]},
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 7,
+      "title": "Credential reads total (all types, 7d)",
+      "type": "stat",
+      "description": "Total reads across all four CredType values over last 7d. Cross-reference with audit log app_credential.read events for actor breakdown.",
+      "gridPos": {"x": 8, "y": 20, "w": 8, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(white_label_app_credential_accessed_total[7d]))"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "short"}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value"}
+    },
+    {
+      "id": 8,
+      "title": "Active teardowns in flight",
+      "type": "text",
+      "gridPos": {"x": 16, "y": 20, "w": 8, "h": 6},
+      "options": {
+        "mode": "markdown",
+        "content": "#### Query for live count\n\n```sql\nSELECT status, COUNT(*)\nFROM white_label_app_state\nWHERE status != 'credentials_purged'\nGROUP BY status;\n```\n\n_No Prometheus gauge yet — advancer reads DB on tick only, doesn't publish a queue depth. Consider adding one if backlog concerns grow._"
+      }
+    }
+  ]
+}
