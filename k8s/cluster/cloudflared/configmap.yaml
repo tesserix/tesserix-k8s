@@ -21,6 +21,13 @@ data:
         service: http://istio-ingressgateway.istio-system.svc.cluster.local:80
 
       # Marketplace
+      # NOTE (P12, 2026-04-19): *.mark8ly.com is fronted by the
+      # `storefront-gate` Cloudflare Worker (workers/storefront-gate/).
+      # The Worker intercepts requests for store_closed / pending_hard_delete
+      # subscriptions and serves a branded HTTP 200 + noindex page (or 404 for
+      # hard_deleted), then `fetch()`es this tunnel for live and
+      # expired-in-grace stores. The tunnel itself is unchanged — the Worker
+      # decision happens before traffic reaches us. See spec §5.4.
       - hostname: mark8ly.com
         service: http://istio-ingressgateway.istio-system.svc.cluster.local:80
       - hostname: "*.mark8ly.com"

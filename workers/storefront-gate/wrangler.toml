@@ -1,0 +1,29 @@
+name = "storefront-gate"
+main = "src/index.ts"
+compatibility_date = "2026-04-15"
+compatibility_flags = ["nodejs_compat"]
+
+# Routes: every storefront subdomain. The apex (mark8ly.com) is handled by a
+# separate marketing Worker and is intentionally NOT included here.
+routes = [
+  { pattern = "*.mark8ly.com/*", zone_name = "mark8ly.com" },
+]
+
+# closed.html is bundled into the Worker as a string at build time.
+rules = [
+  { type = "Text", globs = ["**/*.html"], fallthrough = true },
+]
+
+[[kv_namespaces]]
+binding = "STATUS_KV"
+id = "REPLACE_AT_DEPLOY_TIME"
+preview_id = "REPLACE_AT_DEPLOY_TIME"
+
+[vars]
+INTERNAL_API_BASE = "https://marketplace-api.internal.mark8ly.com"
+STATUS_CACHE_TTL_SECONDS = "900"
+
+# Analytics Engine binding for close-page render counts.
+[[analytics_engine_datasets]]
+binding = "CLOSED_PAGE_ANALYTICS"
+dataset = "storefront_closed_events"
