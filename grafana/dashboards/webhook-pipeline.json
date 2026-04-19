@@ -1,0 +1,203 @@
+{
+  "uid": "webhook-pipeline-v1",
+  "title": "Webhook Pipeline",
+  "description": "Webhook ingress throughput + HTTP-level health. Latency histograms (p50/p95/p99) and orphan-queue panels from the plan are deferred: webhook_processing_duration_seconds_bucket and webhook_orphan_* collectors are not yet registered in marketplace-api. Once shipped (P8 successor round) this dashboard gains the histogram panels in-place.",
+  "tags": ["subscription", "webhook", "ops", "mark8ly"],
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "",
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {"selected": true, "text": "Prometheus", "value": "Prometheus"},
+        "hide": 0
+      },
+      {
+        "name": "tenant",
+        "label": "Tenant (placeholder)",
+        "description": "Placeholder — webhook_received_total has no tenant_id label yet.",
+        "type": "custom",
+        "query": "all",
+        "current": {"selected": true, "text": "all", "value": "all"},
+        "includeAll": true,
+        "multi": false,
+        "hide": 0
+      }
+    ]
+  },
+  "links": [
+    {"title": "Subscription Health", "url": "/d/subscription-health-v1", "type": "link", "icon": "external link", "targetBlank": false},
+    {"title": "Trial Activation Funnel", "url": "/d/trial-funnel-v1", "type": "link", "icon": "external link", "targetBlank": false},
+    {"title": "Arbitrage Operations", "url": "/d/arbitrage-ops-v1", "type": "link", "icon": "external link", "targetBlank": false}
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Ingress rate by event_type",
+      "type": "timeseries",
+      "description": "webhook:received:rate5m broken down by provider + event_type. Driven by the shipped webhook_received_total counter.",
+      "gridPos": {"x": 0, "y": 0, "w": 18, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "webhook:received:rate5m",
+          "refId": "A",
+          "legendFormat": "{{provider}} / {{event_type}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ops"},
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Webhook ingress total (last 6h)",
+      "type": "stat",
+      "description": "sum(increase(webhook_received_total[$__range])) — total events received over the dashboard range.",
+      "gridPos": {"x": 18, "y": 0, "w": 6, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "sum(increase(webhook_received_total[$__range]))",
+          "refId": "A",
+          "legendFormat": "events"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "title": "Top event types (last 1h)",
+      "type": "table",
+      "description": "topk(10, sum by (provider, event_type) (increase(webhook_received_total[1h]))) — table of busiest event types.",
+      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "topk(10, sum by (provider, event_type) (increase(webhook_received_total[1h])))",
+          "refId": "A",
+          "legendFormat": "{{provider}}/{{event_type}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "HTTP 5xx rate (full service)",
+      "type": "timeseries",
+      "description": "http:error_rate:ratio5m — includes webhook endpoint failures. A spike here usually means the Stripe webhook handler is 5xx-ing; Stripe will retry at >10s.",
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "http:error_rate:ratio5m",
+          "refId": "A",
+          "legendFormat": "5xx ratio"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.03},
+              {"color": "red", "value": 0.05}
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Outbox events published — 5m rate",
+      "type": "timeseries",
+      "description": "rate(outbox_events_published_total[5m]). Tracks outbound event throughput; a flatline alongside live traffic indicates the outbox drainer stalled.",
+      "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "outbox:published:rate5m",
+          "refId": "A",
+          "legendFormat": "published/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ops"},
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Outbox pending depth",
+      "type": "timeseries",
+      "description": "outbox_events_pending gauge. Sustained non-zero values indicate publish lag.",
+      "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "outbox_events_pending",
+          "refId": "A",
+          "legendFormat": "pending"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 50},
+              {"color": "red", "value": 500}
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "HTTP requests by status class",
+      "type": "timeseries",
+      "description": "http:requests:rate5m split by HTTP status class. Useful next to the error-rate ratio for absolute scale.",
+      "gridPos": {"x": 0, "y": 24, "w": 24, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "http:requests:rate5m",
+          "refId": "A",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ops"},
+        "overrides": []
+      }
+    }
+  ]
+}
