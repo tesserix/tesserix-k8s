@@ -1,0 +1,89 @@
+# =============================================================================
+# promtool unit tests for subscription.yaml
+# =============================================================================
+# Run: promtool test rules subscription_test.yaml
+#
+# Scenarios:
+#   1. DunningSuppressedRefundWindowSpike fires when the refund-window
+#      counter climbs faster than 1 per 100s over 1h.
+#   2. NoDunningEmailsFor48h fires when the dunning email series is absent
+#      for 48h.
+#   3. TrialSignupAnomaly fires once the anomaly counter ticks up.
+# =============================================================================
+rule_files:
+  - subscription.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # ---------------------------------------------------------------------------
+  # 1. Refund-window suppression spike — 1 increment per minute for 90m.
+  #    rate(... [1h]) stabilises at 1/60 ≈ 0.0166/s, which exceeds 0.01.
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'mark8ly_subscription_dunning_suppressed_refund_window_total'
+        values: '0+1x90'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: DunningSuppressedRefundWindowSpike
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: DunningSuppressedRefundWindowSpike
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: subscription
+              alertname: DunningSuppressedRefundWindowSpike
+              runbook: https://runbooks.mark8ly.internal/subscription/refund-window-spike
+            exp_annotations:
+              summary: "Refund-window dunning suppressions firing >1/100s over 1h"
+              description: 'Rate: 0.016666666666666666/s. Expected near-zero — investigate clock skew or §16.5 logic regression.'
+
+  # ---------------------------------------------------------------------------
+  # 2. Dunning cron dead-man's switch — series exists briefly then disappears.
+  #    absent_over_time fires once the 48h window contains no samples.
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'mark8ly_subscription_dunning_emails_sent_total{day="day_5"}'
+        values: '1x5'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NoDunningEmailsFor48h
+        exp_alerts: []
+      - eval_time: 49h
+        alertname: NoDunningEmailsFor48h
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: subscription
+              alertname: NoDunningEmailsFor48h
+              runbook: https://runbooks.mark8ly.internal/subscription/dunning-cron-dead
+            exp_annotations:
+              summary: "No dunning emails emitted in 48h — cron likely dead"
+              description: "mark8ly_subscription_dunning_emails_sent_total is absent. Check P6 dunning CronJob and the tenants-in-arrears query."
+
+  # ---------------------------------------------------------------------------
+  # 3. Trial signup anomaly — counter ticks once, rate over 24h stays >0 for
+  #    the window. Alert requires `for: 15m` of sustained truth.
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'mark8ly_trial_signup_anomaly_alerts_total'
+        values: '0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: TrialSignupAnomaly
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: TrialSignupAnomaly
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: subscription
+              security: "true"
+              alertname: TrialSignupAnomaly
+            exp_annotations:
+              summary: "Trial signup anomaly threshold tripped in 24h window"
+              description: 'Rate: 0.0000115740740740740740/s. Check arbitrage flags + IP distribution. §5.1 flags >50/day as anomalous at our stage.'
