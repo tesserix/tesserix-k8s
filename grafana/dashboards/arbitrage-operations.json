@@ -1,0 +1,219 @@
+{
+  "uid": "arbitrage-ops-v1",
+  "title": "Arbitrage Operations",
+  "description": "Placeholder dashboard for P8 arbitrage detector. The subscription_arbitrage_* collectors (flagged/false_positive_cleared/blocked/appeal_queue_depth) are NOT yet registered in marketplace-api — this dashboard exists so the uid and panel skeleton are in place, letting P8 land without a dashboard change. Each panel references its expected metric; panels will populate automatically once collectors ship. The trial signup anomaly panel IS live today and serves as a canary for the overall abuse-signal surface.",
+  "tags": ["subscription", "abuse", "ops", "mark8ly"],
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "1m",
+  "time": {"from": "now-30d", "to": "now"},
+  "timezone": "",
+  "editable": true,
+  "graphTooltip": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {"selected": true, "text": "Prometheus", "value": "Prometheus"},
+        "hide": 0
+      },
+      {
+        "name": "tenant",
+        "label": "Tenant (placeholder)",
+        "description": "Placeholder — arbitrage counters will not expose a tenant_id label either (cardinality), but filtering by store_id / detector may land.",
+        "type": "custom",
+        "query": "all",
+        "current": {"selected": true, "text": "all", "value": "all"},
+        "includeAll": true,
+        "multi": false,
+        "hide": 0
+      }
+    ]
+  },
+  "links": [
+    {"title": "Subscription Health", "url": "/d/subscription-health-v1", "type": "link", "icon": "external link", "targetBlank": false},
+    {"title": "Webhook Pipeline", "url": "/d/webhook-pipeline-v1", "type": "link", "icon": "external link", "targetBlank": false},
+    {"title": "Trial Activation Funnel", "url": "/d/trial-funnel-v1", "type": "link", "icon": "external link", "targetBlank": false}
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "title": "Arbitrage dashboard status",
+      "type": "text",
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 4},
+      "options": {
+        "mode": "markdown",
+        "content": "### Awaiting P8 collectors\n\nThis dashboard is pre-wired for the arbitrage detector. Panels below reference metrics that are **not yet emitted**. When P8 registers the collectors, the panels fill in without a dashboard edit.\n\n**Expected collectors:** `subscription_arbitrage_flagged`, `subscription_arbitrage_false_positive_cleared`, `subscription_arbitrage_blocked_total`, `subscription_arbitrage_appeal_queue_depth`.\n\nThe **Trial Signup Anomaly** panel on the right uses a shipped metric and acts as a canary for the abuse-signal surface."
+      }
+    },
+    {
+      "id": 2,
+      "title": "Flags per week (pending)",
+      "type": "timeseries",
+      "description": "Pending metric: increase(subscription_arbitrage_flagged[7d]). Will render empty until the P8 detector lands.",
+      "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "increase(subscription_arbitrage_flagged[7d])",
+          "refId": "A",
+          "legendFormat": "flags/7d"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Trial signup anomaly — 24h rate (live)",
+      "type": "timeseries",
+      "description": "subscription:trial_signup_anomalies:rate24h — shipped signal. Serves as a canary for abuse-related anomalies until the arbitrage detector lands.",
+      "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "subscription:trial_signup_anomalies:rate24h",
+          "refId": "A",
+          "legendFormat": "anomalies/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ops"},
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Resolution mix — 30d (pending)",
+      "type": "piechart",
+      "description": "Pending metrics: cleared + blocked + pending (appeal queue).",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "increase(subscription_arbitrage_false_positive_cleared[30d])",
+          "refId": "A",
+          "legendFormat": "Cleared"
+        },
+        {
+          "expr": "increase(subscription_arbitrage_blocked_total[30d])",
+          "refId": "B",
+          "legendFormat": "Blocked"
+        },
+        {
+          "expr": "subscription_arbitrage_appeal_queue_depth",
+          "refId": "C",
+          "legendFormat": "Pending"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Flag rate vs baseline (pending)",
+      "type": "timeseries",
+      "description": "Pending: 1h rate vs 24h baseline vs 5× threshold anchor. Will power ArbitrageFlagSpike alert in a later round.",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 8},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "rate(subscription_arbitrage_flagged[1h])",
+          "refId": "A",
+          "legendFormat": "1h rate"
+        },
+        {
+          "expr": "rate(subscription_arbitrage_flagged[24h])",
+          "refId": "B",
+          "legendFormat": "24h baseline"
+        },
+        {
+          "expr": "5 * rate(subscription_arbitrage_flagged[24h])",
+          "refId": "C",
+          "legendFormat": "5x threshold"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "ops"},
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "False-positive ratio — 7d (pending)",
+      "type": "stat",
+      "description": "Pending: cleared / flagged over 7d. Threshold guidance: green <0.30, yellow <0.60, red ≥0.60.",
+      "gridPos": {"x": 0, "y": 20, "w": 12, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "sum(rate(subscription_arbitrage_false_positive_cleared[7d])) / clamp_min(sum(rate(subscription_arbitrage_flagged[7d])), 1)",
+          "refId": "A",
+          "legendFormat": "fp ratio"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.30},
+              {"color": "red", "value": 0.60}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 7,
+      "title": "Appeal queue depth (pending)",
+      "type": "stat",
+      "description": "Pending: subscription_arbitrage_appeal_queue_depth gauge. Sustained growth indicates review SLA at risk.",
+      "gridPos": {"x": 12, "y": 20, "w": 12, "h": 6},
+      "datasource": {"type": "prometheus", "uid": "${datasource}"},
+      "targets": [
+        {
+          "expr": "subscription_arbitrage_appeal_queue_depth",
+          "refId": "A",
+          "legendFormat": "pending"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 10},
+              {"color": "red", "value": 50}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      }
+    }
+  ]
+}
