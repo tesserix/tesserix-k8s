@@ -1,0 +1,69 @@
+# =============================================================================
+# subscription-observability — ArgoCD Application
+# =============================================================================
+# Deploys the PrometheusRule, AlertmanagerConfig, and Grafana dashboard
+# ConfigMap that make up the P17 observability slice for mark8ly
+# marketplace-api.
+#
+# Source layout (tesserix-k8s):
+#   k8s/cluster/prometheus/rules/          — PrometheusRule CR + kustomization
+#   k8s/cluster/alertmanager/              — AlertmanagerConfig + kustomization
+#   k8s/cluster/grafana/dashboards/        — kustomization using configMapGenerator
+#   grafana/dashboards/*.json              — the dashboards themselves
+#
+# This Application points at a parent kustomization that aggregates all three.
+# Requires monitoring.coreos.com CRDs (installed by prometheus-operator-crds,
+# sync-wave -1). AlertmanagerConfig/PrometheusRule CRDs come from the same
+# chart.
+#
+# NOTE: prod prometheus/grafana Helm apps are currently commented out in
+# argocd/prod/infrastructure/kustomization.yaml. This manifest is still
+# checked in so the CRs are GitOps-ready for when the stack is re-enabled.
+# To activate, add `- subscription-observability.yaml` to that kustomization.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: subscription-observability
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: monitoring
+    product: mark8ly
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: k8s/cluster/observability
+    kustomize:
+      # Dashboard JSON lives at repo root (grafana/dashboards/) while the
+      # ConfigMap generator kustomization is nested under
+      # k8s/cluster/grafana/dashboards/. Root-relative file references
+      # require loosening the default load restriction.
+      commonAnnotations:
+        mark8ly/observability-slice: "p17"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      # LoadRestrictionsNone allows configMapGenerator to reference files
+      # outside the kustomization directory (grafana/dashboards/*.json).
+      - LoadRestrictionsNone=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
