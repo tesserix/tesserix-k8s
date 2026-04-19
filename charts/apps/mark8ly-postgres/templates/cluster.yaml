@@ -109,6 +109,12 @@ spec:
   enableSuperuserAccess: false
 
   primaryUpdateStrategy: unsupervised
+  # Use switchover (promote replica first, then rebuild old primary) instead
+  # of the default "restart" (delete primary, wait, recreate). Avoids the
+  # deadlock where a resource change + PVC resize deletes the primary and
+  # the operator can't recreate it until filesystem-expand completes — which
+  # itself requires a running pod. See 2026-04-19 incident + docs/runbooks.
+  primaryUpdateMethod: switchover
   failoverDelay: 0
   switchoverDelay: 3600
 {{- end }}
