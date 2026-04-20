@@ -85,10 +85,19 @@ encryptionMode: "noop" # "kms" in production once KMS key is provisioned
 # lazily rewrapped to gsm:// on first access.
 carrierSecretStore: "gcpsm"
 gcpProjectId: "tesseracthub-480811"
-# IAM on the workload-identity SA is scoped by
-# resource.name.startsWith(...) of this prefix, so prod and test
-# workloads cannot see each other's carrier secrets.
+# Application-layer naming on GCP SM secrets. Code only writes
+# secrets under this prefix by construction, so even though the IAM
+# binding is unconditional (see note below), the naming scheme
+# prevents cross-environment collision.
 carrierSecretPrefix: "mark8ly-test"
+# Self-provisions the roles/secretmanager.admin binding on the
+# marketplace-api GCP SA via a Helm post-install/upgrade Job. The
+# binding is UNCONDITIONAL — GCP IAM can't gate secrets.create by
+# prefix because at create-time no resource exists. See the Job
+# template for full reasoning. Set to false in environments where
+# the binding is managed by Terraform / Config Connector instead.
+carrierIamBootstrap:
+  enabled: true
 corsAllowedOrigins: "https://*.mark8ly.com"
 # ── P1: Observability ────────────────────────────────────────────
 metricsPort: 9090
