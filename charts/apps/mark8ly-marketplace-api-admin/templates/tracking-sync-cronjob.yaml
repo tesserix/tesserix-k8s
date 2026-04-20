@@ -1,0 +1,115 @@
+{{- if .Values.trackingSyncCron.enabled }}
+# Background tracking sync — every 2 minutes, POSTs the in-cluster
+# service URL /internal/shipments/tracking/sync on the admin engine.
+# Scope: ALL non-terminal shipments across EVERY tenant/store.
+# Auth: the same X-Internal-Auth secret that gates /internal/audit-events.
+#
+# Uses a lightweight curl image rather than re-building the Go binary
+# because we don't need any tenant state on the Job side — the actual
+# work happens inside the admin pod. Keeping the Job tiny means a
+# stuck CronJob doesn't pin resources and pod startup is sub-second.
+#
+# concurrencyPolicy=Forbid: if a run takes longer than the schedule
+# interval (should not happen — the sync handler has its own
+# 105s context deadline below the 120s schedule), the next tick is
+# skipped rather than running in parallel and stepping on the DB.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.name }}-tracking-sync
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}-tracking-sync
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: cron
+spec:
+  schedule: {{ .Values.trackingSyncCron.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 60
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # Per-Job deadline slightly below the cron tick so a stuck run
+      # is killed before the next one fires. concurrencyPolicy=Forbid
+      # is the primary guard; this is defence-in-depth.
+      activeDeadlineSeconds: 115
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: {{ .Values.name }}-tracking-sync
+            app.kubernetes.io/part-of: mark8ly
+          annotations:
+            # No sidecar: this pod only makes one in-cluster HTTP call
+            # and exits. Skipping istio keeps the job startup time at
+            # ~500ms instead of ~2-3s while still leaving the target
+            # service on the mesh.
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            fsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: sync
+              image: curlimages/curl:8.10.1
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: INTERNAL_AUTH_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: mark8ly-audit-ingest
+                      key: AUDIT_INGEST_SECRET
+                      optional: true
+              # curl flags:
+              #   -sS              — silent but show errors
+              #   --max-time 110   — hard timeout slightly below activeDeadlineSeconds
+              #   -w               — append status + timing summary for log forensics
+              #   -o /tmp/body.out — capture response body so we can print it
+              #   -f               — fail on non-2xx so a regression in the endpoint
+              #                      surfaces as a Job failure rather than silent success
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  echo "tracking-sync: starting at $(date -u +%FT%TZ)"
+                  HTTP_STATUS=$(curl -sS --max-time 110 \
+                    -o /tmp/body.out \
+                    -w '%{http_code}' \
+                    -H "X-Internal-Auth: ${INTERNAL_AUTH_SECRET:-}" \
+                    -H 'Content-Type: application/json' \
+                    -X POST \
+                    "http://{{ .Values.name }}.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.service.port }}/api/v1/internal/shipments/tracking/sync") || true
+                  echo "tracking-sync: http_status=${HTTP_STATUS}"
+                  echo "tracking-sync: response:"
+                  cat /tmp/body.out || true
+                  echo
+                  # Fail the Job on anything other than 2xx so GKE
+                  # marks the pod Failed and the CronJob's
+                  # failedJobsHistoryLimit surfaces the tail.
+                  case "${HTTP_STATUS}" in
+                    2*) exit 0 ;;
+                    *) echo "tracking-sync: FAILED with status ${HTTP_STATUS}"; exit 1 ;;
+                  esac
+              resources:
+                requests:
+                  memory: 16Mi
+                limits:
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
+{{- end }}
