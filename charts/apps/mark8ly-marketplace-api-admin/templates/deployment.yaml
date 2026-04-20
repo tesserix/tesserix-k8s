@@ -122,6 +122,17 @@ spec:
             # P0: Security
             - name: ENCRYPTION_MODE
               value: {{ .Values.encryptionMode | quote }}
+            # Per-tenant carrier credentials — GCP Secret Manager.
+            # "gcpsm" writes/reads one secret per (tenant, domain,
+            # provider, field). Legacy rows with noop:/aes: refs still
+            # resolve via the HybridStore fallback and lazy-migrate on
+            # first read.
+            - name: SHIPPING_SECRET_STORE
+              value: {{ .Values.carrierSecretStore | default "inline" | quote }}
+            - name: GCP_PROJECT_ID
+              value: {{ .Values.gcpProjectId | quote }}
+            - name: SECRET_NAME_PREFIX
+              value: {{ .Values.carrierSecretPrefix | default "mark8ly-dev" | quote }}
             - name: CORS_ALLOWED_ORIGINS
               value: {{ .Values.corsAllowedOrigins | quote }}
             # P1: Observability
