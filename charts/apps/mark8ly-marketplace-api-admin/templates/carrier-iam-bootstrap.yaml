@@ -36,13 +36,16 @@ metadata:
     app.kubernetes.io/name: {{ .Values.name }}
     app.kubernetes.io/part-of: mark8ly
     app.kubernetes.io/component: iam-bootstrap
+  # Use ArgoCD Sync phases — ArgoCD ignores Helm's post-install /
+  # post-upgrade hooks because it renders the chart and applies the
+  # manifests directly rather than running `helm install`. The Argo
+  # equivalent is argocd.argoproj.io/hook=PostSync, which runs the
+  # Job after the main Sync wave completes. The Job is recreated on
+  # every Sync so it reruns on every ArgoCD sync — exactly the same
+  # semantics as helm post-install/post-upgrade.
   annotations:
-    # Helm hook so the Job reruns on every upgrade (idempotent). We
-    # don't delete the Job on success — leaves an audit trail for
-    # operators inspecting IAM provenance.
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": before-hook-creation
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 2
   ttlSecondsAfterFinished: 3600
