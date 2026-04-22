@@ -231,8 +231,21 @@ keycloak:
       value: "1"
     - name: KC_DB_POOL_MAX_SIZE
       value: "10"
+    # JDBC URL properties — tcpKeepAlive=true asks the OS to send TCP
+    # keepalive probes on the DB socket so GKE Dataplane V2 / Cilium
+    # conntrack doesn't evict the flow after ~5 min idle. socketTimeout
+    # caps any single query at 60s so a half-dead socket is detected
+    # instead of blocking an executor thread forever.
+    - name: KC_DB_URL_PROPERTIES
+      value: "?tcpKeepAlive=true&socketTimeout=60&tcpNoDelay=true"
+    # Agroal pool tuning: recycle pooled connections every 4 minutes
+    # (below the ~5 min conntrack idle window) and validate them in
+    # the background every 30s so broken connections are discarded
+    # before a real request picks them up. acquisition-timeout=60 is
+    # kept from the original config so pod startup is tolerant of
+    # Postgres being briefly unready.
     - name: JAVA_OPTS_APPEND
-      value: "-Djgroups.dns.query=keycloak-headless.identity-internal.svc.cluster.local -Dquarkus.datasource.jdbc.acquisition-timeout=60"
+      value: "-Djgroups.dns.query=keycloak-headless.identity-internal.svc.cluster.local -Dquarkus.datasource.jdbc.acquisition-timeout=60 -Dquarkus.datasource.jdbc.max-lifetime=PT4M -Dquarkus.datasource.jdbc.background-validation-interval=PT30S -Dquarkus.datasource.jdbc.idle-removal-interval=PT1M"
 
 # -----------------------------------------------------------------------------
 # POSTGRESQL CONFIGURATION (Bitnami) - Smaller for internal
