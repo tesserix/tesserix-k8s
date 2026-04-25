@@ -93,11 +93,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.gip.webApiKeySecret.name }}
                   key: {{ .Values.gip.webApiKeySecret.key }}
-            # Cross-service audit emit (staff invite/accept/revoke).
-            # MARKETPLACE_API_URL has a sensible default in code; we
-            # only need to mount the optional ingest secret here so the
-            # X-Internal-Auth header gets forwarded once the
-            # ExternalSecret is provisioned in GCP.
+            # Cross-service calls into marketplace-api (self-vendor
+            # ensure/update on onboarding + audit emit on staff events).
+            # Pin the URL here so a code-level default change can't
+            # silently re-introduce the 8086/8080 port mismatch that
+            # broke onboarding self-vendor creation in prod.
+            - name: MARKETPLACE_API_URL
+              value: {{ .Values.marketplaceApiUrl | quote }}
             - name: AUDIT_INGEST_SECRET
               valueFrom:
                 secretKeyRef:
