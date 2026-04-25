@@ -1,0 +1,15 @@
+{{- if and .Values.backup.enabled (not .Values.hibernate) }}
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ .Values.clusterName }}-scheduled-backup
+  namespace: {{ .Values.namespace }}
+spec:
+  # Twice daily: 02:00 UTC and 14:00 UTC
+  schedule: "0 2,14 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: {{ .Values.clusterName }}
+  target: prefer-standby
+  method: barmanObjectStore
+{{- end }}
