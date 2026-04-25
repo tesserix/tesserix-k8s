@@ -83,18 +83,23 @@ spec:
                   optional: true
             - name: OTTO_SESSION_COOKIE
               value: "otto_session"
+          # Probes hit a static API health route, not /. SSR'ing the
+          # homepage was timing out under cold-start at the default 1s
+          # probe timeout and triggering false-positive restarts.
           livenessProbe:
             httpGet:
-              path: /
+              path: /api/health
               port: http
             initialDelaySeconds: 20
             periodSeconds: 30
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
-              path: /
+              path: /api/health
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 3
           resources:
 {{ toYaml .Values.resources | indent 12 }}
           volumeMounts:

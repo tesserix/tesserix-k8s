@@ -62,19 +62,22 @@ spec:
                   key: GIP_WEB_API_KEY
             - name: NEXT_PUBLIC_GOOGLE_CLIENT_ID
               value: {{ .Values.public.googleClientId | quote }}
-          # Next.js has no dedicated /health endpoint — probe the homepage.
+          # Probes hit a static API health route to keep them cheap and
+          # decoupled from the SSR'd marketing pages.
           livenessProbe:
             httpGet:
-              path: /
+              path: /api/health
               port: http
             initialDelaySeconds: 20
             periodSeconds: 30
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
-              path: /
+              path: /api/health
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 3
           resources:
 {{ toYaml .Values.resources | indent 12 }}
           # Standalone Next.js writes to /tmp for font/image optimization.

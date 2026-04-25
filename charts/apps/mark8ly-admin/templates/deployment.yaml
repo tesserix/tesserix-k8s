@@ -80,18 +80,24 @@ spec:
                   name: mark8ly-otto
                   key: INTERNAL_AUTH_SECRET
                   optional: true
+          # Probes hit a static API health route, not /. Hitting /
+          # forces the auth middleware to redirect unauthenticated probe
+          # traffic to /login, which kubelet logs as
+          # "Probe terminated redirects" every period.
           livenessProbe:
             httpGet:
-              path: /
+              path: /api/health
               port: http
             initialDelaySeconds: 20
             periodSeconds: 30
+            timeoutSeconds: 3
           readinessProbe:
             httpGet:
-              path: /
+              path: /api/health
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 3
           resources:
 {{ toYaml .Values.resources | indent 12 }}
           volumeMounts:
