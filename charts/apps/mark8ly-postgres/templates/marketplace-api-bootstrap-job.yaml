@@ -91,11 +91,14 @@ spec:
               fi
 
               # Set the role password from the secret. ALTER ROLE is
-              # idempotent. Using psql's :'pw' variable form with a
-              # single-quote wrapper so the password is safely escaped
-              # regardless of which characters it contains.
-              psql -v ON_ERROR_STOP=1 -v pw="$MARKETPLACE_API_PASSWORD" \
-                -c "ALTER ROLE marketplace_api WITH PASSWORD :'pw'"
+              # idempotent. psql's :'pw' substitution only fires for SQL
+              # read from stdin/-f — not from -c (-c sends the literal
+              # string to the server, which then errors on the colon).
+              # Pipe via stdin so the substitution actually happens and
+              # the password is single-quote-escaped by psql itself.
+              psql -v ON_ERROR_STOP=1 -v pw="$MARKETPLACE_API_PASSWORD" <<'SQL'
+              ALTER ROLE marketplace_api WITH PASSWORD :'pw';
+              SQL
 
               # Ensure ownership + privileges (safe to re-run).
               psql -v ON_ERROR_STOP=1 \
