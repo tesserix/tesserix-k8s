@@ -56,8 +56,14 @@ spec:
             - -c
             - |
               set -eu
-              psql -v ON_ERROR_STOP=1 -v pw="$OPENFGA_PASSWORD" \
-                -c "ALTER ROLE {{ .Values.bootstrap.secondaryOwner }} WITH PASSWORD :'pw'"
+              # psql's :'pw' substitution only fires for SQL read from
+              # stdin/-f, not from -c (-c sends the literal string to
+              # the server, which errors on the colon). Pipe via stdin
+              # so the substitution actually happens and the password
+              # is single-quote-escaped by psql itself.
+              psql -v ON_ERROR_STOP=1 -v pw="$OPENFGA_PASSWORD" <<'SQL'
+              ALTER ROLE {{ .Values.bootstrap.secondaryOwner }} WITH PASSWORD :'pw';
+              SQL
           resources:
             requests:
               memory: 128Mi
