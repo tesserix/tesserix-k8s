@@ -99,10 +99,11 @@ spec:
             - name: MARKETPLACE_MEDIA_CACHE_CONTROL
               value: {{ . | quote }}
             {{- end }}
-            # Internal auth disabled for now — admin frontend doesn't send
-            # X-Internal-Auth yet. Re-enable when admin client is updated.
             - name: MARKETPLACE_INTERNAL_AUTH_SECRET
-              value: ""
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.internalAuthSecret.secretName }}
+                  key: {{ .Values.internalAuthSecret.secretKey }}
             # Narrow secret gating ONLY /internal/audit-events. When the
             # ExternalSecret hasn't been provisioned (no GCP SM entry),
             # the secretKeyRef returns empty thanks to optional: true and

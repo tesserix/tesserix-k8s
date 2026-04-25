@@ -17,6 +17,13 @@ spec:
   template:
     spec:
       restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: psql
           image: ghcr.io/cloudnative-pg/postgresql:16.4
@@ -45,6 +52,21 @@ spec:
             - -c
             - |
               set -eu
-              psql -v ON_ERROR_STOP=1 <<SQL
-              ALTER ROLE {{ .Values.bootstrap.secondaryOwner }} WITH PASSWORD '$OPENFGA_PASSWORD';
-              SQL
+              psql -v ON_ERROR_STOP=1 -v pw="$OPENFGA_PASSWORD" \
+                -c "ALTER ROLE {{ .Values.bootstrap.secondaryOwner }} WITH PASSWORD :'pw'"
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
