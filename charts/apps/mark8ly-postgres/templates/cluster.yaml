@@ -11,8 +11,11 @@ spec:
   instances: {{ .Values.instances }}
   imageName: {{ .Values.imageName }}
 
-  # Primary database bootstrap. Secondary database + role are created
-  # by a post-init SQL block below.
+  # Primary database bootstrap. Secondary + tertiary roles/databases
+  # are created by the postInitSQL block below (initdb runs them as the
+  # postgres superuser, so role/database creation always succeeds).
+  # Passwords are then reconciled by the operator via spec.managed.roles
+  # — postInitSQL itself can't reference Kubernetes secrets.
   bootstrap:
     initdb:
       database: {{ .Values.bootstrap.primaryDatabase }}
@@ -20,13 +23,12 @@ spec:
       secret:
         name: {{ .Values.bootstrap.primarySecret }}
       postInitSQL:
+        # openfga (used by mark8ly-openfga)
         - "CREATE ROLE {{ .Values.bootstrap.secondaryOwner }} LOGIN"
         - "CREATE DATABASE {{ .Values.bootstrap.secondaryDatabase }} OWNER {{ .Values.bootstrap.secondaryOwner }}"
-        - "ALTER ROLE {{ .Values.bootstrap.secondaryOwner }} PASSWORD NULL"
-        # Password is applied after bootstrap by the post-init Job
-        # (templates/post-init-job.yaml) which reads from the CNPG basic-auth
-        # secret. We cannot inline the password here because CNPG does not
-        # support variable substitution inside postInitSQL.
+        # marketplace_api (used by mark8ly-marketplace-api-{admin,storefront})
+        - "CREATE ROLE marketplace_api LOGIN"
+        - "CREATE DATABASE mark8ly_marketplace_api OWNER marketplace_api"
 
   storage:
     size: {{ .Values.storageSize }}
@@ -112,6 +114,25 @@ spec:
     disableDefaultQueries: false
 
   enableSuperuserAccess: false
+
+  # CNPG-managed roles. The operator runs SQL as the postgres superuser
+  # internally, so password reconciliation works even though
+  # enableSuperuserAccess is false above. This replaced two PostSync
+  # Jobs that connected as platform_api and tried to ALTER ROLE openfga
+  # / marketplace_api — those failed with "permission denied to alter
+  # role" because platform_api lacks CREATEROLE + ADMIN OPTION.
+  managed:
+    roles:
+      - name: {{ .Values.bootstrap.secondaryOwner }}
+        ensure: present
+        login: true
+        passwordSecret:
+          name: {{ .Values.bootstrap.secondarySecret }}
+      - name: marketplace_api
+        ensure: present
+        login: true
+        passwordSecret:
+          name: mark8ly-postgres-marketplace-api
 
   primaryUpdateStrategy: unsupervised
   # Use switchover (promote replica first, then rebuild old primary) instead
