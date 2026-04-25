@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guardix-db-schema-bootstrap
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: guardix
+    app.kubernetes.io/component: database
+    environment: prod
+spec:
+  project: guardix
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/apps/db-schema-bootstrap
+    targetRevision: HEAD
+    helm:
+      releaseName: guardix-db-schema-bootstrap
+      values: |
+        app: guardix
+
+        targets:
+          - name: guardix
+            host: guardix-postgres-rw.guardix.svc.cluster.local
+            port: 5432
+            user: guardix
+            secretName: guardix-postgres-app-credentials
+            secretKey: password
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: guardix
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

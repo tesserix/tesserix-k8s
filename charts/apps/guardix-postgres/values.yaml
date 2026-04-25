@@ -1,0 +1,67 @@
+hibernate: false
+
+namespace: guardix
+clusterName: guardix-postgres
+
+instances: 2
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+storageSize: 20Gi
+storageClass: standard-rwo-retain
+walStorageSize: 10Gi
+
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+bootstrap:
+  database: guardix
+  owner: guardix
+  secret: guardix-postgres-app-credentials
+  gcpSecretName: prod-guardix-postgresql-password
+  postInitSQL: []
+
+postgresql:
+  max_connections: "300"
+  shared_buffers: "512MB"
+  effective_cache_size: "1536MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "128MB"
+  wal_level: "logical"
+  max_replication_slots: "10"
+  max_wal_senders: "10"
+  ssl_min_protocol_version: "TLSv1.3"
+  ssl_max_protocol_version: "TLSv1.3"
+  idle_in_transaction_session_timeout: "300000"
+  statement_timeout: "120000"
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"
+  log_min_duration_statement: "1000"
+  hot_standby_feedback: "on"
+  max_slot_wal_keep_size: "10GB"
+  pg_stat_statements.track: "all"
+  pg_stat_statements.max: "10000"
+
+backup:
+  enabled: true
+  destinationPath: "gs://tesseract-prod-backups-in/guardix-postgres"
+  retentionPolicy: "30d"
+  serviceAccount: "app-secrets-guardix-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+pooler:
+  enabled: true
+  instances: 2
+  maxClientConn: "500"
+  defaultPoolSize: "25"
+
+monitoring:
+  enablePodMonitor: true
+
+affinity:
+  podAntiAffinityType: preferred
+
+replication:
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
