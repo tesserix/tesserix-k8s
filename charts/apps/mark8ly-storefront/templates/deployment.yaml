@@ -83,6 +83,16 @@ spec:
                   optional: true
             - name: OTTO_SESSION_COOKIE
               value: "otto_session"
+            # Shared secret with marketplace-api (same as the admin
+            # pod). Gates the storefront's /api/internal/orders/:id/{invoice,receipt}
+            # routes so marketplace-api can fetch rendered PDFs to
+            # attach to order emails without needing a customer
+            # session cookie.
+            - name: MARKETPLACE_INTERNAL_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-marketplace-api-internal-auth
+                  key: INTERNAL_AUTH_SECRET
           # Probes hit a static API health route, not /. SSR'ing the
           # homepage was timing out under cold-start at the default 1s
           # probe timeout and triggering false-positive restarts.
