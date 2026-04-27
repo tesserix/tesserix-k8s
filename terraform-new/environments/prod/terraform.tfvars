@@ -382,7 +382,7 @@ buckets = [
       region     = "in"
       compliance = "dpdpa"
     }
-    # Tiered cost-down: NEARLINE (0-90d) -> COLDLINE (90-365d) -> ARCHIVE (365-730d) -> Delete (>730d)
+    # Tiered cost-down: STANDARD (0-7d) -> NEARLINE (7-15d) -> COLDLINE (15-30d) -> ARCHIVE (30-90d) -> Delete (>90d)
     # Plus noncurrent-version cleanup (versioning is enabled).
     lifecycle_rules = [
       {
@@ -391,7 +391,7 @@ buckets = [
           storage_class = "NEARLINE"
         }
         condition = {
-          age                   = 30
+          age                   = 7
           matches_storage_class = ["STANDARD"]
         }
       },
@@ -401,7 +401,7 @@ buckets = [
           storage_class = "COLDLINE"
         }
         condition = {
-          age                   = 90
+          age                   = 15
           matches_storage_class = ["NEARLINE"]
         }
       },
@@ -411,13 +411,13 @@ buckets = [
           storage_class = "ARCHIVE"
         }
         condition = {
-          age                   = 365
+          age                   = 30
           matches_storage_class = ["COLDLINE"]
         }
       },
       {
         action    = { type = "Delete" }
-        condition = { age = 730 }
+        condition = { age = 90 }
       },
       {
         action = { type = "Delete" }
@@ -430,7 +430,7 @@ buckets = [
         action = { type = "Delete" }
         condition = {
           with_state                 = "ARCHIVED"
-          days_since_noncurrent_time = 90
+          days_since_noncurrent_time = 30
         }
       }
     ]
@@ -459,7 +459,7 @@ buckets = [
           storage_class = "NEARLINE"
         }
         condition = {
-          age                   = 30
+          age                   = 7
           matches_storage_class = ["STANDARD"]
         }
       },
@@ -469,7 +469,7 @@ buckets = [
           storage_class = "COLDLINE"
         }
         condition = {
-          age                   = 90
+          age                   = 15
           matches_storage_class = ["NEARLINE"]
         }
       },
@@ -479,13 +479,13 @@ buckets = [
           storage_class = "ARCHIVE"
         }
         condition = {
-          age                   = 365
+          age                   = 30
           matches_storage_class = ["COLDLINE"]
         }
       },
       {
         action    = { type = "Delete" }
-        condition = { age = 730 }
+        condition = { age = 90 }
       },
       {
         action = { type = "Delete" }
@@ -498,7 +498,7 @@ buckets = [
         action = { type = "Delete" }
         condition = {
           with_state                 = "ARCHIVED"
-          days_since_noncurrent_time = 90
+          days_since_noncurrent_time = 30
         }
       }
     ]
@@ -663,7 +663,7 @@ buckets = [
       region     = "in"
       compliance = "dpdpa"
     }
-    # Tiered cost-down: STANDARD -> NEARLINE (30d) -> COLDLINE (90d) -> ARCHIVE (365d) -> Delete (730d)
+    # Tiered cost-down: STANDARD -> NEARLINE (7d) -> COLDLINE (15d) -> ARCHIVE (30d) -> Delete (90d)
     lifecycle_rules = [
       {
         action = {
@@ -671,7 +671,7 @@ buckets = [
           storage_class = "NEARLINE"
         }
         condition = {
-          age                   = 30
+          age                   = 7
           matches_storage_class = ["STANDARD"]
         }
       },
@@ -681,7 +681,7 @@ buckets = [
           storage_class = "COLDLINE"
         }
         condition = {
-          age                   = 90
+          age                   = 15
           matches_storage_class = ["NEARLINE"]
         }
       },
@@ -691,13 +691,13 @@ buckets = [
           storage_class = "ARCHIVE"
         }
         condition = {
-          age                   = 365
+          age                   = 30
           matches_storage_class = ["COLDLINE"]
         }
       },
       {
         action    = { type = "Delete" }
-        condition = { age = 730 }
+        condition = { age = 90 }
       },
       {
         action = { type = "Delete" }
@@ -710,7 +710,7 @@ buckets = [
         action = { type = "Delete" }
         condition = {
           with_state                 = "ARCHIVED"
-          days_since_noncurrent_time = 90
+          days_since_noncurrent_time = 30
         }
       }
     ]
@@ -740,7 +740,7 @@ buckets = [
           storage_class = "NEARLINE"
         }
         condition = {
-          age                   = 30
+          age                   = 7
           matches_storage_class = ["STANDARD"]
         }
       },
@@ -750,7 +750,7 @@ buckets = [
           storage_class = "COLDLINE"
         }
         condition = {
-          age                   = 90
+          age                   = 15
           matches_storage_class = ["NEARLINE"]
         }
       },
@@ -760,13 +760,13 @@ buckets = [
           storage_class = "ARCHIVE"
         }
         condition = {
-          age                   = 365
+          age                   = 30
           matches_storage_class = ["COLDLINE"]
         }
       },
       {
         action    = { type = "Delete" }
-        condition = { age = 730 }
+        condition = { age = 90 }
       },
       {
         action = { type = "Delete" }
@@ -779,7 +779,7 @@ buckets = [
         action = { type = "Delete" }
         condition = {
           with_state                 = "ARCHIVED"
-          days_since_noncurrent_time = 90
+          days_since_noncurrent_time = 30
         }
       }
     ]
@@ -1418,7 +1418,7 @@ buckets = [
           storage_class = "NEARLINE"
         }
         condition = {
-          age                   = 30
+          age                   = 7
           matches_storage_class = ["STANDARD"]
         }
       },
@@ -1428,7 +1428,7 @@ buckets = [
           storage_class = "COLDLINE"
         }
         condition = {
-          age                   = 90
+          age                   = 15
           matches_storage_class = ["NEARLINE"]
         }
       },
@@ -1438,13 +1438,13 @@ buckets = [
           storage_class = "ARCHIVE"
         }
         condition = {
-          age                   = 365
+          age                   = 30
           matches_storage_class = ["COLDLINE"]
         }
       },
       {
         action    = { type = "Delete" }
-        condition = { age = 730 }
+        condition = { age = 90 }
       }
     ]
     cors         = []
