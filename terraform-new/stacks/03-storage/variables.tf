@@ -109,11 +109,12 @@ variable "buckets" {
         storage_class = optional(string)
       })
       condition = object({
-        age                   = optional(number)
-        created_before        = optional(string)
-        with_state            = optional(string)
-        matches_storage_class = optional(list(string))
-        num_newer_versions    = optional(number)
+        age                        = optional(number)
+        created_before             = optional(string)
+        with_state                 = optional(string)
+        matches_storage_class      = optional(list(string))
+        num_newer_versions         = optional(number)
+        days_since_noncurrent_time = optional(number)
       })
     })), [])
     cors = optional(list(object({
@@ -135,12 +136,65 @@ variable "buckets" {
 # =============================================================================
 
 variable "docker_repositories" {
-  description = "Artifact Registry Docker repositories to create"
+  description = "Artifact Registry Docker repositories to create (STANDARD mode)"
   type = list(object({
     name        = string
     description = optional(string, "")
     location    = optional(string)
     labels      = optional(map(string), {})
+    cleanup_policies = optional(list(object({
+      id     = string
+      action = string # KEEP or DELETE
+      condition = optional(object({
+        tag_state             = optional(string) # TAGGED | UNTAGGED | ANY
+        tag_prefixes          = optional(list(string))
+        version_name_prefixes = optional(list(string))
+        package_name_prefixes = optional(list(string))
+        older_than            = optional(string)
+        newer_than            = optional(string)
+      }))
+      most_recent_versions = optional(object({
+        package_name_prefixes = optional(list(string))
+        keep_count            = optional(number)
+      }))
+    })), [])
+  }))
+  default = []
+}
+
+variable "remote_docker_repositories" {
+  description = "Artifact Registry Docker REMOTE_REPOSITORY (pull-through cache) repos."
+  type = list(object({
+    name                        = string
+    description                 = optional(string, "")
+    location                    = optional(string)
+    labels                      = optional(map(string), {})
+    cleanup_policy_dry_run      = optional(bool, false)
+    remote_description          = optional(string, "")
+    disable_upstream_validation = optional(bool, false)
+    # Either public_repository (e.g. DOCKER_HUB) OR common_repository_uri must be set.
+    public_repository     = optional(string)
+    common_repository_uri = optional(string)
+    upstream_credentials = optional(object({
+      username                = string
+      password_secret_version = string
+    }))
+    cleanup_policies = optional(list(object({
+      id     = string
+      action = string # KEEP or DELETE
+      condition = optional(object({
+        tag_state             = optional(string)
+        tag_prefixes          = optional(list(string))
+        version_name_prefixes = optional(list(string))
+        package_name_prefixes = optional(list(string))
+        older_than            = optional(string)
+        newer_than            = optional(string)
+      }))
+      most_recent_versions = optional(object({
+        package_name_prefixes = optional(list(string))
+        keep_count            = optional(number)
+      }))
+    })), [])
   }))
   default = []
 }
