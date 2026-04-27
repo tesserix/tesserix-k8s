@@ -34,6 +34,9 @@ env:
   GCP_PROJECT_ID: tesseracthub-480811
   CLUSTER_NAME: tesseract-prod-in-gke
   CLUSTER_REGION: asia-south1
+  # WIF — same values as terraform.yml; safe to hardcode (not sensitive)
+  WIF_PROVIDER: projects/849928263410/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+  SA_EMAIL: github-actions@tesseracthub-480811.iam.gserviceaccount.com
 
 jobs:
   audit:
@@ -53,8 +56,9 @@ jobs:
       - name: Authenticate to Google Cloud (WIF)
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.SA_EMAIL }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
 
       - name: Setup gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
