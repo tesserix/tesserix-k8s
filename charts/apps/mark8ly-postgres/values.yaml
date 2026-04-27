@@ -13,7 +13,14 @@ clusterName: mark8ly-postgres
 # Cost delta: doubles PVC spend + reserves 1 full vCPU per pod. Target
 # tier's storage (200Gi) is 10× the v0.1 value — stage this via ArgoCD
 # staging sync before merging to prod.
-instances: 2
+#
+# Currently held at instances=1: replica-1 was stuck mid-resize for 8d
+# (PVC.spec=200Gi but PVC.status=20Gi, pod could not start to complete
+# fs expansion) while contributing nothing — minSyncReplicas was 0 so
+# writes never waited on it. Continuous archiving + scheduled backups
+# preserve RPO via WAL shipping. Restore to 2 once the merchant tier
+# warrants HA standby and resize race is understood.
+instances: 1
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 storageSize: 200Gi
 storageClass: standard-rwo-retain
