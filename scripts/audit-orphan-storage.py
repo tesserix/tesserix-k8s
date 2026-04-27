@@ -403,6 +403,10 @@ def render_markdown(findings: list[Finding], age_days: int, applied: bool) -> st
         lines.append("")
         lines.append("> **Apply mode was enabled.** Safe categories were deleted; see Action log below.")
     lines.append("")
+    if not findings:
+        lines.append("> ⚠️  Inventory was empty — script saw zero pvc-* disks. Verify the CI service")
+        lines.append("> account has `roles/compute.storageAdmin` and that kubectl can list PV/PVC/Pods.")
+        lines.append("")
 
     # Summary table
     lines.append("## Summary")
@@ -489,6 +493,13 @@ def main() -> int:
 
     inv = build_inventory(args.project)
     findings = classify(inv, args.age_days)
+
+    # Diagnostic line on stderr (visible in CI logs but not in the report).
+    sys.stderr.write(
+        f"[audit] inventory: disks={len(inv.disks)} pvs={len(inv.pvs)} "
+        f"pvcs={len(inv.pvcs)} cnpg_clusters={len(inv.cnpg)} "
+        f"sts={len(inv.sts)} findings={len(findings)}\n"
+    )
 
     actions: list[str] = []
     if args.apply:
