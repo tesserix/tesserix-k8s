@@ -9,9 +9,11 @@ instances: 3
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
 # Storage — separate WAL volume for I/O isolation
-storageSize: 60Gi
+# WAL volume is sized 3× max_slot_wal_keep_size so a stuck replication slot
+# can never fill the volume and trip CNPG's low-disk-space preflight.
+storageSize: 100Gi
 storageClass: standard-rwo-retain
-walStorageSize: 10Gi
+walStorageSize: 30Gi
 
 resources:
   requests:
@@ -54,8 +56,10 @@ postgresql:
   log_min_duration_statement: "1000"
   # Replica query safety
   hot_standby_feedback: "on"
-  # WAL safety cap — prevent unbounded growth from inactive slots
-  max_slot_wal_keep_size: "10GB"
+  # WAL safety cap — prevent unbounded growth from inactive slots.
+  # Kept comfortably below walStorageSize (30Gi) so a single stuck slot
+  # cannot exhaust the WAL volume.
+  max_slot_wal_keep_size: "8GB"
   # Performance monitoring (CNPG auto-loads extension)
   pg_stat_statements.track: "all"
   pg_stat_statements.max: "10000"
