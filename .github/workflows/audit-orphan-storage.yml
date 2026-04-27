@@ -1,0 +1,179 @@
+name: Audit Orphan Storage (Weekly)
+
+# Walks every GCE PD + k8s PV/PVC in the prod cluster, classifies each one
+# (CNPG member? StatefulSet member? Released? Zombie?), and reports anything
+# that needs human attention. Optionally auto-deletes the safest categories.
+#
+# Workload-specific signals it understands:
+#  - CNPG cluster ordinals vs cluster.spec.instances
+#  - StatefulSet volumeClaimTemplates vs sts.spec.replicas
+#  - PV phase = Released (PVC gone, reclaim=Retain held the PV)
+#  - GCE PD with no matching PV
+# It will NOT delete anything that looks like an in-scope CNPG/STS member,
+# regardless of how long the pod has been down.
+
+on:
+  schedule:
+    # Every Monday at 09:00 UTC (= 14:30 IST / 19:00 AEST)
+    - cron: '0 9 * * 1'
+
+  workflow_dispatch:
+    inputs:
+      age_days:
+        description: 'Minimum days since last detach before a disk is auto-deletable'
+        required: false
+        type: number
+        default: 14
+      apply_safe_deletes:
+        description: 'Actually delete ZOMBIE_DISK + RELEASED_PV that exceed age_days (default: report only)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  GCP_PROJECT_ID: tesseracthub-480811
+  CLUSTER_NAME: tesseract-prod-in-gke
+  CLUSTER_REGION: asia-south1
+
+jobs:
+  audit:
+    name: Audit & Report
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      issues: write     # to open / update the report issue
+      id-token: write   # for WIF if available
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          install_components: 'gke-gcloud-auth-plugin'
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials "${CLUSTER_NAME}" \
+            --region "${CLUSTER_REGION}" \
+            --project "${GCP_PROJECT_ID}"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Resolve inputs
+        id: inputs
+        run: |
+          age="${{ github.event.inputs.age_days }}"
+          apply="${{ github.event.inputs.apply_safe_deletes }}"
+          # Schedule runs always default to report-only with a 14-day window
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            age=14
+            apply=false
+          fi
+          echo "age=${age:-14}" >> "$GITHUB_OUTPUT"
+          echo "apply=${apply:-false}" >> "$GITHUB_OUTPUT"
+          echo "Resolved: age=${age:-14}, apply=${apply:-false}"
+
+      - name: Run audit (report-only mode)
+        if: steps.inputs.outputs.apply == 'false'
+        id: audit_report
+        run: |
+          set +e
+          python3 scripts/audit-orphan-storage.py \
+            --project "${GCP_PROJECT_ID}" \
+            --age-days "${{ steps.inputs.outputs.age }}" \
+            --out audit-report.md
+          rc=$?
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          # Exit 0 = nothing needs attention; 1 = at least one finding worth review.
+          # Either way the workflow itself is "successful".
+          exit 0
+
+      - name: Run audit (apply safe deletes)
+        if: steps.inputs.outputs.apply == 'true'
+        id: audit_apply
+        run: |
+          set +e
+          python3 scripts/audit-orphan-storage.py \
+            --project "${GCP_PROJECT_ID}" \
+            --age-days "${{ steps.inputs.outputs.age }}" \
+            --apply \
+            --out audit-report.md
+          rc=$?
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish report to step summary
+        run: cat audit-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-report-${{ github.run_id }}
+          path: audit-report.md
+          retention-days: 90
+
+      - name: Decide if a GitHub Issue is warranted
+        id: needs_issue
+        run: |
+          rc="${{ steps.audit_report.outputs.exit_code || steps.audit_apply.outputs.exit_code }}"
+          if [ "$rc" = "1" ]; then
+            echo "create=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "create=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update the audit issue
+        if: steps.needs_issue.outputs.create == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          today=$(date -u '+%Y-%m-%d')
+          title="Storage audit ${today}: orphan/unowned disks need review"
+          body=$(cat audit-report.md)
+          # Append run link so a reader can jump back to the workflow output.
+          body="${body}
+
+          ---
+          Workflow run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          Triggered by: \`${{ github.event_name }}\` (apply=${{ steps.inputs.outputs.apply }}, age_days=${{ steps.inputs.outputs.age }})"
+
+          # If there's already an open audit issue, update it instead of opening a new one
+          # so the issue list does not bloat over time.
+          existing=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --label storage-audit \
+            --limit 1 \
+            --json number --jq '.[0].number' || echo "")
+
+          if [ -n "$existing" ]; then
+            echo "Updating existing issue #$existing"
+            gh issue edit "$existing" \
+              --repo "${{ github.repository }}" \
+              --title "$title" \
+              --body "$body"
+            gh issue comment "$existing" \
+              --repo "${{ github.repository }}" \
+              --body "Re-audited ${today}. See updated body and the linked workflow run for details."
+          else
+            echo "Opening new audit issue"
+            gh issue create \
+              --repo "${{ github.repository }}" \
+              --title "$title" \
+              --body "$body" \
+              --label "storage-audit"
+          fi
