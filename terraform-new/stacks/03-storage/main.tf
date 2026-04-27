@@ -99,11 +99,12 @@ resource "google_storage_bucket" "buckets" {
         storage_class = lifecycle_rule.value.action.storage_class
       }
       condition {
-        age                   = lifecycle_rule.value.condition.age
-        created_before        = lifecycle_rule.value.condition.created_before
-        with_state            = lifecycle_rule.value.condition.with_state
-        matches_storage_class = lifecycle_rule.value.condition.matches_storage_class
-        num_newer_versions    = lifecycle_rule.value.condition.num_newer_versions
+        age                        = lifecycle_rule.value.condition.age
+        created_before             = lifecycle_rule.value.condition.created_before
+        with_state                 = lifecycle_rule.value.condition.with_state
+        matches_storage_class      = lifecycle_rule.value.condition.matches_storage_class
+        num_newer_versions         = lifecycle_rule.value.condition.num_newer_versions
+        days_since_noncurrent_time = lifecycle_rule.value.condition.days_since_noncurrent_time
       }
     }
   }
@@ -266,7 +267,7 @@ resource "google_kms_crypto_key_iam_member" "secret_manager_service_agent" {
 }
 
 # =============================================================================
-# Artifact Registry — Docker Repositories
+# Artifact Registry — Docker Repositories (Standard, where we push our own images)
 # =============================================================================
 
 resource "google_artifact_registry_repository" "docker" {
@@ -282,6 +283,108 @@ resource "google_artifact_registry_repository" "docker" {
   labels = merge(var.common_labels, each.value.labels)
 
   cleanup_policy_dry_run = false
+
+  dynamic "cleanup_policies" {
+    for_each = each.value.cleanup_policies
+    content {
+      id     = cleanup_policies.value.id
+      action = cleanup_policies.value.action
+      dynamic "condition" {
+        for_each = cleanup_policies.value.condition != null ? [cleanup_policies.value.condition] : []
+        content {
+          tag_state             = condition.value.tag_state
+          tag_prefixes          = condition.value.tag_prefixes
+          version_name_prefixes = condition.value.version_name_prefixes
+          package_name_prefixes = condition.value.package_name_prefixes
+          older_than            = condition.value.older_than
+          newer_than            = condition.value.newer_than
+        }
+      }
+      dynamic "most_recent_versions" {
+        for_each = cleanup_policies.value.most_recent_versions != null ? [cleanup_policies.value.most_recent_versions] : []
+        content {
+          package_name_prefixes = most_recent_versions.value.package_name_prefixes
+          keep_count            = most_recent_versions.value.keep_count
+        }
+      }
+    }
+  }
+
+  depends_on = [data.terraform_remote_state.foundation]
+}
+
+# =============================================================================
+# Artifact Registry — Docker Remote (Pull-Through Cache) Repositories
+# Cleanup policies prune cached images so the cache stays small and cheap.
+# =============================================================================
+
+resource "google_artifact_registry_repository" "docker_remote" {
+  for_each = { for repo in var.remote_docker_repositories : repo.name => repo }
+
+  provider = google-beta
+
+  repository_id = each.value.name
+  project       = var.project_id
+  location      = each.value.location != null ? each.value.location : var.region
+  format        = "DOCKER"
+  description   = each.value.description
+  mode          = "REMOTE_REPOSITORY"
+
+  labels = merge(var.common_labels, each.value.labels)
+
+  cleanup_policy_dry_run = each.value.cleanup_policy_dry_run
+
+  remote_repository_config {
+    description                 = each.value.remote_description
+    disable_upstream_validation = each.value.disable_upstream_validation
+
+    docker_repository {
+      public_repository = each.value.public_repository
+
+      dynamic "custom_repository" {
+        for_each = each.value.common_repository_uri != null ? [1] : []
+        content {
+          uri = each.value.common_repository_uri
+        }
+      }
+    }
+
+    dynamic "upstream_credentials" {
+      for_each = each.value.upstream_credentials != null ? [each.value.upstream_credentials] : []
+      content {
+        username_password_credentials {
+          username                = upstream_credentials.value.username
+          password_secret_version = upstream_credentials.value.password_secret_version
+        }
+      }
+    }
+  }
+
+  dynamic "cleanup_policies" {
+    for_each = each.value.cleanup_policies
+    content {
+      id     = cleanup_policies.value.id
+      action = cleanup_policies.value.action
+      dynamic "condition" {
+        for_each = cleanup_policies.value.condition != null ? [cleanup_policies.value.condition] : []
+        content {
+          tag_state             = condition.value.tag_state
+          tag_prefixes          = condition.value.tag_prefixes
+          version_name_prefixes = condition.value.version_name_prefixes
+          package_name_prefixes = condition.value.package_name_prefixes
+          older_than            = condition.value.older_than
+          newer_than            = condition.value.newer_than
+        }
+      }
+      dynamic "most_recent_versions" {
+        for_each = cleanup_policies.value.most_recent_versions != null ? [cleanup_policies.value.most_recent_versions] : []
+        content {
+          package_name_prefixes = most_recent_versions.value.package_name_prefixes
+          keep_count            = most_recent_versions.value.keep_count
+        }
+      }
+    }
+  }
 
   depends_on = [data.terraform_remote_state.foundation]
 }

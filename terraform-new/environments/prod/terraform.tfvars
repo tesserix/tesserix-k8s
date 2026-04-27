@@ -49,8 +49,8 @@ vpc_name                = "tesseract-prod-in-vpc"
 routing_mode            = "GLOBAL"
 enable_private_services = true
 create_nat_gateway      = true
-nat_network_tier        = "STANDARD"  # Cost optimization
-enable_nat_logging      = false       # Enable for production debugging
+nat_network_tier        = "STANDARD" # Cost optimization
+enable_nat_logging      = false      # Enable for production debugging
 
 # =============================================================================
 # Subnet Configuration
@@ -61,7 +61,7 @@ enable_nat_logging      = false       # Enable for production debugging
 subnet_name              = "tesseract-prod-in-subnet"
 subnet_cidr              = "10.10.0.0/20"
 private_ip_google_access = true
-enable_flow_logs         = false  # Enable for compliance if needed
+enable_flow_logs         = false # Enable for compliance if needed
 
 secondary_ip_ranges = [
   {
@@ -90,9 +90,9 @@ firewall_rules = []
 # Naming: tesseract-prod-{region}-gke
 # =============================================================================
 
-cluster_name     = "tesseract-prod-in-gke"
-regional         = true   # Regional cluster for high availability (3 zones)
-deletion_protection = true   # Enabled - protects cluster from accidental deletion
+cluster_name        = "tesseract-prod-in-gke"
+regional            = true # Regional cluster for high availability (3 zones)
+deletion_protection = true # Enabled - protects cluster from accidental deletion
 
 # Logging and Monitoring (DISABLED for cost optimization - enable when needed)
 enable_logging            = false
@@ -105,16 +105,16 @@ services_range_name = "services"
 
 # Private Cluster Configuration
 enable_private_cluster  = true
-enable_private_endpoint = false  # Allow external kubectl access
+enable_private_endpoint = false # Allow external kubectl access
 master_ipv4_cidr_block  = "172.16.0.0/28"
 
 # Network Policy
-enable_network_policy      = true
-http_load_balancing        = true
-horizontal_pod_autoscaling = true
-vertical_pod_autoscaling   = true
-gce_pd_csi_driver          = true
-gcs_fuse_csi_driver        = false
+enable_network_policy       = true
+http_load_balancing         = true
+horizontal_pod_autoscaling  = true
+vertical_pod_autoscaling    = true
+gce_pd_csi_driver           = true
+gcs_fuse_csi_driver         = false
 enable_binary_authorization = false
 
 # =============================================================================
@@ -135,8 +135,8 @@ database_encryption_key_name = "projects/tesseracthub-480811/locations/asia-sout
 maintenance_start_time = "21:30"
 
 # Release Channel
-release_channel        = "RAPID"  # Use RAPID channel for latest edge GKE versions
-use_latest_version     = true
+release_channel           = "RAPID" # Use RAPID channel for latest edge GKE versions
+use_latest_version        = true
 kubernetes_version_prefix = null
 
 # Master Authorized Networks
@@ -178,26 +178,26 @@ cluster_labels = {
 # TO SWITCH TO ON-DEMAND: Simply change use_spot_instances = false below
 # =============================================================================
 
-use_spot_instances = true  # ENABLED - 70% cost savings; set to false for on-demand
+use_spot_instances = true # ENABLED - 70% cost savings; set to false for on-demand
 
 node_pools = [
   {
     name                        = "optimized-v2"
-    machine_type                = "e2-standard-8"  # 8 vCPU, 32GB RAM — downsized from e2-standard-16 (actual usage ~5 vCPU / 30 Gi)
-    disk_size_gb                = 80               # Reduced from 100 — sufficient for node workloads
-    disk_type                   = "pd-standard"    # Standard disk for cost optimization
-    spot                        = true             # Per-pool setting (overridden by use_spot_instances)
+    machine_type                = "e2-standard-8" # 8 vCPU, 32GB RAM — downsized from e2-standard-16 (actual usage ~5 vCPU / 30 Gi)
+    disk_size_gb                = 80              # Reduced from 100 — sufficient for node workloads
+    disk_type                   = "pd-standard"   # Standard disk for cost optimization
+    spot                        = true            # Per-pool setting (overridden by use_spot_instances)
     initial_node_count          = 1
-    min_count                   = 0                # Per-zone min (using total counts instead)
-    max_count                   = 0                # Per-zone max (using total counts instead)
-    total_min_count             = 1                # Min 1 node — autoscaler adds nodes in other zones as needed for zonal PVCs
-    total_max_count             = 6                # Max 6 nodes — autoscaler adds nodes as requests exceed capacity
-    location_policy             = "ANY"            # Nodes can be in ANY zone for better spot availability
+    min_count                   = 0     # Per-zone min (using total counts instead)
+    max_count                   = 0     # Per-zone max (using total counts instead)
+    total_min_count             = 1     # Min 1 node — autoscaler adds nodes in other zones as needed for zonal PVCs
+    total_max_count             = 6     # Max 6 nodes — autoscaler adds nodes as requests exceed capacity
+    location_policy             = "ANY" # Nodes can be in ANY zone for better spot availability
     max_pods_per_node           = 110
     auto_repair                 = true
-    auto_upgrade                = true             # Auto-upgrade enabled with surge protection
-    max_surge                   = 1                # New nodes created before old ones removed
-    max_unavailable             = 0                # Zero unavailable during upgrades (surge-only strategy)
+    auto_upgrade                = true # Auto-upgrade enabled with surge protection
+    max_surge                   = 1    # New nodes created before old ones removed
+    max_unavailable             = 0    # Zero unavailable during upgrades (surge-only strategy)
     enable_secure_boot          = true
     enable_integrity_monitoring = true
     labels = {
@@ -226,16 +226,16 @@ node_labels = {
 # KMS Configuration
 create_kms_keyring = true
 kms_keyring_name   = "tesseract-prod-in-keyring"
-kms_location       = "asia-south1"  # Same region as GKE
+kms_location       = "asia-south1" # Same region as GKE
 enable_cmek        = true
 
 kms_keys = [
   # Infrastructure Keys
   {
     name             = "infra-secrets-encryption-key"
-    rotation_period  = "7776000s"  # 90 days
+    rotation_period  = "7776000s" # 90 days
     purpose          = "ENCRYPT_DECRYPT"
-    protection_level = "SOFTWARE"  # Use HSM for higher security
+    protection_level = "SOFTWARE" # Use HSM for higher security
     labels = {
       tier    = "infrastructure"
       purpose = "secrets-encryption"
@@ -305,10 +305,10 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = true
     labels = {
-      purpose     = "assets"
-      product     = "global"
-      region      = "in"
-      compliance  = "dpdpa"
+      purpose    = "assets"
+      product    = "global"
+      region     = "in"
+      compliance = "dpdpa"
     }
     lifecycle_rules = [
       {
@@ -341,10 +341,10 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = true
     labels = {
-      purpose     = "assets"
-      product     = "global"
-      region      = "au"
-      compliance  = "privacy-act"
+      purpose    = "assets"
+      product    = "global"
+      region     = "au"
+      compliance = "privacy-act"
     }
     lifecycle_rules = [
       {
@@ -377,19 +377,32 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = true
     labels = {
-      purpose     = "backups"
-      product     = "global"
-      region      = "in"
-      compliance  = "dpdpa"
+      purpose    = "backups"
+      product    = "global"
+      region     = "in"
+      compliance = "dpdpa"
     }
+    # Tiered cost-down: NEARLINE (0-90d) -> COLDLINE (90-365d) -> ARCHIVE (365-730d) -> Delete (>730d)
+    # Plus noncurrent-version cleanup (versioning is enabled).
     lifecycle_rules = [
+      {
+        action = {
+          type          = "SetStorageClass"
+          storage_class = "NEARLINE"
+        }
+        condition = {
+          age                   = 30
+          matches_storage_class = ["STANDARD"]
+        }
+      },
       {
         action = {
           type          = "SetStorageClass"
           storage_class = "COLDLINE"
         }
         condition = {
-          age = 180
+          age                   = 90
+          matches_storage_class = ["NEARLINE"]
         }
       },
       {
@@ -398,7 +411,26 @@ buckets = [
           storage_class = "ARCHIVE"
         }
         condition = {
-          age = 365
+          age                   = 365
+          matches_storage_class = ["COLDLINE"]
+        }
+      },
+      {
+        action    = { type = "Delete" }
+        condition = { age = 730 }
+      },
+      {
+        action = { type = "Delete" }
+        condition = {
+          with_state         = "ARCHIVED"
+          num_newer_versions = 3
+        }
+      },
+      {
+        action = { type = "Delete" }
+        condition = {
+          with_state                 = "ARCHIVED"
+          days_since_noncurrent_time = 90
         }
       }
     ]
@@ -415,19 +447,30 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = true
     labels = {
-      purpose     = "backups"
-      product     = "global"
-      region      = "au"
-      compliance  = "privacy-act"
+      purpose    = "backups"
+      product    = "global"
+      region     = "au"
+      compliance = "privacy-act"
     }
     lifecycle_rules = [
+      {
+        action = {
+          type          = "SetStorageClass"
+          storage_class = "NEARLINE"
+        }
+        condition = {
+          age                   = 30
+          matches_storage_class = ["STANDARD"]
+        }
+      },
       {
         action = {
           type          = "SetStorageClass"
           storage_class = "COLDLINE"
         }
         condition = {
-          age = 180
+          age                   = 90
+          matches_storage_class = ["NEARLINE"]
         }
       },
       {
@@ -436,7 +479,26 @@ buckets = [
           storage_class = "ARCHIVE"
         }
         condition = {
-          age = 365
+          age                   = 365
+          matches_storage_class = ["COLDLINE"]
+        }
+      },
+      {
+        action    = { type = "Delete" }
+        condition = { age = 730 }
+      },
+      {
+        action = { type = "Delete" }
+        condition = {
+          with_state         = "ARCHIVED"
+          num_newer_versions = 3
+        }
+      },
+      {
+        action = { type = "Delete" }
+        condition = {
+          with_state                 = "ARCHIVED"
+          days_since_noncurrent_time = 90
         }
       }
     ]
@@ -485,11 +547,11 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = false
     labels = {
-      purpose     = "hms-assets"
-      product     = "hms"
-      system      = "hospital-management"
-      region      = "in"
-      compliance  = "dpdpa"
+      purpose    = "hms-assets"
+      product    = "hms"
+      system     = "hospital-management"
+      region     = "in"
+      compliance = "dpdpa"
     }
     lifecycle_rules = [
       {
@@ -540,11 +602,11 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = false
     labels = {
-      purpose     = "hms-assets"
-      product     = "hms"
-      system      = "hospital-management"
-      region      = "au"
-      compliance  = "privacy-act"
+      purpose    = "hms-assets"
+      product    = "hms"
+      system     = "hospital-management"
+      region     = "au"
+      compliance = "privacy-act"
     }
     lifecycle_rules = [
       {
@@ -595,12 +657,13 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = true
     labels = {
-      purpose     = "hms-backups"
-      product     = "hms"
-      system      = "hospital-management"
-      region      = "in"
-      compliance  = "dpdpa"
+      purpose    = "hms-backups"
+      product    = "hms"
+      system     = "hospital-management"
+      region     = "in"
+      compliance = "dpdpa"
     }
+    # Tiered cost-down: STANDARD -> NEARLINE (30d) -> COLDLINE (90d) -> ARCHIVE (365d) -> Delete (730d)
     lifecycle_rules = [
       {
         action = {
@@ -608,7 +671,8 @@ buckets = [
           storage_class = "NEARLINE"
         }
         condition = {
-          age = 30
+          age                   = 30
+          matches_storage_class = ["STANDARD"]
         }
       },
       {
@@ -617,7 +681,8 @@ buckets = [
           storage_class = "COLDLINE"
         }
         condition = {
-          age = 90
+          age                   = 90
+          matches_storage_class = ["NEARLINE"]
         }
       },
       {
@@ -626,7 +691,26 @@ buckets = [
           storage_class = "ARCHIVE"
         }
         condition = {
-          age = 365
+          age                   = 365
+          matches_storage_class = ["COLDLINE"]
+        }
+      },
+      {
+        action    = { type = "Delete" }
+        condition = { age = 730 }
+      },
+      {
+        action = { type = "Delete" }
+        condition = {
+          with_state         = "ARCHIVED"
+          num_newer_versions = 3
+        }
+      },
+      {
+        action = { type = "Delete" }
+        condition = {
+          with_state                 = "ARCHIVED"
+          days_since_noncurrent_time = 90
         }
       }
     ]
@@ -643,11 +727,11 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = true
     labels = {
-      purpose     = "hms-backups"
-      product     = "hms"
-      system      = "hospital-management"
-      region      = "au"
-      compliance  = "privacy-act"
+      purpose    = "hms-backups"
+      product    = "hms"
+      system     = "hospital-management"
+      region     = "au"
+      compliance = "privacy-act"
     }
     lifecycle_rules = [
       {
@@ -656,7 +740,8 @@ buckets = [
           storage_class = "NEARLINE"
         }
         condition = {
-          age = 30
+          age                   = 30
+          matches_storage_class = ["STANDARD"]
         }
       },
       {
@@ -665,7 +750,8 @@ buckets = [
           storage_class = "COLDLINE"
         }
         condition = {
-          age = 90
+          age                   = 90
+          matches_storage_class = ["NEARLINE"]
         }
       },
       {
@@ -674,7 +760,26 @@ buckets = [
           storage_class = "ARCHIVE"
         }
         condition = {
-          age = 365
+          age                   = 365
+          matches_storage_class = ["COLDLINE"]
+        }
+      },
+      {
+        action    = { type = "Delete" }
+        condition = { age = 730 }
+      },
+      {
+        action = { type = "Delete" }
+        condition = {
+          with_state         = "ARCHIVED"
+          num_newer_versions = 3
+        }
+      },
+      {
+        action = { type = "Delete" }
+        condition = {
+          with_state                 = "ARCHIVED"
+          days_since_noncurrent_time = 90
         }
       }
     ]
@@ -691,12 +796,12 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = true
     labels = {
-      purpose     = "hms-patientrecords"
-      product     = "hms"
-      system      = "hospital-management"
-      region      = "in"
-      sensitive   = "true"
-      compliance  = "dpdpa"
+      purpose    = "hms-patientrecords"
+      product    = "hms"
+      system     = "hospital-management"
+      region     = "in"
+      sensitive  = "true"
+      compliance = "dpdpa"
     }
     lifecycle_rules = [
       {
@@ -740,12 +845,12 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = true
     labels = {
-      purpose     = "hms-patientrecords"
-      product     = "hms"
-      system      = "hospital-management"
-      region      = "au"
-      sensitive   = "true"
-      compliance  = "privacy-act"
+      purpose    = "hms-patientrecords"
+      product    = "hms"
+      system     = "hospital-management"
+      region     = "au"
+      sensitive  = "true"
+      compliance = "privacy-act"
     }
     lifecycle_rules = [
       {
@@ -793,10 +898,10 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = false
     labels = {
-      purpose     = "fanzone-assets"
-      product     = "fanzone"
-      region      = "in"
-      compliance  = "dpdpa"
+      purpose    = "fanzone-assets"
+      product    = "fanzone"
+      region     = "in"
+      compliance = "dpdpa"
     }
     lifecycle_rules = [
       {
@@ -829,10 +934,10 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = false
     labels = {
-      purpose     = "fanzone-assets"
-      product     = "fanzone"
-      region      = "au"
-      compliance  = "privacy-act"
+      purpose    = "fanzone-assets"
+      product    = "fanzone"
+      region     = "au"
+      compliance = "privacy-act"
     }
     lifecycle_rules = [
       {
@@ -870,11 +975,11 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = false
     labels = {
-      purpose     = "sportsbook-media"
-      product     = "fanzone"
-      region      = "in"
-      compliance  = "dpdpa"
-      ttl-days    = "65"
+      purpose    = "sportsbook-media"
+      product    = "fanzone"
+      region     = "in"
+      compliance = "dpdpa"
+      ttl-days   = "65"
     }
     lifecycle_rules = [
       # Auto-delete ALL objects after 65 days (5-day buffer over 60-day MongoDB post TTL)
@@ -913,7 +1018,7 @@ buckets = [
     storage_class               = "STANDARD"
     force_destroy               = false
     uniform_bucket_level_access = true
-    public_access_prevention    = "inherited"  # Allow public object reads via IAM
+    public_access_prevention    = "inherited" # Allow public object reads via IAM
     versioning                  = false
     labels = {
       purpose    = "homechef-public-media"
@@ -929,7 +1034,7 @@ buckets = [
           storage_class = "NEARLINE"
         }
         condition = {
-          age = 180  # Menu images stay STANDARD longer (frequently accessed)
+          age = 180 # Menu images stay STANDARD longer (frequently accessed)
         }
       }
     ]
@@ -958,8 +1063,8 @@ buckets = [
     storage_class               = "STANDARD"
     force_destroy               = false
     uniform_bucket_level_access = true
-    public_access_prevention    = "enforced"  # No public access ever
-    versioning                  = true        # Audit trail for compliance docs
+    public_access_prevention    = "enforced" # No public access ever
+    versioning                  = true       # Audit trail for compliance docs
     labels = {
       purpose    = "homechef-vendor-docs"
       product    = "homechef"
@@ -997,8 +1102,8 @@ buckets = [
         }
       }
     ]
-    cors         = []  # No direct browser access — API generates signed URLs for admin
-    iam_bindings = []  # Access only via homechef-prod-backend-sa (configured in WI stack)
+    cors         = [] # No direct browser access — API generates signed URLs for admin
+    iam_bindings = [] # Access only via homechef-prod-backend-sa (configured in WI stack)
   },
 
   # ===========================================================================
@@ -1014,10 +1119,10 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = true
     labels = {
-      purpose     = "bookkeeping-assets"
-      product     = "bookkeeping"
-      region      = "in"
-      compliance  = "dpdpa"
+      purpose    = "bookkeeping-assets"
+      product    = "bookkeeping"
+      region     = "in"
+      compliance = "dpdpa"
     }
     lifecycle_rules = [
       {
@@ -1059,10 +1164,10 @@ buckets = [
     public_access_prevention    = "enforced"
     versioning                  = true
     labels = {
-      purpose     = "bookkeeping-assets"
-      product     = "bookkeeping"
-      region      = "au"
-      compliance  = "privacy-act"
+      purpose    = "bookkeeping-assets"
+      product    = "bookkeeping"
+      region     = "au"
+      compliance = "privacy-act"
     }
     lifecycle_rules = [
       {
@@ -1160,7 +1265,7 @@ buckets = [
     storage_class               = "STANDARD"
     force_destroy               = false
     uniform_bucket_level_access = true
-    public_access_prevention    = "inherited"  # Allow public object reads via IAM
+    public_access_prevention    = "inherited" # Allow public object reads via IAM
     versioning                  = false
     labels = {
       purpose    = "marketplace-public"
@@ -1202,7 +1307,7 @@ buckets = [
     storage_class               = "STANDARD"
     force_destroy               = false
     uniform_bucket_level_access = true
-    public_access_prevention    = "inherited"  # Allow public object reads via IAM
+    public_access_prevention    = "inherited" # Allow public object reads via IAM
     versioning                  = false
     labels = {
       purpose    = "marketplace-public"
@@ -1290,6 +1395,61 @@ buckets = [
     ]
     iam_bindings = []
   },
+  # Mark8ly Postgres dump backups (CNPG / pg_dump CronJob target)
+  # Tiered cost-down: STANDARD -> NEARLINE (30d) -> COLDLINE (90d) -> ARCHIVE (365d) -> Delete (730d)
+  {
+    name                        = "tesseracthub-480811-mark8ly-pg-backups"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = false
+    labels = {
+      purpose    = "pg-backups"
+      product    = "marketplace"
+      region     = "in"
+      compliance = "dpdpa"
+    }
+    lifecycle_rules = [
+      {
+        action = {
+          type          = "SetStorageClass"
+          storage_class = "NEARLINE"
+        }
+        condition = {
+          age                   = 30
+          matches_storage_class = ["STANDARD"]
+        }
+      },
+      {
+        action = {
+          type          = "SetStorageClass"
+          storage_class = "COLDLINE"
+        }
+        condition = {
+          age                   = 90
+          matches_storage_class = ["NEARLINE"]
+        }
+      },
+      {
+        action = {
+          type          = "SetStorageClass"
+          storage_class = "ARCHIVE"
+        }
+        condition = {
+          age                   = 365
+          matches_storage_class = ["COLDLINE"]
+        }
+      },
+      {
+        action    = { type = "Delete" }
+        condition = { age = 730 }
+      }
+    ]
+    cors         = []
+    iam_bindings = []
+  },
 
   # ===========================================================================
   # BLOG - Engineering Blog Assets (public read, upload-only for blog SA)
@@ -1365,6 +1525,23 @@ docker_repositories = [
     labels = {
       product = "fanzone"
     }
+    cleanup_policies = [
+      {
+        id     = "delete-untagged-older-than-3d"
+        action = "DELETE"
+        condition = {
+          tag_state  = "UNTAGGED"
+          older_than = "259200s" # 3 days
+        }
+      },
+      {
+        id     = "keep-recent-tagged-versions"
+        action = "KEEP"
+        most_recent_versions = {
+          keep_count = 10
+        }
+      }
+    ]
   },
   {
     name        = "global"
@@ -1373,6 +1550,23 @@ docker_repositories = [
     labels = {
       product = "global"
     }
+    cleanup_policies = [
+      {
+        id     = "delete-untagged-older-than-3d"
+        action = "DELETE"
+        condition = {
+          tag_state  = "UNTAGGED"
+          older_than = "259200s"
+        }
+      },
+      {
+        id     = "keep-recent-tagged-versions"
+        action = "KEEP"
+        most_recent_versions = {
+          keep_count = 10
+        }
+      }
+    ]
   },
   {
     name        = "marketplace"
@@ -1381,6 +1575,139 @@ docker_repositories = [
     labels = {
       product = "marketplace"
     }
+    cleanup_policies = [
+      {
+        id     = "delete-untagged-older-than-3d"
+        action = "DELETE"
+        condition = {
+          tag_state  = "UNTAGGED"
+          older_than = "259200s"
+        }
+      },
+      {
+        id     = "keep-recent-tagged-versions"
+        action = "KEEP"
+        most_recent_versions = {
+          keep_count = 10
+        }
+      }
+    ]
+  }
+]
+
+# =============================================================================
+# Artifact Registry — Docker REMOTE (pull-through cache) Repositories
+# Cleanup: prune any cached image older than 3 days (re-fetched from upstream on demand).
+# =============================================================================
+
+remote_docker_repositories = [
+  {
+    name               = "docker-remote"
+    description        = "Public Docker Hub mirror — reduces Cloud NAT egress"
+    location           = "asia-south1"
+    remote_description = "docker.io mirror"
+    public_repository  = "DOCKER_HUB"
+    labels = {
+      purpose = "pull-through-cache"
+      product = "global"
+    }
+    cleanup_policies = [
+      {
+        id     = "delete-cached-older-than-3d"
+        action = "DELETE"
+        condition = {
+          older_than = "259200s" # 3 days
+        }
+      }
+    ]
+  },
+  {
+    name                  = "ghcr-remote"
+    description           = "ghcr.io mirror (authenticated via prod-tesserix-ghcr-token) — reduces Cloud NAT egress"
+    location              = "asia-south1"
+    remote_description    = "ghcr.io mirror (Sam123ben)"
+    common_repository_uri = "https://ghcr.io"
+    upstream_credentials = {
+      username                = "Sam123ben"
+      password_secret_version = "projects/849928263410/secrets/prod-tesserix-ghcr-token/versions/latest"
+    }
+    labels = {
+      purpose = "pull-through-cache"
+      product = "global"
+    }
+    cleanup_policies = [
+      {
+        id     = "delete-cached-older-than-3d"
+        action = "DELETE"
+        condition = {
+          older_than = "259200s"
+        }
+      }
+    ]
+  },
+  {
+    name                  = "ghcr-nexus-remote"
+    description           = "ghcr.io mirror for tesseract-nexus org (authenticated via prod-ghcr-token)"
+    location              = "asia-south1"
+    remote_description    = "ghcr.io mirror (tesseract-nexus)"
+    common_repository_uri = "https://ghcr.io"
+    upstream_credentials = {
+      username                = "tesseract-nexus"
+      password_secret_version = "projects/849928263410/secrets/prod-ghcr-token/versions/latest"
+    }
+    labels = {
+      purpose = "pull-through-cache"
+      product = "global"
+    }
+    cleanup_policies = [
+      {
+        id     = "delete-cached-older-than-3d"
+        action = "DELETE"
+        condition = {
+          older_than = "259200s"
+        }
+      }
+    ]
+  },
+  {
+    name                  = "k8s-remote"
+    description           = "registry.k8s.io mirror — reduces Cloud NAT egress for kube-system images"
+    location              = "asia-south1"
+    remote_description    = "registry.k8s.io mirror"
+    common_repository_uri = "https://registry.k8s.io"
+    labels = {
+      purpose = "pull-through-cache"
+      product = "global"
+    }
+    cleanup_policies = [
+      {
+        id     = "delete-cached-older-than-3d"
+        action = "DELETE"
+        condition = {
+          older_than = "259200s"
+        }
+      }
+    ]
+  },
+  {
+    name                  = "quay-remote"
+    description           = "quay.io mirror — reduces Cloud NAT egress"
+    location              = "asia-south1"
+    remote_description    = "quay.io mirror"
+    common_repository_uri = "https://quay.io"
+    labels = {
+      purpose = "pull-through-cache"
+      product = "global"
+    }
+    cleanup_policies = [
+      {
+        id     = "delete-cached-older-than-3d"
+        action = "DELETE"
+        condition = {
+          older_than = "259200s"
+        }
+      }
+    ]
   }
 ]
 
@@ -1438,27 +1765,27 @@ secrets = [
   # Auth Secrets
   # ===========================================================================
   {
-    secret_id = "prod-admin-init-secret"
-    labels = { tier = "auth", type = "admin", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Admin initialization secret" }
+    secret_id             = "prod-admin-init-secret"
+    labels                = { tier = "auth", type = "admin", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Admin initialization secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-jwt-secret"
-    labels = { tier = "auth", type = "jwt", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "JWT signing secret" }
+    secret_id             = "prod-jwt-secret"
+    labels                = { tier = "auth", type = "jwt", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "JWT signing secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-jwt-refresh-secret"
-    labels = { tier = "auth", type = "jwt", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "JWT refresh token secret" }
+    secret_id             = "prod-jwt-refresh-secret"
+    labels                = { tier = "auth", type = "jwt", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "JWT refresh token secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-encryption-key"
-    labels = { tier = "auth", type = "encryption", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "General encryption key" }
+    secret_id             = "prod-encryption-key"
+    labels                = { tier = "auth", type = "encryption", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "General encryption key" }
     replication_locations = [{ location = "asia-south1" }]
   },
 
@@ -1466,84 +1793,84 @@ secrets = [
   # Database Secrets - PostgreSQL Passwords
   # ===========================================================================
   {
-    secret_id = "prod-global-postgresql-password"
-    labels = { tier = "database", type = "postgresql", environment = "prod", namespace = "global" }
-    annotations = { "managed-by" = "terraform", "description" = "Global PostgreSQL password" }
+    secret_id             = "prod-global-postgresql-password"
+    labels                = { tier = "database", type = "postgresql", environment = "prod", namespace = "global" }
+    annotations           = { "managed-by" = "terraform", "description" = "Global PostgreSQL password" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-bookkeeping-postgresql-password"
-    labels = { tier = "database", type = "postgresql", environment = "prod", namespace = "bookkeeping" }
-    annotations = { "managed-by" = "terraform", "description" = "Bookkeeping PostgreSQL password" }
+    secret_id             = "prod-bookkeeping-postgresql-password"
+    labels                = { tier = "database", type = "postgresql", environment = "prod", namespace = "bookkeeping" }
+    annotations           = { "managed-by" = "terraform", "description" = "Bookkeeping PostgreSQL password" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-fanzone-postgresql-password"
-    labels = { tier = "database", type = "postgresql", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Fanzone PostgreSQL password" }
+    secret_id             = "prod-fanzone-postgresql-password"
+    labels                = { tier = "database", type = "postgresql", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Fanzone PostgreSQL password" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-homechef-postgresql-password"
-    labels = { tier = "database", type = "postgresql", environment = "prod", namespace = "homechef" }
-    annotations = { "managed-by" = "terraform", "description" = "Homechef PostgreSQL password" }
+    secret_id             = "prod-homechef-postgresql-password"
+    labels                = { tier = "database", type = "postgresql", environment = "prod", namespace = "homechef" }
+    annotations           = { "managed-by" = "terraform", "description" = "Homechef PostgreSQL password" }
     replication_locations = [{ location = "asia-south1" }]
   },
   # ===========================================================================
   # Database Secrets - PostgreSQL Certificates
   # ===========================================================================
   {
-    secret_id = "prod-postgresql-ca-cert"
-    labels = { tier = "database", type = "certificate", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "PostgreSQL CA certificate" }
+    secret_id             = "prod-postgresql-ca-cert"
+    labels                = { tier = "database", type = "certificate", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "PostgreSQL CA certificate" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postgresql-server-cert"
-    labels = { tier = "database", type = "certificate", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "PostgreSQL server certificate" }
+    secret_id             = "prod-postgresql-server-cert"
+    labels                = { tier = "database", type = "certificate", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "PostgreSQL server certificate" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postgresql-server-key"
-    labels = { tier = "database", type = "certificate", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "PostgreSQL server key" }
+    secret_id             = "prod-postgresql-server-key"
+    labels                = { tier = "database", type = "certificate", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "PostgreSQL server key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postgresql-global-ca-cert"
-    labels = { tier = "database", type = "certificate", environment = "prod", namespace = "global" }
-    annotations = { "managed-by" = "terraform", "description" = "Global PostgreSQL CA certificate" }
+    secret_id             = "prod-postgresql-global-ca-cert"
+    labels                = { tier = "database", type = "certificate", environment = "prod", namespace = "global" }
+    annotations           = { "managed-by" = "terraform", "description" = "Global PostgreSQL CA certificate" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postgresql-global-server-cert"
-    labels = { tier = "database", type = "certificate", environment = "prod", namespace = "global" }
-    annotations = { "managed-by" = "terraform", "description" = "Global PostgreSQL server certificate" }
+    secret_id             = "prod-postgresql-global-server-cert"
+    labels                = { tier = "database", type = "certificate", environment = "prod", namespace = "global" }
+    annotations           = { "managed-by" = "terraform", "description" = "Global PostgreSQL server certificate" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postgresql-global-server-key"
-    labels = { tier = "database", type = "certificate", environment = "prod", namespace = "global" }
-    annotations = { "managed-by" = "terraform", "description" = "Global PostgreSQL server key" }
+    secret_id             = "prod-postgresql-global-server-key"
+    labels                = { tier = "database", type = "certificate", environment = "prod", namespace = "global" }
+    annotations           = { "managed-by" = "terraform", "description" = "Global PostgreSQL server key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postgresql-bookkeeping-ca-cert"
-    labels = { tier = "database", type = "certificate", environment = "prod", namespace = "bookkeeping" }
-    annotations = { "managed-by" = "terraform", "description" = "Bookkeeping PostgreSQL CA certificate" }
+    secret_id             = "prod-postgresql-bookkeeping-ca-cert"
+    labels                = { tier = "database", type = "certificate", environment = "prod", namespace = "bookkeeping" }
+    annotations           = { "managed-by" = "terraform", "description" = "Bookkeeping PostgreSQL CA certificate" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postgresql-bookkeeping-server-cert"
-    labels = { tier = "database", type = "certificate", environment = "prod", namespace = "bookkeeping" }
-    annotations = { "managed-by" = "terraform", "description" = "Bookkeeping PostgreSQL server certificate" }
+    secret_id             = "prod-postgresql-bookkeeping-server-cert"
+    labels                = { tier = "database", type = "certificate", environment = "prod", namespace = "bookkeeping" }
+    annotations           = { "managed-by" = "terraform", "description" = "Bookkeeping PostgreSQL server certificate" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postgresql-bookkeeping-server-key"
-    labels = { tier = "database", type = "certificate", environment = "prod", namespace = "bookkeeping" }
-    annotations = { "managed-by" = "terraform", "description" = "Bookkeeping PostgreSQL server key" }
+    secret_id             = "prod-postgresql-bookkeeping-server-key"
+    labels                = { tier = "database", type = "certificate", environment = "prod", namespace = "bookkeeping" }
+    annotations           = { "managed-by" = "terraform", "description" = "Bookkeeping PostgreSQL server key" }
     replication_locations = [{ location = "asia-south1" }]
   },
 
@@ -1551,57 +1878,57 @@ secrets = [
   # Keycloak Secrets
   # ===========================================================================
   {
-    secret_id = "prod-keycloak-internal-admin-username"
-    labels = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Keycloak internal admin username" }
+    secret_id             = "prod-keycloak-internal-admin-username"
+    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Keycloak internal admin username" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-keycloak-internal-admin-password"
-    labels = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Keycloak internal admin password" }
+    secret_id             = "prod-keycloak-internal-admin-password"
+    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Keycloak internal admin password" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-keycloak-customer-admin-username"
-    labels = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Keycloak customer admin username" }
+    secret_id             = "prod-keycloak-customer-admin-username"
+    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Keycloak customer admin username" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-keycloak-customer-admin-password"
-    labels = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Keycloak customer admin password" }
+    secret_id             = "prod-keycloak-customer-admin-password"
+    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Keycloak customer admin password" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-keycloak-customer-admin-client-secret"
-    labels = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Keycloak customer admin client secret" }
+    secret_id             = "prod-keycloak-customer-admin-client-secret"
+    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Keycloak customer admin client secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-keycloak-customer-dashboard-client-secret"
-    labels = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Keycloak customer dashboard client secret" }
+    secret_id             = "prod-keycloak-customer-dashboard-client-secret"
+    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Keycloak customer dashboard client secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-keycloak-customer-onboarding-client-secret"
-    labels = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Keycloak customer onboarding client secret" }
+    secret_id             = "prod-keycloak-customer-onboarding-client-secret"
+    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Keycloak customer onboarding client secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-keycloak-admin-bff-client-secret"
-    labels = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Keycloak admin BFF client secret" }
+    secret_id             = "prod-keycloak-admin-bff-client-secret"
+    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Keycloak admin BFF client secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-keycloak-token-exchange-client-secret"
-    labels = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Keycloak token exchange client secret" }
+    secret_id             = "prod-keycloak-token-exchange-client-secret"
+    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Keycloak token exchange client secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
 
@@ -1609,21 +1936,21 @@ secrets = [
   # Customer Tier Secrets
   # ===========================================================================
   {
-    secret_id = "prod-customer-api-keys"
-    labels = { tier = "customer", type = "api-keys", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Customer API keys for integrations" }
+    secret_id             = "prod-customer-api-keys"
+    labels                = { tier = "customer", type = "api-keys", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Customer API keys for integrations" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-customer-credentials"
-    labels = { tier = "customer", type = "credentials", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Customer OAuth/SSO credentials" }
+    secret_id             = "prod-customer-credentials"
+    labels                = { tier = "customer", type = "credentials", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Customer OAuth/SSO credentials" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-customer-tenant-configs"
-    labels = { tier = "customer", type = "config", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Tenant-specific configurations" }
+    secret_id             = "prod-customer-tenant-configs"
+    labels                = { tier = "customer", type = "config", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Tenant-specific configurations" }
     replication_locations = [{ location = "asia-south1" }]
   },
 
@@ -1631,69 +1958,69 @@ secrets = [
   # Third-Party Secrets - Email/Communication
   # ===========================================================================
   {
-    secret_id = "prod-thirdparty-email"
-    labels = { tier = "thirdparty", type = "email", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "SendGrid API keys" }
+    secret_id             = "prod-thirdparty-email"
+    labels                = { tier = "thirdparty", type = "email", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "SendGrid API keys" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-thirdparty-messaging"
-    labels = { tier = "thirdparty", type = "messaging", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "FCM, Twilio, SMS gateway credentials" }
+    secret_id             = "prod-thirdparty-messaging"
+    labels                = { tier = "thirdparty", type = "messaging", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "FCM, Twilio, SMS gateway credentials" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-thirdparty-payment"
-    labels = { tier = "thirdparty", type = "payment", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Payment gateway credentials" }
+    secret_id             = "prod-thirdparty-payment"
+    labels                = { tier = "thirdparty", type = "payment", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Payment gateway credentials" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-sendgrid-api-key"
-    labels = { tier = "thirdparty", type = "email", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "SendGrid API key" }
+    secret_id             = "prod-sendgrid-api-key"
+    labels                = { tier = "thirdparty", type = "email", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "SendGrid API key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-ses-smtp-username"
-    labels = { tier = "thirdparty", type = "email", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "AWS SES SMTP username" }
+    secret_id             = "prod-ses-smtp-username"
+    labels                = { tier = "thirdparty", type = "email", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "AWS SES SMTP username" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-ses-smtp-password"
-    labels = { tier = "thirdparty", type = "email", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "AWS SES SMTP password" }
+    secret_id             = "prod-ses-smtp-password"
+    labels                = { tier = "thirdparty", type = "email", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "AWS SES SMTP password" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-ses-smtp-relay-username"
-    labels = { tier = "thirdparty", type = "email", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "SES SMTP relay username" }
+    secret_id             = "prod-ses-smtp-relay-username"
+    labels                = { tier = "thirdparty", type = "email", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "SES SMTP relay username" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-ses-smtp-relay-password"
-    labels = { tier = "thirdparty", type = "email", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "SES SMTP relay password" }
+    secret_id             = "prod-ses-smtp-relay-password"
+    labels                = { tier = "thirdparty", type = "email", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "SES SMTP relay password" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postal-api-key"
-    labels = { tier = "thirdparty", type = "email", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Postal API key" }
+    secret_id             = "prod-postal-api-key"
+    labels                = { tier = "thirdparty", type = "email", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Postal API key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postal-admin-credentials"
-    labels = { tier = "thirdparty", type = "email", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Postal admin credentials" }
+    secret_id             = "prod-postal-admin-credentials"
+    labels                = { tier = "thirdparty", type = "email", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Postal admin credentials" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mautic-api-password"
-    labels = { tier = "thirdparty", type = "marketing", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Mautic API password" }
+    secret_id             = "prod-mautic-api-password"
+    labels                = { tier = "thirdparty", type = "marketing", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Mautic API password" }
     replication_locations = [{ location = "asia-south1" }]
   },
 
@@ -1701,51 +2028,51 @@ secrets = [
   # Third-Party Secrets - APIs
   # ===========================================================================
   {
-    secret_id = "prod-cloudflare-api-token"
-    labels = { tier = "thirdparty", type = "api", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Cloudflare API token" }
+    secret_id             = "prod-cloudflare-api-token"
+    labels                = { tier = "thirdparty", type = "api", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Cloudflare API token" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-firebase-sa-key"
-    labels = { tier = "thirdparty", type = "firebase", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Firebase service account key" }
+    secret_id             = "prod-firebase-sa-key"
+    labels                = { tier = "thirdparty", type = "firebase", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Firebase service account key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-google-client-id"
-    labels = { tier = "thirdparty", type = "oauth", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Google OAuth client ID" }
+    secret_id             = "prod-google-client-id"
+    labels                = { tier = "thirdparty", type = "oauth", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Google OAuth client ID" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-google-client-secret"
-    labels = { tier = "thirdparty", type = "oauth", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Google OAuth client secret" }
+    secret_id             = "prod-google-client-secret"
+    labels                = { tier = "thirdparty", type = "oauth", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Google OAuth client secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-ghcr-token"
-    labels = { tier = "thirdparty", type = "registry", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "GitHub Container Registry token" }
+    secret_id             = "prod-ghcr-token"
+    labels                = { tier = "thirdparty", type = "registry", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "GitHub Container Registry token" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-ghcr-username"
-    labels = { tier = "thirdparty", type = "registry", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "GitHub Container Registry username" }
+    secret_id             = "prod-ghcr-username"
+    labels                = { tier = "thirdparty", type = "registry", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "GitHub Container Registry username" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-rapidapi-key"
-    labels = { tier = "thirdparty", type = "api", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "RapidAPI key" }
+    secret_id             = "prod-rapidapi-key"
+    labels                = { tier = "thirdparty", type = "api", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "RapidAPI key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-typesense-api-key"
-    labels = { tier = "thirdparty", type = "search", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Typesense API key" }
+    secret_id             = "prod-typesense-api-key"
+    labels                = { tier = "thirdparty", type = "search", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Typesense API key" }
     replication_locations = [{ location = "asia-south1" }]
   },
 
@@ -1753,21 +2080,21 @@ secrets = [
   # Location Services Secrets
   # ===========================================================================
   {
-    secret_id = "prod-location-service-google-api-key"
-    labels = { tier = "thirdparty", type = "location", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Google Maps API key" }
+    secret_id             = "prod-location-service-google-api-key"
+    labels                = { tier = "thirdparty", type = "location", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Google Maps API key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-location-service-locationiq-api-key"
-    labels = { tier = "thirdparty", type = "location", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "LocationIQ API key" }
+    secret_id             = "prod-location-service-locationiq-api-key"
+    labels                = { tier = "thirdparty", type = "location", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "LocationIQ API key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-location-service-mapbox-token"
-    labels = { tier = "thirdparty", type = "location", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Mapbox access token" }
+    secret_id             = "prod-location-service-mapbox-token"
+    labels                = { tier = "thirdparty", type = "location", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Mapbox access token" }
     replication_locations = [{ location = "asia-south1" }]
   },
 
@@ -1775,153 +2102,153 @@ secrets = [
   # Fanzone Secrets
   # ===========================================================================
   {
-    secret_id = "prod-fanzone-jwt-secret"
-    labels = { tier = "application", type = "jwt", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Fanzone JWT secret" }
+    secret_id             = "prod-fanzone-jwt-secret"
+    labels                = { tier = "application", type = "jwt", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Fanzone JWT secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-fanzone-mongodb-url"
-    labels = { tier = "database", type = "mongodb", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Fanzone MongoDB connection URL for external access" }
+    secret_id             = "prod-fanzone-mongodb-url"
+    labels                = { tier = "database", type = "mongodb", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Fanzone MongoDB connection URL for external access" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-fanzone-postgresql-url"
-    labels = { tier = "database", type = "postgresql", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Fanzone PostgreSQL URL (fanzone DB) for external access" }
+    secret_id             = "prod-fanzone-postgresql-url"
+    labels                = { tier = "database", type = "postgresql", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Fanzone PostgreSQL URL (fanzone DB) for external access" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-auth-database-url"
-    labels = { tier = "database", type = "postgresql", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Fanzone Auth PostgreSQL URL (fanzone_auth DB) for external access" }
+    secret_id             = "prod-fanzone-auth-database-url"
+    labels                = { tier = "database", type = "postgresql", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Fanzone Auth PostgreSQL URL (fanzone_auth DB) for external access" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-redis-url"
-    labels = { tier = "database", type = "redis", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Fanzone Redis URL for external access" }
+    secret_id             = "prod-fanzone-redis-url"
+    labels                = { tier = "database", type = "redis", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Fanzone Redis URL for external access" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-redis-password"
-    labels = { tier = "database", type = "redis", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Fanzone Redis password for external access" }
+    secret_id             = "prod-fanzone-redis-password"
+    labels                = { tier = "database", type = "redis", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Fanzone Redis password for external access" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-klipy-api-key"
-    labels = { tier = "thirdparty", type = "api-key", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Klipy GIF API key for media service" }
+    secret_id             = "prod-fanzone-klipy-api-key"
+    labels                = { tier = "thirdparty", type = "api-key", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Klipy GIF API key for media service" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-jwt-refresh-secret"
-    labels = { tier = "auth", type = "jwt", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Fanzone JWT refresh token secret" }
+    secret_id             = "prod-fanzone-jwt-refresh-secret"
+    labels                = { tier = "auth", type = "jwt", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Fanzone JWT refresh token secret" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-encryption-key"
-    labels = { tier = "auth", type = "encryption", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Fanzone AES-256 encryption key" }
+    secret_id             = "prod-fanzone-encryption-key"
+    labels                = { tier = "auth", type = "encryption", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Fanzone AES-256 encryption key" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-internal-api-key"
-    labels = { tier = "auth", type = "api-key", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Fanzone internal service-to-service API key" }
+    secret_id             = "prod-fanzone-internal-api-key"
+    labels                = { tier = "auth", type = "api-key", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Fanzone internal service-to-service API key" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-oauth-google-client-id"
-    labels = { tier = "auth", type = "oauth", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Google OAuth client ID" }
+    secret_id             = "prod-fanzone-oauth-google-client-id"
+    labels                = { tier = "auth", type = "oauth", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Google OAuth client ID" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-oauth-google-client-secret"
-    labels = { tier = "auth", type = "oauth", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Google OAuth client secret" }
+    secret_id             = "prod-fanzone-oauth-google-client-secret"
+    labels                = { tier = "auth", type = "oauth", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Google OAuth client secret" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-oauth-meta-client-id"
-    labels = { tier = "auth", type = "oauth", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Meta/Facebook OAuth client ID" }
+    secret_id             = "prod-fanzone-oauth-meta-client-id"
+    labels                = { tier = "auth", type = "oauth", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Meta/Facebook OAuth client ID" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-oauth-meta-client-secret"
-    labels = { tier = "auth", type = "oauth", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Meta/Facebook OAuth client secret" }
+    secret_id             = "prod-fanzone-oauth-meta-client-secret"
+    labels                = { tier = "auth", type = "oauth", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Meta/Facebook OAuth client secret" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-oauth-twitter-client-id"
-    labels = { tier = "auth", type = "oauth", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Twitter/X OAuth client ID" }
+    secret_id             = "prod-fanzone-oauth-twitter-client-id"
+    labels                = { tier = "auth", type = "oauth", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Twitter/X OAuth client ID" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-oauth-twitter-client-secret"
-    labels = { tier = "auth", type = "oauth", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Twitter/X OAuth client secret" }
+    secret_id             = "prod-fanzone-oauth-twitter-client-secret"
+    labels                = { tier = "auth", type = "oauth", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Twitter/X OAuth client secret" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-twilio-account-sid"
-    labels = { tier = "thirdparty", type = "twilio", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Twilio account SID for OTP" }
+    secret_id             = "prod-fanzone-twilio-account-sid"
+    labels                = { tier = "thirdparty", type = "twilio", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Twilio account SID for OTP" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-twilio-auth-token"
-    labels = { tier = "thirdparty", type = "twilio", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Twilio auth token for OTP" }
+    secret_id             = "prod-fanzone-twilio-auth-token"
+    labels                = { tier = "thirdparty", type = "twilio", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Twilio auth token for OTP" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-twilio-service-sid"
-    labels = { tier = "thirdparty", type = "twilio", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Twilio Verify service SID" }
+    secret_id             = "prod-fanzone-twilio-service-sid"
+    labels                = { tier = "thirdparty", type = "twilio", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Twilio Verify service SID" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-admin-init-secret"
-    labels = { tier = "auth", type = "admin", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Fanzone admin initialization secret" }
+    secret_id             = "prod-fanzone-admin-init-secret"
+    labels                = { tier = "auth", type = "admin", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Fanzone admin initialization secret" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-keycloak-client-secret"
-    labels = { tier = "auth", type = "keycloak", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Keycloak OIDC client secret for BFF" }
+    secret_id             = "prod-fanzone-keycloak-client-secret"
+    labels                = { tier = "auth", type = "keycloak", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Keycloak OIDC client secret for BFF" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-fanzone-keycloak-admin-client-secret"
-    labels = { tier = "auth", type = "keycloak", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Keycloak admin client secret for BFF" }
+    secret_id             = "prod-fanzone-keycloak-admin-client-secret"
+    labels                = { tier = "auth", type = "keycloak", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Keycloak admin client secret for BFF" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-session-secret"
-    labels = { tier = "auth", type = "session", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "Session signing secret for BFF" }
+    secret_id             = "prod-fanzone-session-secret"
+    labels                = { tier = "auth", type = "session", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "Session signing secret for BFF" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-cricketdata-api-key"
-    labels = { tier = "thirdparty", type = "api-key", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "CricketData.org API key" }
+    secret_id             = "prod-fanzone-cricketdata-api-key"
+    labels                = { tier = "thirdparty", type = "api-key", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "CricketData.org API key" }
     replication_locations = null
   },
   {
-    secret_id = "prod-fanzone-mysportsfeeds-api-key"
-    labels = { tier = "thirdparty", type = "api-key", environment = "prod", namespace = "fanzone" }
-    annotations = { "managed-by" = "terraform", "description" = "MySportsFeeds API key for NFL/NBA/NHL/MLB" }
+    secret_id             = "prod-fanzone-mysportsfeeds-api-key"
+    labels                = { tier = "thirdparty", type = "api-key", environment = "prod", namespace = "fanzone" }
+    annotations           = { "managed-by" = "terraform", "description" = "MySportsFeeds API key for NFL/NBA/NHL/MLB" }
     replication_locations = null
   },
 
@@ -1929,21 +2256,21 @@ secrets = [
   # Verification Secrets
   # ===========================================================================
   {
-    secret_id = "prod-verification-api-key"
-    labels = { tier = "thirdparty", type = "verification", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Verification service API key" }
+    secret_id             = "prod-verification-api-key"
+    labels                = { tier = "thirdparty", type = "verification", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Verification service API key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-verification-email-api-key"
-    labels = { tier = "thirdparty", type = "verification", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Email verification API key" }
+    secret_id             = "prod-verification-email-api-key"
+    labels                = { tier = "thirdparty", type = "verification", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Email verification API key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-verification-encryption-key"
-    labels = { tier = "thirdparty", type = "verification", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Verification encryption key" }
+    secret_id             = "prod-verification-encryption-key"
+    labels                = { tier = "thirdparty", type = "verification", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Verification encryption key" }
     replication_locations = [{ location = "asia-south1" }]
   },
 
@@ -1951,33 +2278,33 @@ secrets = [
   # Legacy Secrets (pre-existing in GCP)
   # ===========================================================================
   {
-    secret_id = "prod-db-password"
-    labels = { tier = "infrastructure", type = "database", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Database password" }
+    secret_id             = "prod-db-password"
+    labels                = { tier = "infrastructure", type = "database", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Database password" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-fcm-credentials"
-    labels = { tier = "thirdparty", type = "messaging", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Firebase Cloud Messaging credentials" }
+    secret_id             = "prod-fcm-credentials"
+    labels                = { tier = "thirdparty", type = "messaging", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Firebase Cloud Messaging credentials" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-maps-api-key"
-    labels = { tier = "thirdparty", type = "api", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Google Maps API key" }
+    secret_id             = "prod-maps-api-key"
+    labels                = { tier = "thirdparty", type = "api", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Google Maps API key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-razorpay-key"
-    labels = { tier = "thirdparty", type = "payment", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Razorpay payment gateway key" }
+    secret_id             = "prod-razorpay-key"
+    labels                = { tier = "thirdparty", type = "payment", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Razorpay payment gateway key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-stripe-key"
-    labels = { tier = "thirdparty", type = "payment", environment = "prod" }
-    annotations = { "managed-by" = "terraform", "description" = "Stripe payment gateway key" }
+    secret_id             = "prod-stripe-key"
+    labels                = { tier = "thirdparty", type = "payment", environment = "prod" }
+    annotations           = { "managed-by" = "terraform", "description" = "Stripe payment gateway key" }
     replication_locations = [{ location = "asia-south1" }]
   },
 
@@ -1985,33 +2312,33 @@ secrets = [
   # Marketplace Secrets — Platform (auth-bff, openfga, shared)
   # ===========================================================================
   {
-    secret_id = "prod-mp-auth-bff-cookie-encryption-key"
-    labels = { tier = "application", type = "encryption", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Auth BFF cookie encryption key (auto-generated)" }
+    secret_id             = "prod-mp-auth-bff-cookie-encryption-key"
+    labels                = { tier = "application", type = "encryption", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Auth BFF cookie encryption key (auto-generated)" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-auth-bff-csrf-secret"
-    labels = { tier = "application", type = "csrf", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Auth BFF CSRF secret (auto-generated)" }
+    secret_id             = "prod-mp-auth-bff-csrf-secret"
+    labels                = { tier = "application", type = "csrf", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Auth BFF CSRF secret (auto-generated)" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-openfga-preshared-key"
-    labels = { tier = "application", type = "auth", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "OpenFGA preshared key (auto-generated)" }
+    secret_id             = "prod-mp-openfga-preshared-key"
+    labels                = { tier = "application", type = "auth", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "OpenFGA preshared key (auto-generated)" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-shared-internal-service-key"
-    labels = { tier = "application", type = "auth", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Shared internal service-to-service key (auto-generated)" }
+    secret_id             = "prod-mp-shared-internal-service-key"
+    labels                = { tier = "application", type = "auth", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Shared internal service-to-service key (auto-generated)" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-openfga-db-uri"
-    labels = { tier = "database", type = "postgresql", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "OpenFGA full database URI" }
+    secret_id             = "prod-mp-openfga-db-uri"
+    labels                = { tier = "database", type = "postgresql", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "OpenFGA full database URI" }
     replication_locations = [{ location = "asia-south1" }]
   },
 
@@ -2019,27 +2346,27 @@ secrets = [
   # Marketplace Secrets — Third-Party Integrations
   # ===========================================================================
   {
-    secret_id = "prod-mp-stripe-secret-key"
-    labels = { tier = "thirdparty", type = "payment", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace Stripe secret key" }
+    secret_id             = "prod-mp-stripe-secret-key"
+    labels                = { tier = "thirdparty", type = "payment", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace Stripe secret key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-stripe-webhook-secret"
-    labels = { tier = "thirdparty", type = "payment", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace Stripe webhook secret" }
+    secret_id             = "prod-mp-stripe-webhook-secret"
+    labels                = { tier = "thirdparty", type = "payment", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace Stripe webhook secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-growthbook-api-key"
-    labels = { tier = "thirdparty", type = "feature-flags", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "GrowthBook feature flags API key" }
+    secret_id             = "prod-mp-growthbook-api-key"
+    labels                = { tier = "thirdparty", type = "feature-flags", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "GrowthBook feature flags API key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-identity-platform-smtp-password"
-    labels = { tier = "thirdparty", type = "email", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Identity Platform SMTP password" }
+    secret_id             = "prod-mp-identity-platform-smtp-password"
+    labels                = { tier = "thirdparty", type = "email", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Identity Platform SMTP password" }
     replication_locations = [{ location = "asia-south1" }]
   },
 
@@ -2047,45 +2374,45 @@ secrets = [
   # Marketplace Secrets — Client Secrets & Auth
   # ===========================================================================
   {
-    secret_id = "prod-mp-platform-client-secret"
-    labels = { tier = "application", type = "oauth", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Platform OAuth client secret" }
+    secret_id             = "prod-mp-platform-client-secret"
+    labels                = { tier = "application", type = "oauth", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Platform OAuth client secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-admin-client-secret"
-    labels = { tier = "application", type = "oauth", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace admin OAuth client secret" }
+    secret_id             = "prod-mp-admin-client-secret"
+    labels                = { tier = "application", type = "oauth", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace admin OAuth client secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-storefront-client-secret"
-    labels = { tier = "application", type = "oauth", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace storefront OAuth client secret" }
+    secret_id             = "prod-mp-storefront-client-secret"
+    labels                = { tier = "application", type = "oauth", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace storefront OAuth client secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-openfga-marketplace-store-id"
-    labels = { tier = "application", type = "auth", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "OpenFGA marketplace store ID" }
+    secret_id             = "prod-mp-openfga-marketplace-store-id"
+    labels                = { tier = "application", type = "auth", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "OpenFGA marketplace store ID" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-openfga-platform-store-id"
-    labels = { tier = "application", type = "auth", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "OpenFGA platform store ID" }
+    secret_id             = "prod-mp-openfga-platform-store-id"
+    labels                = { tier = "application", type = "auth", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "OpenFGA platform store ID" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-verification-encryption-key"
-    labels = { tier = "application", type = "encryption", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Verification encryption key" }
+    secret_id             = "prod-mp-verification-encryption-key"
+    labels                = { tier = "application", type = "encryption", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Verification encryption key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-mp-admin-csrf-secret"
-    labels = { tier = "application", type = "csrf", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace admin CSRF secret" }
+    secret_id             = "prod-mp-admin-csrf-secret"
+    labels                = { tier = "application", type = "csrf", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace admin CSRF secret" }
     replication_locations = [{ location = "asia-south1" }]
   },
 
@@ -2093,57 +2420,57 @@ secrets = [
   # Marketplace Secrets — Pre-existing (already in GCP/state)
   # ===========================================================================
   {
-    secret_id = "prod-marketplace-api-key"
-    labels = { tier = "application", type = "api-key", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace API key" }
+    secret_id             = "prod-marketplace-api-key"
+    labels                = { tier = "application", type = "api-key", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace API key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-marketplace-encryption-key"
-    labels = { tier = "application", type = "encryption", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace encryption key" }
+    secret_id             = "prod-marketplace-encryption-key"
+    labels                = { tier = "application", type = "encryption", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace encryption key" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-marketplace-google-translate-api-key"
-    labels = { tier = "thirdparty", type = "api-key", environment = "prod", product = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Google Translate API key for marketplace" }
+    secret_id             = "prod-marketplace-google-translate-api-key"
+    labels                = { tier = "thirdparty", type = "api-key", environment = "prod", product = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Google Translate API key for marketplace" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-marketplace-jwt-secret"
-    labels = { tier = "auth", type = "jwt", environment = "prod", namespace = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace JWT signing secret" }
-    replication_locations = null  # Uses auto replication (existing)
+    secret_id             = "prod-marketplace-jwt-secret"
+    labels                = { tier = "auth", type = "jwt", environment = "prod", namespace = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace JWT signing secret" }
+    replication_locations = null # Uses auto replication (existing)
   },
   {
-    secret_id = "prod-marketplace-postgresql-password"
-    labels = { tier = "database", type = "postgresql", environment = "prod", namespace = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace PostgreSQL password" }
+    secret_id             = "prod-marketplace-postgresql-password"
+    labels                = { tier = "database", type = "postgresql", environment = "prod", namespace = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace PostgreSQL password" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-marketplace-redis-password"
-    labels = { tier = "database", type = "redis", environment = "prod", namespace = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace Redis password" }
+    secret_id             = "prod-marketplace-redis-password"
+    labels                = { tier = "database", type = "redis", environment = "prod", namespace = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace Redis password" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postgresql-marketplace-ca-cert"
-    labels = { tier = "database", type = "certificate", environment = "prod", namespace = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace PostgreSQL CA certificate" }
+    secret_id             = "prod-postgresql-marketplace-ca-cert"
+    labels                = { tier = "database", type = "certificate", environment = "prod", namespace = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace PostgreSQL CA certificate" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postgresql-marketplace-server-cert"
-    labels = { tier = "database", type = "certificate", environment = "prod", namespace = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace PostgreSQL server certificate" }
+    secret_id             = "prod-postgresql-marketplace-server-cert"
+    labels                = { tier = "database", type = "certificate", environment = "prod", namespace = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace PostgreSQL server certificate" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
-    secret_id = "prod-postgresql-marketplace-server-key"
-    labels = { tier = "database", type = "certificate", environment = "prod", namespace = "marketplace" }
-    annotations = { "managed-by" = "terraform", "description" = "Marketplace PostgreSQL server key" }
+    secret_id             = "prod-postgresql-marketplace-server-key"
+    labels                = { tier = "database", type = "certificate", environment = "prod", namespace = "marketplace" }
+    annotations           = { "managed-by" = "terraform", "description" = "Marketplace PostgreSQL server key" }
     replication_locations = [{ location = "asia-south1" }]
   }
 ]
@@ -2158,11 +2485,11 @@ enable_k8s_bootstrap = true
 install_cert_manager       = true
 cert_manager_namespace     = "cert-manager"
 cert_manager_chart_version = "v1.13.3"
-cert_manager_replicas      = 2  # HA for production
+cert_manager_replicas      = 2 # HA for production
 
 # Cloudflare DNS01 Challenge
 # Values provided via TF_VAR_* environment variables
-enable_cloudflare_dns = true  # Set to true when cloudflare_api_token is provided
+enable_cloudflare_dns = true # Set to true when cloudflare_api_token is provided
 cloudflare_domain     = "tesseracthub.app"
 letsencrypt_email     = "samyak.rout@gmail.com"
 letsencrypt_issuer    = "letsencrypt-prod"
@@ -2174,7 +2501,7 @@ kong_chart_version      = "2.33.0"
 kong_ingress_class      = "kong"
 kong_proxy_service_type = "LoadBalancer"
 kong_admin_enabled      = false
-kong_replicas           = 2  # HA for production
+kong_replicas           = 2 # HA for production
 
 # ArgoCD
 install_argocd              = true
@@ -2182,7 +2509,7 @@ argocd_namespace            = "argocd"
 argocd_chart_version        = "7.7.23"
 argocd_image_tag            = "v2.13.4"
 argocd_server_insecure      = true
-argocd_server_replicas      = 2  # HA for production
+argocd_server_replicas      = 2 # HA for production
 argocd_controller_replicas  = 2
 argocd_repo_server_replicas = 2
 
@@ -2231,7 +2558,7 @@ argocd_ingress_tls     = true
 #   export TF_VAR_google_oauth_client_id="your-client-id.apps.googleusercontent.com"
 #   export TF_VAR_google_oauth_client_secret="your-client-secret"
 argocd_enable_sso    = true
-argocd_admin_enabled = true  # Keep admin login enabled as fallback while Google SSO is being configured
+argocd_admin_enabled = true # Keep admin login enabled as fallback while Google SSO is being configured
 argocd_url           = "https://argocd.tesseracthub.app"
 argocd_admin_users = [
   "samyak.rout@gmail.com"
@@ -2243,17 +2570,17 @@ argocd_admin_users = [
 
 # ArgoCD Repository
 argocd_repo_url          = "https://github.com/tesserix/tesserix-k8s.git"
-argocd_repo_revision     = "main"  # Use main branch for production
+argocd_repo_revision     = "main" # Use main branch for production
 argocd_bootstrap_enabled = true
 argocd_repo_auth_method  = "github-app"
 
 # Sealed Secrets
-install_sealed_secrets            = true
-sealed_secrets_namespace          = "sealed-secrets"
-sealed_secrets_chart_version      = "2.13.3"
-generate_sealed_secrets_cert      = false  # Use existing from GitHub Secrets
-use_existing_sealed_secrets_cert  = true   # Certs provided via TF_VAR_sealed_secrets_tls_*
-sealed_secrets_cert_organization  = "TesseractHub"
+install_sealed_secrets           = true
+sealed_secrets_namespace         = "sealed-secrets"
+sealed_secrets_chart_version     = "2.13.3"
+generate_sealed_secrets_cert     = false # Use existing from GitHub Secrets
+use_existing_sealed_secrets_cert = true  # Certs provided via TF_VAR_sealed_secrets_tls_*
+sealed_secrets_cert_organization = "TesseractHub"
 
 # =============================================================================
 # Workload Identity Configuration
@@ -2644,8 +2971,8 @@ service_accounts = [
         kubernetes_service_account = "default"
       }
     ]
-    bucket_bindings  = []
-    secret_bindings  = []
+    bucket_bindings = []
+    secret_bindings = []
   },
   # App Secrets HMS
   {
@@ -2662,8 +2989,8 @@ service_accounts = [
         kubernetes_service_account = "default"
       }
     ]
-    bucket_bindings  = []
-    secret_bindings  = []
+    bucket_bindings = []
+    secret_bindings = []
   },
   # App Secrets Fanzone
   # All fanzone Knative services use this GCP SA via Workload Identity
@@ -2709,7 +3036,7 @@ service_accounts = [
         role   = "roles/storage.objectAdmin"
       },
     ]
-    secret_bindings  = []
+    secret_bindings = []
   },
   # App Secrets Homechef
   {
@@ -2726,8 +3053,8 @@ service_accounts = [
         kubernetes_service_account = "default"
       }
     ]
-    bucket_bindings  = []
-    secret_bindings  = []
+    bucket_bindings = []
+    secret_bindings = []
   },
   # App Secrets Bookkeeping
   {
@@ -2744,8 +3071,8 @@ service_accounts = [
         kubernetes_service_account = "default"
       }
     ]
-    bucket_bindings  = []
-    secret_bindings  = []
+    bucket_bindings = []
+    secret_bindings = []
   },
   # App Secrets External Secrets Operator
   {
@@ -2762,8 +3089,8 @@ service_accounts = [
         kubernetes_service_account = "external-secrets"
       }
     ]
-    bucket_bindings  = []
-    secret_bindings  = []
+    bucket_bindings = []
+    secret_bindings = []
   },
 
   # ===========================================================================
@@ -2784,8 +3111,8 @@ service_accounts = [
         kubernetes_service_account = "notification-service"
       }
     ]
-    bucket_bindings  = []
-    secret_bindings  = []
+    bucket_bindings = []
+    secret_bindings = []
   },
   # Infrastructure Backend Secrets
   {
@@ -2803,8 +3130,8 @@ service_accounts = [
         kubernetes_service_account = "infra-backend"
       }
     ]
-    bucket_bindings  = []
-    secret_bindings  = []
+    bucket_bindings = []
+    secret_bindings = []
   },
   # Customer Tenant Secrets
   {
@@ -2826,8 +3153,8 @@ service_accounts = [
         kubernetes_service_account = "tenant-service"
       }
     ]
-    bucket_bindings  = []
-    secret_bindings  = []
+    bucket_bindings = []
+    secret_bindings = []
   },
   # Third-Party Integration Secrets
   {
@@ -2849,8 +3176,8 @@ service_accounts = [
         kubernetes_service_account = "payment-service"
       }
     ]
-    bucket_bindings  = []
-    secret_bindings  = []
+    bucket_bindings = []
+    secret_bindings = []
   },
   # QR Service
   {
@@ -2880,7 +3207,7 @@ service_accounts = [
         role   = "roles/storage.legacyBucketReader"
       }
     ]
-    secret_bindings  = []
+    secret_bindings = []
   },
 
   # ===========================================================================
@@ -2987,10 +3314,10 @@ service_accounts = [
     workload_identity_bindings = [
       { namespace = "marketplace", kubernetes_service_account = "tenant-service" }
     ]
-    bucket_bindings  = []
+    bucket_bindings = []
     secret_bindings = [
       { secret_id = "prod-mp-shared-internal-service-key", role = "roles/secretmanager.secretAccessor" },
-      { secret_id = "prod-mp-openfga-preshared-key",       role = "roles/secretmanager.secretAccessor" }
+      { secret_id = "prod-mp-openfga-preshared-key", role = "roles/secretmanager.secretAccessor" }
     ]
   },
 
@@ -3018,17 +3345,17 @@ service_accounts = [
       { namespace = "marketplace", kubernetes_service_account = "mp-marketing" },
       { namespace = "marketplace", kubernetes_service_account = "mp-tax" }
     ]
-    bucket_bindings  = []
-    secret_bindings  = []
+    bucket_bindings = []
+    secret_bindings = []
   },
 
   # ===========================================================================
   # BLOG - Blog Assets Writer (upload-only to GCS public bucket)
   # ===========================================================================
   {
-    name         = "blog-assets-writer"
-    display_name = "Blog Assets Writer"
-    description  = "Upload-only access to tesserix-blog-assets GCS bucket for blog image uploads"
+    name          = "blog-assets-writer"
+    display_name  = "Blog Assets Writer"
+    description   = "Upload-only access to tesserix-blog-assets GCS bucket for blog image uploads"
     project_roles = []
     workload_identity_bindings = [
       { namespace = "tesserix", kubernetes_service_account = "tesserix-blog" }
@@ -3160,7 +3487,7 @@ app_secrets = [
 # =============================================================================
 
 enable_communication_services = true
-enable_pubsub_queues          = true  # Enable for production
+enable_pubsub_queues          = true # Enable for production
 
 # =============================================================================
 # GitHub ARC Configuration
@@ -3178,10 +3505,10 @@ runner_scale_sets = [
   {
     name              = "tesserix-runner"
     github_config_url = "https://github.com/tesserix"
-    min_runners       = 1       # 1 warm runner always ready (scales up on demand)
-    max_runners       = 15      # Up to 15 concurrent jobs
+    min_runners       = 1  # 1 warm runner always ready (scales up on demand)
+    max_runners       = 15 # Up to 15 concurrent jobs
     runner_group      = "default"
-    runner_image      = "ghcr.io/actions/actions-runner:latest"  # Switch to custom ghcr.io/tesserix/arc-runner:latest once built
+    runner_image      = "ghcr.io/actions/actions-runner:latest" # Switch to custom ghcr.io/tesserix/arc-runner:latest once built
     resources = {
       limits = {
         cpu    = "3500m"
@@ -3192,7 +3519,7 @@ runner_scale_sets = [
         memory = "512Mi"
       }
     }
-    node_selector = {}       # Run on existing optimized pool (no dedicated CI nodes)
+    node_selector = {} # Run on existing optimized pool (no dedicated CI nodes)
     tolerations   = []
   }
 ]
