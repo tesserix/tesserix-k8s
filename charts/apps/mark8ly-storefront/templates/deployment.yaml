@@ -93,6 +93,18 @@ spec:
                 secretKeyRef:
                   name: mark8ly-marketplace-api-internal-auth
                   key: INTERNAL_AUTH_SECRET
+            # Storefront-key gate. marketplace-api's storefront engine
+            # checks `X-Storefront-Key` on every /api/v1/storefront/...
+            # call. Without this env, the proxy in apps/storefront/app/api
+            # silently strips the header and every authenticated request
+            # (account, orders, addresses, gift-cards, …) gets blanket
+            # 404'd by RequireStorefrontKey. Same secret marketplace-api-storefront
+            # mounts on its receiving side.
+            - name: MARKETPLACE_STOREFRONT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-marketplace-api-storefront-key
+                  key: STOREFRONT_KEY
           # Probes hit a static API health route, not /. SSR'ing the
           # homepage was timing out under cold-start at the default 1s
           # probe timeout and triggering false-positive restarts.
