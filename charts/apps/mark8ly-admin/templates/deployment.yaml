@@ -80,6 +80,16 @@ spec:
                   name: mark8ly-otto
                   key: INTERNAL_AUTH_SECRET
                   optional: true
+            # Cross-TLD admin handoff: HMAC-signs the short-lived
+            # handoff JWT used to bridge the canonical .mark8ly.com
+            # session to a custom admin domain (admin.<merchant-tld>).
+            # Same secret as auth-bff, storefront, onboarding —
+            # verifying the handoff requires both sides hold the key.
+            - name: SESSION_ENCRYPT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-session
+                  key: SESSION_ENCRYPT_KEY
           # Probes hit a static API health route, not /. Hitting /
           # forces the auth middleware to redirect unauthenticated probe
           # traffic to /login, which kubelet logs as
