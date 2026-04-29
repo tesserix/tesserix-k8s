@@ -1,0 +1,44 @@
+namespace: social
+name: social-platform-api
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/social-platform-api
+  migrateTarget: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/social-platform-api
+  tag: "latest"
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+service:
+  type: ClusterIP
+  port: 8081
+
+env: devtest
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+database:
+  host: social-postgres-rw.social.svc.cluster.local
+  port: 5432
+  name: social_platform_api
+  secretName: social-postgres-platform-api
+  sslmode: require
+
+# Service-to-service JWT verification — minted by auth-bff, verified here.
+internalJwtSecretName: social-internal-jwt
+
+# Redis for scheduler queue (Phase 1+).
+redis:
+  url: "redis://redis.redis-marketplace.svc.cluster.local:6379"
+
+keda:
+  enabled: false
+
+pdb:
+  enabled: false

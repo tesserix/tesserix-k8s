@@ -1,0 +1,38 @@
+namespace: social
+name: social-reports-agent
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/social-reports-agent
+  tag: "latest"
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+service:
+  type: ClusterIP
+  port: 8090
+
+env: devtest
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+# LLM provider — switchable via env. The corresponding API key is read
+# from the social-llm Secret (created by ExternalSecret).
+llm:
+  provider: anthropic
+  model: claude-opus-4-7
+
+# Where to fetch analytics from.
+platformApiUrl: "http://social-platform-api.social.svc.cluster.local:8081"
+
+keda:
+  enabled: false
+
+pdb:
+  enabled: false

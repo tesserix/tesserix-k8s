@@ -1,0 +1,28 @@
+{{- if .Values.networkPolicy.enabled }}
+# Allow the CNPG operator (in cnpg-system) to reach pods on port 8000
+# for instance management. Without this, replicas never start.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.clusterName }}-allow-cnpg-system
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: tesserix-social
+    app.kubernetes.io/component: database
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: {{ .Values.clusterName }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.cnpgSystemNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 5432
+{{- end }}

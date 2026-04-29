@@ -1,0 +1,71 @@
+{{- if not .Values.hibernate }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: tesserix-social
+    app.kubernetes.io/component: database
+spec:
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.imageName }}
+
+  bootstrap:
+    initdb:
+      database: {{ .Values.bootstrap.primaryDatabase }}
+      owner: {{ .Values.bootstrap.primaryOwner }}
+      secret:
+        name: {{ .Values.bootstrap.primarySecret }}
+      postInitSQL:
+        # Create the auth_bff role + database. Password is reconciled by
+        # the CNPG operator via spec.managed.roles below — postInitSQL
+        # itself can't reference Kubernetes secrets.
+        - "CREATE ROLE {{ .Values.bootstrap.secondaryOwner }} LOGIN"
+        - "CREATE DATABASE {{ .Values.bootstrap.secondaryDatabase }} OWNER {{ .Values.bootstrap.secondaryOwner }}"
+
+  storage:
+    size: {{ .Values.storageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  walStorage:
+    size: {{ .Values.walStorageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  resources:
+{{ toYaml .Values.resources | indent 4 }}
+
+  postgresql:
+    parameters:
+      max_connections: "100"
+      shared_buffers: "256MB"
+      wal_level: "logical"
+      ssl_min_protocol_version: "TLSv1.3"
+      ssl_max_protocol_version: "TLSv1.3"
+      idle_in_transaction_session_timeout: "300000"
+      statement_timeout: "120000"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+
+  managed:
+    roles:
+      - name: {{ .Values.bootstrap.secondaryOwner }}
+        login: true
+        passwordSecret:
+          name: {{ .Values.bootstrap.secondarySecret }}
+
+  {{- if .Values.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.backup.destinationPath | quote }}
+      googleCredentials:
+        gkeEnvironment: true
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+    retentionPolicy: {{ .Values.backup.retentionPolicy | quote }}
+  {{- end }}
+{{- end }}
