@@ -1,0 +1,147 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sm-version-cleanup.fullname" . }}-script
+  namespace: {{ include "sm-version-cleanup.namespace" . }}
+  labels:
+    {{- include "sm-version-cleanup.labels" . | nindent 4 }}
+data:
+  cleanup.sh: |
+    #!/bin/sh
+    # =============================================================================
+    # Secret Manager version retention cleanup
+    # =============================================================================
+    # Keeps the latest KEEP active versions per secret in PROJECT and destroys
+    # older ones. "Active" means state != DESTROYED (i.e. ENABLED or DISABLED) —
+    # those are the versions that incur replica-storage billing.
+    #
+    # Auth: relies on Workload Identity bound to the GSA referenced by the SA's
+    # iam.gke.io/gcp-service-account annotation. The GSA must hold the project
+    # role roles/secretmanager.secretVersionManager.
+    #
+    # Idempotent: re-running has no effect once each secret already has <= KEEP
+    # active versions. Safe to run on any schedule.
+    # =============================================================================
+
+    set -eu
+
+    PROJECT="${PROJECT:?PROJECT env var required}"
+    KEEP="${KEEP:-2}"
+    DESTROY="${DESTROY:-false}"
+    NAME_FILTER="${NAME_FILTER:-}"
+
+    log()   { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*"; }
+
+    log "============================================="
+    log "Secret Manager version retention cleanup"
+    log "  project:    $PROJECT"
+    log "  keep:       $KEEP newest active versions per secret"
+    log "  mode:       $([ "$DESTROY" = "true" ] && echo EXECUTE || echo DRY-RUN)"
+    log "  filter:     ${NAME_FILTER:-<all secrets>}"
+    log "  gcloud:     $(gcloud --version 2>/dev/null | head -1)"
+    log "  identity:   $(gcloud auth list --filter=status:ACTIVE --format='value(account)' 2>/dev/null || echo unknown)"
+    log "============================================="
+
+    # --- Sanity checks ---
+    case "$KEEP" in
+      ''|*[!0-9]*) log "ERROR: KEEP must be a positive integer (got '$KEEP')"; exit 2 ;;
+    esac
+    if [ "$KEEP" -lt 1 ]; then
+      log "ERROR: KEEP must be >= 1 (got $KEEP)"
+      exit 2
+    fi
+
+    # --- List secrets ---
+    LIST_FILTER=""
+    if [ -n "$NAME_FILTER" ]; then
+      LIST_FILTER="--filter=name~${NAME_FILTER}"
+    fi
+
+    SECRETS_FILE=$(mktemp)
+    if ! gcloud secrets list --project="$PROJECT" $LIST_FILTER \
+         --format="value(name)" > "$SECRETS_FILE" 2>&1; then
+      log "ERROR: failed to list secrets: $(cat "$SECRETS_FILE")"
+      rm -f "$SECRETS_FILE"
+      exit 1
+    fi
+
+    TOTAL=$(wc -l < "$SECRETS_FILE" | tr -d ' ')
+    log "Scanning $TOTAL secrets..."
+
+    SCANNED=0
+    EXCESS=0
+    DESTROYED=0
+    FAILED=0
+
+    while IFS= read -r SECRET; do
+      [ -z "$SECRET" ] && continue
+      SCANNED=$((SCANNED + 1))
+
+      # Newest-first list of non-DESTROYED versions.
+      VERSIONS_FILE=$(mktemp)
+      if ! gcloud secrets versions list "$SECRET" --project="$PROJECT" \
+             --filter="state!=DESTROYED" \
+             --sort-by=~createTime \
+             --format="value(name)" > "$VERSIONS_FILE" 2>&1; then
+        log "  [$SECRET] ERROR listing versions: $(cat "$VERSIONS_FILE")"
+        FAILED=$((FAILED + 1))
+        rm -f "$VERSIONS_FILE"
+        continue
+      fi
+
+      ACTIVE=$(wc -l < "$VERSIONS_FILE" | tr -d ' ')
+      if [ "$ACTIVE" -le "$KEEP" ]; then
+        rm -f "$VERSIONS_FILE"
+        continue
+      fi
+
+      EXCESS=$((EXCESS + 1))
+      TO_DROP=$((ACTIVE - KEEP))
+      log "[$SECRET] active=$ACTIVE keeping=$KEEP destroying=$TO_DROP"
+
+      i=0
+      while IFS= read -r VID; do
+        i=$((i + 1))
+        if [ "$i" -le "$KEEP" ]; then
+          log "    KEEP    v$VID"
+          continue
+        fi
+        if [ "$DESTROY" = "true" ]; then
+          if gcloud secrets versions destroy "$VID" \
+               --secret="$SECRET" --project="$PROJECT" --quiet \
+               >/dev/null 2>&1; then
+            log "    DESTROY v$VID  -> ok"
+            DESTROYED=$((DESTROYED + 1))
+          else
+            log "    DESTROY v$VID  -> FAILED"
+            FAILED=$((FAILED + 1))
+          fi
+        else
+          log "    PLAN    v$VID  (would destroy)"
+          DESTROYED=$((DESTROYED + 1))
+        fi
+      done < "$VERSIONS_FILE"
+
+      rm -f "$VERSIONS_FILE"
+    done < "$SECRETS_FILE"
+
+    rm -f "$SECRETS_FILE"
+
+    log "============================================="
+    log "SUMMARY"
+    log "  Secrets scanned     : $SCANNED"
+    log "  Secrets with excess : $EXCESS"
+    if [ "$DESTROY" = "true" ]; then
+      log "  Versions destroyed  : $DESTROYED"
+    else
+      log "  Versions to destroy : $DESTROYED  (dry-run)"
+    fi
+    log "  Failures            : $FAILED"
+    log "============================================="
+
+    if [ "$FAILED" -gt 0 ]; then
+      log "RESULT: PARTIAL — some operations failed"
+      exit 1
+    fi
+    log "RESULT: SUCCESS"
+    exit 0

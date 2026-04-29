@@ -1,0 +1,41 @@
+nameOverride: ""
+fullnameOverride: ""
+namespaceOverride: ""
+
+# CronJob schedule — weekly Sundays 03:00 UTC
+schedule: "0 3 * * 0"
+concurrencyPolicy: Forbid
+ttlSecondsAfterFinished: 3600
+backoffLimit: 1
+activeDeadlineSeconds: 1800
+successfulJobsHistoryLimit: 3
+failedJobsHistoryLimit: 3
+suspend: false
+
+image:
+  gcloud: google/cloud-sdk:slim
+
+# Retention policy
+gcp:
+  projectId: "tesseracthub-480811"
+  # Keep the latest N active (ENABLED+DISABLED) versions per secret
+  keep: 2
+  # When false the script runs in dry-run mode and only logs the plan.
+  destroy: true
+  # Optional: only run against secrets matching this name regex.
+  # Empty string means all secrets in the project.
+  nameFilter: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  # GSA bound via Workload Identity. Must hold roles/secretmanager.secretVersionManager
+  # at the project level (sufficient for list/get/disable/destroy versions; cannot
+  # modify or delete secret resources themselves).
+  gcpServiceAccount: "sm-cleanup-sa@tesseracthub-480811.iam.gserviceaccount.com"
+
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 256Mi
