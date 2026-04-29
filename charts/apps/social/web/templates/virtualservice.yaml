@@ -1,0 +1,47 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "social-web.fullname" . }}
+  labels:
+    {{- include "social-web.labels" . | nindent 4 }}
+spec:
+  hosts:
+    {{- range .Values.ingress.hosts }}
+    - {{ .host | quote }}
+    {{- end }}
+  gateways:
+    - {{ .Values.ingress.gateway | default "istio-ingress/tesseract-gateway" }}
+  http:
+    # /api/* lands on the auth-bff in-cluster (it's the BFF that mints
+    # session cookies and reverse-proxies to platform-api). The Next.js
+    # app's `next.config.ts` rewrite handles this in dev; in cluster we
+    # do it at the Istio layer so the service-to-service hop avoids
+    # going through Next.js's Node runtime for non-render API calls.
+    - match:
+        - uri:
+            prefix: /api/
+      route:
+        - destination:
+            host: social-auth-bff
+            port:
+              number: 8080
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: {{ include "social-web.fullname" . }}
+            port:
+              number: {{ .Values.service.port }}
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+{{- end }}
