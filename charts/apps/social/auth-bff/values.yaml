@@ -1,3 +1,5 @@
+# Values for social-auth-bff (single-env: prod).
+
 namespace: social
 name: social-auth-bff
 
@@ -14,16 +16,16 @@ service:
   type: ClusterIP
   port: 8080
 
-env: devtest
+env: prod
 
 resources:
   requests:
-    cpu: 50m
-    memory: 128Mi
+    cpu: 100m
+    memory: 192Mi
   limits:
-    memory: 256Mi
+    memory: 384Mi
 
-# Database config — CNPG cluster created by social-postgres chart.
+# Database — CNPG cluster created by social-postgres chart.
 database:
   host: social-postgres-rw.social.svc.cluster.local
   port: 5432
@@ -31,15 +33,15 @@ database:
   secretName: social-postgres-auth-bff
   sslmode: require
 
-# GIP — values from docs/setup/gip.md step 9. The OAuth client secret +
-# session encryption key + internal-JWT secret are pulled from K8s
-# Secrets created by ExternalSecrets, not from values.yaml.
+# GIP — non-secret values live here; web API key + OAuth client secret
+# come from the social-gip Secret (via ExternalSecret).
 gip:
   projectId: "tesseracthub-480811"
-  tenantId: "social-dev-PLACEHOLDER" # replace post-step-2
+  tenantId: "REPLACE-WITH-PROD-TENANT-ID" # set after Identity Platform tenant is created
 
 oauth:
-  clientId: "REPLACE-WITH-OAUTH-CLIENT-ID.apps.googleusercontent.com"
+  # OAuth 2.0 Web client created in the GCP project.
+  clientId: "849928263410-jemqn4sn0id1cvisa726r7nhubukp0qe.apps.googleusercontent.com"
 
 session:
   cookieName: "social_session"
@@ -49,7 +51,12 @@ session:
 platformApiUrl: "http://social-platform-api.social.svc.cluster.local:8081"
 
 keda:
-  enabled: false
+  enabled: true
+  minReplicaCount: 1
+  maxReplicaCount: 5
+  pollingInterval: 15
+  cooldownPeriod: 300
 
 pdb:
-  enabled: false
+  enabled: true
+  maxUnavailable: 1

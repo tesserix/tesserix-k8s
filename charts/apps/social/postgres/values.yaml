@@ -1,28 +1,32 @@
+# Values for social-postgres (single-env: prod).
+#
+# Starts at instances=1; bump to 3 (1 primary + 1 sync replica + 1 async)
+# once the workload justifies HA. Backup is disabled by default —
+# enable when you have the GCS bucket + IAM in place (see backup section).
+
 hibernate: false
 
 namespace: social
 clusterName: social-postgres
 
-# Single instance for devtest; bump to 3 (1 primary + 1 sync + 1 async)
-# in values-prod.yaml when we want HA. Pattern matches mark8ly-postgres.
 instances: 1
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
-storageSize: 20Gi
-walStorageSize: 5Gi
+storageSize: 50Gi
+walStorageSize: 10Gi
 storageClass: standard-rwo-retain
 
 resources:
   requests:
-    cpu: 250m
-    memory: 1Gi
+    cpu: 500m
+    memory: 2Gi
   limits:
     cpu: "1"
-    memory: 2Gi
+    memory: 4Gi
 
 # Two logical databases: auth_bff (sessions, OIDC state) + platform_api
 # (posts, oauth_tokens, post_metrics, reports). One Postgres cluster, two
-# separate roles + databases — keeps blast radius bounded.
+# separate roles + databases.
 bootstrap:
   primaryDatabase: social_platform_api
   primaryOwner: platform_api
@@ -31,14 +35,14 @@ bootstrap:
   secondaryOwner: auth_bff
   secondarySecret: social-postgres-auth-bff
 
-# WAL archiving + scheduled backups — wired in values-prod.yaml only
-# (devtest doesn't need a backup bucket).
+# WAL archive + scheduled backups. Enable only after confirming
+# `gs://tesseract-prod-backups-in/social-postgres` exists and the CNPG
+# cluster's ServiceAccount has roles/storage.objectAdmin on it.
 backup:
   enabled: false
-  destinationPath: ""
+  destinationPath: "gs://tesseract-prod-backups-in/social-postgres"
   retentionPolicy: "30d"
 
-# NetworkPolicy values
 networkPolicy:
   enabled: true
   cnpgSystemNamespace: cnpg-system
