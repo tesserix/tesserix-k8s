@@ -16,8 +16,12 @@ retention, every rotation accumulates storage cost forever.
 - Image: `google/cloud-sdk:slim` (no custom build).
 - Auth: Workload Identity. The KSA `global/sm-version-cleanup` is bound to the
   GSA `sm-cleanup-sa@tesseracthub-480811.iam.gserviceaccount.com`, which holds
-  the project role `roles/secretmanager.secretVersionManager` (least-privilege
-  — can disable/destroy versions, cannot delete secrets or read payloads).
+  two project roles:
+  - `roles/secretmanager.secretVersionManager` — list/disable/destroy versions
+  - `roles/secretmanager.viewer` — list/get secrets (versionManager alone does
+    not include `secretmanager.secrets.list`, which the script needs to
+    enumerate the project)
+  Cannot delete secret resources, cannot read payload bytes.
 - Schedule: weekly, Sunday 03:00 UTC (`0 3 * * 0`).
 - Idempotent: if no secret has more than `keep` active versions, the job is a
   no-op and exits SUCCESS.
@@ -45,6 +49,10 @@ gcloud iam service-accounts create sm-cleanup-sa \
 gcloud projects add-iam-policy-binding $PROJECT \
   --member="serviceAccount:$GSA_EMAIL" \
   --role="roles/secretmanager.secretVersionManager"
+
+gcloud projects add-iam-policy-binding $PROJECT \
+  --member="serviceAccount:$GSA_EMAIL" \
+  --role="roles/secretmanager.viewer"
 
 gcloud iam service-accounts add-iam-policy-binding $GSA_EMAIL \
   --project=$PROJECT \
