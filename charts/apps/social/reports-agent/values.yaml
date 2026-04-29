@@ -1,3 +1,5 @@
+# Values for social-reports-agent (single-env: prod).
+
 namespace: social
 name: social-reports-agent
 
@@ -13,14 +15,14 @@ service:
   type: ClusterIP
   port: 8090
 
-env: devtest
+env: prod
 
 resources:
   requests:
-    cpu: 100m
-    memory: 256Mi
+    cpu: 200m
+    memory: 384Mi
   limits:
-    memory: 512Mi
+    memory: 1Gi
 
 # LLM provider — switchable via env. The corresponding API key is read
 # from the social-llm Secret (created by ExternalSecret).
@@ -32,7 +34,10 @@ llm:
 platformApiUrl: "http://social-platform-api.social.svc.cluster.local:8081"
 
 keda:
-  enabled: false
+  enabled: true
+  minReplicaCount: 1
+  maxReplicaCount: 3
 
 pdb:
-  enabled: false
+  enabled: true
+  maxUnavailable: 1

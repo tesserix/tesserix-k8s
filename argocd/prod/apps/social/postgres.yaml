@@ -1,12 +1,12 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: social-app-of-apps
+  name: social-postgres
   namespace: argocd
   labels:
     app.kubernetes.io/part-of: tesserix-social
-    app.kubernetes.io/component: app-of-apps
-    environment: devtest
+    app.kubernetes.io/component: database
+    environment: prod
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -14,16 +14,20 @@ spec:
   source:
     repoURL: https://github.com/tesserix/tesserix-k8s.git
     targetRevision: HEAD
-    path: argocd/devtest/apps/social
+    path: charts/apps/social/postgres
+    helm:
+      valueFiles:
+        - values.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: argocd
+    namespace: social
   syncPolicy:
     automated:
       prune: false
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - PruneLast=true
     retry:
       limit: 5
       backoff:
