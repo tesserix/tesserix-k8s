@@ -1,0 +1,73 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "sm-version-cleanup.fullname" . }}
+  namespace: {{ include "sm-version-cleanup.namespace" . }}
+  labels:
+    {{- include "sm-version-cleanup.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  concurrencyPolicy: {{ .Values.concurrencyPolicy }}
+  suspend: {{ .Values.suspend }}
+  successfulJobsHistoryLimit: {{ .Values.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.failedJobsHistoryLimit }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "sm-version-cleanup.selectorLabels" . | nindent 8 }}
+        sidecar.istio.io/inject: "false"
+    spec:
+      ttlSecondsAfterFinished: {{ .Values.ttlSecondsAfterFinished }}
+      backoffLimit: {{ .Values.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "sm-version-cleanup.selectorLabels" . | nindent 12 }}
+            sidecar.istio.io/inject: "false"
+          annotations:
+            traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+        spec:
+          serviceAccountName: {{ include "sm-version-cleanup.serviceAccountName" . }}
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: cleanup
+              image: {{ .Values.image.gcloud }}
+              command:
+                - sh
+                - /scripts/cleanup.sh
+              env:
+                - name: PROJECT
+                  value: {{ .Values.gcp.projectId | quote }}
+                - name: KEEP
+                  value: {{ .Values.gcp.keep | quote }}
+                - name: DESTROY
+                  value: {{ .Values.gcp.destroy | quote }}
+                - name: NAME_FILTER
+                  value: {{ .Values.gcp.nameFilter | quote }}
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: scripts
+              configMap:
+                name: {{ include "sm-version-cleanup.fullname" . }}-script
+                defaultMode: 0755
+            - name: tmp
+              emptyDir: {}
