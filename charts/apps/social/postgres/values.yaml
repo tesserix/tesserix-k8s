@@ -1,0 +1,44 @@
+hibernate: false
+
+namespace: social
+clusterName: social-postgres
+
+# Single instance for devtest; bump to 3 (1 primary + 1 sync + 1 async)
+# in values-prod.yaml when we want HA. Pattern matches mark8ly-postgres.
+instances: 1
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+storageSize: 20Gi
+walStorageSize: 5Gi
+storageClass: standard-rwo-retain
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+  limits:
+    cpu: "1"
+    memory: 2Gi
+
+# Two logical databases: auth_bff (sessions, OIDC state) + platform_api
+# (posts, oauth_tokens, post_metrics, reports). One Postgres cluster, two
+# separate roles + databases — keeps blast radius bounded.
+bootstrap:
+  primaryDatabase: social_platform_api
+  primaryOwner: platform_api
+  primarySecret: social-postgres-platform-api
+  secondaryDatabase: social_auth_bff
+  secondaryOwner: auth_bff
+  secondarySecret: social-postgres-auth-bff
+
+# WAL archiving + scheduled backups — wired in values-prod.yaml only
+# (devtest doesn't need a backup bucket).
+backup:
+  enabled: false
+  destinationPath: ""
+  retentionPolicy: "30d"
+
+# NetworkPolicy values
+networkPolicy:
+  enabled: true
+  cnpgSystemNamespace: cnpg-system

@@ -1,0 +1,55 @@
+namespace: social
+name: social-auth-bff
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/social-auth-bff
+  migrateTarget: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/social-auth-bff
+  tag: "latest"
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+service:
+  type: ClusterIP
+  port: 8080
+
+env: devtest
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+# Database config — CNPG cluster created by social-postgres chart.
+database:
+  host: social-postgres-rw.social.svc.cluster.local
+  port: 5432
+  name: social_auth_bff
+  secretName: social-postgres-auth-bff
+  sslmode: require
+
+# GIP — values from docs/setup/gip.md step 9. The OAuth client secret +
+# session encryption key + internal-JWT secret are pulled from K8s
+# Secrets created by ExternalSecrets, not from values.yaml.
+gip:
+  projectId: "tesseracthub-480811"
+  tenantId: "social-dev-PLACEHOLDER" # replace post-step-2
+
+oauth:
+  clientId: "REPLACE-WITH-OAUTH-CLIENT-ID.apps.googleusercontent.com"
+
+session:
+  cookieName: "social_session"
+  cookieDomain: ".tesserix.app"
+
+# Where platform-api lives in cluster (auth-bff reverse-proxies /api/v1/*).
+platformApiUrl: "http://social-platform-api.social.svc.cluster.local:8081"
+
+keda:
+  enabled: false
+
+pdb:
+  enabled: false
