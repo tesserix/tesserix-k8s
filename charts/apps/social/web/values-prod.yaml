@@ -1,0 +1,44 @@
+# Production overrides for social-web.
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+
+replicaCount: 2
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 384Mi
+  limits:
+    memory: 768Mi
+
+env:
+  NODE_ENV: "production"
+  PORT: "3000"
+  NEXT_PUBLIC_APP_NAME: "Tesserix Social"
+  NEXT_PUBLIC_APP_URL: "https://social.tesserix.app"
+
+serverEnv:
+  AUTH_BFF_URL: "http://social-auth-bff.social.svc.cluster.local:8080"
+
+ingress:
+  enabled: true
+  gateway: "istio-ingress/tesseract-gateway"
+  hosts:
+    - host: social.tesserix.app
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: storefront-wildcard-tls
+      hosts:
+        - social.tesserix.app
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+
+gcp:
+  projectId: "tesseracthub-480811"
+  namespace: "social"
+  secretManager:
+    secretPrefix: "prod"

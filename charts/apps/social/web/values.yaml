@@ -1,0 +1,137 @@
+# Default values for social-web (devtest baseline).
+# Production overrides live in values-prod.yaml.
+
+replicaCount: 1
+
+image:
+  # Pulled via the in-region GAR mirror of ghcr.io. CI pushes
+  # `ghcr.io/tesserix/social-web:sha-<commit>` and the GAR mirror
+  # auto-replicates.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/social-web
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  sidecar.istio.io/inject: "true"
+  proxy.istio.io/config: |
+    holdApplicationUntilProxyStarts: true
+  # GKE metadata server must bypass the Istio sidecar for Workload
+  # Identity to function.
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+service:
+  type: ClusterIP
+  port: 3000
+  targetPort: 3000
+
+# Next.js needs writable /tmp + /app/.next/cache when readOnlyRootFilesystem
+# is true. emptyDir is per-pod and cleared on restart — fine.
+volumes:
+  - name: tmp
+    emptyDir: {}
+  - name: nextcache
+    emptyDir: {}
+
+volumeMounts:
+  - name: tmp
+    mountPath: /tmp
+  - name: nextcache
+    mountPath: /app/apps/web/.next/cache
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 192Mi
+  limits:
+    memory: 512Mi
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 30
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+# Public env (exposed to the browser via Next.js).
+env:
+  NODE_ENV: "production"
+  PORT: "3000"
+  NEXT_PUBLIC_APP_NAME: "Tesserix Social"
+  NEXT_PUBLIC_APP_URL: "https://dev-social.tesserix.app"
+
+# Server-side BFF target. The web app proxies /api/* to this URL.
+serverEnv:
+  AUTH_BFF_URL: "http://social-auth-bff.social.svc.cluster.local:8080"
+
+ingress:
+  enabled: true
+  gateway: "istio-ingress/tesseract-gateway"
+  hosts:
+    - host: dev-social.tesserix.app
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: storefront-wildcard-tls
+      hosts:
+        - dev-social.tesserix.app
+
+gcp:
+  projectId: "tesseracthub-480811"
+  namespace: "social"
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "devtest"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
