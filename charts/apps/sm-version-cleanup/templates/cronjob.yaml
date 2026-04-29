@@ -19,6 +19,8 @@ spec:
     spec:
       ttlSecondsAfterFinished: {{ .Values.ttlSecondsAfterFinished }}
       backoffLimit: {{ .Values.backoffLimit }}
+      # Auto-clean failed pods so re-runs aren't blocked, but keep them long
+      # enough to read logs in case of failure.
       activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
       template:
         metadata:
@@ -51,6 +53,12 @@ spec:
                   value: {{ .Values.gcp.destroy | quote }}
                 - name: NAME_FILTER
                   value: {{ .Values.gcp.nameFilter | quote }}
+                # gcloud needs a writable config dir; root FS is read-only and
+                # the runAsUser (65534) has no home. Point both at /tmp.
+                - name: HOME
+                  value: /tmp
+                - name: CLOUDSDK_CONFIG
+                  value: /tmp/gcloud
               volumeMounts:
                 - name: scripts
                   mountPath: /scripts
