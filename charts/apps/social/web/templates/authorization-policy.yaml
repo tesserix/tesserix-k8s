@@ -1,0 +1,19 @@
+# Namespace-wide ALLOW for the social namespace. Mirrors mark8ly's
+# "allow-known-sources" pattern: lets the istio-ingress gateway and
+# in-namespace pods reach any social workload. The cluster default
+# (istio-system/deny-all-default) blocks everything else.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: social-allow-known-sources
+  labels:
+    {{- include "social-web.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-system
+              - istio-ingress
+              - social
