@@ -155,6 +155,27 @@ externalSecrets:
   enabled: true
   secretStoreRef: "gcp-secret-store"
 
+# Database connections.
+# - `tesserix`: this app's own Postgres (tesserix-postgres CNPG cluster
+#   in the tesserix namespace). Owns leads + apps registry.
+# - `mark8ly`: cross-namespace elevated read/write into mark8ly's CNPG
+#   cluster as the mark8ly_platform_admin role (CRUD, NOT superuser/DDL —
+#   see tesserix-k8s/docs/cross-db-admin.md).
+# Each block is opt-in via .enabled so the chart still renders for
+# environments without the role/secret yet.
+database:
+  tesserix:
+    enabled: true
+    host: tesserix-postgres-rw.tesserix.svc.cluster.local
+    port: 5432
+    name: tesserix_admin
+    secretName: tesserix-postgres-tesserix-admin
+  mark8ly:
+    enabled: true
+    host: mark8ly-postgres-rw.mark8ly.svc.cluster.local
+    port: 5432
+    secretName: mark8ly-platform-admin
+
 # ConfigMap for additional configuration
 configMap:
   data: {}
