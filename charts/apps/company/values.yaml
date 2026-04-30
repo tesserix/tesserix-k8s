@@ -213,11 +213,17 @@ configMap:
 
 # Vertical Pod Autoscaler configuration
 vpa:
-  enabled: true
+  # Disabled: VPA was down-sizing the pod to 2m cpu / 83Mi memory based
+  # on historical usage that predated the new Next.js admin pages, which
+  # left the pod unable to serve requests (every external call timed
+  # out). The KEDA memory trigger handles real load now; VPA is moot.
+  enabled: false
   updateMode: "InPlaceOrRecreate"
   minAllowed:
-    memory: "64Mi"
+    cpu: "250m"
+    memory: "256Mi"
   maxAllowed:
+    cpu: "2000m"
     memory: "1Gi"
   excludeIstioProxy: true
 
