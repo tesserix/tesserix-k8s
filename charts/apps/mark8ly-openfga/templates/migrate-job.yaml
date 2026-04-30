@@ -11,11 +11,13 @@ metadata:
     # (with a wave) avoids the BeforeHookCreation/spin loop with Istio strict
     # mTLS. Migrate is idempotent (current version no-op).
     argocd.argoproj.io/sync-wave: "-5"
-    # Job spec.template is immutable in Kubernetes — any change (e.g. image
-    # tag bump or registry redirect) requires delete + recreate. Replace=true
-    # makes ArgoCD do that instead of attempting an in-place patch which fails
-    # with "field is immutable".
-    argocd.argoproj.io/sync-options: Replace=true
+    # Job spec.template + spec.selector are immutable in Kubernetes — any
+    # change (e.g. image tag bump or registry redirect) requires delete +
+    # recreate. Replace=true alone does `kubectl replace` (in-place) which
+    # still fails on the auto-generated selector mismatch. Adding Force=true
+    # makes ArgoCD do `kubectl replace --force` (delete + create), which is
+    # the correct semantics for Jobs.
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
   labels:
     app.kubernetes.io/name: {{ .Values.name }}
     app.kubernetes.io/component: migrate
