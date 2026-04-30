@@ -38,6 +38,20 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    # Cross-namespace client: tesserix-auth-bff (in tesserix namespace) reuses
+    # this CNPG cluster against the mark8ly_platform_api database. Without an
+    # explicit namespaceSelector, the rule above matches only mark8ly pods, so
+    # the tesserix pod's TCP SYN to 5432 is silently dropped.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tesserix
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tesserix-auth-bff
+      ports:
+        - protocol: TCP
+          port: 5432
     # Allow the CNPG operator to manage and probe instances.
     - from:
         - namespaceSelector:
