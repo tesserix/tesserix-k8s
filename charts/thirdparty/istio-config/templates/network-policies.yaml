@@ -1521,6 +1521,20 @@ spec:
           port: 5432
     {{- end }}
     {{- end }}
+    # Allow full-namespace egress (any port) to listed cross-product namespaces.
+    # Used when a product reuses multiple services (DB + AuthZ + APIs) from
+    # another product's namespace. Defined in values.yaml under
+    # crossProductNamespaceAccess. Service-side AuthorizationPolicies still
+    # narrow callers by principal.
+    {{- if $.Values.crossProductNamespaceAccess }}
+    {{- $allowedNamespaces := index $.Values.crossProductNamespaceAccess $key }}
+    {{- range $allowedNs := $allowedNamespaces }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $allowedNs }}
+    {{- end }}
+    {{- end }}
     {{- if index $.Values.redisNamespaces $key }}
     # Allow egress to own Redis namespace
     - to:
