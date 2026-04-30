@@ -24,6 +24,15 @@ metadata:
 spec:
   backoffLimit: 5
   template:
+    metadata:
+      # Pod labels are required for the mark8ly-postgres NetworkPolicy to
+      # whitelist this Job's pod by app.kubernetes.io/name. Without these,
+      # K8s only attaches auto-generated job-name/controller-uid labels, so
+      # the migrate pod's TCP SYN to mark8ly-postgres-rw:5432 is dropped and
+      # the migrate command times out.
+      labels:
+        app.kubernetes.io/name: {{ .Values.name }}
+        app.kubernetes.io/component: migrate
     spec:
       restartPolicy: OnFailure
       serviceAccountName: {{ .Values.name }}
