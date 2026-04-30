@@ -46,6 +46,19 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: tesserix
+  # CI sets the deployment's image to a specific SHA tag after each build
+  # (see tesserix-home/.github/workflows/ci.yml). This is necessary because
+  # the GAR remote-repository mirror caches :latest's digest aggressively
+  # and would otherwise serve stale content to kubelet on rollout. We
+  # therefore exclude the image field from reconciliation — Argo will not
+  # revert CI's pinned SHA back to whatever the chart renders.
+  ignoreDifferences:
+  - group: apps
+    kind: Deployment
+    name: company
+    namespace: tesserix
+    jsonPointers:
+    - /spec/template/spec/containers/0/image
   syncPolicy:
     automated:
       prune: false
