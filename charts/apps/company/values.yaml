@@ -71,15 +71,16 @@ ingress:
   backendServices: []
 
 resources:
-  # KEDA ScaledObject uses a CPU trigger. With no cpu request defined,
-  # the % trigger has nothing to compute against and the
-  # vscaledobject admission webhook rejects the deploy. Keep this in sync
-  # with values-prod.yaml whenever resource shape changes.
+  # cpu request must be realistic for the % utilization KEDA trigger or
+  # the autoscaler chases its tail (Next.js SSR easily uses 400-800m
+  # under steady load — at 50m request that reads as 800-1600% which
+  # pins the deployment at maxReplicas and churns pods faster than the
+  # service endpoints settle, causing ingress 503s).
   requests:
-    cpu: "50m"
+    cpu: "250m"
     memory: 256Mi
   limits:
-    cpu: "500m"
+    cpu: "1000m"
     memory: 512Mi
 
 livenessProbe:
