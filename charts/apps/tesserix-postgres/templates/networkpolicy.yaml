@@ -1,0 +1,62 @@
+{{- if not .Values.hibernate }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.clusterName }}-ingress
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: database
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: {{ .Values.clusterName }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Application clients within the tesserix namespace.
+    # tesserix-home (Next.js) and the future tesserix-admin-api Go
+    # service connect by name. CNPG operator-managed peer pods (replicas,
+    # if instances>1; backup jobs) join via the cnpg.io/cluster label.
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - tesserix-home
+                  - tesserix-admin-api
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ .Values.clusterName }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: database-init
+      ports:
+        - protocol: TCP
+          port: 5432
+    # CNPG operator (lives in cnpg-system) for status checks, switchover,
+    # backup invocation, and PVC-resize coordination.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 9187
+    # Prometheus / monitoring scrape on the CNPG metrics port.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9187
+{{- end }}

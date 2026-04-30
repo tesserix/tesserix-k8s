@@ -1,0 +1,16 @@
+{{- if and .Values.backup.enabled (not .Values.hibernate) }}
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ .Values.clusterName }}-scheduled-backup
+  namespace: {{ .Values.namespace }}
+spec:
+  # Twice daily: 03:00 UTC and 15:00 UTC. Offset from mark8ly (02/14)
+  # so the shared backup bucket isn't hit by both clusters at once.
+  schedule: "0 0 3,15 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: {{ .Values.clusterName }}
+  target: primary
+  method: barmanObjectStore
+{{- end }}
