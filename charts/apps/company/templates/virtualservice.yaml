@@ -27,31 +27,31 @@ spec:
             {{- end }}
       timeout: 30s
 
-    # Auth routes (for admin portal login)
-    # X-Auth-Context: admin tells auth-bff to use the platform tenant realm
+    # /auth/* — self-hosted Google OAuth flow lives in the company app
+    # itself: app/auth/login (redirect to Google), /auth/callback
+    # (exchange code, mint cookie), /auth/logout (clear cookie),
+    # /auth/session (JSON read of local cookie).
+    #
+    # Previously we routed this prefix to tesserix-auth-bff for the
+    # legacy OIDC server-side flow, but that auth-bff binary no longer
+    # exposes /auth/login or /auth/callback (the new mark8ly flow is
+    # client-initiated via Firebase SDK + POST /auth/auto-login).
+    # Tesserix-home now owns its session minting end-to-end.
     - match:
         - uri:
             prefix: /auth
-      headers:
-        request:
-          set:
-            X-Auth-Context: admin
       route:
         - destination:
             {{- if .Values.cloudRun.enabled }}
-            host: {{ .Values.cloudRun.authBff.host }}
+            host: {{ .Values.cloudRun.frontend.host }}
             port:
-              number: {{ .Values.cloudRun.authBff.port }}
+              number: {{ .Values.cloudRun.frontend.port }}
             {{- else }}
-            host: tesserix-auth-bff.tesserix.svc.cluster.local
+            host: {{ include "company.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
             port:
-              number: 8087
+              number: {{ .Values.service.port }}
             {{- end }}
-      timeout: 60s
-      retries:
-        attempts: 3
-        perTryTimeout: 2s
-        retryOn: "connect-failure,refused-stream,unavailable,cancelled"
+      timeout: 30s
 
     # Default route to company frontend
     - route:
