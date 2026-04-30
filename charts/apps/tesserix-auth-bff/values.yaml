@@ -1,0 +1,60 @@
+namespace: tesserix
+name: tesserix-auth-bff
+image:
+  # Same Go binary as mark8ly-auth-bff — config-driven via env vars below.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/mark8ly-auth-bff
+  tag: "latest"
+  pullPolicy: Always
+  migrateTarget: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/mark8ly-auth-bff
+imagePullSecrets:
+  - name: ghcr-secret
+service:
+  type: ClusterIP
+  port: 8087
+keda:
+  enabled: true
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 5
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+pdb:
+  enabled: true
+  maxUnavailable: 1
+# Reuses the mark8ly-postgres CNPG cluster cross-namespace.
+# Schema migrations are owned by mark8ly-auth-bff (same DB) so this
+# release skips its own migrate init container to avoid races.
+database:
+  host: mark8ly-postgres-rw.mark8ly.svc.cluster.local
+  port: 5432
+  name: mark8ly_platform_api
+  secretName: tesserix-postgres-platform-api
+  sslmode: require
+runMigrations: false
+openfga:
+  apiUrl: "http://mark8ly-openfga.mark8ly.svc.cluster.local:8080"
+  storeId: ""
+gip:
+  projectId: "tesseracthub-480811"
+  projectNumber: "849928263410"
+  internalTenantId: "MP-Internal-e986p"
+  customerTenantId: "MP-Customer-39opy"
+  # Platform-9bu14 is the live super-admin tenant for tesserix.app.
+  platformTenantId: "Platform-9bu14"
+oauth:
+  # Reuses the mark8ly Google OAuth client. The tesserix.app/auth/callback
+  # redirect URI must be added to this client's Authorized redirect URIs in
+  # GCP Console (APIs & Services > Credentials) for sign-in to succeed.
+  clientId: "849928263410-eq63i2v34j61mbaghf0opu9fubmrkqua.apps.googleusercontent.com"
+session:
+  cookieName: "tx_session"
+  cookieDomain: ".tesserix.app"
+marketplaceApiUrl: "http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080"
+marketplaceInternalAuthSecret:
+  secretName: tesserix-marketplace-api-internal-auth
+  secretKey: INTERNAL_AUTH_SECRET
