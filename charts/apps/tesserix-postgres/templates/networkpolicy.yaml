@@ -15,15 +15,19 @@ spec:
     - Ingress
   ingress:
     # Application clients within the tesserix namespace.
-    # tesserix-home (Next.js) and the future tesserix-admin-api Go
-    # service connect by name. CNPG operator-managed peer pods (replicas,
-    # if instances>1; backup jobs) join via the cnpg.io/cluster label.
+    # `company` is the chart name for the tesserix.app Next.js app
+    # (the super-admin frontend + server routes). The repo is
+    # `tesserix-home` but the K8s pod label is `company`. The future
+    # `tesserix-admin-api` Go service will use its own name.
+    # CNPG operator-managed peer pods (replicas, backup jobs) match by
+    # the cnpg.io/cluster label.
     - from:
         - podSelector:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
                 values:
+                  - company
                   - tesserix-home
                   - tesserix-admin-api
         - podSelector:

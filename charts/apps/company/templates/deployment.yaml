@@ -59,6 +59,47 @@ spec:
               value: {{ .Values.gcp.secretManager.secretPrefix | quote }}
             - name: USE_GCP_SECRET_MANAGER
               value: "true"
+            {{- if .Values.database.tesserix.enabled }}
+            # tesserix-postgres connection (own DB — apps registry + leads).
+            # Host/port/name are static; user+password come from the
+            # tesserix-postgres-tesserix-admin Secret synced by ESO.
+            - name: TESSERIX_DB_HOST
+              value: {{ .Values.database.tesserix.host | quote }}
+            - name: TESSERIX_DB_PORT
+              value: {{ .Values.database.tesserix.port | quote }}
+            - name: TESSERIX_DB_NAME
+              value: {{ .Values.database.tesserix.name | quote }}
+            - name: TESSERIX_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.tesserix.secretName | quote }}
+                  key: username
+            - name: TESSERIX_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.tesserix.secretName | quote }}
+                  key: password
+            {{- end }}
+            {{- if .Values.database.mark8ly.enabled }}
+            # mark8ly-postgres cross-namespace read/write (super-admin).
+            # Connects as mark8ly_platform_admin (CRUD, no DDL/superuser).
+            # The DB name is chosen per-query in app code (platform_api
+            # vs marketplace_api), so it's not pinned here.
+            - name: MARK8LY_DB_HOST
+              value: {{ .Values.database.mark8ly.host | quote }}
+            - name: MARK8LY_DB_PORT
+              value: {{ .Values.database.mark8ly.port | quote }}
+            - name: MARK8LY_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.mark8ly.secretName | quote }}
+                  key: username
+            - name: MARK8LY_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.mark8ly.secretName | quote }}
+                  key: password
+            {{- end }}
           {{- if .Values.livenessProbe }}
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
