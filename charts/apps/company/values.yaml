@@ -71,10 +71,16 @@ ingress:
   backendServices: []
 
 resources:
-  limits:
-    memory: 512Mi
+  # KEDA ScaledObject uses a CPU trigger. With no cpu request defined,
+  # the % trigger has nothing to compute against and the
+  # vscaledobject admission webhook rejects the deploy. Keep this in sync
+  # with values-prod.yaml whenever resource shape changes.
   requests:
+    cpu: "50m"
     memory: 256Mi
+  limits:
+    cpu: "500m"
+    memory: 512Mi
 
 livenessProbe:
   enabled: false
