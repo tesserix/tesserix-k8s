@@ -1,5 +1,6 @@
-# auth-bff is the front door for the Next.js apps. Ingress gateway and the
-# three Next.js apps may call it; nothing else.
+# auth-bff is the front door for the Next.js apps. Ingress gateway, the
+# tesserix.app super-admin (`company`), and (legacy) mark8ly Next.js apps
+# may call it; nothing else.
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
 metadata:
@@ -17,6 +18,11 @@ spec:
     - from:
         - source:
             principals:
+              # `company` is the super-admin Next.js app on tesserix.app.
+              # Its middleware proxies cookie validation to /auth/session,
+              # so this principal must be in the allowlist or every page
+              # request 401s.
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/company"
               - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-onboarding"
               - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-admin"
               - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-storefront"
