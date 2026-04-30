@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tesserix-postgres
+  namespace: argocd
+  annotations:
+    # Bring the database up before any consumers (tesserix-home,
+    # future tesserix-admin-api). sync-wave -30 mirrors mark8ly-postgres.
+    argocd.argoproj.io/sync-wave: "-30"
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: database
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/tesserix-postgres
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tesserix
+  syncPolicy:
+    automated:
+      # Never prune a database via GitOps accidentally. Drift on the
+      # CNPG Cluster CR (e.g. operator-managed status fields) is fine
+      # to leave; deletion of any resource here would destroy data.
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

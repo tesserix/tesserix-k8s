@@ -1,0 +1,50 @@
+hibernate: false
+
+namespace: tesserix
+clusterName: tesserix-postgres
+
+# Single instance — this DB only holds the super-admin's own data
+# (apps registry + leads). Volume is < 1 GiB at scale; HA isn't worth
+# 2x the storage cost. RPO ≤ 5 min via continuous WAL archiving to GCS;
+# RTO is ~10 min via barman restore. Acceptable for an ops tool.
+instances: 1
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+# Provisioned for slow growth — leads volume is the only thing that
+# accumulates here. 10 GiB data + 5 GiB WAL is generous for years.
+storageSize: 10Gi
+storageClass: standard-rwo-retain
+walStorageSize: 5Gi
+
+# Tiny workload (admin tool, low QPS). 100m/256Mi covers normal traffic;
+# 500m/512Mi limit handles occasional dashboard analytics queries.
+resources:
+  requests:
+    cpu: "100m"
+    memory: 256Mi
+  limits:
+    cpu: "500m"
+    memory: 512Mi
+
+# Single database. tesserix-home (and the future tesserix-admin-api Go
+# service) connect as the tesserix_admin role.
+bootstrap:
+  primaryDatabase: tesserix_admin
+  primaryOwner: tesserix_admin
+  # Secret created by ExternalSecret (external-secrets/prod/tesserix/externalsecret.yaml).
+  primarySecret: tesserix-postgres-tesserix-admin
+
+# WAL archive → GCS via Workload Identity. Reuses the existing
+# tesseract-prod-backups-in bucket with a per-cluster prefix to avoid
+# provisioning a new bucket. Backup GSA lives in IAM and is bound to
+# the CNPG-managed KSA via Workload Identity.
+backup:
+  enabled: true
+  destinationPath: "gs://tesseract-prod-backups-in/tesserix-postgres"
+  retentionPolicy: "30d"
+  serviceAccount: "app-secrets-tesserix-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+# Pod-level metrics (CNPG exporter on 9187) — opt-in once monitoring
+# stack subscribes. Cheap to keep enabled.
+monitoring:
+  enablePodMonitor: true
