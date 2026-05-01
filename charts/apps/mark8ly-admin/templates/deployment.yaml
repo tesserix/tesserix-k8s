@@ -90,6 +90,19 @@ spec:
                 secretKeyRef:
                   name: mark8ly-session
                   key: SESSION_ENCRYPT_KEY
+            {{- if .Values.tesserixInternal.enabled }}
+            # tesserix-home internal API integration — shared bearer token
+            # for filing platform support tickets and reading active
+            # announcements. Secret is provisioned by templates/externalsecret.yaml
+            # in this chart, sourced from GSM key {{ .Values.tesserixInternal.gsmKey }}.
+            - name: TESSERIX_INTERNAL_URL
+              value: {{ .Values.tesserixInternal.url | quote }}
+            - name: INTERNAL_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.tesserixInternal.secretName }}
+                  key: INTERNAL_API_TOKEN
+            {{- end }}
           # Probes hit a static API health route, not /. Hitting /
           # forces the auth middleware to redirect unauthenticated probe
           # traffic to /login, which kubelet logs as
