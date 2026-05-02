@@ -1,5 +1,6 @@
-# Only auth-bff and the three Next.js apps may call platform-api.
-# External traffic should always transit auth-bff first.
+# Only auth-bff, the three Next.js apps, and tesserix-home (for the
+# email-templates /internal/* refresh + test-send pings) may call
+# platform-api. External traffic should always transit auth-bff first.
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
 metadata:
@@ -18,3 +19,7 @@ spec:
               - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-onboarding"
               - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-admin"
               - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-storefront"
+              # tesserix-home (super-admin) — needed for /internal/templates/refresh
+              # and /internal/templates/:key/test calls when an operator saves an
+              # email template or fires a test-send via the admin UI.
+              - "cluster.local/ns/tesserix/sa/company"

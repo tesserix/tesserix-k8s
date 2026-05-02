@@ -26,7 +26,7 @@ spec:
       # SHA forces a fresh pull on every CI build. CI's post-build step
       # rewrites this value when bumping the deployment.
       - name: image.tag
-        value: "main-cc4d61d"
+        value: "main-11491c9"
       - name: ingress.hosts[0].host
         value: tesserix.app
       - name: ingress.tls[0].hosts[0]
@@ -47,6 +47,21 @@ spec:
         value: http://feature-flags-service.marketplace.svc.cluster.local:8096/api/v1
       - name: env.NOTIFICATION_SERVICE_URL
         value: http://notification-service.marketplace.svc.cluster.local:8090/api/v1
+      # Mark8ly /internal endpoints — used by tesserix-home's email-templates
+      # admin UI to evict the per-process template cache after a save and to
+      # fire test-sends through the real send pipeline. In-cluster URLs (no
+      # CF egress). NetworkPolicy + AuthorizationPolicy on the mark8ly side
+      # restrict who can reach /internal/*.
+      #
+      # marketplace-api runs as two Knative services (admin + storefront)
+      # in prod; we point at -admin because the operator-driven /internal
+      # endpoints are mounted on the admin pod (storefront stays minimal).
+      # The storefront pod has its own template cache that ages out via
+      # the 5-min TTL, which is acceptable for runtime sends.
+      - name: env.MARK8LY_PLATFORM_API_URL
+        value: http://mark8ly-platform-api.mark8ly.svc.cluster.local:8086
+      - name: env.MARK8LY_MARKETPLACE_API_URL
+        value: http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080
   destination:
     server: https://kubernetes.default.svc
     namespace: tesserix
