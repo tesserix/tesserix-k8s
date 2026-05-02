@@ -6,9 +6,15 @@ clusterName: stockpilot-postgres
 instances: 1
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
-storageSize: 100Gi
+storageSize: 10Gi
 storageClass: standard-rwo-retain
-walStorageSize: 20Gi
+walStorageSize: 5Gi
+# NOTE: storage was bumped to 100Gi/20Gi briefly but the GKE PD-CSI
+# resizer hit DeadlineExceeded, leaving the PVC half-resized and the
+# cluster pod stuck. Reverting size to current PVC status.capacity so
+# CNPG stops waiting on the resize. Re-do storage growth incrementally
+# (e.g. 10 -> 20 -> 50 -> 100) and only when the cluster is idle so
+# any retry deadline doesn't catch us mid-debate.
 
 resources:
   requests:
