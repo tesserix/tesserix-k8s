@@ -6,29 +6,42 @@ clusterName: stockpilot-postgres
 instances: 1
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
-storageSize: 10Gi
+storageSize: 100Gi
 storageClass: standard-rwo-retain
-walStorageSize: 5Gi
+walStorageSize: 20Gi
 
 resources:
   requests:
-    memory: 512Mi
+    memory: 1Gi
+    cpu: 250m
   limits:
-    memory: 2Gi
+    memory: 4Gi
+    cpu: 2000m
 
 bootstrap:
   database: stockpilot
   owner: stockpilot
   secret: stockpilot-postgres-app-credentials
   gcpSecretName: prod-stockpilot-postgresql-password
-  postInitSQL: []
+  # First-init bootstrap. CNPG runs these once when the cluster is created.
+  # vector       — pgvector for LLM embedding storage (analyst memory,
+  #                situation-similarity retrieval over agent_decision_memory).
+  # uuid-ossp    — uuid_generate_v4 / v7 helpers for SQL-side id generation.
+  # pg_stat_statements is auto-loaded via shared_preload_libraries; the
+  # CREATE EXTENSION is just for safety on rare images that miss the auto-load.
+  postInitSQL:
+    - "CREATE EXTENSION IF NOT EXISTS vector"
+    - "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\""
+    - "CREATE EXTENSION IF NOT EXISTS pg_stat_statements"
 
 postgresql:
   max_connections: "200"
-  shared_buffers: "256MB"
-  effective_cache_size: "1536MB"
-  work_mem: "4MB"
-  maintenance_work_mem: "128MB"
+  # Tuned for the 4Gi memory limit so pgvector workloads have headroom for
+  # HNSW / IVFFLAT index builds and large k-NN scans.
+  shared_buffers: "1GB"
+  effective_cache_size: "3GB"
+  work_mem: "16MB"
+  maintenance_work_mem: "512MB"
   wal_level: "logical"
   max_replication_slots: "10"
   max_wal_senders: "10"
