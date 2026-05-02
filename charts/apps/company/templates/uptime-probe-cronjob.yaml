@@ -1,0 +1,74 @@
+{{- if .Values.uptimeProbe.enabled }}
+# M1 — synthetic uptime probe trigger.
+#
+# Hits the company pod's /api/internal/uptime/probe endpoint every
+# 5 minutes via the in-cluster service. The endpoint runs the actual
+# probes against tenant subdomains (which DO go out through Cloudflare —
+# we want the synthetic to test the full external path), persists
+# results into tenant_uptime_probes, and returns a summary.
+#
+# We use curl from a tiny Alpine image rather than wiring the cron into
+# the Next.js pod itself because (a) the probe sweep is bounded but
+# can take 30s+ on cold caches and we don't want to tie up an SSR
+# worker, and (b) keeping the trigger out-of-process means a Next.js
+# rolling deploy doesn't skip a probe slot.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "company.fullname" . }}-uptime-probe
+  labels:
+    {{- include "company.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.uptimeProbe.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 60
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: {{ .Values.uptimeProbe.timeoutSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "company.labels" . | nindent 12 }}
+            app.kubernetes.io/component: uptime-probe-trigger
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: probe-trigger
+              image: curlimages/curl:8.8.0
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  echo "[uptime-probe] firing sweep at $(date -u +%FT%TZ)"
+                  curl -fsS -X POST \
+                    -H "X-Internal-Token: $INTERNAL_API_TOKEN" \
+                    -H "Content-Type: application/json" \
+                    --max-time {{ .Values.uptimeProbe.curlTimeoutSeconds }} \
+                    "http://{{ include "company.fullname" . }}/api/internal/uptime/probe"
+              env:
+                - name: INTERNAL_API_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "company.fullname" . }}-secrets
+                      key: INTERNAL_API_TOKEN
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1001
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+{{- end }}

@@ -251,6 +251,23 @@ gcp:
   secretManager:
     secretPrefix: "devtest"
 
+# M1 — synthetic uptime probe driver. CronJob in this namespace fires
+# a curl at the company pod's /api/internal/uptime/probe endpoint on
+# the configured schedule, which actually runs the probes and persists
+# results into tenant_uptime_probes. Disable by setting enabled=false.
+uptimeProbe:
+  enabled: true
+  # Every 5 minutes — matches the per-probe rolling window assumed by
+  # the /admin/uptime page's "24h uptime" calculation.
+  schedule: "*/5 * * * *"
+  # Hard cap on the trigger Job's lifetime. The probe sweep itself
+  # uses a 5s per-target timeout in lib/uptime/runner.ts, so a sweep
+  # of N tenants finishes well under this even when half are down.
+  timeoutSeconds: 90
+  # Curl timeout — generous so a slow first-tenant doesn't fail the
+  # whole sweep. Must be ≤ timeoutSeconds.
+  curlTimeoutSeconds: 75
+
 # RBAC for cross-namespace operations
 rbac:
   rolloutRestart:
