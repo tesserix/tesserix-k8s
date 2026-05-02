@@ -50,7 +50,59 @@ spec:
               number: 3000
       timeout: 30s
 
-    # API routes → stockpilot-api service
+    # Long-running synchronous AI/agent endpoints — TradingAgents debate graph,
+    # DCA monthly run, prediction generation, multi-stock comparison can each
+    # take ~60-180s end-to-end. The default /api retry policy (perTryTimeout
+    # 30s, attempts 3) terminates these mid-flight; carve them out into their
+    # own route with a single attempt and a generous wall-clock timeout so the
+    # in-process asyncio.wait_for in run_trading_graph (110s) is what enforces
+    # the cutoff.
+    - match:
+        - uri:
+            prefix: /api/agents/research
+        - uri:
+            prefix: /api/agents/compare
+        - uri:
+            prefix: /api/agents/chat/stream
+        - uri:
+            prefix: /api/dca/run
+        - uri:
+            prefix: /api/predictions/generate
+        - uri:
+            prefix: /api/polymarket/scan
+        - uri:
+            prefix: /api/agents/fno
+        - uri:
+            prefix: /api/agents/ipo
+      route:
+        - destination:
+            host: stockpilot-api.stockpilot.svc.cluster.local
+            port:
+              number: 8000
+      timeout: 300s
+      retries:
+        attempts: 1
+        perTryTimeout: 300s
+        retryOn: connect-failure,refused-stream
+      corsPolicy: &stockpilot-cors-long
+        allowOrigins:
+          - exact: "https://stockpilot.tesserix.app"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # Generic API routes → stockpilot-api service
     - match:
         - uri:
             prefix: /api
