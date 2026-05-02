@@ -1,0 +1,65 @@
+replicaCount: 2
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/tesserix-storybook
+  pullPolicy: IfNotPresent
+  tag: "main-bootstrap"   # CI rewrites this on every push to design-system/main
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  gateway: istio-ingress/tesseract-gateway
+  hosts:
+    - host: ui.tesserix.app
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+podSecurityContext:
+  fsGroup: 1001
+  runAsNonRoot: true
+
+securityContext:
+  runAsUser: 1001
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+volumes:
+  tmp:
+    enabled: true
+    mountPath: /tmp
+  nginxCache:
+    enabled: true
+    mountPath: /var/cache/nginx
+
+pdb:
+  enabled: false
