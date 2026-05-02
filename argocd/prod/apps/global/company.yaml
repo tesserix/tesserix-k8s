@@ -66,6 +66,12 @@ spec:
     syncOptions:
     - CreateNamespace=true
     - PruneLast=true
+    # Without this, Argo's selfHeal applies the chart's rendered manifest
+    # (image: :latest) on every sync, overwriting CI's `kubectl set image`
+    # to the per-commit SHA tag. RespectIgnoreDifferences tells Argo to
+    # strip ignored fields from the applied manifest, not just from drift
+    # detection — so the live image stays whatever CI pinned it to.
+    - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
