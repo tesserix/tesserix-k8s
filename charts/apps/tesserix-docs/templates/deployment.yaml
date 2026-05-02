@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tesserix-docs.fullname" . }}
+  labels: {{- include "tesserix-docs.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "tesserix-docs.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "tesserix-docs.selectorLabels" . | nindent 8 }}
+      annotations:
+        sidecar.istio.io/inject: "true"
+        proxy.istio.io/config: |
+          holdApplicationUntilProxyStarts: true
+    spec:
+      serviceAccountName: {{ include "tesserix-docs.serviceAccountName" . }}
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: web
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: PORT
+              value: {{ .Values.service.targetPort | quote }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            {{- if .Values.volumes.tmp.enabled }}
+            - name: tmp
+              mountPath: {{ .Values.volumes.tmp.mountPath }}
+            {{- end }}
+            {{- if .Values.volumes.cache.enabled }}
+            - name: cache
+              mountPath: {{ .Values.volumes.cache.mountPath }}
+            {{- end }}
+      volumes:
+        {{- if .Values.volumes.tmp.enabled }}
+        - name: tmp
+          emptyDir: {}
+        {{- end }}
+        {{- if .Values.volumes.cache.enabled }}
+        - name: cache
+          emptyDir: {}
+        {{- end }}
