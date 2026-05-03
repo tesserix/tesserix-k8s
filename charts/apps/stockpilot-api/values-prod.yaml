@@ -8,16 +8,13 @@
 # rollout. Once the workflow is updated to also `kustomize edit set
 # image` here on each green build, this can become a tracked field.
 image:
-  tag: "main-c454e9b"
-
+  tag: "main-6caa397"
 replicaCount: 1
-
 resources:
   requests:
     memory: 384Mi
   limits:
     memory: 1Gi
-
 env:
   PYTHONUNBUFFERED: "1"
   ACCOUNT_MODE: "demo"
@@ -46,7 +43,6 @@ env:
   IBKR_HOST: "127.0.0.1"
   IBKR_PORT: "4001"
   IBKR_CLIENT_ID: "1"
-
 # IB Gateway sidecar — runs alongside stockpilot-api on localhost:4001.
 # Disabled: ibkr-credentials secret is not provisioned, causing the sidecar
 # to fail every pod start with CreateContainerConfigError. Re-enable after
@@ -55,13 +51,11 @@ ibGateway:
   enabled: false
   image: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/gnzsnz/ib-gateway:latest
   port: 4001
-
 autoscaling:
-  enabled: false  # Replaced by KEDA
+  enabled: false # Replaced by KEDA
   minReplicas: 1
   maxReplicas: 3
   targetMemoryUtilizationPercentage: 80
-
 keda:
   enabled: true
   pollingInterval: 15
@@ -79,20 +73,17 @@ keda:
   memory:
     enabled: true
     threshold: "80"
-
 gcp:
   projectId: "tesseracthub-480811"
   workloadIdentity:
     enabled: true
     gcpServiceAccount: "app-secrets-global-prod@tesseracthub-480811.iam.gserviceaccount.com"
-
 database:
   host: "stockpilot-postgres-rw.stockpilot.svc.cluster.local"
   port: "5432"
   user: "stockpilot"
   name: "stockpilot"
   sslmode: "require"
-
 redis:
   host: "redis.redis-stockpilot.svc.cluster.local"
   port: "6379"
