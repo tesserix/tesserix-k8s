@@ -58,6 +58,25 @@ spec:
             # GCP project — app reads GROQ_API_KEY, DB password, Redis password from SM
             - name: GCP_PROJECT
               value: {{ .Values.gcp.projectId | default "" | quote }}
+            # Shared secret with the Next.js BFF proxy. The backend trusts
+            # X-User-Email only when X-Internal-Secret matches this value.
+            # Same value MUST be on stockpilot-web. Without this, browser
+            # API calls 401 because the backend ignores X-User-Email.
+            - name: INTERNAL_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: stockpilot-auth-secrets
+                  key: INTERNAL_AUTH_SECRET
+                  optional: true
+            # NEXTAUTH_SECRET is referenced by the backend for any direct
+            # Authorization: Bearer <jwt> path that bypasses the BFF
+            # (e.g. WebSocket auth handshake, system-to-system calls).
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: stockpilot-auth-secrets
+                  key: NEXTAUTH_SECRET
+                  optional: true
           # /health does DB+Redis+LLM round-trips, so it can take several
           # seconds while the agent graph is running its tool loops on the
           # event loop. Probe timeouts must comfortably exceed that or

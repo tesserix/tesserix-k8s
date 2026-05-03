@@ -73,6 +73,21 @@ spec:
                   name: stockpilot-auth-secrets
                   key: NEXTAUTH_SECRET
                   optional: true
+            # Shared with the FastAPI backend; the Next.js BFF proxy at
+            # /api/auth/proxy/* sends X-Internal-Secret with this value
+            # so the backend trusts the paired X-User-Email header.
+            # Without this, every browser API call 401s.
+            - name: INTERNAL_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: stockpilot-auth-secrets
+                  key: INTERNAL_AUTH_SECRET
+                  optional: true
+            # Cluster-internal backend hostname for the BFF proxy. Defaults
+            # to the in-cluster service so browser→Next.js→FastAPI stays on
+            # the cluster network and bypasses the Istio ingress JWT filter.
+            - name: BACKEND_API_URL
+              value: {{ .Values.backendApiUrl | default "http://stockpilot-api.stockpilot.svc.cluster.local:8000" | quote }}
           livenessProbe:
             httpGet:
               path: /
