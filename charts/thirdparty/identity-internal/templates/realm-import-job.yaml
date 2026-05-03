@@ -164,6 +164,37 @@ spec:
               fi
 
               # =================================================================
+              # Step 4c: Ensure Google IDP on stockpilot realm forwards `prompt`
+              # =================================================================
+              # Realm import is one-shot (skipped when the realm already exists),
+              # so a config drift on the Google IDP would otherwise be sticky.
+              # We patch in `prompt=select_account` and `forwardParameters` here
+              # so a stale Keycloak/Google session does not silently re-bind to
+              # the previous user — the symptom is "You are already authenticated
+              # as different user" on the broker callback.
+              echo "Ensuring stockpilot Google IDP has prompt + forwardParameters..."
+              SP_GOOGLE_CFG=$(curl -s \
+                -H "Authorization: Bearer $TOKEN" \
+                "$KEYCLOAK_URL/admin/realms/stockpilot/identity-provider/instances/google")
+              if echo "$SP_GOOGLE_CFG" | grep -q '"alias":"google"'; then
+                if ! echo "$SP_GOOGLE_CFG" | grep -q '"prompt":"select_account"'; then
+                  echo "Patching Google IDP on stockpilot realm..."
+                  PATCHED=$(echo "$SP_GOOGLE_CFG" | sed \
+                    -e 's/"syncMode":"IMPORT"/"syncMode":"IMPORT","prompt":"select_account","forwardParameters":"prompt,max_age,login_hint"/')
+                  IDP_PUT_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+                    "$KEYCLOAK_URL/admin/realms/stockpilot/identity-provider/instances/google" \
+                    -H "Authorization: Bearer $TOKEN" \
+                    -H "Content-Type: application/json" \
+                    -d "$PATCHED")
+                  echo "stockpilot Google IDP patch result: HTTP $IDP_PUT_STATUS"
+                else
+                  echo "stockpilot Google IDP already has prompt=select_account"
+                fi
+              else
+                echo "Warning: Google IDP not found on stockpilot realm"
+              fi
+
+              # =================================================================
               # Step 5: Configure Password Policy
               # =================================================================
               # Password policy is applied separately to avoid conflicts with
