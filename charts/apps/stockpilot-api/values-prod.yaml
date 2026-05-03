@@ -1,5 +1,15 @@
 # Production overrides for stockpilot-api
 
+# Pin to the immutable per-commit tag so deploys cannot be silently
+# served stale by the GCP Artifact Registry remote-pull mirror's
+# tag-to-digest cache (which has bitten us with `:latest` before).
+# The CI workflow at .github/workflows/stockpilot-api-build.yml emits
+# `<branch>-<sha>` via docker/metadata-action; bump this on each
+# rollout. Once the workflow is updated to also `kustomize edit set
+# image` here on each green build, this can become a tracked field.
+image:
+  tag: "main-c454e9b"
+
 replicaCount: 1
 
 resources:
