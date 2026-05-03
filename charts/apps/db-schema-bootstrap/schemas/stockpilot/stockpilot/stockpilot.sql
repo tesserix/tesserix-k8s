@@ -430,6 +430,69 @@ CREATE INDEX IF NOT EXISTS idx_research_reports_user  ON research_reports (user_
 CREATE INDEX IF NOT EXISTS idx_research_reports_stock ON research_reports (stock_id, created_at DESC);
 
 -- ============================================================
+-- AGENT DECISION MEMORY (pgvector situation-similarity retrieval)
+-- ============================================================
+-- Persists a compact "situation summary" + 1536-dim embedding for every
+-- trading-graph run, so the next run on the same user can retrieve
+-- semantically similar past decisions and inject them into the bull/
+-- bear/PM prompts (matching the layered-memory pattern in the
+-- TauricResearch/TradingAgents paper).
+--
+-- The vector(1536) column matches OpenAI's text-embedding-3-small.
+-- HNSW is preferred over IVFFLAT for read-heavy access at our scale.
+-- The DO block guards the column add when pgvector isn't installed
+-- so the bootstrap stays idempotent on any image (the cluster image
+-- on prod has pgvector; some dev images may not).
+
+CREATE TABLE IF NOT EXISTS agent_decision_memory (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    research_report_id UUID REFERENCES research_reports(id) ON DELETE SET NULL,
+    ticker TEXT NOT NULL,
+    run_date DATE NOT NULL,
+    rating TEXT,
+    trader_action TEXT,
+    position_size_pct NUMERIC(5,4),
+    confidence NUMERIC(3,2),
+    persona TEXT DEFAULT 'balanced',
+    situation_summary TEXT NOT NULL,
+    raw_return NUMERIC(8,4),
+    alpha_return NUMERIC(8,4),
+    holding_days INTEGER,
+    reflection TEXT,
+    resolved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+        EXECUTE 'ALTER TABLE agent_decision_memory '
+                'ADD COLUMN IF NOT EXISTS situation_embedding vector(1536)';
+        -- HNSW cosine index is created only if it doesn't already exist.
+        -- On a fresh table this is fast; on a populated one it can take
+        -- a few seconds.
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname = current_schema()
+              AND indexname = 'idx_agent_decision_memory_embedding'
+        ) THEN
+            EXECUTE 'CREATE INDEX idx_agent_decision_memory_embedding '
+                    'ON agent_decision_memory '
+                    'USING hnsw (situation_embedding vector_cosine_ops)';
+        END IF;
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_agent_decision_memory_user_ticker
+    ON agent_decision_memory (user_id, ticker, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_decision_memory_user_recent
+    ON agent_decision_memory (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_decision_memory_resolved
+    ON agent_decision_memory (resolved_at)
+    WHERE resolved_at IS NULL;
+
+-- ============================================================
 -- ALERTS & NOTIFICATIONS
 -- ============================================================
 
