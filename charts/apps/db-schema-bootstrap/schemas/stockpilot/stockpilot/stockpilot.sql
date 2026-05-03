@@ -467,11 +467,18 @@ CREATE TABLE IF NOT EXISTS agent_decision_memory (
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+        -- One column per embedding provider so the dim always matches:
+        --   gemini text-embedding-004   = 768
+        --   voyage voyage-3.5           = 1024
+        --   openai text-embedding-3-small = 1536 (kept under the original
+        --     unsuffixed name for backward compat with previously-written rows)
         EXECUTE 'ALTER TABLE agent_decision_memory '
                 'ADD COLUMN IF NOT EXISTS situation_embedding vector(1536)';
-        -- HNSW cosine index is created only if it doesn't already exist.
-        -- On a fresh table this is fast; on a populated one it can take
-        -- a few seconds.
+        EXECUTE 'ALTER TABLE agent_decision_memory '
+                'ADD COLUMN IF NOT EXISTS situation_embedding_gemini vector(768)';
+        EXECUTE 'ALTER TABLE agent_decision_memory '
+                'ADD COLUMN IF NOT EXISTS situation_embedding_voyage vector(1024)';
+        -- HNSW cosine indexes per column. Fast on empty / small tables.
         IF NOT EXISTS (
             SELECT 1 FROM pg_indexes
             WHERE schemaname = current_schema()
@@ -480,6 +487,24 @@ BEGIN
             EXECUTE 'CREATE INDEX idx_agent_decision_memory_embedding '
                     'ON agent_decision_memory '
                     'USING hnsw (situation_embedding vector_cosine_ops)';
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname = current_schema()
+              AND indexname = 'idx_agent_decision_memory_embedding_gemini'
+        ) THEN
+            EXECUTE 'CREATE INDEX idx_agent_decision_memory_embedding_gemini '
+                    'ON agent_decision_memory '
+                    'USING hnsw (situation_embedding_gemini vector_cosine_ops)';
+        END IF;
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_indexes
+            WHERE schemaname = current_schema()
+              AND indexname = 'idx_agent_decision_memory_embedding_voyage'
+        ) THEN
+            EXECUTE 'CREATE INDEX idx_agent_decision_memory_embedding_voyage '
+                    'ON agent_decision_memory '
+                    'USING hnsw (situation_embedding_voyage vector_cosine_ops)';
         END IF;
     END IF;
 END $$;
@@ -491,6 +516,112 @@ CREATE INDEX IF NOT EXISTS idx_agent_decision_memory_user_recent
 CREATE INDEX IF NOT EXISTS idx_agent_decision_memory_resolved
     ON agent_decision_memory (resolved_at)
     WHERE resolved_at IS NULL;
+
+-- Runtime app user must be able to read/write the new table.
+-- Schema bootstrap runs as `postgres`; without explicit GRANT the
+-- runtime role (`stockpilot`) gets PermissionDenied which poisons
+-- the SQLAlchemy session. Idempotent — safe to re-run.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'stockpilot') THEN
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON agent_decision_memory TO stockpilot';
+    END IF;
+END $$;
+
+-- ============================================================
+-- SUPERINVESTOR PORTFOLIOS (13F-derived holdings of famous investors)
+-- ============================================================
+-- Curated list of currently-active 13F filers + a few legacy persona-only
+-- entries (Munger / Lynch). Refreshed weekly from dataroma.com (or SEC EDGAR
+-- 13F-HR XML as a fallback) by tasks.superinvestors. Holdings are stamped
+-- with the as-of date of the filing they came from — DO NOT present this
+-- as live-portfolio data; it lags 45 days minimum.
+
+CREATE TABLE IF NOT EXISTS superinvestors (
+    slug TEXT PRIMARY KEY,                       -- e.g. "buffett", "ackman"
+    name TEXT NOT NULL,                          -- "Warren Buffett"
+    firm TEXT NOT NULL,                          -- "Berkshire Hathaway"
+    tier TEXT NOT NULL DEFAULT 'value',          -- value|activist|allocator|legacy
+    style_tags TEXT[] DEFAULT '{}',
+    bio TEXT,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active','legacy','paused')),
+    dataroma_id TEXT,                            -- e.g. "BRK"
+    cik TEXT,                                    -- SEC CIK for EDGAR fallback
+    last_filing_date DATE,
+    last_synced_at TIMESTAMPTZ,
+    sort_order INTEGER NOT NULL DEFAULT 100,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS superinvestor_holdings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    investor_slug TEXT NOT NULL REFERENCES superinvestors(slug) ON DELETE CASCADE,
+    ticker TEXT NOT NULL,
+    company TEXT,
+    weight_pct NUMERIC(6,3),
+    value_usd NUMERIC(20,2),
+    shares NUMERIC(20,2),
+    prior_shares NUMERIC(20,2),
+    change_type TEXT CHECK (change_type IN ('NEW','ADD','REDUCE','EXIT','HOLD')),
+    as_of_date DATE NOT NULL,
+    filing_date DATE,
+    filing_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (investor_slug, ticker, as_of_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_superinvestor_holdings_investor_asof
+    ON superinvestor_holdings (investor_slug, as_of_date DESC);
+CREATE INDEX IF NOT EXISTS idx_superinvestor_holdings_ticker
+    ON superinvestor_holdings (ticker);
+
+-- Runtime app user perms (idempotent).
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'stockpilot') THEN
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON superinvestors TO stockpilot';
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON superinvestor_holdings TO stockpilot';
+    END IF;
+END $$;
+
+-- Curated investor seed list. Pinned via UPSERT so future edits to the spec
+-- (e.g. style_tags, sort_order) propagate next bootstrap run.
+-- dataroma_id values verified against dataroma.com/m/managers.php on
+-- 2026-05-03. Three investors are NOT in dataroma's index — Stanley
+-- Druckenmiller (Duquesne is a private family office), Joel Greenblatt
+-- (Gotham not listed), and Charlie Munger (Daily Journal isn't tracked
+-- separately) — leave dataroma_id NULL so the scraper skips them.
+INSERT INTO superinvestors (slug, name, firm, tier, status, sort_order, dataroma_id, style_tags)
+VALUES
+    ('buffett',      'Warren Buffett',     'Berkshire Hathaway',          'value',     'active', 10,  'BRK',     ARRAY['quality','concentrated','owner-mindset']),
+    ('druckenmiller','Stanley Druckenmiller','Duquesne Family Office',    'value',     'active', 20,  NULL,      ARRAY['macro','high-conviction']),
+    ('klarman',      'Seth Klarman',       'Baupost Group',               'value',     'active', 30,  'BAUPOST', ARRAY['deep-value','contrarian']),
+    ('lilu',         'Li Lu',              'Himalaya Capital',            'value',     'active', 40,  'HC',      ARRAY['quality','concentrated']),
+    ('pabrai',       'Mohnish Pabrai',     'Pabrai Investment Funds',     'value',     'active', 50,  'PI',      ARRAY['cloned-buffett','high-conviction']),
+    ('spier',        'Guy Spier',          'Aquamarine Capital',          'value',     'active', 60,  'aq',      ARRAY['buffett-style']),
+    ('terrysmith',   'Terry Smith',        'Fundsmith',                   'value',     'active', 70,  'FS',      ARRAY['quality-compounders','uk']),
+    ('billmiller',   'Bill Miller',        'Miller Value Partners',       'value',     'active', 80,  'LMM',     ARRAY['contrarian','long-term']),
+    ('kantesaria',   'Dev Kantesaria',     'Valley Forge Capital',        'value',     'active', 90,  'VFC',     ARRAY['hyper-concentrated','quality']),
+    ('gayner',       'Tom Gayner',         'Markel Group',                'value',     'active', 100, 'MKL',     ARRAY['allocator']),
+    ('ackman',       'Bill Ackman',        'Pershing Square Capital',     'activist',  'active', 110, 'psc',     ARRAY['activist','concentrated']),
+    ('tepper',       'David Tepper',       'Appaloosa Management',        'activist',  'active', 120, 'AM',      ARRAY['distressed','macro']),
+    ('hohn',         'Chris Hohn',         'TCI Fund Management',         'activist',  'active', 130, 'TCI',     ARRAY['activist','long-term']),
+    ('icahn',        'Carl Icahn',         'Icahn Enterprises',           'activist',  'active', 140, 'ic',      ARRAY['activist']),
+    ('loeb',         'Dan Loeb',           'Third Point',                 'activist',  'active', 150, 'TP',      ARRAY['event-driven']),
+    ('peltz',        'Nelson Peltz',       'Trian Fund Management',       'activist',  'active', 160, 'TF',      ARRAY['activist']),
+    ('marks',        'Howard Marks',       'Oaktree Capital',             'allocator', 'active', 170, 'oc',      ARRAY['credit-aware']),
+    ('greenblatt',   'Joel Greenblatt',    'Gotham Asset Management',     'allocator', 'active', 180, NULL,      ARRAY['magic-formula','special-situations']),
+    ('munger',       'Charlie Munger',     'Daily Journal Corp',          'legacy',    'legacy', 990, NULL,      ARRAY['historical','run-by-successor-since-q4-2023']),
+    ('lynch',        'Peter Lynch',        'Magellan Fund (retired 1990)','legacy',    'legacy', 999, NULL,      ARRAY['historical','persona-only'])
+ON CONFLICT (slug) DO UPDATE SET
+    name = EXCLUDED.name,
+    firm = EXCLUDED.firm,
+    tier = EXCLUDED.tier,
+    status = EXCLUDED.status,
+    sort_order = EXCLUDED.sort_order,
+    dataroma_id = EXCLUDED.dataroma_id,
+    style_tags = EXCLUDED.style_tags;
 
 -- ============================================================
 -- ALERTS & NOTIFICATIONS
