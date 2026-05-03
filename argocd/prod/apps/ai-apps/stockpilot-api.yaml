@@ -19,9 +19,13 @@ spec:
       valueFiles:
         - values.yaml
         - values-prod.yaml
+      # NOTE: image.tag was previously hard-coded here as "latest" via
+      # an ArgoCD parameter override, which silently won over whatever
+      # values-prod.yaml said. Removed so values-prod.yaml's `image.tag`
+      # is the single source of truth — bump it on each rollout to
+      # defeat the GCP Artifact Registry remote-pull tag-cache that
+      # served stale `:latest` digests in the past.
       parameters:
-        - name: image.tag
-          value: "latest"
         - name: env.CORS_ORIGINS
           value: "https://stockpilot.tesserix.app"
   destination:
