@@ -285,6 +285,11 @@ ambient:
 # above. The mark8ly-namespace chart declares the namespace with only
 # `istio-injection: disabled` and no ambient label, which is the mode the
 # service topology was originally deployed with.
+#
+# `ambientExcluded` keeps a namespace declared here (so it still gets the
+# istio-injection=disabled, name, and database-access labels) but skips the
+# ambient dataplane-mode label. Use this when ambient enrollment breaks the
+# ingress chain — same failure mode mark8ly hit on 2026-04-11.
 sidecarInjection:
   namespaces:
     # Application namespaces
@@ -343,6 +348,11 @@ sidecarInjection:
     - redis-devai
     - mongodb-fanzone                 # MongoDB doesn't need sidecar
     - db-backup-and-restore        # Backup jobs don't need sidecar
+  # Namespaces in `namespaces` but NOT enrolled in Ambient mesh.
+  # Keeps istio-injection=disabled + name labels but skips dataplane-mode=ambient.
+  # Use when ambient enrollment breaks ingress (504s through cloudflared).
+  ambientExcluded:
+    - gameverse
 
 # Rate limiting configuration
 rateLimiting:
