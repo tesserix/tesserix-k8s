@@ -103,38 +103,39 @@ spec:
 
               if [ "$REALM_STATUS" = "200" ]; then
                 echo "Realm tesserix-internal already exists, skipping import"
-                exit 0
-              fi
+                # NOTE: do NOT exit 0 here — the Step 4b/4c blocks below
+                # need to run even when the tesserix-internal realm
+                # already exists, so that the stockpilot realm import
+                # and the Google IDP hot-patch can still execute.
+              elif [ "$REALM_STATUS" = "404" ]; then
+                echo "Realm does not exist, proceeding with import..."
 
-              if [ "$REALM_STATUS" != "404" ]; then
-                echo "Unexpected status checking realm: $REALM_STATUS"
-                exit 1
-              fi
+                # =================================================================
+                # Step 4: Import realm with substituted secrets
+                # =================================================================
+                echo "Importing realm configuration..."
 
-              echo "Realm does not exist, proceeding with import..."
+                # Capture both response body and HTTP status code for debugging
+                IMPORT_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$KEYCLOAK_URL/admin/realms" \
+                  -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d @/tmp/realm.json)
 
-              # =================================================================
-              # Step 4: Import realm with substituted secrets
-              # =================================================================
-              echo "Importing realm configuration..."
+                # Extract HTTP status code (last line)
+                IMPORT_STATUS=$(echo "$IMPORT_RESPONSE" | tail -n1)
+                # Extract response body (all but last line)
+                IMPORT_BODY=$(echo "$IMPORT_RESPONSE" | sed '$d')
 
-              # Capture both response body and HTTP status code for debugging
-              IMPORT_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$KEYCLOAK_URL/admin/realms" \
-                -H "Authorization: Bearer $TOKEN" \
-                -H "Content-Type: application/json" \
-                -d @/tmp/realm.json)
+                echo "Import returned status: $IMPORT_STATUS"
 
-              # Extract HTTP status code (last line)
-              IMPORT_STATUS=$(echo "$IMPORT_RESPONSE" | tail -n1)
-              # Extract response body (all but last line)
-              IMPORT_BODY=$(echo "$IMPORT_RESPONSE" | sed '$d')
-
-              echo "Import returned status: $IMPORT_STATUS"
-
-              if [ "$IMPORT_STATUS" = "201" ] || [ "$IMPORT_STATUS" = "204" ]; then
-                echo "Realm imported successfully!"
+                if [ "$IMPORT_STATUS" = "201" ] || [ "$IMPORT_STATUS" = "204" ]; then
+                  echo "Realm imported successfully!"
+                else
+                  echo "Failed to import realm. Response: $IMPORT_BODY"
+                  exit 1
+                fi
               else
-                echo "Failed to import realm. Response: $IMPORT_BODY"
+                echo "Unexpected status checking realm: $REALM_STATUS"
                 exit 1
               fi
 
