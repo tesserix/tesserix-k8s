@@ -50,9 +50,12 @@ spec:
       # Slow query logging (queries > 1s). Tiny workload, so any slow
       # query is interesting.
       log_min_duration_statement: "1000"
-      # WAL safety cap — single-instance, no replica to fall behind, but
-      # keeps disk usage bounded if archiving stalls.
-      max_slot_wal_keep_size: "5GB"
+      # WAL safety cap — single-instance, no replicas, so this only
+      # bounds growth when archiving stalls. Keep small (2GB) so we
+      # don't pre-reserve a chunk of the volume that's never used in
+      # the steady state. Live WAL files take whatever they need on top
+      # of this; the disk has 15Gi total (post 2026-05-04 bump).
+      max_slot_wal_keep_size: "2GB"
       # Performance monitoring (CNPG auto-loads extension).
       pg_stat_statements.track: "all"
       pg_stat_statements.max: "10000"
