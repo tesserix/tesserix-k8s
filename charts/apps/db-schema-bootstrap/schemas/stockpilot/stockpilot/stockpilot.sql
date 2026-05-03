@@ -817,6 +817,44 @@ INSERT INTO schema_migrations (version, description) VALUES
 ON CONFLICT (version) DO NOTHING;
 
 -- ============================================================
+-- MIGRATION 004: 3-bucket weekly predictions + LLM telemetry
+-- ============================================================
+-- weekly_predictions gains the new dividend / penny buckets, the
+-- detected macro regime, and per-run token + cost totals so the UI
+-- can show how much each weekly run actually costs.
+
+ALTER TABLE weekly_predictions ADD COLUMN IF NOT EXISTS dividend_picks      JSONB;
+ALTER TABLE weekly_predictions ADD COLUMN IF NOT EXISTS penny_picks         JSONB;
+ALTER TABLE weekly_predictions ADD COLUMN IF NOT EXISTS macro_regime        TEXT;
+ALTER TABLE weekly_predictions ADD COLUMN IF NOT EXISTS tokens_used         INTEGER;
+ALTER TABLE weekly_predictions ADD COLUMN IF NOT EXISTS estimated_cost_usd  NUMERIC(10,4);
+
+-- Per-call LLM usage telemetry. Populated by services/llm_runtime.py
+-- so every cached_generate() call gets a row (cache hits included,
+-- with zero tokens/cost). Powers /api/predictions/usage/summary.
+CREATE TABLE IF NOT EXISTS llm_usage (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    user_id             UUID REFERENCES users(id) ON DELETE SET NULL,
+    agent_type          TEXT NOT NULL,
+    provider            TEXT NOT NULL,
+    model               TEXT NOT NULL,
+    input_tokens        INTEGER NOT NULL DEFAULT 0,
+    output_tokens       INTEGER NOT NULL DEFAULT 0,
+    estimated_cost_usd  NUMERIC(10,6) NOT NULL DEFAULT 0,
+    cache_hit           BOOLEAN NOT NULL DEFAULT FALSE,
+    latency_ms          INTEGER,
+    request_context     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_llm_usage_created_at ON llm_usage (created_at);
+CREATE INDEX IF NOT EXISTS idx_llm_usage_agent_type ON llm_usage (agent_type);
+
+INSERT INTO schema_migrations (version, description) VALUES
+    ('004', '3-bucket weekly_predictions (dividend/penny) + llm_usage telemetry')
+ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
 -- DONE
 -- ============================================================
 -- This script is fully idempotent. Running it multiple times
