@@ -327,6 +327,33 @@ CREATE TABLE IF NOT EXISTS trades (
 
 CREATE INDEX IF NOT EXISTS idx_trades_portfolio ON trades (portfolio_id, executed_at DESC);
 
+-- ──────────────────────────────────────────────────────────────────────
+-- Trade journal: thesis at trade time + post-trade outcome review.
+-- Columns are added with IF NOT EXISTS so legacy tables get them without
+-- losing existing rows; absent values mean "user did not record a thesis"
+-- rather than failing the trade.
+--
+--   thesis           jsonb  — captured before the order fills:
+--     { "why": "iPhone 18 launch demand surprise",
+--       "stop_price":   180.00,
+--       "target_price": 245.00,
+--       "horizon_days": 60 }
+--
+--   review           jsonb  — recorded N days later via PUT /review:
+--     { "outcome":      "right_thesis_right_outcome" |
+--                       "wrong_thesis_right_outcome" |
+--                       "right_thesis_wrong_outcome" |
+--                       "wrong_thesis_wrong_outcome" |
+--                       "still_open",
+--       "notes":         "iPhone numbers came in below expectations …",
+--       "days_after_trade": 30 }
+--
+--   reviewed_at      timestamptz — last time review was written.
+-- ──────────────────────────────────────────────────────────────────────
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS thesis      JSONB;
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS review      JSONB;
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+
 -- Seed default demo portfolios for allowed users (skip if already exist)
 INSERT INTO portfolios (user_id, name, mode, initial_balance, cash_balance)
 SELECT u.id, 'My Demo Portfolio', 'demo', 100000.00, 100000.00
