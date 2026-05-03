@@ -37,27 +37,27 @@ jobs:
         with:
           version: ${{ env.HELM_VERSION }}
 
-      - name: Get changed files
-        id: changed-files
-        uses: tj-actions/changed-files@v44
-        with:
-          files: |
-            charts/apps/**
-
+      # Identify changed charts via native git diff against the PR base.
+      # Replaces tj-actions/changed-files (CVE-2025-30066 supply-chain
+      # compromise) with a zero-third-party-dep equivalent. actions/checkout
+      # above uses fetch-depth: 0 so we have the full history available.
       - name: Identify changed charts
         id: changed-charts
         run: |
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
           changed_charts=""
-          for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
-            # Extract chart name from path
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
             chart=$(echo "$file" | sed -n 's|charts/apps/\([^/]*\)/.*|\1|p')
             if [ -n "$chart" ] && [ -d "charts/apps/$chart" ]; then
-              if [[ ! "$changed_charts" =~ "$chart" ]]; then
-                changed_charts="$changed_charts $chart"
-              fi
+              case " $changed_charts " in
+                *" $chart "*) ;;
+                *) changed_charts="$changed_charts $chart" ;;
+              esac
             fi
-          done
-          echo "charts=$changed_charts" >> $GITHUB_OUTPUT
+          done < <(git diff --name-only "$base_sha" "$head_sha" -- 'charts/apps/**')
+          echo "charts=$changed_charts" >> "$GITHUB_OUTPUT"
           echo "Changed charts:$changed_charts"
 
       - name: Lint changed charts
