@@ -39,7 +39,13 @@ spec:
               number: 8000
       timeout: 3600s
 
-    # Auth routes → stockpilot-web (must be before /api catch-all)
+    # Auth routes → stockpilot-web (must be before /api catch-all).
+    # The BFF proxy (/api/auth/proxy/*) routes user requests through
+    # the Next.js server before they reach the FastAPI backend, so a
+    # rolling deploy of stockpilot-web can briefly hand a request to
+    # a terminating pod. Retry on connection-level failures only —
+    # never on 5xx, because POST /api/trades isn't idempotent and we
+    # don't want duplicate fills.
     - match:
         - uri:
             prefix: /api/auth
@@ -48,7 +54,11 @@ spec:
             host: stockpilot-web.stockpilot.svc.cluster.local
             port:
               number: 3000
-      timeout: 30s
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 20s
+        retryOn: connect-failure,refused-stream,reset
 
     # Long-running synchronous AI/agent endpoints — TradingAgents debate graph,
     # DCA monthly run, prediction generation, multi-stock comparison can each
