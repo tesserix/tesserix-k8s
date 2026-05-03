@@ -4,6 +4,7 @@ Ambient mode uses ztunnel (per-node L4 proxy) instead of sidecar injection.
 Label namespaces with istio.io/dataplane-mode: ambient to enroll them.
 */}}
 {{- $dbAccessNamespaces := .Values.sidecarInjection.databaseAccessNamespaces | default list }}
+{{- $ambientExcluded := .Values.sidecarInjection.ambientExcluded | default list }}
 {{- range .Values.sidecarInjection.namespaces }}
 ---
 apiVersion: v1
@@ -13,8 +14,10 @@ metadata:
   labels:
     # Disable legacy sidecar injection (must be explicit to override existing label)
     istio-injection: disabled
+    {{- if not (has . $ambientExcluded) }}
     # Istio Ambient mesh enrollment (replaces sidecar injection)
     istio.io/dataplane-mode: ambient
+    {{- end }}
     # K8s built-in namespace name label
     kubernetes.io/metadata.name: {{ . }}
     # Custom name label for NetworkPolicy namespaceSelector matching
