@@ -124,6 +124,100 @@ spec:
             - name: STRIPE_SECRET_KEY
               value: ""
 
+            # ─── Email (SendGrid via NodeMailer SMTP) ─────────────────────
+            {{- if .Values.email.enabled }}
+            - name: EMAIL_PROVIDER
+              value: "nodemailer"
+            - name: EMAIL_HOST
+              value: {{ .Values.email.host | quote }}
+            - name: EMAIL_PORT
+              value: {{ .Values.email.port | quote }}
+            - name: EMAIL_SECURE
+              value: {{ .Values.email.secure | quote }}
+            - name: EMAIL_USER
+              value: {{ .Values.email.user | quote }}
+            - name: EMAIL_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: postsocial-secrets
+                  key: SENDGRID_API_KEY
+                  optional: true
+            - name: EMAIL_FROM_ADDRESS
+              value: {{ .Values.email.fromAddress | quote }}
+            - name: EMAIL_FROM_NAME
+              value: {{ .Values.email.fromName | quote }}
+            {{- end }}
+
+            # ─── Sentry monitoring (optional) ─────────────────────────────
+            {{- if .Values.sentry.enabled }}
+            - name: NEXT_PUBLIC_SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: postsocial-secrets
+                  key: SENTRY_DSN
+                  optional: true
+            {{- if .Values.sentry.spotlight }}
+            - name: SENTRY_SPOTLIGHT
+              value: "1"
+            {{- end }}
+            {{- end }}
+
+            # ─── URL shorteners (Postiz auto-picks the configured one) ────
+            {{- if .Values.shortLinks.dub.enabled }}
+            - name: DUB_API_ENDPOINT
+              value: {{ .Values.shortLinks.dub.apiEndpoint | quote }}
+            - name: DUB_SHORT_LINK_DOMAIN
+              value: {{ .Values.shortLinks.dub.domain | quote }}
+            - name: DUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: postsocial-secrets
+                  key: DUB_TOKEN
+                  optional: true
+            {{- end }}
+            {{- if .Values.shortLinks.shortIo.enabled }}
+            - name: SHORT_IO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: postsocial-secrets
+                  key: SHORT_IO_SECRET_KEY
+                  optional: true
+            {{- end }}
+            {{- if .Values.shortLinks.kutt.enabled }}
+            - name: KUTT_API_ENDPOINT
+              value: {{ .Values.shortLinks.kutt.apiEndpoint | quote }}
+            - name: KUTT_SHORT_LINK_DOMAIN
+              value: {{ .Values.shortLinks.kutt.domain | quote }}
+            - name: KUTT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: postsocial-secrets
+                  key: KUTT_API_KEY
+                  optional: true
+            {{- end }}
+            {{- if .Values.shortLinks.linkDrip.enabled }}
+            - name: LINK_DRIP_API_ENDPOINT
+              value: {{ .Values.shortLinks.linkDrip.apiEndpoint | quote }}
+            - name: LINK_DRIP_SHORT_LINK_DOMAIN
+              value: {{ .Values.shortLinks.linkDrip.domain | quote }}
+            - name: LINK_DRIP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: postsocial-secrets
+                  key: LINK_DRIP_API_KEY
+                  optional: true
+            {{- end }}
+
+            # ─── Polotno (optional canvas editor) ─────────────────────────
+            {{- if .Values.polotnoEnabled }}
+            - name: NEXT_PUBLIC_POLOTNO
+              valueFrom:
+                secretKeyRef:
+                  name: postsocial-secrets
+                  key: POLOTNO_KEY
+                  optional: true
+            {{- end }}
+
           volumeMounts:
             - name: uploads
               mountPath: /uploads
