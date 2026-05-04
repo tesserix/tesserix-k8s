@@ -39,9 +39,20 @@ spec:
               value: "temporal-postgres.{{ .Values.namespace }}.svc.cluster.local"
             - name: TEMPORAL_NAMESPACE
               value: default
-            # SQL-based visibility — no Elasticsearch needed for our footprint
+            {{- if .Values.elasticsearch.enabled }}
+            # ES-backed visibility — required for PostSocial's custom Text
+            # search attributes (organizationId, postId), which exceed SQL's
+            # 3-Text-column limit.
+            - name: ENABLE_ES
+              value: "true"
+            - name: ES_SEEDS
+              value: "temporal-elasticsearch.{{ .Values.namespace }}.svc.cluster.local"
+            - name: ES_VERSION
+              value: "v7"
+            {{- else }}
             - name: ENABLE_ES
               value: "false"
+            {{- end }}
             - name: SKIP_DEFAULT_NAMESPACE_CREATION
               value: "false"
           ports:
