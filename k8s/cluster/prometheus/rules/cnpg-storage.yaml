@@ -1,0 +1,130 @@
+# =============================================================================
+# CNPG fleet — storage utilization alerts
+# =============================================================================
+# Catches the failure mode that took tesserix-postgres down on 2026-05-04:
+# WAL volume filled up and CNPG instance-manager refused to start with
+# "Detected low-disk space condition." The existing per-cluster
+# CNPGWALAccumulation alert fires on a fixed 1GB threshold which doesn't
+# scale with disk size — useful for the smallest clusters but invisible
+# on the larger ones.
+#
+# This file uses kubelet PVC metrics (kubelet_volume_stats_*) to compute
+# utilization as a percentage of the actual provisioned volume size.
+# Selectors match any PVC owned by a CNPG cluster (the PVCs CNPG creates
+# carry the cnpg.io/cluster label that the operator injects).
+#
+# WAL fill is the more urgent failure mode (postgres can't start at all)
+# so its thresholds are tighter than the data volume's.
+#
+# Recovery for low-WAL: bump walStorageSize in the cluster's values.yaml,
+# patch the PVC if CNPG won't (CNPG can't auto-resize while the pod is
+# crashing — see .planning/OPERATOR-RUNBOOK.md). For data: same flow,
+# different value.
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cnpg-storage-utilization
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+    app.kubernetes.io/component: monitoring
+    app.kubernetes.io/part-of: subscription-observability
+spec:
+  groups:
+    - name: cnpg-storage-utilization
+      interval: 60s
+      rules:
+        # ─── WAL volume — disk full means postgres can't start ────────
+        # WAL volumes follow the naming pattern <clusterName>-N-wal so
+        # the regex match `.*-wal$` is the cleanest fleet-wide selector.
+        # An alternative is to label-select on cnpg.io/* labels but
+        # those don't always propagate to kubelet's volume stats.
+        - alert: CNPGWALVolumeUtilizationHigh
+          expr: |
+            (
+              kubelet_volume_stats_used_bytes{persistentvolumeclaim=~".*-wal"}
+              /
+              kubelet_volume_stats_capacity_bytes{persistentvolumeclaim=~".*-wal"}
+            ) > 0.70
+          for: 5m
+          labels:
+            severity: warning
+            component: cnpg-storage
+          annotations:
+            summary: "CNPG WAL volume {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} > 70% full"
+            description: |
+              WAL volume {{ $labels.persistentvolumeclaim }} in namespace
+              {{ $labels.namespace }} is at {{ $value | humanizePercentage }}
+              utilization. WAL fill drives the cluster offline once
+              CNPG's instance-manager hits its low-disk threshold.
+
+              Action: bump walStorageSize in the corresponding chart's
+              values.yaml and push. CNPG resizeInUseVolumes is enabled,
+              so it expands online. If the pod is already crashing,
+              kubectl patch the PVC directly (see OPERATOR-RUNBOOK.md
+              §Recovery — tesserix WAL fill 2026-05-04).
+
+        - alert: CNPGWALVolumeUtilizationCritical
+          expr: |
+            (
+              kubelet_volume_stats_used_bytes{persistentvolumeclaim=~".*-wal"}
+              /
+              kubelet_volume_stats_capacity_bytes{persistentvolumeclaim=~".*-wal"}
+            ) > 0.85
+          for: 2m
+          labels:
+            severity: critical
+            component: cnpg-storage
+          annotations:
+            summary: "CNPG WAL volume {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} > 85% full — outage imminent"
+            description: |
+              WAL volume {{ $labels.persistentvolumeclaim }} in namespace
+              {{ $labels.namespace }} is at {{ $value | humanizePercentage }}.
+              Once CNPG declares low-disk the pod will not start. Resize
+              now — see OPERATOR-RUNBOOK.md §Recovery — tesserix WAL fill
+              2026-05-04 for the exact PVC patch sequence.
+
+        # ─── Data volume — slower failure mode but still painful ─────
+        # Data volumes follow <clusterName>-N (no -wal suffix). The
+        # negative lookahead via != excludes WAL PVCs.
+        - alert: CNPGDataVolumeUtilizationHigh
+          expr: |
+            (
+              kubelet_volume_stats_used_bytes{persistentvolumeclaim=~"^.*-postgres-[0-9]+$"}
+              /
+              kubelet_volume_stats_capacity_bytes{persistentvolumeclaim=~"^.*-postgres-[0-9]+$"}
+            ) > 0.80
+          for: 15m
+          labels:
+            severity: warning
+            component: cnpg-storage
+          annotations:
+            summary: "CNPG data volume {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} > 80% full"
+            description: |
+              Data volume {{ $labels.persistentvolumeclaim }} in namespace
+              {{ $labels.namespace }} is at {{ $value | humanizePercentage }}
+              utilization. Postgres won't immediately fail, but writes will
+              start failing once the disk is full and bloat from autovacuum
+              can briefly push usage higher than steady-state.
+
+              Action: bump storageSize in the cluster's values.yaml.
+
+        - alert: CNPGDataVolumeUtilizationCritical
+          expr: |
+            (
+              kubelet_volume_stats_used_bytes{persistentvolumeclaim=~"^.*-postgres-[0-9]+$"}
+              /
+              kubelet_volume_stats_capacity_bytes{persistentvolumeclaim=~"^.*-postgres-[0-9]+$"}
+            ) > 0.90
+          for: 5m
+          labels:
+            severity: critical
+            component: cnpg-storage
+          annotations:
+            summary: "CNPG data volume {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} > 90% full"
+            description: |
+              Data volume {{ $labels.persistentvolumeclaim }} in namespace
+              {{ $labels.namespace }} is at {{ $value | humanizePercentage }}.
+              Writes may begin to fail. Resize NOW.
