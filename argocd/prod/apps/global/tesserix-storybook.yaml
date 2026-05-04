@@ -21,6 +21,14 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: tesserix
+  # Strip Deployment .status.terminatingReplicas before diff — K8s 1.32 added
+  # this field but the ArgoCD version running here has an older OpenAPI schema,
+  # which causes "field not declared in schema" ComparisonError and blocks sync.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jqPathExpressions:
+        - .status.terminatingReplicas
   syncPolicy:
     automated:
       prune: true
