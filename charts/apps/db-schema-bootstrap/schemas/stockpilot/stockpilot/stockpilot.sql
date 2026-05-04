@@ -603,6 +603,24 @@ CREATE INDEX IF NOT EXISTS idx_superinvestor_holdings_investor_asof
 CREATE INDEX IF NOT EXISTS idx_superinvestor_holdings_ticker
     ON superinvestor_holdings (ticker);
 
+-- CUSIP → ticker resolution cache. SEC 13F filings list holdings by
+-- CUSIP, not ticker. We resolve via OpenFIGI's anonymous tier (25
+-- req/min, no auth) and cache here so subsequent quarterly syncs are
+-- one DB round-trip per holding rather than 25-rps-rate-limited
+-- network calls. ``ticker = NULL`` means OpenFIGI couldn't resolve
+-- the CUSIP — re-trigger by deleting the row.
+CREATE TABLE IF NOT EXISTS cusip_tickers (
+    cusip            TEXT PRIMARY KEY,
+    ticker           TEXT,
+    last_resolved_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'stockpilot') THEN
+        EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON cusip_tickers TO stockpilot';
+    END IF;
+END $$;
+
 -- Runtime app user perms (idempotent).
 DO $$
 BEGIN
@@ -613,34 +631,36 @@ BEGIN
 END $$;
 
 -- Curated investor seed list. Pinned via UPSERT so future edits to the spec
--- (e.g. style_tags, sort_order) propagate next bootstrap run.
+-- (e.g. style_tags, sort_order, cik) propagate next bootstrap run.
 -- dataroma_id values verified against dataroma.com/m/managers.php on
--- 2026-05-03. Three investors are NOT in dataroma's index — Stanley
--- Druckenmiller (Duquesne is a private family office), Joel Greenblatt
--- (Gotham not listed), and Charlie Munger (Daily Journal isn't tracked
--- separately) — leave dataroma_id NULL so the scraper skips them.
-INSERT INTO superinvestors (slug, name, firm, tier, status, sort_order, dataroma_id, style_tags)
+-- 2026-05-03. Two investors are not in dataroma's index but file 13F
+-- with the SEC, so we sync them via EDGAR using their CIK:
+--   * Stanley Druckenmiller — Duquesne Family Office (CIK 0001536411)
+--   * Joel Greenblatt — Gotham Asset Management LLC (CIK 0001407763)
+-- Munger / Lynch stay legacy — Daily Journal Corp's investments are
+-- disclosed in 10-K, not 13F-HR, and Lynch retired in 1990.
+INSERT INTO superinvestors (slug, name, firm, tier, status, sort_order, dataroma_id, cik, style_tags)
 VALUES
-    ('buffett',      'Warren Buffett',     'Berkshire Hathaway',          'value',     'active', 10,  'BRK',     ARRAY['quality','concentrated','owner-mindset']),
-    ('druckenmiller','Stanley Druckenmiller','Duquesne Family Office',    'value',     'active', 20,  NULL,      ARRAY['macro','high-conviction']),
-    ('klarman',      'Seth Klarman',       'Baupost Group',               'value',     'active', 30,  'BAUPOST', ARRAY['deep-value','contrarian']),
-    ('lilu',         'Li Lu',              'Himalaya Capital',            'value',     'active', 40,  'HC',      ARRAY['quality','concentrated']),
-    ('pabrai',       'Mohnish Pabrai',     'Pabrai Investment Funds',     'value',     'active', 50,  'PI',      ARRAY['cloned-buffett','high-conviction']),
-    ('spier',        'Guy Spier',          'Aquamarine Capital',          'value',     'active', 60,  'aq',      ARRAY['buffett-style']),
-    ('terrysmith',   'Terry Smith',        'Fundsmith',                   'value',     'active', 70,  'FS',      ARRAY['quality-compounders','uk']),
-    ('billmiller',   'Bill Miller',        'Miller Value Partners',       'value',     'active', 80,  'LMM',     ARRAY['contrarian','long-term']),
-    ('kantesaria',   'Dev Kantesaria',     'Valley Forge Capital',        'value',     'active', 90,  'VFC',     ARRAY['hyper-concentrated','quality']),
-    ('gayner',       'Tom Gayner',         'Markel Group',                'value',     'active', 100, 'MKL',     ARRAY['allocator']),
-    ('ackman',       'Bill Ackman',        'Pershing Square Capital',     'activist',  'active', 110, 'psc',     ARRAY['activist','concentrated']),
-    ('tepper',       'David Tepper',       'Appaloosa Management',        'activist',  'active', 120, 'AM',      ARRAY['distressed','macro']),
-    ('hohn',         'Chris Hohn',         'TCI Fund Management',         'activist',  'active', 130, 'TCI',     ARRAY['activist','long-term']),
-    ('icahn',        'Carl Icahn',         'Icahn Enterprises',           'activist',  'active', 140, 'ic',      ARRAY['activist']),
-    ('loeb',         'Dan Loeb',           'Third Point',                 'activist',  'active', 150, 'TP',      ARRAY['event-driven']),
-    ('peltz',        'Nelson Peltz',       'Trian Fund Management',       'activist',  'active', 160, 'TF',      ARRAY['activist']),
-    ('marks',        'Howard Marks',       'Oaktree Capital',             'allocator', 'active', 170, 'oc',      ARRAY['credit-aware']),
-    ('greenblatt',   'Joel Greenblatt',    'Gotham Asset Management',     'allocator', 'active', 180, NULL,      ARRAY['magic-formula','special-situations']),
-    ('munger',       'Charlie Munger',     'Daily Journal Corp',          'legacy',    'legacy', 990, NULL,      ARRAY['historical','run-by-successor-since-q4-2023']),
-    ('lynch',        'Peter Lynch',        'Magellan Fund (retired 1990)','legacy',    'legacy', 999, NULL,      ARRAY['historical','persona-only'])
+    ('buffett',      'Warren Buffett',     'Berkshire Hathaway',          'value',     'active', 10,  'BRK',     NULL,         ARRAY['quality','concentrated','owner-mindset']),
+    ('druckenmiller','Stanley Druckenmiller','Duquesne Family Office',    'value',     'active', 20,  NULL,      '0001536411', ARRAY['macro','high-conviction']),
+    ('klarman',      'Seth Klarman',       'Baupost Group',               'value',     'active', 30,  'BAUPOST', NULL,         ARRAY['deep-value','contrarian']),
+    ('lilu',         'Li Lu',              'Himalaya Capital',            'value',     'active', 40,  'HC',      NULL,         ARRAY['quality','concentrated']),
+    ('pabrai',       'Mohnish Pabrai',     'Pabrai Investment Funds',     'value',     'active', 50,  'PI',      NULL,         ARRAY['cloned-buffett','high-conviction']),
+    ('spier',        'Guy Spier',          'Aquamarine Capital',          'value',     'active', 60,  'aq',      NULL,         ARRAY['buffett-style']),
+    ('terrysmith',   'Terry Smith',        'Fundsmith',                   'value',     'active', 70,  'FS',      NULL,         ARRAY['quality-compounders','uk']),
+    ('billmiller',   'Bill Miller',        'Miller Value Partners',       'value',     'active', 80,  'LMM',     NULL,         ARRAY['contrarian','long-term']),
+    ('kantesaria',   'Dev Kantesaria',     'Valley Forge Capital',        'value',     'active', 90,  'VFC',     NULL,         ARRAY['hyper-concentrated','quality']),
+    ('gayner',       'Tom Gayner',         'Markel Group',                'value',     'active', 100, 'MKL',     NULL,         ARRAY['allocator']),
+    ('ackman',       'Bill Ackman',        'Pershing Square Capital',     'activist',  'active', 110, 'psc',     NULL,         ARRAY['activist','concentrated']),
+    ('tepper',       'David Tepper',       'Appaloosa Management',        'activist',  'active', 120, 'AM',      NULL,         ARRAY['distressed','macro']),
+    ('hohn',         'Chris Hohn',         'TCI Fund Management',         'activist',  'active', 130, 'TCI',     NULL,         ARRAY['activist','long-term']),
+    ('icahn',        'Carl Icahn',         'Icahn Enterprises',           'activist',  'active', 140, 'ic',      NULL,         ARRAY['activist']),
+    ('loeb',         'Dan Loeb',           'Third Point',                 'activist',  'active', 150, 'TP',      NULL,         ARRAY['event-driven']),
+    ('peltz',        'Nelson Peltz',       'Trian Fund Management',       'activist',  'active', 160, 'TF',      NULL,         ARRAY['activist']),
+    ('marks',        'Howard Marks',       'Oaktree Capital',             'allocator', 'active', 170, 'oc',      NULL,         ARRAY['credit-aware']),
+    ('greenblatt',   'Joel Greenblatt',    'Gotham Asset Management',     'allocator', 'active', 180, NULL,      '0001407763', ARRAY['magic-formula','special-situations']),
+    ('munger',       'Charlie Munger',     'Daily Journal Corp',          'legacy',    'legacy', 990, NULL,      NULL,         ARRAY['historical','run-by-successor-since-q4-2023']),
+    ('lynch',        'Peter Lynch',        'Magellan Fund (retired 1990)','legacy',    'legacy', 999, NULL,      NULL,         ARRAY['historical','persona-only'])
 ON CONFLICT (slug) DO UPDATE SET
     name = EXCLUDED.name,
     firm = EXCLUDED.firm,
@@ -648,6 +668,7 @@ ON CONFLICT (slug) DO UPDATE SET
     status = EXCLUDED.status,
     sort_order = EXCLUDED.sort_order,
     dataroma_id = EXCLUDED.dataroma_id,
+    cik = EXCLUDED.cik,
     style_tags = EXCLUDED.style_tags;
 
 -- ============================================================
