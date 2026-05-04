@@ -1,0 +1,37 @@
+# Otto support-chat REST + WebSocket surface.
+#
+# Two principal sets share the workload:
+#   - mark8ly-admin:      proxies the staff inbox (/api/v1/admin/otto/*)
+#                         + the staff WebSocket
+#   - mark8ly-storefront: proxies the customer widget
+#                         (/api/v1/storefront/otto/*) + the customer
+#                         WebSocket. Customer browsers don't speak
+#                         mTLS so they go through storefront's proxy.
+#
+# Istio-ingress is also allowed here because Istio routes the WebSocket
+# upgrade path (/api/v1/.../ws) DIRECTLY at otto, bypassing the Next.js
+# proxies — see services/otto/cmd/server/main.go RegisterWS comment. The
+# WS auth uses signed tickets; this AP is the network-layer gate.
+#
+# Dead config until the namespace is enrolled in ambient mode
+# (istio.io/dataplane-mode: ambient). At that point ztunnel begins
+# enforcing this policy + the namespace-level default-deny.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-otto-callers
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-admin"
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-storefront"
+        - source:
+            namespaces:
+              - istio-system

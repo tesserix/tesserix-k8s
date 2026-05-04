@@ -1,0 +1,21 @@
+# MongoDB backs Otto's conversation/message/audit/availability collections.
+# Otto is the only legit caller; cnpg-system is unrelated (Postgres).
+# When ambient mode is enabled, ztunnel enforces this gate at the node;
+# until then the policy is dead config (matches sibling services).
+{{- $namespace := .Values.namespace | default "mark8ly" }}
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-mongodb-callers
+  namespace: {{ $namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "mark8ly-mongodb.name" . }}
+      app.kubernetes.io/component: database
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/{{ $namespace }}/sa/mark8ly-otto"

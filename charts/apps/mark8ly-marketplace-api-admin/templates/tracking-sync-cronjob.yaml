@@ -48,6 +48,14 @@ spec:
             sidecar.istio.io/inject: "false"
         spec:
           restartPolicy: OnFailure
+          # Run as the same SA as marketplace-api-admin so when ambient
+          # mode is enabled, the AuthorizationPolicy on marketplace-api-admin
+          # (which only allows specific named principals) admits this
+          # CronJob's self-callback. Falling back to `default` SA — as
+          # this Job did before — would surface as a 401/403 against
+          # /api/v1/internal/shipments/tracking/sync the moment the
+          # mesh starts enforcing.
+          serviceAccountName: {{ .Values.name }}
           securityContext:
             runAsNonRoot: true
             runAsUser: 65534
