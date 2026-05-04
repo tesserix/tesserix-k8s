@@ -1,0 +1,39 @@
+# RBAC granted to the scrapper-api ServiceAccount so its
+# /api/settings/publishing-providers PUT handler can:
+#   1. Annotate the postsocial-secrets ExternalSecret to force ESO resync
+#   2. Trigger a rollout-restart of the postsocial Deployment so the new env
+#      values from the K8s Secret get picked up immediately.
+#
+# Scoped narrowly: scrapper namespace only, named resources only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: scrapper-api-postsocial-manager
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "postsocial.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
+    resourceNames: ["postsocial-secrets"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["postsocial"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: scrapper-api-postsocial-manager
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "postsocial.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: scrapper-api
+    namespace: {{ .Values.namespace }}
+roleRef:
+  kind: Role
+  name: scrapper-api-postsocial-manager
+  apiGroup: rbac.authorization.k8s.io
