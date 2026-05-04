@@ -88,12 +88,8 @@ spec:
                   name: postsocial-secrets
                   key: OPENAI_API_KEY
 
-            # ─── Per-platform OAuth (id from values, secret from secret) ──
-            {{- range $key, $value := .Values.platformOauth }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
-            {{- range $name := list "X_API_SECRET" "LINKEDIN_CLIENT_SECRET" "FACEBOOK_APP_SECRET" "THREADS_APP_SECRET" "YOUTUBE_CLIENT_SECRET" "TIKTOK_CLIENT_SECRET" "PINTEREST_CLIENT_SECRET" "REDDIT_CLIENT_SECRET" "DISCORD_CLIENT_SECRET" "DISCORD_BOT_TOKEN_ID" "SLACK_SECRET" "SLACK_SIGNING_SECRET" "MASTODON_CLIENT_SECRET" }}
+            # ─── Per-platform OAuth (BOTH ids and secrets from postsocial-secrets) ──
+            {{- range $name := list "X_API_KEY" "X_API_SECRET" "LINKEDIN_CLIENT_ID" "LINKEDIN_CLIENT_SECRET" "FACEBOOK_APP_ID" "FACEBOOK_APP_SECRET" "THREADS_APP_ID" "THREADS_APP_SECRET" "YOUTUBE_CLIENT_ID" "YOUTUBE_CLIENT_SECRET" "TIKTOK_CLIENT_ID" "TIKTOK_CLIENT_SECRET" "PINTEREST_CLIENT_ID" "PINTEREST_CLIENT_SECRET" "REDDIT_CLIENT_ID" "REDDIT_CLIENT_SECRET" "DISCORD_CLIENT_ID" "DISCORD_CLIENT_SECRET" "DISCORD_BOT_TOKEN_ID" "SLACK_ID" "SLACK_SECRET" "SLACK_SIGNING_SECRET" "MASTODON_CLIENT_ID" "MASTODON_CLIENT_SECRET" }}
             - name: {{ $name }}
               valueFrom:
                 secretKeyRef:
@@ -101,6 +97,9 @@ spec:
                   key: {{ $name }}
                   optional: true
             {{- end }}
+            # MASTODON_URL is a literal (no cred), kept as a value
+            - name: MASTODON_URL
+              value: {{ .Values.mastodonUrl | quote }}
 
             # ─── Misc tunables (ULTIMATE tier auto-resolves with Stripe absent) ──
             - name: IS_GENERAL
