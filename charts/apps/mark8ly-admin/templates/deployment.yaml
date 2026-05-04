@@ -49,6 +49,19 @@ spec:
               value: {{ .Values.service.port | quote }}
             - name: PLATFORM_API_URL
               value: {{ .Values.platformApiUrl | quote }}
+            # Forwarded as X-Internal-Auth on every server-side fetch
+            # into platform-api/internal/*. lib/api/server/platformInternal.ts
+            # trims trailing whitespace before sending so a GSM-stored
+            # newline doesn't poison the constant-time compare on the
+            # other side. Optional during the rollout window — empty
+            # value disables the header (matches platform-api's
+            # permissive-empty middleware).
+            - name: PLATFORM_INTERNAL_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.platformInternalAuthSecret.secretName }}
+                  key: {{ .Values.platformInternalAuthSecret.secretKey }}
+                  optional: true
             - name: AUTH_BFF_URL
               value: {{ .Values.authBffUrl | quote }}
             - name: MARKETPLACE_API_URL
