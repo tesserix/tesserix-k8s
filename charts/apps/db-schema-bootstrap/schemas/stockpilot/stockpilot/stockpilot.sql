@@ -855,6 +855,39 @@ INSERT INTO schema_migrations (version, description) VALUES
 ON CONFLICT (version) DO NOTHING;
 
 -- ============================================================
+-- MIGRATION 005: user_api_keys (CLI + MCP personal access tokens)
+-- ============================================================
+-- Backs the StockPilot CLI and the bundled MCP server. Plaintext is
+-- shown to the user exactly once at creation and never stored — only
+-- the SHA-256 hash is persisted. `prefix` (first ~14 chars of the
+-- plaintext, e.g. "sp_live_a1b2c3") is safe to display so users can
+-- identify which token is which from /dashboard/settings.
+--
+-- Scopes are a JSONB array of strings: "read" is implicit on every
+-- token, "trade" is required by POST /api/trades and POST /api/dca/run,
+-- "broker" guards PUT/DELETE on /api/settings/broker.
+
+CREATE TABLE IF NOT EXISTS user_api_keys (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    prefix       TEXT NOT NULL,
+    token_hash   TEXT NOT NULL UNIQUE,
+    scopes       JSONB NOT NULL DEFAULT '[]'::jsonb,
+    last_used_at TIMESTAMPTZ,
+    expires_at   TIMESTAMPTZ,
+    revoked_at   TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_api_keys_user ON user_api_keys (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_api_keys_hash ON user_api_keys (token_hash);
+
+INSERT INTO schema_migrations (version, description) VALUES
+    ('005', 'user_api_keys: personal access tokens for CLI and MCP server')
+ON CONFLICT (version) DO NOTHING;
+
+-- ============================================================
 -- DONE
 -- ============================================================
 -- This script is fully idempotent. Running it multiple times
