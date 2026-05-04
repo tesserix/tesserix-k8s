@@ -1,16 +1,12 @@
 replicaCount: 2
-
 image:
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/tesserix-docs
   pullPolicy: IfNotPresent
-  tag: "main-bootstrap"   # CI rewrites this on every push to design-system/main
-
+  tag: "sha-c26763aacfdb" # CI rewrites this on every push to design-system/main
 imagePullSecrets:
   - name: ghcr-secret
-
 nameOverride: ""
 fullnameOverride: ""
-
 serviceAccount:
   create: true
   # Static web apps with no K8s API access — drop the auto-mounted SA token
@@ -18,12 +14,10 @@ serviceAccount:
   automount: false
   annotations: {}
   name: ""
-
 service:
   type: ClusterIP
   port: 80
   targetPort: 3000
-
 ingress:
   enabled: true
   gateway: istio-ingress/tesseract-gateway
@@ -32,7 +26,6 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
-
 resources:
   requests:
     cpu: 100m
@@ -40,13 +33,11 @@ resources:
   limits:
     cpu: 500m
     memory: 512Mi
-
 podSecurityContext:
   fsGroup: 1001
   runAsNonRoot: true
   seccompProfile:
     type: RuntimeDefault
-
 securityContext:
   runAsUser: 1001
   runAsNonRoot: true
@@ -54,7 +45,6 @@ securityContext:
   allowPrivilegeEscalation: false
   capabilities:
     drop: ["ALL"]
-
 volumes:
   tmp:
     enabled: true
@@ -62,6 +52,5 @@ volumes:
   cache:
     enabled: true
     mountPath: /app/apps/docs/.next/cache
-
 pdb:
   enabled: false
