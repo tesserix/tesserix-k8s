@@ -636,7 +636,7 @@ END $$;
 -- 2026-05-03. Two investors are not in dataroma's index but file 13F
 -- with the SEC, so we sync them via EDGAR using their CIK:
 --   * Stanley Druckenmiller — Duquesne Family Office (CIK 0001536411)
---   * Joel Greenblatt — Gotham Asset Management LLC (CIK 0001407763)
+--   * Joel Greenblatt — Gotham Asset Management LLC (CIK 0001510387)
 -- Munger / Lynch stay legacy — Daily Journal Corp's investments are
 -- disclosed in 10-K, not 13F-HR, and Lynch retired in 1990.
 INSERT INTO superinvestors (slug, name, firm, tier, status, sort_order, dataroma_id, cik, style_tags)
@@ -658,7 +658,7 @@ VALUES
     ('loeb',         'Dan Loeb',           'Third Point',                 'activist',  'active', 150, 'TP',      NULL,         ARRAY['event-driven']),
     ('peltz',        'Nelson Peltz',       'Trian Fund Management',       'activist',  'active', 160, 'TF',      NULL,         ARRAY['activist']),
     ('marks',        'Howard Marks',       'Oaktree Capital',             'allocator', 'active', 170, 'oc',      NULL,         ARRAY['credit-aware']),
-    ('greenblatt',   'Joel Greenblatt',    'Gotham Asset Management',     'allocator', 'active', 180, NULL,      '0001407763', ARRAY['magic-formula','special-situations']),
+    ('greenblatt',   'Joel Greenblatt',    'Gotham Asset Management',     'allocator', 'active', 180, NULL,      '0001510387', ARRAY['magic-formula','special-situations']),
     ('munger',       'Charlie Munger',     'Daily Journal Corp',          'legacy',    'legacy', 990, NULL,      NULL,         ARRAY['historical','run-by-successor-since-q4-2023']),
     ('lynch',        'Peter Lynch',        'Magellan Fund (retired 1990)','legacy',    'legacy', 999, NULL,      NULL,         ARRAY['historical','persona-only'])
 ON CONFLICT (slug) DO UPDATE SET
