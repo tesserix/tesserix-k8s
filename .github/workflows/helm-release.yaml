@@ -65,6 +65,19 @@ jobs:
             changed_files=$(git diff --name-only $base_sha $head_sha 2>/dev/null || git diff --name-only HEAD~1 HEAD)
             changed_charts=$(echo "$changed_files" | grep "^charts/apps/" | cut -d'/' -f3 | sort -u | grep -v "^$" || true)
 
+            # Skip charts that were deleted (e.g. renamed away). They show up
+            # in the diff but no longer exist on disk; trying to lint/package
+            # them just produces noise.
+            existing_charts=""
+            for chart in $changed_charts; do
+              if [ -d "charts/apps/$chart" ]; then
+                existing_charts="$existing_charts$chart"$'\n'
+              else
+                echo "Skipping deleted chart: $chart"
+              fi
+            done
+            changed_charts=$(printf '%s' "$existing_charts" | sed '/^$/d')
+
             if [ -z "$changed_charts" ]; then
               echo "No chart changes detected"
               echo "has_changes=false" >> $GITHUB_OUTPUT
