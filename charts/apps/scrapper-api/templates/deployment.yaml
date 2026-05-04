@@ -60,6 +60,15 @@ spec:
             # GCP project — app reads GROQ_API_KEY, DB password, Redis password from SM
             - name: GCP_PROJECT
               value: {{ .Values.gcp.projectId | default "" | quote }}
+            # NextAuth secret — pulled from the same K8s secret that scrapper-web uses,
+            # populated by the scrapper-auth-secrets ExternalSecret. Used by:
+            #   1. JWT verification of frontend-issued tokens (existing)
+            #   2. Fallback derivation of the credential-encryption key (src/utils/crypto.py)
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: scrapper-auth-secrets
+                  key: NEXTAUTH_SECRET
           livenessProbe:
             httpGet:
               path: /api/health
