@@ -129,21 +129,31 @@ spec:
             - name: uploads
               mountPath: /uploads
 
+          # Postiz boot is heavy: webpack bundles workflows for ~30 platforms,
+          # then NestJS registers ~150 routes. Total cold start is ~45-90s.
+          # startupProbe lets the slow boot complete before liveness kicks in.
+          startupProbe:
+            httpGet:
+              path: /api/auth/can-register
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30   # 30 × 10s = up to 5 min for cold start
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: /api/auth/can-register
               port: http
-            initialDelaySeconds: 60
             periodSeconds: 30
             failureThreshold: 5
             timeoutSeconds: 5
           readinessProbe:
             httpGet:
-              path: /
+              path: /api/auth/can-register
               port: http
-            initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
 
