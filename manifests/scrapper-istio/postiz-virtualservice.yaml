@@ -1,0 +1,44 @@
+##############################################################################
+# Postiz publishing UI — publishing.tesserix.app → postiz service
+# Postiz needs the host as the "frontend URL" so OAuth callbacks land back
+# correctly. We expose it as its own subdomain rather than mounting under
+# social-scrapper.tesserix.app to avoid cookie/path collisions.
+##############################################################################
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: postiz
+  namespace: scrapper
+  labels:
+    app.kubernetes.io/part-of: postiz
+    app.kubernetes.io/component: routing
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - publishing.tesserix.app
+  http:
+    # WebSocket support for Postiz's live-update calendar
+    - match:
+        - uri:
+            prefix: /ws
+      route:
+        - destination:
+            host: postiz.scrapper.svc.cluster.local
+            port:
+              number: 5000
+      timeout: 3600s
+    # Everything else → postiz container (it serves both API + UI on 5000)
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: postiz.scrapper.svc.cluster.local
+            port:
+              number: 5000
+      timeout: 120s
+      retries:
+        attempts: 3
+        perTryTimeout: 30s
+        retryOn: gateway-error,connect-failure,refused-stream
