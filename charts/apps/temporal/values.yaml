@@ -1,6 +1,8 @@
-# Minimal single-node Temporal — frontend, history, matching, worker all in one
-# `auto-setup` container — backed by an embedded postgres pod for state and
-# SQL-based visibility (no Elasticsearch dependency to keep footprint small).
+# Single-node Temporal with auto-setup, backed by an in-cluster postgres
+# (state + SQL visibility for system attributes) and a single-node
+# Elasticsearch (visibility for arbitrary custom search attributes — required
+# by PostSocial which registers `organizationId` and `postId`, exceeding the
+# 3-Text-column limit of Temporal's SQL visibility).
 
 namespace: scrapper
 
@@ -14,12 +16,11 @@ server:
     pullPolicy: IfNotPresent
   resources:
     requests:
-      memory: 256Mi
+      memory: 384Mi
     limits:
       memory: 1Gi
 
-# Embedded Postgres for Temporal state. Kept tiny — Temporal's working set is
-# small and we don't co-locate PostSocial business data here.
+# Embedded Postgres for Temporal state.
 postgres:
   image:
     repository: postgres
@@ -33,14 +34,30 @@ postgres:
       memory: 256Mi
     limits:
       memory: 512Mi
-  # Password is provisioned via ExternalSecret from GCP SM
   auth:
     user: temporal
     database: temporal
     gcpSecretName: prod-temporal-postgresql-password
 
+# Single-node Elasticsearch for custom search-attribute visibility.
+elasticsearch:
+  enabled: true
+  image:
+    repository: elasticsearch
+    tag: "7.17.27"
+    pullPolicy: IfNotPresent
+  storage:
+    size: 5Gi
+    storageClass: standard-rwo-retain
+  resources:
+    requests:
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  javaOpts: "-Xms256m -Xmx256m"
+
 ui:
-  enabled: false   # set to true if you want temporal-ui exposed in cluster
+  enabled: false
   image:
     repository: temporalio/ui
     tag: "2.34.0"
