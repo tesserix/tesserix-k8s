@@ -1,11 +1,11 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: postiz-postgres
+  name: postsocial
   namespace: argocd
   labels:
-    app.kubernetes.io/part-of: postiz
-    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: postsocial
+    app.kubernetes.io/component: backend
     environment: prod
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -14,10 +14,15 @@ spec:
   source:
     repoURL: https://github.com/tesserix/tesserix-k8s.git
     targetRevision: HEAD
-    path: charts/apps/postiz-postgres
+    path: charts/apps/postsocial
     helm:
       valueFiles:
         - values.yaml
+      parameters:
+        - name: image.tag
+          value: "latest"
+        - name: publicUrl
+          value: "https://publishing.tesserix.app"
   destination:
     server: https://kubernetes.default.svc
     namespace: scrapper
@@ -27,8 +32,8 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      - ServerSideApply=true
-      - RespectIgnoreDifferences=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
     retry:
       limit: 5
       backoff:
