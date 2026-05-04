@@ -39,6 +39,27 @@ spec:
               number: 3000
       timeout: 120s
 
+    # PostSocial publishing engine — exposed only as a path prefix on the same
+    # hostname, never as a separate subdomain. Used for OAuth callbacks from
+    # social platforms (X, LinkedIn, etc.) and any direct browser traffic the
+    # PostSocial frontend assets need. Users never visit this directly — our
+    # Next.js publishing pages call this through the scraper API.
+    - match:
+        - uri:
+            prefix: /api/postsocial/
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: postsocial.scrapper.svc.cluster.local
+            port:
+              number: 5000
+      timeout: 120s
+      retries:
+        attempts: 3
+        perTryTimeout: 30s
+        retryOn: gateway-error,connect-failure,refused-stream
+
     # API routes → scrapper-api service
     - match:
         - uri:

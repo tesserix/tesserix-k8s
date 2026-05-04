@@ -1,4 +1,4 @@
-# postiz — upstream image proxied through Artifact Registry, integrated into scrapper namespace.
+# postsocial — upstream image proxied through Artifact Registry, integrated into scrapper namespace.
 
 namespace: scrapper
 
@@ -22,59 +22,57 @@ serviceAccount:
   name: ""
   automount: true
 
-# Public hostname (Istio gateway points here)
-publicUrl: "https://publishing.tesserix.app"
+# Mounted under the main scraper hostname — no separate user-facing domain.
+# OAuth callbacks from social platforms come through Istio at this prefix
+# and get proxied to postsocial.scrapper.svc.cluster.local:5000 internally.
+publicUrl: "https://social-scrapper.tesserix.app/api/postsocial"
 
 # Internal datastore endpoints (managed by sibling charts)
 database:
-  host: "postiz-postgres-rw.scrapper.svc.cluster.local"
+  host: "postsocial-postgres-rw.scrapper.svc.cluster.local"
   port: "5432"
-  user: "postiz-user"
-  database: "postiz-db-local"
+  user: "postsocial-user"
+  database: "postsocial-db-local"
   passwordSecret:
-    name: postiz-postgres-app-credentials
+    name: postsocial-postgres-app-credentials
     key: password
 
 redis:
-  host: "postiz-redis.scrapper.svc.cluster.local"
+  host: "postsocial-redis.scrapper.svc.cluster.local"
   port: "6379"
   passwordSecret:
-    name: postiz-redis-auth
+    name: postsocial-redis-auth
     key: password
 
 temporal:
   address: "temporal.scrapper.svc.cluster.local:7233"
 
-# Postiz expects /uploads to be writable. PVC provides persistence across restarts.
+# PostSocial expects /uploads to be writable. PVC provides persistence across restarts.
 uploads:
   pvc:
     size: 20Gi
     storageClass: standard-rwo-retain
     accessMode: ReadWriteOnce
 
-# Keycloak (reuses scrapper realm). Set generic OAuth so Postiz delegates login
-# to the existing identity provider rather than running its own user store.
+# PostSocial is invisible to end users — they never visit its UI.
+# The scraper backend bootstraps a single internal admin and uses the org
+# API key for all calls. No SSO/OIDC needed.
 keycloak:
-  enabled: true
-  realmIssuer: "https://identity-social.tesserix.app/realms/social-scrapper"
-  authUrl: "https://identity-social.tesserix.app/realms/social-scrapper/protocol/openid-connect/auth"
-  tokenUrl: "https://identity-social.tesserix.app/realms/social-scrapper/protocol/openid-connect/token"
-  userInfoUrl: "https://identity-social.tesserix.app/realms/social-scrapper/protocol/openid-connect/userinfo"
-  clientId: "postiz"
-  displayName: "Tesserix Identity"
-  scope: "openid profile email"
+  enabled: false
 
-# Misc Postiz tunables (full unlock — Stripe absent → ULTIMATE tier in code)
+# Misc PostSocial tunables (full unlock — Stripe absent → ULTIMATE tier in code).
+# notSecured: "true" lets the bootstrap step read the JWT from the `auth`
+# response header (over an in-cluster connection only — never user-facing).
 flags:
   isGeneral: "true"
-  notSecured: "false"          # production: keep cookies httpOnly+secure
-  disableRegistration: "true"  # external auth only
+  notSecured: "true"
+  disableRegistration: "true"
   apiLimit: "10000"
   storageProvider: "local"
 
 # Per-platform OAuth client IDs are *non-secret* values. Drop them here so they
 # render into the Deployment cleanly. Secrets are mounted from a single
-# ExternalSecret at /etc/postiz/secrets via env mapping below.
+# ExternalSecret at /etc/postsocial/secrets via env mapping below.
 platformOauth:
   X_API_KEY: ""
   LINKEDIN_CLIENT_ID: ""

@@ -1,17 +1,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "postiz.fullname" . }}
+  name: {{ include "postsocial.fullname" . }}
   namespace: {{ .Values.namespace }}
   labels:
-    {{- include "postiz.labels" . | nindent 4 }}
+    {{- include "postsocial.labels" . | nindent 4 }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
     matchLabels:
-      {{- include "postiz.selectorLabels" . | nindent 6 }}
+      {{- include "postsocial.selectorLabels" . | nindent 6 }}
   strategy:
     type: Recreate   # PVC-backed uploads volume is RWO — single pod at a time
   template:
@@ -21,7 +21,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
-        {{- include "postiz.selectorLabels" . | nindent 8 }}
+        {{- include "postsocial.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -30,9 +30,9 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "postiz.serviceAccountName" . }}
+      serviceAccountName: {{ include "postsocial.serviceAccountName" . }}
       containers:
-        - name: postiz
+        - name: postsocial
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
@@ -51,15 +51,15 @@ spec:
               value: "http://localhost:3000"
 
             # ─── Database ────────────────────────────────────────────────
-            # POSTIZ_DB_PASSWORD is interpolated into DATABASE_URL via $(VAR)
+            # POSTSOCIAL_DB_PASSWORD is interpolated into DATABASE_URL via $(VAR)
             # at container start. The CNPG-issued ExternalSecret holds it.
-            - name: POSTIZ_DB_PASSWORD
+            - name: POSTSOCIAL_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.database.passwordSecret.name }}
                   key: {{ .Values.database.passwordSecret.key }}
             - name: DATABASE_URL
-              value: "postgresql://{{ .Values.database.user }}:$(POSTIZ_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.database }}"
+              value: "postgresql://{{ .Values.database.user }}:$(POSTSOCIAL_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.database }}"
 
             # ─── Redis ───────────────────────────────────────────────────
             - name: REDIS_URL
@@ -78,12 +78,12 @@ spec:
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: postiz-secrets
+                  name: postsocial-secrets
                   key: JWT_SECRET
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: postiz-secrets
+                  name: postsocial-secrets
                   key: OPENAI_API_KEY
 
             # ─── Per-platform OAuth (id from values, secret from secret) ──
@@ -95,34 +95,9 @@ spec:
             - name: {{ $name }}
               valueFrom:
                 secretKeyRef:
-                  name: postiz-secrets
+                  name: postsocial-secrets
                   key: {{ $name }}
                   optional: true
-            {{- end }}
-
-            # ─── Generic OAuth (Keycloak SSO) ─────────────────────────────
-            {{- if .Values.keycloak.enabled }}
-            - name: POSTIZ_GENERIC_OAUTH
-              value: "true"
-            - name: POSTIZ_OAUTH_URL
-              value: {{ .Values.keycloak.realmIssuer | quote }}
-            - name: POSTIZ_OAUTH_AUTH_URL
-              value: {{ .Values.keycloak.authUrl | quote }}
-            - name: POSTIZ_OAUTH_TOKEN_URL
-              value: {{ .Values.keycloak.tokenUrl | quote }}
-            - name: POSTIZ_OAUTH_USERINFO_URL
-              value: {{ .Values.keycloak.userInfoUrl | quote }}
-            - name: POSTIZ_OAUTH_CLIENT_ID
-              value: {{ .Values.keycloak.clientId | quote }}
-            - name: POSTIZ_OAUTH_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: postiz-secrets
-                  key: POSTIZ_OAUTH_CLIENT_SECRET
-            - name: POSTIZ_OAUTH_SCOPE
-              value: {{ .Values.keycloak.scope | quote }}
-            - name: NEXT_PUBLIC_POSTIZ_OAUTH_DISPLAY_NAME
-              value: {{ .Values.keycloak.displayName | quote }}
             {{- end }}
 
             # ─── Misc tunables (ULTIMATE tier auto-resolves with Stripe absent) ──
@@ -142,7 +117,7 @@ spec:
               value: "/uploads"
             - name: NX_ADD_PLUGINS
               value: "false"
-            # Empty Stripe envs → Postiz auto-resolves tier=ULTIMATE, totalChannels=10000
+            # Empty Stripe envs → PostSocial auto-resolves tier=ULTIMATE, totalChannels=10000
             - name: STRIPE_PUBLISHABLE_KEY
               value: ""
             - name: STRIPE_SECRET_KEY
@@ -173,4 +148,4 @@ spec:
       volumes:
         - name: uploads
           persistentVolumeClaim:
-            claimName: postiz-uploads
+            claimName: postsocial-uploads

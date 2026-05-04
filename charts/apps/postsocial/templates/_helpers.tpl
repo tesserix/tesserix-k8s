@@ -1,12 +1,12 @@
-{{- define "postiz.name" -}}
-{{- default "postiz" .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- define "postsocial.name" -}}
+{{- default "postsocial" .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{- define "postiz.fullname" -}}
+{{- define "postsocial.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
-{{- $name := default "postiz" .Values.nameOverride }}
+{{- $name := default "postsocial" .Values.nameOverride }}
 {{- if contains $name .Release.Name }}
 {{- .Release.Name | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -15,26 +15,26 @@
 {{- end }}
 {{- end }}
 
-{{- define "postiz.chart" -}}
+{{- define "postsocial.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{- define "postiz.labels" -}}
-helm.sh/chart: {{ include "postiz.chart" . }}
-{{ include "postiz.selectorLabels" . }}
+{{- define "postsocial.labels" -}}
+helm.sh/chart: {{ include "postsocial.chart" . }}
+{{ include "postsocial.selectorLabels" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-app.kubernetes.io/part-of: postiz
+app.kubernetes.io/part-of: postsocial
 {{- end }}
 
-{{- define "postiz.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "postiz.name" . }}
+{{- define "postsocial.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "postsocial.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
-{{- define "postiz.serviceAccountName" -}}
+{{- define "postsocial.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "postiz.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "postsocial.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
