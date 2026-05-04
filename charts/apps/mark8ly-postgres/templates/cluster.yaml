@@ -59,8 +59,14 @@ spec:
       effective_io_concurrency: "200"
       # Slow query logging (queries > 1s)
       log_min_duration_statement: "1000"
-      # WAL safety cap
-      max_slot_wal_keep_size: "10GB"
+      # WAL safety cap. Was 10GB on a 20Gi WAL volume — half the disk
+      # reservable for slot retention, leaving little room for live WAL
+      # + archive lag. Tightened to 5GB (25% of WAL volume) on
+      # 2026-05-04 after a sibling cluster (tesserix-postgres) hit the
+      # WAL-full failure mode. The CNPGWALVolumeUtilization* alerts
+      # in cnpg-storage.yaml now also catch impending fills regardless
+      # of this setting.
+      max_slot_wal_keep_size: "5GB"
       # Performance monitoring (CNPG auto-loads extension)
       pg_stat_statements.track: "all"
       pg_stat_statements.max: "10000"
