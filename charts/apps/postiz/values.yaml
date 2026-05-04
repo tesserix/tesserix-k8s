@@ -1,0 +1,107 @@
+# postiz — upstream image proxied through Artifact Registry, integrated into scrapper namespace.
+
+namespace: scrapper
+
+replicaCount: 1
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/gitroomhq/postiz-app
+  tag: latest
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+service:
+  type: ClusterIP
+  port: 5000
+  targetPort: 5000
+
+serviceAccount:
+  create: true
+  name: ""
+  automount: true
+
+# Public hostname (Istio gateway points here)
+publicUrl: "https://publishing.tesserix.app"
+
+# Internal datastore endpoints (managed by sibling charts)
+database:
+  host: "postiz-postgres-rw.scrapper.svc.cluster.local"
+  port: "5432"
+  user: "postiz-user"
+  database: "postiz-db-local"
+  passwordSecret:
+    name: postiz-postgres-app-credentials
+    key: password
+
+redis:
+  host: "postiz-redis.scrapper.svc.cluster.local"
+  port: "6379"
+  passwordSecret:
+    name: postiz-redis-auth
+    key: password
+
+temporal:
+  address: "temporal.scrapper.svc.cluster.local:7233"
+
+# Postiz expects /uploads to be writable. PVC provides persistence across restarts.
+uploads:
+  pvc:
+    size: 20Gi
+    storageClass: standard-rwo-retain
+    accessMode: ReadWriteOnce
+
+# Keycloak (reuses scrapper realm). Set generic OAuth so Postiz delegates login
+# to the existing identity provider rather than running its own user store.
+keycloak:
+  enabled: true
+  realmIssuer: "https://identity-social.tesserix.app/realms/social-scrapper"
+  authUrl: "https://identity-social.tesserix.app/realms/social-scrapper/protocol/openid-connect/auth"
+  tokenUrl: "https://identity-social.tesserix.app/realms/social-scrapper/protocol/openid-connect/token"
+  userInfoUrl: "https://identity-social.tesserix.app/realms/social-scrapper/protocol/openid-connect/userinfo"
+  clientId: "postiz"
+  displayName: "Tesserix Identity"
+  scope: "openid profile email"
+
+# Misc Postiz tunables (full unlock — Stripe absent → ULTIMATE tier in code)
+flags:
+  isGeneral: "true"
+  notSecured: "false"          # production: keep cookies httpOnly+secure
+  disableRegistration: "true"  # external auth only
+  apiLimit: "10000"
+  storageProvider: "local"
+
+# Per-platform OAuth client IDs are *non-secret* values. Drop them here so they
+# render into the Deployment cleanly. Secrets are mounted from a single
+# ExternalSecret at /etc/postiz/secrets via env mapping below.
+platformOauth:
+  X_API_KEY: ""
+  LINKEDIN_CLIENT_ID: ""
+  FACEBOOK_APP_ID: ""
+  THREADS_APP_ID: ""
+  YOUTUBE_CLIENT_ID: ""
+  TIKTOK_CLIENT_ID: ""
+  PINTEREST_CLIENT_ID: ""
+  REDDIT_CLIENT_ID: ""
+  DISCORD_CLIENT_ID: ""
+  SLACK_ID: ""
+  MASTODON_URL: "https://mastodon.social"
+  MASTODON_CLIENT_ID: ""
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetMemoryUtilizationPercentage: 80
+
+podAnnotations:
+  holdApplicationUntilProxyStarts: "true"
+podLabels: {}

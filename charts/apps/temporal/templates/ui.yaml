@@ -1,0 +1,57 @@
+{{- if .Values.ui.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-ui
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: temporal-ui
+    app.kubernetes.io/part-of: temporal
+    app.kubernetes.io/component: ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: temporal-ui
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: temporal-ui
+        app.kubernetes.io/part-of: temporal
+        app.kubernetes.io/component: ui
+    spec:
+      containers:
+        - name: ui
+          image: "{{ .Values.ui.image.repository }}:{{ .Values.ui.image.tag }}"
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: "temporal.{{ .Values.namespace }}.svc.cluster.local:7233"
+            - name: TEMPORAL_CORS_ORIGINS
+              value: "*"
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-ui
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: temporal-ui
+    app.kubernetes.io/part-of: temporal
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.ui.port }}
+      targetPort: http
+      name: http
+  selector:
+    app.kubernetes.io/name: temporal-ui
+{{- end }}

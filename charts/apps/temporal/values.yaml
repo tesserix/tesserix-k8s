@@ -1,0 +1,49 @@
+# Minimal single-node Temporal — frontend, history, matching, worker all in one
+# `auto-setup` container — backed by an embedded postgres pod for state and
+# SQL-based visibility (no Elasticsearch dependency to keep footprint small).
+
+namespace: scrapper
+
+service:
+  frontendPort: 7233
+
+server:
+  image:
+    repository: temporalio/auto-setup
+    tag: "1.28.1"
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+# Embedded Postgres for Temporal state. Kept tiny — Temporal's working set is
+# small and we don't co-locate Postiz business data here.
+postgres:
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  storage:
+    size: 10Gi
+    storageClass: standard-rwo-retain
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  # Password is provisioned via ExternalSecret from GCP SM
+  auth:
+    user: temporal
+    database: temporal
+    gcpSecretName: prod-temporal-postgresql-password
+
+ui:
+  enabled: false   # set to true if you want temporal-ui exposed in cluster
+  image:
+    repository: temporalio/ui
+    tag: "2.34.0"
+  port: 8080
