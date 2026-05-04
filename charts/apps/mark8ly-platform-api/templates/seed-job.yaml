@@ -34,6 +34,14 @@ spec:
       labels:
         app.kubernetes.io/name: {{ .Values.name }}-seed
         app.kubernetes.io/part-of: mark8ly
+        # postgres NetworkPolicy (managed by mark8ly-postgres chart) allows
+        # ingress from pods labeled `app.kubernetes.io/component: database-init`.
+        # Without it the seed pod's connect to mark8ly-postgres-rw:5432 times
+        # out, the PostSync hook hangs, and ArgoCD never reaches Synced —
+        # which means template changes (env vars, secret refs) never roll
+        # out to the platform-api Deployment until someone deletes the seed
+        # pod by hand.
+        app.kubernetes.io/component: database-init
       annotations:
         sidecar.istio.io/inject: "true"
     spec:
