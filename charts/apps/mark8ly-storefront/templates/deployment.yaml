@@ -83,6 +83,18 @@ spec:
                   optional: true
             - name: OTTO_SESSION_COOKIE
               value: "otto_session"
+            # Shared secret with platform-api's /internal/* surface.
+            # Storefront server actions resolve {slug} → tenant_id/store_id
+            # via /internal/stores/by-slug; without this header platform-api
+            # 401's the call and customer sign-in (Google + email/password)
+            # bounces back to /sign-in?error=store_not_found. Same secret
+            # the admin pod mounts on its caller side.
+            - name: PLATFORM_INTERNAL_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.platformInternalAuthSecret.secretName }}
+                  key: {{ .Values.platformInternalAuthSecret.secretKey }}
+                  optional: true
             # Shared secret with marketplace-api (same as the admin
             # pod). Gates the storefront's /api/internal/orders/:id/{invoice,receipt}
             # routes so marketplace-api can fetch rendered PDFs to
