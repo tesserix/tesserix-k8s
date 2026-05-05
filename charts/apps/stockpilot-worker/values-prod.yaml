@@ -6,10 +6,8 @@
 # lockstep with stockpilot-api/values-prod.yaml on every green build,
 # so leaving this on `:latest` would silently lag main behind the api.
 image:
-  tag: "main-155603e"
-
+  tag: "main-6dbc9de"
 replicaCount: 1
-
 resources:
   requests:
     memory: 512Mi
@@ -17,7 +15,6 @@ resources:
   limits:
     memory: 2Gi
     cpu: 1000m
-
 env:
   PYTHONUNBUFFERED: "1"
   ACCOUNT_MODE: "demo"
@@ -31,15 +28,12 @@ env:
   ALPACA_BROKER_URL: "https://broker-api.sandbox.alpaca.markets"
   ALPACA_AUTH_URL: "https://authx.sandbox.alpaca.markets"
   ALPACA_DATA_URL: "https://data.sandbox.alpaca.markets"
-
 # No IB Gateway sidecar on worker
 ibGateway:
   enabled: false
-
 # Scale worker horizontally when many users trigger scans simultaneously
 autoscaling:
-  enabled: false  # Replaced by KEDA
-
+  enabled: false # Replaced by KEDA
 keda:
   enabled: true
   pollingInterval: 15
@@ -47,27 +41,24 @@ keda:
   minReplicaCount: 1
   maxReplicaCount: 5
   prometheus:
-    enabled: false  # Worker doesn't serve external traffic
+    enabled: false # Worker doesn't serve external traffic
   cpu:
     enabled: true
     threshold: "70"
   memory:
     enabled: true
     threshold: "75"
-
 gcp:
   projectId: "tesseracthub-480811"
   workloadIdentity:
     enabled: true
     gcpServiceAccount: "app-secrets-global-prod@tesseracthub-480811.iam.gserviceaccount.com"
-
 database:
   host: "stockpilot-postgres-rw.stockpilot.svc.cluster.local"
   port: "5432"
   user: "stockpilot"
   name: "stockpilot"
   sslmode: "require"
-
 redis:
   host: "redis.redis-stockpilot.svc.cluster.local"
   port: "6379"
