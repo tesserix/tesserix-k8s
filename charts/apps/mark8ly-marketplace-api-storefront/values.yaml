@@ -52,6 +52,16 @@ storefrontKey:
 # ── Service discovery ─────────────────────────────────────────────
 fgaApiUrl: "http://mark8ly-openfga.mark8ly.svc.cluster.local:8080"
 platformApiUrl: "http://mark8ly-platform-api.mark8ly.svc.cluster.local:8086"
+# X-Internal-Auth header sent on outbound calls to platform-api's
+# /internal/* endpoints (used by SlugCache to resolve store slug →
+# store_id + tenant_id). Must match platform-api's INTERNAL_AUTH_SECRET.
+# Required since mark8ly@889e595 gated platform-api /internal/* on the
+# header — empty value here makes the entire /api/v1/storefront/stores/
+# :slug/* surface 404 because every request short-circuits on the
+# slug-resolution step.
+platformApiSecret:
+  secretName: mark8ly-platform-api-internal-auth
+  secretKey: INTERNAL_AUTH_SECRET
 customerSessionSecret:
   secretName: mark8ly-session
   secretKey: SESSION_ENCRYPT_KEY
