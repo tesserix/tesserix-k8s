@@ -60,8 +60,18 @@ fgaApiUrl: "http://mark8ly-openfga.mark8ly.svc.cluster.local:8080"
 platformApiUrl: "http://mark8ly-platform-api.mark8ly.svc.cluster.local:8086"
 authBffUrl: "http://mark8ly-auth-bff.mark8ly.svc.cluster.local:8087"
 # ── Secrets (from ExternalSecret) ─────────────────────────────────
+# Inbound — platform-api / auth-bff / otto authenticate against this
+# value when calling marketplace-api's /internal/* surface.
 internalAuthSecret:
   secretName: mark8ly-marketplace-api-internal-auth
+  secretKey: INTERNAL_AUTH_SECRET
+# Outbound — X-Internal-Auth header sent on calls to platform-api's
+# /internal/* endpoints (SlugCache slug → store_id + tenant_id, plus
+# any other platform-api internal calls the admin engine makes). Must
+# match platform-api's INTERNAL_AUTH_SECRET. Required since
+# mark8ly@889e595 gated platform-api /internal/* on the header.
+platformApiSecret:
+  secretName: mark8ly-platform-api-internal-auth
   secretKey: INTERNAL_AUTH_SECRET
 customerSessionSecret:
   secretName: mark8ly-session
