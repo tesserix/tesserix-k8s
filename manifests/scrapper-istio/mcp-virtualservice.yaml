@@ -1,0 +1,38 @@
+##############################################################################
+# Social Media Scrapper MCP VirtualService
+# Routes: mcp.scrapper.tesserix.app → scrapper-mcp:8765
+#
+# Exposes the MCP (Model Context Protocol) server externally so LLM clients
+# (Claude Desktop, Cursor, etc.) can connect via Streamable HTTP. All requests
+# are forwarded as-is — auth is enforced at the application layer by the
+# bearer-token middleware in src/mcp/auth.py.
+##############################################################################
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: scrapper-mcp
+  namespace: scrapper
+  labels:
+    app.kubernetes.io/part-of: social-media-scrapper
+    app.kubernetes.io/component: routing
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - mcp.scrapper.tesserix.app
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: scrapper-mcp.scrapper.svc.cluster.local
+            port:
+              number: 8765
+      # MCP Streamable HTTP keeps the connection open for tool calls; allow
+      # long-lived requests but cap them so dead clients don't pin connections.
+      timeout: 600s
+      retries:
+        attempts: 2
+        perTryTimeout: 60s
+        retryOn: gateway-error,connect-failure,refused-stream
