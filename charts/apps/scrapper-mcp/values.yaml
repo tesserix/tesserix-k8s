@@ -6,11 +6,13 @@
 replicaCount: 1
 
 image:
-  # Pull directly from GHCR to bypass the GAR remote cache TTL — the pod ships the
-  # exact image CI just published. The same `ghcr-secret` ImagePullSecret applies.
-  repository: ghcr.io/tesserix/social-media-scrapper/scrapper-api
+  # Always pull via the GAR mirror (org policy — never ghcr.io directly).
+  # `:latest` would risk serving a stale cached manifest from GAR; pin to the
+  # CI-emitted SHA tag so GAR is forced to fetch the new digest from upstream.
+  # CI overrides `image.tag` with the current SHA on each deploy.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/social-media-scrapper/scrapper-api
   pullPolicy: Always
-  tag: "latest"
+  tag: "main-f7b1b38"
 
 imagePullSecrets:
   - name: ghcr-secret
