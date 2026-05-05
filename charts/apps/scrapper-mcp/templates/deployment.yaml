@@ -60,14 +60,27 @@ spec:
               value: {{ .Values.redis.port | quote }}
             - name: GCP_PROJECT
               value: {{ .Values.gcp.projectId | default "" | quote }}
-            # Bearer token used by the MCP auth middleware. Provisioned by the
-            # scrapper-mcp-secrets ExternalSecret in tesserix-k8s.
+            # Bearer token used by the MCP auth middleware (service-to-service).
+            # Provisioned by the scrapper-mcp-secrets ExternalSecret.
             - name: MCP_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.mcp.apiKeySecret.name }}
                   key: {{ .Values.mcp.apiKeySecret.key }}
                   optional: true
+            # NextAuth secret — same value used by scrapper-web/api so the MCP
+            # middleware can verify SSO-issued JWTs signed by the web frontend
+            # via /api/mcp/token. Without this, SSO JWT auth silently falls
+            # back to MCP_API_KEY-only mode.
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: scrapper-auth-secrets
+                  key: NEXTAUTH_SECRET
+            # Email allowlist — same one src/api/auth.py uses; the MCP
+            # middleware re-checks every JWT against this list.
+            - name: ALLOWED_EMAILS
+              value: {{ .Values.allowedEmails | default "samyak.rout@gmail.com,mahesh.sangawar@gmail.com" | quote }}
           livenessProbe:
             httpGet:
               path: /healthz
