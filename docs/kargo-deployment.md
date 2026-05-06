@@ -24,6 +24,7 @@ Helm chart at `oci://ghcr.io/akuity/kargo-charts/kargo`, pinned to
   receive the Kargo `admin` role:
   - `samyak.rout@gmail.com`
   - `unidevidp@gmail.com`
+  - `mahesh.sangawar@gmail.com`
 - Anyone else with a GitHub account can complete OIDC, but Kargo's
   RBAC will not bind any role to them — the UI shows zero projects and
   the API rejects every mutating call. To make access *strictly*
