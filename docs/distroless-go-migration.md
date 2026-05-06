@@ -215,18 +215,36 @@ promotion will pick up genuinely-broken images too.
 Recommended onboarding order (smallest blast radius first; depends on
 Kargo Project already existing for that product):
 
-1. ✅ **mark8ly** — done. 4 Go services on distroless, validated end
-   to end on 2026-05-07.
-2. **fanzone** — 23 services, multi-arch images. The Warehouse already
+1. **mark8ly** — done 2026-05-07. 4 Go services
+   (`auth-bff`, `otto`, `platform-api`, `marketplace-api`) on
+   distroless-static. Reference Dockerfiles for new migrations.
+2. **homechef** — done 2026-05-07. 1 Go service (`homechef-api`)
+   on distroless-static; product also onboarded into Kargo
+   (`kargo-homechef` Project, 5 ArgoCD Apps, 5 image subscriptions).
+   The shared `tesseract-nexus/global-services/auth-bff` image is
+   intentionally OUT of scope here — same image is consumed by
+   `devai-auth-bff`, so it will land under a separate
+   `kargo-shared-services` Project alongside DevAI.
+3. **fanzone** — 23 services, multi-arch images. The Warehouse already
    uses `platform: linux/amd64`; that's orthogonal to distroless — the
    amd64 variant of the image still has `CGO_ENABLED=0` static
    binaries. No Kargo change needed; just the Dockerfile sweep.
-3. **homechef** — 3 Go services (`homechef-api`, `homechef-auth-bff`
-   shared image, plus delivery-driver-bff). Same pattern.
-4. **devai, gameverse, stockpilot, bookkeeping, guardix, blog,
-   social, scrapper** — onboard each into Kargo first (see
-   [`kargo-manifests/docs/adding-a-project.md`](https://github.com/tesserix/kargo-manifests/blob/main/docs/adding-a-project.md)),
-   then run this runbook.
+4. **bookkeeping** — 6 Go services (`bka-auth/core/customer/invoice/report/tax`).
+   Needs Kargo onboarding first.
+5. **gameverse** — Rust (not Go). Distroless still applies because
+   the Rust builder uses `openssl-libs-static` to produce a static
+   musl binary, but this runbook is Go-specific; will need a Rust
+   addendum before rolling.
+6. **shared `auth-bff` (kargo-shared-services)** — the
+   `tesseract-nexus/global-services/auth-bff` image consumed by
+   HomeChef + DevAI. Standing up this Project lets a single
+   promotion update both products in lock-step.
+7. **devai, stockpilot, blog, social, scrapper, guardix, tesserix-blog** —
+   onboard each into Kargo first
+   (see [`adding-a-project.md`](https://github.com/tesserix/kargo-manifests/blob/main/docs/adding-a-project.md)),
+   then run this runbook. Several of these are Python (devai, stockpilot,
+   scrapper) so they're out of scope for *Go* distroless migration —
+   they'd use `base-python-runtime-3.13` instead.
 
 ## Common pitfalls
 
