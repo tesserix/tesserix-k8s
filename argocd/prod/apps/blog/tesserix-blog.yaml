@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: tesserix-blog
   namespace: argocd
+  annotations:
+    kargo.akuity.io/authorized-stage: kargo-tesserix-blog:prod
   labels:
     app.kubernetes.io/part-of: tesserix-blog
     app.kubernetes.io/component: blog
@@ -18,6 +20,8 @@ spec:
         - values.yaml
         - ../global-config.yaml
       parameters:
+        - name: image.tag
+          value: "main-00cf99d"
         - name: gcp.secretManager.secretPrefix
           value: "prod"
   destination:
@@ -30,6 +34,7 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - PruneLast=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
