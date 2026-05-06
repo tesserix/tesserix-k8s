@@ -492,3 +492,62 @@ spec:
             host: prometheus-alertmanager.monitoring.svc.cluster.local
             port:
               number: 9093
+---
+# ===========================================
+# ArgoCD UI - VirtualService
+# argocd.tesserix.app fronts argocd-server (insecure mode: TLS
+# terminated at Cloudflare edge, plain HTTP to argocd-server:80).
+# Cloudflare Tunnel (prod) ingresses *.tesserix.app to istio-ingress;
+# this VS picks the host out and forwards to argocd-server.argocd.svc.
+# ===========================================
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: argocd-vs
+  namespace: argocd
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: gitops
+spec:
+  hosts:
+    - "argocd.tesserix.app"
+  gateways:
+    - istio-ingress/tesseract-gateway
+  http:
+    - route:
+        - destination:
+            host: argocd-server.argocd.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+---
+# ===========================================
+# Kargo - VirtualService
+# Release / promotion control plane (GH SSO via Dex GitHub connector).
+# Routes kargo.tesserix.app to the kargo-api Service in the kargo
+# namespace. Cloudflare Tunnel terminates TLS at the edge, so we listen
+# on plain HTTP inside the mesh; api.tls.terminatedUpstream is set in
+# the Kargo Helm values so OIDC redirects use https://.
+# ===========================================
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: kargo-vs
+  namespace: kargo
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: release
+spec:
+  hosts:
+    - "kargo.tesserix.app"
+  gateways:
+    - istio-ingress/tesseract-gateway
+  http:
+    - route:
+        - destination:
+            host: kargo-api.kargo.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
