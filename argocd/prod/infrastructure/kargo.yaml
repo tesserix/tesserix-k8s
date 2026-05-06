@@ -149,6 +149,23 @@ spec:
             # service tokens itself when it needs to mutate Argo CD
             # Applications during a Promotion.
             namespace: argocd
+          # Bind the controller's K8s SA to a GCP SA via Workload
+          # Identity so the controller can read the ghcr-remote GAR
+          # mirror without needing a registry password Secret. GAR
+          # is in-region (Private Google Access) so tag listing has
+          # zero NAT cost and the controller no longer hits the
+          # GHCR upstream directly.
+          serviceAccount:
+            annotations:
+              iam.gke.io/gcp-service-account: kargo-controller@tesseracthub-480811.iam.gserviceaccount.com
+          # Workaround for an HTTP/2 connection-reuse interaction
+          # between go-containerregistry and Cloud NAT keepalives that
+          # was causing image-descriptor fetches to time out before we
+          # switched to GAR. Harmless to keep — disables HTTP/2 in
+          # Go's std http client.
+          env:
+            - name: GODEBUG
+              value: "http2client=0"
           resources:
             requests:
               memory: 256Mi
