@@ -1,35 +1,24 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: mark8ly-admin
+  name: release-app-of-apps
   namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "20"
-    kargo.akuity.io/authorized-stage: mark8ly:prod
   labels:
-    product: mark8ly
+    app.kubernetes.io/part-of: tesseract-platform
+    app.kubernetes.io/component: release
     environment: prod
-    component: frontend
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: platform
   source:
     repoURL: https://github.com/tesserix/tesserix-k8s.git
     targetRevision: HEAD
-    path: charts/apps/mark8ly-admin
-    helm:
-      valueFiles:
-        - values.yaml
-      parameters:
-        - name: image.tag
-          value: "sha-493c3652c68d"
+    path: argocd/prod/apps/release
   destination:
     server: https://kubernetes.default.svc
-    namespace: mark8ly
+    namespace: argocd
   syncPolicy:
     automated:
-      prune: true
+      prune: false
       selfHeal: true
     syncOptions:
       - CreateNamespace=true

@@ -1,0 +1,79 @@
+---
+# ApplicationSet — one Argo CD Application per `projects/<name>` directory
+# in tesserix/kargo-manifests. Adding a project = creating a directory in
+# that repo; nothing else.
+#
+# The generator treats `projects/*` as the source of truth for what is
+# deployed. If a directory disappears, the corresponding Application is
+# pruned (and its `resources-finalizer.argocd.argoproj.io` finalizer
+# cascade-deletes the Kargo Project, which deletes its Warehouses,
+# Stages, Freight, Promotions and finally the kargo-<name> namespace).
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: kargo-projects
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesseract-platform
+    app.kubernetes.io/component: release
+    environment: prod
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/tesserix/kargo-manifests.git
+        revision: HEAD
+        directories:
+          - path: projects/*
+        # Belt-and-braces: don't generate from the placeholder file or
+        # any nested `examples/` someone forgets to move.
+        # (`exclude: true` removes matches.)
+        # Currently nothing to exclude — kept here as a comment to
+        # signal the lever exists.
+        # - path: projects/_archive/*
+        #   exclude: true
+  template:
+    metadata:
+      name: 'kargo-project-{{ .path.basename }}'
+      labels:
+        app.kubernetes.io/part-of: tesseract-platform
+        app.kubernetes.io/component: release
+        kargo.akuity.io/project: '{{ .path.basename }}'
+      annotations:
+        argocd.argoproj.io/sync-wave: "5"
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: release
+      source:
+        repoURL: https://github.com/tesserix/kargo-manifests.git
+        targetRevision: HEAD
+        path: '{{ .path.path }}'
+        directory:
+          recurse: true
+          jsonnet: {}
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'kargo-{{ .path.basename }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+          - ApplyOutOfSyncOnly=true
+          - PruneLast=true
+          - RespectIgnoreDifferences=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m
+
+  # Treat kargo-manifests as authoritative — pruned directories must
+  # propagate to the cluster.
+  syncPolicy:
+    preserveResourcesOnDeletion: false
