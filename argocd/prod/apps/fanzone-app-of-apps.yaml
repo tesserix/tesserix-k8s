@@ -16,12 +16,25 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
+  # Kargo's argocd-update step writes spec.source.helm.parameters
+  # (specifically `image.tag`) on each child Application during a
+  # Promotion. Without an ignoreDifferences exception here, this parent
+  # app-of-apps notices the child drift and self-heals the parameter
+  # back to whatever placeholder value is checked in to git — which
+  # rolls every fanzone Knative service back to a non-existent tag and
+  # leaves the Stage stuck in Unhealthy.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /spec/source/helm/parameters
   syncPolicy:
     automated:
       prune: false
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
