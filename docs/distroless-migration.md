@@ -1,17 +1,25 @@
-# Distroless Migration Runbook — Go services
+# Distroless Migration Runbook — Go and Rust static binaries
 
-This runbook documents how to migrate any tesserix Go service to the
-**`ghcr.io/tesserix/base-distroless-static`** runtime base, end to end:
+This runbook documents how to migrate any tesserix Go (or Rust)
+service to the **`ghcr.io/tesserix/base-distroless-static`** runtime
+base, end to end:
 Dockerfile change → CI build → Kargo discovery → ArgoCD rollout →
-verification. Every Go-based product (HomeChef, FanZone, mark8ly,
-DevAI, GameVerse, StockPilot, Bookkeeping, Guardix, blog, social,
-scrapper, …) should follow the same lifecycle so the runtime base is
-uniform across the cluster.
+verification. Every product whose binary is statically linked
+should follow the same lifecycle so the runtime base is uniform across
+the cluster.
 
-The reference migration that established this pattern is **mark8ly**:
-`auth-bff`, `otto`, `platform-api`, `marketplace-api` — all four Go
-services moved from `base-alpine-runtime` to `base-distroless-static`
-in a single PR. Use those Dockerfiles as the template.
+The reference migrations that established this pattern are:
+
+- **mark8ly** (Go): `auth-bff`, `otto`, `platform-api`, `marketplace-api` —
+  all four Go services moved from `base-alpine-runtime` to
+  `base-distroless-static` in a single PR.
+- **homechef** (Go): `homechef-api` — single Go service, same pattern.
+- **gameverse-server** (Rust): `apps/server/Dockerfile` — Rust binary
+  statically linked against musl + openssl, drops in to distroless
+  the same way as Go.
+
+Use the mark8ly Dockerfiles for new Go migrations, and the
+gameverse-server Dockerfile (covered below) for new Rust migrations.
 
 ## Why distroless
 
@@ -28,9 +36,54 @@ in a single PR. Use those Dockerfiles as the template.
 Go binaries built by `base-go-builder` are statically linked
 (`CGO_ENABLED=0` baked in), so distroless/static is a drop-in runtime.
 
+## Rust addendum
+
+Rust statically-linked binaries are distroless-compatible the same
+way Go static binaries are, with two extra requirements on the
+builder side:
+
+- **`musl-dev`** must be installed in the Rust builder so the
+  default toolchain produces a `target/release/<bin>` that is
+  glibc-free. The official `rust:<version>-alpine` images already
+  ship a `*-unknown-linux-musl` toolchain by default.
+- **`openssl-libs-static`** (alpine) or `openssl-sys`'s `vendored`
+  feature must be available so any TLS-using crate (`reqwest`,
+  `rustls-native-certs`, `tonic` with TLS, etc.) links its OpenSSL
+  dependency statically. Without this, the binary will SIGSEGV on
+  distroless because `libssl.so` is missing.
+
+Reference Dockerfile:
+[`gameverse-platform/apps/server/Dockerfile`](https://github.com/tesserix/gameverse-platform/blob/main/apps/server/Dockerfile).
+The diff vs the previous alpine runtime is mechanical:
+
+```diff
+-FROM alpine:3.21 AS production
+-RUN apk --no-cache add ca-certificates wget tzdata
+-RUN addgroup -g 1000 -S appgroup && adduser -D -u 1000 -S appuser -G appgroup
+-COPY --from=builder /build/target/release/gameserver .
+-RUN chown -R appuser:appgroup /app
+-USER appuser
+-HEALTHCHECK --interval=30s ... CMD wget ... || exit 1
++FROM ghcr.io/tesserix/base-distroless-static:latest AS production
++COPY --from=builder --chown=65532:65532 /build/target/release/gameserver /app/gameserver
+```
+
+Notes:
+- Drop the in-Dockerfile `addgroup` / `adduser` / `chown` / `USER` —
+  K8s `securityContext.runAsUser` overrides USER, so all that's
+  needed is mode-0755 binaries (which `cargo build --release` emits
+  by default).
+- Drop the Dockerfile `HEALTHCHECK`. Distroless has no shell to exec
+  `wget`. Kubernetes uses livenessProbe/readinessProbe (`httpGet
+  /healthz`) configured in the Helm chart, so the production health
+  mechanism is unaffected.
+- Tokio's runtime handles SIGTERM via `signal::unix` listeners the
+  same way Go's runtime does — no tini wrapper needed for the Rust
+  binary to be PID 1.
+
 ## When you can migrate
 
-A Go service is safe to move to distroless if **all** of these hold:
+A Go (or Rust) service is safe to move to distroless if **all** of these hold:
 
 - Build uses `base-go-builder` (or any builder with `CGO_ENABLED=0`).
 - The container runs a Go binary as PID 1 — no shell entrypoints, no
@@ -231,10 +284,9 @@ Kargo Project already existing for that product):
    binaries. No Kargo change needed; just the Dockerfile sweep.
 4. **bookkeeping** — 6 Go services (`bka-auth/core/customer/invoice/report/tax`).
    Needs Kargo onboarding first.
-5. **gameverse** — Rust (not Go). Distroless still applies because
-   the Rust builder uses `openssl-libs-static` to produce a static
-   musl binary, but this runbook is Go-specific; will need a Rust
-   addendum before rolling.
+5. **gameverse** — done 2026-05-07. gameverse-server (Rust tokio +
+   axum) on distroless-static via the Rust addendum above. Pod
+   Running 2/2, no shell, no tini, Tokio handles SIGTERM directly.
 6. **shared `auth-bff` (kargo-shared-services)** — the
    `tesseract-nexus/global-services/auth-bff` image consumed by
    HomeChef + DevAI. Standing up this Project lets a single
