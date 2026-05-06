@@ -1,0 +1,49 @@
+---
+# Cluster-wide reusable promotion tasks. One Argo CD Application
+# rendering a single directory of YAML — kept separate from the
+# per-project ApplicationSet because these are cluster-scoped and
+# need a single owner, not N parallel ones.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kargo-templates
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesseract-platform
+    app.kubernetes.io/component: release
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    # Sync ahead of any per-project Application that might reference these tasks.
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  project: release
+  source:
+    repoURL: https://github.com/tesserix/kargo-manifests.git
+    targetRevision: HEAD
+    path: templates/cluster-promotion-tasks
+    directory:
+      recurse: true
+      jsonnet: {}
+  destination:
+    server: https://kubernetes.default.svc
+    # Kargo controller runs in the `kargo` namespace and watches
+    # ClusterPromotionTasks cluster-wide. Materialising them in the
+    # `kargo` namespace keeps them grouped with the controller without
+    # needing a separate namespace.
+    namespace: kargo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m

@@ -14,6 +14,8 @@ spec:
     - https://github.com/tesserix/tesserix-k8s.git
     # Upstream Kargo Helm chart (OCI)
     - ghcr.io/akuity/kargo-charts
+    # Kargo Project / Warehouse / Stage / PromotionTask manifests live here.
+    - https://github.com/tesserix/kargo-manifests.git
   destinations:
     - namespace: kargo
       server: https://kubernetes.default.svc
@@ -40,6 +42,13 @@ spec:
       kind: ValidatingWebhookConfiguration
     - group: admissionregistration.k8s.io
       kind: MutatingWebhookConfiguration
+    # Kargo's own cluster-scoped kinds — Project (creates the kargo-<name>
+    # namespace + per-project RBAC) and ClusterPromotionTask (reusable
+    # promotion recipes).
+    - group: kargo.akuity.io
+      kind: Project
+    - group: kargo.akuity.io
+      kind: ClusterPromotionTask
   namespaceResourceWhitelist:
     - group: '*'
       kind: '*'
