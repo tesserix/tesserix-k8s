@@ -1,0 +1,56 @@
+{{/*
+RequestAuthentication for platform tooling Dex issuers (Kargo, ArgoCD).
+
+Why this exists:
+The shared istio-auth-policies chart creates a RequestAuthentication on
+the ingressgateway that only knows about the customer Keycloak realms.
+Envoy's JWT filter merges all RequestAuthentication rules selected by the
+same workload — so any inbound JWT whose `iss` doesn't match one of those
+configured issuers gets rejected at the gateway with
+`Jwt issuer is not configured` (HTTP 401), BEFORE reaching the upstream.
+
+ArgoCD doesn't hit this — its UI uses HttpOnly session cookies, not
+bearer JWTs. Kargo (and Kargo CLI) DO send `Authorization: Bearer <id_token>`
+issued by their bundled Dex, so we have to register those issuers here so
+the JWT filter accepts them.
+
+Each rule is additive — non-matching JWTs from these issuers don't fail,
+they just don't set requestPrincipals. AuthorizationPolicies upstream
+make their own decisions.
+*/}}
+---
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: jwt-auth-kargo-dex
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: release
+spec:
+  selector:
+    matchLabels:
+      istio: ingressgateway
+  jwtRules:
+    - issuer: https://kargo.tesserix.app/dex
+      jwksUri: https://kargo.tesserix.app/dex/keys
+      forwardOriginalToken: true
+---
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: jwt-auth-argocd-dex
+  namespace: istio-ingress
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: gitops
+spec:
+  selector:
+    matchLabels:
+      istio: ingressgateway
+  jwtRules:
+    - issuer: https://argocd.tesserix.app/api/dex
+      jwksUri: https://argocd.tesserix.app/api/dex/keys
+      forwardOriginalToken: true
