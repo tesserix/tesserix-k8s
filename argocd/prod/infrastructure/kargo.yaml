@@ -231,6 +231,16 @@ spec:
       kind: MutatingWebhookConfiguration
       jsonPointers:
         - /webhooks/0/clientConfig/caBundle
+    # Workaround: ArgoCD's vendored OpenAPI schema doesn't know about
+    # Deployment.status.terminatingReplicas (Kubernetes 1.31+). Without
+    # this exception, ArgoCD's structured-merge diff fails with
+    # "field not declared in schema" and the sync gets stuck in
+    # ComparisonError. Strip status entirely from the diff — controllers
+    # own status anyway.
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status
   syncPolicy:
     automated:
       prune: false
