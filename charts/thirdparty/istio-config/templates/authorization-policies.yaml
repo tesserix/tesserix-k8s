@@ -137,7 +137,6 @@ spec:
         - source:
             namespaces:
               - {{ .Values.appNamespaces.homechef }}
-              - {{ .Values.appNamespaces.bookkeeping }}
 
 # =============================================================================
 # HomeChef Namespace Policies
@@ -217,69 +216,6 @@ spec:
         - source:
             namespaces:
               - {{ .Values.appNamespaces.fanzone }}
-              - {{ .Values.appNamespaces.bookkeeping }}
-
-# =============================================================================
-# Bookkeeping Namespace Policies
-# Accounting platform isolation
-# =============================================================================
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-ingress-to-bookkeeping
-  namespace: {{ .Values.appNamespaces.bookkeeping }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - istio-ingress
-
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-internal-bookkeeping
-  namespace: {{ .Values.appNamespaces.bookkeeping }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.bookkeeping }}
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.global }}
-    - from:
-        - source:
-            namespaces:
-              - monitoring
-              - istio-system
-
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: deny-cross-product-to-bookkeeping
-  namespace: {{ .Values.appNamespaces.bookkeeping }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: DENY
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.fanzone }}
-              - {{ .Values.appNamespaces.homechef }}
 
 # =============================================================================
 # StockPilot Namespace Policies

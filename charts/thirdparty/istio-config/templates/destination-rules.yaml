@@ -144,41 +144,6 @@ spec:
     {{- end }}
 
 # =============================================================================
-# Bookkeeping Namespace DestinationRules
-# Accounting platform services
-# =============================================================================
----
-apiVersion: networking.istio.io/v1
-kind: DestinationRule
-metadata:
-  name: bookkeeping-services-dr
-  namespace: {{ .Values.appNamespaces.bookkeeping }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  host: "*.{{ .Values.appNamespaces.bookkeeping }}.svc.cluster.local"
-  trafficPolicy:
-    tls:
-      mode: {{ if eq .Values.mtls.mode "STRICT" }}ISTIO_MUTUAL{{ else }}DISABLE{{ end }}
-    connectionPool:
-      tcp:
-        maxConnections: 100
-        connectTimeout: 30s
-      http:
-        h2UpgradePolicy: UPGRADE
-        http1MaxPendingRequests: 100
-        http2MaxRequests: 1000
-        maxRequestsPerConnection: 10
-        maxRetries: 3
-    {{- if .Values.circuitBreaker.enabled }}
-    outlierDetection:
-      consecutive5xxErrors: {{ .Values.circuitBreaker.consecutive5xxErrors }}
-      interval: {{ .Values.circuitBreaker.interval }}
-      baseEjectionTime: {{ .Values.circuitBreaker.baseEjectionTime }}
-      maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
-    {{- end }}
-
-# =============================================================================
 # StockPilot Namespace DestinationRules
 # AI stock analysis platform
 # =============================================================================
