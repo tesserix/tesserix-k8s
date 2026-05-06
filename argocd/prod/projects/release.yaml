@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: release
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  description: >
+    Release / promotion tooling. Hosts the Kargo control plane and any
+    Kargo Project resources. Kept distinct from `infrastructure` so that
+    promotion machinery has its own RBAC boundary.
+  sourceRepos:
+    - https://github.com/tesserix/tesserix-k8s.git
+    # Upstream Kargo Helm chart (OCI)
+    - ghcr.io/akuity/kargo-charts
+  destinations:
+    - namespace: kargo
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+    # Kargo Project namespaces are created by the Kargo controller using
+    # the convention `kargo-<project>`; allow the project to manage them
+    # so existing kargo-project chart applications work under this project.
+    - namespace: 'kargo-*'
+      server: https://kubernetes.default.svc
+    - namespace: 'tesseract-hub-*'
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    # Kargo installs CRDs and cluster-scoped RBAC.
+    - group: ''
+      kind: Namespace
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
