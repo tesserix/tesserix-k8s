@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: stockpilot-worker
   namespace: argocd
+  annotations:
+    kargo.akuity.io/authorized-stage: kargo-stockpilot:prod
   labels:
     app.kubernetes.io/part-of: stock-analysis
     app.kubernetes.io/component: worker
@@ -21,7 +23,7 @@ spec:
         - values-prod.yaml
       parameters:
         - name: image.tag
-          value: "latest"
+          value: "main-007f13b"
   destination:
     server: https://kubernetes.default.svc
     namespace: stockpilot
@@ -33,6 +35,7 @@ spec:
       - CreateNamespace=true
       - PruneLast=true
       - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
