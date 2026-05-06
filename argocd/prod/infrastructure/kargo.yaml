@@ -1,0 +1,229 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kargo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: release
+  annotations:
+    # Sync after cert-manager / external-secrets / istio.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: release
+  source:
+    # Upstream Akuity Kargo OCI Helm chart.
+    repoURL: ghcr.io/akuity/kargo-charts
+    chart: kargo
+    targetRevision: 1.9.8
+    helm:
+      releaseName: kargo
+      values: |
+        # ---------------------------------------------------------------
+        # Kargo control plane — production
+        # ---------------------------------------------------------------
+        # External URL — fronted by Cloudflare Tunnel + Istio ingress.
+        # Cloudflare terminates TLS, Istio routes HTTP to the kargo-api
+        # service in this namespace. See VirtualService in
+        # charts/thirdparty/istio-config/templates/virtual-services.yaml.
+        api:
+          host: kargo.tesserix.app
+
+          # Cloudflare terminates TLS on the public edge; we hand off
+          # plain HTTP to istio-ingress, then to the kargo-api Service.
+          # Disable in-pod TLS, but tell Kargo TLS is terminated upstream
+          # so it builds https:// callback URLs for OIDC.
+          tls:
+            enabled: false
+            terminatedUpstream: true
+
+          # Use a Service of type ClusterIP — Istio handles ingress.
+          service:
+            type: ClusterIP
+
+          # Helm-chart-managed Ingress is disabled; we use a dedicated
+          # Istio VirtualService for kargo.tesserix.app.
+          ingress:
+            enabled: false
+
+          replicas: 2
+
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+
+          podAnnotations:
+            # Allow the Cloudflare Tunnel + Istio mesh to reach the API
+            # without sidecar wonkiness on the OIDC discovery endpoint.
+            sidecar.istio.io/inject: "true"
+
+          # ------------------------------------------------------------
+          # Local admin account is DISABLED — GitHub SSO only.
+          # passwordHash + tokenSigningKey still need to exist in the
+          # api Secret because the Helm chart references them; we sync
+          # them from GCP Secret Manager via ExternalSecrets so they
+          # stay rotatable.
+          # ------------------------------------------------------------
+          adminAccount:
+            enabled: false
+
+          # The chart will read ADMIN_ACCOUNT_PASSWORD_HASH and
+          # ADMIN_ACCOUNT_TOKEN_SIGNING_KEY out of this Secret instead
+          # of generating values.
+          secret:
+            name: kargo-api-secret
+
+          # ------------------------------------------------------------
+          # OIDC — Dex (built-in) with a GitHub connector.
+          # Email-based admin allowlist is the access gate: anyone
+          # outside the list lands in an empty UI with no projects.
+          # ------------------------------------------------------------
+          oidc:
+            enabled: true
+            usernameClaim: email
+            additionalScopes:
+              - email
+              - profile
+              - groups
+            admins:
+              claims:
+                email:
+                  - samyak.rout@gmail.com
+                  - unidevidp@gmail.com
+            dex:
+              enabled: true
+              image:
+                repository: ghcr.io/dexidp/dex
+                tag: v2.44.0
+                pullPolicy: IfNotPresent
+              skipApprovalScreen: true
+              # GitHub OAuth client ID/secret are provided as env from
+              # the kargo-github-oauth Secret (synced from GCP Secret
+              # Manager — see external-secrets/prod/kargo/).
+              env:
+                - name: GITHUB_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: kargo-github-oauth
+                      key: client-id
+                - name: GITHUB_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: kargo-github-oauth
+                      key: client-secret
+              connectors:
+                - id: github
+                  name: GitHub
+                  type: github
+                  config:
+                    clientID: $GITHUB_CLIENT_ID
+                    clientSecret: $GITHUB_CLIENT_SECRET
+                    redirectURI: https://kargo.tesserix.app/dex/callback
+                    # We rely on the user's verified primary email to
+                    # match the admin allowlist. Do not pull all GH
+                    # groups (saves API quota); leave teams empty so
+                    # any GitHub user can authenticate but only the
+                    # admin emails get any role.
+                    loadAllGroups: false
+                    useLoginAsID: false
+              resources:
+                requests:
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
+
+        # ---------------------------------------------------------------
+        # Kargo controller (reconciles Projects, Warehouses, Stages,
+        # Promotions and talks to ArgoCD).
+        # ---------------------------------------------------------------
+        controller:
+          enabled: true
+          logLevel: INFO
+          argocd:
+            # In-cluster ArgoCD; Kargo will create AppProject-scoped
+            # service tokens itself when it needs to mutate Argo CD
+            # Applications during a Promotion.
+            namespace: argocd
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+
+        # ---------------------------------------------------------------
+        # Webhooks server — validating/mutating admission for Kargo CRDs.
+        # ---------------------------------------------------------------
+        webhooksServer:
+          enabled: true
+          replicas: 2
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+        # ---------------------------------------------------------------
+        # Garbage collector — clean up old Promotions / Freight.
+        # ---------------------------------------------------------------
+        garbageCollector:
+          enabled: true
+          schedule: "0 * * * *"
+          maxRetainedPromotions: 50
+          minPromotionDeletionAge: 336h
+          maxRetainedFreight: 50
+          minFreightDeletionAge: 336h
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+
+        # ---------------------------------------------------------------
+        # Management controller — provisions per-Project namespaces and
+        # default RBAC inside them.
+        # ---------------------------------------------------------------
+        managementController:
+          enabled: true
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+
+        # ---------------------------------------------------------------
+        # Install CRDs through the chart (Kargo manages its own).
+        # ---------------------------------------------------------------
+        crds:
+          install: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kargo
+  ignoreDifferences:
+    # Webhook caBundle is filled in by cert-manager's CA Injector.
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jsonPointers:
+        - /webhooks/0/clientConfig/caBundle
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
