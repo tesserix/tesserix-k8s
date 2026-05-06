@@ -14,11 +14,17 @@ imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 # refused to start (low-disk condition). Original sizing (10Gi data + 5Gi
 # WAL) was too tight: max_slot_wal_keep_size=5GB on a 5Gi WAL volume left
 # no headroom for live writes, and WAL archiving lag pushed the volume
-# over the CNPG threshold. New sizing gives ~3x WAL headroom and ~50%
-# more data — still cheap, but recovers automatically on archive lag.
+# over the CNPG threshold. Bumped again 2026-05-07 after the same low-
+# disk condition recurred at 15Gi WAL — instance manager has been
+# CrashLoopBackOff for 10h+ and has logged 130+ restarts. 30Gi gives
+# meaningful headroom; the underlying WAL-archive path will be checked
+# separately once the instance is back up.
+# resizeInUseVolumes: true (set in the chart template) makes CNPG do
+# the GCE PD expansion online — no pod restart on data side, and the
+# WAL volume mount picks up the new size on the next restart.
 storageSize: 15Gi
 storageClass: standard-rwo-retain
-walStorageSize: 15Gi
+walStorageSize: 30Gi
 
 # Tiny workload (admin tool, low QPS). 100m/256Mi covers normal traffic;
 # 500m/512Mi limit handles occasional dashboard analytics queries.
