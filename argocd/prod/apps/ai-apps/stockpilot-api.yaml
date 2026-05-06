@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: stockpilot-api
   namespace: argocd
+  annotations:
+    kargo.akuity.io/authorized-stage: kargo-stockpilot:prod
   labels:
     app.kubernetes.io/part-of: stock-analysis
     app.kubernetes.io/component: backend
@@ -19,13 +21,13 @@ spec:
       valueFiles:
         - values.yaml
         - values-prod.yaml
-      # NOTE: image.tag was previously hard-coded here as "latest" via
-      # an ArgoCD parameter override, which silently won over whatever
-      # values-prod.yaml said. Removed so values-prod.yaml's `image.tag`
-      # is the single source of truth — bump it on each rollout to
-      # defeat the GCP Artifact Registry remote-pull tag-cache that
-      # served stale `:latest` digests in the past.
+      # image.tag is now Kargo-managed via the kargo-stockpilot Project's
+      # prod Stage (see kargo-manifests). The previous bump-k8s job in
+      # tesserix/stock-analysis::stockpilot-api-build.yml is being
+      # retired in the same change.
       parameters:
+        - name: image.tag
+          value: "main-007f13b"
         - name: env.CORS_ORIGINS
           value: "https://stockpilot.tesserix.app"
   destination:
@@ -39,6 +41,7 @@ spec:
       - CreateNamespace=true
       - PruneLast=true
       - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:

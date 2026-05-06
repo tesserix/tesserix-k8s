@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: scrapper-web
   namespace: argocd
+  annotations:
+    kargo.akuity.io/authorized-stage: kargo-scrapper:prod
   labels:
     app.kubernetes.io/part-of: social-media-scrapper
     app.kubernetes.io/component: frontend
@@ -21,7 +23,7 @@ spec:
         - values-prod.yaml
       parameters:
         - name: image.tag
-          value: "latest"
+          value: "main-018a31a"
   destination:
     server: https://kubernetes.default.svc
     namespace: scrapper
@@ -33,6 +35,7 @@ spec:
       - CreateNamespace=true
       - PruneLast=true
       - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:

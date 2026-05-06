@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: stockpilot-web
   namespace: argocd
+  annotations:
+    kargo.akuity.io/authorized-stage: kargo-stockpilot:prod
   labels:
     app.kubernetes.io/part-of: stock-analysis
     app.kubernetes.io/component: frontend
@@ -19,12 +21,13 @@ spec:
       valueFiles:
         - values.yaml
         - values-prod.yaml
-      # NOTE: image.tag was previously hard-coded here as "latest" via
-      # an ArgoCD parameter override, which silently won over whatever
-      # values-prod.yaml said. Removed so values-prod.yaml is the
-      # single source of truth — bumped on each rollout by the
-      # `Bump image tag in tesserix-k8s` step in
-      # tesserix/stock-analysis::.github/workflows/stockpilot-web-build.yml.
+      # image.tag is now Kargo-managed via the kargo-stockpilot Project's
+      # prod Stage (see kargo-manifests). The previous bump-k8s job in
+      # tesserix/stock-analysis::stockpilot-web-build.yml is being
+      # retired in the same change.
+      parameters:
+        - name: image.tag
+          value: "main-031cef1"
   destination:
     server: https://kubernetes.default.svc
     namespace: stockpilot
@@ -36,6 +39,7 @@ spec:
       - CreateNamespace=true
       - PruneLast=true
       - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:

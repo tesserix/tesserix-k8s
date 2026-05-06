@@ -16,12 +16,24 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
+  # ai-apps-app-of-apps covers BOTH scrapper + stockpilot (and DevAI),
+  # so Kargo writes from kargo-scrapper:prod and kargo-stockpilot:prod
+  # both land on child Applications in this directory. The
+  # ignoreDifferences below stops selfHeal from reverting those writes.
+  # DevAI Apps don't have Kargo-managed parameters today, so the
+  # exception is a no-op for them.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /spec/source/helm/parameters
   syncPolicy:
     automated:
       prune: false
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
