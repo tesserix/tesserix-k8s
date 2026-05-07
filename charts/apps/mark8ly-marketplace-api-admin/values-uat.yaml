@@ -1,0 +1,24 @@
+# UAT overlay for mark8ly-marketplace-api-admin.
+namespace: mark8ly-uat
+name: mark8ly-uat-marketplace-api-admin
+
+keda:
+  minReplicaCount: 1
+  maxReplicaCount: 1   # admin engine pinned to 1 replica (per-user rate limiter, see prod values)
+pdb:
+  enabled: false
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+
+database:
+  host: mark8ly-uat-postgres-rw.mark8ly-uat.svc.cluster.local
+  port: 5432
+  name: mark8ly_marketplace_api
+  secretName: mark8ly-uat-postgres-marketplace-api
+  sslmode: require
+
+# In-cluster service discovery — UAT siblings only.
+fgaApiUrl: "http://mark8ly-uat-openfga.mark8ly-uat.svc.cluster.local:8080"
+platformApiUrl: "http://mark8ly-uat-platform-api.mark8ly-uat.svc.cluster.local:8086"

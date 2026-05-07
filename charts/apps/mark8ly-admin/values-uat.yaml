@@ -1,0 +1,38 @@
+# UAT overlay for mark8ly-admin.
+# Same chart as prod, sized down + cross-references rewired to the
+# mark8ly-uat-* siblings.
+namespace: mark8ly-uat
+name: mark8ly-uat-admin
+
+# UAT replica ceiling: 2. Single replica at idle, scale-up only when
+# smoke / acceptance tests drive load.
+keda:
+  minReplicaCount: 1
+  maxReplicaCount: 2
+pdb:
+  enabled: false
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+
+# In-namespace cross-service URLs.
+platformApiUrl: "http://mark8ly-uat-platform-api:8086"
+authBffUrl: "http://mark8ly-uat-auth-bff:8087"
+marketplaceApiUrl: "http://mark8ly-uat-marketplace-api-admin:8080"
+
+# UAT-side internal-auth secret; rotated independently from prod so a
+# UAT key compromise can't be replayed into prod.
+marketplaceInternalAuthSecret:
+  secretName: mark8ly-uat-marketplace-api-internal-auth
+  secretKey: INTERNAL_AUTH_SECRET
+platformInternalAuthSecret:
+  secretName: mark8ly-uat-platform-api-internal-auth
+  secretKey: INTERNAL_AUTH_SECRET
+
+# Disable the cross-namespace tesserix.app integration in UAT — the
+# tesserix-home company site only exposes its /api/internal/* surface
+# to prod mark8ly. UAT runs without the support-ticket / announcements
+# integration; the admin app handles its absence.
+tesserixInternal:
+  enabled: false

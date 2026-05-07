@@ -1,5 +1,7 @@
-# Only platform-api, auth-bff, and tesserix-auth-bff (cross-namespace
-# super-admin gateway for tesserix.app) are allowed to call OpenFGA.
+# Only the listed callers are allowed to talk to OpenFGA. The default set
+# below (used by prod) covers platform-api + auth-bff + fga-init in the
+# same namespace, plus the tesserix-home super-admin gateway. UAT
+# overrides the list to use the `mark8ly-uat-*` SA names instead.
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
 metadata:
@@ -14,7 +16,13 @@ spec:
     - from:
         - source:
             principals:
+            {{- if .Values.allowedPrincipals }}
+              {{- range .Values.allowedPrincipals }}
+              - {{ . | quote }}
+              {{- end }}
+            {{- else }}
               - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-platform-api"
               - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-auth-bff"
               - "cluster.local/ns/{{ .Values.namespace }}/sa/mark8ly-fga-init"
               - "cluster.local/ns/tesserix/sa/tesserix-auth-bff"
+            {{- end }}

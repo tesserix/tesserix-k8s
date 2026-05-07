@@ -1,0 +1,41 @@
+# UAT overlay for mark8ly-otto.
+namespace: mark8ly-uat
+name: mark8ly-uat-otto
+
+# Otto stays single-replica even in UAT — WebSocket stickiness > replica
+# count for chat workloads.
+replicaCount: 1
+keda:
+  enabled: false
+  maxReplicaCount: 1
+pdb:
+  enabled: false
+resources:
+  requests:
+    cpu: 25m
+    memory: 96Mi
+
+# MongoDB → mark8ly-uat-mongodb (same StatefulSet name, different ns).
+mongo:
+  url: "mongodb://mark8ly-uat-mongodb-mark8ly-mongodb.mark8ly-uat.svc.cluster.local:27017"
+  database: "otto"
+
+# Cookie domain stays `.mark8ly.com` (covers `uat.mark8ly.com`,
+# `*-uat.mark8ly.com`).
+session:
+  cookieName: "otto_session"
+  cookieDomain: ".mark8ly.com"
+  cookieSecure: true
+
+cors:
+  # Same wildcard as prod — covers all `*.mark8ly.com` UAT subdomains
+  # (admin-uat, uat, otto-uat, etc.) without a UAT-specific list.
+  allowedOrigins: "https://*.mark8ly.com"
+
+# OTP email runs against the same SendGrid sandbox as prod for now.
+otp:
+  fromEmail: "noreply@mark8ly.com"
+  fromName: "Otto Support (UAT)"
+  codeTtlSeconds: 600
+  maxAttempts: 5
+  resendCooldownSeconds: 45
