@@ -333,3 +333,79 @@ to post without explicit invite.
 ---
 
 *Last updated: 2026-05-07 (initial write + live verification).*
+
+---
+
+## GIP tenant alignment policy
+
+UAT runtime GIP tenants intentionally match the prod tenants the
+client JS bundle was built with. This is **not a bug** — it's a
+deliberate trade-off so the Playwright suite has stable credentials
+across releases without needing per-env images.
+
+### Why
+
+Next.js inlines `NEXT_PUBLIC_*` env vars into the client JS bundle at
+build time. CI builds the admin / onboarding / storefront images with
+`NEXT_PUBLIC_GIP_TENANT_ID = MP-Internal-e986p` (the prod merchant
+tenant) and `NEXT_PUBLIC_GIP_CUSTOMER_TENANT_ID = MP-Customer-39opy`
+(the prod customer tenant). These values ship inside the JS bundle.
+
+If the UAT runtime points at different GIP tenants (e.g. UAT-only
+ones), the browser-side Firebase Auth call uses the bundle's tenant
+to mint the id_token, but the server-side verify uses the runtime
+tenant to validate it — the tenant claim mismatches and the verify
+rejects, looping the user on /sign-in.
+
+### Files that enforce alignment
+
+| Chart | File | Aligned key |
+| --- | --- | --- |
+| admin | `charts/apps/mark8ly-admin/values-uat.yaml` | `public.gipTenantId` |
+| onboarding | `charts/apps/mark8ly-onboarding/values-uat.yaml` | `public.gipTenantId` + `public.gipCustomerTenantId` |
+| storefront | `charts/apps/mark8ly-storefront/values-uat.yaml` | `gipCustomerTenantId` |
+| auth-bff | `charts/apps/mark8ly-auth-bff/values-uat.yaml` | `gip.internalTenantId` + `customerTenantId` + `platformTenantId` |
+| platform-api | `charts/apps/mark8ly-platform-api/values-uat.yaml` | `gip.tenantId` |
+
+All five resolve to the prod tenant set:
+- `MP-Internal-e986p`
+- `MP-Customer-39opy`
+- `Platform-9bu14`
+
+If you ever bump the GIP tenant in CI, **bump these five files in the
+same commit** so the alignment holds. The smoke pipeline tests will
+catch a mismatch on the next promotion.
+
+### Test credentials
+
+The Playwright suite signs in as `samyak.rout@gmail.com` with the
+password stored in GCP SM as `prod-mark8ly-uat-playwright-creds`. The
+user is pre-provisioned in BOTH required tenants:
+
+| Tenant | Used by |
+| --- | --- |
+| `MP-Internal-e986p` | admin sign-in (auth.setup.ts) |
+| `MP-Customer-39opy` | storefront customer sign-in (100/101/102 specs) |
+
+Provisioning was done via Identity Toolkit Admin API — re-create with:
+
+```bash
+TOKEN=$(gcloud auth application-default print-access-token)
+for T in MP-Internal-e986p MP-Customer-39opy; do
+  curl -X POST -H "Authorization: Bearer $TOKEN" -H "x-goog-user-project: tesseracthub-480811" \
+    -H "Content-Type: application/json" \
+    "https://identitytoolkit.googleapis.com/v1/projects/tesseracthub-480811/tenants/$T/accounts" \
+    -d '{"email":"samyak.rout@gmail.com","password":"<from prod-mark8ly-uat-playwright-creds>","emailVerified":true}'
+done
+```
+
+### True isolation (deferred)
+
+The proper "UAT-only GIP tenants" goal requires a refactor of the
+mark8ly admin / onboarding / storefront app code to lift
+`NEXT_PUBLIC_GIP_*` out of the build bundle (server resolves
+GIP_*_TENANT_ID at runtime, passes to client components via React
+props). 32 consumer files in apps/admin alone — it's a Phase 7
+refactor we can pick up when there's bandwidth. Until then, the
+alignment policy above keeps the smoke pipeline green at every
+release.
