@@ -53,11 +53,19 @@ auditIngest:
 
 # UAT-only GCS bucket — separates UAT-uploaded media from prod's
 # tesseracthub-480811-mark8ly-media so test data can't pollute the
-# prod CDN cache or rack up cost there. Bucket created 2026-05-07
-# with objectAdmin granted to the shared marketplace SA.
+# prod CDN cache or rack up cost there.
 gcsBucket: "tesseracthub-480811-mark8ly-media-uat"
 
 # UAT doesn't have its own CDN domain set up yet — use the bucket's
 # public-virtual-host URL directly. cdn.mark8ly.com is prod-only;
 # pointing UAT writes there would cache-poison prod CDN edges.
 mediaPublicBaseURL: "https://storage.googleapis.com/tesseracthub-480811-mark8ly-media-uat"
+
+# UAT-specific Workload Identity GSA. The prod GSA's IAM
+# workloadIdentityUser binding does NOT include UAT K8s SAs, so
+# pointing UAT pods at the prod GSA silently breaks any GCP API
+# call that uses ADC (V4-signed-URL minting was the visible
+# symptom — every /media/upload-url call 502'd). The UAT GSA has
+# least-privilege scope: objectAdmin only on the UAT media bucket
+# + tokenCreator on itself for V4 signing on Workload Identity.
+gcpServiceAccount: "app-secrets-marketplace-uat@tesseracthub-480811.iam.gserviceaccount.com"
