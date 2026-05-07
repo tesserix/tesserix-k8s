@@ -1,0 +1,23 @@
+# Marker ConfigMap that records the test image tag for the current release.
+#
+# Argo CD's Sync hooks (the e2e Job) only fire when the host Application
+# has at least one non-hook resource to apply. A chart that contains only
+# a Sync hook reports "synced (no more tasks)" on each sync without ever
+# materialising the hook — the e2e Job never runs.
+#
+# This ConfigMap exists purely to give every sync a concrete piece of
+# work, and its `imageTag` field changes on every release so Argo always
+# sees a diff and triggers the hook lifecycle.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mark8ly-uat-e2e-tests-version
+  namespace: {{ .Values.namespace | default "mark8ly-uat" }}
+  labels:
+    app.kubernetes.io/name: mark8ly-uat-e2e-tests
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: e2e-tests
+    environment: uat
+data:
+  imageTag: {{ .Values.image.tag | default "latest" | quote }}
+  imageRepository: {{ .Values.image.repository | quote }}
