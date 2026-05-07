@@ -168,3 +168,51 @@ spec:
             port:
               number: {{ .Values.services.onboarding.port }}
       timeout: {{ .Values.timeout.default }}
+---
+# uat-landing.mark8ly.com -> mark8ly-uat-onboarding (landing page).
+# Mirrors prod where mark8ly.com (bare apex) serves the onboarding
+# Next.js app's marketing/landing route. UAT can't claim the apex from
+# a different namespace, so it gets its own subdomain instead.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: mark8ly-uat-landing-vs
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: mark8ly
+    environment: uat
+spec:
+  hosts:
+    - "{{ .Values.hosts.landing }}.{{ .Values.domain }}"
+  gateways:
+    - {{ .Values.gateway.ref }}
+  http:
+    - name: bff-routes
+      match:
+        - uri:
+            prefix: /bff/
+      route:
+        - destination:
+            host: {{ .Values.services.authBff.name }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.services.authBff.port }}
+      timeout: {{ .Values.timeout.api }}
+    - name: platform-routes
+      match:
+        - uri:
+            prefix: /api/v1/platform/
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: {{ .Values.services.platformApi.name }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.services.platformApi.port }}
+      timeout: {{ .Values.timeout.api }}
+    - name: default
+      route:
+        - destination:
+            host: {{ .Values.services.onboarding.name }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.services.onboarding.port }}
+      timeout: {{ .Values.timeout.default }}
