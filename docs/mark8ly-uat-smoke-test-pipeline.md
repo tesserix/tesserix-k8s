@@ -121,10 +121,75 @@ prod-mark8ly-uat-           mark8ly-uat-           mark8ly-uat-     MARK8LY_ADMI
 | --- | --- |
 | Slack bot token | `prod-argocd-notifications-slack-token` (xoxb-…, GCP SM) |
 | ExternalSecret | `external-secrets/prod/argocd/notifications.yaml` → `argocd-notifications-secret` (key `slack-token`) |
-| Trigger / template / service | helm release `argocd` values (notifications section); CM `argocd-notifications-cm` |
+| Trigger / template / service | helm release `argocd` values; the helm overlay is checked in at `docs/argocd/notifications-overlay.yaml` (re-apply via `helm upgrade --reuse-values -f`) |
 | App subscription | annotation `notifications.argoproj.io/subscribe.on-mark8ly-uat-smoke-failed.slack` on `argocd/prod/apps/mark8ly-uat/e2e-tests.yaml` |
 | Channel | `#mark8ly-smoke-test-verification` (Slack workspace `Unidev`) |
 | Bot user | `@mark8lyplaywritetestn` (App: `mark8ly-playwright`) |
+
+#### What the Slack message looks like
+
+```
+🚨 Mark8ly UAT smoke test failed — prod auto-promotion blocked
+
+┌─[red]──────────────────────────────────────────────┐
+│ mark8ly-uat-e2e-tests failed in UAT  (clickable →  │
+│                                       Argo CD App) │
+│                                                    │
+│ Failure                                            │
+│ one or more synchronization tasks completed        │
+│ unsuccessfully (retried 3 times).                  │
+│                                                    │
+│ Sync Revision     Image Tag                        │
+│ `13a390e487ab`    `main-bd4584b`                   │
+│                                                    │
+│ Failed Resource — Job/mark8ly-uat-e2e-tests        │
+│ ┌────────────────────────────────────────────────┐ │
+│ │ Job has reached the specified backoff limit    │ │
+│ └────────────────────────────────────────────────┘ │
+│                                                    │
+│ Triage commands                                    │
+│ ┌────────────────────────────────────────────────┐ │
+│ │ kubectl -n mark8ly-uat get pods …             │ │
+│ │ kubectl -n mark8ly-uat logs <POD>             │ │
+│ │ kubectl -n mark8ly-uat cp <POD>:/app/playwright│ │
+│ │  -report ./playwright-report                   │ │
+│ │ open ./playwright-report/index.html            │ │
+│ └────────────────────────────────────────────────┘ │
+│                                                    │
+│ Quick links                                        │
+│ Argo CD App · Kargo Project · Smoke Stage          │
+│                                                    │
+│ Block prod auto-promotion until smoke goes Healthy │
+│                                                    │
+└────────────────────────────────────────────────────┘
+```
+
+The message gives on-call enough context to know **which** App failed,
+**why** at the K8s/Argo CD level, the **exact image tag** under test, and
+**copy-paste commands** to dig into the actual Playwright failure (test
+name, assertion error, screenshots) without leaving Slack.
+
+#### Future enhancement: inline test-failure summary
+
+The current message exposes the *Kubernetes* failure ("Job has reached
+the specified backoff limit") and points operators at the Job logs for
+the actual test details. A nicer-but-bigger lift is having the
+Playwright reporter write a structured failure summary
+(failing-test name + first 200 chars of the assertion error) to a
+location the notifications template can read. Two viable approaches:
+
+1. **Webhook intermediary** — Add `service.webhook` to argocd-notifications,
+   target a small in-cluster service that fetches Job logs via the K8s
+   API and re-posts an enriched Slack message. Most flexible, ~50 lines
+   of Go.
+2. **K8s Secret hand-off** — Custom Playwright reporter writes the
+   summary into a Secret in the `argocd` namespace; a second template
+   renders that Secret's content via `secrets.get` template helper.
+   Lighter-weight, zero extra runtime services.
+
+Neither is needed today — the kubectl one-liner gets the full report
+in one command — but worth considering if Slack-first triage becomes
+more important.
 
 ---
 

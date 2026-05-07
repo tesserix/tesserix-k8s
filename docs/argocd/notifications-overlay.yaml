@@ -1,0 +1,89 @@
+# Argo CD Notifications overlay — apply with:
+#   helm -n argocd upgrade argocd argo-cd \
+#     --repo https://argoproj.github.io/argo-helm --version 7.7.23 \
+#     -f <previous-values.yaml> -f docs/argocd/notifications-overlay.yaml \
+#     --reuse-values
+#
+# Lives outside the helm release of record because the ArgoCD install
+# itself is currently not GitOps-managed. Once we move ArgoCD to
+# self-management, fold this overlay into the live values.
+
+notifications:
+  enabled: true
+  # ESO-managed Secret (external-secrets/prod/argocd/notifications.yaml)
+  # owns argocd-notifications-secret with key `slack-token`. Helm must
+  # NOT recreate the Secret or the ESO-controlled value gets clobbered.
+  secret:
+    create: false
+
+  notifiers:
+    service.slack: |
+      token: $slack-token
+
+  templates:
+    # Rich Slack message for mark8ly UAT smoke failures. Uses Slack
+    # block-style attachments to surface the failed-resource details
+    # inline so on-call doesn't need to dig through Argo CD UI to
+    # know which test surface broke. Triage commands are right in the
+    # message, ready to copy + paste.
+    template.mark8ly-uat-smoke-failed: |
+      message: |
+        🚨 *Mark8ly UAT smoke test failed* — prod auto-promotion blocked
+      slack:
+        attachments: |
+          [{
+            "color": "#E01E5A",
+            "title": "{{.app.metadata.name}} failed in UAT",
+            "title_link": "https://argocd.tesserix.app/applications/{{.app.metadata.name}}",
+            "fields": [
+              {
+                "title": "Failure",
+                "value": "{{.app.status.operationState.message}}",
+                "short": false
+              },
+              {
+                "title": "Sync Revision",
+                "value": "`{{.app.status.operationState.syncResult.revision | substr 0 12}}`",
+                "short": true
+              },
+              {
+                "title": "Image Tag",
+                "value": "`{{(index .app.spec.source.helm.parameters 0).value}}`",
+                "short": true
+              }
+              {{- range .app.status.operationState.syncResult.resources }}
+              {{- if eq .hookPhase "Failed" }}
+              ,{
+                "title": "Failed Resource — {{.kind}}/{{.name}}",
+                "value": "```{{.message}}```",
+                "short": false
+              }
+              {{- end }}
+              {{- end }}
+              ,{
+                "title": "Triage commands",
+                "value": "```# Find the latest failing pod\nkubectl -n {{.app.spec.destination.namespace}} get pods -l app.kubernetes.io/name={{.app.metadata.name}} --sort-by=.status.startTime\n\n# Tail logs (replace POD with output above)\nkubectl -n {{.app.spec.destination.namespace}} logs <POD>\n\n# Open the Playwright report inside the pod\nkubectl -n {{.app.spec.destination.namespace}} cp <POD>:/app/playwright-report ./playwright-report\nopen ./playwright-report/index.html```",
+                "short": false
+              },
+              {
+                "title": "Quick links",
+                "value": "<https://argocd.tesserix.app/applications/{{.app.metadata.name}}|Argo CD App> · <https://kargo.tesserix.app/project/kargo-mark8ly|Kargo Project> · <https://kargo.tesserix.app/project/kargo-mark8ly/stages/smoke|Smoke Stage>",
+                "short": false
+              }
+            ],
+            "footer": "Block prod auto-promotion until smoke goes Healthy. To bypass for hot-fix, see runbook: docs/mark8ly-uat-smoke-test-pipeline.md",
+            "ts": {{ now | unixEpoch }}
+          }]
+
+  triggers:
+    trigger.on-mark8ly-uat-smoke-failed: |
+      - description: Fires when the mark8ly-uat e2e Job hits backoffLimit and Argo CD reports the App Failed.
+        send: [mark8ly-uat-smoke-failed]
+        when: |
+          app.metadata.name == 'mark8ly-uat-e2e-tests'
+          && app.status.operationState != nil
+          && app.status.operationState.phase in ['Failed','Error']
+
+  subscriptions:
+    - recipients: [slack:mark8ly-smoke-test-verification]
+      triggers: [on-mark8ly-uat-smoke-failed]
