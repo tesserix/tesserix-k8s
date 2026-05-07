@@ -93,7 +93,6 @@ spec:
               claims:
                 email:
                   - samyak.rout@gmail.com
-                  - unidevidp@gmail.com
                   - mahesh.sangawar@gmail.com
             dex:
               enabled: true
@@ -124,11 +123,17 @@ spec:
                     clientID: $GITHUB_CLIENT_ID
                     clientSecret: $GITHUB_CLIENT_SECRET
                     redirectURI: https://kargo.tesserix.app/dex/callback
-                    # We rely on the user's verified primary email to
-                    # match the admin allowlist. Do not pull all GH
-                    # groups (saves API quota); leave teams empty so
-                    # any GitHub user can authenticate but only the
-                    # admin emails get any role.
+                    # Hard authn gate: only members of the `tesserix`
+                    # GitHub org can complete login. Dex calls
+                    # GitHub's /user/orgs endpoint and rejects anyone
+                    # whose membership is missing. Combined with the
+                    # admin email allowlist above, only Sam123ben
+                    # and mahesh-sangawar can authenticate AND have
+                    # any role. Note: Mahesh's tesserix membership
+                    # must be public on his GH profile, otherwise
+                    # the App also needs "Members: Read" permission.
+                    orgs:
+                      - name: tesserix
                     loadAllGroups: false
                     useLoginAsID: false
               resources:
