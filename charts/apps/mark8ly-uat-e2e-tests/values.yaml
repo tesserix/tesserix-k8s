@@ -30,8 +30,14 @@ resources:
   limits:
     memory: 2Gi
 
-# Backoff for transient infrastructure failures (DNS, ingress restart).
-backoffLimit: 1
+# Looser retry budget: 2 reruns (3 total attempts) so a single transient
+# storefront blip / Cloudflare hiccup doesn't immediately Errored the
+# smoke Stage. Real test failures still bubble up — after the 3rd
+# attempt the Job's status.failed exceeds backoffLimit and the Job
+# condition flips to type=Failed, which Argo CD propagates as
+# hookPhase=Failed → App OperationPhase=Failed → Kargo argocd-update
+# step Errored → smoke Stage Errored → prod cascade gated.
+backoffLimit: 2
 
 # The Job is created on every sync (sync-hook), so we don't keep history
 # beyond the most recent run — Kargo / Argo CD UI is the audit trail.
