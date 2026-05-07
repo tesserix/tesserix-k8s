@@ -44,9 +44,11 @@ spec:
     syncOptions:
       - CreateNamespace=false        # mark8ly-uat namespace already exists
       - RespectIgnoreDifferences=true
+    # Argo CD sync retries are NOT useful here: the e2e Job has its own
+    # backoffLimit (2 reruns / 3 attempts) at the workload layer. Once
+    # the Job exhausts that, recreating it via another sync will just
+    # produce the same failure. Setting limit: 0 means Argo CD reports
+    # the failure to Kargo immediately on the first sync attempt — no
+    # 6+ minute Argo retry loop hiding the result.
     retry:
-      limit: 3
-      backoff:
-        duration: 10s
-        factor: 2
-        maxDuration: 2m
+      limit: 0
