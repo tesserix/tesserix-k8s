@@ -15,17 +15,18 @@ spec:
     - Ingress
   ingress:
     # PostgreSQL clients: app pods, OpenFGA, PgBouncer, and CNPG peers.
+    # The list of allowed app names is values-driven so UAT (mark8ly-uat-*
+    # SAs) can reuse this chart by overriding `allowedAppNames` in
+    # values-uat.yaml. Default = the prod-shaped name list.
     - from:
         - podSelector:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
                 values:
-                  - mark8ly-auth-bff
-                  - mark8ly-platform-api
-                  - mark8ly-marketplace-api-admin
-                  - mark8ly-marketplace-api-storefront
-                  - mark8ly-openfga
+                {{- range (.Values.allowedAppNames | default (list "mark8ly-auth-bff" "mark8ly-platform-api" "mark8ly-marketplace-api-admin" "mark8ly-marketplace-api-storefront" "mark8ly-openfga")) }}
+                  - {{ . }}
+                {{- end }}
         - podSelector:
             matchLabels:
               cnpg.io/cluster: {{ .Values.clusterName }}
@@ -38,31 +39,29 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
-    # Cross-namespace clients in the tesserix namespace. tesserix-auth-bff
-    # connects to mark8ly_platform_api as its app role; tesserix-home and
-    # tesserix-admin-api connect as mark8ly_platform_admin (CRUD super-admin
-    # role) for cross-product reads/writes. Without an explicit
-    # namespaceSelector, the in-namespace rule above matches only mark8ly
-    # pods, so any tesserix pod's TCP SYN to 5432 is silently dropped.
+    {{- if .Values.allowedCrossNamespaceSources }}
+    # Cross-namespace clients (defaults to none — set in values-prod-style
+    # overrides only when needed). Prod allows tesserix.* services into
+    # mark8ly_platform_api as part of the super-admin path; UAT keeps
+    # this empty so the test env stays self-contained.
+    {{- range .Values.allowedCrossNamespaceSources }}
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: tesserix
+              kubernetes.io/metadata.name: {{ .namespace }}
           podSelector:
             matchExpressions:
               - key: app.kubernetes.io/name
                 operator: In
                 values:
-                  - tesserix-auth-bff
-                  # `company` is the chart name for the tesserix.app
-                  # Next.js app (frontend + super-admin server routes).
-                  # The repo is `tesserix-home` but the K8s label is `company`.
-                  - company
-                  - tesserix-home
-                  - tesserix-admin-api
+                {{- range .appNames }}
+                  - {{ . }}
+                {{- end }}
       ports:
         - protocol: TCP
           port: 5432
+    {{- end }}
+    {{- end }}
     # Allow the CNPG operator to manage and probe instances.
     - from:
         - namespaceSelector:
