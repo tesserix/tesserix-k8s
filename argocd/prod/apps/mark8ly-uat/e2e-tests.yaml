@@ -11,6 +11,12 @@ metadata:
     # Smoke Stage's argocd-update step writes a new image.tag here on
     # every promotion. Without this annotation Kargo refuses to mutate.
     kargo.akuity.io/authorized-stage: kargo-mark8ly:smoke
+    # argocd-notifications subscription. The on-mark8ly-uat-smoke-failed
+    # trigger fires when this App's operationState.phase is Failed/Error
+    # — i.e. the e2e Job exited non-zero past backoffLimit. Posts to
+    # #mark8ly-smoke-test-verification via the slack-token Secret synced
+    # from prod-argocd-notifications-slack-token in GCP SM.
+    notifications.argoproj.io/subscribe.on-mark8ly-uat-smoke-failed.slack: mark8ly-smoke-test-verification
   labels:
     app.kubernetes.io/part-of: tesseract-platform
     app.kubernetes.io/component: e2e-tests
