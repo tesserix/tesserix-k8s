@@ -22,6 +22,16 @@ spec:
       owner: {{ .Values.bootstrap.primaryOwner }}
       secret:
         name: {{ .Values.bootstrap.primarySecret }}
+      # Install required extensions on template1 so EVERY database
+      # CREATEd from postInitSQL (openfga, marketplace_api, ...)
+      # inherits them. Without this, marketplace-api migration 058
+      # (`gen_random_bytes`) fails on a fresh cluster, leaving the
+      # schema dirty and the deployment stuck — fixed manually in
+      # prod, automated here so UAT and any future bootstrap is
+      # reproducible.
+      postInitTemplateSQL:
+        - "CREATE EXTENSION IF NOT EXISTS pgcrypto"
+        - "CREATE EXTENSION IF NOT EXISTS citext"
       postInitSQL:
         # openfga (used by mark8ly-openfga)
         - "CREATE ROLE {{ .Values.bootstrap.secondaryOwner }} LOGIN"
