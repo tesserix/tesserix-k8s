@@ -77,6 +77,35 @@ spec:
             port:
               number: {{ .Values.authBffServicePort }}
       timeout: 30s
+    {{- if and .Values.uatRoutes .Values.uatRoutes.enabled }}
+    # {slug}-admin-uat.mark8ly.com → UAT admin (cross-namespace).
+    # Per-tenant UAT admin subdomains fall through this wildcard VS
+    # because only EXACT host VSes (admin-uat.mark8ly.com) live in
+    # the mark8ly-uat namespace.
+    - match:
+        - authority:
+            regex: "^[^.]+-admin-uat\\.mark8ly\\.com$"
+      route:
+        - destination:
+            host: {{ .Values.uatRoutes.adminServiceName }}.{{ .Values.uatRoutes.adminServiceNamespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.uatRoutes.adminServicePort }}
+      timeout: 30s
+    # {slug}-uat.mark8ly.com → UAT storefront (cross-namespace).
+    # The exact-host hits (uat.mark8ly.com, admin-uat.mark8ly.com,
+    # onboarding-uat.mark8ly.com, uat-landing.mark8ly.com) all have
+    # their own VSes in mark8ly-uat that win on host-priority, so
+    # this regex only catches per-slug storefront URLs.
+    - match:
+        - authority:
+            regex: "^[^.]+-uat\\.mark8ly\\.com$"
+      route:
+        - destination:
+            host: {{ .Values.uatRoutes.storefrontServiceName }}.{{ .Values.uatRoutes.storefrontServiceNamespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.uatRoutes.storefrontServicePort }}
+      timeout: 30s
+    {{- end }}
     # Everything else under *.mark8ly.com → storefront
     - route:
         - destination:
