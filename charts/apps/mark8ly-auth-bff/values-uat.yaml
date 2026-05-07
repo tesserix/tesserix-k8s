@@ -1,0 +1,50 @@
+# UAT overlay for mark8ly-auth-bff.
+namespace: mark8ly-uat
+name: mark8ly-uat-auth-bff
+
+keda:
+  minReplicaCount: 1
+  maxReplicaCount: 2
+pdb:
+  enabled: false
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+
+# Postgres → mark8ly-uat CNPG primary.
+database:
+  host: mark8ly-uat-postgres-rw.mark8ly-uat.svc.cluster.local
+  port: 5432
+  name: mark8ly_platform_api
+  secretName: mark8ly-uat-postgres-platform-api
+  sslmode: require
+
+openfga:
+  apiUrl: "http://mark8ly-uat-openfga:8080"
+  storeId: ""
+
+# Same GIP project + tenants as prod for now (Phase 4 will introduce
+# UAT-specific tenant pools so test users can't cross over).
+gip:
+  projectId: "tesseracthub-480811"
+  projectNumber: "849928263410"
+  internalTenantId: "MP-Internal-e986p"
+  customerTenantId: "MP-Customer-39opy"
+  platformTenantId: "Platform-9bu14"
+
+# Same OAuth client. Phase 4 will add a UAT-specific OAuth client
+# with `admin-uat.mark8ly.com`, `uat.mark8ly.com` redirect URIs.
+oauth:
+  clientId: "849928263410-eq63i2v34j61mbaghf0opu9fubmrkqua.apps.googleusercontent.com"
+
+# Cookie domain `.mark8ly.com` already covers `*-uat.mark8ly.com` and
+# `uat.mark8ly.com` since both are under the same parent.
+session:
+  cookieName: "m8_session"
+  cookieDomain: ".mark8ly.com"
+
+marketplaceApiUrl: "http://mark8ly-uat-marketplace-api-admin.mark8ly-uat.svc.cluster.local:8080"
+marketplaceInternalAuthSecret:
+  secretName: mark8ly-uat-marketplace-api-internal-auth
+  secretKey: INTERNAL_AUTH_SECRET
