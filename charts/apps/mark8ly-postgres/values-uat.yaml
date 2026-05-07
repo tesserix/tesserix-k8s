@@ -1,0 +1,47 @@
+# UAT overlay for mark8ly-postgres.
+# Same chart as prod, sized down for the UAT tier (single instance, smaller
+# storage, no PgBouncer pool, separate WAL archive prefix). The CNPG
+# Workload Identity SA is the same as prod since it's bound at the
+# tesserix-prod project level and the bucket has prefix-only IAM
+# conditions per cluster.
+
+namespace: mark8ly-uat
+clusterName: mark8ly-uat-postgres
+
+# UAT runs on a single primary; HA isn't worth 2× cost for a test env.
+# Continuous backup still goes to GCS so we can recover state if a UAT
+# data-loss exercise corrupts the volume.
+instances: 1
+storageSize: 50Gi
+walStorageSize: 10Gi
+
+# Smaller resource ask — enough headroom for smoke tests + integration
+# runs but a fraction of prod's 1 CPU / 4 GiB.
+resources:
+  requests:
+    memory: 1Gi
+  limits:
+    memory: 1Gi
+
+# Same database layout as prod so app code paths are identical. Different
+# secret names so ExternalSecrets create independent K8s Secrets in
+# mark8ly-uat namespace.
+bootstrap:
+  primaryDatabase: mark8ly_platform_api
+  primaryOwner: platform_api
+  primarySecret: mark8ly-uat-postgres-platform-api
+  secondaryDatabase: mark8ly_openfga
+  secondaryOwner: openfga
+  secondarySecret: mark8ly-uat-postgres-openfga
+
+# WAL archive — separate GCS prefix so a UAT corruption can't taint the
+# prod restore catalog.
+backup:
+  enabled: true
+  destinationPath: "gs://tesseract-prod-backups-in/mark8ly-uat-postgres"
+  retentionPolicy: "7d"
+  serviceAccount: "app-secrets-mark8ly-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+# UAT pool size is small — direct connections are fine, no PgBouncer.
+pooler:
+  enabled: false

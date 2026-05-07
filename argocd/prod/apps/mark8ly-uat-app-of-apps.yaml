@@ -1,0 +1,50 @@
+# Root "app of apps" for the mark8ly UAT environment.
+# Drop in argocd/prod/apps/mark8ly-uat/ and this root picks them up
+# automatically. Mirrors the mark8ly (prod) app-of-apps pattern with
+# the same ignoreDifferences exception for Kargo's helm.parameters
+# writes — when Kargo's `kargo-mark8ly:uat` Stage promotes a freight,
+# it writes spec.source.helm.parameters.image.tag on every
+# mark8ly-uat-* child Application. Without ignoreDifferences this
+# parent would self-heal those writes back within seconds (gotcha #13
+# in the kargo phase-1 retrospective).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mark8ly-uat
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesseract-platform
+    app.kubernetes.io/component: applications
+    environment: uat
+    product: mark8ly
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: argocd/prod/apps/mark8ly-uat
+    directory:
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /spec/source/helm/parameters
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
