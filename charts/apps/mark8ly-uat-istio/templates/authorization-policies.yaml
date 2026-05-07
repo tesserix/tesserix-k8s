@@ -1,0 +1,58 @@
+{{/*
+AuthorizationPolicies for the mark8ly-uat namespace.
+
+Two policies:
+  1. allow-uat-ingress — workloads in mark8ly-uat accept traffic only
+     from istio-ingress (the gateway), the mark8ly-uat namespace
+     itself (intra-namespace service-to-service), monitoring, and
+     istio-system. Cross-product (mark8ly prod, fanzone, homechef
+     etc.) is implicitly denied.
+  2. deny-cross-product — explicit deny for known prod product
+     namespaces, even though (1) already denies them by omission.
+     Belt + braces against future ingress allowlist drift.
+*/}}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-mark8ly-uat-ingress
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: mark8ly
+    environment: uat
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+              - {{ .Values.namespace }}
+              - monitoring
+              - istio-system
+              - knative-serving
+              - cnpg-system
+              - kube-system
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-cross-product-to-mark8ly-uat
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: mark8ly
+    environment: uat
+spec:
+  action: DENY
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - mark8ly        # prod mark8ly must not reach UAT
+              - fanzone
+              - homechef
+              - gameverse
+              - stockpilot
+              - scrapper
+              - devai
+              - tesserix
