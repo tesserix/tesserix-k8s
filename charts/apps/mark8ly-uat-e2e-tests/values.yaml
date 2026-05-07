@@ -1,0 +1,38 @@
+namespace: mark8ly-uat
+name: mark8ly-uat-e2e-tests
+
+image:
+  repository: ghcr.io/tesserix/mark8ly-uat-e2e
+  tag: "latest"            # bumped per-build by CI / Kargo
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+# UAT URL targets driven by the suite's TARGET_ENV/TARGET_SLUG env switch.
+# tesserix-store is the seed tenant we onboarded in the UAT env. To run
+# against a different slug, override here.
+target:
+  env: uat
+  slug: tesserix-store
+
+# Credentials come from the K8s Secret that ESO syncs from
+# prod-mark8ly-uat-playwright-creds in GCP Secret Manager. Email +
+# password are projected into the Pod via envFrom — never written to
+# values.yaml or any other Git-tracked location.
+credentialsSecret:
+  name: mark8ly-uat-playwright-creds
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 768Mi
+  limits:
+    memory: 2Gi
+
+# Backoff for transient infrastructure failures (DNS, ingress restart).
+backoffLimit: 1
+
+# The Job is created on every sync (sync-hook), so we don't keep history
+# beyond the most recent run — Kargo / Argo CD UI is the audit trail.
+ttlSecondsAfterFinished: 600

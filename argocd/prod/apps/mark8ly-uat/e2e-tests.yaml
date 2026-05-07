@@ -1,0 +1,52 @@
+# Argo CD Application that hosts the UAT Playwright e2e Job. Kargo's
+# smoke Stage is authorized to mutate this App's image.tag (via the
+# kargo.akuity.io/authorized-stage annotation), so each smoke promotion
+# triggers a fresh Job run with the latest test image.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mark8ly-uat-e2e-tests
+  namespace: argocd
+  annotations:
+    # Smoke Stage's argocd-update step writes a new image.tag here on
+    # every promotion. Without this annotation Kargo refuses to mutate.
+    kargo.akuity.io/authorized-stage: kargo-mark8ly:smoke
+  labels:
+    app.kubernetes.io/part-of: tesseract-platform
+    app.kubernetes.io/component: e2e-tests
+    environment: uat
+    product: mark8ly
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/mark8ly-uat-e2e-tests
+    helm:
+      releaseName: mark8ly-uat-e2e-tests
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mark8ly-uat
+  ignoreDifferences:
+    # Kargo writes image.tag here on each smoke promotion.
+    - group: ""
+      kind: Application
+      jsonPointers:
+        - /spec/source/helm/parameters
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false        # mark8ly-uat namespace already exists
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 2m
