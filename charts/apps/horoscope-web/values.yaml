@@ -1,0 +1,74 @@
+# Default values for horoscope-web (Next.js 15 frontend)
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/tesserix-horoscope/horoscope-web
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+  automount: true
+
+podAnnotations:
+  proxy.istio.io/holdApplicationUntilProxyStarts: "true"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+# Knative Serving — scale-to-zero with a warm primary.
+knative:
+  enabled: true
+  minScale: 1
+  maxScale: 5
+  scaleDownDelay: "120s"
+  containerConcurrency: 0
+  timeoutSeconds: 60
+
+resources:
+  limits:
+    memory: 384Mi
+  requests:
+    memory: 96Mi
+    cpu: 50m
+
+# Runtime env. Note: NEXT_PUBLIC_* vars are baked into the client bundle
+# at BUILD time by the GitHub Actions workflow — these settings here are
+# for any server-side env Next.js reads at runtime (currently none).
+# The runtime flip in lib/api.ts that swaps to relative URLs when the
+# host isn't localhost is what makes a single image work in dev + prod.
+env:
+  NODE_ENV: "production"
+  HOSTNAME: "0.0.0.0"
+
+# Workload Identity (lets the SA mount any future GCS bucket directly).
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-horoscope-prod@tesseracthub-480811.iam.gserviceaccount.com"

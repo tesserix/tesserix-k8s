@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: horoscope
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: horoscope
+    environment: prod
+spec:
+  description: Tesserix Horoscope — natal chart + daily/weekly/monthly readings
+  sourceRepos:
+    - https://github.com/tesserix/tesserix-k8s.git
+    - https://github.com/tesserix/tesserix-horoscope.git
+  destinations:
+    - namespace: horoscope
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  orphanedResources:
+    warn: true

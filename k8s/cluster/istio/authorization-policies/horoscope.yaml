@@ -1,0 +1,76 @@
+# Horoscope namespace authorization rules.
+#
+# Pattern: cluster-wide deny-all is the default; explicit ALLOW rules
+# below whitelist the legitimate ingress paths.
+#
+# Path map (mTLS):
+#   istio-system           → horoscope            (Cloudflare Tunnel + ingress gateway)
+#   horoscope              → horoscope            (intra-namespace east-west)
+#   horoscope              → postgresql-horoscope (API → Postgres only, ports 5432/6432)
+#
+# We do NOT include identity-customer / identity-internal allow lists like
+# homechef does, because horoscope uses Firebase Authentication directly —
+# no in-cluster Keycloak.
+
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-gateway
+  namespace: horoscope
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["istio-system"]
+
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-horoscope-internal
+  namespace: horoscope
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["horoscope"]
+
+---
+# Postgres reachable from the horoscope namespace on Postgres + PgBouncer ports.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-horoscope-api-to-postgres
+  namespace: postgresql-horoscope
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["horoscope"]
+      to:
+        - operation:
+            ports: ["5432", "6432"]
+
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: horoscope
+spec:
+  mtls:
+    mode: STRICT
+
+---
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: postgresql-horoscope
+spec:
+  mtls:
+    mode: STRICT

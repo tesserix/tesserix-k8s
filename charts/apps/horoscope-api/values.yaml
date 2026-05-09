@@ -1,0 +1,115 @@
+# Default values for horoscope-api (Go + Gin backend)
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/tesserix-horoscope/horoscope-api
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+  automount: true
+
+podAnnotations:
+  proxy.istio.io/holdApplicationUntilProxyStarts: "true"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+# Knative Serving — scale-to-zero with a warm primary.
+knative:
+  enabled: true
+  minScale: 1
+  maxScale: 5
+  scaleDownDelay: "120s"
+  containerConcurrency: 0
+  timeoutSeconds: 300
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+    cpu: 100m
+
+# Plain env (non-secret). Anything secret must go in `secretEnv` below
+# and be sourced from the ExternalSecret target.
+env:
+  GIN_MODE: "release"
+  PORT: "8080"
+  HTTP_USER_AGENT: "tesserix-horoscope/1.0 (+https://astronomy.tesserix.app)"
+  ASTROLOGY_PRIMARY: "internal"
+  HOROSCOPE_VISION_MODEL: "claude-opus-4-7"
+  GEO_PRIMARY: "nominatim"
+  # Public CORS list. Same-origin via the VirtualService means CORS isn't
+  # strictly needed, but we keep the laptop-dev origin on so /scan testing
+  # against the prod backend still works.
+  CORS_ORIGINS: "https://astronomy.tesserix.app,http://localhost:3000"
+  # Firebase JWTs are signed by Google; this is the project ID that the
+  # backend's auth.Verifier expects in the `aud` claim.
+  FIREBASE_PROJECT_ID: "tesseracthub-480811"
+
+# Each entry maps an env var name to a key in the k8s Secret created by
+# the ExternalSecret. Keep this in sync with externalsecret.yaml.
+secretEnv:
+  ANTHROPIC_API_KEY:        anthropic_api_key
+  ASTROLOGYAPI_USER_ID:     astrologyapi_user_id
+  ASTROLOGYAPI_API_KEY:     astrologyapi_api_key
+  PROKERALA_CLIENT_ID:      prokerala_client_id
+  PROKERALA_CLIENT_SECRET:  prokerala_client_secret
+  ADMIN_EMAILS:             admin_emails
+  DATABASE_URL:             database_url
+
+# GCP / Workload Identity — annotates the SA with the matching GSA email.
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-horoscope-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+# GCS bucket for biometric uploads (face / palm photos). Provisioned via
+# terraform-new alongside the GSA. Lifecycle: 24h delete.
+gcs:
+  uploadBucket: "tesserix-prod-horoscope-uploads-in"
+
+# ExternalSecret config — pulls all secrets from GCP Secret Manager via
+# the cluster-wide gcp-secret-store ClusterSecretStore.
+externalSecret:
+  create: true
+  refreshInterval: "1h"
+  store:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+  remoteRefs:
+    anthropic_api_key:        prod-horoscope-anthropic-api-key
+    astrologyapi_user_id:     prod-horoscope-astrologyapi-user-id
+    astrologyapi_api_key:     prod-horoscope-astrologyapi-api-key
+    prokerala_client_id:      prod-horoscope-prokerala-client-id
+    prokerala_client_secret:  prod-horoscope-prokerala-client-secret
+    admin_emails:             prod-horoscope-admin-emails
+    database_url:             prod-horoscope-database-url
