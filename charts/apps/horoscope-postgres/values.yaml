@@ -1,0 +1,93 @@
+hibernate: false
+
+namespace: postgresql-horoscope
+clusterName: horoscope-postgres
+
+# 2 instances for v0: 1 primary + 1 sync replica. Bump to 3 if traffic
+# justifies it. CNPG handles automatic failover either way.
+instances: 2
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+# Storage — separate WAL volume for I/O isolation. Smaller than homechef
+# since horoscope writes much less per user (one row per reading vs
+# thousands of orders).
+storageSize: 30Gi
+storageClass: standard-rwo-retain
+walStorageSize: 10Gi
+
+resources:
+  requests:
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+# Bootstrap — primary database for the horoscope Go API
+bootstrap:
+  database: horoscope_db
+  owner: horoscope
+  # Secret must contain 'username' and 'password' keys (CNPG basic-auth format).
+  # Created by ExternalSecret from GCP Secret Manager.
+  secret: horoscope-postgres-app-credentials
+  gcpSecretName: prod-horoscope-postgresql-password
+  # Post-init SQL runs once after the cluster is created (idempotent).
+  # Keycloak previously used its own PG (now in postgresql-global); if you
+  # need additional databases, add CREATE DATABASE statements here.
+  postInitSQL: []
+
+# PostgreSQL tuning
+postgresql:
+  max_connections: "300"
+  shared_buffers: "512MB"
+  effective_cache_size: "1536MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "128MB"
+  wal_level: "logical"
+  max_replication_slots: "10"
+  max_wal_senders: "10"
+  ssl_min_protocol_version: "TLSv1.3"
+  ssl_max_protocol_version: "TLSv1.3"
+  # Query safety nets
+  idle_in_transaction_session_timeout: "300000"
+  statement_timeout: "120000"
+  # SSD-optimized planner (GKE PD-SSD)
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"
+  # Slow query logging (queries > 1s)
+  log_min_duration_statement: "1000"
+  # Replica query safety
+  hot_standby_feedback: "on"
+  # WAL safety cap — prevent unbounded growth from inactive slots.
+  # Kept comfortably below walStorageSize (30Gi) so a single stuck slot
+  # cannot exhaust the WAL volume.
+  max_slot_wal_keep_size: "8GB"
+  # Performance monitoring (CNPG auto-loads extension)
+  pg_stat_statements.track: "all"
+  pg_stat_statements.max: "10000"
+
+# Continuous backup to GCS via Barman Cloud
+backup:
+  enabled: true
+  destinationPath: "gs://tesseract-prod-backups-in/horoscope-postgres"
+  retentionPolicy: "30d"
+  # GCP Service Account for Workload Identity. Must have
+  # roles/storage.objectAdmin on the backup bucket.
+  serviceAccount: "app-secrets-horoscope-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+# PgBouncer connection pooling
+pooler:
+  enabled: true
+  instances: 2
+  maxClientConn: "1000"
+  defaultPoolSize: "25"
+
+# Monitoring — CNPG built-in Prometheus exporter on port 9187
+monitoring:
+  enablePodMonitor: true
+
+# Replication
+affinity:
+  podAntiAffinityType: preferred
+
+replication:
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
