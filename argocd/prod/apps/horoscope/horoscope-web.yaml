@@ -3,6 +3,8 @@ kind: Application
 metadata:
   name: horoscope-web
   namespace: argocd
+  annotations:
+    kargo.akuity.io/authorized-stage: kargo-horoscope:prod
   labels:
     app.kubernetes.io/part-of: tesserix-horoscope
     app.kubernetes.io/component: frontend
@@ -20,13 +22,12 @@ spec:
         - values.yaml
         - values-prod.yaml
       parameters:
-        # Image tag is also pinned in charts/apps/horoscope-web/values.yaml.
-        # Both must agree; ArgoCD parameters here are last-write-wins so
-        # leaving "latest" here would silently override the SHA pin in the
-        # chart and pull a stale digest from the AR pull-through cache.
-        # When Kargo is wired up it will manage this value.
+        # PLACEHOLDER — Kargo overwrites this on every promotion with
+        # the freshly-discovered `main-<sha>` tag from the GHCR-mirrored
+        # AR repo. The previous SHA-pin from before Kargo was wired is
+        # gone; Kargo is now the single writer of this value.
         - name: image.tag
-          value: "a543cbe5280a9dce06517fa7b9272542622ee023"
+          value: "latest"
         - name: "podAnnotations.client\\.knative\\.dev/updateTimestamp"
           value: "2026-05-09T22:30:00Z"
   destination:
