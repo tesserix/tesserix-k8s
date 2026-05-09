@@ -7,15 +7,14 @@ image:
   # serves subsequent pulls from-region (no egress, faster cold-starts).
   # Same convention as homechef-web.
   #
-  # Tag policy: pin to commit SHA, NOT :latest. The AR pull-through cache
-  # has a stale-tag problem where it keeps serving the previous digest
-  # for :latest until manually purged. Pinning by SHA forces the AR
-  # cache to fetch fresh from GHCR for that specific tag, sidestepping
-  # the cache. Bump this on every release; Kargo will eventually
-  # automate it the way it does for homechef.
+  # Tag policy: Kargo (kargo-horoscope:prod stage) overwrites this via
+  # the ArgoCD Application's helm.parameters[image.tag] on every push
+  # to main. The "latest" here is just a chart-default fallback for
+  # `helm template` / local dev / first-bootstrap before Kargo's first
+  # promotion lands. Real deploys always run a `main-<sha>` tag.
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/tesserix-horoscope/horoscope-web
   pullPolicy: Always
-  tag: "a543cbe5280a9dce06517fa7b9272542622ee023"
+  tag: "latest"
 
 imagePullSecrets:
   - name: ghcr-secret
