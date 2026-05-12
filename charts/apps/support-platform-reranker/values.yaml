@@ -10,7 +10,10 @@ image:
 model:
   id: BAAI/bge-reranker-base
   maxConcurrentRequests: 16
-  maxBatchTokens: 8192
+  # Cross-encoder attention over concatenated (query, doc) pairs makes
+  # max_batch_tokens the dominant memory driver. 8192 OOMed even at 3Gi;
+  # 4096 keeps peak memory under 4Gi and only slightly reduces throughput.
+  maxBatchTokens: 4096
 
 service:
   type: ClusterIP
@@ -21,13 +24,14 @@ replicaCount: 1
 resources:
   requests:
     cpu: 500m
-    memory: 1500Mi
-  # bge-reranker-base + TEI overhead exceeded the prior 2Gi cap and was
-  # OOMKilled at boot. Cross-encoders use more memory than dual-encoders
-  # for the same param count because of attention over concatenated
-  # (query, doc) sequences.
+    memory: 2Gi
+  # bge-reranker-base + TEI's ONNX runtime overhead OOMed at 3Gi during
+  # initial model load. Cross-encoders use more memory than dual-encoders
+  # because the attention matrix is over concatenated (query, doc)
+  # sequences. Combined with reducing max_batch_tokens to 4096, 4Gi has
+  # comfortable headroom.
   limits:
-    memory: 3Gi
+    memory: 4Gi
 
 persistence:
   enabled: true
