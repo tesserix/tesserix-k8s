@@ -13,11 +13,20 @@ metadata:
     {{- include "support-platform-slm-router.labels" . | nindent 4 }}
 data:
   routes.yaml: |
+    {{- if .Values.routes.defaultTenant }}
+    default_tenant: {{ .Values.routes.defaultTenant | quote }}
+    {{- end }}
     products:
 {{- range $tenant, $cfg := .Values.routes.products }}
       {{ $tenant }}:
         system_prompt_file: {{ $cfg.systemPromptFile | quote }}
         rag_namespace: {{ $cfg.ragNamespace | quote }}
+        {{- if $cfg.aliases }}
+        aliases:
+        {{- range $cfg.aliases }}
+          - {{ . | quote }}
+        {{- end }}
+        {{- end }}
         mcp_servers:
         {{- range $cfg.mcpServers }}
           - name: {{ .name | quote }}
