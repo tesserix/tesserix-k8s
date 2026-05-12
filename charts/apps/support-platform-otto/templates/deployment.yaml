@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "support-platform-otto.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.keda.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "support-platform-otto.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "support-platform-otto.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/part-of: support-platform
+    spec:
+      serviceAccountName: {{ .Values.name }}
+      imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 8 }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          env:
+            - name: ENV
+              value: "prod"
+            - name: HTTP_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: MONGO_URL
+              value: {{ .Values.mongo.url | quote }}
+            - name: MONGO_DATABASE
+              value: {{ .Values.mongo.database | quote }}
+            - name: CUSTOMER_SESSION_COOKIE
+              value: {{ .Values.session.cookieName | quote }}
+            - name: CUSTOMER_COOKIE_DOMAIN
+              value: {{ .Values.session.cookieDomain | quote }}
+            - name: CUSTOMER_COOKIE_SECURE
+              value: {{ .Values.session.cookieSecure | quote }}
+            - name: CUSTOMER_SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.otto }}
+                  key: CUSTOMER_SESSION_SECRET
+            - name: INTERNAL_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.otto }}
+                  key: INTERNAL_AUTH_SECRET
+            - name: CORS_ALLOWED_ORIGINS
+              value: {{ .Values.cors.allowedOrigins | quote }}
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.sendgrid }}
+                  key: SENDGRID_API_KEY
+                  optional: true
+            - name: OTP_FROM_EMAIL
+              value: {{ .Values.otp.fromEmail | quote }}
+            - name: OTP_FROM_NAME
+              value: {{ .Values.otp.fromName | quote }}
+            - name: OTP_CODE_TTL_SECONDS
+              value: {{ .Values.otp.codeTtlSeconds | quote }}
+            - name: OTP_MAX_ATTEMPTS
+              value: {{ .Values.otp.maxAttempts | quote }}
+            - name: OTP_RESEND_COOLDOWN_SECONDS
+              value: {{ .Values.otp.resendCooldownSeconds | quote }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

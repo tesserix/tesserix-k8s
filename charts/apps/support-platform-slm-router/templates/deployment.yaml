@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "support-platform-slm-router.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "support-platform-slm-router.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "support-platform-slm-router.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/part-of: support-platform
+      annotations:
+        # Force a pod restart on routes/ConfigMap content change so the
+        # in-memory cache picks up immediately (the reload-loop also
+        # catches it within ROUTE_RELOAD_INTERVAL).
+        checksum/routes: {{ include (print $.Template.BasePath "/configmap-routes.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Values.name }}
+      imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 8 }}
+      containers:
+        - name: server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          env:
+            - name: ENV
+              value: "prod"
+            - name: HTTP_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: MONGO_URI
+              value: {{ .Values.env.MONGO_URI | quote }}
+            - name: MONGO_DATABASE
+              value: {{ .Values.env.MONGO_DATABASE | quote }}
+            - name: INFERENCE_URL
+              value: {{ .Values.env.INFERENCE_URL | quote }}
+            - name: EMBEDDER_URL
+              value: {{ .Values.env.EMBEDDER_URL | quote }}
+            - name: RERANKER_URL
+              value: {{ .Values.env.RERANKER_URL | quote }}
+            - name: ROUTES_FILE
+              value: {{ .Values.env.ROUTES_FILE | quote }}
+            - name: ROUTE_RELOAD_INTERVAL
+              value: {{ .Values.env.ROUTE_RELOAD_INTERVAL | quote }}
+            # Compose pgvector DSN from the CNPG-managed password secret.
+            - name: VECTOR_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.vectorDB.passwordSecret }}
+                  key: {{ .Values.vectorDB.passwordKey }}
+            - name: VECTOR_DB_DSN
+              value: "postgres://{{ .Values.vectorDB.user }}:$(VECTOR_DB_PASSWORD)@{{ .Values.vectorDB.host }}:{{ .Values.vectorDB.port }}/{{ .Values.vectorDB.database }}?sslmode={{ .Values.vectorDB.sslmode }}"
+            # Per-product MCP API keys (referenced by name from routes.yaml).
+            - name: MARK8LY_MCP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcpKeysSecret }}
+                  key: MARK8LY_MCP_KEY
+                  optional: true
+            - name: FANZONE_MCP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcpKeysSecret }}
+                  key: FANZONE_MCP_KEY
+                  optional: true
+            - name: HOMECHEF_MCP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcpKeysSecret }}
+                  key: HOMECHEF_MCP_KEY
+                  optional: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: routes
+              mountPath: /etc/slm-router
+              readOnly: true
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: routes
+          configMap:
+            name: {{ .Values.name }}-routes
