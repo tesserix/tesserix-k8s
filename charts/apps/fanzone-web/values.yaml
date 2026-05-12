@@ -397,6 +397,22 @@ env:
   NEXT_PUBLIC_CHAT_MODERATION_LEVEL: "medium"
   NEXT_PUBLIC_CHAT_ENCRYPTION_ENABLED: "true"
 
+  # Otto support-chat — shared deployment in support-platform namespace.
+  # The Next.js /api/otto/[...path] proxy uses these to forward customer
+  # messages to the multi-tenant shared Otto.
+  OTTO_URL: "http://support-platform-otto.support-platform.svc.cluster.local:8089"
+  OTTO_SESSION_COOKIE: "otto_session"
+
+# Secret-backed env vars. Kept separate from the plain `env:` block so
+# values.yaml stays free of secret material. The K8s Secret itself is
+# materialised by ExternalSecrets outside this chart (see
+# external-secrets/prod/fanzone/).
+envFromSecrets:
+  - name: OTTO_INTERNAL_AUTH
+    secret: fanzone-otto
+    key: INTERNAL_AUTH_SECRET
+    optional: true
+
   # Mobile/PWA settings
   NEXT_PUBLIC_MOBILE_APP_ENABLED: "true"
 
