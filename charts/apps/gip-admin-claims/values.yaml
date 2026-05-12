@@ -1,11 +1,28 @@
 namespace: global
 name: gip-admin-claims
 
-# The GIP project + Internal tenant the admin allow-list applies to.
-# Customer tenant is unaffected — every customer authenticates with no
-# admin claim regardless.
+# The GIP project + the full set of admin-class tenants the allow-list
+# applies to. Each tenant is one product's admin/internal user namespace.
+# Customer-class tenants are deliberately omitted — customers never carry
+# the admin claim. The CronJob will, per tenant:
+#   - ensure every email in the allow-list exists as a user with admin=true
+#   - revoke admin from any other user that happens to carry it (drift)
 gip:
   projectId: tesseracthub-480811
+  adminTenants:
+    - id: MP-Internal-e986p     # mark8ly admin
+      product: mark8ly
+    - id: Platform-9bu14        # cross-product platform admin (tesserix-internal)
+      product: platform
+    - id: DevAI-1mh9c           # DevAI admin (devai + devai-sre Keycloak realms)
+      product: devai
+    - id: StockPilot-37yur      # StockPilot internal users
+      product: stockpilot
+    - id: Social-tuhg7          # Social scrapper admin
+      product: social
+  # Legacy single-tenant key kept for compatibility with older renders.
+  # The new script reads adminTenants; this stays so a partial revert
+  # cannot ever silently miss the mark8ly tenant.
   internalTenantId: MP-Internal-e986p
 
 # Workload Identity: this GSA already holds firebaseauth.admin +
