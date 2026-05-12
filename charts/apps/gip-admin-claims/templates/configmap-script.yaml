@@ -12,25 +12,30 @@ data:
   sync.py: |
     """Enforce the admin allow-list on the GIP Internal tenant.
 
+    Auth: Application Default Credentials via Workload Identity. The
+    pod's KSA is bound to a GSA that holds firebaseauth.admin +
+    identitytoolkit.admin on the project, so no static SA JSON key
+    sits in the cluster.
+
     Three jobs:
       1. For every email in ADMIN_EMAILS, ensure a user exists in the
          tenant and carries {"admin": True} in its custom claims.
       2. For every OTHER user in the tenant, strip the admin claim if
-         present (drift correction).
+         present (drift correction — e.g. claims granted ad-hoc via
+         the Firebase Console).
       3. Log what was changed and exit non-zero on partial failures so
          the CronJob status surfaces issues.
 
     No-op fast path: if an email's user already has admin=True we skip
     the write, so re-runs every 6h are cheap.
     """
-    import json
     import os
     import sys
     import time
 
     try:
         import firebase_admin
-        from firebase_admin import auth, credentials
+        from firebase_admin import auth, credentials, tenant_mgt
     except ImportError:
         # Cold-start path on python:3.12-slim — install just-in-time.
         # The proper image bakes firebase-admin in.
@@ -40,11 +45,10 @@ data:
             "firebase-admin==6.5.0",
         ])
         import firebase_admin
-        from firebase_admin import auth, credentials
+        from firebase_admin import auth, credentials, tenant_mgt
 
     PROJECT_ID = os.environ["GIP_PROJECT_ID"]
     TENANT_ID = os.environ["GIP_INTERNAL_TENANT_ID"]
-    SA_JSON = os.environ["FIREBASE_SERVICE_ACCOUNT_JSON"]
     raw_emails = os.environ.get("ADMIN_EMAILS", "")
     allow_emails = {e.strip().lower() for e in raw_emails.split(",") if e.strip()}
 
@@ -54,9 +58,11 @@ data:
 
     print(f"[start] project={PROJECT_ID} tenant={TENANT_ID} allow={sorted(allow_emails)}")
 
-    cred = credentials.Certificate(json.loads(SA_JSON))
-    firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID})
-    tenant_client = auth.tenant_manager().auth_for_tenant(TENANT_ID)
+    app = firebase_admin.initialize_app(
+        credentials.ApplicationDefault(),
+        {"projectId": PROJECT_ID},
+    )
+    tenant_client = tenant_mgt.auth_for_tenant(TENANT_ID, app=app)
 
     failures = 0
     granted = 0

@@ -8,17 +8,17 @@ gip:
   projectId: tesseracthub-480811
   internalTenantId: MP-Internal-e986p
 
-# K8s Secret names. Both are materialised by ExternalSecrets — see
-# external-secrets/prod/global/.
+# Workload Identity: this GSA already holds firebaseauth.admin +
+# identitytoolkit.admin on the project. The KSA's WI annotation +
+# the project-side roles/iam.workloadIdentityUser binding let the Job
+# pod call the Firebase Admin SDK with no static JSON key in cluster.
+gcpServiceAccount: app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com
+
+# K8s Secret name carrying the comma-separated admin email allow-list.
+# Materialised by external-secrets/prod/global/. Updating the GCP
+# secret value rolls through ESO within the refresh interval; the
+# CronJob's next firing applies it.
 secrets:
-  # Firebase service-account JSON. Required for the Admin SDK to
-  # manage users in any tenant.
-  firebaseServiceAccount:
-    name: gip-firebase-sa
-    key: SERVICE_ACCOUNT_JSON
-  # Comma-separated list of admin emails. Updating the GCP secret
-  # value rolls through the cluster within ESO's refresh interval; the
-  # CronJob's next firing applies it.
   adminEmails:
     name: gip-admin-emails
     key: ADMIN_EMAILS
@@ -27,11 +27,9 @@ secrets:
 # fixes drift introduced by ad-hoc Firebase Console edits.
 schedule: "0 */6 * * *"
 
-# Python runtime container with firebase-admin pre-installed (built
-# from services/gip-admin-claims/ in slm-support-platform; for the
-# bootstrap we use python:3.12-slim and pip install at startup which
-# keeps this chart fully self-contained while the proper image is
-# being built).
+# python:3.12-slim + pip install at startup keeps the chart fully
+# self-contained while the proper baked image is being built in
+# slm-support-platform.
 image:
   repository: python
   tag: "3.12-slim"
