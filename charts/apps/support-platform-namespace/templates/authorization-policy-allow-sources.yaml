@@ -1,19 +1,27 @@
-# Namespace-wide allow-list for the source namespaces in values.yaml.
-# Service-level AuthorizationPolicies in each chart narrow further
-# (e.g. Otto's WebSocket endpoint only accepts traffic from istio-ingress).
+# Namespace-wide AuthorizationPolicy.
+#
+# The previous form used `source.namespaces: [mark8ly, fanzone, …]`,
+# which only matches when the source presents an mTLS-derived SPIFFE
+# identity. Combined with PeerAuthentication=PERMISSIVE (plaintext
+# allowed at the wire), legitimate plaintext traffic from non-mesh
+# callers (cnpg-system probes, mark8ly's non-ambient storefront pod
+# direct dialing in-cluster service DNS, ESO controller) was getting
+# "connection reset by peer" because no source identity was available
+# to match the allow-list.
+#
+# With the v1 platform still bedding in (multiple ambient + non-ambient
+# tenants, no waypoint yet on support-platform itself), we use a single
+# permissive ALLOW rule. Workload-level AuthorizationPolicies in each
+# chart can narrow this further as we identify which workloads need
+# tighter ingress controls (Otto's admin WS endpoint is the obvious
+# first one — only istio-ingress should hit it).
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
 metadata:
-  name: allow-from-source-namespaces
+  name: allow-namespace-wide
   namespace: {{ .Values.namespace }}
 spec:
   action: ALLOW
   rules:
-    - from:
-        - source:
-            namespaces:
-              {{- range .Values.allowedSources }}
-              - {{ . | quote }}
-              {{- end }}
-              - cnpg-system
-              - external-secrets
+    - {}  # match every request; NetworkPolicy still gates which
+          # namespaces can reach support-platform at L3.
