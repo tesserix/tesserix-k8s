@@ -321,10 +321,13 @@ gcp:
   secretManager:
     secretPrefix: "prod"
 
-# GIP Web API key — public per-project Firebase identifier embedded in
-# the browser bundle. Same value as prod-gip-web-api-key in Secret
-# Manager; tenant pinning in firebase-client.ts enforces user-base
-# isolation so the bare key in the bundle is safe (it merely identifies
-# the Firebase project to Google's OAuth handler).
-env:
-  NEXT_PUBLIC_GIP_API_KEY: "<REDACTED-GIP-API-KEY-ROTATED-2026-05-13>"
+# GIP Web API key is intentionally NOT shipped through Helm/runtime env.
+# Next.js bakes NEXT_PUBLIC_* into the static client bundle at `next
+# build` — runtime env on the ksvc never reaches the already-shipped
+# JS. The key is supplied as a Docker build-arg in
+# FanZone-Battle-Ground/.github/workflows/fanzone-web-build.yml, where
+# it is read from the GitHub Actions secret NEXT_PUBLIC_GIP_API_KEY
+# (which is sourced from GCP Secret Manager: prod-gip-web-api-key).
+# Keeping it out of this file removes a public-repo leak vector that
+# triggered a Google Security 'Publicly accessible API key' alert on
+# 2026-05-13.
