@@ -47,29 +47,26 @@ data:
     import time
 
     # We run as a non-root user (uid 1000, securityContext) so the system
-    # site-packages dir is read-only. Direct pip into a tmpfs-writable
-    # PYTHONUSERBASE so the cold-start install path works without root.
+    # site-packages dir is read-only. Use pip --target to install into a
+    # known tmpfs-writable directory and prepend it to sys.path so the
+    # subsequent import resolves there.
+    DEPS_DIR = "/tmp/python-deps"
     os.environ.setdefault("HOME", "/tmp/home")
-    os.environ.setdefault("PYTHONUSERBASE", "/tmp/python-user")
     os.makedirs(os.environ["HOME"], exist_ok=True)
-    os.makedirs(os.environ["PYTHONUSERBASE"], exist_ok=True)
-    user_site = os.path.join(
-        os.environ["PYTHONUSERBASE"], "lib",
-        f"python{sys.version_info.major}.{sys.version_info.minor}", "site-packages",
-    )
-    if user_site not in sys.path:
-        sys.path.insert(0, user_site)
+    os.makedirs(DEPS_DIR, exist_ok=True)
+    if DEPS_DIR not in sys.path:
+        sys.path.insert(0, DEPS_DIR)
 
     try:
         import firebase_admin
         from firebase_admin import auth, credentials, tenant_mgt
     except ImportError:
         # Cold-start path on python:3.12-slim — install just-in-time
-        # into the writable user-base. The proper image bakes firebase-admin in.
+        # into DEPS_DIR. The proper image bakes firebase-admin in.
         import subprocess
         subprocess.check_call([
             sys.executable, "-m", "pip", "install", "--quiet", "--no-cache-dir",
-            "--user", "firebase-admin==6.5.0",
+            "--target", DEPS_DIR, "firebase-admin==6.5.0",
         ])
         import firebase_admin
         from firebase_admin import auth, credentials, tenant_mgt
