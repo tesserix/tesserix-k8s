@@ -18,6 +18,42 @@ spec:
         {{- include "support-platform-embedder.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/part-of: support-platform
     spec:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      # TEI's hf-hub 0.3.2 has a "relative URL without a base" bug when
+      # downloading the main config.json (after the pool/st configs
+      # succeed). Bypass it: pre-populate the HF cache with an init
+      # container using huggingface_hub directly. TEI then finds the
+      # snapshot already on disk and skips its broken downloader.
+      initContainers:
+        - name: model-prefetch
+          image: python:3.11-slim
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              MODEL="{{ .Values.model.id }}"
+              CACHE=/data
+              echo "checking $CACHE for $MODEL"
+              # If we see ANY snapshot for this model, assume we're cached.
+              if find "$CACHE/models--$(echo $MODEL | tr / -)/snapshots" -type d -mindepth 1 -maxdepth 1 2>/dev/null | head -1 | grep -q .; then
+                echo "  cache hit, skipping prefetch"
+                exit 0
+              fi
+              pip install --no-cache-dir --quiet huggingface_hub==0.27.1
+              python - <<EOF
+              from huggingface_hub import snapshot_download
+              snapshot_download(repo_id="$MODEL", cache_dir="$CACHE")
+              EOF
+              echo "  downloaded; cache size:" $(du -sh $CACHE | cut -f1)
+          volumeMounts:
+            - name: cache
+              mountPath: /data
       containers:
         - name: server
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

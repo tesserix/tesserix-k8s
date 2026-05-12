@@ -18,6 +18,35 @@ spec:
         {{- include "support-platform-reranker.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/part-of: support-platform
     spec:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      # See embedder chart: TEI 0.3.2 hf-hub crate fails on the main
+      # config.json download. Pre-populate the cache via huggingface_hub.
+      initContainers:
+        - name: model-prefetch
+          image: python:3.11-slim
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              MODEL="{{ .Values.model.id }}"
+              CACHE=/data
+              if find "$CACHE/models--$(echo $MODEL | tr / -)/snapshots" -type d -mindepth 1 -maxdepth 1 2>/dev/null | head -1 | grep -q .; then
+                echo "  cache hit, skipping"; exit 0
+              fi
+              pip install --no-cache-dir --quiet huggingface_hub==0.27.1
+              python - <<EOF
+              from huggingface_hub import snapshot_download
+              snapshot_download(repo_id="$MODEL", cache_dir="$CACHE")
+              EOF
+          volumeMounts:
+            - name: cache
+              mountPath: /data
       containers:
         - name: server
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
