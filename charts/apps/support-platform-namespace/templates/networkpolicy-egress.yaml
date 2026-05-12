@@ -1,69 +1,26 @@
-# Egress allow rules — separate from the HBONE 15008 rule so each can
-# be reasoned about independently.
+# Broad egress allow for support-platform pods.
 #
-# Why we need this: slm-inference's init container downloads the GGUF
-# model from Hugging Face (huggingface.co). TEI in embedder + reranker
-# also fetches models from Hugging Face on first boot. Without explicit
-# egress, the pods sit forever trying to resolve DNS.
+# Why broad: slm-inference's init container downloads a 1GB GGUF model
+# from huggingface.co at first boot; TEI does the same. ArgoCD-managed
+# CNPG bootstrap pulls images from ghcr.io. Lots of external hosts on
+# transient first-boot paths. A tight allow-list is rebuild-by-rebuild
+# maintenance; the trust boundary here is the namespace AuthorizationPolicy
+# (ingress) rather than egress filtering.
 #
-# Allow:
-#   - DNS to kube-dns (UDP/TCP 53 within kube-system)
-#   - HTTPS to the internet (TCP 443 to 0.0.0.0/0). Restrictive shops
-#     would limit this to a curated list of CIDRs (huggingface.co,
-#     ghcr.io, GCP services) but for v1 we accept the broader rule —
-#     ambient mesh + AuthorizationPolicy still gate east-west traffic.
-#   - SMTP to SendGrid (TCP 587/465) so Otto's OTP mailer can reach
-#     SendGrid's API. (HTTP API also works, falls under TCP 443.)
+# Excluded: GKE metadata IP 169.254.169.254 — only reachable via
+# Workload Identity, never via direct curl from a pod.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-egress-dns-and-https
+  name: allow-egress-broad
   namespace: {{ .Values.namespace }}
 spec:
   podSelector: {}
   policyTypes:
     - Egress
   egress:
-    # DNS resolution
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-    # HTTPS to the public internet (Hugging Face, GHCR/GAR pull,
-    # external APIs, GCP Secret Manager).
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
-              # Block the GKE metadata endpoint — that should only be
-              # reached via Workload Identity through the sidecar.
               - 169.254.169.254/32
-      ports:
-        - protocol: TCP
-          port: 443
-    # In-cluster traffic to support-platform peers + product MCP
-    # servers + cnpg-system probes + external-secrets controller.
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: support-platform
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: mark8ly
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: fanzone
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: homechef
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: cnpg-system
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: external-secrets
