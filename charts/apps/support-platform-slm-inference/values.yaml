@@ -1,0 +1,58 @@
+namespace: support-platform
+name: support-platform-slm-inference
+
+# llama.cpp's official server image. Pin to a known-good tag — the
+# project moves fast and breaking changes happen.
+image:
+  repository: ghcr.io/ggml-org/llama.cpp
+  tag: "server-b4382"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Model is downloaded from Hugging Face at boot (cached on the PVC).
+# Qwen2.5-1.5B-Instruct quantized to Q4_K_M — best CPU quality at the
+# 1.5B size on the CPU node pool.
+model:
+  huggingfaceRepo: Qwen/Qwen2.5-1.5B-Instruct-GGUF
+  filename: qwen2.5-1.5b-instruct-q4_k_m.gguf
+  contextWindow: 4096
+  threads: 4
+  parallel: 4
+
+service:
+  type: ClusterIP
+  port: 8000
+
+# Single replica with KEDA-driven scale-up. The model load takes 5-15s
+# so we keep minReplicas=1 (no scale-to-zero).
+replicaCount: 1
+
+# Big — int4 1.5B is ~1GB on disk, fp32 logits + KV cache need more RAM.
+resources:
+  requests:
+    cpu: 1000m
+    memory: 4Gi
+  limits:
+    memory: 6Gi
+
+# Model cache PVC — re-pulling the GGUF on every restart is expensive.
+persistence:
+  enabled: true
+  storageClassName: standard-rwo
+  size: 10Gi
+
+keda:
+  enabled: true
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  # Scale on a Prometheus metric — set up once the metric exists.
+  # Until then KEDA holds at minReplicaCount.
+  pollingInterval: 30
+  cooldownPeriod: 300
+
+# HF token is OPTIONAL for the Qwen GGUF (it's a public repo) but
+# required for gated models. Keep the secret reference in case we
+# switch.
+huggingfaceTokenSecret:
+  name: support-platform-hf-token
+  key: HF_TOKEN
