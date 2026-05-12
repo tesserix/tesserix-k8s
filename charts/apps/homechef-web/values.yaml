@@ -165,6 +165,20 @@ env:
   VITE_APP_NAME: "HomeChef"
   VITE_APP_ENV: "development"
 
+  # Otto support-chat — shared Otto in support-platform. nginx.conf in
+  # the homechef-web image runs envsubst on this so /api/otto/* proxies
+  # to the cross-namespace service.
+  OTTO_URL: "http://support-platform-otto.support-platform.svc.cluster.local:8089"
+
+# Secret-backed env vars. Kept separate from the plain env map so values
+# stay free of secret material. The K8s Secret itself is materialised by
+# ExternalSecrets outside this chart (see external-secrets/prod/homechef/).
+envFromSecrets:
+  - name: OTTO_INTERNAL_AUTH
+    secret: homechef-otto
+    key: INTERNAL_AUTH_SECRET
+    optional: true
+
 # ConfigMap for additional configuration
 configMap:
   # Workload Identity is always enabled
