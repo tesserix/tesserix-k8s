@@ -1,0 +1,35 @@
+# Per-tenant routing rules mounted into the pod at ROUTES_FILE.
+# slm-router reloads this file every ROUTE_RELOAD_INTERVAL; a values
+# edit + ArgoCD sync takes effect without a pod restart.
+#
+# Camel-case keys in values.yaml are converted to snake_case here to match
+# the Go YAML tags in services/slm-router/internal/config/config.go.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-routes
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "support-platform-slm-router.labels" . | nindent 4 }}
+data:
+  routes.yaml: |
+    products:
+{{- range $tenant, $cfg := .Values.routes.products }}
+      {{ $tenant }}:
+        system_prompt_file: {{ $cfg.systemPromptFile | quote }}
+        rag_namespace: {{ $cfg.ragNamespace | quote }}
+        mcp_servers:
+        {{- range $cfg.mcpServers }}
+          - name: {{ .name | quote }}
+            url: {{ .url | quote }}
+            auth_header: {{ .authHeader | quote }}
+            auth_env_var: {{ .authEnvVar | quote }}
+        {{- end }}
+        escalation:
+          confidence_threshold: {{ $cfg.escalation.confidenceThreshold }}
+          keywords:
+          {{- range $cfg.escalation.keywords }}
+            - {{ . | quote }}
+          {{- end }}
+          max_tool_failures: {{ $cfg.escalation.maxToolFailures }}
+{{- end }}

@@ -1,0 +1,71 @@
+namespace: support-platform
+name: support-platform-otto
+
+# Built by the slm-support-platform CI (ci-otto.yml). Pulled via the
+# in-region GAR mirror per the org-wide image policy.
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/slm-support-platform/otto
+  tag: "main"  # Kargo bumps this to main-<sha> as CI publishes images
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+service:
+  type: ClusterIP
+  port: 8089
+
+# Plain Deployment (not Knative) to preserve long-lived WebSocket
+# connections from the chat widget. KEDA scales on connection count
+# once a metric exists.
+replicaCount: 1
+
+keda:
+  enabled: false
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 1
+  maxReplicaCount: 3
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+pdb:
+  enabled: true
+  maxUnavailable: 1
+
+# Shared support-mongo in the same namespace.
+mongo:
+  url: "mongodb://support-platform-mongo.support-platform.svc.cluster.local:27017"
+  database: "otto"
+
+# Multi-tenant cookies. Each product's Next.js proxy sets its OWN cookie
+# name/domain when sending requests, so this value is the *default* —
+# overridable per request via the X-Cookie-Domain header (set by the
+# product proxies in mark8ly/fanzone/homechef).
+session:
+  cookieName: "otto_session"
+  cookieDomain: ".tesserix.app"
+  cookieSecure: true
+
+# Allow all three product domains. Otto's CORS middleware does suffix
+# matching against this list. WebSocket upgrades hit Otto directly from
+# the product frontends; REST calls go via Next.js same-origin proxies
+# so no browser CORS for those.
+cors:
+  allowedOrigins: "https://*.mark8ly.com,https://*.fanzonebattleground.com,https://*.fe3dr.com"
+
+otp:
+  fromEmail: "noreply@tesserix.app"
+  fromName: "Otto Support"
+  codeTtlSeconds: 600
+  maxAttempts: 5
+  resendCooldownSeconds: 45
+
+secrets:
+  otto: support-platform-otto       # CUSTOMER_SESSION_SECRET, INTERNAL_AUTH_SECRET
+  sendgrid: support-platform-sendgrid  # SENDGRID_API_KEY (shared across products)
