@@ -54,3 +54,12 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: external-secrets
+        # Ambient ztunnel runs in istio-system and is the *actual* L3
+        # source on the wire for traffic from ambient-meshed
+        # namespaces (fanzone, homechef, …). Without this allow, those
+        # callers hit "connection reset by peer" even though the HBONE
+        # 15008 ingress rule above accepts the encrypted hop — the
+        # post-unwrap delivery to the destination pod fails.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
