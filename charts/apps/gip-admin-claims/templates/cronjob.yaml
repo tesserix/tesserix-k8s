@@ -1,0 +1,60 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "gip-admin-claims.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            {{- include "gip-admin-claims.labels" . | nindent 12 }}
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: sync
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["python", "/etc/sync/sync.py"]
+              env:
+                - name: GIP_PROJECT_ID
+                  value: {{ .Values.gip.projectId | quote }}
+                - name: GIP_INTERNAL_TENANT_ID
+                  value: {{ .Values.gip.internalTenantId | quote }}
+                - name: FIREBASE_SERVICE_ACCOUNT_JSON
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secrets.firebaseServiceAccount.name }}
+                      key: {{ .Values.secrets.firebaseServiceAccount.key }}
+                - name: ADMIN_EMAILS
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secrets.adminEmails.name }}
+                      key: {{ .Values.secrets.adminEmails.key }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              volumeMounts:
+                - name: script
+                  mountPath: /etc/sync
+                  readOnly: true
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: false   # pip install at startup
+                runAsNonRoot: true
+                runAsUser: 1000
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            - name: script
+              configMap:
+                name: {{ .Values.name }}-script
+                defaultMode: 0o555

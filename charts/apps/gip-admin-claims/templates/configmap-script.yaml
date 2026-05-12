@@ -1,0 +1,114 @@
+# Inline Python script the CronJob runs. Lives in a ConfigMap so the
+# rendered helm template carries the full source — auditable in the
+# repo without chasing a separate image.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-script
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "gip-admin-claims.labels" . | nindent 4 }}
+data:
+  sync.py: |
+    """Enforce the admin allow-list on the GIP Internal tenant.
+
+    Three jobs:
+      1. For every email in ADMIN_EMAILS, ensure a user exists in the
+         tenant and carries {"admin": True} in its custom claims.
+      2. For every OTHER user in the tenant, strip the admin claim if
+         present (drift correction).
+      3. Log what was changed and exit non-zero on partial failures so
+         the CronJob status surfaces issues.
+
+    No-op fast path: if an email's user already has admin=True we skip
+    the write, so re-runs every 6h are cheap.
+    """
+    import json
+    import os
+    import sys
+    import time
+
+    try:
+        import firebase_admin
+        from firebase_admin import auth, credentials
+    except ImportError:
+        # Cold-start path on python:3.12-slim — install just-in-time.
+        # The proper image bakes firebase-admin in.
+        import subprocess
+        subprocess.check_call([
+            sys.executable, "-m", "pip", "install", "--quiet", "--no-cache-dir",
+            "firebase-admin==6.5.0",
+        ])
+        import firebase_admin
+        from firebase_admin import auth, credentials
+
+    PROJECT_ID = os.environ["GIP_PROJECT_ID"]
+    TENANT_ID = os.environ["GIP_INTERNAL_TENANT_ID"]
+    SA_JSON = os.environ["FIREBASE_SERVICE_ACCOUNT_JSON"]
+    raw_emails = os.environ.get("ADMIN_EMAILS", "")
+    allow_emails = {e.strip().lower() for e in raw_emails.split(",") if e.strip()}
+
+    if not allow_emails:
+        print("[error] ADMIN_EMAILS is empty — refusing to run", file=sys.stderr)
+        sys.exit(2)
+
+    print(f"[start] project={PROJECT_ID} tenant={TENANT_ID} allow={sorted(allow_emails)}")
+
+    cred = credentials.Certificate(json.loads(SA_JSON))
+    firebase_admin.initialize_app(cred, {"projectId": PROJECT_ID})
+    tenant_client = auth.tenant_manager().auth_for_tenant(TENANT_ID)
+
+    failures = 0
+    granted = 0
+    revoked = 0
+    already = 0
+
+    # --- 1. Ensure allow-list users have admin=True --------------------
+    allow_uids = set()
+    for email in allow_emails:
+        try:
+            try:
+                user = tenant_client.get_user_by_email(email)
+            except auth.UserNotFoundError:
+                user = tenant_client.create_user(email=email, email_verified=True)
+                print(f"  created {email} -> uid={user.uid}")
+            allow_uids.add(user.uid)
+            current = (user.custom_claims or {}).get("admin")
+            if current is True:
+                already += 1
+                print(f"  {email} already admin (uid={user.uid})")
+                continue
+            new_claims = {**(user.custom_claims or {}), "admin": True}
+            tenant_client.set_custom_user_claims(user.uid, new_claims)
+            granted += 1
+            print(f"  granted admin to {email} (uid={user.uid})")
+        except Exception as e:  # pragma: no cover
+            failures += 1
+            print(f"[error] {email}: {e}", file=sys.stderr)
+
+    # --- 2. Revoke admin from anyone else in the tenant ----------------
+    page = tenant_client.list_users()
+    while page:
+        for user in page.users:
+            if user.uid in allow_uids:
+                continue
+            claims = user.custom_claims or {}
+            if claims.get("admin"):
+                try:
+                    new_claims = {k: v for k, v in claims.items() if k != "admin"}
+                    tenant_client.set_custom_user_claims(user.uid, new_claims or None)
+                    revoked += 1
+                    print(
+                        f"  revoked admin from uid={user.uid} "
+                        f"email={user.email or '<no email>'}"
+                    )
+                except Exception as e:
+                    failures += 1
+                    print(f"[error] revoke uid={user.uid}: {e}", file=sys.stderr)
+        page = page.get_next_page()
+
+    print(
+        f"[done] granted={granted} already={already} "
+        f"revoked={revoked} failures={failures} at {int(time.time())}"
+    )
+    sys.exit(1 if failures else 0)

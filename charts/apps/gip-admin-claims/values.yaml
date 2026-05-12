@@ -1,0 +1,45 @@
+namespace: global
+name: gip-admin-claims
+
+# The GIP project + Internal tenant the admin allow-list applies to.
+# Customer tenant is unaffected — every customer authenticates with no
+# admin claim regardless.
+gip:
+  projectId: tesseracthub-480811
+  internalTenantId: MP-Internal-e986p
+
+# K8s Secret names. Both are materialised by ExternalSecrets — see
+# external-secrets/prod/global/.
+secrets:
+  # Firebase service-account JSON. Required for the Admin SDK to
+  # manage users in any tenant.
+  firebaseServiceAccount:
+    name: gip-firebase-sa
+    key: SERVICE_ACCOUNT_JSON
+  # Comma-separated list of admin emails. Updating the GCP secret
+  # value rolls through the cluster within ESO's refresh interval; the
+  # CronJob's next firing applies it.
+  adminEmails:
+    name: gip-admin-emails
+    key: ADMIN_EMAILS
+
+# How often to reconcile. Every 6h is more than enough — the job only
+# fixes drift introduced by ad-hoc Firebase Console edits.
+schedule: "0 */6 * * *"
+
+# Python runtime container with firebase-admin pre-installed (built
+# from services/gip-admin-claims/ in slm-support-platform; for the
+# bootstrap we use python:3.12-slim and pip install at startup which
+# keeps this chart fully self-contained while the proper image is
+# being built).
+image:
+  repository: python
+  tag: "3.12-slim"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
