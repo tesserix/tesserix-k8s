@@ -25,18 +25,23 @@ env:
   # fanzone-auth Go service (in-cluster Knative)
   FANZONE_BASE_URL: "http://fanzone-auth.fanzone.svc.cluster.local"
 
-# Production GCP configuration
+# Production GCP configuration. The KSA is bound (via WI) to a GSA
+# that holds firebaseauth.admin + identitytoolkit.admin so the BFF can
+# verify Firebase ID tokens via the Admin SDK without a static key.
 gcp:
   projectId: "tesseracthub-480811"
   workloadIdentity:
-    gcpServiceAccount: "app-secrets-fanzone-prod@tesseracthub-480811.iam.gserviceaccount.com"
+    # app-secrets-marketplace-prod already holds firebaseauth.admin +
+    # identitytoolkit.admin and is reused here for the GIP cutover.
+    # The KSA -> GSA WI binding is added in the same commit.
+    gcpServiceAccount: "app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com"
   secretManager:
     secretPrefix: "prod"
 
-# Production Keycloak configuration
-keycloak:
-  url: "https://identity.fanzonebattleground.com"
-  realm: "fanzone"
+# Production GIP tenant for FanZone customers.
+gip:
+  projectId: "tesseracthub-480811"
+  tenantId: "Fanzone-ut25f"
 
 # Istio VirtualService for auth.fanzonebattleground.com
 virtualService:
