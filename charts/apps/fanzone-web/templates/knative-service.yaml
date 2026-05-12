@@ -62,6 +62,18 @@ spec:
               value: {{ .Values.gcp.secretManager.secretPrefix | quote }}
             - name: USE_GCP_SECRET_MANAGER
               value: "true"
+            {{- with .Values.envFromSecrets }}
+            # Secret-backed env vars (kept out of values.yaml's plain
+            # env: block so secret material doesn't appear in the chart).
+            {{- range . }}
+            - name: {{ .name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .secret }}
+                  key: {{ .key }}
+                  optional: {{ .optional | default false }}
+            {{- end }}
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.securityContext }}
