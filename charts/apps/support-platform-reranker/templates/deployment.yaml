@@ -37,12 +37,16 @@ spec:
             - name: http
               containerPort: 80
           env:
+            {{- if .Values.huggingfaceTokenSecret.enabled }}
+            # See embedder chart: TEI fails on a non-empty placeholder
+            # token. Only inject when a real token is configured.
             - name: HF_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.huggingfaceTokenSecret.name }}
                   key: {{ .Values.huggingfaceTokenSecret.key }}
                   optional: true
+            {{- end }}
           startupProbe:
             httpGet:
               path: /health
