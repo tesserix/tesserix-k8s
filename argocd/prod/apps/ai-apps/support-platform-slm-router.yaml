@@ -12,6 +12,14 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
+  # ArgoCD v2.13 schema does not know about the apps/v1 Deployment
+  # status.terminatingReplicas field introduced in K8s 1.33+. Ignoring
+  # it lets the structured merge diff complete on GKE 1.35 clusters.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
   project: default
   source:
     repoURL: https://github.com/tesserix/tesserix-k8s.git
