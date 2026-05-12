@@ -22,11 +22,24 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      # fsGroup so both the curl init container and the llama.cpp server
+      # can write to the model PVC. Without this the PVC mount inherits
+      # root:root and writes fail with EACCES.
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       # Init container downloads the GGUF on first boot. Subsequent
       # restarts use the cached file on the PVC.
       initContainers:
         - name: model-fetch
           image: curlimages/curl:8.10.1
+          # Run as root so we can write to the freshly-mounted PVC
+          # regardless of its initial ownership. fsGroup above chgrp's
+          # the volume so subsequent containers (running as 1000) can
+          # read.
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
           command:
             - sh
             - -c
