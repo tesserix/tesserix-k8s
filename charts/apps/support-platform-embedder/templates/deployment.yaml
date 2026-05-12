@@ -37,6 +37,12 @@ spec:
             - name: http
               containerPort: 80
           env:
+            # TEI's hf-hub crate fails with "relative URL without a base"
+            # on model download unless HF_ENDPOINT is explicit. Hard-pin.
+            - name: HF_ENDPOINT
+              value: "https://huggingface.co"
+            - name: HUGGINGFACE_HUB_URL
+              value: "https://huggingface.co"
             {{- if .Values.huggingfaceTokenSecret.enabled }}
             # TEI fails with "relative URL without a base" when HF_TOKEN
             # is set to any non-empty string but the model is public.
