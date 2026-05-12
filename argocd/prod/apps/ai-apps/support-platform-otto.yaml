@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: support-platform-otto
+  namespace: argocd
+  # Kargo writes image.tag below every time a new main-<sha> tag appears
+  # on the otto image. The ai-apps-app-of-apps ignoreDifferences on
+  # /spec/source/helm/parameters keeps selfHeal from reverting Kargo's
+  # writes.
+  annotations:
+    kargo.akuity.io/authorized-stage: kargo-support-platform:prod
+  labels:
+    app.kubernetes.io/part-of: support-platform
+    app.kubernetes.io/component: chat
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/support-platform-otto
+    helm:
+      valueFiles:
+        - values.yaml
+      parameters:
+        - name: image.tag
+          value: "main"   # Kargo overwrites with main-<sha>
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: support-platform
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
