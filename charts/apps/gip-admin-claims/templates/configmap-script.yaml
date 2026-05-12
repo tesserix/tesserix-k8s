@@ -10,24 +10,37 @@ metadata:
     {{- include "gip-admin-claims.labels" . | nindent 4 }}
 data:
   sync.py: |
-    """Enforce the admin allow-list on the GIP Internal tenant.
+    """Enforce the admin allow-list across every admin-class GIP tenant.
 
     Auth: Application Default Credentials via Workload Identity. The
     pod's KSA is bound to a GSA that holds firebaseauth.admin +
     identitytoolkit.admin on the project, so no static SA JSON key
     sits in the cluster.
 
-    Three jobs:
+    Inputs (env):
+      GIP_PROJECT_ID     — Firebase project (same as the GCP project).
+      GIP_ADMIN_TENANTS  — comma-separated tenant IDs to enforce on
+                           (e.g. "MP-Internal-e986p,Platform-9bu14,
+                           DevAI-1mh9c,StockPilot-37yur,Social-tuhg7").
+                           Every product's admin/internal tenant goes
+                           in this list. Customer-class tenants stay
+                           out — they never carry the admin claim.
+      ADMIN_EMAILS       — comma-separated email allow-list, from a
+                           K8s secret backed by GCP Secret Manager.
+
+    Per tenant the job will:
       1. For every email in ADMIN_EMAILS, ensure a user exists in the
-         tenant and carries {"admin": True} in its custom claims.
-      2. For every OTHER user in the tenant, strip the admin claim if
+         tenant. If missing, create it (email_verified=True so first
+         social-login auto-links the IdP identity).
+      2. Set {"admin": True} in the user's custom claims if not
+         already present.
+      3. For every OTHER user in the tenant, strip the admin claim if
          present (drift correction — e.g. claims granted ad-hoc via
          the Firebase Console).
-      3. Log what was changed and exit non-zero on partial failures so
-         the CronJob status surfaces issues.
+      4. Exit non-zero on partial failures.
 
-    No-op fast path: if an email's user already has admin=True we skip
-    the write, so re-runs every 6h are cheap.
+    No-op fast path: a user that already has admin=True is skipped, so
+    re-runs every 6h are cheap.
     """
     import os
     import sys
@@ -48,73 +61,102 @@ data:
         from firebase_admin import auth, credentials, tenant_mgt
 
     PROJECT_ID = os.environ["GIP_PROJECT_ID"]
-    TENANT_ID = os.environ["GIP_INTERNAL_TENANT_ID"]
+    tenant_ids = [
+        t.strip() for t in os.environ.get("GIP_ADMIN_TENANTS", "").split(",") if t.strip()
+    ]
+    if not tenant_ids:
+        # Backward-compat: fall back to the legacy single-tenant env.
+        legacy = os.environ.get("GIP_INTERNAL_TENANT_ID", "").strip()
+        if legacy:
+            tenant_ids = [legacy]
+
     raw_emails = os.environ.get("ADMIN_EMAILS", "")
     allow_emails = {e.strip().lower() for e in raw_emails.split(",") if e.strip()}
 
     if not allow_emails:
         print("[error] ADMIN_EMAILS is empty — refusing to run", file=sys.stderr)
         sys.exit(2)
+    if not tenant_ids:
+        print("[error] GIP_ADMIN_TENANTS is empty — refusing to run", file=sys.stderr)
+        sys.exit(2)
 
-    print(f"[start] project={PROJECT_ID} tenant={TENANT_ID} allow={sorted(allow_emails)}")
+    print(f"[start] project={PROJECT_ID} tenants={tenant_ids} allow={sorted(allow_emails)}")
 
     app = firebase_admin.initialize_app(
         credentials.ApplicationDefault(),
         {"projectId": PROJECT_ID},
     )
-    tenant_client = tenant_mgt.auth_for_tenant(TENANT_ID, app=app)
 
-    failures = 0
-    granted = 0
-    revoked = 0
-    already = 0
+    overall_failures = 0
+    overall_totals = {"granted": 0, "already": 0, "revoked": 0, "created": 0}
 
-    # --- 1. Ensure allow-list users have admin=True --------------------
-    allow_uids = set()
-    for email in allow_emails:
+    for tenant_id in tenant_ids:
+        print(f"\n--- tenant={tenant_id} ---")
         try:
-            try:
-                user = tenant_client.get_user_by_email(email)
-            except auth.UserNotFoundError:
-                user = tenant_client.create_user(email=email, email_verified=True)
-                print(f"  created {email} -> uid={user.uid}")
-            allow_uids.add(user.uid)
-            current = (user.custom_claims or {}).get("admin")
-            if current is True:
-                already += 1
-                print(f"  {email} already admin (uid={user.uid})")
-                continue
-            new_claims = {**(user.custom_claims or {}), "admin": True}
-            tenant_client.set_custom_user_claims(user.uid, new_claims)
-            granted += 1
-            print(f"  granted admin to {email} (uid={user.uid})")
-        except Exception as e:  # pragma: no cover
-            failures += 1
-            print(f"[error] {email}: {e}", file=sys.stderr)
+            client = tenant_mgt.auth_for_tenant(tenant_id, app=app)
+        except Exception as e:
+            overall_failures += 1
+            print(f"[error] cannot bind tenant {tenant_id}: {e}", file=sys.stderr)
+            continue
 
-    # --- 2. Revoke admin from anyone else in the tenant ----------------
-    page = tenant_client.list_users()
-    while page:
-        for user in page.users:
-            if user.uid in allow_uids:
-                continue
-            claims = user.custom_claims or {}
-            if claims.get("admin"):
+        per_failures = 0
+        granted = already = revoked = created = 0
+        allow_uids = set()
+
+        # --- 1. Ensure allow-list users have admin=True ----------------
+        for email in allow_emails:
+            try:
                 try:
-                    new_claims = {k: v for k, v in claims.items() if k != "admin"}
-                    tenant_client.set_custom_user_claims(user.uid, new_claims or None)
-                    revoked += 1
-                    print(
-                        f"  revoked admin from uid={user.uid} "
-                        f"email={user.email or '<no email>'}"
-                    )
-                except Exception as e:
-                    failures += 1
-                    print(f"[error] revoke uid={user.uid}: {e}", file=sys.stderr)
-        page = page.get_next_page()
+                    user = client.get_user_by_email(email)
+                except auth.UserNotFoundError:
+                    user = client.create_user(email=email, email_verified=True)
+                    created += 1
+                    print(f"  created {email} -> uid={user.uid}")
+                allow_uids.add(user.uid)
+                current = (user.custom_claims or {}).get("admin")
+                if current is True:
+                    already += 1
+                    continue
+                new_claims = {**(user.custom_claims or {}), "admin": True}
+                client.set_custom_user_claims(user.uid, new_claims)
+                granted += 1
+                print(f"  granted admin to {email} (uid={user.uid})")
+            except Exception as e:
+                per_failures += 1
+                print(f"[error] {tenant_id}/{email}: {e}", file=sys.stderr)
+
+        # --- 2. Revoke admin from anyone else in the tenant ------------
+        page = client.list_users()
+        while page:
+            for user in page.users:
+                if user.uid in allow_uids:
+                    continue
+                claims = user.custom_claims or {}
+                if claims.get("admin"):
+                    try:
+                        new_claims = {k: v for k, v in claims.items() if k != "admin"}
+                        client.set_custom_user_claims(user.uid, new_claims or None)
+                        revoked += 1
+                        print(
+                            f"  revoked admin from uid={user.uid} "
+                            f"email={user.email or '<no email>'}"
+                        )
+                    except Exception as e:
+                        per_failures += 1
+                        print(f"[error] revoke {tenant_id}/{user.uid}: {e}", file=sys.stderr)
+            page = page.get_next_page()
+
+        print(
+            f"  [{tenant_id}] created={created} granted={granted} "
+            f"already={already} revoked={revoked} failures={per_failures}"
+        )
+        overall_failures += per_failures
+        overall_totals["granted"] += granted
+        overall_totals["already"] += already
+        overall_totals["revoked"] += revoked
+        overall_totals["created"] += created
 
     print(
-        f"[done] granted={granted} already={already} "
-        f"revoked={revoked} failures={failures} at {int(time.time())}"
+        f"\n[done] {overall_totals} failures={overall_failures} at {int(time.time())}"
     )
-    sys.exit(1 if failures else 0)
+    sys.exit(1 if overall_failures else 0)
