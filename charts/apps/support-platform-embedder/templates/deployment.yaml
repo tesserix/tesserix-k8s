@@ -37,12 +37,18 @@ spec:
             - name: http
               containerPort: 80
           env:
+            {{- if .Values.huggingfaceTokenSecret.enabled }}
+            # TEI fails with "relative URL without a base" when HF_TOKEN
+            # is set to any non-empty string but the model is public.
+            # Only inject the env var when a real token is configured;
+            # bge-small-en + bge-reranker-base are both anonymous-pull.
             - name: HF_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.huggingfaceTokenSecret.name }}
                   key: {{ .Values.huggingfaceTokenSecret.key }}
                   optional: true
+            {{- end }}
           startupProbe:
             httpGet:
               path: /health
