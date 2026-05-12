@@ -1,0 +1,29 @@
+namespace: support-platform
+name: support-platform-mongo
+
+image:
+  repository: mongo
+  tag: "7.0"
+  pullPolicy: IfNotPresent
+
+# v1: no auth (inside the mesh, network-policy gated). slm-router and Otto
+# both connect from inside support-platform; nothing outside the namespace
+# should reach this Mongo. Flip to true and add a root password ExternalSecret
+# before opening cross-namespace access.
+auth:
+  enabled: false
+
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+persistence:
+  enabled: true
+  storageClassName: standard-rwo
+  size: 20Gi
+
+service:
+  type: ClusterIP
+  port: 27017

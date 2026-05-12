@@ -1,0 +1,19 @@
+# Namespace-wide allow-list for the source namespaces in values.yaml.
+# Service-level AuthorizationPolicies in each chart narrow further
+# (e.g. Otto's WebSocket endpoint only accepts traffic from istio-ingress).
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-from-source-namespaces
+  namespace: {{ .Values.namespace }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              {{- range .Values.allowedSources }}
+              - {{ . | quote }}
+              {{- end }}
+              - cnpg-system
+              - external-secrets

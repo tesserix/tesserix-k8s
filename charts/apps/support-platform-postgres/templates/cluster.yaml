@@ -1,0 +1,89 @@
+{{- if not .Values.hibernate }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: support-platform
+    app.kubernetes.io/component: vector-database
+spec:
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.imageName }}
+
+  bootstrap:
+    initdb:
+      database: {{ .Values.bootstrap.database }}
+      owner: {{ .Values.bootstrap.owner }}
+      secret:
+        name: {{ .Values.bootstrap.ownerSecret }}
+      # Install pgvector + helper extensions on template1 so any future
+      # database CREATEd in this cluster inherits them.
+      postInitTemplateSQL:
+        - "CREATE EXTENSION IF NOT EXISTS vector"
+        - "CREATE EXTENSION IF NOT EXISTS pgcrypto"
+
+  storage:
+    size: {{ .Values.storageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  walStorage:
+    size: {{ .Values.walStorageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  resources:
+{{ toYaml .Values.resources | indent 4 }}
+
+  postgresql:
+    shared_preload_libraries:
+      - vector
+    parameters:
+      max_connections: "100"
+      shared_buffers: "128MB"
+      wal_level: "logical"
+      ssl_min_protocol_version: "TLSv1.3"
+      ssl_max_protocol_version: "TLSv1.3"
+      idle_in_transaction_session_timeout: "300000"
+      statement_timeout: "120000"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      log_min_duration_statement: "1000"
+      max_slot_wal_keep_size: "2GB"
+      pg_stat_statements.track: "all"
+      pg_stat_statements.max: "10000"
+      synchronous_commit: "local"
+
+  {{- if .Values.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.backup.destinationPath | quote }}
+      googleCredentials:
+        gkeEnvironment: true
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        immediateCheckpoint: true
+        jobs: 2
+    retentionPolicy: {{ .Values.backup.retentionPolicy | quote }}
+
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: {{ .Values.backup.serviceAccount }}
+  {{- end }}
+
+  monitoring:
+    enablePodMonitor: {{ .Values.monitoring.enablePodMonitor }}
+    disableDefaultQueries: false
+
+  enableSuperuserAccess: false
+
+  primaryUpdateStrategy: unsupervised
+  primaryUpdateMethod: switchover
+  failoverDelay: 0
+  switchoverDelay: 3600
+{{- end }}
