@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "support-platform-slm-inference.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.keda.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "support-platform-slm-inference.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "support-platform-slm-inference.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/part-of: support-platform
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Init container downloads the GGUF on first boot. Subsequent
+      # restarts use the cached file on the PVC.
+      initContainers:
+        - name: model-fetch
+          image: curlimages/curl:8.10.1
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              FILE="/models/{{ .Values.model.filename }}"
+              if [ -f "$FILE" ]; then
+                echo "model already cached at $FILE"
+                exit 0
+              fi
+              URL="https://huggingface.co/{{ .Values.model.huggingfaceRepo }}/resolve/main/{{ .Values.model.filename }}"
+              echo "downloading $URL"
+              if [ -n "${HF_TOKEN:-}" ]; then
+                curl -L -H "Authorization: Bearer $HF_TOKEN" -o "$FILE" "$URL"
+              else
+                curl -L -o "$FILE" "$URL"
+              fi
+              echo "downloaded $(du -h $FILE | cut -f1)"
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.huggingfaceTokenSecret.name }}
+                  key: {{ .Values.huggingfaceTokenSecret.key }}
+                  optional: true
+          volumeMounts:
+            - name: models
+              mountPath: /models
+      containers:
+        - name: server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-m"
+            - "/models/{{ .Values.model.filename }}"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "-c"
+            - "{{ .Values.model.contextWindow }}"
+            - "-t"
+            - "{{ .Values.model.threads }}"
+            - "--parallel"
+            - "{{ .Values.model.parallel }}"
+          ports:
+            - name: http
+              containerPort: 8000
+          # llama.cpp is single-threaded sensitive — give it the readiness
+          # time to load the model before probing.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: models
+              mountPath: /models
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: models
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.name }}-models
+          {{- else }}
+          emptyDir:
+            sizeLimit: 5Gi
+          {{- end }}

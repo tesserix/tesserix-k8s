@@ -1,0 +1,41 @@
+namespace: support-platform
+name: support-platform-embedder
+
+image:
+  repository: ghcr.io/huggingface/text-embeddings-inference
+  tag: "cpu-1.5"  # CPU-only build of TEI
+  pullPolicy: IfNotPresent
+
+model:
+  id: BAAI/bge-small-en-v1.5
+  maxConcurrentRequests: 32
+  maxBatchTokens: 8192
+
+service:
+  type: ClusterIP
+  port: 8001
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    memory: 2Gi
+
+persistence:
+  enabled: true
+  storageClassName: standard-rwo
+  size: 5Gi
+
+keda:
+  enabled: true
+  minReplicaCount: 0
+  maxReplicaCount: 2
+  pollingInterval: 30
+  cooldownPeriod: 300
+
+huggingfaceTokenSecret:
+  name: support-platform-hf-token
+  key: HF_TOKEN
