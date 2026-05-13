@@ -61,12 +61,14 @@ frontendApps:
     hosts:
       - "tesserix.app"
       - "www.tesserix.app"
-  - name: tesserix-blog
-    label: tesserix-blog
-    namespace: tesserix
-    hosts:
-      - "blog.tesserix.app"
-      - "identity-blog.tesserix.app"
+  # tesserix-blog intentionally omitted. In Istio ambient mode each xds push
+  # of an AuthorizationPolicy makes ztunnel drain & rebuild the per-pod proxy,
+  # which kills in-flight HBONE connections and surfaces as Envoy "connection
+  # termination" 503s at the edge. ArgoCD reconciles this chart every ~3min,
+  # so a "frontend-allow"-style ALLOW {} policy attached to the blog produces
+  # a drain-induced 503 burst every ~3min for as long as it exists. Removing
+  # the policy is safe: Istio's default for a workload with no
+  # AuthorizationPolicy is ALLOW, so the blog stays publicly reachable.
   - name: tesserix-docs
     label: tesserix-docs
     namespace: tesserix
