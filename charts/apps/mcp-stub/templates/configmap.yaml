@@ -1,0 +1,42 @@
+# Static MCP responses served by the stub. The MCP Streamable-HTTP
+# transport is JSON-RPC over POST; we don't actually implement the
+# protocol here, but we return well-formed JSON for the two requests
+# slm-router cares about during handshake (initialise + tools/list)
+# so it can register the endpoint without erroring.
+#
+# Real tools land here when the product team replaces this stub with
+# a FastMCP server (see social-media-scrapper/src/mcp for the pattern).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mcp-stub.name" . }}-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "mcp-stub.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    server {
+      listen 8765;
+      server_name _;
+
+      # Health / readiness — Kubernetes probes hit these on every poll.
+      location = /healthz { return 200 "ok"; }
+      location = /livez { return 200 "ok"; }
+      location = /readyz { return 200 "ok"; }
+
+      # MCP handshake — return a valid JSON-RPC envelope with an empty
+      # tool list. The slm-router treats "no tools" as a soft fallback
+      # and proceeds to answer with system-prompt + RAG only.
+      location = /mcp {
+        default_type application/json;
+        return 200 '{"jsonrpc":"2.0","result":{"protocolVersion":"2024-11-05","serverInfo":{"name":"{{ .Values.tenant }}-mcp-stub","version":"0.1.0"},"capabilities":{"tools":{}},"tools":[]},"id":null}';
+      }
+
+      # Anything else — return MCP-shaped "method not found" so the
+      # caller can recognise a stub responding to an unimplemented
+      # method without throwing a transport error.
+      location / {
+        default_type application/json;
+        return 200 '{"jsonrpc":"2.0","error":{"code":-32601,"message":"Method not yet implemented for tenant {{ .Values.tenant }}"},"id":null}';
+      }
+    }

@@ -20,6 +20,7 @@ spec:
         # in-memory cache picks up immediately (the reload-loop also
         # catches it within ROUTE_RELOAD_INTERVAL).
         checksum/routes: {{ include (print $.Template.BasePath "/configmap-routes.yaml") . | sha256sum }}
+        checksum/prompts: {{ include (print $.Template.BasePath "/configmap-prompts.yaml") . | sha256sum }}
     spec:
       serviceAccountName: {{ .Values.name }}
       imagePullSecrets:
@@ -77,6 +78,30 @@ spec:
                   name: {{ .Values.mcpKeysSecret }}
                   key: HOMECHEF_MCP_KEY
                   optional: true
+            - name: STOCKPILOT_MCP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcpKeysSecret }}
+                  key: STOCKPILOT_MCP_KEY
+                  optional: true
+            - name: GAMEVERSE_MCP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcpKeysSecret }}
+                  key: GAMEVERSE_MCP_KEY
+                  optional: true
+            - name: HOROSCOPE_MCP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcpKeysSecret }}
+                  key: HOROSCOPE_MCP_KEY
+                  optional: true
+            - name: SCRAPPER_MCP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcpKeysSecret }}
+                  key: SCRAPPER_MCP_KEY
+                  optional: true
           livenessProbe:
             httpGet:
               path: /healthz
@@ -93,6 +118,13 @@ spec:
             - name: routes
               mountPath: /etc/slm-router
               readOnly: true
+            # Nested mount: per-tenant system prompts. Kubernetes overlays
+            # configmap volumes, so the routes volume above projects only
+            # `routes.yaml` and this volume populates the `prompts/`
+            # subdirectory the routes file references.
+            - name: prompts
+              mountPath: /etc/slm-router/prompts
+              readOnly: true
           resources:
 {{ toYaml .Values.resources | indent 12 }}
           securityContext:
@@ -104,3 +136,6 @@ spec:
         - name: routes
           configMap:
             name: {{ .Values.name }}-routes
+        - name: prompts
+          configMap:
+            name: {{ .Values.name }}-prompts
