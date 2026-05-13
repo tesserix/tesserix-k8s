@@ -20,10 +20,18 @@ spec:
       jsonPointers:
         - /status/terminatingReplicas
   project: infrastructure
+  # Source is a Tesserix-vendored copy of the upstream
+  # gateway-1.29.1 chart with a single delta — the chart default
+  # `istio.io/dataplane-mode: none` pod label removed (see
+  # charts/thirdparty/istio-ingress-gateway/values.yaml). The
+  # label key presence triggers an istiod bug where incremental
+  # LDS/RDS pushes silently never reach the public ingressgateway
+  # pods. Drop the chart fork once upstream Istio fixes the
+  # ambient-vs-router push filter.
   source:
-    repoURL: https://istio-release.storage.googleapis.com/charts
-    chart: gateway
-    targetRevision: 1.29.1
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: main
+    path: charts/thirdparty/istio-ingress-gateway
     helm:
       releaseName: istio-ingress
       values: |
@@ -124,20 +132,12 @@ spec:
               - ALL
           readOnlyRootFilesystem: true
 
-        # Labels for the gateway pods.
-        #
-        # The empty `istio.io/dataplane-mode` value is deliberate — it
-        # OVERRIDES the chart 1.29.1 default of `"none"` from upstream
-        # `values.yaml:119`. With the default value, istiod 1.29.1's
-        # push path treats this pod as managed by the ambient dataplane
-        # and silently drops LDS/RDS pushes, so VirtualService changes
-        # never reach Envoy until the pods are rolled. Empty value
-        # keeps the pod out of ambient (the namespace isn't ambient-
-        # labelled anyway) while bypassing istiod's broken filter.
+        # Labels for the gateway pods. The vendored chart already drops
+        # the offending `istio.io/dataplane-mode` default, so this stays
+        # minimal — just the selector keys the chart consumes.
         labels:
           app: istio-ingressgateway
           istio: ingressgateway
-          istio.io/dataplane-mode: ""
 
         # Topology spread constraints for HA
         topologySpreadConstraints:
