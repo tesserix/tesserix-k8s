@@ -23,7 +23,12 @@ resources:
     memory: 512Mi
 
 env:
-  MONGO_URI: "mongodb://support-platform-mongo.support-platform.svc.cluster.local:27017"
+  # Use pod-DNS via the headless support-platform-mongo Service so the
+  # hostname mongod thinks it has matches what the driver resolves to.
+  # ?replicaSet=rs0&directConnection=true keeps the driver from trying
+  # discovery (the headless DNS would round-robin in a multi-pod
+  # cluster, which we don't run yet).
+  MONGO_URI: "mongodb://support-platform-mongo-0.support-platform-mongo.support-platform.svc.cluster.local:27017/?replicaSet=rs0&directConnection=true"
   MONGO_DATABASE: "otto"
   INFERENCE_URL: "http://support-platform-slm-inference.support-platform.svc.cluster.local:8000"
   EMBEDDER_URL: "http://support-platform-embedder.support-platform.svc.cluster.local:8001"
