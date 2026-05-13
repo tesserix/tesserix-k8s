@@ -1,0 +1,209 @@
+namespace: support-platform
+
+# python:3.12-slim + pgvector + httpx is enough to call the embedder
+# and write rows. Job runs to completion in seconds for the starter
+# content; image is pulled once and reused for every re-seed.
+image:
+  repository: python
+  tag: "3.12-slim"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+# Service URLs inside the cluster — match the existing slm-router env.
+embedderURL: http://support-platform-embedder.support-platform.svc.cluster.local:80
+postgresHost: support-platform-postgres.support-platform.svc.cluster.local
+postgresPort: 5432
+postgresUser: support_platform
+postgresDB: support_platform
+postgresPasswordSecret: support-platform-postgres-app
+postgresPasswordKey: password
+
+# Per-tenant starter content. Each key is the slm-router rag_namespace,
+# value is a list of {id, text, metadata} entries. Real product
+# documentation is layered on top later — this is just enough so the
+# SLM's first answer cites SOMETHING from each tenant.
+content:
+  mark8ly:
+    - id: mark8ly-overview
+      text: |
+        Mark8ly is a multi-tenant SaaS marketplace where every merchant
+        runs their own storefront on a custom subdomain. Customers reach
+        support by clicking the chat bubble at the bottom-right of any
+        storefront page. Common support topics are order status,
+        returns, refunds, payments, and product questions.
+      metadata: {source: "starter-seed", section: "overview"}
+    - id: mark8ly-returns
+      text: |
+        Returns policy: items can be returned within 14 days of
+        delivery if unused, in original packaging. Initiate a return
+        from the order detail page; once the merchant approves the
+        return label is emailed and the refund is issued on item
+        receipt. Refunds reach the original payment method in 5-7
+        business days.
+      metadata: {source: "starter-seed", section: "returns"}
+    - id: mark8ly-payments
+      text: |
+        Payments are processed by Stripe or Razorpay depending on the
+        merchant's market. Failed payments do NOT debit the customer —
+        if the order page shows "payment failed", retry from the
+        order. If a payment was debited but the order shows not paid,
+        contact support — that usually reconciles within an hour.
+      metadata: {source: "starter-seed", section: "payments"}
+
+  fanzone:
+    - id: fanzone-overview
+      text: |
+        FanZone Battle Ground is a cricket fan engagement platform.
+        Real-time match chat, prediction games, IPL coverage, leaderboards
+        and points. Users sign in with Google or Meta via Firebase.
+      metadata: {source: "starter-seed", section: "overview"}
+    - id: fanzone-points
+      text: |
+        Points are earned by predicting match outcomes correctly,
+        chatting in active battle rooms during live matches, and daily
+        login streaks. The leaderboard refreshes hourly. Points are NOT
+        redeemable for real money; they unlock badges, predictions of
+        higher stake, and ranking on the fan leaderboard.
+      metadata: {source: "starter-seed", section: "points"}
+    - id: fanzone-predictions
+      text: |
+        Predictions close at the toss of the match. Once locked, a
+        prediction can't be changed. If a match is abandoned without
+        a result, the prediction is voided and the staked points
+        returned. If a match is rain-affected with a DLS result, the
+        prediction is settled against the DLS winner.
+      metadata: {source: "starter-seed", section: "predictions"}
+
+  homechef:
+    - id: homechef-overview
+      text: |
+        HomeChef (fe3dr.com) connects customers with home chefs in
+        their neighbourhood for fresh home-cooked food, delivered.
+        Browse local chefs, place an order, and track delivery in real
+        time. Available in selected cities in India and Australia.
+      metadata: {source: "starter-seed", section: "overview"}
+    - id: homechef-delivery
+      text: |
+        Delivery windows are 30-45 minutes typical; the order page
+        shows a live ETA. Drivers send status updates and a final
+        delivery photo. If a delivery is more than 20 minutes past
+        the ETA, contact support and we'll either expedite or refund
+        the delivery fee.
+      metadata: {source: "starter-seed", section: "delivery"}
+    - id: homechef-refunds
+      text: |
+        Refunds are processed for missing items, incorrect orders,
+        and food-safety concerns. If you feel unwell after a meal,
+        STOP eating it, photograph the dish, and contact support
+        immediately. We refund the full order and escalate to the
+        chef and our food-safety partner within 1 hour.
+      metadata: {source: "starter-seed", section: "refunds", urgent: true}
+
+  stockpilot:
+    - id: stockpilot-overview
+      text: |
+        StockPilot is an AI stock-analysis and trading platform. It
+        runs multi-agent research workflows (LangGraph) backed by
+        Alpaca Markets for execution. Demo mode uses paper trading
+        with a $100K virtual balance; live mode requires a connected
+        Alpaca brokerage account.
+      metadata: {source: "starter-seed", section: "overview"}
+    - id: stockpilot-disclaimer
+      text: |
+        StockPilot is NOT a financial adviser. The AI agents produce
+        analysis and trade ideas; you decide whether to act. Past
+        performance does not predict future results. Markets can move
+        against an agent's thesis without warning. Never invest more
+        than you can afford to lose.
+      metadata: {source: "starter-seed", section: "disclaimer", regulated: true}
+    - id: stockpilot-broker
+      text: |
+        Broker connection is done via Alpaca Markets OAuth. Sandbox
+        uses broker-api.sandbox.alpaca.markets; production uses
+        broker-api.alpaca.markets. If your portfolio shows "broker
+        disconnected", re-authenticate from Settings -> Broker.
+        Open positions are not affected by a transient disconnection.
+      metadata: {source: "starter-seed", section: "broker"}
+
+  gameverse:
+    - id: gameverse-overview
+      text: |
+        GameVerse is a multiplayer board-games platform — Ludo, Chess,
+        Checkers, Snakes & Ladders, Word Stack, and more. The shell
+        app is the lobby; each game is a standalone module that loads
+        in the same shell so your sign-in, ratings and friends stay
+        consistent across games.
+      metadata: {source: "starter-seed", section: "overview"}
+    - id: gameverse-rules
+      text: |
+        Game-specific rules live on each game's lobby page. Server-side
+        engines run the authoritative game state — dice, shuffles, and
+        AI opponents all run on the server in Rust, so client
+        modifications cannot influence outcomes.
+      metadata: {source: "starter-seed", section: "rules"}
+    - id: gameverse-matchmaking
+      text: |
+        Multiplayer pairing is Glicko-2-rating based. New accounts
+        start at rating 1500; each win/loss against a rated opponent
+        adjusts your rating. If a match-up is taking too long, the
+        rating window widens automatically every 30 seconds. Manual
+        room codes bypass matchmaking — share a code with friends.
+      metadata: {source: "starter-seed", section: "matchmaking"}
+
+  horoscope:
+    - id: horoscope-overview
+      text: |
+        Tesserix Horoscope offers natal charts, daily/weekly/monthly
+        transits, and palm + face readings across Western, Vedic
+        (sidereal) and Mian Xiang traditions. Sign in with Google,
+        fill in birth details, and the chart engine produces your
+        personalised reading.
+      metadata: {source: "starter-seed", section: "overview"}
+    - id: horoscope-disclaimer
+      text: |
+        Charts and readings are for entertainment and self-reflection
+        ONLY. They are NOT medical, legal, psychological, financial,
+        romantic, or safety advice. If you are facing a health,
+        financial, legal or safety concern, consult an appropriately
+        qualified professional. In Australia, Lifeline is available
+        24/7 at 13 11 14 for crisis support.
+      metadata: {source: "starter-seed", section: "disclaimer", regulated: true}
+    - id: horoscope-providers
+      text: |
+        Chart compute is provider-agnostic. By default the internal
+        Keplerian engine answers; if the operator sets
+        ASTROLOGY_PRIMARY to prokerala / astrologyapi / freeastro the
+        dispatcher prefers that provider with the internal engine as
+        an always-available fallback.
+      metadata: {source: "starter-seed", section: "providers"}
+
+  scrapper:
+    - id: scrapper-overview
+      text: |
+        Social Media Scrapper is a marketing-intelligence platform.
+        Scrape public profiles across Instagram / X / Facebook /
+        Reddit / LinkedIn / TikTok, analyse audiences with Groq, and
+        publish campaigns back across the same set of platforms via
+        the operator's connected accounts.
+      metadata: {source: "starter-seed", section: "overview"}
+    - id: scrapper-jobs
+      text: |
+        A scrape job runs the platform-specific scraper, persists
+        profiles in Postgres, and emits a marketing report. Jobs can
+        be cancelled mid-run; partial profiles already collected are
+        kept. Failed scrapers retry with exponential backoff up to
+        three times before the job is marked failed.
+      metadata: {source: "starter-seed", section: "jobs"}
+    - id: scrapper-tos
+      text: |
+        The scraper only collects PUBLIC profile data. It does not
+        bypass authentication, scrape private posts, or collect DMs.
+        Each platform's terms of service apply — if a platform issues
+        a takedown, the scraper for that platform is paused until the
+        operator confirms compliance.
+      metadata: {source: "starter-seed", section: "tos", regulated: true}

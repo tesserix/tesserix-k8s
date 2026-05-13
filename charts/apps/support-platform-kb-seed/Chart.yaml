@@ -1,0 +1,20 @@
+apiVersion: v2
+name: support-platform-kb-seed
+description: |
+  Seeds the support-platform pgvector knowledge base (chunks table)
+  with per-tenant starter content. Mounts a per-tenant ConfigMap of
+  markdown blurbs, calls the support-platform-embedder for each
+  chunk, and INSERTs (namespace, content, embedding) rows.
+
+  The Job is idempotent — re-runs UPSERT by chunk id so it's safe to
+  run on schedule. Initially we run on-demand (or via ArgoCD sync
+  after a content change); long-term this becomes a CronJob.
+
+  Real product content lives where the product team curates it. The
+  blurbs shipped in this chart's default values are sane "what is
+  this product / how do I get help / where do I go for X" defaults
+  so the SLM never answers an empty-context question with hallucinated
+  marketplace-specific phrases.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

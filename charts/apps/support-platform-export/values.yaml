@@ -1,0 +1,36 @@
+namespace: support-platform
+
+image:
+  repository: python
+  tag: "3.12-slim"
+  pullPolicy: IfNotPresent
+
+# Daily at 03:00 UTC = 13:00 AEST / 08:30 IST — outside business hours
+# for both regions we care about, so the export doesn't compete with
+# live support traffic on Mongo.
+schedule: "0 3 * * *"
+
+# Mongo connection — same single-node replica set Otto uses.
+mongoURL: "mongodb://support-platform-mongo-0.support-platform-mongo.support-platform.svc.cluster.local:27017/?replicaSet=rs0&directConnection=true"
+mongoDB: otto
+
+# GCS bucket where the JSONL lands. Auth is via Workload Identity;
+# the service account in this chart maps to a GSA with objectAdmin
+# on the bucket.
+gcsBucket: tesseract-prod-otto-exports-in
+
+# Workload Identity binding. The GSA must have
+# roles/storage.objectAdmin on the bucket above.
+serviceAccount:
+  name: support-platform-export
+  workloadIdentityGSA: app-secrets-support-platform-prod@tesseracthub-480811.iam.gserviceaccount.com
+
+# Look back this many days each run. Default 1 = strict "yesterday";
+# bump if a run fails and you need to catch up.
+lookbackDays: 1
+
+resources:
+  requests:
+    memory: 256Mi
+  limits:
+    memory: 512Mi
