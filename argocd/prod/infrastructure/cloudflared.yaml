@@ -66,7 +66,11 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      - ServerSideApply=true
+      # Client-side apply: ArgoCD's bundled OpenAPI lags behind the cluster's
+      # K8s 1.33+ schema (e.g. Deployment.status.terminatingReplicas), which
+      # breaks the structured merge diff under ServerSideApply. Client-side
+      # apply diffs textually and is unaffected.
+      - ServerSideApply=false
     retry:
       limit: 5
       backoff:
