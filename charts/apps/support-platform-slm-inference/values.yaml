@@ -18,7 +18,11 @@ imagePullSecrets: []
 model:
   huggingfaceRepo: Qwen/Qwen2.5-1.5B-Instruct-GGUF
   filename: qwen2.5-1.5b-instruct-q4_k_m.gguf
-  contextWindow: 4096
+  # llama.cpp splits contextWindow across `parallel` slots — each slot
+  # only gets contextWindow/parallel tokens. 4096/4=1024 was overflowing
+  # on prompts that include the system prompt + RAG chunks + history +
+  # tool results. Bump to 8192 so each slot gets 2048 tokens.
+  contextWindow: 8192
   threads: 4
   parallel: 4
 
