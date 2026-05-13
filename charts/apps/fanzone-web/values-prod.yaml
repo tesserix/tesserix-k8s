@@ -182,6 +182,24 @@ ingress:
       knative: true
       serviceName: fanzone-web
     # ---------------------------------------------------------
+    # Otto WebSocket + REST passthrough — the widget opens
+    # wss://fanzonebattleground.com/api/v1/storefront/otto/.../ws
+    # directly against the otto pod (bypasses the Next.js proxy so
+    # WS upgrades aren't terminated by Knative's queue-proxy). The
+    # otto service lives in the support-platform namespace, so we
+    # route via externalHost.
+    # ---------------------------------------------------------
+    - path: /api/v1/storefront/otto
+      pathType: Prefix
+      externalHost: support-platform-otto.support-platform.svc.cluster.local
+      externalPort: 8089
+      websocket: true
+    - path: /api/v1/admin/otto
+      pathType: Prefix
+      externalHost: support-platform-otto.support-platform.svc.cluster.local
+      externalPort: 8089
+      websocket: true
+    # ---------------------------------------------------------
     # Generic API route — GKE Knative (fanzone-api catch-all)
     # ---------------------------------------------------------
     - path: /api
