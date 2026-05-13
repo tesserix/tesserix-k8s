@@ -95,12 +95,12 @@ spec:
             hosts:
               - "tesserix.app"
               - "www.tesserix.app"
-          - name: tesserix-blog
-            label: tesserix-blog
-            namespace: tesserix
-            hosts:
-              - "blog.tesserix.app"
-              - "identity-blog.tesserix.app"
+          # tesserix-blog intentionally omitted. See chart values-prod.yaml for
+          # full rationale: every ArgoCD reconcile re-pushed the ALLOW policy
+          # via xds, ztunnel drained the per-pod proxy on each push, killing
+          # in-flight HBONE connections and producing edge 503s. With no
+          # AuthorizationPolicy attached, Istio's default for the workload is
+          # ALLOW, so the blog stays publicly reachable.
           - name: tesserix-docs
             label: tesserix-docs
             namespace: tesserix
@@ -244,7 +244,16 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=false
-      - ServerSideApply=true
+      # Client-side apply. With ServerSideApply, every sync touches
+      # managedFields on each AuthorizationPolicy (even when spec/content is
+      # unchanged), bumping resourceVersion and triggering an xds push.
+      # ztunnel responds to every xds push by draining and rebuilding the
+      # per-pod proxy on every workload selected by any policy in this chart,
+      # producing brief 503 'connection termination' windows at the edge every
+      # ~3min reconcile. Client-side apply compares the
+      # last-applied-configuration annotation textually and skips the apply
+      # entirely when content matches, so unchanged policies stop churning.
+      - ServerSideApply=false
     retry:
       limit: 5
       backoff:
