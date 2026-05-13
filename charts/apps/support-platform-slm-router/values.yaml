@@ -72,6 +72,13 @@ routes:
         confidenceThreshold: 0.6
         keywords: ["refund", "lawyer", "ombudsman"]
         maxToolFailures: 2
+      # On every escalation, POST the conversation context to
+      # marketplace-api so a durable ticket lands in the merchant's
+      # dashboard. Idempotent on conversation_id; safe to retry.
+      escalationHook:
+        url: http://marketplace-api.marketplace.svc.cluster.local/internal/v1/tickets/from-conversation
+        authHeader: X-Internal-Auth
+        authEnvVar: MARKETPLACE_INTERNAL_AUTH
     fanzone:
       systemPromptFile: /etc/slm-router/prompts/fanzone.md
       ragNamespace: fanzone
