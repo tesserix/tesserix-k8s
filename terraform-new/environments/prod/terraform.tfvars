@@ -1507,6 +1507,72 @@ buckets = [
         member = "serviceAccount:blog-assets-writer@tesseracthub-480811.iam.gserviceaccount.com"
       }
     ]
+  },
+
+  # ===========================================================================
+  # SUPPORT-PLATFORM (Otto) — Conversation Exports for LoRA Training
+  # ===========================================================================
+  # Nightly CronJob in support-platform namespace dumps closed Otto
+  # conversations grouped by tenant_id. Each per-tenant JSONL is the
+  # training corpus for that tenant's LoRA adapter (see
+  # slm-support-platform/phase2-optimizations/2a-model-serving/).
+  #
+  # No public access ever. Object lifecycle: keep raw exports
+  # indefinitely (audit trail + retraining), nearline after 30 days
+  # (we re-read on-demand for training runs, not constantly).
+  {
+    name                        = "tesseract-prod-otto-exports-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = false
+    labels = {
+      purpose    = "otto-conversation-exports"
+      product    = "support-platform"
+      region     = "in"
+      compliance = "dpdpa"
+      sensitive  = "true"
+      visibility = "private"
+    }
+    lifecycle_rules = [
+      {
+        action = {
+          type          = "SetStorageClass"
+          storage_class = "NEARLINE"
+        }
+        condition = {
+          age = 30
+        }
+      }
+    ]
+    cors          = []
+    iam_bindings  = []
+  },
+
+  # Per-tenant LoRA adapters land here after `train_lora.py` runs.
+  # slm-inference loads adapters from this bucket via Workload
+  # Identity. Each tenant owns their own subdirectory; never
+  # cross-load adapters across tenants.
+  {
+    name                        = "tesseract-prod-otto-models-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    labels = {
+      purpose    = "otto-lora-adapters"
+      product    = "support-platform"
+      region     = "in"
+      compliance = "dpdpa"
+      visibility = "private"
+    }
+    lifecycle_rules = []
+    cors          = []
+    iam_bindings  = []
   }
 ]
 
@@ -3054,6 +3120,44 @@ service_accounts = [
       }
     ]
     bucket_bindings = []
+    secret_bindings = []
+  },
+  # App Secrets Support-Platform — Otto + slm-router + export Job
+  # Bound to:
+  #   - tesseract-prod-otto-exports-in (write, via export CronJob)
+  #   - tesseract-prod-otto-models-in  (read,  via slm-inference for LoRA adapters)
+  {
+    name         = "app-secrets-support-platform-prod"
+    display_name = "App Secrets Accessor - support-platform"
+    description  = "Service account for support-platform namespace: Otto, slm-router, export CronJob"
+    project_roles = [
+      "roles/secretmanager.secretAccessor",
+      "roles/iam.serviceAccountTokenCreator"
+    ]
+    workload_identity_bindings = [
+      {
+        namespace                  = "support-platform"
+        kubernetes_service_account = "default"
+      },
+      {
+        namespace                  = "support-platform"
+        kubernetes_service_account = "support-platform-export"
+      },
+      {
+        namespace                  = "support-platform"
+        kubernetes_service_account = "support-platform-slm-inference"
+      }
+    ]
+    bucket_bindings = [
+      {
+        bucket = "tesseract-prod-otto-exports-in"
+        role   = "roles/storage.objectAdmin"
+      },
+      {
+        bucket = "tesseract-prod-otto-models-in"
+        role   = "roles/storage.objectViewer"
+      }
+    ]
     secret_bindings = []
   },
   # App Secrets Bookkeeping
