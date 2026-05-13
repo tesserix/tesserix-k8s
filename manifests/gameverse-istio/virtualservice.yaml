@@ -19,6 +19,36 @@ spec:
   hosts:
     - stayandplays.com
   http:
+    # Otto support-chat — WebSocket + REST passthrough to
+    # support-platform-otto. Comes before the generic /api routes so
+    # /api/v1/storefront/otto/* doesn't fall through to gameverse-server.
+    - match:
+        - uri:
+            prefix: /api/v1/storefront/otto
+      headers:
+        request:
+          set:
+            Host: support-platform-otto.support-platform.svc.cluster.local
+      route:
+        - destination:
+            host: support-platform-otto.support-platform.svc.cluster.local
+            port:
+              number: 8089
+      timeout: 3600s
+    - match:
+        - uri:
+            prefix: /api/v1/admin/otto
+      headers:
+        request:
+          set:
+            Host: support-platform-otto.support-platform.svc.cluster.local
+      route:
+        - destination:
+            host: support-platform-otto.support-platform.svc.cluster.local
+            port:
+              number: 8089
+      timeout: 3600s
+
     # WebSocket routes -> Game Server Knative service
     - match:
         - uri:

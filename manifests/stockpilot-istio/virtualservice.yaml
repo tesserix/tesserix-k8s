@@ -39,6 +39,35 @@ spec:
               number: 8000
       timeout: 3600s
 
+    # Otto support-chat — WebSocket + REST passthrough to
+    # support-platform-otto. MUST come before the /api catch-all.
+    - match:
+        - uri:
+            prefix: /api/v1/storefront/otto
+      headers:
+        request:
+          set:
+            Host: support-platform-otto.support-platform.svc.cluster.local
+      route:
+        - destination:
+            host: support-platform-otto.support-platform.svc.cluster.local
+            port:
+              number: 8089
+      timeout: 3600s
+    - match:
+        - uri:
+            prefix: /api/v1/admin/otto
+      headers:
+        request:
+          set:
+            Host: support-platform-otto.support-platform.svc.cluster.local
+      route:
+        - destination:
+            host: support-platform-otto.support-platform.svc.cluster.local
+            port:
+              number: 8089
+      timeout: 3600s
+
     # Auth routes → stockpilot-web (must be before /api catch-all).
     # The BFF proxy (/api/auth/proxy/*) routes user requests through
     # the Next.js server before they reach the FastAPI backend, so a

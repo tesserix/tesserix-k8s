@@ -92,6 +92,39 @@ spec:
               number: 80
       timeout: 60s
 
+    # Otto support-chat — WebSocket + REST passthrough to the
+    # support-platform-otto pod. MUST come before the generic /api
+    # catch-all so /api/v1/storefront/otto/* doesn't fall through to
+    # the homechef-api Go service and 404. 3600s timeout for WS;
+    # no retries (retrying a half-upgraded stateful connection
+    # corrupts it).
+    - match:
+        - uri:
+            prefix: /api/v1/storefront/otto
+      headers:
+        request:
+          set:
+            Host: support-platform-otto.support-platform.svc.cluster.local
+      route:
+        - destination:
+            host: support-platform-otto.support-platform.svc.cluster.local
+            port:
+              number: 8089
+      timeout: 3600s
+    - match:
+        - uri:
+            prefix: /api/v1/admin/otto
+      headers:
+        request:
+          set:
+            Host: support-platform-otto.support-platform.svc.cluster.local
+      route:
+        - destination:
+            host: support-platform-otto.support-platform.svc.cluster.local
+            port:
+              number: 8089
+      timeout: 3600s
+
     # API routes -> HomeChef API Knative service
     - match:
         - uri:
