@@ -17,6 +17,36 @@ spec:
   hosts:
     - social-scrapper.tesserix.app
   http:
+    # Otto support-chat — WebSocket + REST passthrough to
+    # support-platform-otto. MUST come before any /api/* rule so
+    # /api/v1/storefront/otto/* doesn't fall through to scrapper-web.
+    - match:
+        - uri:
+            prefix: /api/v1/storefront/otto
+      headers:
+        request:
+          set:
+            Host: support-platform-otto.support-platform.svc.cluster.local
+      route:
+        - destination:
+            host: support-platform-otto.support-platform.svc.cluster.local
+            port:
+              number: 8089
+      timeout: 3600s
+    - match:
+        - uri:
+            prefix: /api/v1/admin/otto
+      headers:
+        request:
+          set:
+            Host: support-platform-otto.support-platform.svc.cluster.local
+      route:
+        - destination:
+            host: support-platform-otto.support-platform.svc.cluster.local
+            port:
+              number: 8089
+      timeout: 3600s
+
     # NextAuth routes → scrapper-web (must come before /api catch-all)
     - match:
         - uri:

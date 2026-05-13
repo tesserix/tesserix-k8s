@@ -31,6 +31,35 @@ spec:
   hosts:
     - astronomy.tesserix.app
   http:
+    # ----- Otto support-chat (WS + REST) — MUST come before the
+    # generic /api/ catch-all or horoscope-api would 404 the Otto path.
+    - match:
+        - uri:
+            prefix: /api/v1/storefront/otto
+      headers:
+        request:
+          set:
+            Host: support-platform-otto.support-platform.svc.cluster.local
+      route:
+        - destination:
+            host: support-platform-otto.support-platform.svc.cluster.local
+            port:
+              number: 8089
+      timeout: 3600s
+    - match:
+        - uri:
+            prefix: /api/v1/admin/otto
+      headers:
+        request:
+          set:
+            Host: support-platform-otto.support-platform.svc.cluster.local
+      route:
+        - destination:
+            host: support-platform-otto.support-platform.svc.cluster.local
+            port:
+              number: 8089
+      timeout: 3600s
+
     # ----- API path: /api/v1/... → horoscope-api -----
     - match:
         - uri:
