@@ -1,3 +1,9 @@
+# Mongo needs a HEADLESS service so each pod gets its own stable DNS
+# (<pod>-N.<svc>.<ns>.svc.cluster.local). The replica-set config
+# registers that pod-DNS as the member host, and clients connect via
+# the same name with directConnection=true so the driver doesn't try
+# to do topology discovery (which would fail against the headless
+# round-robin).
 apiVersion: v1
 kind: Service
 metadata:
@@ -6,7 +12,10 @@ metadata:
   labels:
     {{- include "support-platform-mongo.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
+  # `clusterIP: None` makes this a headless Service. DNS queries
+  # return the pod IP directly, so the IP mongod sees on a
+  # `socket.gethostbyname` matches the IP in rs.config.
+  clusterIP: None
   ports:
     - name: mongodb
       port: {{ .Values.service.port }}
