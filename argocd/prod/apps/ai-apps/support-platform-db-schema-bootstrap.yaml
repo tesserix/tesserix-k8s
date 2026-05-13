@@ -25,13 +25,18 @@ spec:
         # Schemas live under charts/apps/db-schema-bootstrap/schemas/
         # support-platform/support_platform/.
         targets:
-          - name: support_platform
+          # target.name is used as the schemas/<app>/<target.name>
+          # directory + as part of k8s resource names, so it must be
+          # RFC1123 (no underscore). The actual Postgres database is
+          # derived from the SQL filename — support_platform.sql ->
+          # CREATE DATABASE support_platform (the underscore is fine
+          # inside Postgres identifiers).
+          - name: support-platform
             host: support-platform-postgres.support-platform.svc.cluster.local
             port: 5432
             user: support_platform
             secretName: support-platform-postgres-app
             secretKey: password
-            database: support_platform
 
         # The seed Job in support-platform-kb-seed picks up empty
         # chunks rows (embedding IS NULL) and backfills them. Keep
