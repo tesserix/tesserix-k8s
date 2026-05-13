@@ -20,17 +20,10 @@ spec:
       jsonPointers:
         - /status/terminatingReplicas
   project: infrastructure
-  # Pinned to 1.24.0 to avoid the chart-1.29.1 default pod label
-  # `istio.io/dataplane-mode: none`. istiod (1.29.1) silently stops
-  # pushing LDS/RDS to gateway pods that carry that label — visible
-  # as VS updates never reaching Envoy until the pods are rolled.
-  # The other two gateways in this cluster (custom-ingressgateway,
-  # istio-ingressgateway-internal) stay on 1.24.0 and have always
-  # been fine. Bump back to 1.29.x once istio/istio#XXXXX is fixed.
   source:
     repoURL: https://istio-release.storage.googleapis.com/charts
     chart: gateway
-    targetRevision: 1.24.0
+    targetRevision: 1.29.1
     helm:
       releaseName: istio-ingress
       values: |
@@ -131,10 +124,20 @@ spec:
               - ALL
           readOnlyRootFilesystem: true
 
-        # Labels for the gateway pods
+        # Labels for the gateway pods.
+        #
+        # The empty `istio.io/dataplane-mode` value is deliberate — it
+        # OVERRIDES the chart 1.29.1 default of `"none"` from upstream
+        # `values.yaml:119`. With the default value, istiod 1.29.1's
+        # push path treats this pod as managed by the ambient dataplane
+        # and silently drops LDS/RDS pushes, so VirtualService changes
+        # never reach Envoy until the pods are rolled. Empty value
+        # keeps the pod out of ambient (the namespace isn't ambient-
+        # labelled anyway) while bypassing istiod's broken filter.
         labels:
           app: istio-ingressgateway
           istio: ingressgateway
+          istio.io/dataplane-mode: ""
 
         # Topology spread constraints for HA
         topologySpreadConstraints:
