@@ -9,6 +9,11 @@ spec:
   {{- if not .Values.keda.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
+  # PVC for the GGUF model is ReadWriteOnce — a RollingUpdate deadlocks
+  # because the new pod can't mount until the old pod releases the
+  # volume. Force Recreate so the deployment kills the old pod first.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "support-platform-slm-inference.selectorLabels" . | nindent 6 }}
