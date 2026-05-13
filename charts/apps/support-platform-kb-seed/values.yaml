@@ -29,31 +29,377 @@ postgresPasswordKey: password
 # SLM's first answer cites SOMETHING from each tenant.
 content:
   mark8ly:
+    # ==== Overview =========================================================
     - id: mark8ly-overview
       text: |
-        Mark8ly is a multi-tenant SaaS marketplace where every merchant
-        runs their own storefront on a custom subdomain. Customers reach
-        support by clicking the chat bubble at the bottom-right of any
-        storefront page. Common support topics are order status,
-        returns, refunds, payments, and product questions.
-      metadata: {source: "starter-seed", section: "overview"}
-    - id: mark8ly-returns
+        Mark8ly is a multi-tenant SaaS marketplace. Each store runs on its own
+        subdomain (storename.mark8ly.com). Customers reach support via the chat
+        bubble at the bottom-right of any storefront page. Common areas: account/
+        sign-in, browsing, cart & checkout, payment, orders & shipping, returns
+        & refunds, coupons, gift cards, reviews.
+      metadata: {section: "overview"}
+
+    # ==== Account & sign-in ================================================
+    - id: mark8ly-account-session-expired
       text: |
-        Returns policy: items can be returned within 14 days of
-        delivery if unused, in original packaging. Initiate a return
-        from the order detail page; once the merchant approves the
-        return label is emailed and the refund is issued on item
-        receipt. Refunds reach the original payment method in 5-7
-        business days.
-      metadata: {source: "starter-seed", section: "returns"}
-    - id: mark8ly-payments
+        ISSUE: Session expired ("Your session has expired" or redirect to /login
+        even right after signing in).
+        CAUSE: HttpOnly session cookie reached its 24h expiry, browser cleared
+        cookies, or customer is on a different store's subdomain.
+        SOLUTION: Tell the customer to clear cookies and sign in again on the
+        EXACT store subdomain shown in the URL (e.g. storename.mark8ly.com — not
+        a sibling store's domain). Cookies are scoped per store.
+        ESCALATE: Same-subdomain re-login still fails, OR shared browser session.
+      metadata: {section: "account", issue_id: "session-expired"}
+    - id: mark8ly-account-email-verify-expired
       text: |
-        Payments are processed by Stripe or Razorpay depending on the
-        merchant's market. Failed payments do NOT debit the customer —
-        if the order page shows "payment failed", retry from the
-        order. If a payment was debited but the order shows not paid,
-        contact support — that usually reconciles within an hour.
-      metadata: {source: "starter-seed", section: "payments"}
+        ISSUE: "This verification link is invalid or has expired."
+        CAUSE: Email verification tokens are single-use and expire after 7 days.
+        SOLUTION: Customer should click "Request a new verification email" on the
+        signup or account page and check spam/junk. Each link can only be used once.
+        ESCALATE: Original email never arrived AND resend doesn't either after 5min.
+      metadata: {section: "account", issue_id: "email-verify-expired"}
+    - id: mark8ly-account-password-reset-expired
+      text: |
+        ISSUE: Password reset link says "invalid or expired".
+        CAUSE: Reset tokens are single-use and expire 1 hour after issue.
+        SOLUTION: Re-enter email on the forgot-password page, request a fresh
+        link, then use it within 1 hour.
+        ESCALATE: Customer clicks reset within minutes and still gets "expired",
+        or reset email never arrives.
+      metadata: {section: "account", issue_id: "password-reset-expired"}
+    - id: mark8ly-account-mfa-already-enabled
+      text: |
+        ISSUE: "MFA is already enabled — disable it first to re-enrol."
+        CAUSE: Customer enrolled TOTP previously, reset their device, and is now
+        trying to enrol again without disabling.
+        SOLUTION: Account Settings → Security → Disable MFA (needs existing
+        authenticator code), then re-enrol with the new device.
+        ESCALATE: Lost access to the old authenticator and can't complete the
+        disable flow — needs staff to reset MFA on the account.
+      metadata: {section: "account", issue_id: "mfa-already-enabled"}
+    - id: mark8ly-account-mfa-invalid-code
+      text: |
+        ISSUE: "Verification code is incorrect."
+        CAUSE: Wrong 6-digit code, device clock skew, or code rotated mid-entry
+        (codes change every 30s).
+        SOLUTION: Wait 3-5 seconds for a fresh code, then re-enter. Ensure phone
+        time is set to Auto (Settings → Date & Time).
+        ESCALATE: Phone clock is correct and customer is using the right account
+        in the authenticator app, but still rejected on multiple tries.
+      metadata: {section: "account", issue_id: "mfa-invalid-code"}
+
+    # ==== Browsing & search ================================================
+    - id: mark8ly-browse-product-not-found
+      text: |
+        ISSUE: "I can't find the product I saw yesterday."
+        CAUSE: Product was unpublished by the merchant, went out of stock, or
+        the customer is on the wrong store's subdomain.
+        SOLUTION: Search by exact product name or SKU. Confirm the store slug in
+        the URL matches the original link. "In stock only" filters can hide
+        unavailable items.
+        ESCALATE: Customer has the exact name/SKU and recently bought it — the
+        product may have been removed in error.
+      metadata: {section: "browse", issue_id: "product-not-found"}
+    - id: mark8ly-browse-store-not-found
+      text: |
+        ISSUE: "This store doesn't exist" / 404 on a store subdomain.
+        CAUSE: Mistyped subdomain, store voluntarily closed, store suspended for
+        billing, or subdomain was renamed.
+        SOLUTION: Verify the URL with the store owner. Stores can be temporarily
+        closed; the customer should retry later or contact the store directly.
+        ESCALATE: Store admin says it should be live and customer URL is correct.
+      metadata: {section: "browse", issue_id: "store-not-found"}
+
+    # ==== Cart & checkout ==================================================
+    - id: mark8ly-checkout-currency-mismatch
+      text: |
+        ISSUE: "Item currency does not match store currency" at checkout.
+        CAUSE: Storefront sent the price in the wrong currency — usually a
+        frontend cache issue.
+        SOLUTION: Refresh the page and rebuild the cart. All item prices should
+        be in the store's default currency (shown on product pages).
+        ESCALATE: Persists after a hard refresh, or only happens for specific
+        products on the same store.
+      metadata: {section: "checkout", issue_id: "currency-mismatch"}
+    - id: mark8ly-checkout-too-many-addresses
+      text: |
+        ISSUE: "You've reached the maximum of 5 saved addresses."
+        CAUSE: v1 caps each customer at 5 saved shipping addresses.
+        SOLUTION: Account → Saved Addresses → delete an unused address, then add
+        the new one.
+        ESCALATE: Never — this is enforced by design.
+      metadata: {section: "checkout", issue_id: "too-many-addresses"}
+    - id: mark8ly-checkout-idempotency-conflict
+      text: |
+        ISSUE: "Idempotency key was previously used with a different payload."
+        CAUSE: Customer modified the cart (qty/price) and retried with the same
+        idempotency key the frontend already used.
+        SOLUTION: If an order exists, do not retry — they already have it. If
+        not, start a fresh checkout so a new key is generated. Don't manually
+        retry with the same key.
+        ESCALATE: Two orders exist when the customer meant to place one, OR
+        payment was charged twice.
+      metadata: {section: "checkout", issue_id: "idempotency-conflict"}
+    - id: mark8ly-checkout-address-validation-failed
+      text: |
+        ISSUE: "Shipping address is invalid" at checkout.
+        CAUSE: Postal code format wrong for the country, missing required field
+        (city/region/phone), or address not in the validation service's DB yet.
+        SOLUTION: Confirm postal-code format (US 12345, India 123456 etc.). Fill
+        every required field. Try slightly different spellings for very new
+        addresses.
+        ESCALATE: Address is verifiably correct but validation keeps rejecting.
+      metadata: {section: "checkout", issue_id: "address-validation"}
+
+    # ==== Payment ==========================================================
+    - id: mark8ly-payment-gateway-not-configured
+      text: |
+        ISSUE: "Gateway not configured" or "Payment service unavailable" on the
+        payment step.
+        CAUSE: Store owner hasn't activated Stripe/Razorpay yet, or their
+        encrypted gateway secrets are missing/corrupted.
+        SOLUTION: Contact the store owner — checkout won't work on this store
+        until they finish payment setup. Offer to come back once they confirm.
+        ESCALATE: Store says they configured the gateway but customers still see
+        the error.
+      metadata: {section: "payment", issue_id: "gateway-not-configured"}
+    - id: mark8ly-payment-razorpay-signature-mismatch
+      text: |
+        ISSUE: "Signature mismatch" / "Payment verification failed" after the
+        Razorpay widget closes.
+        CAUSE: Stale Razorpay config in the browser cache after the store rotated
+        its webhook secret, or rarely, a corporate proxy tampering with the body.
+        SOLUTION: Hard-refresh the browser (Cmd-Shift-R / Ctrl-Shift-R) and retry
+        the payment. Customer wasn't debited — pending payments are released by
+        the bank within minutes.
+        ESCALATE: Hard refresh doesn't help, OR multiple customers on the same
+        store report identical errors at once.
+      metadata: {section: "payment", issue_id: "razorpay-signature"}
+
+    # ==== Orders & shipping ================================================
+    - id: mark8ly-order-cannot-cancel
+      text: |
+        ISSUE: "This order is not in a state where it can be cancelled."
+        CAUSE: Order has shipped (carrier already has it), OR order is still
+        "pending payment" (resolve payment or cancel from there, not the order
+        page).
+        SOLUTION: Orders cancel only between "paid" and "shipped". If shipped,
+        customer should open a return after delivery instead.
+        ESCALATE: Order is clearly not shipped but the cancel button is greyed,
+        or customer has a receipt showing it was placed minutes ago.
+      metadata: {section: "orders", issue_id: "cannot-cancel"}
+    - id: mark8ly-order-no-shipping-rates
+      text: |
+        ISSUE: "Unable to calculate shipping rates" / no shipping options shown.
+        CAUSE: PIN / postal code is outside the store's serviceable area, OR a
+        required field is missing (India needs phone), OR address invalid.
+        SOLUTION: Confirm the PIN code matches the country and that phone is
+        filled for India. Check the store's shipping FAQ for supported regions.
+        ESCALATE: A serviceable PIN returns no rates, or rates were previously
+        available for the same PIN but now aren't.
+      metadata: {section: "orders", issue_id: "no-shipping-rates"}
+    - id: mark8ly-order-late-delivery
+      text: |
+        ISSUE: "My order is late, where is it?"
+        CAUSE: Carrier delay (weather, ops, last-mile congestion). Tracking can
+        also lag the actual location by 24-48h.
+        SOLUTION: Share the tracking link on the order page. Delivery estimates
+        are not guarantees — carrier delays of 2-5 days are common during peak.
+        If tracking shows "out for delivery" but it doesn't arrive within 24h,
+        come back and we'll escalate.
+        ESCALATE: Marked "delivered" but never received, OR tracking stuck on
+        "pending" for >7 days.
+      metadata: {section: "orders", issue_id: "late-delivery"}
+    - id: mark8ly-order-missing-or-damaged
+      text: |
+        ISSUE: "Item didn't arrive" or "Arrived broken."
+        CAUSE: Missing-from-shipment, transit damage, wrong item picked, or
+        delivered to the wrong address.
+        SOLUTION: Open a return from the order page (Request Return), pick the
+        matching reason, and attach photos if available. The store reviews and
+        responds within 5 business days. Refund or replacement follows.
+        ESCALATE: Return is rejected and customer disputes the assessment, OR
+        package was visibly tampered (different sealing).
+      metadata: {section: "orders", issue_id: "missing-or-damaged"}
+
+    # ==== Returns & refunds ================================================
+    - id: mark8ly-return-cant-return
+      text: |
+        ISSUE: "This order can't be returned in its current state."
+        CAUSE: Returns only fire on shipped/delivered orders. Pending or
+        cancelled orders use the cancel flow instead.
+        SOLUTION: If the order hasn't shipped, use Cancel Order. If it has,
+        Return becomes available after delivery is marked.
+        ESCALATE: Order shipped >50 days ago and customer just noticed — store
+        policy may need to be checked.
+      metadata: {section: "returns", issue_id: "cant-return"}
+    - id: mark8ly-return-already-open
+      text: |
+        ISSUE: "A return request already exists for this order."
+        CAUSE: v1 only allows one open return per order at a time.
+        SOLUTION: Customer should check the existing return's status. They can
+        file another only after the first is resolved or rejected.
+        ESCALATE: Customer needs to amend an open return (add items) — that
+        path doesn't exist in v1 and needs a staff override.
+      metadata: {section: "returns", issue_id: "already-open"}
+    - id: mark8ly-return-rejected
+      text: |
+        ISSUE: "Your return was rejected."
+        CAUSE: Item outside policy (custom / final-sale), return window expired,
+        or item appears used / damaged by the customer.
+        SOLUTION: Read the rejection reason in return details. If customer
+        disagrees, ask them to reply with photos of the item's current condition
+        and the store will review.
+        ESCALATE: Rejection reason is vague, OR a refund was promised in writing.
+      metadata: {section: "returns", issue_id: "rejected"}
+    - id: mark8ly-return-refund-not-received
+      text: |
+        ISSUE: "I returned the item but no refund yet."
+        CAUSE: Either still pending approval, OR approved within the last 10
+        business days, OR refunded to wallet vs card.
+        SOLUTION: Approved returns refund in 5-10 business days to the original
+        payment method. Bank settlement adds 2-3 more days. Confirm the customer
+        is checking the same card they paid with.
+        ESCALATE: Approved >10 business days ago and nothing on the card, OR
+        refund went to wallet without the customer's consent.
+      metadata: {section: "returns", issue_id: "refund-not-received"}
+
+    # ==== Vendor / multi-tenant ============================================
+    - id: mark8ly-tenant-wrong-store
+      text: |
+        ISSUE: "I placed an order on Store A but it shows on Store B."
+        CAUSE: Customer has accounts on both stores and signed in to the wrong
+        one. Each store has its own account + order list — they don't bleed.
+        SOLUTION: Sign out completely, clear cookies, sign back in on the SAME
+        subdomain where the order was placed.
+        ESCALATE: Customer has only one account and orders genuinely appear
+        on a different store.
+      metadata: {section: "tenant", issue_id: "wrong-store"}
+    - id: mark8ly-tenant-store-closed
+      text: |
+        ISSUE: "This store doesn't exist" or "Store temporarily unavailable."
+        CAUSE: Store owner paused/closed the store, store subscription expired,
+        or subdomain was renamed.
+        SOLUTION: Contact the store owner directly. The mark8ly platform doesn't
+        force stores open.
+        ESCALATE: Store owner says they did not close it.
+      metadata: {section: "tenant", issue_id: "store-closed"}
+
+    # ==== Coupons / discounts ==============================================
+    - id: mark8ly-coupon-not-found
+      text: |
+        ISSUE: "Coupon CODE not found."
+        CAUSE: Typo or wrong case — coupon codes are case-sensitive.
+        SOLUTION: Copy-paste the code directly from the email/ad to avoid typos.
+        ESCALATE: Customer has the email with the exact code and store confirms
+        it should be valid.
+      metadata: {section: "coupons", issue_id: "not-found"}
+    - id: mark8ly-coupon-expired
+      text: |
+        ISSUE: "Coupon has expired."
+        CAUSE: Past the campaign end date or the store ended the campaign early.
+        SOLUTION: Ask the store for a replacement code if the original email
+        promised a longer window.
+        ESCALATE: Email explicitly says "valid until <future date>" but system
+        says expired.
+      metadata: {section: "coupons", issue_id: "expired"}
+    - id: mark8ly-coupon-usage-limit
+      text: |
+        ISSUE: "Coupon has reached its usage limit."
+        CAUSE: Store-set max total uses, or max uses per customer, has been hit.
+        SOLUTION: This specific code is no longer redeemable. Ask the store for
+        an alternate code.
+        ESCALATE: Never — usage caps are working as intended.
+      metadata: {section: "coupons", issue_id: "usage-limit"}
+    - id: mark8ly-coupon-min-purchase
+      text: |
+        ISSUE: "Coupon requires a minimum purchase of X."
+        CAUSE: Subtotal is below the minimum spend the coupon requires.
+        SOLUTION: Add items so the cart subtotal hits the threshold. The discount
+        applies automatically once you do.
+        ESCALATE: Never — this is by design.
+      metadata: {section: "coupons", issue_id: "min-purchase"}
+
+    # ==== Gift cards / loyalty =============================================
+    - id: mark8ly-giftcard-not-found
+      text: |
+        ISSUE: "Gift card not found."
+        CAUSE: Wrong card number, copy-paste error, or store revoked the card.
+        SOLUTION: Copy the number directly from the email/receipt. Confirm with
+        the store if the card should still be valid.
+        ESCALATE: Customer has the receipt and store confirms the card was
+        issued.
+      metadata: {section: "giftcard", issue_id: "not-found"}
+    - id: mark8ly-giftcard-expired
+      text: |
+        ISSUE: "Gift card has expired."
+        CAUSE: Past the expiry the store set when the card was issued.
+        SOLUTION: If it was a promotional card the store may reissue — customer
+        should ask. Purchased cards usually have longer windows.
+        ESCALATE: Card expired recently and no expiry warning email was sent.
+      metadata: {section: "giftcard", issue_id: "expired"}
+    - id: mark8ly-giftcard-insufficient
+      text: |
+        ISSUE: "Gift card balance is too low to complete purchase."
+        CAUSE: Prior redemptions reduced the balance below the order total.
+        SOLUTION: Check the live balance on the store's gift-card balance page.
+        Pay the difference with another method, or combine multiple cards.
+        ESCALATE: Customer says the balance should be higher than shown.
+      metadata: {section: "giftcard", issue_id: "insufficient"}
+    - id: mark8ly-loyalty-points-not-credited
+      text: |
+        ISSUE: "My loyalty points didn't increase after a purchase."
+        CAUSE: Customer isn't enrolled, OR points are batch-credited after the
+        order moves from "paid" to "confirmed" (up to 48h delay), OR the order
+        was refunded so points reversed.
+        SOLUTION: Enrol in Account → Loyalty if not already. Points credit after
+        order confirmation, not order placement. Check Points History for the
+        most recent ledger row.
+        ESCALATE: Points disappeared on a confirmed order, OR customer is
+        enrolled and confirmed orders show no credit for >48h.
+      metadata: {section: "loyalty", issue_id: "points-not-credited"}
+    - id: mark8ly-loyalty-insufficient-points
+      text: |
+        ISSUE: "You don't have enough points to redeem this."
+        CAUSE: Balance below the redemption threshold, or points already
+        expired off the balance.
+        SOLUTION: Show the customer the current balance in Account → Loyalty.
+        They need more points before this redemption is available.
+        ESCALATE: Never — this is the expected behaviour when balance is low.
+      metadata: {section: "loyalty", issue_id: "insufficient-points"}
+
+    # ==== Reviews ==========================================================
+    - id: mark8ly-review-already-reviewed
+      text: |
+        ISSUE: "You have already reviewed this product."
+        CAUSE: Customer already submitted a review — one review per
+        customer per product.
+        SOLUTION: Find the existing review on the product page (or My Reviews).
+        Edit or delete it (within the edit window) and resubmit.
+        ESCALATE: Customer insists they never reviewed it AND no review shows
+        — the review may be sitting in moderation.
+      metadata: {section: "reviews", issue_id: "already-reviewed"}
+    - id: mark8ly-review-validation-failed
+      text: |
+        ISSUE: "Posting review blocked" / validation error.
+        CAUSE: Review body >5000 chars, title >300 chars, empty content, or
+        rating not in 1-5.
+        SOLUTION: Trim to under the limits and use a 1-5 star rating, then
+        resubmit.
+        ESCALATE: Customer claims the body was well under 5000 chars and still
+        rejected — the profanity filter may be over-matching.
+      metadata: {section: "reviews", issue_id: "validation-failed"}
+    - id: mark8ly-review-not-appearing
+      text: |
+        ISSUE: "I posted a review but I can't see it."
+        CAUSE: Review is awaiting store moderation (24-48h is normal) or was
+        held by the spam filter.
+        SOLUTION: My Reviews page shows the current approval status. Approved
+        reviews appear publicly within minutes of approval.
+        ESCALATE: Pending >5 days, OR auto-rejected and customer disputes the
+        reason.
+      metadata: {section: "reviews", issue_id: "not-appearing"}
 
   fanzone:
     - id: fanzone-overview
