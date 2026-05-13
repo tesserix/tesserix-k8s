@@ -1,0 +1,42 @@
+tenant: REQUIRED-OVERRIDE
+namespace: REQUIRED-OVERRIDE
+
+image:
+  # GHCR remote pull-through. Built by ci-mcp-gateway in
+  # slm-support-platform; one shared image for every tenant.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/slm-support-platform/mcp-gateway
+  tag: "main"  # Kargo-promoted to main-<sha> once that pipeline lands
+  pullPolicy: Always
+
+replicaCount: 1
+
+resources:
+  requests:
+    memory: 96Mi
+  limits:
+    memory: 256Mi
+
+service:
+  port: 8765
+
+# Cross-tenant tool config. Optional — if unset the corresponding
+# tool returns an explanatory error and the agent proceeds without it.
+embedderURL: http://support-platform-embedder.support-platform.svc.cluster.local:8001
+vectorDBHost: support-platform-postgres-rw.support-platform.svc.cluster.local
+vectorDBPort: 5432
+vectorDBUser: support_platform
+vectorDBName: support_platform
+vectorDBPasswordSecret: support-platform-postgres-app
+vectorDBPasswordKey: password
+mongoURL: mongodb://support-platform-mongo-0.support-platform-mongo.support-platform.svc.cluster.local:27017/?replicaSet=rs0&directConnection=true
+mongoDB: otto
+
+# Optional bearer auth (X-MCP-Key). Default unset (open within the
+# namespace; cluster NetworkPolicy locks the surface). To turn on, set
+# `mcpAuthKeySecret.enabled: true` and create the secret with the key
+# `MCP_AUTH_KEY`. slm-router's routes.yaml carries the matching key
+# in the corresponding `authEnvVar` env var.
+mcpAuthKeySecret:
+  enabled: false
+  name: ""
+  key: MCP_AUTH_KEY
