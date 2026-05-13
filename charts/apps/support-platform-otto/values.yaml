@@ -43,13 +43,23 @@ mongo:
   url: "mongodb://support-platform-mongo-0.support-platform-mongo.support-platform.svc.cluster.local:27017/?replicaSet=rs0&directConnection=true"
   database: "otto"
 
-# Multi-tenant cookies. Each product's Next.js proxy sets its OWN cookie
-# name/domain when sending requests, so this value is the *default* —
-# overridable per request via the X-Cookie-Domain header (set by the
-# product proxies in mark8ly/fanzone/homechef).
+# Multi-tenant cookies. Otto resolves the cookie's Domain attribute
+# per request:
+#  1. trust the `X-Cookie-Domain` header (product proxy sets e.g.
+#     ".fanzonebattleground.com" to cover www. + apex), else
+#  2. fall back to `cookieDomain` below — and we DELIBERATELY leave
+#     that empty so the cookie becomes host-only (scoped to the exact
+#     origin the widget called). Host-only means a fanzone session
+#     cookie is unreachable from mark8ly and vice versa, which is the
+#     isolation guarantee the multi-product setup needs.
+#
+# DO NOT set a static value here ("./tesserix.app", ".mark8ly.com",
+# etc.) — it would leak the session cookie to whichever product
+# happens to share that suffix and breaks every other product whose
+# domain doesn't match.
 session:
   cookieName: "otto_session"
-  cookieDomain: ".tesserix.app"
+  cookieDomain: ""
   cookieSecure: true
 
 # Allow all three product domains. Otto's CORS middleware does suffix
