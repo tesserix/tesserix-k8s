@@ -3,6 +3,10 @@ kind: Application
 metadata:
   name: mark8ly-mcp
   namespace: argocd
+  annotations:
+    # Kargo's prod stage writes image.tag via argocd-update — the
+    # authorized-stage annotation tells Kargo it's allowed to.
+    kargo.akuity.io/authorized-stage: kargo-support-platform:prod
   labels:
     app.kubernetes.io/part-of: support-platform
     app.kubernetes.io/component: mcp-stub
@@ -22,6 +26,10 @@ spec:
           value: "mark8ly"
         - name: namespace
           value: "mark8ly"
+        # Kargo support-platform/prod overwrites image.tag with the
+        # newest mcp-gateway main-<sha> on every CI build.
+        - name: image.tag
+          value: "main"
   destination:
     server: https://kubernetes.default.svc
     namespace: mark8ly

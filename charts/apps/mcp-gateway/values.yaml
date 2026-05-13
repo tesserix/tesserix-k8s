@@ -5,11 +5,12 @@ image:
   # GHCR remote pull-through. Built by ci-mcp-gateway in
   # slm-support-platform; one shared image for every tenant.
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/slm-support-platform/mcp-gateway
-  # SHA-pinned because GAR's pull-through caches by digest, not tag —
-  # a floating `main` tag can serve a stale image for hours. Bump to
-  # the latest CI artifact on every chart change; switch to a Kargo
-  # promotion path once that's wired up for this repo.
-  tag: "main-dbdad46"
+  # Default is "main"; the per-tenant ArgoCD apps override
+  # `image.tag` via helm parameters and Kargo
+  # (kargo-support-platform/prod stage) writes the newest main-<sha>
+  # there on every CI build. Always-pull means a pod restart pulls
+  # the new digest as soon as ArgoCD syncs.
+  tag: "main"
   pullPolicy: Always
 
 replicaCount: 1
