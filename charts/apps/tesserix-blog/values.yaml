@@ -102,6 +102,24 @@ updateStrategy:
     maxUnavailable: 0
 
 # =============================================================================
+# Graceful shutdown
+# When a pod is marked Terminating, kubelet sends SIGTERM immediately. Next.js
+# closes its HTTP server on SIGTERM, but kube-proxy + Istio ingress Envoy take
+# ~1-3s to propagate the EndpointSlice removal — in-flight or just-routed
+# connections RST during that window, surfacing as Envoy "connection
+# termination" 503s and Cloudflare 504s at the edge.
+#
+# preStop sleep keeps the pod serving traffic for 10s AFTER it's removed from
+# Endpoints, so consumers drain cleanly before Node receives SIGTERM. Total
+# grace = preStop (10s) + SIGTERM drain budget (20s) = 30s.
+# =============================================================================
+terminationGracePeriodSeconds: 30
+lifecycle:
+  preStop:
+    sleep:
+      seconds: 10
+
+# =============================================================================
 # Health Probes
 # =============================================================================
 # Startup probe gates liveness/readiness — gives Next.js + Istio sidecar time to boot

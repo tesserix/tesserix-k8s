@@ -39,6 +39,18 @@ updateStrategy:
     maxSurge: 1
     maxUnavailable: 0
 
+# =============================================================================
+# Graceful shutdown — see values.yaml for full rationale. preStop sleep bridges
+# the endpoint-propagation lag between kube-proxy/Istio and pod termination,
+# eliminating the 503 "connection termination" + Cloudflare 504 burst that hits
+# users on every rollout.
+# =============================================================================
+terminationGracePeriodSeconds: 30
+lifecycle:
+  preStop:
+    sleep:
+      seconds: 10
+
 livenessProbe:
   enabled: true
   httpGet:
