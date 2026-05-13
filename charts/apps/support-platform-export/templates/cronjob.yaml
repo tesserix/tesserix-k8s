@@ -1,0 +1,55 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "export.name" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "export.labels" . | nindent 4 }}
+spec:
+  schedule: "{{ .Values.schedule }}"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "export.labels" . | nindent 12 }}
+        spec:
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          restartPolicy: OnFailure
+          containers:
+            - name: exporter
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  pip install --quiet --no-cache-dir \
+                    'pymongo>=4.6,<5' \
+                    'google-cloud-storage>=2.16,<3'
+                  python /etc/otto-export/export.py
+              env:
+                - name: MONGO_URL
+                  value: {{ .Values.mongoURL | quote }}
+                - name: MONGO_DB
+                  value: {{ .Values.mongoDB | quote }}
+                - name: GCS_BUCKET
+                  value: {{ .Values.gcsBucket | quote }}
+                - name: LOOKBACK_DAYS
+                  value: {{ .Values.lookbackDays | quote }}
+              volumeMounts:
+                - name: script
+                  mountPath: /etc/otto-export
+                  readOnly: true
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+          volumes:
+            - name: script
+              configMap:
+                name: {{ include "export.name" . }}

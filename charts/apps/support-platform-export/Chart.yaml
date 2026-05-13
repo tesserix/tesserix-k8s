@@ -1,0 +1,25 @@
+apiVersion: v2
+name: support-platform-export
+description: |
+  Nightly CronJob that exports closed Otto conversations into
+  per-tenant JSONL files in GCS. Each file is the training-data
+  prerequisite for a per-tenant LoRA fine-tune on the shared
+  qwen2.5-1.5b base served by slm-inference.
+
+  Output path:
+    gs://tesseract-prod-otto-exports-in/<tenant_id>/<YYYY-MM-DD>.jsonl
+
+  Each line is one closed conversation:
+    {
+      "tenant_id": "fanzone",
+      "conversation_id": "...",
+      "intake": {...},
+      "messages": [{role: customer|staff|assistant, content: "..."}, ...],
+      "outcome": "resolved" | "needs_human" | "abandoned"
+    }
+
+  When a tenant has >5k closed conversations, kick off training via
+  the script in slm-support-platform/phase2-optimizations/2a-model-serving/.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

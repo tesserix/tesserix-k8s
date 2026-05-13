@@ -1,0 +1,52 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: support-platform-db-schema-bootstrap
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: support-platform
+    app.kubernetes.io/component: database
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/apps/db-schema-bootstrap
+    targetRevision: HEAD
+    helm:
+      releaseName: support-platform-db-schema-bootstrap
+      values: |
+        app: support-platform
+
+        # Targets the support-platform Postgres (vanilla StatefulSet,
+        # not CNPG — slm-router only uses pgvector, no HA needed yet).
+        # Schemas live under charts/apps/db-schema-bootstrap/schemas/
+        # support-platform/support_platform/.
+        targets:
+          - name: support_platform
+            host: support-platform-postgres.support-platform.svc.cluster.local
+            port: 5432
+            user: support_platform
+            secretName: support-platform-postgres-app
+            secretKey: password
+            database: support_platform
+
+        # The seed Job in support-platform-kb-seed picks up empty
+        # chunks rows (embedding IS NULL) and backfills them. Keep
+        # the bootstrap CronJob on the standard 30-min interval so
+        # any new SQL changes deploy without an out-of-band run.
+        schedule: "*/30 * * * *"
+
+        namespaceOverride: support-platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: support-platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true

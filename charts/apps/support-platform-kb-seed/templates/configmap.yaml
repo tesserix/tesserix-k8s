@@ -1,0 +1,128 @@
+# Seed content + seed script bundled into one ConfigMap. The Job mounts
+# this at /etc/kb-seed and runs seed.py which iterates every (tenant,
+# chunk) entry in content.json, calls the embedder for the vector, and
+# UPSERTs the row into the chunks table.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kb-seed.name" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "kb-seed.labels" . | nindent 4 }}
+data:
+  content.json: |
+{{ .Values.content | toJson | indent 4 }}
+
+  seed.py: |
+    """Seed the support_platform.chunks pgvector table.
+
+    Idempotent: every chunk is UPSERTed by id. Embedding is recomputed
+    every run so editing a chunk's text in values.yaml re-vectorises
+    on the next sync.
+    """
+    import json
+    import os
+    import sys
+    import time
+    import urllib.request
+
+    import psycopg
+
+    EMBEDDER_URL = os.environ["EMBEDDER_URL"].rstrip("/")
+    DB_HOST = os.environ["PGHOST"]
+    DB_PORT = os.environ.get("PGPORT", "5432")
+    DB_NAME = os.environ["PGDATABASE"]
+    DB_USER = os.environ["PGUSER"]
+    DB_PASS = os.environ["PGPASSWORD"]
+
+
+    def embed(texts: list[str]) -> list[list[float]]:
+        """Call HuggingFace TEI. Same wire contract as slm-router."""
+        body = json.dumps({"inputs": texts}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{EMBEDDER_URL}/embed",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status // 100 != 2:
+                raise RuntimeError(f"embed HTTP {resp.status}")
+            return json.loads(resp.read().decode("utf-8"))
+
+
+    def vector_literal(vec: list[float]) -> str:
+        """Render a Python list as a pgvector textual literal."""
+        return "[" + ",".join(f"{x:.6g}" for x in vec) + "]"
+
+
+    def main() -> int:
+        with open("/etc/kb-seed/content.json", "r", encoding="utf-8") as fh:
+            content = json.load(fh)
+
+        # Flatten (tenant -> chunks) into a single ordered list so we
+        # can embed in batches and write back in one transaction.
+        flat: list[tuple[str, str, str, dict]] = []
+        for tenant, chunks in content.items():
+            for chunk in chunks:
+                flat.append(
+                    (tenant, chunk["id"], chunk["text"].strip(), chunk.get("metadata", {}))
+                )
+
+        print(f"seeding {len(flat)} chunks across {len(content)} tenants")
+
+        # TEI's max batch is 8 — see logs ('forcing max_batch_requests=8').
+        vectors: list[list[float]] = []
+        for i in range(0, len(flat), 8):
+            batch = [t[2] for t in flat[i : i + 8]]
+            vectors.extend(embed(batch))
+        print(f"embedded {len(vectors)} chunks")
+
+        with psycopg.connect(
+            host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS
+        ) as conn:
+            with conn.cursor() as cur:
+                # Wait briefly for the schema bootstrap CronJob to have
+                # created the chunks table. The bootstrap is on a
+                # *every-30-min* schedule, but on a fresh cluster we
+                # may hit this before the first run completes.
+                for attempt in range(30):
+                    cur.execute(
+                        "SELECT to_regclass('public.chunks')"
+                    )
+                    if cur.fetchone()[0] is not None:
+                        break
+                    print(f"chunks table not ready, retry {attempt + 1}/30")
+                    time.sleep(10)
+                else:
+                    print("chunks table never appeared; aborting", file=sys.stderr)
+                    return 1
+
+                for (tenant, chunk_id, text, metadata), vec in zip(flat, vectors):
+                    cur.execute(
+                        """
+                        INSERT INTO chunks (id, namespace, content, embedding, metadata, updated_at)
+                        VALUES (%s, %s, %s, %s::vector, %s::jsonb, NOW())
+                        ON CONFLICT (id) DO UPDATE SET
+                            namespace  = EXCLUDED.namespace,
+                            content    = EXCLUDED.content,
+                            embedding  = EXCLUDED.embedding,
+                            metadata   = EXCLUDED.metadata,
+                            updated_at = NOW()
+                        """,
+                        (
+                            chunk_id,
+                            tenant,
+                            text,
+                            vector_literal(vec),
+                            json.dumps(metadata),
+                        ),
+                    )
+            conn.commit()
+
+        print("seed complete")
+        return 0
+
+
+    if __name__ == "__main__":
+        sys.exit(main())

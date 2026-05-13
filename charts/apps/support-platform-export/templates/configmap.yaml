@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "export.name" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "export.labels" . | nindent 4 }}
+data:
+  export.py: |
+    """Nightly Otto -> GCS JSONL exporter.
+
+    Pulls all conversations that closed in the last LOOKBACK_DAYS,
+    groups by tenant_id, and writes one JSONL file per tenant per day.
+    The JSONL is the input format the phase2 LoRA trainer expects.
+
+    Atomicity: each tenant's file is written to /tmp first, then
+    uploaded once complete. A failed upload doesn't leave a partial
+    object in GCS.
+    """
+    import datetime as dt
+    import json
+    import os
+    import sys
+    import tempfile
+
+    import pymongo
+    from google.cloud import storage
+
+    MONGO_URL = os.environ["MONGO_URL"]
+    MONGO_DB = os.environ["MONGO_DB"]
+    GCS_BUCKET = os.environ["GCS_BUCKET"]
+    LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "1"))
+
+
+    def main() -> int:
+        client = pymongo.MongoClient(MONGO_URL)
+        db = client[MONGO_DB]
+
+        now = dt.datetime.now(dt.timezone.utc)
+        # Run for the day that JUST ENDED in UTC, not "today". A
+        # cron that fires at 03:00 UTC on the 13th should export
+        # closures from the 12th.
+        target_day = (now - dt.timedelta(days=1)).date()
+        start = dt.datetime.combine(
+            target_day - dt.timedelta(days=LOOKBACK_DAYS - 1),
+            dt.time.min,
+            tzinfo=dt.timezone.utc,
+        )
+        end = dt.datetime.combine(
+            target_day, dt.time.max, tzinfo=dt.timezone.utc
+        )
+
+        print(
+            f"exporting conversations closed between {start.isoformat()} and {end.isoformat()}"
+        )
+
+        # Group conversations by tenant — every tenant's training data
+        # MUST stay separate. Cross-contamination is the most expensive
+        # thing to detect after the fact.
+        convos = db.conversations.find(
+            {
+                "status": "closed",
+                "$or": [
+                    {"closed_at": {"$gte": start, "$lte": end}},
+                    {"inactivity_closed_at": {"$gte": start, "$lte": end}},
+                ],
+            }
+        )
+
+        by_tenant: dict[str, list[dict]] = {}
+        total = 0
+        for conv in convos:
+            tenant = conv.get("tenant_id")
+            if not tenant:
+                # Defensive: a row without tenant_id can't be assigned
+                # to a training set. Log it and skip — we'll patch
+                # the producer rather than blend it into mark8ly.
+                print(
+                    f"skipping conversation {conv.get('_id')} — missing tenant_id",
+                    file=sys.stderr,
+                )
+                continue
+            # Pull the full message timeline for the conversation.
+            messages = list(
+                db.messages.find(
+                    {"conversation_id": conv["_id"]}
+                ).sort("created_at", pymongo.ASCENDING)
+            )
+            by_tenant.setdefault(tenant, []).append(
+                {
+                    "tenant_id": tenant,
+                    "conversation_id": conv["_id"],
+                    "case_id": conv.get("case_id"),
+                    "intake": conv.get("intake", {}),
+                    "outcome": _outcome(conv),
+                    "messages": [
+                        {
+                            "role": m.get("sender_type"),
+                            "sender_name": m.get("sender_name"),
+                            "content": m.get("body", ""),
+                            "ts": _isoformat(m.get("created_at")),
+                        }
+                        for m in messages
+                    ],
+                }
+            )
+            total += 1
+        print(f"prepared {total} conversations across {len(by_tenant)} tenants")
+
+        gcs = storage.Client()
+        bucket = gcs.bucket(GCS_BUCKET)
+
+        for tenant, rows in by_tenant.items():
+            object_name = f"{tenant}/{target_day.isoformat()}.jsonl"
+            with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
+                tmp_path = fh.name
+                for row in rows:
+                    fh.write(json.dumps(row, default=str) + "\n")
+            blob = bucket.blob(object_name)
+            blob.upload_from_filename(tmp_path, content_type="application/x-ndjson")
+            os.unlink(tmp_path)
+            print(
+                f"wrote {len(rows)} rows to gs://{GCS_BUCKET}/{object_name}"
+            )
+
+        return 0
+
+
+    def _outcome(conv: dict) -> str:
+        if conv.get("inactivity_closed_at"):
+            return "abandoned"
+        if conv.get("escalated_to_human"):
+            return "needs_human"
+        return "resolved"
+
+
+    def _isoformat(value) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, dt.datetime):
+            return value.astimezone(dt.timezone.utc).isoformat()
+        return str(value)
+
+
+    if __name__ == "__main__":
+        sys.exit(main())

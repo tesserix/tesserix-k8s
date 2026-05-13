@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Job name carries a sha of the ConfigMap so editing a chunk in
+  # values.yaml produces a NEW Job (and re-seeds), not an in-place
+  # mutation of the finished Job (which is immutable).
+  name: {{ include "kb-seed.name" . }}-{{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum | trunc 8 }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "kb-seed.labels" . | nindent 4 }}
+  annotations:
+    # Drop completed Jobs after the TTL so ArgoCD doesn't accumulate
+    # orphans.
+    argocd.argoproj.io/sync-options: Prune=true
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "kb-seed.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: seeder
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # psycopg is the only non-stdlib dep — the embed call uses
+          # urllib so we don't need httpx.
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -euo pipefail
+              pip install --quiet --no-cache-dir 'psycopg[binary]>=3.2,<3.3'
+              python /etc/kb-seed/seed.py
+          env:
+            - name: EMBEDDER_URL
+              value: {{ .Values.embedderURL | quote }}
+            - name: PGHOST
+              value: {{ .Values.postgresHost | quote }}
+            - name: PGPORT
+              value: {{ .Values.postgresPort | quote }}
+            - name: PGDATABASE
+              value: {{ .Values.postgresDB | quote }}
+            - name: PGUSER
+              value: {{ .Values.postgresUser | quote }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgresPasswordSecret }}
+                  key: {{ .Values.postgresPasswordKey }}
+          volumeMounts:
+            - name: content
+              mountPath: /etc/kb-seed
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: content
+          configMap:
+            name: {{ include "kb-seed.name" . }}

@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: support-platform-kb-seed
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: support-platform
+    app.kubernetes.io/component: kb-seed
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/support-platform-kb-seed
+    helm:
+      releaseName: support-platform-kb-seed
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: support-platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
