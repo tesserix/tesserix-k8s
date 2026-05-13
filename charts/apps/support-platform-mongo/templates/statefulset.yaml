@@ -25,6 +25,17 @@ spec:
         - name: mongodb
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # --replSet rs0 promotes this standalone Mongo to a single-node
+          # replica set. That unlocks the MongoDB Change Streams API which
+          # slm-router needs to react to new customer messages without
+          # polling; without it the router gets "Location40573" errors
+          # on every reconnect and never delivers an AI reply.
+          # --bind_ip_all required so the replica set can talk to its
+          # own pod DNS for the initiate() handshake.
+          args:
+            - "--replSet"
+            - "rs0"
+            - "--bind_ip_all"
           ports:
             - name: mongodb
               containerPort: 27017
@@ -32,12 +43,16 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data/db
+          # Liveness checks the daemon is up (not the replica set);
+          # readiness is gated on the replica set actually being PRIMARY
+          # so slm-router doesn't connect before rs.initiate() runs.
           livenessProbe:
             exec:
               command:
                 - mongosh
+                - --quiet
                 - --eval
-                - "db.adminCommand('ping')"
+                - "db.adminCommand('ping').ok"
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
@@ -46,12 +61,44 @@ spec:
             exec:
               command:
                 - mongosh
+                - --quiet
                 - --eval
-                - "db.adminCommand('ping')"
-            initialDelaySeconds: 5
+                - |
+                  try {
+                    const s = rs.status();
+                    if (s.myState === 1 || s.myState === 2) { quit(0); }
+                    quit(1);
+                  } catch (e) {
+                    // Replica set not yet initiated — init container does it
+                    // on first boot; until then we're not ready.
+                    quit(1);
+                  }
+            initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
-            failureThreshold: 3
+            failureThreshold: 30
+          # On first boot the replica set has never been initiated, so we
+          # run rs.initiate() once. The script is safe to retry — it
+          # short-circuits when `rs.status()` already reports a member.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    until mongosh --quiet --eval "db.adminCommand('ping').ok" >/dev/null 2>&1; do
+                      sleep 1
+                    done
+                    if mongosh --quiet --eval "rs.status().ok" 2>/dev/null | grep -q '^1$'; then
+                      exit 0
+                    fi
+                    mongosh --quiet --eval '
+                      rs.initiate({
+                        _id: "rs0",
+                        members: [{ _id: 0, host: "{{ .Values.name }}-0.{{ .Values.name }}.{{ .Values.namespace }}.svc.cluster.local:27017" }]
+                      });
+                    ' || true
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
   {{- if .Values.persistence.enabled }}

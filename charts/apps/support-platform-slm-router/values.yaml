@@ -89,6 +89,60 @@ routes:
         confidenceThreshold: 0.6
         keywords: ["food poisoning", "allergic reaction", "lawyer"]
         maxToolFailures: 2
+    stockpilot:
+      systemPromptFile: /etc/slm-router/prompts/stockpilot.md
+      ragNamespace: stockpilot
+      mcpServers:
+        - name: stockpilot-mcp
+          url: http://stockpilot-mcp.stockpilot.svc.cluster.local:8765/mcp
+          authHeader: X-MCP-Key
+          authEnvVar: STOCKPILOT_MCP_KEY
+      # Lower threshold: a wrong financial answer is high blast radius —
+      # escalate to a human aggressively. "regulator" / "complaint" /
+      # "ASIC" force a human regardless of confidence.
+      escalation:
+        confidenceThreshold: 0.7
+        keywords: ["regulator", "complaint", "asic", "fraud", "lawyer"]
+        maxToolFailures: 2
+    gameverse:
+      systemPromptFile: /etc/slm-router/prompts/gameverse.md
+      ragNamespace: gameverse
+      mcpServers:
+        - name: gameverse-mcp
+          url: http://gameverse-mcp.gameverse.svc.cluster.local:8765/mcp
+          authHeader: X-MCP-Key
+          authEnvVar: GAMEVERSE_MCP_KEY
+      escalation:
+        confidenceThreshold: 0.6
+        keywords: ["cheater", "ban appeal", "harassment", "lawyer"]
+        maxToolFailures: 2
+    horoscope:
+      systemPromptFile: /etc/slm-router/prompts/horoscope.md
+      ragNamespace: horoscope
+      mcpServers:
+        - name: horoscope-mcp
+          url: http://horoscope-mcp.horoscope.svc.cluster.local:8765/mcp
+          authHeader: X-MCP-Key
+          authEnvVar: HOROSCOPE_MCP_KEY
+      # Higher threshold + "for entertainment only" guardrail —
+      # medical / financial / legal questions ALWAYS escalate so the
+      # SLM never poses as a professional.
+      escalation:
+        confidenceThreshold: 0.75
+        keywords: ["medical", "doctor", "legal", "lawyer", "investment", "suicide", "self-harm"]
+        maxToolFailures: 2
+    scrapper:
+      systemPromptFile: /etc/slm-router/prompts/scrapper.md
+      ragNamespace: scrapper
+      mcpServers:
+        - name: scrapper-mcp
+          url: http://scrapper-mcp.scrapper.svc.cluster.local:8765/mcp
+          authHeader: X-MCP-Key
+          authEnvVar: SCRAPPER_MCP_KEY
+      escalation:
+        confidenceThreshold: 0.6
+        keywords: ["account ban", "policy violation", "lawyer", "dmca"]
+        maxToolFailures: 2
 
 # MCP API keys are injected as env vars (referenced by name in the
 # routes config above). The ExternalSecret for support-platform-slm-router

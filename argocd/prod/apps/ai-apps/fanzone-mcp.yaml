@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fanzone-mcp
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: support-platform
+    app.kubernetes.io/component: mcp-stub
+    mcp.tesserix.app/tenant: fanzone
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: fanzone
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/mcp-stub
+    helm:
+      parameters:
+        - name: tenant
+          value: "fanzone"
+        - name: namespace
+          value: "fanzone"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fanzone
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true

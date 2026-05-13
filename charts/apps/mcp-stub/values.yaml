@@ -1,0 +1,29 @@
+# Per-product MCP stub. Each ArgoCD app instantiates this chart with
+# the product's tenant id + namespace; the slm-router routes config
+# already references `<tenant>-mcp.<tenant>.svc.cluster.local:8765/mcp`,
+# which is exactly what this chart provisions.
+
+# Logical product slug — appears in pod names, labels, and the static
+# JSON-RPC responses so a curl against /mcp shows which tenant the
+# stub is serving.
+tenant: REQUIRED-OVERRIDE
+namespace: REQUIRED-OVERRIDE
+
+image:
+  # nginx is the smallest reliable container that can serve static
+  # JSON + respond to liveness probes. No Python dependency install
+  # at pod start; pod is ready in seconds.
+  repository: nginx
+  tag: "1.27-alpine"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+resources:
+  requests:
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+service:
+  port: 8765
