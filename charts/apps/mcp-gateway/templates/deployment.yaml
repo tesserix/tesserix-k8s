@@ -35,11 +35,19 @@ spec:
               value: {{ .Values.embedderURL | quote }}
             # pgvector DSN composed from the CNPG app password secret
             # so the secret never lands in the chart values directly.
+            # Optional — the pgvector secret lives in support-platform.
+            # Cross-namespace secret refs aren't supported, so for now
+            # the search_knowledge_base tool runs only inside the
+            # support-platform namespace's MCP instance (if we add
+            # one). Other tenants get a 'kb not configured' error from
+            # that tool and the agent proceeds without it. Replicate
+            # the secret per-namespace via ExternalSecret to enable.
             - name: VECTOR_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.vectorDBPasswordSecret }}
                   key: {{ .Values.vectorDBPasswordKey }}
+                  optional: true
             - name: VECTOR_DB_DSN
               value: "postgres://{{ .Values.vectorDBUser }}:$(VECTOR_DB_PASSWORD)@{{ .Values.vectorDBHost }}:{{ .Values.vectorDBPort }}/{{ .Values.vectorDBName }}?sslmode=require"
             - name: MONGO_URL
