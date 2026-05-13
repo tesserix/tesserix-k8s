@@ -158,6 +158,21 @@ routes:
         keywords: ["account ban", "policy violation", "lawyer", "dmca"]
         maxToolFailures: 2
 
+    # Admin -> Tesserix-employee support surface. The customer here is
+    # NOT a shopper — it's a merchant admin asking for platform help
+    # (billing, store setup, downtime, etc.). No MCP yet; chat-only
+    # answers come from the platform RAG namespace. Tighter escalation
+    # threshold so unfamiliar platform asks go to a Tesserix employee
+    # quickly instead of being made up.
+    platform:
+      systemPromptFile: /etc/slm-router/prompts/platform.md
+      ragNamespace: platform
+      mcpServers: []
+      escalation:
+        confidenceThreshold: 0.8
+        keywords: ["billing dispute", "outage", "incident", "data deletion", "gdpr", "lawsuit", "subpoena"]
+        maxToolFailures: 0
+
 # MCP API keys are injected as env vars (referenced by name in the
 # routes config above). The ExternalSecret for support-platform-slm-router
 # materialises these from GCP Secret Manager.
