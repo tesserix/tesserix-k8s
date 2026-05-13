@@ -24,18 +24,6 @@ spec:
         {{- end }}
       labels:
         {{- include "common.selectorLabels" . | nindent 8 }}
-        # Opt the blog OUT of Istio ambient. The tesserix namespace is labeled
-        # istio.io/dataplane-mode: ambient, which puts every pod under ztunnel.
-        # On every Istio RBAC config push (namespace-wide AuthorizationPolicy
-        # re-applied by ArgoCD reconcile), ztunnel drained the per-pod proxy
-        # for ALL tesserix pods simultaneously — for the blog that meant all
-        # 3 endpoints went unreachable for the ~15-30s drain window with no
-        # healthy retry target, producing the "connection termination" 503
-        # bursts users were hitting at the edge. The blog is a public site
-        # with no mesh-internal authZ requirement (Keycloak OIDC is enforced
-        # in-app), so removing it from ambient costs nothing and eliminates
-        # the drain-induced outages entirely.
-        istio.io/dataplane-mode: none
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
