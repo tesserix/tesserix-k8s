@@ -117,6 +117,17 @@ spec:
           # second bump catches the /api/otto/ + WS-regex split that
           # routes homechef REST through nginx for X-Internal-Auth.
           tesserix.com/force-restart: "2026-05-14T01-15-00Z"
+          # Disable delta xDS on the gateway proxy. istiod 1.29.x's
+          # delta xDS implementation has a race where newly-connected
+          # gateway proxies after the first one in a Deployment can
+          # subscribe to CDS+EDS but never get LDS pushed, leaving
+          # Envoy stuck in INITIALIZING and the pod permanently
+          # un-Ready. Falling back to State-Of-The-World xDS works
+          # around it — istiod sends the complete config on every
+          # push so there's no incremental state to mis-track.
+          proxy.istio.io/config: |
+            proxyMetadata:
+              ISTIO_DELTA_XDS: "false"
 
         # Security context
         securityContext:
