@@ -4,8 +4,14 @@ metadata:
   name: {{ .Release.Name }}
   labels:
     {{- include "common.labels" . | nindent 4 }}
-  annotations:
-    service.kubernetes.io/topology-aware-hints: auto
+  # topology-aware-hints REMOVED on purpose: with 3 blog pods on 3 different
+  # nodes and 2 istio-ingressgateway replicas, the hint pinned each gateway
+  # Envoy to its same-node blog endpoint. When that endpoint's ztunnel drained
+  # the proxy (on every Istio RBAC config push for the namespace), the gateway
+  # pod lost its only routable endpoint and served 503 for the full drain
+  # window — no fallback, retries had nowhere to go. Without the annotation
+  # all 3 endpoints are visible to both gateway pods so a drain on one pod
+  # becomes a 33% capacity hit covered by VS retries (reset/connect-failure).
 spec:
   type: {{ .Values.service.type }}
   ports:
