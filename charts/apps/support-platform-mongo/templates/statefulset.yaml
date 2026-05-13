@@ -93,10 +93,18 @@ spec:
                     if mongosh --quiet --eval "rs.status().ok" 2>/dev/null | grep -q '^1$'; then
                       exit 0
                     fi
+                    # Register the replica-set member using the regular
+                    # service hostname (NOT the per-pod headless DNS) so
+                    # clients don't need a headless Service. The
+                    # ClusterIP service has one endpoint (the only pod)
+                    # and routes there deterministically, so the
+                    # advertised hostname always resolves to mongod
+                    # itself. When we scale to 3 replicas, switch to a
+                    # headless service + pod DNS.
                     mongosh --quiet --eval '
                       rs.initiate({
                         _id: "rs0",
-                        members: [{ _id: 0, host: "{{ .Values.name }}-0.{{ .Values.name }}.{{ .Values.namespace }}.svc.cluster.local:27017" }]
+                        members: [{ _id: 0, host: "{{ .Values.name }}.{{ .Values.namespace }}.svc.cluster.local:27017" }]
                       });
                     ' || true
           resources:
