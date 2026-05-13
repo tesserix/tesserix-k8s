@@ -95,12 +95,23 @@ spec:
             hosts:
               - "tesserix.app"
               - "www.tesserix.app"
-          # tesserix-blog intentionally omitted. See chart values-prod.yaml for
-          # full rationale: every ArgoCD reconcile re-pushed the ALLOW policy
-          # via xds, ztunnel drained the per-pod proxy on each push, killing
-          # in-flight HBONE connections and producing edge 503s. With no
-          # AuthorizationPolicy attached, Istio's default for the workload is
-          # ALLOW, so the blog stays publicly reachable.
+          # tesserix-blog MUST stay listed here. The frontendApps list drives
+          # both the per-app ALLOW policy (attached to the pods) AND the
+          # gateway-level aggregate ALLOW (allow-frontend-apps-public). Once
+          # any ALLOW policy targets the ingress gateway, Istio default-denies
+          # traffic that doesn't match an ALLOW rule. Dropping the entry
+          # removed blog.tesserix.app from the gateway ALLOW host list, so
+          # every request started getting "RBAC: access denied" (403) at the
+          # edge. The drain churn this used to cause is now handled at a
+          # higher layer: istio-auth-policies syncs via client-side apply
+          # (unchanged content does not re-apply) and the blog VS retries on
+          # reset/connect-failure/5xx so the residual drains are invisible.
+          - name: tesserix-blog
+            label: tesserix-blog
+            namespace: tesserix
+            hosts:
+              - "blog.tesserix.app"
+              - "identity-blog.tesserix.app"
           - name: tesserix-docs
             label: tesserix-docs
             namespace: tesserix
