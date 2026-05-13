@@ -58,11 +58,17 @@ spec:
             port:
               number: {{ .servicePort | default 80 }}
       {{- end }}
+      {{- if .websocket }}
+      # WebSocket routes get a long timeout (1h) and no retries —
+      # retrying a half-upgraded stateful connection corrupts it.
+      timeout: 3600s
+      {{- else }}
       timeout: 60s
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
+      {{- end }}
     {{- end }}
     {{- end }}
 

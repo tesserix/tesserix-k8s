@@ -92,15 +92,16 @@ spec:
               number: 80
       timeout: 60s
 
-    # Otto support-chat — WebSocket + REST passthrough to the
-    # support-platform-otto pod. MUST come before the generic /api
-    # catch-all so /api/v1/storefront/otto/* doesn't fall through to
-    # the homechef-api Go service and 404. 3600s timeout for WS;
-    # no retries (retrying a half-upgraded stateful connection
-    # corrupts it).
+    # Otto support-chat WebSocket — direct passthrough to the
+    # support-platform-otto pod. Ticket auth is checked inside Otto;
+    # the WS handler is mounted on a no-middleware group so it does
+    # NOT need X-Internal-Auth. MUST be the most-specific match so
+    # /api/v1/storefront/otto/conversations/.../ws beats the REST
+    # rule below. 3600s timeout, no retries (retrying a half-upgraded
+    # stream corrupts it).
     - match:
         - uri:
-            prefix: /api/v1/storefront/otto
+            regex: ^/api/v1/storefront/otto/conversations/[^/]+/ws$
       headers:
         request:
           set:
@@ -124,6 +125,27 @@ spec:
             port:
               number: 8089
       timeout: 3600s
+
+    # Otto REST — proxied through the homechef-web nginx so the
+    # X-Internal-Auth + X-Tenant-Id + X-Store-Id headers Otto's
+    # CustomerContext middleware requires are injected server-side
+    # (the secret must never reach the browser). nginx rewrites
+    # /api/otto/* -> /api/v1/storefront/otto/* and forwards to
+    # support-platform-otto. Long timeout for the SSE-shaped queue
+    # poll, no retries.
+    - match:
+        - uri:
+            prefix: /api/otto/
+      headers:
+        request:
+          set:
+            Host: homechef-web.homechef.svc.cluster.local
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      timeout: 120s
 
     # API routes -> HomeChef API Knative service
     - match:
