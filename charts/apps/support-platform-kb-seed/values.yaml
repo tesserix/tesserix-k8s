@@ -28,6 +28,107 @@ postgresPasswordKey: password
 # documentation is layered on top later — this is just enough so the
 # SLM's first answer cites SOMETHING from each tenant.
 content:
+  # ==========================================================================
+  # platform — admin <-> Tesserix-employee help surface. Knowledge is
+  # platform-operations level (billing, store setup, KYC, downtime).
+  # No MCP; everything the SLM answers comes from here. ESCALATION
+  # threshold is high so anything unfamiliar reaches a real employee.
+  # ==========================================================================
+  platform:
+    - id: platform-overview
+      text: |
+        The Tesserix Platform support surface is for MERCHANT ADMINS
+        (the owner/admin of a store), not end shoppers. Customers of
+        a storefront use the Otto widget inside that storefront; the
+        platform widget lives in the merchant's admin app under
+        /support/platform and routes to Tesserix employees, not the
+        merchant themselves.
+      metadata: {section: "overview"}
+    - id: platform-billing-cycle
+      text: |
+        ISSUE: "When is my Tesserix invoice charged?"
+        ANSWER: Tesserix invoices auto-charge on the calendar day the
+        store was activated, every month, in the store's default
+        currency. The card on file is charged at 00:05 UTC. If the
+        primary card fails the platform retries the secondary
+        payment method (if any) the next morning, then suspends the
+        store after 3 failed attempts and emails the owner.
+        ESCALATE: 3-attempt suspension already happened, OR card was
+        charged but invoice shows unpaid.
+      metadata: {section: "billing"}
+    - id: platform-domain-takeover
+      text: |
+        ISSUE: "Custom domain is verified but storefront still shows the
+        platform subdomain."
+        ANSWER: Custom-domain takeover is a 2-step flow:
+        (1) DNS records published + verified (status = verified) and
+        (2) certificate provisioned. Cert issuance can take up to 15
+        minutes after verification. If it's been longer, check the
+        Tesserix Cert dashboard for the store's domain — if status is
+        "pending DNS challenge" the CAA record may be blocking it.
+        ESCALATE: cert pending >2 hours OR cert status = "failed".
+      metadata: {section: "domains"}
+    - id: platform-staff-invite
+      text: |
+        ISSUE: "Staff invitation email didn't arrive."
+        ANSWER: Staff invites go through Tesserix's transactional email
+        path (SendGrid). They expire in 7 days. The invitation email
+        comes from staff@tesserix.app — ask the invitee to check spam
+        and add the sender to their contacts. The owner can re-send
+        the invitation from Settings -> Team without canceling first.
+        ESCALATE: Resend doesn't arrive either, OR the invitee's
+        domain has a strict DMARC reject policy.
+      metadata: {section: "team"}
+    - id: platform-incidents
+      text: |
+        ISSUE: "Storefront / admin is down — is it just me?"
+        ANSWER: Check status.tesserix.app for current platform status.
+        Component-level: storefront, admin, checkout, payment, and
+        webhook delivery each have their own status. Acknowledged
+        incidents post updates every 15 minutes. If status is green
+        but you're seeing errors, capture the request ID from the
+        admin's bottom-right footer and report it.
+        ESCALATE: Status is green AND you can reproduce the error
+        with a fresh request_id.
+      metadata: {section: "incidents"}
+    - id: platform-data-export
+      text: |
+        ISSUE: "How do I export all my store data?"
+        ANSWER: Settings -> Data Export -> "Create export". The
+        platform packages products, orders, customers, reviews and
+        gift-cards into a single zipped CSV bundle and emails a
+        signed S3 link valid for 7 days. Generation can take up to
+        an hour for stores >10k orders. Customer PII is included only
+        if the admin explicitly checks "Include PII" — that flag is
+        audit-logged.
+        ESCALATE: Export never arrives, OR a regulator is requesting
+        data on the customer's behalf (GDPR Article 15 / DPA SAR).
+      metadata: {section: "data"}
+    - id: platform-payments-setup
+      text: |
+        ISSUE: "How do I connect Stripe / Razorpay to my store?"
+        ANSWER: Settings -> Payments -> "Connect Stripe" (or Razorpay).
+        Stripe uses OAuth — the customer is redirected to Stripe's
+        Connect screen and back. Razorpay uses API key + secret entered
+        directly. The platform encrypts the keys at rest. Test by
+        placing a 1 INR / 1 USD order in test mode before going live.
+        ESCALATE: OAuth callback fails repeatedly, OR live-mode payments
+        report "Gateway not configured" despite the store admin
+        confirming credentials are saved.
+      metadata: {section: "payments"}
+    - id: platform-kyc
+      text: |
+        ISSUE: "My store is in 'pending KYC' status."
+        ANSWER: KYC is required before the platform processes live
+        payouts. Owner needs to upload company registration, ID, and
+        bank statement under Settings -> Compliance. Reviews take
+        2-3 business days. The platform doesn't share KYC docs with
+        third parties — they're stored in a separate compliance
+        bucket with role-restricted access.
+        ESCALATE: KYC submitted >5 business days ago with no decision,
+        OR documents were rejected and the reason is unclear.
+      metadata: {section: "kyc"}
+
   mark8ly:
     # ==== Overview =========================================================
     - id: mark8ly-overview
