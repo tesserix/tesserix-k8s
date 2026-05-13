@@ -31,7 +31,10 @@ persistence:
 
 keda:
   enabled: true
-  minReplicaCount: 0
+  # KEDA's admission webhook rejects minReplicaCount=0 on a cpu/memory-
+  # only ScaledObject (scale-to-zero needs an event-driven trigger).
+  # Keep one pod warm — embedder is on the hot path for every AI reply.
+  minReplicaCount: 1
   maxReplicaCount: 2
   pollingInterval: 30
   cooldownPeriod: 300
