@@ -30,6 +30,13 @@ spec:
         tunnel:
           existingSecret: "cloudflare-tunnel-token"
           existingSecretKey: "token"
+          # Pin to HTTP/2 (TCP) instead of QUIC (UDP). GKE Container-Optimized OS
+          # ships net.core.rmem_max far below the 7 MiB QUIC wants; the buffer
+          # warning at cloudflared startup ("failed to sufficiently increase
+          # receive buffer size") leads to silent QUIC connection degradation
+          # over ~24h, manifesting as ~50% request failures from Cloudflare
+          # edge to the tunnel. HTTP/2 is TCP and unaffected.
+          protocol: "http2"
 
         # ExternalSecrets configuration
         externalSecrets:
