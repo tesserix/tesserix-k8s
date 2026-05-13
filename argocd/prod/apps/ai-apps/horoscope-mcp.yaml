@@ -25,6 +25,14 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: horoscope
+  ignoreDifferences:
+    # ArgoCD's structured-merge crashes on the newer
+    # Deployment.status.terminatingReplicas field. Cosmetic; the
+    # comparison succeeds, sync still runs.
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
   syncPolicy:
     automated:
       prune: true
