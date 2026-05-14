@@ -62,10 +62,14 @@ openapi:
   urls: ""  # CSV of full URLs, e.g. "http://api.svc/openapi.json"
   # When true, the deployment looks for a per-tenant spec at
   # /app/openapi/<tenant>/spec.yaml inside the image and loads it
-  # via MCP_OPENAPI_FILES. Used as the bootstrap path before a
-  # backend serves its own /openapi.json — flip a tenant to false
-  # once it migrates to URL-based loading.
-  fileEnabled: false
+  # via MCP_OPENAPI_FILES. The loader is fail-soft: a missing file
+  # logs a warning and the pod starts clean with zero auto-tools,
+  # so it's safe to default this to true — any tenant whose spec
+  # is checked in gets it automatically, others are no-ops. This
+  # default also matters because Kargo's argocd-update step
+  # rewrites the helm.parameters list on every image promotion,
+  # so per-Application overrides don't survive a Kargo bump.
+  fileEnabled: true
   headers:
     # Literal value used for `MCP_OPENAPI_HEADERS`. Plain text is
     # fine for non-sensitive headers. To inject a secret, leave a
