@@ -30,6 +30,25 @@ spec:
         # newest mcp-gateway main-<sha> on every CI build.
         - name: image.tag
           value: "main"
+        # Phase 3 — auto-register marketplace-api's storefront read
+        # operations tagged `x-mcp-expose: customer-read` as MCP
+        # tools. The spec is served at /storefront/openapi.json
+        # without the storefront-key gate (it's metadata, not data),
+        # so the gateway can fetch it unauthenticated. The actual
+        # backend calls the auto-tools make DO need the storefront
+        # key — injected via the secret block below.
+        - name: openapi.urls
+          value: "http://mark8ly-marketplace-api-storefront.mark8ly.svc.cluster.local/storefront/openapi.json"
+        - name: openapi.headers.template
+          value: "X-Storefront-Key: $(STOREFRONT_KEY)"
+        - name: openapi.headers.secret.enabled
+          value: "true"
+        - name: openapi.headers.secret.envVar
+          value: "STOREFRONT_KEY"
+        - name: openapi.headers.secret.name
+          value: "mark8ly-marketplace-api-storefront-key"
+        - name: openapi.headers.secret.key
+          value: "STOREFRONT_KEY"
   destination:
     server: https://kubernetes.default.svc
     namespace: mark8ly

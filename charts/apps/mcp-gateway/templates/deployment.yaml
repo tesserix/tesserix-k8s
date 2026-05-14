@@ -61,6 +61,25 @@ spec:
                   name: {{ .Values.mcpAuthKeySecret.name }}
                   key: {{ .Values.mcpAuthKeySecret.key }}
             {{- end }}
+            {{- if .Values.openapi.headers.secret.enabled }}
+            # Project the secret value as an env var so the
+            # MCP_OPENAPI_HEADERS template below can interpolate it
+            # via the K8s `$(NAME)` syntax — the literal secret never
+            # appears in the chart values.
+            - name: {{ .Values.openapi.headers.secret.envVar }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.openapi.headers.secret.name }}
+                  key: {{ .Values.openapi.headers.secret.key }}
+            {{- end }}
+            {{- if .Values.openapi.urls }}
+            - name: MCP_OPENAPI_URLS
+              value: {{ .Values.openapi.urls | quote }}
+            {{- end }}
+            {{- if .Values.openapi.headers.template }}
+            - name: MCP_OPENAPI_HEADERS
+              value: {{ .Values.openapi.headers.template | quote }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /readyz
