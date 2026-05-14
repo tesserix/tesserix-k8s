@@ -1,0 +1,17 @@
+apiVersion: v2
+name: mcp-gateway-docs-ingest
+description: |
+  Hourly CronJob that re-ingests the per-tenant help-docs markdown
+  corpus (baked into the mcp-gateway image at `/app/docs/<tenant>`)
+  into the pgvector `chunks` table the `search_knowledge_base` MCP
+  tool retrieves from. One Job per fire, sequentially walking every
+  supported tenant — same image, same DB, same embedder, different
+  `--tenant` flag per pass.
+
+  Lives in the `support-platform` namespace because that's where the
+  pgvector + embedder live (cross-namespace secret refs aren't
+  supported, so the tenant-specific mcp-gateway pods can't write here
+  themselves).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

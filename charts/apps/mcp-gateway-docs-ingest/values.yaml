@@ -1,0 +1,44 @@
+namespace: support-platform
+
+# Same image as the runtime mcp-gateway — the Dockerfile copies
+# `docs/` and `scripts/` in alongside `src/` so this CronJob can run
+# `python scripts/ingest_docs.py` without a separate build.
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/slm-support-platform/mcp-gateway
+  tag: "main"
+  pullPolicy: Always
+
+# Hourly at HH:05 — offset so we never coincide with the top of the
+# hour when the rest of the platform's hourly batches run.
+schedule: "5 * * * *"
+
+# Tenants the seed corpus covers. Adding a new tenant means dropping
+# markdown under `docs/<slug>/` in the mcp-gateway repo and adding
+# the slug here. Removing one is safe — the script just no-ops on a
+# missing dir.
+tenants:
+  - fanzone
+  - mark8ly
+  - homechef
+  - stockpilot
+  - gameverse
+  - horoscope
+  - scrapper
+
+# Embedder + pgvector are the same colocated services the runtime
+# mcp-gateway points at (see charts/apps/mcp-gateway/values.yaml).
+embedderURL: http://support-platform-embedder.support-platform.svc.cluster.local:8001
+vectorDBHost: support-platform-postgres-rw.support-platform.svc.cluster.local
+vectorDBPort: 5432
+vectorDBUser: support_platform
+vectorDBName: support_platform
+vectorDBPasswordSecret: support-platform-postgres-app
+vectorDBPasswordKey: password
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
