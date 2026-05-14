@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mcp-gateway-docs-ingest
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: support-platform
+    app.kubernetes.io/component: ingestion
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/mcp-gateway-docs-ingest
+    helm:
+      releaseName: mcp-gateway-docs-ingest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: support-platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true

@@ -1,0 +1,89 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "ingest.name" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "ingest.labels" . | nindent 4 }}
+spec:
+  schedule: "{{ .Values.schedule }}"
+  # Forbid: don't overlap runs. If a previous run is still going at
+  # the top of the next hour we skip rather than stacking — the
+  # corpus is small and one missed run isn't worth contention.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 86400
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "ingest.labels" . | nindent 12 }}
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: ingest
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              # Iterate every tenant slug from values.yaml. Each
+              # invocation deletes-and-replaces that tenant's chunks
+              # for the markdown files it sees; a tenant whose docs
+              # dir is missing logs a warning and contributes zero
+              # ingested chunks. A failure on one tenant doesn't
+              # short-circuit the loop — we want a partial refresh,
+              # not a full halt, if e.g. one corpus has a malformed
+              # frontmatter line.
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -u
+                  failed=0
+                  for tenant in {{ range .Values.tenants }}{{ . }} {{ end }}; do
+                    echo "=== ingesting tenant=$tenant ==="
+                    if ! python /app/scripts/ingest_docs.py \
+                        --tenant "$tenant" \
+                        --docs-dir "/app/docs/$tenant"; then
+                      echo "!!! ingestion failed for tenant=$tenant"
+                      failed=$((failed + 1))
+                    fi
+                  done
+                  if [ "$failed" -gt 0 ]; then
+                    echo "ingest completed with $failed tenant failure(s)"
+                    exit 1
+                  fi
+              env:
+                - name: EMBEDDER_URL
+                  value: {{ .Values.embedderURL | quote }}
+                # pgvector DSN composed from the CNPG app password
+                # secret so the secret never lands in the chart
+                # values directly. Same pattern the runtime
+                # mcp-gateway deployment uses.
+                - name: VECTOR_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.vectorDBPasswordSecret }}
+                      key: {{ .Values.vectorDBPasswordKey }}
+                - name: VECTOR_DB_DSN
+                  value: "postgres://{{ .Values.vectorDBUser }}:$(VECTOR_DB_PASSWORD)@{{ .Values.vectorDBHost }}:{{ .Values.vectorDBPort }}/{{ .Values.vectorDBName }}?sslmode=require"
+                - name: INGEST_ACTOR
+                  value: "cronjob:mcp-gateway-docs-ingest"
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 10001
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                # httpx + psycopg need a writable tmpdir even though
+                # the workload is read-only otherwise.
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
