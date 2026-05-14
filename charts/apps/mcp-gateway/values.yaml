@@ -45,3 +45,29 @@ mcpAuthKeySecret:
   enabled: false
   name: ""
   key: MCP_AUTH_KEY
+
+# OpenAPI auto-tool discovery. When `openapi.urls` is non-empty,
+# mcp-gateway fetches each spec at startup and registers every
+# operation tagged `x-mcp-expose: customer-read` as an MCP tool the
+# SLM can call. This is how we expand the SLM's read coverage of a
+# product's API surface without hand-coding a tool per endpoint.
+#
+# `openapi.headers.template` is the literal `MCP_OPENAPI_HEADERS`
+# CSV that the gateway parses (`Key: Value, Other: Value2`). When
+# `openapi.headers.secret.enabled` is true we additionally project
+# a secret into the pod as `$STOREFRONT_KEY` (or whatever env name
+# the chart user picks) so the template can interpolate it without
+# the literal secret value ever appearing in this values file.
+openapi:
+  urls: ""  # CSV of full URLs, e.g. "http://api.svc/openapi.json"
+  headers:
+    # Literal value used for `MCP_OPENAPI_HEADERS`. Plain text is
+    # fine for non-sensitive headers. To inject a secret, leave a
+    # `$(NAME)` placeholder here and configure `secret` below — K8s
+    # will substitute at pod start.
+    template: ""
+    secret:
+      enabled: false
+      envVar: ""   # name the projected env var (referenced via $(NAME) in `template`)
+      name: ""     # Kubernetes Secret name
+      key: ""      # Secret key
