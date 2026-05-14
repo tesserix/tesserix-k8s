@@ -76,6 +76,13 @@ spec:
             - name: MCP_OPENAPI_URLS
               value: {{ .Values.openapi.urls | quote }}
             {{- end }}
+            {{- if .Values.openapi.fileEnabled }}
+            # Phase 4 bootstrap: load the per-tenant spec baked into
+            # the image. The file path is derived from the tenant
+            # name so the chart doesn't need a per-tenant override.
+            - name: MCP_OPENAPI_FILES
+              value: "/app/openapi/{{ .Values.tenant }}/spec.yaml"
+            {{- end }}
             {{- if .Values.openapi.headers.template }}
             - name: MCP_OPENAPI_HEADERS
               value: {{ .Values.openapi.headers.template | quote }}
