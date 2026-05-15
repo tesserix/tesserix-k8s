@@ -4,17 +4,30 @@ kind: ScaledObject
 metadata:
   name: {{ .Values.name }}
   namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
 spec:
   scaleTargetRef:
-    kind: Deployment
     name: {{ .Values.name }}
   pollingInterval: {{ .Values.keda.pollingInterval }}
   cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
   minReplicaCount: {{ .Values.keda.minReplicaCount }}
   maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
   triggers:
+    {{- if and .Values.keda.prometheus .Values.keda.prometheus.enabled }}
+    # Istio request-rate trigger — supports scale-to-zero. Cold start: first
+    # request returns 503, prometheus picks it up, KEDA spins replicas to 1.
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.prometheus.serverAddress | quote }}
+        threshold: {{ .Values.keda.prometheus.threshold | quote }}
+        query: {{ .Values.keda.prometheus.query | quote }}
+    {{- else }}
+    # CPU-utilization fallback for prod / non-UAT environments. Requires
+    # resources.requests.cpu to be set — without it, metric is "<unknown>".
     - type: cpu
       metricType: Utilization
       metadata:
         value: "70"
+    {{- end }}
 {{- end }}
