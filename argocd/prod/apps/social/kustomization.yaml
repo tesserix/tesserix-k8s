@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# tesserix-social — prod cluster apps.
+#
+# Order matters at first activation: postgres → external-secrets → auth-bff
+# (with migrate init container) → platform-api (also with migrate) →
+# reports-agent → web. ArgoCD's automated retry handles the cold-start race.
+
+resources:
+  - postgres.yaml
+  - auth-bff.yaml
+  - platform-api.yaml
+  - reports-agent.yaml
+  - web.yaml
