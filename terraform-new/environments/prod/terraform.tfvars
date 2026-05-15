@@ -1573,6 +1573,42 @@ buckets = [
     lifecycle_rules = []
     cors          = []
     iam_bindings  = []
+  },
+
+  # ===========================================================================
+  # CLOUD BUILD - CI source tarballs
+  # ===========================================================================
+  # Auto-created by Cloud Build on first run. Imported into Terraform so the
+  # lifecycle policy is reproducible. The bucket holds gzipped source archives
+  # uploaded by GitHub Actions / Cloud Build triggers; nothing reads them after
+  # a build completes. 7-day deletion on the `source/` prefix prevents stale
+  # tarballs from accumulating (~64 MB at last check, would grow unbounded).
+  {
+    name                        = "tesseracthub-480811_cloudbuild"
+    location                    = "us"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "inherited"
+    versioning                  = false
+    labels = {
+      purpose = "cloudbuild-sources"
+      product = "global"
+      managed = "terraform"
+    }
+    lifecycle_rules = [
+      {
+        action = {
+          type = "Delete"
+        }
+        condition = {
+          age            = 7
+          matches_prefix = ["source/"]
+        }
+      }
+    ]
+    cors         = []
+    iam_bindings = []
   }
 ]
 

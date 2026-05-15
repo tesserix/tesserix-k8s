@@ -103,6 +103,8 @@ resource "google_storage_bucket" "buckets" {
         created_before             = lifecycle_rule.value.condition.created_before
         with_state                 = lifecycle_rule.value.condition.with_state
         matches_storage_class      = lifecycle_rule.value.condition.matches_storage_class
+        matches_prefix             = lifecycle_rule.value.condition.matches_prefix
+        matches_suffix             = lifecycle_rule.value.condition.matches_suffix
         num_newer_versions         = lifecycle_rule.value.condition.num_newer_versions
         days_since_noncurrent_time = lifecycle_rule.value.condition.days_since_noncurrent_time
       }

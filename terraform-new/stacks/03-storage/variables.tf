@@ -113,6 +113,8 @@ variable "buckets" {
         created_before             = optional(string)
         with_state                 = optional(string)
         matches_storage_class      = optional(list(string))
+        matches_prefix             = optional(list(string))
+        matches_suffix             = optional(list(string))
         num_newer_versions         = optional(number)
         days_since_noncurrent_time = optional(number)
       })
