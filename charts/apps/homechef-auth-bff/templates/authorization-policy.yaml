@@ -1,0 +1,25 @@
+# auth-bff is the public front door for /auth/* and /bff/* on every
+# fe3dr.com host. Browsers hit it through the istio-ingress gateway.
+# The four homechef SPAs (homechef-web, vendor-portal, delivery-portal,
+# admin-portal) are static Vite bundles served by nginx — they have NO
+# server-side runtime, so they never call auth-bff in-cluster. Only
+# istio-ingress (and homechef-api, in case server-side callbacks are
+# wired later) is allowed.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-auth-bff-callers
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["istio-system"]
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/homechef-api"
