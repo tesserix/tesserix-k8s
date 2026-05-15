@@ -77,17 +77,12 @@ ingress:
   # Backend services exposed via ingress (if needed)
   backendServices: []
 
+# Memory only — no CPU requests/limits per project convention. KEDA/HPA CPU
+# triggers are disabled in this chart; memory-based scaling only.
 resources:
-  # cpu request must be realistic for the % utilization KEDA trigger or
-  # the autoscaler chases its tail (Next.js SSR easily uses 400-800m
-  # under steady load — at 50m request that reads as 800-1600% which
-  # pins the deployment at maxReplicas and churns pods faster than the
-  # service endpoints settle, causing ingress 503s).
   requests:
-    cpu: "250m"
     memory: 256Mi
   limits:
-    cpu: "1000m"
     memory: 512Mi
 
 livenessProbe:
@@ -235,10 +230,8 @@ vpa:
   enabled: false
   updateMode: "InPlaceOrRecreate"
   minAllowed:
-    cpu: "250m"
     memory: "256Mi"
   maxAllowed:
-    cpu: "2000m"
     memory: "1Gi"
   excludeIstioProxy: true
 
