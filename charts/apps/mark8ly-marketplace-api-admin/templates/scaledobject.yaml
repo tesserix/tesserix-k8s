@@ -13,14 +13,21 @@ spec:
   cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
   minReplicaCount: {{ .Values.keda.minReplicaCount }}
   maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
-  # Admin engine is pinned to maxReplicaCount=1 in slice 1 because the
-  # rate limiter is an in-memory token bucket — a second replica would
-  # silently double the effective limit. A CPU trigger is declared so
-  # KEDA has something to evaluate; it will never fire at this size.
-  # TODO(slice-2): unpin once the Redis-backed rate limiter ships.
   triggers:
+    {{- if and .Values.keda.prometheus .Values.keda.prometheus.enabled }}
+    # Istio request-rate trigger — supports scale-to-zero. Cold start: first
+    # request returns 503, prometheus picks it up, KEDA spins replicas to 1.
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.prometheus.serverAddress | quote }}
+        threshold: {{ .Values.keda.prometheus.threshold | quote }}
+        query: {{ .Values.keda.prometheus.query | quote }}
+    {{- else }}
+    # CPU-utilization fallback for prod / non-UAT environments. Requires
+    # resources.requests.cpu to be set — without it, metric is "<unknown>".
     - type: cpu
       metricType: Utilization
       metadata:
-        value: "95"
+        value: "70"
+    {{- end }}
 {{- end }}

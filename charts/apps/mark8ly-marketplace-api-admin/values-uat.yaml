@@ -3,8 +3,19 @@ namespace: mark8ly-uat
 name: mark8ly-uat-marketplace-api-admin
 
 keda:
-  minReplicaCount: 1
-  maxReplicaCount: 1   # admin engine pinned to 1 replica (per-user rate limiter, see prod values)
+  enabled: true
+  pollingInterval: 30
+  cooldownPeriod: 300
+  minReplicaCount: 0
+  maxReplicaCount: 1
+  # Scale-to-zero in UAT via istio request-rate. Cold start: first request
+  # returns 503, prometheus picks it up within pollingInterval (30s), KEDA
+  # scales the deployment 0->1. Subsequent requests succeed once pod ready.
+  prometheus:
+    enabled: true
+    serverAddress: "http://prometheus-server.monitoring.svc.cluster.local:80"
+    threshold: "0.01"
+    query: 'sum(rate(istio_requests_total{destination_canonical_service="mark8ly-uat-marketplace-api-admin",reporter="destination"}[1m]))'
 pdb:
   enabled: false
 resources:
