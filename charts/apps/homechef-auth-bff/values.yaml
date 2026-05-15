@@ -1,188 +1,67 @@
-# =============================================================================
-# HomeChef Auth BFF - Dual Keycloak OIDC Backend-For-Frontend
-# Node.js service handling session management, OIDC flows, and token exchange
-# Supports both customer (homechef realm) and internal (admin) authentication
-# =============================================================================
-
-replicaCount: 1
-
+namespace: homechef
+name: homechef-auth-bff
 image:
-  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-nexus-remote/tesseract-nexus/global-services/auth-bff
-  pullPolicy: Always
-  tag: "latest"
-
+  # Pulled via the in-region Artifact Registry mirror of ghcr.io — see
+  # docs/artifact-registry-mirror.md.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/home-chef-app/homechef-auth-bff
+  tag: "main-placeholder" # overridden per-release by CI bump job (Kargo)
+  pullPolicy: IfNotPresent
 imagePullSecrets:
   - name: ghcr-secret
-
-nameOverride: ""
-fullnameOverride: ""
-
-serviceAccount:
-  create: true
-  automount: true
-  annotations: {}
-  name: ""
-
-podAnnotations:
-podLabels: {}
-
-podSecurityContext:
-  fsGroup: 1001
-
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 1001
-  runAsGroup: 1001
-  allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
-  capabilities:
-    drop:
-      - ALL
-  seccompProfile:
-    type: RuntimeDefault
-
 service:
   type: ClusterIP
-  port: 8090
-  targetPort: 8090
-
-resources:
-  limits:
-    memory: 512Mi
-  requests:
-    memory: 128Mi
-
-livenessProbe:
-  enabled: true
-  httpGet:
-    path: /health/live
-    port: http
-  initialDelaySeconds: 10
-  periodSeconds: 30
-  timeoutSeconds: 3
-  failureThreshold: 3
-
-readinessProbe:
-  enabled: true
-  httpGet:
-    path: /health/ready
-    port: http
-  initialDelaySeconds: 5
-  periodSeconds: 10
-  timeoutSeconds: 3
-  failureThreshold: 3
-
-knative:
-  enabled: false
-  minScale: 1
-  maxScale: 10
-  scaleDownDelay: "60s"
-  concurrencyTarget: 100
-  containerConcurrency: 0
-  timeoutSeconds: 300
-
-autoscaling:
-  enabled: true
-  minReplicas: 1
-  maxReplicas: 12
-  targetCPUUtilizationPercentage: 70
-  targetMemoryUtilizationPercentage: 75
-
-# Vertical Pod Autoscaler configuration
-vpa:
-  enabled: true
-  updateMode: "InPlaceOrRecreate"
-  minAllowed:
-    memory: "64Mi"
-  maxAllowed:
-    memory: "1Gi"
-  excludeIstioProxy: true
-
-# KEDA ScaledObject configuration
+  port: 8080
 keda:
   enabled: true
   pollingInterval: 15
   cooldownPeriod: 300
-  minReplicaCount: 1
-  maxReplicaCount: 12
-  triggers:
-    - type: cpu
-      metricType: Utilization
-      metadata:
-        value: "80"
-    - type: memory
-      metricType: Utilization
-      metadata:
-        value: "85"
-
-nodeSelector: {}
-tolerations: []
-affinity: {}
-
-# Environment configuration
-env:
-  PORT: "8090"
-  HOST: "0.0.0.0"
-  NODE_ENV: "production"
-  LOG_LEVEL: "info"
-  TRUST_PROXY: "true"
-
-  # Session configuration
-  SESSION_MAX_AGE: "604800"
-  SESSION_COOKIE_NAME: "homechef_bff_session"
-  SESSION_COOKIE_DOMAIN: ""
-  SESSION_COOKIE_SECURE: "true"
-  SESSION_COOKIE_HTTPONLY: "true"
-  SESSION_COOKIE_SAMESITE: "lax"
-
-  # Base domain for hostname matching
-  BASE_DOMAIN: "tesserix.app"
-
-  # Allowed CORS origins
-  ALLOWED_ORIGINS: "fe3dr://,https://dev-homechef.tesserix.app,https://*.tesserix.app"
-
-  # HomeChef API URL (internal cluster DNS)
-  HOMECHEF_API_URL: "http://homechef-api.homechef.svc.cluster.local:80"
-
-# ============================================================================
-# DUAL-REALM KEYCLOAK CONFIGURATION
-# - Customer realm (homechef): Customer/chef/delivery partner authentication
-# - Internal realm (tesserix-internal): Admin team authentication
-# ============================================================================
-keycloak:
-  customer:
-    url: "https://devtest-customer-idp.tesserix.app"
-    internalUrl: "http://keycloak.identity-customer.svc.cluster.local:8080"
-    realm: "homechef"
-    clientId: "homechef-bff"
-  internal:
-    url: "https://devtest-internal-idp.tesserix.app"
-    internalUrl: "http://keycloak.identity-internal.svc.cluster.local:8080"
-    realm: "tesserix-internal"
-    clientId: "homechef-admin-bff"
-
-# Redis configuration (for session store)
-redis:
-  host: "redis.redis-homechef.svc.cluster.local"
-  port: "6379"
-
-# GCP Secret Manager Configuration
-gcp:
-  projectId: ""
-  namespace: "homechef"
-  workloadIdentity:
-    gcpServiceAccount: ""
-  secretManager:
-    secretPrefix: "devtest"
-
-# External Secrets Configuration
-externalSecrets:
+  minReplicaCount: 2
+  maxReplicaCount: 10
+resources:
+  requests:
+    # Required by the KEDA cpu-utilization trigger.
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+pdb:
   enabled: true
-  secretStoreRef: "gcp-secret-store"
+  minAvailable: 1
 
-# Istio VirtualService configuration
-virtualService:
-  enabled: false
-  gateway: "istio-ingress/tesseract-gateway"
-  hosts: []
-  allowedOrigins: []
+# Google Identity Platform — homechef product tenants. The OAuth client is
+# shared across all four apps; per-app client SECRETS live in different env
+# vars (HOMECHEF_*_CLIENT_SECRET) resolved by productregistry from
+# homechef-products.yaml (baked into the image at /etc/auth-bff/).
+gip:
+  projectId: "tesseracthub-480811"
+  projectNumber: "849928263410"
+
+# Session cookie scope. `.fe3dr.com` lets the cookie ride across
+# www / vendors / delivery / admin subdomains.
+session:
+  cookieDomain: ".fe3dr.com"
+  maxAgeHours: 168
+
+# Path to the products registry YAML inside the container. The Dockerfile
+# COPYs homechef-products.yaml to this exact path.
+productsConfigPath: "/etc/auth-bff/homechef-products.yaml"
+
+# In-cluster URL of the Go API the BFF proxies to after authenticating.
+apiBaseURL: "http://homechef-api.homechef.svc.cluster.local:8080"
+
+# Optional — audit endpoint is empty/unwired in slice 1. The auth-bff
+# audit client treats empty as no-op.
+auditEndpoint: ""
+
+# Workload Identity GSA — bound to the homechef-auth-bff KSA in this
+# namespace by the create-homechef-auth-bff-gsa.sh script (or Terraform
+# once the team migrates the GSA lifecycle there).
+serviceAccount:
+  create: true
+  annotations:
+    iam.gke.io/gcp-service-account: "homechef-auth-bff@tesseracthub-480811.iam.gserviceaccount.com"
+
+# Secret resource names — produced by external-secrets/prod/homechef/externalsecret.yaml.
+secrets:
+  authBff: homechef-auth-bff-secrets

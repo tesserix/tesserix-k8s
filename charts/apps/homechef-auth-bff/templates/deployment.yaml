@@ -1,129 +1,136 @@
-{{- if not .Values.knative.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "homechef-auth-bff.fullname" . }}
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
   labels:
-    {{- include "homechef-auth-bff.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/part-of: homechef
+    app.kubernetes.io/component: auth
 spec:
-  {{- if not .Values.autoscaling.enabled }}
-  replicas: {{ .Values.replicaCount }}
+  {{- if not .Values.keda.enabled }}
+  replicas: 2
   {{- end }}
   selector:
     matchLabels:
-      {{- include "homechef-auth-bff.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: {{ .Values.name }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
-      annotations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       labels:
-        {{- include "homechef-auth-bff.labels" . | nindent 8 }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        app.kubernetes.io/name: {{ .Values.name }}
+        app.kubernetes.io/part-of: homechef
+      annotations:
+        sidecar.istio.io/inject: "true"
+        proxy.istio.io/config: |
+          holdApplicationUntilProxyStarts: true
     spec:
-      {{- with .Values.imagePullSecrets }}
+      serviceAccountName: {{ .Values.name }}
       imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      serviceAccountName: {{ include "homechef-auth-bff.serviceAccountName" . }}
+{{ toYaml .Values.imagePullSecrets | indent 8 }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        runAsNonRoot: true
+        runAsUser: 10002
+        fsGroup: 10002
+        seccompProfile:
+          type: RuntimeDefault
+
       containers:
-        - name: {{ .Chart.Name }}
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        - name: server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ .Values.service.targetPort | default .Values.service.port }}
-              protocol: TCP
+              containerPort: {{ .Values.service.port }}
           env:
-            {{- range $key, $value := .Values.env }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
-            # Keycloak - Customer IDP (for customer/chef/delivery partner auth)
-            - name: KEYCLOAK_CUSTOMER_URL
-              value: {{ .Values.keycloak.customer.url | quote }}
-            {{- if .Values.keycloak.customer.internalUrl }}
-            - name: KEYCLOAK_CUSTOMER_INTERNAL_URL
-              value: {{ .Values.keycloak.customer.internalUrl | quote }}
-            {{- end }}
-            - name: KEYCLOAK_CUSTOMER_REALM
-              value: {{ .Values.keycloak.customer.realm | quote }}
-            - name: KEYCLOAK_CUSTOMER_CLIENT_ID
-              value: {{ .Values.keycloak.customer.clientId | quote }}
-            # Keycloak - Internal IDP (for admin team auth)
-            - name: KEYCLOAK_INTERNAL_URL
-              value: {{ .Values.keycloak.internal.url | quote }}
-            {{- if .Values.keycloak.internal.internalUrl }}
-            - name: KEYCLOAK_INTERNAL_INTERNAL_URL
-              value: {{ .Values.keycloak.internal.internalUrl | quote }}
-            {{- end }}
-            - name: KEYCLOAK_INTERNAL_REALM
-              value: {{ .Values.keycloak.internal.realm | quote }}
-            - name: KEYCLOAK_INTERNAL_CLIENT_ID
-              value: {{ .Values.keycloak.internal.clientId | quote }}
-            # Redis configuration
-            - name: REDIS_URL
-              value: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
-            - name: REDIS_PASSWORD
+            - name: ENV
+              value: "prod"
+            - name: HTTP_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: LOG_LEVEL
+              value: "info"
+            # homechef-products.yaml is baked into the image by the Dockerfile
+            # (COPY homechef-products.yaml /etc/auth-bff/homechef-products.yaml).
+            - name: PRODUCTS_CONFIG_PATH
+              value: {{ .Values.productsConfigPath | quote }}
+            - name: GIP_PROJECT_ID
+              value: {{ .Values.gip.projectId | quote }}
+            - name: GIP_PROJECT_NUMBER
+              value: {{ .Values.gip.projectNumber | quote }}
+            # GIP browser-exposed key (used server-side for password sign-in
+            # via the Identity Toolkit REST API, surfaced to the client for
+            # phone/social flows).
+            - name: GIP_WEB_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "homechef-auth-bff.fullname" . }}-secrets
-                  key: REDIS_PASSWORD
-            # Secrets from ExternalSecret
-            - name: KEYCLOAK_CUSTOMER_CLIENT_SECRET
+                  name: {{ .Values.secrets.authBff }}
+                  key: GIP_WEB_API_KEY
+            # Per-app OAuth client secrets. Names match the
+            # `clientSecretEnv` fields in homechef-products.yaml — the
+            # productregistry resolver looks them up via os.Getenv at
+            # request time.
+            - name: HOMECHEF_CUSTOMER_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "homechef-auth-bff.fullname" . }}-secrets
-                  key: KEYCLOAK_CUSTOMER_CLIENT_SECRET
-            - name: KEYCLOAK_INTERNAL_CLIENT_SECRET
+                  name: {{ .Values.secrets.authBff }}
+                  key: HOMECHEF_CUSTOMER_CLIENT_SECRET
+            - name: HOMECHEF_BUSINESS_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "homechef-auth-bff.fullname" . }}-secrets
-                  key: KEYCLOAK_INTERNAL_CLIENT_SECRET
-            - name: SESSION_SECRET
+                  name: {{ .Values.secrets.authBff }}
+                  key: HOMECHEF_BUSINESS_CLIENT_SECRET
+            - name: HOMECHEF_INTERNAL_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "homechef-auth-bff.fullname" . }}-secrets
-                  key: SESSION_SECRET
-          {{- if and .Values.livenessProbe .Values.livenessProbe.enabled }}
+                  name: {{ .Values.secrets.authBff }}
+                  key: HOMECHEF_INTERNAL_CLIENT_SECRET
+            # Session — encrypted cookie shared across *.fe3dr.com.
+            - name: SESSION_COOKIE_DOMAIN
+              value: {{ .Values.session.cookieDomain | quote }}
+            - name: SESSION_MAX_AGE_HOURS
+              value: {{ .Values.session.maxAgeHours | quote }}
+            - name: SESSION_ENCRYPT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.authBff }}
+                  key: SESSION_ENCRYPT_KEY
+            # HMAC key for the internal BFF→API trust header. The Go API
+            # surfaces the same key as BFF_INTERNAL_HMAC_KEY and rejects
+            # any request whose signature doesn't match. MUST be kept in
+            # sync — see external-secrets/prod/homechef/externalsecret.yaml.
+            - name: BFF_INTERNAL_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.authBff }}
+                  key: BFF_INTERNAL_HMAC_KEY
+            - name: API_BASE_URL
+              value: {{ .Values.apiBaseURL | quote }}
+            - name: AUDIT_ENDPOINT
+              value: {{ .Values.auditEndpoint | quote }}
+            # Admin allow-list for the internal portal (admin.fe3dr.com).
+            # Resolved by productregistry from the `allowedEmailsEnv` field
+            # in homechef-products.yaml.
+            - name: HOMECHEF_ADMIN_ALLOWED_EMAILS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.authBff }}
+                  key: HOMECHEF_ADMIN_ALLOWED_EMAILS
+                  optional: true
           livenessProbe:
             httpGet:
-              path: {{ .Values.livenessProbe.httpGet.path | default "/health/live" }}
+              path: /healthz
               port: http
-            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds | default 10 }}
-            periodSeconds: {{ .Values.livenessProbe.periodSeconds | default 30 }}
-            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds | default 3 }}
-            failureThreshold: {{ .Values.livenessProbe.failureThreshold | default 3 }}
-          {{- end }}
-          {{- if and .Values.readinessProbe .Values.readinessProbe.enabled }}
+            initialDelaySeconds: 10
+            periodSeconds: 30
           readinessProbe:
             httpGet:
-              path: {{ .Values.readinessProbe.httpGet.path | default "/health/ready" }}
+              path: /healthz
               port: http
-            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds | default 5 }}
-            periodSeconds: {{ .Values.readinessProbe.periodSeconds | default 10 }}
-            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds | default 3 }}
-            failureThreshold: {{ .Values.readinessProbe.failureThreshold | default 3 }}
-          {{- end }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-      {{- with .Values.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-{{- end }}
+{{ toYaml .Values.resources | indent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

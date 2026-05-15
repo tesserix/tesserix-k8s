@@ -27,28 +27,21 @@ spec:
     - fe3dr.com
     - www.fe3dr.com
   http:
-    # BFF auth routes -> Auth BFF Knative service (via /bff/ prefix)
+    # GIP auth-bff — handles /auth/login, /auth/callback, /auth/logout,
+    # /auth/refresh, /auth/whoami. Replaces the legacy /bff/* and
+    # /driver-bff/* Keycloak prefixes (deleted 2026-05-15 cutover).
+    # Routes directly to the homechef-auth-bff ClusterIP service (8080),
+    # mirroring mark8ly-auth-bff. No retries — auth callbacks consume
+    # state on first read (non-idempotent).
     - match:
         - uri:
-            prefix: /bff/
-      rewrite:
-        uri: /
-      headers:
-        request:
-          set:
-            Host: homechef-auth-bff.homechef.svc.cluster.local
-            x-forwarded-host: fe3dr.com
-            x-forwarded-proto: https
+            prefix: /auth/
       route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: homechef-auth-bff.homechef.svc.cluster.local
             port:
-              number: 80
-      timeout: 60s
-      retries:
-        attempts: 3
-        perTryTimeout: 10s
-        retryOn: gateway-error,connect-failure,refused-stream
+              number: 8080
+      timeout: 30s
       corsPolicy: &homechef-cors
         allowOrigins:
           - exact: "https://fe3dr.com"
@@ -74,23 +67,6 @@ spec:
           - x-auth-token
         allowCredentials: true
         maxAge: "86400s"
-
-    # Auth callback route -> Auth BFF (Keycloak redirects back here)
-    - match:
-        - uri:
-            prefix: /auth/
-      headers:
-        request:
-          set:
-            Host: homechef-auth-bff.homechef.svc.cluster.local
-            x-forwarded-host: fe3dr.com
-            x-forwarded-proto: https
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      timeout: 60s
 
     # Otto support-chat WebSocket — direct passthrough to the
     # support-platform-otto pod. Ticket auth is checked inside Otto;
@@ -218,29 +194,19 @@ spec:
   hosts:
     - vendors.fe3dr.com
   http:
-    # BFF auth routes -> Auth BFF (customer Keycloak realm)
+    # GIP auth-bff — handles /auth/* for the vendor portal. Replaces the
+    # legacy /bff/* Keycloak prefix (deleted 2026-05-15 cutover). Routes
+    # directly to the homechef-auth-bff ClusterIP service (8080).
     - match:
         - uri:
-            prefix: /bff/
-      rewrite:
-        uri: /
-      headers:
-        request:
-          set:
-            Host: homechef-auth-bff.homechef.svc.cluster.local
-            x-forwarded-host: vendors.fe3dr.com
-            x-forwarded-proto: https
+            prefix: /auth/
       route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: homechef-auth-bff.homechef.svc.cluster.local
             port:
-              number: 80
-      timeout: 60s
-      retries:
-        attempts: 3
-        perTryTimeout: 10s
-        retryOn: gateway-error,connect-failure,refused-stream
-      corsPolicy:
+              number: 8080
+      timeout: 30s
+      corsPolicy: &homechef-cors
         allowOrigins:
           - exact: "https://fe3dr.com"
           - exact: "https://www.fe3dr.com"
@@ -265,23 +231,6 @@ spec:
           - x-auth-token
         allowCredentials: true
         maxAge: "86400s"
-
-    # Auth callback route -> Auth BFF (Keycloak redirects back here)
-    - match:
-        - uri:
-            prefix: /auth/
-      headers:
-        request:
-          set:
-            Host: homechef-auth-bff.homechef.svc.cluster.local
-            x-forwarded-host: vendors.fe3dr.com
-            x-forwarded-proto: https
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      timeout: 60s
 
     # API routes
     - match:
@@ -301,31 +250,7 @@ spec:
             port:
               number: 80
       timeout: 60s
-      corsPolicy:
-        allowOrigins:
-          - exact: "https://fe3dr.com"
-          - exact: "https://www.fe3dr.com"
-          - exact: "https://vendors.fe3dr.com"
-          - exact: "https://admin.fe3dr.com"
-          - exact: "https://delivery.fe3dr.com"
-          - exact: "https://analytics.fe3dr.com"
-        allowMethods:
-          - GET
-          - POST
-          - PUT
-          - DELETE
-          - PATCH
-          - OPTIONS
-        allowHeaders:
-          - content-type
-          - authorization
-          - accept
-          - x-request-id
-          - x-auth-context
-          - x-csrf-token
-          - x-auth-token
-        allowCredentials: true
-        maxAge: "86400s"
+      corsPolicy: *homechef-cors
 
     # WebSocket routes
     - match:
@@ -381,31 +306,20 @@ spec:
   hosts:
     - admin.fe3dr.com
   http:
-    # BFF auth routes -> Auth BFF (INTERNAL Keycloak realm)
-    # x-forwarded-host set to admin.fe3dr.com so BFF detects this as an admin host
-    # and uses the internal Keycloak realm (tesserix-internal) for authentication
+    # GIP auth-bff — handles /auth/* for the admin portal. The BFF resolves
+    # the internal GIP tenant (HomeChef-Internal-gyofe) from the request
+    # Host header (admin.fe3dr.com) via homechef-products.yaml, so we no
+    # longer need x-auth-context / x-forwarded-host injection here.
+    # Replaces the legacy /bff/* Keycloak prefix (deleted 2026-05-15 cutover).
     - match:
         - uri:
-            prefix: /bff/
-      rewrite:
-        uri: /
-      headers:
-        request:
-          set:
-            Host: homechef-auth-bff.homechef.svc.cluster.local
-            x-forwarded-host: admin.fe3dr.com
-            x-forwarded-proto: https
-            x-auth-context: admin
+            prefix: /auth/
       route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: homechef-auth-bff.homechef.svc.cluster.local
             port:
-              number: 80
-      timeout: 60s
-      retries:
-        attempts: 3
-        perTryTimeout: 10s
-        retryOn: gateway-error,connect-failure,refused-stream
+              number: 8080
+      timeout: 30s
       corsPolicy:
         allowOrigins:
           - exact: "https://fe3dr.com"
@@ -432,24 +346,6 @@ spec:
           - x-auth-token
         allowCredentials: true
         maxAge: "86400s"
-
-    # Auth callback route -> Auth BFF (internal realm)
-    - match:
-        - uri:
-            prefix: /auth/
-      headers:
-        request:
-          set:
-            Host: homechef-auth-bff.homechef.svc.cluster.local
-            x-forwarded-host: admin.fe3dr.com
-            x-forwarded-proto: https
-            x-auth-context: admin
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      timeout: 60s
 
     # API routes
     - match:
@@ -523,124 +419,45 @@ spec:
   hosts:
     - delivery.fe3dr.com
   http:
-    # BFF auth routes -> Auth BFF (customer Keycloak realm)
-    # Both /bff/ (staff) and /driver-bff/ (driver) now use the customer realm.
-    # Staff are 3rd party fleet managers, NOT platform admins — they register
-    # and authenticate via the homechef realm alongside drivers.
-    # Platform admins use admin.fe3dr.com (separate VirtualService + internal realm).
-    - match:
-        - uri:
-            prefix: /bff/
-      rewrite:
-        uri: /
-      headers:
-        request:
-          set:
-            Host: homechef-auth-bff.homechef.svc.cluster.local
-            x-forwarded-host: delivery.fe3dr.com
-            x-forwarded-proto: https
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      timeout: 60s
-      retries:
-        attempts: 3
-        perTryTimeout: 10s
-        retryOn: gateway-error,connect-failure,refused-stream
-      corsPolicy:
-        allowOrigins:
-          - exact: "https://fe3dr.com"
-          - exact: "https://www.fe3dr.com"
-          - exact: "https://vendors.fe3dr.com"
-          - exact: "https://admin.fe3dr.com"
-          - exact: "https://delivery.fe3dr.com"
-          - exact: "https://analytics.fe3dr.com"
-        allowMethods:
-          - GET
-          - POST
-          - PUT
-          - DELETE
-          - PATCH
-          - OPTIONS
-        allowHeaders:
-          - content-type
-          - authorization
-          - accept
-          - x-request-id
-          - x-auth-context
-          - x-csrf-token
-          - x-auth-token
-        allowCredentials: true
-        maxAge: "86400s"
-
-    # Driver BFF auth routes -> Auth BFF (customer Keycloak realm)
-    # Unlike /bff/ which uses x-auth-context: admin (internal realm),
-    # /driver-bff/ omits x-auth-context so the BFF defaults to the customer realm (homechef)
-    - match:
-        - uri:
-            prefix: /driver-bff/
-      rewrite:
-        uri: /
-      headers:
-        request:
-          set:
-            Host: homechef-auth-bff.homechef.svc.cluster.local
-            x-forwarded-host: delivery.fe3dr.com
-            x-forwarded-proto: https
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      timeout: 60s
-      retries:
-        attempts: 3
-        perTryTimeout: 10s
-        retryOn: gateway-error,connect-failure,refused-stream
-      corsPolicy:
-        allowOrigins:
-          - exact: "https://fe3dr.com"
-          - exact: "https://www.fe3dr.com"
-          - exact: "https://vendors.fe3dr.com"
-          - exact: "https://admin.fe3dr.com"
-          - exact: "https://delivery.fe3dr.com"
-          - exact: "https://analytics.fe3dr.com"
-        allowMethods:
-          - GET
-          - POST
-          - PUT
-          - DELETE
-          - PATCH
-          - OPTIONS
-        allowHeaders:
-          - content-type
-          - authorization
-          - accept
-          - x-request-id
-          - x-auth-context
-          - x-csrf-token
-          - x-auth-token
-        allowCredentials: true
-        maxAge: "86400s"
-
-    # Auth callback route -> Auth BFF (customer realm)
+    # GIP auth-bff — handles /auth/* for the delivery portal. Drivers and
+    # fleet staff both authenticate against the HomeChef-Business GIP
+    # tenant (resolved by the BFF from the request Host header).
+    # Replaces the legacy /bff/* and /driver-bff/* Keycloak prefixes
+    # (deleted 2026-05-15 cutover).
     - match:
         - uri:
             prefix: /auth/
-      headers:
-        request:
-          set:
-            Host: homechef-auth-bff.homechef.svc.cluster.local
-            x-forwarded-host: delivery.fe3dr.com
-            x-forwarded-proto: https
       route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: homechef-auth-bff.homechef.svc.cluster.local
             port:
-              number: 80
-      timeout: 60s
+              number: 8080
+      timeout: 30s
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://fe3dr.com"
+          - exact: "https://www.fe3dr.com"
+          - exact: "https://vendors.fe3dr.com"
+          - exact: "https://admin.fe3dr.com"
+          - exact: "https://delivery.fe3dr.com"
+          - exact: "https://analytics.fe3dr.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+          - x-auth-context
+          - x-csrf-token
+          - x-auth-token
+        allowCredentials: true
+        maxAge: "86400s"
 
     # API routes
     - match:
@@ -912,28 +729,17 @@ spec:
   hosts:
     - analytics.fe3dr.com
   http:
-    # BFF auth routes -> Auth BFF (customer Keycloak realm)
+    # GIP auth-bff — handles /auth/* for the analytics portal. Replaces
+    # the legacy /bff/* Keycloak prefix (deleted 2026-05-15 cutover).
     - match:
         - uri:
-            prefix: /bff/
-      rewrite:
-        uri: /
-      headers:
-        request:
-          set:
-            Host: homechef-auth-bff.homechef.svc.cluster.local
-            x-forwarded-host: analytics.fe3dr.com
-            x-forwarded-proto: https
+            prefix: /auth/
       route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: homechef-auth-bff.homechef.svc.cluster.local
             port:
-              number: 80
-      timeout: 60s
-      retries:
-        attempts: 3
-        perTryTimeout: 10s
-        retryOn: gateway-error,connect-failure,refused-stream
+              number: 8080
+      timeout: 30s
       corsPolicy:
         allowOrigins:
           - exact: "https://fe3dr.com"
@@ -959,23 +765,6 @@ spec:
           - x-auth-token
         allowCredentials: true
         maxAge: "86400s"
-
-    # Auth callback route -> Auth BFF (Keycloak redirects back here)
-    - match:
-        - uri:
-            prefix: /auth/
-      headers:
-        request:
-          set:
-            Host: homechef-auth-bff.homechef.svc.cluster.local
-            x-forwarded-host: analytics.fe3dr.com
-            x-forwarded-proto: https
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      timeout: 60s
 
     # API routes
     - match:

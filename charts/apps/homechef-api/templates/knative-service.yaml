@@ -122,6 +122,16 @@ spec:
                   name: {{ include "homechef-api.fullname" . }}-secrets
                   key: SENDGRID_API_KEY
                   optional: true
+            # Shared HMAC key for the internal BFF→API trust header. The
+            # auth-bff signs every internal call with this key; the Go
+            # API verifies and rejects unsigned/mismatched requests.
+            # Sourced from prod-homechef-bff-internal-hmac-key in GCP
+            # Secret Manager — same key the homechef-auth-bff pod reads.
+            - name: BFF_INTERNAL_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "homechef-api.fullname" . }}-secrets
+                  key: BFF_INTERNAL_HMAC_KEY
             {{- if .Values.email }}
             - name: FROM_EMAIL
               value: {{ .Values.email.fromEmail | quote }}
