@@ -15,19 +15,25 @@ spec:
   maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
   triggers:
     {{- if and .Values.keda.prometheus .Values.keda.prometheus.enabled }}
-    # Istio request-rate trigger — supports scale-to-zero. Cold start: first
-    # request returns 503, prometheus picks it up, KEDA spins replicas to 1.
+    # Explicit prometheus trigger: scale on the chart-supplied query.
+    # Supports scale-to-zero in UAT and traffic-tracking in prod.
     - type: prometheus
       metadata:
         serverAddress: {{ .Values.keda.prometheus.serverAddress | quote }}
         threshold: {{ .Values.keda.prometheus.threshold | quote }}
         query: {{ .Values.keda.prometheus.query | quote }}
     {{- else }}
-    # CPU-utilization fallback for prod / non-UAT environments. Requires
-    # resources.requests.cpu to be set — without it, metric is "<unknown>".
-    - type: cpu
+    # Default trigger when no explicit prometheus block is supplied.
+    # Memory-utilization is the platform's fallback because CPU
+    # triggers are rejected by the KEDA vscaledobject admission
+    # webhook whenever resources.requests.cpu is absent — and platform
+    # policy is intentionally memory-only (see feedback_no_cpu_limits).
+    # The 80% threshold rarely fires for HTTP services and keeps
+    # min/maxReplicaCount in charge; charts that want traffic-based
+    # scaling should set keda.prometheus.* explicitly.
+    - type: memory
       metricType: Utilization
       metadata:
-        value: "70"
+        value: "80"
     {{- end }}
 {{- end }}
