@@ -63,8 +63,8 @@ Before deploying Postal, ensure you have:
 1. Go to AWS Console → SES → SMTP Settings
 2. Click "Create SMTP credentials"
 3. Note down:
-   - **SMTP Username**: e.g., `AKIAQ4IPRTELV4NVSHVT`
-   - **SMTP Password**: 44-character base64 string, e.g., `BEF9XqKR553QUTMioNuCvjczmeyV8m443wAK/bQFwTd3`
+   - **SMTP Username**: 20-character `AKIA`-prefixed string (e.g., `AKIAEXAMPLE1234567890`)
+   - **SMTP Password**: 44-character base64 string (e.g., `EXAMPLE/base64/value+for+ses+smtp+password=`)
 
 > **Important**: SMTP credentials are different from IAM access keys. Generate them from the SES Console.
 
