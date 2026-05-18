@@ -27,6 +27,21 @@ spec:
     - fe3dr.com
     - www.fe3dr.com
   http:
+    # GIP auth-bff via legacy /bff/* prefix — frontend (auth-service.ts)
+    # uses /bff as its same-origin base. Rewrite /bff/* → /* and route to
+    # the same upstream as /auth/*.
+    - match:
+        - uri:
+            prefix: /bff/
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: homechef-auth-bff.homechef.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
+
     # GIP auth-bff — handles /auth/login, /auth/callback, /auth/logout,
     # /auth/refresh, /auth/whoami. Replaces the legacy /bff/* and
     # /driver-bff/* Keycloak prefixes (deleted 2026-05-15 cutover).
@@ -194,6 +209,20 @@ spec:
   hosts:
     - vendors.fe3dr.com
   http:
+    # GIP auth-bff via legacy /bff/* prefix — vendor portal frontend uses
+    # /bff as its same-origin base. Rewrite /bff/* → /* before routing.
+    - match:
+        - uri:
+            prefix: /bff/
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: homechef-auth-bff.homechef.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
+
     # GIP auth-bff — handles /auth/* for the vendor portal. Replaces the
     # legacy /bff/* Keycloak prefix (deleted 2026-05-15 cutover). Routes
     # directly to the homechef-auth-bff ClusterIP service (8080).
@@ -306,6 +335,20 @@ spec:
   hosts:
     - admin.fe3dr.com
   http:
+    # GIP auth-bff via legacy /bff/* prefix — admin portal frontend uses
+    # /bff as its same-origin base. Rewrite /bff/* → /* before routing.
+    - match:
+        - uri:
+            prefix: /bff/
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: homechef-auth-bff.homechef.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
+
     # GIP auth-bff — handles /auth/* for the admin portal. The BFF resolves
     # the internal GIP tenant (HomeChef-Internal-gyofe) from the request
     # Host header (admin.fe3dr.com) via homechef-products.yaml, so we no
@@ -419,6 +462,20 @@ spec:
   hosts:
     - delivery.fe3dr.com
   http:
+    # GIP auth-bff via legacy /bff/* prefix — delivery portal frontend uses
+    # /bff as its same-origin base. Rewrite /bff/* → /* before routing.
+    - match:
+        - uri:
+            prefix: /bff/
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: homechef-auth-bff.homechef.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
+
     # GIP auth-bff — handles /auth/* for the delivery portal. Drivers and
     # fleet staff both authenticate against the HomeChef-Business GIP
     # tenant (resolved by the BFF from the request Host header).
