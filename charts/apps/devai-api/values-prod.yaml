@@ -4,7 +4,7 @@ replicaCount: 1
 
 # Bumping this annotation rolls the deployment so :latest gets re-pulled.
 podAnnotations:
-  deployedAt: "91926af"
+  deployedAt: "e417d62"
 
 resources:
   requests:
@@ -66,6 +66,26 @@ pipeline:
 specializations:
   enabled: true
   dir: "specializations"
+
+# ─── K8s Job runtime (Spec-Driven Development) ─────────────────────
+# When enabled, each blueprint stage that declares `stage: run_as_job`
+# spawns a Pod in the devai namespace via the JobRunnerStage. The Pod
+# pulls its agent metadata + skills from aregistry, executes, and
+# writes RESULT::<json> on stdout that the api parses back into a
+# StageResult. RBAC lives in templates/runtime-rbac.yaml.
+k8sRuntime:
+  enabled: true
+  namespace: "devai"
+  runnerServiceAccount: "devai-runner"
+  pullSecretName: ""
+  jobTtlSeconds: 3600
+  jobBackoffLimit: 0
+  # Single runner base image until per-stack variants ship.
+  runnerImage: "ghcr.io/tesserix/devai/devai-runner:main"
+  # Stack-specific runner images. Same key as Settings.runner_image_per_stack.
+  runnerImagePerStack: '{"default":"ghcr.io/tesserix/devai/devai-runner:main","nextjs":"ghcr.io/tesserix/devai/devai-runner-nextjs:main","vite":"ghcr.io/tesserix/devai/devai-runner-vite:main","go":"ghcr.io/tesserix/devai/devai-runner-go:main","python":"ghcr.io/tesserix/devai/devai-runner-python:main"}'
+  previewDomain: "devai.tesserix.app"
+  editorBridgeImage: "ghcr.io/tesserix/devai/devai-editor-bridge:main"
 
 # Memory adapter — pgvector is the production default (reuses the
 # same Postgres + pgvector cluster the rest of DevAI already uses).
