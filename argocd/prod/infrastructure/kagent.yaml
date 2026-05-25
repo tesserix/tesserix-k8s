@@ -28,22 +28,20 @@ spec:
         namespaceOverride: kagent-system
         controller:
           replicas: 1
-          # First-boot DB migrations against the bundled Postgres take
-          # longer than the upstream default startup probe (30s).
-          # Without this override, K8s SIGKILLs the pod mid-migration
-          # (exit 137 in container status).
-          startupProbe:
-            httpGet:
-              path: /health
-              port: 8083
-            periodSeconds: 5
-            failureThreshold: 60   # 60 * 5s = 5min for migrations
+          # Bump memory limit — first-boot migrations + vector store
+          # init OOM at 512Mi (controller exits with 137). The chart's
+          # startupProbe (periodSeconds 15, initialDelaySeconds 15) is
+          # hardcoded in templates/controller-deployment.yaml and isn't
+          # overridable via values; making sure the container has
+          # enough memory to finish initialization within that window
+          # is the only knob we have here.
           resources:
             requests:
-              memory: 256Mi
+              cpu: 200m
+              memory: 512Mi
             limits:
-              # 512Mi was too tight — migrations + vector init OOMKilled.
-              memory: 1Gi
+              cpu: 2
+              memory: 2Gi
         # The bundled Postgres provisions a PVC for the vector store.
         # standard-rwo is the default storage class on this GKE cluster.
         postgresql:
