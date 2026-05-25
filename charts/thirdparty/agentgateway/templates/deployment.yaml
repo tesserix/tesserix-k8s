@@ -20,13 +20,9 @@ spec:
         - name: gateway
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args:
-            - serve
-            - --addr=0.0.0.0:{{ .Values.service.port }}
-            {{- if .Values.metrics.enabled }}
-            - --metrics-addr=0.0.0.0:{{ .Values.metrics.port }}
-            {{- end }}
-            - --aregistry-url=$(AREGISTRY_URL)
+          # Let the image's ENTRYPOINT run as-is; agentgateway has
+          # subcommands but no `serve`. Listen address + catalog URL
+          # are configured via env vars below (AREGISTRY_URL etc.).
           env:
             - name: AREGISTRY_URL
               value: {{ .Values.aregistry.endpoint | quote }}

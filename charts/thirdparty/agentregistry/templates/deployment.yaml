@@ -20,12 +20,9 @@ spec:
         - name: aregistry
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args:
-            - serve
-            - --addr=0.0.0.0:{{ .Values.service.port }}
-            {{- if .Values.metrics.enabled }}
-            - --metrics-addr=0.0.0.0:{{ .Values.metrics.port }}
-            {{- end }}
+          # Let the image's default ENTRYPOINT run — the upstream binary
+          # doesn't expose a `serve` subcommand; addr + metrics are
+          # configured via env vars below.
           env:
             # Database — sourced from the CNPG-rendered Secret
             - name: PG_HOST
