@@ -28,6 +28,22 @@ spec:
         namespaceOverride: kagent-system
         controller:
           replicas: 1
+          # First-boot DB migrations against the bundled Postgres take
+          # longer than the upstream default startup probe (30s).
+          # Without this override, K8s SIGKILLs the pod mid-migration
+          # (exit 137 in container status).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8083
+            periodSeconds: 5
+            failureThreshold: 60   # 60 * 5s = 5min for migrations
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              # 512Mi was too tight — migrations + vector init OOMKilled.
+              memory: 1Gi
         # The bundled Postgres provisions a PVC for the vector store.
         # standard-rwo is the default storage class on this GKE cluster.
         postgresql:
@@ -35,10 +51,6 @@ spec:
           persistence:
             enabled: true
             size: 20Gi
-        # UI is a separate component — keep off for now; Agent CRs are
-        # configured via aregistry seeds, not the kagent UI.
-        ui:
-          enabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: kagent-system
