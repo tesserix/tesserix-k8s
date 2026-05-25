@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentgateway-crds
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: agent-data-plane
+  annotations:
+    # CRDs land before the gateway itself.
+    argocd.argoproj.io/sync-wave: "-6"
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/agentgateway/agentgateway/charts
+    chart: agentgateway-crds
+    targetRevision: v1.0.1
+    helm:
+      releaseName: agentgateway-crds
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentgateway-system
+  syncPolicy:
+    automated:
+      prune: false  # never prune CRDs
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
