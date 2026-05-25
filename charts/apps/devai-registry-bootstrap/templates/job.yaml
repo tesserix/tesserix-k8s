@@ -1,0 +1,96 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Hash the resource version so re-syncing creates a new Job (Kubernetes
+  # Jobs are immutable). The .Release.Revision-based suffix means
+  # `argocd app sync` always produces a runnable new Job.
+  name: devai-registry-bootstrap-{{ .Release.Revision | default "1" }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "devai-registry-bootstrap.labels" . | nindent 4 }}
+  annotations:
+    # Re-run on every sync; aregistry POSTs are idempotent.
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
+spec:
+  ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
+  backoffLimit: {{ .Values.job.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.job.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "devai-registry-bootstrap.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      restartPolicy: OnFailure
+      initContainers:
+        # Step 1: shallow-clone the DevAI repo to /workspace
+        - name: fetch-seeds
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - clone
+            - --depth=1
+            - --branch={{ .Values.seedSource.ref }}
+            - {{ .Values.seedSource.repoUrl }}
+            - /workspace/devai
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+      containers:
+        # Step 2: walk architecture/registry-seeds/ and POST each YAML
+        # to aregistry's v0 API. We use curl because alpine + curl is
+        # smaller than pulling kubectl just for this. The endpoint
+        # accepts YAML body directly and dispatches by `kind`.
+        - name: upsert
+          image: curlimages/curl:8.7.1
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              set -euo pipefail
+              SEEDS=/workspace/devai/{{ .Values.seedSource.subdir }}
+              if [ ! -d "$SEEDS" ]; then
+                echo "ERROR: seeds dir $SEEDS not found in cloned repo"
+                exit 1
+              fi
+              ENDPOINT="{{ .Values.aregistry.endpoint }}/v0"
+              echo "POSTing seeds to $ENDPOINT"
+              # Order matters: Project → MCPServer → Skill → Prompt → Agent.
+              # Agents reference Skills + Prompts, so they must be applied last.
+              for dir in projects mcp-servers skills prompts agents; do
+                if [ ! -d "$SEEDS/$dir" ]; then continue; fi
+                echo "--- $dir ---"
+                for f in "$SEEDS/$dir"/*.yaml; do
+                  [ -e "$f" ] || continue
+                  name=$(basename "$f")
+                  echo "→ $dir/$name"
+                  http_code=$(curl -s -o /tmp/resp -w "%{http_code}" \
+                    -X PUT \
+                    -H "Authorization: Bearer $AREGISTRY_JWT" \
+                    -H "Content-Type: application/yaml" \
+                    --data-binary "@$f" \
+                    "$ENDPOINT/$dir")
+                  if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+                    echo "  FAILED ($http_code):"
+                    cat /tmp/resp
+                    exit 1
+                  fi
+                  echo "  ok ($http_code)"
+                done
+              done
+              echo "registry bootstrap complete"
+          env:
+            - name: AREGISTRY_JWT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.aregistry.jwtSecret.name }}
+                  key: {{ .Values.aregistry.jwtSecret.key }}
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: workspace
+          emptyDir: {}

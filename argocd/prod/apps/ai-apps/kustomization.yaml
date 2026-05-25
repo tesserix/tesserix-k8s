@@ -41,3 +41,22 @@ resources:
   # image at /app/docs/<tenant>; CronJob walks every tenant slug
   # on each fire. See charts/apps/mcp-gateway-docs-ingest.
   - mcp-gateway-docs-ingest.yaml
+
+  # ─── DevAI — AI-powered ALM + SRE platform ────────────────────
+  # The DevAI namespace serves both the ALM pipeline runtime (FastAPI
+  # + LangGraph + the new Fiber-style blueprint runtime) and the SRE
+  # monitoring subsystem. Each component is its own helm chart under
+  # charts/apps/devai-*. Order below matches dependency chain:
+  # postgres + auth-bff first; api + sre afterward; dashboards last.
+  - devai-postgres.yaml
+  - devai-auth-bff.yaml
+  - devai-db-seed.yaml
+  - devai-istio.yaml
+  - devai-api.yaml
+  - devai-sre.yaml
+  - devai-dashboard.yaml
+  - devai-sre-dashboard.yaml
+  # Registry bootstrap — Job that seeds the YAML specializations /
+  # MCP servers / Agent CRs into aregistry once it's healthy.
+  # Idempotent; safe to re-sync.
+  - devai-registry-bootstrap.yaml
