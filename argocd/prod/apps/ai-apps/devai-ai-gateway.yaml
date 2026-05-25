@@ -18,6 +18,15 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: agentgateway-system
+  ignoreDifferences:
+    # K8s 1.36+ surfaces .status.terminatingReplicas which ArgoCD's
+    # structured-merge-diff doesn't yet recognise. Without this every
+    # sync errors with ComparisonError and the desired-state apply
+    # silently no-ops (which is what blocked the SNI fix from landing).
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
   syncPolicy:
     automated:
       prune: true
