@@ -536,6 +536,79 @@ spec:
 {{- end }}
 
 # =============================================================================
+# Agentic Control Plane Namespace Policies
+# Mirror the devai pattern — allow intra-namespace + istio-ingress +
+# monitoring + cnpg-system + DNS. These are agentregistry-system,
+# agentgateway-system, and kagent-system from .Values.appNamespaces.
+# =============================================================================
+{{- range $name := list "agentregistry" "agentgateway" "kagent" }}
+{{- $ns := index $.Values.appNamespaces $name | default "" }}
+{{- if $ns }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-{{ $name }}-ingress
+  namespace: {{ $ns }}
+  labels:
+    {{- include "istio-config.labels" $ | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+    # Intra-namespace traffic (e.g. agentregistry → its bundled postgres)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $ns }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+    # Cross-namespace agentic traffic (kagent → aregistry, gateway → aregistry, …)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentregistry-system
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentgateway-system
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kagent-system
+    # devai consumers
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devai
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}
+{{- end }}
+
+# =============================================================================
 # Database Namespace Policies (STRICT MULTI-TENANT ISOLATION)
 # Each product can ONLY access its own database namespace
 # Cross-product access is DENIED
