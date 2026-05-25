@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentregistry
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: agent-catalog
+  annotations:
+    # First in the agentic control-plane sync chain. kagent + agentgateway
+    # both depend on aregistry being healthy, so we land this earliest.
+    # cnpg-system (the operator that backs aregistry's pgvector) is at
+    # wave -40, so we comfortably follow it.
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/thirdparty/agentregistry
+    helm:
+      releaseName: agentregistry
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentregistry-system
+  syncPolicy:
+    automated:
+      prune: false  # never auto-prune the catalog — destructive
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

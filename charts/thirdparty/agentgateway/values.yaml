@@ -1,0 +1,69 @@
+# Solo.io agentgateway — defaults
+#
+# ───────────────────────────────────────────────────────────────────────
+# IMPORTANT: verify the image reference against the upstream release
+# before sync:
+#   https://github.com/agentgateway/agentgateway
+# ───────────────────────────────────────────────────────────────────────
+
+image:
+  # REPLACE with the verified upstream image.
+  repository: ghcr.io/agentgateway/agentgateway
+  tag: v1.1.0
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+namespace:
+  create: true
+  name: agentgateway-system
+  istioInjection: enabled
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Connection back to the catalog. agentgateway reads agents, MCP servers,
+# and policies from aregistry on a 30-second poll.
+aregistry:
+  endpoint: http://agentregistry.agentregistry-system.svc.cluster.local:8080
+  # JWT minted from the aregistry-jwt secret (same one aregistry signs
+  # with). Mirrored across namespaces by Reflector.
+  jwtSecret:
+    name: aregistry-jwt
+    key: jwt-secret
+
+# Single-URL LLM topology. Agents always POST to
+#   http://ai-gateway.agentgateway-system.svc.cluster.local/anthropic/model/<id>/invoke
+# the gateway rewrites /anthropic/* → /bedrock/* and injects the
+# Authorization header from the fiber-secrets Secret (replicated from
+# default ns by Reflector).
+backends:
+  anthropic:
+    enabled: true
+    # The Bedrock proxy URL Solo.io publishes for the Anthropic tunnel.
+    upstreamUrl: https://ai-gateway.zende.sk/bedrock
+    authSecret:
+      name: fiber-secrets
+      key: zdai-token
+  openai:
+    enabled: false
+  groq:
+    enabled: false
+
+# Per-role traffic policies. Empty list = permissive; add per-role gates
+# as we lock the surface down (defense in depth on top of the prompt-
+# level allowed_tools list in each specialization YAML).
+policies: []
+
+metrics:
+  enabled: true
+  port: 9090

@@ -1,0 +1,82 @@
+# Solo.io agentregistry — defaults
+#
+# ───────────────────────────────────────────────────────────────────────
+# IMPORTANT: verify the image reference against the upstream release
+# before sync. Solo.io publishes aregistry via their OSS channel; the
+# concrete tag for v0.3.3 should be confirmed against:
+#   https://github.com/solo-io/agentregistry
+# ───────────────────────────────────────────────────────────────────────
+
+image:
+  # REPLACE with the verified Solo.io image. Common candidates:
+  #   quay.io/solo-io/agentregistry:v0.3.3
+  #   ghcr.io/solo-io/agentregistry:v0.3.3
+  repository: quay.io/solo-io/agentregistry
+  tag: v0.3.3
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+namespace:
+  create: true
+  name: agentregistry-system
+  istioInjection: enabled
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Auth — JWT/HMAC token issued by aregistry's bootstrap secret.
+auth:
+  enabled: true
+  # The bootstrap secret is provisioned by an ExternalSecret (synced
+  # from GCP SM key `prod-aregistry-jwt-secret`).
+  existingSecret: aregistry-jwt
+  secretKey: jwt-secret
+
+# CNPG cluster for the registry's pgvector store.
+# Requires the cloudnative-pg operator (already installed cluster-wide
+# at sync-wave -40).
+postgres:
+  enabled: true
+  cluster:
+    name: aregistry-pg
+    instances: 1
+    storage:
+      size: 20Gi
+      storageClass: standard-rwo
+    bootstrap:
+      initdb:
+        database: agentregistry
+        owner: agentregistry
+        # The postgres password is rendered from an ExternalSecret in
+        # external-secrets/prod/agentregistry-system/ (see runbook).
+        secret:
+          name: aregistry-pg-credentials
+    postgresql:
+      parameters:
+        # pgvector extension required for semantic search
+        shared_preload_libraries: vector
+
+# Bootstrap content — registry seeds are NOT applied via this chart.
+# A separate ArgoCD app (`devai-registry-bootstrap`) runs a Job that
+# applies architecture/registry-seeds/*.yaml against the aregistry API
+# once it's healthy. See docs/deploy/CONTROL-PLANES.md.
+seeds:
+  enabled: false  # use the bootstrap app instead
+
+# Metrics scraping
+metrics:
+  enabled: true
+  port: 9090
+  path: /metrics
+  serviceMonitor:
+    enabled: false  # enable once Prometheus Operator is wired up
