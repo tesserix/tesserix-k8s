@@ -49,6 +49,8 @@ spec:
               sed -i "s|%%GOOGLE_CLIENT_ID%%|${GOOGLE_CLIENT_ID}|g" /tmp/devai-realm.json
               sed -i "s|%%GOOGLE_CLIENT_SECRET%%|${GOOGLE_CLIENT_SECRET}|g" /tmp/devai-realm.json
               sed -i "s|%%DEVAI_BFF_CLIENT_SECRET%%|${DEVAI_BFF_CLIENT_SECRET}|g" /tmp/devai-realm.json
+              sed -i "s|%%KAGENT_OAUTH2_PROXY_CLIENT_SECRET%%|${KAGENT_OAUTH2_PROXY_CLIENT_SECRET}|g" /tmp/devai-realm.json
+              sed -i "s|%%AREGISTRY_OAUTH2_PROXY_CLIENT_SECRET%%|${AREGISTRY_OAUTH2_PROXY_CLIENT_SECRET}|g" /tmp/devai-realm.json
 
               sed -i "s|%%GOOGLE_CLIENT_ID%%|${GOOGLE_CLIENT_ID}|g" /tmp/devai-sre-realm.json
               sed -i "s|%%GOOGLE_CLIENT_SECRET%%|${GOOGLE_CLIENT_SECRET}|g" /tmp/devai-sre-realm.json
@@ -136,6 +138,54 @@ spec:
               fi
 
               # ============================
+              # Step 5b: Idempotently upsert oauth2-proxy clients on the
+              # devai realm. The realm-create path (step 4) is skipped on
+              # second runs because the realm exists; without this step the
+              # new clients defined in the realm JSON would never reach
+              # Keycloak. The clients section in devai-realm.json is the
+              # source of truth — this loop just replays each {clientId}
+              # block as a POST/PUT against the admin clients API.
+              # ============================
+              for CLIENT in kagent-oauth2-proxy aregistry-oauth2-proxy; do
+                echo "Ensuring client ${CLIENT} in devai realm..."
+
+                if [ "${CLIENT}" = "kagent-oauth2-proxy" ]; then
+                  CLIENT_SECRET="${KAGENT_OAUTH2_PROXY_CLIENT_SECRET}"
+                  HOST="kagent.tesserix.app"
+                  CLIENT_NAME="kagent UI OAuth2 Proxy"
+                else
+                  CLIENT_SECRET="${AREGISTRY_OAUTH2_PROXY_CLIENT_SECRET}"
+                  HOST="aregistry.tesserix.app"
+                  CLIENT_NAME="Agent Registry OAuth2 Proxy"
+                fi
+
+                CLIENT_JSON='{"clientId":"'"${CLIENT}"'","name":"'"${CLIENT_NAME}"'","enabled":true,"publicClient":false,"directAccessGrantsEnabled":false,"standardFlowEnabled":true,"serviceAccountsEnabled":false,"protocol":"openid-connect","secret":"'"${CLIENT_SECRET}"'","redirectUris":["https://'"${HOST}"'/oauth2/callback"],"webOrigins":["https://'"${HOST}"'"],"defaultClientScopes":["openid","email","profile"]}'
+
+                EXISTING_ID=$(curl -sf -H "Authorization: Bearer ${TOKEN}" \
+                  "${KEYCLOAK_URL}/admin/realms/devai/clients?clientId=${CLIENT}" \
+                  | sed 's/.*"id":"\([^"]*\)".*/\1/' \
+                  | head -c 36)
+
+                if [ -n "${EXISTING_ID}" ] && [ "${EXISTING_ID}" != "[]" ]; then
+                  echo "  ${CLIENT} exists (id=${EXISTING_ID}) — updating"
+                  curl -sf -X PUT \
+                    -H "Authorization: Bearer ${TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d "${CLIENT_JSON}" \
+                    "${KEYCLOAK_URL}/admin/realms/devai/clients/${EXISTING_ID}" \
+                    -o /dev/null -w "  PUT HTTP %{http_code}\n" || echo "  client PUT failed"
+                else
+                  echo "  ${CLIENT} does not exist — creating"
+                  curl -sf -X POST \
+                    -H "Authorization: Bearer ${TOKEN}" \
+                    -H "Content-Type: application/json" \
+                    -d "${CLIENT_JSON}" \
+                    "${KEYCLOAK_URL}/admin/realms/devai/clients" \
+                    -o /dev/null -w "  POST HTTP %{http_code}\n" || echo "  client POST failed"
+                fi
+              done
+
+              # ============================
               # Step 6: Configure user restrictions
               # For Google IdP, restrict via "first broker login" flow
               # that checks email against allowed list
@@ -194,6 +244,16 @@ spec:
                 secretKeyRef:
                   name: keycloak-devai-client-secrets
                   key: devai-sre-bff-secret
+            - name: KAGENT_OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-devai-client-secrets
+                  key: kagent-oauth2-proxy-secret
+            - name: AREGISTRY_OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-devai-client-secrets
+                  key: aregistry-oauth2-proxy-secret
           volumeMounts:
             - name: realm-config
               mountPath: /realm-config

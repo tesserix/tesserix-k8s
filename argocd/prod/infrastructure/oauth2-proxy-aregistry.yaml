@@ -1,0 +1,104 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: oauth2-proxy-aregistry
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: auth-proxy
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://oauth2-proxy.github.io/manifests
+    chart: oauth2-proxy
+    targetRevision: 7.7.4
+    helm:
+      releaseName: oauth2-proxy-aregistry
+      values: |
+        # ============================================================
+        # OAuth2-Proxy in front of agentregistry UI
+        # (aregistry.tesserix.app). The agentregistry HTTP service
+        # bundles both API (/v0/*) and a Next.js admin console.
+        # ============================================================
+
+        replicaCount: 1
+
+        config:
+          existingSecret: aregistry-oauth2-proxy
+          configFile: |-
+            provider = "oidc"
+            provider_display_name = "Keycloak (devai)"
+            oidc_issuer_url = "http://keycloak.identity-internal.svc.cluster.local:8080/realms/devai"
+            redirect_url = "https://aregistry.tesserix.app/oauth2/callback"
+            cookie_name = "_aregistry_oauth2"
+            cookie_domains = [".tesserix.app"]
+            cookie_secure = true
+            cookie_samesite = "lax"
+            cookie_expire = "24h"
+            email_domains = ["*"]
+            upstreams = ["http://agentregistry.agentregistry-system.svc.cluster.local:12121/"]
+            reverse_proxy = true
+            skip_provider_button = true
+            pass_access_token = true
+            pass_authorization_header = true
+            set_authorization_header = true
+            set_xauthrequest = true
+            insecure_oidc_allow_unverified_email = true
+            whitelist_domains = ["aregistry.tesserix.app", ".tesserix.app"]
+            http_address = "0.0.0.0:4180"
+            real_client_ip_header = "X-Forwarded-For"
+
+        namespaceOverride: agentregistry-system
+
+        service:
+          type: ClusterIP
+          portNumber: 4180
+
+        serviceAccount:
+          enabled: true
+          name: oauth2-proxy-aregistry
+
+        podLabels:
+          app.kubernetes.io/name: oauth2-proxy
+          app.kubernetes.io/instance: aregistry
+          tesserix.app/auth-proxy: "aregistry"
+
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+        ingress:
+          enabled: false
+
+        metrics:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentregistry-system
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,83 @@
+##############################################################################
+# Agentic UIs — Istio VirtualService configuration
+#
+# Routes:
+#   kagent.tesserix.app/    → oauth2-proxy-kagent (port 4180)
+#     - oauth2-proxy reverse-proxies to kagent-ui:8080 once authenticated
+#     - /oauth2/* are handled by oauth2-proxy directly (login/callback)
+#
+#   aregistry.tesserix.app/ → oauth2-proxy-aregistry (port 4180)
+#     - oauth2-proxy reverse-proxies to agentregistry:12121 once authenticated
+#
+# Both proxies authenticate against the in-cluster Keycloak `devai` realm
+# (clients `kagent-oauth2-proxy` and `aregistry-oauth2-proxy` provisioned
+# by devai-realm-import-job).
+##############################################################################
+
+# kagent UI
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: kagent-ui
+  namespace: kagent-system
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: routing
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - kagent.tesserix.app
+  http:
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            x-forwarded-host: kagent.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: oauth2-proxy-kagent.kagent-system.svc.cluster.local
+            port:
+              number: 4180
+      timeout: 120s
+      retries:
+        attempts: 2
+        perTryTimeout: 30s
+        retryOn: reset,connect-failure,refused-stream,5xx
+---
+# Agent Registry UI
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: aregistry-ui
+  namespace: agentregistry-system
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: routing
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - aregistry.tesserix.app
+  http:
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            x-forwarded-host: aregistry.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: oauth2-proxy-aregistry.agentregistry-system.svc.cluster.local
+            port:
+              number: 4180
+      timeout: 120s
+      retries:
+        attempts: 2
+        perTryTimeout: 30s
+        retryOn: reset,connect-failure,refused-stream,5xx
