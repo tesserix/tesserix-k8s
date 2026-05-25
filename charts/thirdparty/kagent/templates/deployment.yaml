@@ -20,15 +20,8 @@ spec:
         - name: controller
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args:
-            - controller
-            - --aregistry-url=$(AREGISTRY_URL)
-            {{- if .Values.metrics.enabled }}
-            - --metrics-addr=:{{ .Values.metrics.port }}
-            {{- end }}
-            {{- if not .Values.watch.allNamespaces }}
-            - --namespaces={{ .Values.watch.namespaces | join "," }}
-            {{- end }}
+          # Default ENTRYPOINT runs the controller. Configuration via
+          # env vars below (AREGISTRY_URL, WATCH_NAMESPACES, …).
           env:
             - name: AREGISTRY_URL
               value: {{ .Values.aregistry.endpoint | quote }}
