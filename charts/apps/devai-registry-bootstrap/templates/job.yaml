@@ -168,13 +168,17 @@ spec:
                           "$schema",
                           "https://modelcontextprotocol.io/schemas/draft/2025-07-09/server.schema.json",
                       )
-                      desc = (spec.get("description") or name).strip()
+                      desc = (src.get("description") or spec.get("description") or name).strip()
                       # Runtime cap: description ≤ 100 chars. Our seeds
                       # carry rich prose for humans; truncate at the
                       # boundary so it still reads as a phrase.
+                      # We overwrite (not setdefault) because the seed
+                      # already populated `description` from spec.* —
+                      # setdefault would skip the truncation in that
+                      # case, which was the bug behind the 422 loop.
                       if len(desc) > 100:
                           desc = desc[:97].rstrip() + "..."
-                      src.setdefault("description", desc)
+                      src["description"] = desc
                       src.setdefault("version", "1")
                       if "endpoint" in spec and "url" not in src:
                           src["url"] = spec["endpoint"]
