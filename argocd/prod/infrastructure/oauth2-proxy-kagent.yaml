@@ -38,7 +38,14 @@ spec:
           configFile: |-
             provider = "oidc"
             provider_display_name = "Keycloak (devai)"
-            oidc_issuer_url = "http://keycloak.identity-internal.svc.cluster.local:8080/realms/devai"
+            # Issuer MUST match what Keycloak advertises in its
+            # well-known/openid-configuration `issuer` claim. Keycloak is
+            # configured with frontend URL identity-devai.tesserix.app,
+            # so it returns that even when reached via the cluster DNS
+            # name — oauth2-proxy strict-compares the value and refuses
+            # to start otherwise. Browser redirects also need the public
+            # URL, so this is the cleanest choice.
+            oidc_issuer_url = "https://identity-devai.tesserix.app/realms/devai"
             redirect_url = "https://kagent.tesserix.app/oauth2/callback"
             cookie_name = "_kagent_oauth2"
             cookie_domains = [".tesserix.app"]
