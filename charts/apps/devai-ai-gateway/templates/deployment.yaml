@@ -35,10 +35,16 @@ data:
       proxy_send_timeout 600s;
       proxy_buffering off;          # so SSE / chunked responses flow
 
-      # Upstream API hosts. Pinned via map so the path-stripped
-      # rewrite picks the right Host header.
-      map $request_uri $anth_host { default "api.anthropic.com"; }
-      map $request_uri $oai_host  { default "api.openai.com"; }
+      # SNI + cert verification for upstream TLS. Anthropic + OpenAI
+      # serve cert chains rooted in Mozilla trust; we use the OS's
+      # CA bundle (Alpine ships it at the path below). proxy_ssl_name
+      # is set per-location because the SNI hostname differs per
+      # provider.
+      proxy_ssl_server_name on;
+      proxy_ssl_protocols TLSv1.2 TLSv1.3;
+      proxy_ssl_verify on;
+      proxy_ssl_verify_depth 3;
+      proxy_ssl_trusted_certificate /etc/ssl/cert.pem;
 
       server {
         listen 8080 default_server;
@@ -48,10 +54,10 @@ data:
         location = /health { return 200 "ok\n"; add_header Content-Type text/plain; }
 
         # Anthropic — strip /anthropic prefix, inject x-api-key.
-        # Examples (the only routes we care about today):
-        #   POST /anthropic/v1/messages → POST https://api.anthropic.com/v1/messages
+        # POST /anthropic/v1/messages → POST https://api.anthropic.com/v1/messages
         location /anthropic/ {
-          proxy_set_header Host                api.anthropic.com;
+          proxy_ssl_name           api.anthropic.com;
+          proxy_set_header Host    api.anthropic.com;
           proxy_set_header x-api-key           "${ANTHROPIC_API_KEY}";
           proxy_set_header anthropic-version   "2023-06-01";
           proxy_set_header Content-Type        $content_type;
@@ -59,14 +65,14 @@ data:
           # Strip auth headers the caller might send so we always
           # use our injected key.
           proxy_set_header Authorization       "";
-          # rewrite drops the /anthropic prefix; $1 is the rest of the path.
           rewrite ^/anthropic/(.*)$ /$1 break;
           proxy_pass https://api.anthropic.com;
         }
 
         # OpenAI — strip /openai prefix, inject Bearer token.
         location /openai/ {
-          proxy_set_header Host                api.openai.com;
+          proxy_ssl_name           api.openai.com;
+          proxy_set_header Host    api.openai.com;
           proxy_set_header Authorization       "Bearer ${OPENAI_API_KEY}";
           proxy_set_header Content-Type        $content_type;
           proxy_set_header Accept              $http_accept;
