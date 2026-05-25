@@ -170,18 +170,26 @@ spec:
                           desc = desc[:97].rstrip() + "..."
                       src["description"] = desc
                       src["version"] = str(spec.get("version") or "1")
-                      # Translate spec.endpoint → remotes[]. authMode + tools
-                      # in the seed are runtime concerns the registry
-                      # schema doesn't carry; they stay on disk for the
-                      # MCP server itself to consume.
-                      endpoint = spec.get("endpoint") or ""
-                      if endpoint:
-                          # streamable-http is the modern transport for
-                          # MCP-over-HTTP servers (replaces deprecated SSE).
-                          src["remotes"] = [{"type": "streamable-http", "url": endpoint}]
-                      # Drop legacy top-level fields the validator now
-                      # rejects.
-                      for legacy in ("type", "url", "endpoint", "authMode", "tools"):
+                      # aregistry's validator enforces that the remote
+                      # URL's host matches the publisher portion of the
+                      # name (e.g. devai/analyst-mcp ⇒ URL must be
+                      # https://devai/…). That contract is for public
+                      # MCP registries where the publisher IS a real
+                      # hostname; our in-cluster MCPs live at K8s
+                      # Service names (devai-api.devai.svc…), which the
+                      # validator refuses.
+                      #
+                      # So we register MCPs as catalog-only entries
+                      # (no remotes[]): the registry advertises that
+                      # devai/analyst-mcp etc. exist, and the DevAI
+                      # runtime resolves the actual URL from the
+                      # on-disk seed's spec.endpoint at dial time.
+                      # Drop every legacy / runtime-only field the
+                      # validator rejects.
+                      for legacy in (
+                          "type", "url", "endpoint", "authMode", "tools",
+                          "remotes",
+                      ):
                           src.pop(legacy, None)
                   elif kind == "Agent":
                       src.setdefault("version", "1")
