@@ -23,10 +23,21 @@ spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       restartPolicy: OnFailure
       initContainers:
-        # Step 1: shallow-clone the DevAI repo to /workspace
+        # Step 1: shallow-clone the DevAI repo to /workspace.
+        #
+        # The repo is private. We mount the .gitconfig from a Secret
+        # (synced from prod-devai-github-pat in GCP SM) at /etc/gitconfig
+        # so `git clone` picks up the `url.<base>.insteadOf` rewrite
+        # without ever passing the token on the command line. GIT_CONFIG_*
+        # env points the in-image git at /etc/gitconfig (the image runs
+        # as a non-root user; the default $HOME is `/git/.gitconfig` which
+        # we can't easily own at chart-render time).
         - name: fetch-seeds
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: GIT_CONFIG_GLOBAL
+              value: /etc/gitconfig/.gitconfig
           args:
             - clone
             - --depth=1
@@ -36,6 +47,9 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
+            - name: gitconfig
+              mountPath: /etc/gitconfig
+              readOnly: true
       containers:
         # Step 2: walk architecture/registry-seeds/ and POST each YAML
         # to aregistry's v0 API. We use curl because alpine + curl is
@@ -94,3 +108,10 @@ spec:
       volumes:
         - name: workspace
           emptyDir: {}
+        - name: gitconfig
+          secret:
+            secretName: {{ .Values.github.gitconfigSecret }}
+            defaultMode: 0400
+            items:
+              - key: .gitconfig
+                path: .gitconfig
