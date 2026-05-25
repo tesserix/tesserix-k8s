@@ -167,6 +167,22 @@ spec:
                 secretKeyRef:
                   name: devai-api-secrets
                   key: DEVAI_GITHUB_OAUTH_CLIENT_SECRET
+            # PAT for SCM operations (list repos, create repos, list
+            # issues for the Workflows kanban). Source: the
+            # devai-github-pat Secret synced from GCP SM key
+            # prod-devai-github-pat via the ExternalSecret in
+            # external-secrets/prod/devai/. Setting DEVAI_SCM_TOKEN +
+            # DEVAI_SCM_AUTH_METHOD=pat makes the SCM factory use the
+            # PAT branch instead of GitHub App tokens; the rest of the
+            # client surface (list_installation_repos / create_repo /
+            # list_issues) works the same.
+            - name: DEVAI_SCM_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: devai-github-pat
+                  key: token
+            - name: DEVAI_SCM_AUTH_METHOD
+              value: "pat"
             - name: DEVAI_KEYCLOAK_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
