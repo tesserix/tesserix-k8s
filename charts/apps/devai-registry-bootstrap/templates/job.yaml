@@ -165,7 +165,12 @@ spec:
                       src.setdefault("modelProvider", llm.get("provider") or "claude")
                       src.setdefault("modelName", llm.get("model") or "claude-sonnet-4-20250514")
                   allowed = ALLOWED.get(kind, set())
-                  return {k: v for k, v in src.items() if k in allowed and v is not None}
+                  out = {k: v for k, v in src.items() if k in allowed and v is not None}
+                  # aregistry insists on string version; YAML parses
+                  # `version: 1` as an int. Cast every kind uniformly.
+                  if "version" in out:
+                      out["version"] = str(out["version"])
+                  return out
 
               def post(path, body, label):
                   for attempt in range(3):
