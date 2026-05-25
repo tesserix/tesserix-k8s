@@ -117,18 +117,55 @@ spec:
               })
               _ = JWT  # retained for the day we switch back to signed-token auth
 
+              # aregistry's schemas are deliberately slim (verified from
+              # /openapi.json on 2026-05-25). DevAI's seed YAML carries
+              # richer metadata (tools, handoverSchema, contextKeys,
+              # limits, runtime, …) that the registry's API doesn't accept
+              # — POSTing those triggers HTTP 422 "unexpected property".
+              # The rich fields stay in the on-disk YAML; DevAI's Python
+              # registry client layers them in at runtime when the loader
+              # falls back to local seeds. Here we project only the
+              # schema-allowed subset onto the wire body.
+              ALLOWED = {
+                  "Skill":     {"name","description","version","category","packages","remotes","repository","status","title","websiteUrl"},
+                  "MCPServer": {"name","type","args","build","command","env","headers","image","registryServerName","registryServerPreferRemote","registryServerVersion","registryURL","url"},
+                  "Agent":     {"name","description","version","image","language","framework","modelProvider","modelName","mcpServers","packages","prompts","remotes","repository","skills","status","telemetryEndpoint","title","updatedAt","websiteUrl"},
+                  "Prompt":    {"name","version","content","description"},
+              }
+
               def translate(doc, kind):
-                  """Flatten the CRD envelope into aregistry's body shape.
-                  metadata.name → name; spec.<*> → top-level. We default
-                  `version` to "1" since aregistry requires it and the seed
-                  files lean on the registry's auto-versioning."""
                   spec = doc.get("spec") or {}
-                  out = dict(spec)
-                  out["name"] = doc.get("metadata", {}).get("name") or out.get("name")
-                  out.setdefault("version", str(spec.get("version") or "1"))
-                  if kind in ("Skill", "MCPServer"):
-                      out.setdefault("description", spec.get("description", ""))
-                  return out
+                  name = doc.get("metadata", {}).get("name") or spec.get("name")
+                  src = {**spec, "name": name}
+                  # Per-kind defaults the schema requires but the seed
+                  # may not carry.
+                  if kind == "Skill":
+                      src.setdefault("version", "1")
+                      src.setdefault("title", spec.get("displayName") or name)
+                  elif kind == "Prompt":
+                      src.setdefault("version", "1")
+                      src.setdefault("content", spec.get("template") or spec.get("body") or "")
+                  elif kind == "MCPServer":
+                      # aregistry uses `type` = remote|local|registry to
+                      # discriminate. Our seeds describe an HTTP endpoint
+                      # → remote with url.
+                      src.setdefault("type", "remote")
+                      if "endpoint" in spec and "url" not in src:
+                          src["url"] = spec["endpoint"]
+                  elif kind == "Agent":
+                      src.setdefault("version", "1")
+                      # Required-by-schema fields with safe defaults so we
+                      # don't fail on incomplete seeds. Override later by
+                      # editing the YAML.
+                      src.setdefault("description", spec.get("description") or name)
+                      src.setdefault("image", "ghcr.io/tesserix/devai/devai:latest")
+                      src.setdefault("language", "python")
+                      src.setdefault("framework", "langgraph")
+                      llm = spec.get("llm") or {}
+                      src.setdefault("modelProvider", llm.get("provider") or "claude")
+                      src.setdefault("modelName", llm.get("model") or "claude-sonnet-4-20250514")
+                  allowed = ALLOWED.get(kind, set())
+                  return {k: v for k, v in src.items() if k in allowed and v is not None}
 
               def post(path, body, label):
                   for attempt in range(3):
