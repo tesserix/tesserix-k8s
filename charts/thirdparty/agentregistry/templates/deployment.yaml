@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentregistry
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "agentregistry.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "agentregistry.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentregistry.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: agentregistry
+      containers:
+        - name: aregistry
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - serve
+            - --addr=0.0.0.0:{{ .Values.service.port }}
+            {{- if .Values.metrics.enabled }}
+            - --metrics-addr=0.0.0.0:{{ .Values.metrics.port }}
+            {{- end }}
+          env:
+            # Database — sourced from the CNPG-rendered Secret
+            - name: PG_HOST
+              value: {{ printf "%s-rw.%s.svc.cluster.local" .Values.postgres.cluster.name .Values.namespace.name | quote }}
+            - name: PG_PORT
+              value: "5432"
+            - name: PG_DB
+              value: {{ .Values.postgres.cluster.bootstrap.initdb.database | quote }}
+            - name: PG_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.cluster.bootstrap.initdb.secret.name }}
+                  key: username
+            - name: PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.cluster.bootstrap.initdb.secret.name }}
+                  key: password
+            {{- if .Values.auth.enabled }}
+            - name: AREGISTRY_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecret }}
+                  key: {{ .Values.auth.secretKey }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30

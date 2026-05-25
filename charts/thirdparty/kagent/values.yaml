@@ -1,0 +1,54 @@
+# kagent controller — defaults
+#
+# ───────────────────────────────────────────────────────────────────────
+# IMPORTANT: verify the image reference against the upstream release:
+#   https://github.com/kagent-dev/kagent
+# ───────────────────────────────────────────────────────────────────────
+
+image:
+  repository: ghcr.io/kagent-dev/kagent
+  tag: v0.6.0
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+namespace:
+  create: true
+  name: kagent-system
+  istioInjection: enabled
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+aregistry:
+  endpoint: http://agentregistry.agentregistry-system.svc.cluster.local:8080
+  jwtSecret:
+    name: aregistry-jwt
+    key: jwt-secret
+
+# Default values applied to every Agent CR the controller reconciles
+# (each spec can override). Kept tight by default; long-lived agents
+# scale up via HPA when needed.
+agentDefaults:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  replicas: 1
+
+# Watch scope. Default is "all namespaces". Lock down later by setting
+# `--namespaces=devai,fanzone,...` once tenants are real.
+watch:
+  allNamespaces: true
+
+metrics:
+  enabled: true
+  port: 9090

@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagent-controller
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "kagent.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kagent.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kagent.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: kagent-controller
+      containers:
+        - name: controller
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - controller
+            - --aregistry-url=$(AREGISTRY_URL)
+            {{- if .Values.metrics.enabled }}
+            - --metrics-addr=:{{ .Values.metrics.port }}
+            {{- end }}
+            {{- if not .Values.watch.allNamespaces }}
+            - --namespaces={{ .Values.watch.namespaces | join "," }}
+            {{- end }}
+          env:
+            - name: AREGISTRY_URL
+              value: {{ .Values.aregistry.endpoint | quote }}
+            - name: AREGISTRY_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.aregistry.jwtSecret.name }}
+                  key: {{ .Values.aregistry.jwtSecret.key }}
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: AGENT_DEFAULT_CPU_REQUEST
+              value: {{ .Values.agentDefaults.resources.requests.cpu | quote }}
+            - name: AGENT_DEFAULT_MEM_REQUEST
+              value: {{ .Values.agentDefaults.resources.requests.memory | quote }}
+          ports:
+            {{- if .Values.metrics.enabled }}
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            {{- end }}
+            - name: healthz
+              containerPort: 8081
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: healthz
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 30
+            periodSeconds: 30
