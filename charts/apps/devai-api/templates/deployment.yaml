@@ -122,6 +122,16 @@ spec:
                 secretKeyRef:
                   name: devai-api-secrets
                   key: DEVAI_ANTHROPIC_API_KEY
+            # LLM gateway routing — Anthropic adapter dials this base
+            # URL instead of api.anthropic.com directly. The gateway
+            # (devai-ai-gateway in agentgateway-system NS) injects the
+            # x-api-key header itself, so future rotations don't need
+            # a devai-api restart. Empty value falls back to the SDK's
+            # default (direct to public Anthropic API).
+            - name: DEVAI_ANTHROPIC_BASE_URL
+              value: {{ .Values.llm.anthropicBaseUrl | default "" | quote }}
+            - name: DEVAI_OPENAI_BASE_URL
+              value: {{ .Values.llm.openaiBaseUrl | default "" | quote }}
             - name: DEVAI_GROQ_API_KEY
               valueFrom:
                 secretKeyRef:

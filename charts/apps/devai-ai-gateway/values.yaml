@@ -1,0 +1,34 @@
+# devai-ai-gateway — defaults
+namespace: agentgateway-system
+
+image:
+  repository: nginx
+  tag: "1.27-alpine"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# ExternalSecret pulls both LLM keys (Anthropic + OpenAI) from GCP SM.
+externalSecrets:
+  enabled: true
+  secretStoreRef: gcp-secret-store
+  anthropicKey: prod-devai-anthropic-api-key
+  openaiKey: prod-devai-openai-api-key
+
+# Service account — no special IAM today; future SPIFFE identity will
+# pin the gateway as the only egress channel from devai → external LLMs.
+serviceAccount:
+  create: true
+  name: devai-ai-gateway

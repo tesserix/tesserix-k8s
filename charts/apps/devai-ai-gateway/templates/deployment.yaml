@@ -1,0 +1,193 @@
+---
+# Cluster DNS resolver for nginx upstream — set explicitly because the
+# default-resolver-from-/etc/resolv.conf path doesn't survive the
+# distroless-ish alpine pod under some istio sidecar configs. Use
+# CoreDNS's service IP (kube-system/kube-dns) directly.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devai-ai-gateway-config
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: devai-ai-gateway
+    app.kubernetes.io/part-of: devai
+data:
+  nginx.conf.template: |
+    worker_processes auto;
+    error_log /dev/stderr warn;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+
+    http {
+      log_format main '$remote_addr - [$time_iso8601] "$request" $status '
+                     '$body_bytes_sent $upstream_response_time';
+      access_log /dev/stdout main;
+
+      # CoreDNS — fixed cluster IP. `valid=30s` keeps the DNS cache
+      # honest; SDK clients reconnect on cold-start so 30s is fine.
+      resolver kube-dns.kube-system.svc.cluster.local valid=30s;
+
+      # We never serve large request bodies (LLM payloads are JSON,
+      # tens of KB at most). Cap at 4MB to bound abuse.
+      client_max_body_size 4m;
+      proxy_http_version 1.1;
+      proxy_read_timeout 600s;     # streaming LLM responses
+      proxy_send_timeout 600s;
+      proxy_buffering off;          # so SSE / chunked responses flow
+
+      # Upstream API hosts. Pinned via map so the path-stripped
+      # rewrite picks the right Host header.
+      map $request_uri $anth_host { default "api.anthropic.com"; }
+      map $request_uri $oai_host  { default "api.openai.com"; }
+
+      server {
+        listen 8080 default_server;
+        server_name _;
+
+        # Liveness — never touches an upstream.
+        location = /health { return 200 "ok\n"; add_header Content-Type text/plain; }
+
+        # Anthropic — strip /anthropic prefix, inject x-api-key.
+        # Examples (the only routes we care about today):
+        #   POST /anthropic/v1/messages → POST https://api.anthropic.com/v1/messages
+        location /anthropic/ {
+          proxy_set_header Host                api.anthropic.com;
+          proxy_set_header x-api-key           "${ANTHROPIC_API_KEY}";
+          proxy_set_header anthropic-version   "2023-06-01";
+          proxy_set_header Content-Type        $content_type;
+          proxy_set_header Accept              $http_accept;
+          # Strip auth headers the caller might send so we always
+          # use our injected key.
+          proxy_set_header Authorization       "";
+          # rewrite drops the /anthropic prefix; $1 is the rest of the path.
+          rewrite ^/anthropic/(.*)$ /$1 break;
+          proxy_pass https://api.anthropic.com;
+        }
+
+        # OpenAI — strip /openai prefix, inject Bearer token.
+        location /openai/ {
+          proxy_set_header Host                api.openai.com;
+          proxy_set_header Authorization       "Bearer ${OPENAI_API_KEY}";
+          proxy_set_header Content-Type        $content_type;
+          proxy_set_header Accept              $http_accept;
+          rewrite ^/openai/(.*)$ /$1 break;
+          proxy_pass https://api.openai.com;
+        }
+
+        # Catch-all — useful for debugging during rollout.
+        location / {
+          return 404 '{"error":"unknown route — use /anthropic/* or /openai/*"}\n';
+          add_header Content-Type application/json;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devai-ai-gateway
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: devai-ai-gateway
+    app.kubernetes.io/part-of: devai
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: devai-ai-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: devai-ai-gateway
+        app.kubernetes.io/part-of: devai
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+        - name: nginx
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # nginx doesn't natively envsubst its config; expand the
+          # template into /etc/nginx/nginx.conf at startup, then exec
+          # nginx -g daemon=off. We use envsubst (preinstalled in
+          # nginx:alpine via gettext) restricted to the two variables
+          # we care about so unrelated $vars in the template (e.g.
+          # $request_uri, $http_accept) survive intact.
+          command:
+            - /bin/sh
+            - -c
+            - >
+              envsubst '$ANTHROPIC_API_KEY $OPENAI_API_KEY'
+              < /etc/nginx/templates/nginx.conf.template
+              > /etc/nginx/nginx.conf
+              && exec nginx -g 'daemon off;'
+          env:
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: devai-ai-gateway-secrets
+                  key: ANTHROPIC_API_KEY
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: devai-ai-gateway-secrets
+                  key: OPENAI_API_KEY
+          ports:
+            - containerPort: 8080
+              name: http
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/templates
+            - name: cache
+              mountPath: /var/cache/nginx
+            - name: run
+              mountPath: /var/run
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: devai-ai-gateway-config
+        - name: cache
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-gateway
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: devai-ai-gateway
+    app.kubernetes.io/part-of: devai
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app.kubernetes.io/name: devai-ai-gateway
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 8080
+      protocol: TCP
+      name: http
+---
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: devai-ai-gateway
+{{- end }}
