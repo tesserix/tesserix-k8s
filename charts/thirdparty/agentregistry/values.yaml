@@ -44,10 +44,15 @@ auth:
   secretKey: jwt-secret
 
 # CNPG cluster for the registry's pgvector store.
-# Requires the cloudnative-pg operator (already installed cluster-wide
-# at sync-wave -40).
+# Disabled while the parent agentregistry Deployment is scaled to 0
+# (see comment above replicaCount). When we adopt the upstream Helm
+# chart for aregistry, that chart provisions its own DB; this nested
+# Cluster manifest becomes redundant. Also worth noting:
+# `shared_preload_libraries: vector` is rejected by the CNPG webhook
+# as a fixed config parameter — pgvector is loaded by the operator
+# directly when the .spec.imageName carries the pgvector variant.
 postgres:
-  enabled: true
+  enabled: false
   cluster:
     name: aregistry-pg
     instances: 1
@@ -58,14 +63,10 @@ postgres:
       initdb:
         database: agentregistry
         owner: agentregistry
-        # The postgres password is rendered from an ExternalSecret in
-        # external-secrets/prod/agentregistry-system/ (see runbook).
         secret:
           name: aregistry-pg-credentials
     postgresql:
-      parameters:
-        # pgvector extension required for semantic search
-        shared_preload_libraries: vector
+      parameters: {}
 
 # Bootstrap content — registry seeds are NOT applied via this chart.
 # A separate ArgoCD app (`devai-registry-bootstrap`) runs a Job that
