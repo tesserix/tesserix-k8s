@@ -128,7 +128,13 @@ spec:
               # schema-allowed subset onto the wire body.
               ALLOWED = {
                   "Skill":     {"name","description","version","category","packages","remotes","repository","status","title","websiteUrl"},
-                  "MCPServer": {"name","type","args","build","command","env","headers","image","registryServerName","registryServerPreferRemote","registryServerVersion","registryURL","url"},
+                  # MCPServer body is validated against the upstream
+                  # ModelContextProtocol server descriptor schema —
+                  # aregistry's own OpenAPI shows {type, name} as
+                  # required but the runtime additionally enforces a
+                  # top-level $schema discriminator. Allow it through
+                  # the projection filter so we can inject it.
+                  "MCPServer": {"$schema","name","type","args","build","command","env","headers","image","registryServerName","registryServerPreferRemote","registryServerVersion","registryURL","url"},
                   "Agent":     {"name","description","version","image","language","framework","modelProvider","modelName","mcpServers","packages","prompts","remotes","repository","skills","status","telemetryEndpoint","title","updatedAt","websiteUrl"},
                   "Prompt":    {"name","version","content","description"},
               }
@@ -148,8 +154,14 @@ spec:
                   elif kind == "MCPServer":
                       # aregistry uses `type` = remote|local|registry to
                       # discriminate. Our seeds describe an HTTP endpoint
-                      # → remote with url.
+                      # → remote with url. The MCP server descriptor
+                      # requires a $schema URL identifying the JSON
+                      # schema version it conforms to.
                       src.setdefault("type", "remote")
+                      src.setdefault(
+                          "$schema",
+                          "https://modelcontextprotocol.io/schemas/draft/2025-07-09/server.schema.json",
+                      )
                       if "endpoint" in spec and "url" not in src:
                           src["url"] = spec["endpoint"]
                   elif kind == "Agent":
