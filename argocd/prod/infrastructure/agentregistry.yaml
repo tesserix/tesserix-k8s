@@ -30,8 +30,19 @@ spec:
         # aregistry-jwt Secret (mirrored from GCP SM via
         # external-secrets/prod/agentregistry-system/). Value must be
         # hex-encoded (chart parses with encoding/hex).
+        #
+        # enableAnonymousAuth: catalog writers (devai-registry-bootstrap
+        # Job and the DevAI Python registry client) live entirely
+        # in-cluster and are already gated by NetworkPolicies +
+        # Istio AuthorizationPolicies (devai NS only). The aregistry
+        # signed-token flow (POST /v0/auth/{http,github-at,github-oidc})
+        # is heavyweight for a private single-tenant deployment.
+        # Anonymous auth lets us POST seeds + GET catalogue items
+        # without minting a registry-format JWT, and the mesh policies
+        # still deny anyone outside the allowed namespaces.
         config:
           existingSecret: aregistry-jwt
+          enableAnonymousAuth: "true"
         # Postgres backend — schema migration 001 runs
         # `CREATE EXTENSION vector`, so the bundled DB MUST be a
         # pgvector-capable image. Default postgres:18 (without
