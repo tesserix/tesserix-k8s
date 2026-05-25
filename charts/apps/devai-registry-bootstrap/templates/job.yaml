@@ -58,49 +58,106 @@ spec:
               subPath: .gitconfig
               readOnly: true
       containers:
-        # Step 2: walk architecture/registry-seeds/ and POST each YAML
-        # to aregistry's v0 API. We use curl because alpine + curl is
-        # smaller than pulling kubectl just for this. The endpoint
-        # accepts YAML body directly and dispatches by `kind`.
+        # Step 2: walk architecture/registry-seeds/ and POST each entry
+        # to aregistry's v0 HTTP API. The on-disk seeds use a K8s-CRD-
+        # like envelope (apiVersion / kind / metadata.name / spec) for
+        # readability + future reconciler use, but aregistry's API
+        # expects flat JSON bodies whose schemas it documents in
+        # /openapi.json. So we translate inline: load YAML, project
+        # metadata + spec into one flat dict, POST as application/json.
+        #
+        # Directory → endpoint map (verified live against /openapi.json
+        # on 2026-05-25):
+        #   skills/      → POST /v0/skills    (SkillJSON)
+        #   prompts/     → POST /v0/prompts   (PromptJSON)
+        #   mcp-servers/ → POST /v0/servers   (McpServerType)
+        #   agents/      → POST /v0/agents    (AgentJSON)
+        # `projects/` is NOT a real aregistry resource — those YAMLs
+        # describe DevAI's catalogue membership in tree-only form and
+        # are skipped here. Order matters: servers + skills + prompts
+        # must land before agents (which reference them).
         - name: upsert
-          image: curlimages/curl:8.7.1
+          image: python:3.12-alpine
           command:
             - /bin/sh
             - -c
           args:
             - |
               set -euo pipefail
-              SEEDS=/workspace/devai/{{ .Values.seedSource.subdir }}
-              if [ ! -d "$SEEDS" ]; then
-                echo "ERROR: seeds dir $SEEDS not found in cloned repo"
-                exit 1
-              fi
-              ENDPOINT="{{ .Values.aregistry.endpoint }}/v0"
-              echo "POSTing seeds to $ENDPOINT"
-              # Order matters: Project → MCPServer → Skill → Prompt → Agent.
-              # Agents reference Skills + Prompts, so they must be applied last.
-              for dir in projects mcp-servers skills prompts agents; do
-                if [ ! -d "$SEEDS/$dir" ]; then continue; fi
-                echo "--- $dir ---"
-                for f in "$SEEDS/$dir"/*.yaml; do
-                  [ -e "$f" ] || continue
-                  name=$(basename "$f")
-                  echo "→ $dir/$name"
-                  http_code=$(curl -s -o /tmp/resp -w "%{http_code}" \
-                    -X PUT \
-                    -H "Authorization: Bearer $AREGISTRY_JWT" \
-                    -H "Content-Type: application/yaml" \
-                    --data-binary "@$f" \
-                    "$ENDPOINT/$dir")
-                  if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
-                    echo "  FAILED ($http_code):"
-                    cat /tmp/resp
-                    exit 1
-                  fi
-                  echo "  ok ($http_code)"
-                done
-              done
-              echo "registry bootstrap complete"
+              # PyYAML + requests aren't in the base image; pip-install at
+              # boot keeps the image size small at the cost of ~10s pod
+              # startup. Cache could be wired in via an emptyDir, but a
+              # ~50KB / ~100KB wheel pair downloads in well under a second.
+              pip install --quiet --no-cache-dir 'pyyaml==6.*' 'requests==2.*'
+
+              cat > /tmp/upsert.py <<'PYEOF'
+              import os, sys, time, json, glob, pathlib, yaml, requests
+
+              SEEDS = pathlib.Path(os.environ["SEEDS_DIR"])
+              ENDPOINT = os.environ["AREGISTRY_ENDPOINT"].rstrip("/")
+              JWT = os.environ["AREGISTRY_JWT"]
+              # `mcp-servers/` on disk → `/v0/servers` on the wire (aregistry's
+              # endpoint name; `mcp-servers` was Fiber's old reconciler name).
+              DIR_TO_PATH = {
+                  "skills":      "/v0/skills",
+                  "prompts":     "/v0/prompts",
+                  "mcp-servers": "/v0/servers",
+                  "agents":      "/v0/agents",
+              }
+              SESSION = requests.Session()
+              SESSION.headers.update({
+                  "Authorization": f"Bearer {JWT}",
+                  "Content-Type": "application/json",
+              })
+
+              def translate(doc, kind):
+                  """Flatten the CRD envelope into aregistry's body shape.
+                  metadata.name → name; spec.<*> → top-level. We default
+                  `version` to "1" since aregistry requires it and the seed
+                  files lean on the registry's auto-versioning."""
+                  spec = doc.get("spec") or {}
+                  out = dict(spec)
+                  out["name"] = doc.get("metadata", {}).get("name") or out.get("name")
+                  out.setdefault("version", str(spec.get("version") or "1"))
+                  if kind in ("Skill", "MCPServer"):
+                      out.setdefault("description", spec.get("description", ""))
+                  return out
+
+              def post(path, body, label):
+                  for attempt in range(3):
+                      r = SESSION.post(f"{ENDPOINT}{path}", data=json.dumps(body), timeout=20)
+                      if 200 <= r.status_code < 300:
+                          print(f"  ok ({r.status_code}) {label}")
+                          return
+                      # 409 (conflict / already exists) is a success on rerun.
+                      if r.status_code == 409:
+                          print(f"  exists ({r.status_code}) {label}")
+                          return
+                      print(f"  attempt {attempt+1} HTTP {r.status_code} {label}: {r.text[:200]}")
+                      time.sleep(2 ** attempt)
+                  print(f"  FAILED {label}")
+                  sys.exit(1)
+
+              total = 0
+              for dirname in ("skills", "prompts", "mcp-servers", "agents"):
+                  d = SEEDS / dirname
+                  if not d.is_dir():
+                      continue
+                  print(f"--- {dirname} ---")
+                  for f in sorted(d.glob("*.yaml")):
+                      doc = yaml.safe_load(f.read_text()) or {}
+                      kind = doc.get("kind", dirname.rstrip("s").title())
+                      body = translate(doc, kind)
+                      label = f"{dirname}/{f.name}"
+                      post(DIR_TO_PATH[dirname], body, label)
+                      total += 1
+              print(f"registry bootstrap complete: {total} entries upserted")
+              PYEOF
+
+              SEEDS_DIR=/workspace/devai/{{ .Values.seedSource.subdir }} \
+                AREGISTRY_ENDPOINT={{ .Values.aregistry.endpoint }} \
+                AREGISTRY_JWT="${AREGISTRY_JWT}" \
+                python /tmp/upsert.py
           env:
             - name: AREGISTRY_JWT
               valueFrom:
