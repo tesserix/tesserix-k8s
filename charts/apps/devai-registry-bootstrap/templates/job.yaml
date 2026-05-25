@@ -105,10 +105,17 @@ spec:
                   "agents":      "/v0/agents",
               }
               SESSION = requests.Session()
+              # aregistry is configured with enableAnonymousAuth=true on
+              # this cluster (single-tenant, mesh-gated). Sending an
+              # Authorization header makes aregistry try to verify it as
+              # a real signed JWT, which fails because the secret we
+              # have on disk is the SIGNING key, not a minted token —
+              # 401 even though anonymous would have allowed the call.
+              # So we deliberately omit the header.
               SESSION.headers.update({
-                  "Authorization": f"Bearer {JWT}",
                   "Content-Type": "application/json",
               })
+              _ = JWT  # retained for the day we switch back to signed-token auth
 
               def translate(doc, kind):
                   """Flatten the CRD envelope into aregistry's body shape.
