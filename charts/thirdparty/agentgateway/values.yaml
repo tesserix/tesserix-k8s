@@ -1,15 +1,11 @@
-# Solo.io agentgateway — defaults
+# agentgateway/agentgateway — verified defaults
 #
-# ───────────────────────────────────────────────────────────────────────
-# IMPORTANT: verify the image reference against the upstream release
-# before sync:
-#   https://github.com/agentgateway/agentgateway
-# ───────────────────────────────────────────────────────────────────────
+# Real upstream: https://github.com/agentgateway/agentgateway
+# Latest stable: v1.2.1 (2026-05-15).
 
 image:
-  # REPLACE with the verified upstream image.
   repository: ghcr.io/agentgateway/agentgateway
-  tag: v1.1.0
+  tag: v1.2.1
   pullPolicy: IfNotPresent
 
 replicaCount: 2
@@ -41,19 +37,21 @@ aregistry:
     name: aregistry-jwt
     key: jwt-secret
 
-# Single-URL LLM topology. Agents always POST to
-#   http://ai-gateway.agentgateway-system.svc.cluster.local/anthropic/model/<id>/invoke
-# the gateway rewrites /anthropic/* → /bedrock/* and injects the
-# Authorization header from the fiber-secrets Secret (replicated from
-# default ns by Reflector).
+# LLM backends. DevAI dispatches through its own provider adapter family
+# today (claude / openai / groq / gemini / nemoclaw / codex are called
+# directly by the API service). The Solo.io fiber-secrets / Zendesk
+# Bedrock single-URL topology is a demo path we don't use yet — leaving
+# disabled so the gateway pod doesn't require the fiber-secrets Secret.
+#
+# Re-enable when we route Anthropic traffic through the gateway instead
+# of direct Claude API calls.
 backends:
   anthropic:
-    enabled: true
-    # The Bedrock proxy URL Solo.io publishes for the Anthropic tunnel.
-    upstreamUrl: https://ai-gateway.zende.sk/bedrock
-    authSecret:
-      name: fiber-secrets
-      key: zdai-token
+    enabled: false
+    # upstreamUrl: https://ai-gateway.zende.sk/bedrock
+    # authSecret:
+    #   name: fiber-secrets
+    #   key: zdai-token
   openai:
     enabled: false
   groq:
