@@ -1,0 +1,121 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: oauth2-proxy-kagent
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: auth-proxy
+  annotations:
+    # Runs after kagent (wave -3) and keycloak realm import — the OIDC
+    # client this proxy uses lives in the devai Keycloak realm, so the
+    # realm must exist first. Wave 0 is safe.
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://oauth2-proxy.github.io/manifests
+    chart: oauth2-proxy
+    targetRevision: 7.7.4
+    helm:
+      releaseName: oauth2-proxy-kagent
+      values: |
+        # ============================================================
+        # OAuth2-Proxy in front of kagent-ui (kagent.tesserix.app).
+        # The kagent-ui pod env already sets SSO_REDIRECT_PATH=/oauth2/start
+        # — i.e. it expects oauth2-proxy on the same hostname.
+        # ============================================================
+
+        replicaCount: 1
+
+        config:
+          # Reuse the in-cluster Keycloak devai realm. clientId +
+          # clientSecret come from the keycloak-oauth2-proxy Secret
+          # synced from GCP SM (see external-secrets/prod/kagent-system).
+          existingSecret: kagent-oauth2-proxy
+          configFile: |-
+            provider = "oidc"
+            provider_display_name = "Keycloak (devai)"
+            oidc_issuer_url = "http://keycloak.identity-internal.svc.cluster.local:8080/realms/devai"
+            redirect_url = "https://kagent.tesserix.app/oauth2/callback"
+            cookie_name = "_kagent_oauth2"
+            cookie_domains = [".tesserix.app"]
+            cookie_secure = true
+            cookie_samesite = "lax"
+            cookie_expire = "24h"
+            email_domains = ["*"]
+            # The devai realm already restricts logins to the allowed
+            # users via the "first broker login" flow; oauth2-proxy
+            # accepts any successful Keycloak login.
+            upstreams = ["http://kagent-ui.kagent-system.svc.cluster.local:8080/"]
+            reverse_proxy = true
+            skip_provider_button = true
+            pass_access_token = true
+            pass_authorization_header = true
+            set_authorization_header = true
+            set_xauthrequest = true
+            insecure_oidc_allow_unverified_email = true
+            whitelist_domains = ["kagent.tesserix.app", ".tesserix.app"]
+            http_address = "0.0.0.0:4180"
+            real_client_ip_header = "X-Forwarded-For"
+
+        # Run inside the kagent-system namespace so the upstream service
+        # DNS works without cross-namespace egress complications.
+        namespaceOverride: kagent-system
+
+        service:
+          type: ClusterIP
+          portNumber: 4180
+
+        serviceAccount:
+          enabled: true
+          name: oauth2-proxy-kagent
+
+        podLabels:
+          app.kubernetes.io/name: oauth2-proxy
+          app.kubernetes.io/instance: kagent
+          # Used by the AuthorizationPolicy in manifests/agentic-istio/
+          # to grant ingress-gateway → oauth2-proxy and to deny direct
+          # gateway → kagent-ui (only proxy can hit upstream).
+          tesserix.app/auth-proxy: "kagent"
+
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+
+        # The chart's built-in ingress is intentionally disabled —
+        # we route via the existing Istio gateway / VirtualService
+        # in manifests/agentic-istio/.
+        ingress:
+          enabled: false
+
+        metrics:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kagent-system
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

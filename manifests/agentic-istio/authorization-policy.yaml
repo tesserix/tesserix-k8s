@@ -1,0 +1,131 @@
+##############################################################################
+# Agentic UIs — Istio AuthorizationPolicy
+#
+# kagent.tesserix.app and aregistry.tesserix.app are public hostnames. Each
+# routes through its own oauth2-proxy first (the gateway only talks to the
+# proxy), and the proxy reverse-proxies to the upstream UI on its behalf.
+#
+# Policies:
+#   1. oauth2-proxy-kagent / oauth2-proxy-aregistry: allow istio-ingress
+#      and intra-namespace probes.
+#   2. kagent-ui: only allow traffic from oauth2-proxy-kagent (and probes).
+#      Direct ingress-gateway → kagent-ui is denied even though
+#      kagent.tesserix.app exists in frontendApps — the gateway never
+#      points there, so it's defense-in-depth.
+#   3. agentregistry: same pattern — only oauth2-proxy-aregistry +
+#      cross-namespace kagent-controller can reach it.
+##############################################################################
+
+# --- oauth2-proxy-kagent — accepts traffic from istio-ingress ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: oauth2-proxy-kagent-authz
+  namespace: kagent-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: oauth2-proxy
+      app.kubernetes.io/instance: kagent
+  action: ALLOW
+  rules:
+    # Ingress gateway → oauth2-proxy (the only public entry point)
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-ingress/sa/istio-ingressgateway"]
+    # Kubelet probes
+    - to:
+        - operation:
+            paths: ["/ping", "/ready", "/oauth2/healthz"]
+            methods: ["GET"]
+---
+# --- kagent-ui — only the matching oauth2-proxy and kagent-controller (SSR/A2A) ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: kagent-ui-authz
+  namespace: kagent-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kagent
+      app.kubernetes.io/component: ui
+  action: ALLOW
+  rules:
+    # Authenticated traffic is forwarded by oauth2-proxy-kagent
+    - from:
+        - source:
+            principals: ["cluster.local/ns/kagent-system/sa/oauth2-proxy-kagent"]
+    # kagent-controller reads the UI for some metadata exchange
+    - from:
+        - source:
+            principals: ["cluster.local/ns/kagent-system/sa/kagent-controller"]
+    # Kubelet probes (no source identity in ambient probes)
+    - to:
+        - operation:
+            paths: ["/api/health", "/healthz", "/api/ready"]
+            methods: ["GET"]
+---
+# --- oauth2-proxy-aregistry — accepts traffic from istio-ingress ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: oauth2-proxy-aregistry-authz
+  namespace: agentregistry-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: oauth2-proxy
+      app.kubernetes.io/instance: aregistry
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-ingress/sa/istio-ingressgateway"]
+    - to:
+        - operation:
+            paths: ["/ping", "/ready", "/oauth2/healthz"]
+            methods: ["GET"]
+---
+# --- agentregistry — proxy traffic plus catalog-API readers from other namespaces ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: agentregistry-authz
+  namespace: agentregistry-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentregistry
+  action: ALLOW
+  rules:
+    # Authenticated UI traffic via oauth2-proxy
+    - from:
+        - source:
+            principals: ["cluster.local/ns/agentregistry-system/sa/oauth2-proxy-aregistry"]
+    # agentgateway data plane reads agent + skill catalog (machine API path)
+    - from:
+        - source:
+            namespaces: ["agentgateway-system"]
+      to:
+        - operation:
+            paths: ["/v0/*"]
+    # kagent controller reads Agent CRs from aregistry
+    - from:
+        - source:
+            namespaces: ["kagent-system"]
+      to:
+        - operation:
+            paths: ["/v0/*"]
+    # devai pipeline writes registry seeds (bootstrap job)
+    - from:
+        - source:
+            namespaces: ["devai"]
+      to:
+        - operation:
+            paths: ["/v0/*"]
+    # Kubelet probes
+    - to:
+        - operation:
+            paths: ["/v0/health", "/healthz"]
+            methods: ["GET"]
