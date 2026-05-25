@@ -134,7 +134,11 @@ spec:
                   # required but the runtime additionally enforces a
                   # top-level $schema discriminator. Allow it through
                   # the projection filter so we can inject it.
-                  "MCPServer": {"$schema","name","type","args","build","command","env","headers","image","registryServerName","registryServerPreferRemote","registryServerVersion","registryURL","url"},
+                  # `description` + `version` are required by the runtime
+                  # MCP server schema (not surfaced by OpenAPI). Allowing
+                  # them through the projection filter lets the per-kind
+                  # defaults below land them in the body.
+                  "MCPServer": {"$schema","name","description","version","type","args","build","command","env","headers","image","registryServerName","registryServerPreferRemote","registryServerVersion","registryURL","url"},
                   "Agent":     {"name","description","version","image","language","framework","modelProvider","modelName","mcpServers","packages","prompts","remotes","repository","skills","status","telemetryEndpoint","title","updatedAt","websiteUrl"},
                   "Prompt":    {"name","version","content","description"},
               }
@@ -156,12 +160,16 @@ spec:
                       # discriminate. Our seeds describe an HTTP endpoint
                       # → remote with url. The MCP server descriptor
                       # requires a $schema URL identifying the JSON
-                      # schema version it conforms to.
+                      # schema version it conforms to, plus description
+                      # and version fields (enforced by the runtime,
+                      # not surfaced in OpenAPI).
                       src.setdefault("type", "remote")
                       src.setdefault(
                           "$schema",
                           "https://modelcontextprotocol.io/schemas/draft/2025-07-09/server.schema.json",
                       )
+                      src.setdefault("description", spec.get("description") or name)
+                      src.setdefault("version", "1")
                       if "endpoint" in spec and "url" not in src:
                           src["url"] = spec["endpoint"]
                   elif kind == "Agent":
