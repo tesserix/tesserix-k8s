@@ -9,37 +9,44 @@ metadata:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: agent-data-plane
   annotations:
-    # Comes up after aregistry (-5) so its first 30s poll of the catalog
-    # succeeds. Both must be healthy before kagent (-3) starts.
+    # Lands after aregistry (-5) so the gateway's first catalog poll
+    # finds a healthy backend.
     argocd.argoproj.io/sync-wave: "-4"
 spec:
   project: default
   source:
-    repoURL: https://github.com/tesserix/tesserix-k8s.git
-    targetRevision: HEAD
-    path: charts/thirdparty/agentgateway
+    # Upstream OCI Helm chart (stable v1.0.1). Knows the binary's
+    # CLI, config file format, and how to wire ConfigMap-driven
+    # backends — the things our hand-rolled wrapper couldn't.
+    repoURL: ghcr.io/agentgateway/agentgateway/charts
+    chart: agentgateway
+    targetRevision: v1.0.1
     helm:
       releaseName: agentgateway
-      valueFiles:
-        - values.yaml
+      values: |
+        namespaceOverride: agentgateway-system
+        replicaCount: 1
+        # DevAI dispatches LLM calls through its own adapter family
+        # (src/devai/adapters/llm/), so provider backend routing is
+        # off here. Leave the gateway running for MCP / A2A; enable
+        # provider backends via upstream values later if we want them
+        # on the path.
   destination:
     server: https://kubernetes.default.svc
     namespace: agentgateway-system
   ignoreDifferences:
-    # K8s 1.36+ surfaces .status.terminatingReplicas which ArgoCD's
-    # structured-merge-diff doesn't yet recognize. Ignoring it on
-    # Deployments unblocks sync without losing any real coverage.
     - group: apps
       kind: Deployment
       jsonPointers:
         - /status/terminatingReplicas
   syncPolicy:
     automated:
-      prune: false
+      prune: true   # purge stale resources from the previous wrapper chart
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:

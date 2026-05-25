@@ -9,38 +9,56 @@ metadata:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: agent-controller
   annotations:
-    # Last in the agentic control-plane chain. Comes up only after
-    # aregistry (-5) and agentgateway (-4) are healthy, since every
-    # Agent CR it reconciles ultimately calls the gateway.
+    # Lands after aregistry (-5) and agentgateway (-4) — kagent reconciles
+    # Agent CRs via the catalog and dispatches via the gateway.
     argocd.argoproj.io/sync-wave: "-3"
 spec:
   project: default
   source:
-    repoURL: https://github.com/tesserix/tesserix-k8s.git
-    targetRevision: HEAD
-    path: charts/thirdparty/kagent
+    # Upstream OCI Helm chart. Bundles its own Postgres StatefulSet
+    # (kagent-postgresql) for schema migrations + vector store — which
+    # is why the hand-rolled controller-only Deployment crash-looped
+    # on missing DB.
+    repoURL: ghcr.io/kagent-dev/kagent/helm
+    chart: kagent
+    targetRevision: "0.9.4"
     helm:
       releaseName: kagent
-      valueFiles:
-        - values.yaml
+      values: |
+        namespaceOverride: kagent-system
+        controller:
+          replicas: 1
+        # The bundled Postgres provisions a PVC for the vector store.
+        # standard-rwo is the default storage class on this GKE cluster.
+        postgresql:
+          enabled: true
+          persistence:
+            enabled: true
+            size: 20Gi
+        # UI is a separate component — keep off for now; Agent CRs are
+        # configured via aregistry seeds, not the kagent UI.
+        ui:
+          enabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: kagent-system
   ignoreDifferences:
-    # K8s 1.36+ surfaces .status.terminatingReplicas which ArgoCD's
-    # structured-merge-diff doesn't yet recognize. Ignoring it on
-    # Deployments unblocks sync without losing any real coverage.
     - group: apps
       kind: Deployment
       jsonPointers:
         - /status/terminatingReplicas
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /status/terminatingReplicas
   syncPolicy:
     automated:
-      prune: false
+      prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
