@@ -28,14 +28,25 @@ spec:
         namespaceOverride: agentregistry-system
         # JWT signing key — points the chart at our existing
         # aregistry-jwt Secret (mirrored from GCP SM via
-        # external-secrets/prod/agentregistry-system/). The chart's
-        # validate template requires either config.jwtPrivateKey
-        # inline or config.existingSecret containing key
-        # AGENT_REGISTRY_JWT_PRIVATE_KEY — we use the latter.
+        # external-secrets/prod/agentregistry-system/). Value must be
+        # hex-encoded (chart parses with encoding/hex).
         config:
           existingSecret: aregistry-jwt
-        # The chart bundles its own pgvector-capable Postgres
-        # (StatefulSet) with PVC 20Gi. Leave defaults.
+        # Postgres backend — schema migration 001 runs
+        # `CREATE EXTENSION vector`, so the bundled DB MUST be a
+        # pgvector-capable image. Default postgres:18 (without
+        # pgvector) fails with "extension vector is not available".
+        # Swap to the pgvector/pgvector image which is postgres + the
+        # extension pre-installed.
+        database:
+          vectorEnabled: true
+          bundled:
+            enabled: true
+            image:
+              registry: docker.io
+              repository: pgvector
+              name: pgvector
+              tag: "pg18"
   destination:
     server: https://kubernetes.default.svc
     namespace: agentregistry-system
