@@ -1,17 +1,14 @@
 ##############################################################################
 # Agentic UIs — Istio VirtualService configuration
 #
-# Routes:
-#   kagent.tesserix.app/    → oauth2-proxy-kagent (port 4180)
-#     - oauth2-proxy reverse-proxies to kagent-ui:8080 once authenticated
-#     - /oauth2/* are handled by oauth2-proxy directly (login/callback)
+# Both hostnames route through devai-auth-bff (cross-namespace destination
+# in `devai`). The BFF inspects the devai_session cookie:
+#   * present + valid + email allow-listed → reverse-proxy to the upstream
+#   * missing/invalid → 302 to https://devai.tesserix.app/login?return_to=…
 #
-#   aregistry.tesserix.app/ → oauth2-proxy-aregistry (port 4180)
-#     - oauth2-proxy reverse-proxies to agentregistry:12121 once authenticated
-#
-# Both proxies authenticate against the in-cluster Keycloak `devai` realm
-# (clients `kagent-oauth2-proxy` and `aregistry-oauth2-proxy` provisioned
-# by devai-realm-import-job).
+# That's a single SSO for all four DevAI hostnames (devai, sre, kagent,
+# aregistry), all backed by the same GIP project (tesseracthub-480811)
+# and ALM-tenant pool.
 ##############################################################################
 
 # kagent UI
@@ -39,9 +36,9 @@ spec:
             x-forwarded-proto: https
       route:
         - destination:
-            host: oauth2-proxy-kagent.kagent-system.svc.cluster.local
+            host: devai-auth-bff.devai.svc.cluster.local
             port:
-              number: 4180
+              number: 8090
       timeout: 120s
       retries:
         attempts: 2
@@ -73,9 +70,9 @@ spec:
             x-forwarded-proto: https
       route:
         - destination:
-            host: oauth2-proxy-aregistry.agentregistry-system.svc.cluster.local
+            host: devai-auth-bff.devai.svc.cluster.local
             port:
-              number: 4180
+              number: 8090
       timeout: 120s
       retries:
         attempts: 2
