@@ -35,15 +35,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.aregistry.jwtSecret.name }}
                   key: {{ .Values.aregistry.jwtSecret.key }}
-            {{- if .Values.backends.anthropic.enabled }}
-            - name: ANTHROPIC_UPSTREAM_URL
-              value: {{ .Values.backends.anthropic.upstreamUrl | quote }}
-            - name: ANTHROPIC_AUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.backends.anthropic.authSecret.name }}
-                  key: {{ .Values.backends.anthropic.authSecret.key }}
-            {{- end }}
+            # Per-provider backend env vars are NOT injected here.
+            # agentgateway reads provider routes + auth secrets from
+            # aregistry (via AgentgatewayBackend / TrafficPolicy CRDs)
+            # at runtime — env-var injection would create two sources
+            # of truth. Configure backends in values.yaml only as
+            # documentation for what's expected; the actual wiring
+            # happens through CRDs once aregistry is healthy.
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}

@@ -37,25 +37,33 @@ aregistry:
     name: aregistry-jwt
     key: jwt-secret
 
-# LLM backends. DevAI dispatches through its own provider adapter family
-# today (claude / openai / groq / gemini / nemoclaw / codex are called
-# directly by the API service). The Solo.io fiber-secrets / Zendesk
-# Bedrock single-URL topology is a demo path we don't use yet — leaving
-# disabled so the gateway pod doesn't require the fiber-secrets Secret.
+# LLM backends. DevAI dispatches through its own LLM adapter family
+# today (see src/devai/adapters/llm/ in the devai repo) — the
+# agentgateway upstream proxying is off by default.
 #
-# Re-enable when we route Anthropic traffic through the gateway instead
-# of direct Claude API calls.
+# To route a provider's traffic through the gateway, enable that block
+# and fill in the provider's upstream URL + the Secret that holds the
+# authentication token (the Secret must already exist in the
+# agentgateway-system namespace).
 backends:
   anthropic:
     enabled: false
-    # upstreamUrl: https://ai-gateway.zende.sk/bedrock
+    # upstreamUrl: https://api.anthropic.com
     # authSecret:
-    #   name: fiber-secrets
-    #   key: zdai-token
+    #   name: anthropic-api-key
+    #   key: api-key
   openai:
     enabled: false
+    # upstreamUrl: https://api.openai.com
+    # authSecret:
+    #   name: openai-api-key
+    #   key: api-key
   groq:
     enabled: false
+    # upstreamUrl: https://api.groq.com
+    # authSecret:
+    #   name: groq-api-key
+    #   key: api-key
 
 # Per-role traffic policies. Empty list = permissive; add per-role gates
 # as we lock the surface down (defense in depth on top of the prompt-
