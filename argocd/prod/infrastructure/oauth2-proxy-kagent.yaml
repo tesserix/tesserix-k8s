@@ -73,12 +73,14 @@ spec:
           enabled: true
           name: oauth2-proxy-kagent
 
+        # Extra labels for the pod template. NOTE: do NOT override the
+        # chart's `app.kubernetes.io/name` or `app.kubernetes.io/instance`
+        # here — the Deployment selector is built from those plus the
+        # Helm release name, and a mismatch fails K8s validation with
+        # "selector does not match template labels". The
+        # tesserix.app/auth-proxy label is the only thing the AuthZ
+        # policy needs to identify this oauth2-proxy instance.
         podLabels:
-          app.kubernetes.io/name: oauth2-proxy
-          app.kubernetes.io/instance: kagent
-          # Used by the AuthorizationPolicy in manifests/agentic-istio/
-          # to grant ingress-gateway → oauth2-proxy and to deny direct
-          # gateway → kagent-ui (only proxy can hit upstream).
           tesserix.app/auth-proxy: "kagent"
 
         resources:
