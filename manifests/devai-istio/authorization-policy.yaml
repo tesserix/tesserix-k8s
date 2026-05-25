@@ -159,3 +159,40 @@ spec:
         - operation:
             paths: ["/healthz", "/_next/*", "/"]
             methods: ["GET"]
+---
+# --- devai-auth-bff Authorization ---
+#
+# Sees traffic for all four public DevAI hostnames:
+#   * devai.tesserix.app/auth/* + /bff/*  (called by the ALM dashboard)
+#   * sre.tesserix.app/auth/* + /bff/*    (called by the SRE dashboard)
+#   * kagent.tesserix.app/                (full reverse-proxy)
+#   * aregistry.tesserix.app/             (full reverse-proxy)
+#
+# Plus intra-namespace dashboard SSR calls to /auth/me.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: devai-auth-bff-authz
+  namespace: devai
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: devai-auth-bff
+  action: ALLOW
+  rules:
+    # Istio ingress for all four hostnames terminates here.
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-ingress/sa/istio-ingressgateway"]
+    # Dashboards may call /auth/me from server components (SSR) — same NS.
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-dashboard"]
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-sre-dashboard"]
+    # Kubelet health probes.
+    - to:
+        - operation:
+            paths: ["/healthz", "/readyz"]
+            methods: ["GET"]
