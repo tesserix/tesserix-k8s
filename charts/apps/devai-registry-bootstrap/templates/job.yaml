@@ -173,8 +173,13 @@ spec:
                       if 200 <= r.status_code < 300:
                           print(f"  ok ({r.status_code}) {label}")
                           return
-                      # 409 (conflict / already exists) is a success on rerun.
-                      if r.status_code == 409:
+                      # 409 conflict OR 400 with the registry's
+                      # "duplicate version" detail both mean the resource
+                      # already exists at the same version — exactly what
+                      # we want on idempotent re-runs.
+                      if r.status_code == 409 or (
+                          r.status_code == 400 and "duplicate version" in r.text
+                      ):
                           print(f"  exists ({r.status_code}) {label}")
                           return
                       print(f"  attempt {attempt+1} HTTP {r.status_code} {label}: {r.text[:200]}")
