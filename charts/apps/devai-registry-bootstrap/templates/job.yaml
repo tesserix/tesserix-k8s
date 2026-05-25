@@ -36,8 +36,14 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
+            # `git` reads $GIT_CONFIG_GLOBAL as the user-level config; we
+            # point it at the Secret-projected file under /workspace
+            # (writable tmpfs the workload owns). The image's default
+            # /etc/gitconfig is a regular file owned by root, so a file-
+            # over-directory mount fails — using a fresh path under
+            # /workspace avoids that and keeps file mode at 0400.
             - name: GIT_CONFIG_GLOBAL
-              value: /etc/gitconfig/.gitconfig
+              value: /workspace/.gitconfig
           args:
             - clone
             - --depth=1
@@ -48,7 +54,8 @@ spec:
             - name: workspace
               mountPath: /workspace
             - name: gitconfig
-              mountPath: /etc/gitconfig
+              mountPath: /workspace/.gitconfig
+              subPath: .gitconfig
               readOnly: true
       containers:
         # Step 2: walk architecture/registry-seeds/ and POST each YAML
