@@ -63,6 +63,42 @@ spec:
             # NATS
             - name: DEVAI_NATS_URL
               value: {{ .Values.nats.url | quote }}
+            # ─── Fiber-style blueprint runtime + adapters ─────────
+            {{- if .Values.pipeline }}
+            - name: DEVAI_PIPELINE_ENABLED
+              value: {{ .Values.pipeline.enabled | default false | quote }}
+            - name: DEVAI_PIPELINE_BLUEPRINT_DIR
+              value: {{ .Values.pipeline.blueprintDir | default "blueprints" | quote }}
+            - name: DEVAI_PIPELINE_DEFAULT_BLUEPRINT
+              value: {{ .Values.pipeline.defaultBlueprint | default "alm-pipeline" | quote }}
+            - name: DEVAI_PIPELINE_PR_REVIEW_BLUEPRINT
+              value: {{ .Values.pipeline.prReviewBlueprint | default "pr-review" | quote }}
+            - name: DEVAI_PIPELINE_SRE_BLUEPRINT
+              value: {{ .Values.pipeline.sreBlueprint | default "sre-monitor" | quote }}
+            - name: DEVAI_PIPELINE_CONCURRENCY
+              value: {{ .Values.pipeline.concurrency | default 4 | quote }}
+            - name: DEVAI_PIPELINE_DEFAULT_STAGE_TIMEOUT
+              value: {{ .Values.pipeline.defaultStageTimeout | default 900 | quote }}
+            {{- end }}
+            {{- if .Values.specializations }}
+            - name: DEVAI_SPECIALIZATIONS_ENABLED
+              value: {{ .Values.specializations.enabled | default true | quote }}
+            - name: DEVAI_SPECIALIZATIONS_DIR
+              value: {{ .Values.specializations.dir | default "specializations" | quote }}
+            {{- end }}
+            {{- if .Values.memory }}
+            - name: DEVAI_MEMORY_PROVIDER
+              value: {{ .Values.memory.provider | default "noop" | quote }}
+            {{- end }}
+            # Agentic control planes (aregistry / agentgateway / kagent)
+            {{- if .Values.agenticControlPlane }}
+            - name: DEVAI_AREGISTRY_URL
+              value: {{ .Values.agenticControlPlane.aregistryUrl | default "" | quote }}
+            - name: DEVAI_AGENTGATEWAY_URL
+              value: {{ .Values.agenticControlPlane.agentgatewayUrl | default "" | quote }}
+            - name: DEVAI_KAGENT_ENABLED
+              value: {{ .Values.agenticControlPlane.kagentEnabled | default false | quote }}
+            {{- end }}
             # GCP project
             - name: GCP_PROJECT
               value: {{ .Values.gcp.projectId | default "" | quote }}

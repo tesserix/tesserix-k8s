@@ -30,3 +30,30 @@ database:
 redis:
   host: "redis.redis-devai.svc.cluster.local"
   port: "6379"
+
+# ─── Fiber-style blueprint runtime + adapters (new) ──────────────────
+# When pipeline.enabled is true the SRE server dispatches its scans
+# through `sre-monitor.yaml` blueprint instead of the hardcoded
+# SREOrchestrator. Falls back automatically if the runtime fails to
+# start.
+pipeline:
+  enabled: true
+  blueprintDir: "blueprints"
+  defaultBlueprint: "sre-monitor"
+  sreBlueprint: "sre-monitor"
+  concurrency: 2
+  defaultStageTimeout: 900
+
+specializations:
+  enabled: true
+  dir: "specializations"
+
+# Memory adapter — SRE uses the same pgvector backend for the
+# "learn" stage (writes episodic memories about each scan).
+memory:
+  provider: "pgvector"
+
+# Agentic control planes (read-only for SRE — it doesn't create agents).
+agenticControlPlane:
+  aregistryUrl: "http://agentregistry.agentregistry-system.svc.cluster.local:8080"
+  agentgatewayUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local"

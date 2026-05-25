@@ -1,0 +1,47 @@
+# devai-registry-bootstrap — defaults
+#
+# The Job clones the DevAI repo (configurable below), walks
+# architecture/registry-seeds/, and POSTs each YAML to aregistry's v0
+# API. Re-runs are safe: aregistry upserts on (kind, name, namespace).
+
+namespace: devai
+
+# Where the registry seeds live. Default points at the production DevAI
+# repo; override for testing.
+seedSource:
+  repoUrl: https://github.com/tesserix/devai.git
+  ref: main
+  subdir: architecture/registry-seeds
+
+# Connection to aregistry. The URL is correct once
+# argocd/prod/infrastructure/agentregistry.yaml has synced.
+aregistry:
+  endpoint: http://agentregistry.agentregistry-system.svc.cluster.local:8080
+  jwtSecret:
+    name: aregistry-jwt
+    key: jwt-secret
+
+image:
+  # alpine + curl + git is all we need. Pinned via digest in real values-prod.
+  repository: alpine/git
+  tag: v2.40.1
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# Run via Argo as a normal sync (we won't use Argo's `hook` lifecycle so
+# the dashboard can see the Job in the ai-apps app-of-apps tree).
+job:
+  ttlSecondsAfterFinished: 86400  # 24h — let operators inspect logs after success
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+
+serviceAccount:
+  create: true
+  name: devai-registry-bootstrap

@@ -50,3 +50,32 @@ redis:
 
 nats:
   url: "nats://nats.nats.svc.cluster.local:4222"
+
+# ─── Fiber-style blueprint runtime + adapters (new) ──────────────────
+# Master switch for the YAML-blueprint runtime that coexists alongside
+# the legacy LangGraph orchestrator. Flip to "false" to revert.
+pipeline:
+  enabled: true
+  blueprintDir: "blueprints"
+  defaultBlueprint: "alm-pipeline"
+  prReviewBlueprint: "pr-review"
+  sreBlueprint: "sre-monitor"
+  concurrency: 4
+  defaultStageTimeout: 900
+
+specializations:
+  enabled: true
+  dir: "specializations"
+
+# Memory adapter — pgvector is the production default (reuses the
+# same Postgres + pgvector cluster the rest of DevAI already uses).
+# Swap with one env var: noop | redis | pgvector | mem0 | zep | hondo.
+memory:
+  provider: "pgvector"
+
+# Agentic control planes — these URLs become valid once the
+# infrastructure/agentregistry, agentgateway, kagent ArgoCD apps sync.
+agenticControlPlane:
+  aregistryUrl: "http://agentregistry.agentregistry-system.svc.cluster.local:8080"
+  agentgatewayUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local"
+  kagentEnabled: true
