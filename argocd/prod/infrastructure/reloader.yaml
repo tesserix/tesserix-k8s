@@ -1,0 +1,127 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: reloader
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: secret-rotation
+  annotations:
+    # Stakater Reloader watches Secrets + ConfigMaps cluster-wide and
+    # triggers a rollout-restart on any Deployment / StatefulSet /
+    # DaemonSet that consumes a changed one. We need this because
+    # external-secrets rotates GCP-SM-backed Secrets in place — the K8s
+    # Secret object is mutated, but the Pods that read its values into
+    # env vars at start-up keep the stale values until something else
+    # recycles them.
+    #
+    # Concrete fix: when prod-aregistry-jwt-secret is rotated in GCP SM,
+    # ExternalSecrets refreshes aregistry-jwt (the K8s Secret), and
+    # Reloader (configured with reloadStrategy=env-vars) automatically
+    # restarts the agentregistry Deployment so the new JWT key takes
+    # effect — instead of every API call failing with "Invalid or
+    # expired Registry JWT token" until an operator manually restarts
+    # the pod.
+    #
+    # Sync wave -8 places it before external-secrets (-7 in this fleet)
+    # so it's watching by the time the first ExternalSecret syncs.
+    argocd.argoproj.io/sync-wave: "-8"
+spec:
+  project: infrastructure
+  source:
+    # Upstream Helm chart from the Stakater maintainers. Pinned by
+    # targetRevision so chart-image drift doesn't sneak in via
+    # automated syncs.
+    repoURL: https://stakater.github.io/stakater-charts
+    chart: reloader
+    targetRevision: "1.4.7"
+    helm:
+      releaseName: reloader
+      values: |
+        # ── Behaviour ────────────────────────────────────────────────
+        # env-vars is the modern default and the only strategy that
+        # auto-discovers Deployments consuming a Secret without an
+        # explicit per-Deployment annotation. That matters here because
+        # the agentregistry Deployment is rendered by an upstream chart
+        # we don't own — we cannot add reloader.stakater.com/auto:"true"
+        # without forking the chart. env-vars sidesteps that entirely.
+        #
+        # The other modes (annotations, merge) are for setups that want
+        # opt-in semantics; we want every consumer of every refreshed
+        # Secret to recycle, so opt-out semantics are a feature.
+        reloader:
+          watchGlobally: true
+          reloadStrategy: env-vars
+          # Reload Secrets AND ConfigMaps. Pure ConfigMap rotations are
+          # rare but cheap to support.
+          isOpenshift: false
+          ignoreSecrets: false
+          ignoreConfigMaps: false
+          # Limit blast radius: only watch the namespaces we actually
+          # rotate secrets in. Keeps Reloader's API-server load and
+          # restart surface predictable. Extend this list whenever we
+          # add a new ExternalSecret to a new namespace.
+          namespaceSelector: ""
+          watchedNamespaces:
+            agentregistry-system: "true"
+            agentgateway-system: "true"
+            kagent-system: "true"
+            devai: "true"
+            identity-customer: "true"
+            identity-internal: "true"
+            homechef: "true"
+            fanzone: "true"
+            marketplace: "true"
+          # Logging — INFO is enough to see "Deployment X restarted
+          # because Secret Y changed" without firehosing.
+          logLevel: info
+          # Resources — tiny single-pod controller. ~50 MiB RSS in prod.
+          deployment:
+            replicas: 1
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                cpu: 200m
+                memory: 256Mi
+            # Run as non-root for parity with the rest of the cluster.
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65532
+              runAsGroup: 65532
+              fsGroup: 65532
+              seccompProfile:
+                type: RuntimeDefault
+            containerSecurityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: ["ALL"]
+          # Don't expose a Service — Reloader is internal-only,
+          # talks to apiserver only.
+          service:
+            enabled: false
+          # ServiceAccount is auto-created; tag it so audits can find it.
+          serviceAccount:
+            labels:
+              app.kubernetes.io/part-of: tesserix
+              app.kubernetes.io/component: secret-rotation
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: reloader
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
