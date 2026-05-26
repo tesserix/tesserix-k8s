@@ -19,6 +19,9 @@ spec:
     - https://helm.elastic.co
     - ghcr.io/actions/actions-runner-controller-charts
     - https://nats-io.github.io/k8s/helm/charts
+    # Stakater Reloader — auto-restarts Pods whose Secrets/ConfigMaps
+    # change. Required by argocd/prod/infrastructure/reloader.yaml.
+    - https://stakater.github.io/stakater-charts
   destinations:
     - namespace: istio-system
       server: https://kubernetes.default.svc
@@ -69,6 +72,12 @@ spec:
     - namespace: global
       server: https://kubernetes.default.svc
     - namespace: tesserix
+      server: https://kubernetes.default.svc
+    # Stakater Reloader controller. Watches Secrets/ConfigMaps
+    # cluster-wide and restarts Pods that consume them — required so
+    # ExternalSecrets rotations actually take effect without manual
+    # kubectl rollout restart.
+    - namespace: reloader
       server: https://kubernetes.default.svc
     - namespace: fanzone
       server: https://kubernetes.default.svc
