@@ -35,6 +35,10 @@ spec:
     - kind: Gateway
       group: gateway.networking.k8s.io
       name: waypoint
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kagent
+      app.kubernetes.io/component: ui
   action: ALLOW
   rules:
     # Authenticated traffic forwarded by devai-auth-bff
@@ -49,6 +53,48 @@ spec:
     - to:
         - operation:
             paths: ["/api/health", "/healthz", "/api/ready"]
+            methods: ["GET"]
+---
+# --- kagent-controller (the lifecycle controller HTTP API on :8083) ---
+#
+# devai dispatches agent runs through kagent in the future-A2A path.
+# Today devai-api hits this endpoint only for status probes (the
+# /api/agentic/status response), but the same path will carry real
+# A2A handoffs as soon as the runner image flips that flag on.
+#
+# Bound to the waypoint so the L7 method/path matching takes effect.
+# Without a policy explicitly attached to the controller workload,
+# requests routed through the waypoint fall through to deny — that's
+# what was producing the 403s during the devai → kagent probe.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: kagent-controller-authz
+  namespace: kagent-system
+spec:
+  targetRefs:
+    - kind: Gateway
+      group: gateway.networking.k8s.io
+      name: waypoint
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kagent
+      app.kubernetes.io/component: controller
+  action: ALLOW
+  rules:
+    # devai-api reads the controller for /api/agentic/status, and the
+    # runner will POST A2A handoffs here once kagent dispatch flips on.
+    - from:
+        - source:
+            namespaces: ["devai"]
+    # The controller talks to its own UI + tool pods within the namespace.
+    - from:
+        - source:
+            namespaces: ["kagent-system"]
+    # Health probes from kubelet (no source — kubelet has no SPIFFE id).
+    - to:
+        - operation:
+            paths: ["/healthz", "/livez", "/readyz", "/api/health", "/version"]
             methods: ["GET"]
 ---
 # --- agentregistry — devai-auth-bff (UI path) + catalog-API readers ---
