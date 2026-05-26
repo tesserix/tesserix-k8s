@@ -1,14 +1,27 @@
 ##############################################################################
-# Agentic UIs — Istio AuthorizationPolicies
+# Agentic — Istio AuthorizationPolicies (ambient + waypoint)
 #
-# kagent.tesserix.app and aregistry.tesserix.app traverse:
+# In Istio ambient mode, AuthorizationPolicies attach to one of two layers:
 #
-#   istio-ingressgateway → devai-auth-bff (devai NS) → kagent-ui / agentregistry
+#   * ztunnel — per-node L4 proxy. Sees source / destination identities
+#     but NOT HTTP attributes (methods, paths, headers). A policy without
+#     targetRefs binds here by default.
 #
-# The BFF is the only thing that can reach the upstream UIs; istio-ingress
-# cannot bypass the BFF and hit them directly. devai-auth-bff already has
-# its own AuthorizationPolicy in manifests/devai-istio that lets the
-# gateway talk to it on port 8090.
+#   * waypoint — per-namespace L7 proxy. Sees the full request and
+#     enforces method / path rules. A policy binds here via:
+#         spec.targetRefs:
+#           - kind: Gateway
+#             group: gateway.networking.k8s.io
+#             name: waypoint
+#
+# Every policy below that uses HTTP attributes carries targetRefs so it
+# enforces at the waypoint. Skipping targetRefs is the silent foot-gun
+# that bit us once already: the policy looks correct in YAML, gets
+# accepted by ztunnel with status "ZtunnelAccepted: HTTP attributes
+# stripped", and ends up wide-open at L7.
+#
+# Traversal for browser traffic:
+#   istio-ingressgateway → devai-auth-bff (devai ns) → kagent-ui / agentregistry
 ##############################################################################
 
 # --- kagent-ui — only devai-auth-bff (cross-namespace) + probes ---
@@ -18,10 +31,10 @@ metadata:
   name: kagent-ui-authz
   namespace: kagent-system
 spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: kagent
-      app.kubernetes.io/component: ui
+  targetRefs:
+    - kind: Gateway
+      group: gateway.networking.k8s.io
+      name: waypoint
   action: ALLOW
   rules:
     # Authenticated traffic forwarded by devai-auth-bff
@@ -40,32 +53,30 @@ spec:
 ---
 # --- agentregistry — devai-auth-bff (UI path) + catalog-API readers ---
 #
-# Split into READ vs WRITE rules. With the new waypoint proxy on
-# agentregistry-system, L7 method/path matching is actually enforced —
-# previously every rule below was silently L4-stripped down to source-
-# namespace match by ztunnel, which meant any pod in devai could POST
-# new agents to the catalog. Now POST is restricted to the bootstrap
-# Job's SA explicitly.
+# READ vs WRITE split — GETs allowed from any agentic-stack consumer;
+# POST / PUT / PATCH / DELETE locked to the bootstrap Job's SA. The
+# write restriction is also reinforced by an explicit DENY further down
+# because the cluster-wide allow-mesh-internal baseline would otherwise
+# defeat this ALLOW-only rule.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: agentregistry-authz
   namespace: agentregistry-system
 spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: agentregistry
+  targetRefs:
+    - kind: Gateway
+      group: gateway.networking.k8s.io
+      name: waypoint
   action: ALLOW
   rules:
-    # UI traffic comes via devai-auth-bff — full HTTP surface (the UI
-    # is a Next.js app on the same host as /v0/*; the bff is the only
-    # caller and is gated by GIP auth, so it gets the wide pass).
+    # UI traffic comes via devai-auth-bff — full HTTP surface (Next.js
+    # UI and /v0/* live on the same port; the bff is the only caller
+    # and is already gated by GIP auth, so it gets the wide pass).
     - from:
         - source:
             principals: ["cluster.local/ns/devai/sa/devai-auth-bff"]
-    # Catalog READS — any agentic-stack consumer can GET /v0/*.
-    # Kept namespace-scoped (not principal-scoped) so per-MCP / per-Job
-    # SAs do not each need an entry.
+    # Catalog READS — any agentic-stack consumer may GET /v0/*.
     - from:
         - source:
             namespaces: ["agentgateway-system", "kagent-system", "devai"]
@@ -73,11 +84,9 @@ spec:
         - operation:
             methods: ["GET"]
             paths: ["/v0/*"]
-    # Catalog WRITES — only the registry-bootstrap Job's SA may POST /
-    # PUT / DELETE. The Job runs hourly and re-seeds from
-    # architecture/registry-seeds/. Locking writes to exactly one
-    # principal closes the catalog-pollution path: a compromised
-    # devai-api pod can no longer publish fake agents / MCP servers.
+    # Catalog WRITES — only the registry-bootstrap Job's SA may
+    # POST / PUT / PATCH / DELETE. A compromised devai-api pod cannot
+    # publish fake agents / MCP servers.
     - from:
         - source:
             principals:
@@ -92,23 +101,17 @@ spec:
             paths: ["/v0/health", "/healthz"]
             methods: ["GET"]
 ---
-# --- agentgateway (solo.io xDS) — devai-api only + probes ---
-#
-# Today agentgateway is control-plane only (xDS on :9978). Once the
-# data-plane Envoy is added, it will accept /mcp/<name> from devai
-# runner pods on a separate port; that rule goes here too. For now we
-# lock the controller down so a stray workload cannot enumerate the
-# xDS config or scrape the metrics port without going through the
-# expected callers.
+# --- agentgateway (solo.io xDS) — devai-api + kagent + probes ---
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: agentgateway-authz
   namespace: agentgateway-system
 spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: agentgateway
+  targetRefs:
+    - kind: Gateway
+      group: gateway.networking.k8s.io
+      name: waypoint
   action: ALLOW
   rules:
     # devai-api dials this for status probes (/api/agentic/status) and
@@ -121,14 +124,14 @@ spec:
     - from:
         - source:
             namespaces: ["kagent-system"]
-    # Kubelet probes (health on :9093, metrics scrape on :9092 from
-    # the monitoring stack).
+    # Metrics scrape from the monitoring stack on :9092.
     - from:
         - source:
             namespaces: ["monitoring"]
       to:
         - operation:
             ports: ["9092"]
+    # Kubelet health probes.
     - to:
         - operation:
             paths: ["/healthz", "/metrics"]
@@ -136,7 +139,7 @@ spec:
 ---
 # --- ai-gateway (nginx LLM proxy) — devai-api + runners only ---
 #
-# ai-gateway holds the Anthropic / OpenAI API keys server-side; any
+# ai-gateway holds the Anthropic / OpenAI API keys server-side. Any
 # workload that reaches :8080 effectively gets a free LLM credit-card.
 # Lock to devai workloads (the api and ephemeral runner Jobs both
 # live in the devai namespace).
@@ -146,9 +149,10 @@ metadata:
   name: ai-gateway-authz
   namespace: agentgateway-system
 spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: ai-gateway
+  targetRefs:
+    - kind: Gateway
+      group: gateway.networking.k8s.io
+      name: waypoint
   action: ALLOW
   rules:
     - from:
@@ -166,38 +170,32 @@ spec:
 ##############################################################################
 # DENY policies — explicit closures over the wide-open allow-mesh-internal
 # baseline (`ALLOW: {}`) that the istio-auth-policies chart applies to every
-# appNamespace. In Istio AuthZ, DENY takes precedence over ALLOW — so even if
-# allow-mesh-internal would have let a workload through, a matching DENY rule
-# overrides it. This is the minimal-invasive way to close real exposure
-# without rewriting the mesh-internal baseline (which would affect every
-# namespace on the cluster).
+# appNamespace. DENY takes precedence over ALLOW, so even if
+# allow-mesh-internal would have let a workload through, a matching DENY
+# rule overrides it.
 ##############################################################################
-#
-# Catalog WRITE protection — only devai-registry-bootstrap may mutate the
-# catalog. Without this, the only thing stopping a compromised pod in any
-# of {devai, agentgateway-system, kagent-system} from POSTing fake agents is
-# allow-mesh-internal's `ALLOW: {}` rule, which lets them right through.
+
+# Catalog WRITE protection — only devai-registry-bootstrap (and the bff
+# for authenticated human edits) may mutate the catalog.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
   name: agentregistry-deny-writes-from-non-bootstrap
   namespace: agentregistry-system
 spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: agentregistry
+  targetRefs:
+    - kind: Gateway
+      group: gateway.networking.k8s.io
+      name: waypoint
   action: DENY
   rules:
     - from:
         - source:
-            # Anything NOT the bootstrap SA or the bff (which proxies
-            # UI-driven writes from authenticated humans) …
             notPrincipals:
               - "cluster.local/ns/devai/sa/devai-registry-bootstrap"
               - "cluster.local/ns/devai/sa/devai-auth-bff"
       to:
         - operation:
-            # …attempting to mutate the catalog…
             methods: ["POST", "PUT", "PATCH", "DELETE"]
             paths: ["/v0/*"]
 ---
@@ -211,9 +209,10 @@ metadata:
   name: ai-gateway-deny-non-devai
   namespace: agentgateway-system
 spec:
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: ai-gateway
+  targetRefs:
+    - kind: Gateway
+      group: gateway.networking.k8s.io
+      name: waypoint
   action: DENY
   rules:
     - from:
