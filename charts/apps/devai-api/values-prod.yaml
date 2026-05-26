@@ -114,11 +114,21 @@ memory:
 # below under `llm:`. Don't conflate it with the agentgateway.
 agenticControlPlane:
   aregistryUrl: "http://agentregistry.agentregistry-system.svc.cluster.local:12121"
-  # agentgateway Service ports: 9978 (xDS / data-plane), 9093 (debug),
-  # 9092 (metrics). 9978 is the one the runner should dial for MCP
-  # dispatch. When empty, the runner falls back to direct MCP Service
-  # calls — safe degraded mode for clusters without agentgateway.
-  agentgatewayUrl: "http://agentgateway.agentgateway-system.svc.cluster.local:9978"
+  # agentgateway in this cluster is CONTROL PLANE ONLY — the agentgateway
+  # Service exposes 9978 (xDS gRPC), 9093 (health), 9092 (metrics).
+  # There is NO HTTP data-plane port for /mcp/<name> traffic; solo.io
+  # agentgateway-1.x is an xDS server that configures an Envoy data
+  # plane separately, and we have not deployed that Envoy yet.
+  #
+  # Leaving this empty makes the runner fall back to dialing each MCP
+  # server's own Service directly (URL comes from aregistry's
+  # /v0/servers record). That's the correct degraded mode until the
+  # agentgateway-proxy data plane is rolled.
+  #
+  # When the data plane is added (future PR in tesserix-k8s), flip
+  # this to the proxy's Service URL — devai-runner picks it up on the
+  # next Job dispatch with no code change.
+  agentgatewayUrl: ""
   kagentEnabled: true
   # kagent-controller HTTP API. Reserved for the future A2A handoff
   # path — the runner reads this when an agent dispatches a child
