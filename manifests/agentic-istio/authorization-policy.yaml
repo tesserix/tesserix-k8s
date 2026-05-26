@@ -39,6 +39,13 @@ spec:
             methods: ["GET"]
 ---
 # --- agentregistry — devai-auth-bff (UI path) + catalog-API readers ---
+#
+# Split into READ vs WRITE rules. With the new waypoint proxy on
+# agentregistry-system, L7 method/path matching is actually enforced —
+# previously every rule below was silently L4-stripped down to source-
+# namespace match by ztunnel, which meant any pod in devai could POST
+# new agents to the catalog. Now POST is restricted to the bootstrap
+# Job's SA explicitly.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -50,33 +57,108 @@ spec:
       app.kubernetes.io/name: agentregistry
   action: ALLOW
   rules:
-    # UI traffic comes via devai-auth-bff
+    # UI traffic comes via devai-auth-bff — full HTTP surface (the UI
+    # is a Next.js app on the same host as /v0/*; the bff is the only
+    # caller and is gated by GIP auth, so it gets the wide pass).
     - from:
         - source:
             principals: ["cluster.local/ns/devai/sa/devai-auth-bff"]
-    # agentgateway data plane reads agent + skill catalog (machine API)
+    # Catalog READS — any agentic-stack consumer can GET /v0/*.
+    # Kept namespace-scoped (not principal-scoped) so per-MCP / per-Job
+    # SAs do not each need an entry.
     - from:
         - source:
-            namespaces: ["agentgateway-system"]
+            namespaces: ["agentgateway-system", "kagent-system", "devai"]
       to:
         - operation:
+            methods: ["GET"]
             paths: ["/v0/*"]
-    # kagent controller reads Agent CRs from aregistry
+    # Catalog WRITES — only the registry-bootstrap Job's SA may POST /
+    # PUT / DELETE. The Job runs hourly and re-seeds from
+    # architecture/registry-seeds/. Locking writes to exactly one
+    # principal closes the catalog-pollution path: a compromised
+    # devai-api pod can no longer publish fake agents / MCP servers.
     - from:
         - source:
-            namespaces: ["kagent-system"]
+            principals:
+              - "cluster.local/ns/devai/sa/devai-registry-bootstrap"
       to:
         - operation:
-            paths: ["/v0/*"]
-    # devai pipeline writes registry seeds (bootstrap job)
-    - from:
-        - source:
-            namespaces: ["devai"]
-      to:
-        - operation:
+            methods: ["POST", "PUT", "PATCH", "DELETE"]
             paths: ["/v0/*"]
     # Kubelet probes
     - to:
         - operation:
             paths: ["/v0/health", "/healthz"]
+            methods: ["GET"]
+---
+# --- agentgateway (solo.io xDS) — devai-api only + probes ---
+#
+# Today agentgateway is control-plane only (xDS on :9978). Once the
+# data-plane Envoy is added, it will accept /mcp/<name> from devai
+# runner pods on a separate port; that rule goes here too. For now we
+# lock the controller down so a stray workload cannot enumerate the
+# xDS config or scrape the metrics port without going through the
+# expected callers.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: agentgateway-authz
+  namespace: agentgateway-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentgateway
+  action: ALLOW
+  rules:
+    # devai-api dials this for status probes (/api/agentic/status) and
+    # — when the data plane lands — for MCP traffic.
+    - from:
+        - source:
+            namespaces: ["devai"]
+    # kagent reads from agentgateway when dispatching agents to its
+    # MCP backends.
+    - from:
+        - source:
+            namespaces: ["kagent-system"]
+    # Kubelet probes (health on :9093, metrics scrape on :9092 from
+    # the monitoring stack).
+    - from:
+        - source:
+            namespaces: ["monitoring"]
+      to:
+        - operation:
+            ports: ["9092"]
+    - to:
+        - operation:
+            paths: ["/healthz", "/metrics"]
+            methods: ["GET"]
+---
+# --- ai-gateway (nginx LLM proxy) — devai-api + runners only ---
+#
+# ai-gateway holds the Anthropic / OpenAI API keys server-side; any
+# workload that reaches :8080 effectively gets a free LLM credit-card.
+# Lock to devai workloads (the api and ephemeral runner Jobs both
+# live in the devai namespace).
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: ai-gateway-authz
+  namespace: agentgateway-system
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ai-gateway
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["devai"]
+      to:
+        - operation:
+            paths: ["/anthropic/*", "/openai/*", "/healthz"]
+    # Probes
+    - to:
+        - operation:
+            paths: ["/healthz"]
             methods: ["GET"]
