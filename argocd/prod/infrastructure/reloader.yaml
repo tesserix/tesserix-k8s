@@ -113,6 +113,18 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: reloader
+  ignoreDifferences:
+    # K8s 1.36+ surfaces .status.terminatingReplicas on Deployment /
+    # StatefulSet which ArgoCD's structured-merge-diff doesn't yet
+    # recognize. Same workaround pattern used by agentregistry.yaml.
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /status/terminatingReplicas
   syncPolicy:
     automated:
       prune: true
@@ -120,6 +132,7 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
