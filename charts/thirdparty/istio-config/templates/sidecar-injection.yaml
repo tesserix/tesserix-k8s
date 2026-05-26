@@ -2,9 +2,16 @@
 Namespace labels for Istio Ambient mesh
 Ambient mode uses ztunnel (per-node L4 proxy) instead of sidecar injection.
 Label namespaces with istio.io/dataplane-mode: ambient to enroll them.
+
+For namespaces that also have a waypoint proxy (see waypoint-proxies.yaml),
+apply `istio.io/use-waypoint: waypoint` so ztunnel routes traffic through
+the waypoint. Without this label the Gateway is created but never sees
+traffic — and L7 AuthorizationPolicies (method / path / headers) are
+silently degraded to L4-only by ztunnel.
 */}}
 {{- $dbAccessNamespaces := .Values.sidecarInjection.databaseAccessNamespaces | default list }}
 {{- $ambientExcluded := .Values.sidecarInjection.ambientExcluded | default list }}
+{{- $waypointNamespaces := .Values.ambient.waypointNamespaces | default list }}
 {{- range .Values.sidecarInjection.namespaces }}
 ---
 apiVersion: v1
@@ -17,6 +24,11 @@ metadata:
     {{- if not (has . $ambientExcluded) }}
     # Istio Ambient mesh enrollment (replaces sidecar injection)
     istio.io/dataplane-mode: ambient
+    {{- end }}
+    {{- if has . $waypointNamespaces }}
+    # Route all traffic to this namespace's services through the waypoint
+    # proxy. Required for L7 AuthorizationPolicy enforcement under ambient.
+    istio.io/use-waypoint: waypoint
     {{- end }}
     # K8s built-in namespace name label
     kubernetes.io/metadata.name: {{ . }}
