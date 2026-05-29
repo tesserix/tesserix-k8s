@@ -497,3 +497,36 @@ LEFT JOIN sre_incidents i ON i.app_id = a.id AND i.created_at > NOW() - INTERVAL
 LEFT JOIN sre_health_checks hc ON hc.app_id = a.id AND hc.checked_at > NOW() - INTERVAL '7 days'
 WHERE a.is_active
 GROUP BY a.id;
+
+-- ============================================================================
+-- ALM: REPO ONBOARDING (Repos page)
+-- Cache of repo onboarding state. The source of truth is the
+-- `.platform/devai.yaml` marker on each repo's default branch — the
+-- DevAI reconciler rebuilds this table from those markers, so it can be
+-- dropped and regenerated without losing onboarded state.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS repo_onboarding (
+    owner               TEXT NOT NULL,
+    name                TEXT NOT NULL,
+    state               TEXT NOT NULL DEFAULT 'discovered',  -- discovered|pending_pr|onboarded|archived|dormant
+    pr_number           INTEGER,
+    pr_url              TEXT NOT NULL DEFAULT '',
+    default_base_branch TEXT NOT NULL DEFAULT 'main',
+    description         TEXT NOT NULL DEFAULT '',
+    detected_stack      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    onboarded_at        TIMESTAMPTZ,
+    onboarded_by        TEXT NOT NULL DEFAULT '',
+    tags                JSONB NOT NULL DEFAULT '[]'::jsonb,
+    draft               BOOLEAN NOT NULL DEFAULT false,  -- onboarding PR is a draft until marked ready
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (owner, name)
+);
+
+-- Idempotent column add for tables provisioned before `draft` existed
+-- (CREATE TABLE IF NOT EXISTS won't alter an already-present table).
+ALTER TABLE repo_onboarding ADD COLUMN IF NOT EXISTS draft BOOLEAN NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS idx_repo_onboarding_state ON repo_onboarding(state);
+CREATE INDEX IF NOT EXISTS idx_repo_onboarding_updated ON repo_onboarding(updated_at DESC);
