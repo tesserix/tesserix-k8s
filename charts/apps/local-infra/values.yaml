@@ -26,6 +26,7 @@ reflectNamespaces:
   - homechef
   - marketplace
   - fanzone
+  - temporal-system   # Temporal server reads POSTGRES_PASSWORD from the mirrored secret
 
 # ── CloudNativePG (operator comes from `sandboxctl up --with-cnpg`) ──
 cnpg:
@@ -62,6 +63,20 @@ mongodb:
   resources:
     requests: { memory: 128Mi }
     limits: { memory: 512Mi }
+
+# ── Elasticsearch (single node) — visibility store for the Temporal addon ──
+# Only the `temporal` local-root addon consumes it (DNS:
+# elasticsearch.local-infra.svc.cluster.local:9200). v7 line matches what
+# Temporal supports; no auth locally (throwaway sandbox). Toggle off if you
+# don't deploy Temporal.
+elasticsearch:
+  enabled: true
+  image: elasticsearch:7.17.27
+  storage: 4Gi
+  javaOpts: "-Xms256m -Xmx256m"
+  resources:
+    requests: { memory: 512Mi }
+    limits: { memory: 1Gi }
 
 # ── Per-product "slices" ──
 # Each product owns: a Postgres role + DB(s), a Redis logical DB index, an
@@ -104,3 +119,10 @@ products:
     redisDb: 3
     mongoDatabase: ""
     natsPrefix: "fanzone"
+  - name: temporal
+    namespace: temporal-system
+    pgRole: temporal
+    pgDatabases: [temporal]      # default store; visibility uses Elasticsearch
+    redisDb: 5
+    mongoDatabase: ""
+    natsPrefix: ""

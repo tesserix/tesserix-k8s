@@ -92,7 +92,7 @@ spec:
   source:
     repoURL: {{ $a.agentgateway.ociRepo }}
     chart: agentgateway-crds
-    targetRevision: {{ $a.agentgateway.version | quote }}
+    targetRevision: {{ $a.agentgateway.crdsVersion | default $a.agentgateway.version | quote }}
   destination:
     server: https://kubernetes.default.svc
     namespace: {{ $a.agentgateway.namespace }}
@@ -163,4 +163,73 @@ spec:
   syncPolicy:
     automated: { prune: true, selfHeal: true }
     syncOptions: [CreateNamespace=true]
+---
+{{- end }}
+
+{{- /* wave 15: Temporal — latest official SERVER chart (git subdir).
+        Datastores are EXTERNAL (the latest chart bundles none): default store =
+        PostgreSQL on the shared local-infra CNPG, visibility store =
+        Elasticsearch (also in local-infra). Runs AFTER local-infra (wave 10) so
+        Postgres + ES exist first. All values MEMORY-ONLY (no cpu). The frontend
+        gRPC endpoint DevAI dials is
+        temporal-frontend.temporal-system.svc.cluster.local:7233. */ -}}
+{{- if $a.temporal.enabled }}
+{{ include "lr.appHeader" (dict "name" "60-temporal" "wave" "15") }}
+spec:
+  project: {{ .Values.project }}
+  source:
+    repoURL: {{ $a.temporal.repoURL }}
+    targetRevision: {{ $a.temporal.targetRevision | quote }}
+    path: {{ $a.temporal.path }}
+    helm:
+      releaseName: temporal
+      values: |
+        # Latest Temporal SERVER chart (server 1.31.0). External datastores:
+        # default store -> PostgreSQL (shared local-infra CNPG), visibility ->
+        # Elasticsearch (local-infra). Memory-only; single replica.
+        server:
+          replicaCount: 1
+          resources:
+            requests: { memory: 256Mi }
+            limits: { memory: 1Gi }
+          config:
+            persistence:
+              defaultStore: default
+              visibilityStore: visibility
+              numHistoryShards: 512
+              datastores:
+                default:
+                  sql:
+                    pluginName: postgres12
+                    driverName: postgres12
+                    databaseName: temporal
+                    connectAddr: "local-pg-rw.local-infra.svc.cluster.local:5432"
+                    connectProtocol: tcp
+                    user: temporal
+                    existingSecret: local-infra-creds   # reflected into temporal-system
+                    secretKey: POSTGRES_PASSWORD
+                    createDatabase: false               # DB pre-created by local-infra postInitSQL
+                    manageSchema: true                  # schema-setup job creates tables
+                    maxConns: 20
+                visibility:
+                  elasticsearch:
+                    version: v7
+                    url:
+                      scheme: http
+                      host: "elasticsearch.local-infra.svc.cluster.local:9200"
+                    indices:
+                      visibility: temporal_visibility_v1
+        web:
+          enabled: true                  # Temporal Web UI (ClusterIP locally)
+          resources:
+            requests: { memory: 64Mi }
+            limits: { memory: 256Mi }
+        schema:
+          useHelmHooks: true             # Argo maps helm hooks to sync hooks
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ $a.temporal.namespace }}
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
 {{- end }}
