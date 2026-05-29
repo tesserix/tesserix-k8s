@@ -1,0 +1,31 @@
+{{- if .Values.localInfra.enabled -}}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: 20-local-infra
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+  labels:
+    app.kubernetes.io/part-of: local-root
+    environment: local
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: {{ .Values.project }}
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: {{ .Values.localInfra.path }}
+    helm:
+      valueFiles:
+        - {{ .Values.localInfra.valuesFile }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.localInfra.namespace }}
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true     # CNPG Cluster CR can be large
+{{- end }}

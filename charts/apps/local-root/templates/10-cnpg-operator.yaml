@@ -1,0 +1,28 @@
+{{- if .Values.cnpgOperator.enabled -}}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: 10-cnpg-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  labels:
+    app.kubernetes.io/part-of: local-root
+    environment: local
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: {{ .Values.project }}
+  source:
+    repoURL: {{ .Values.cnpgOperator.chartRepo }}
+    chart: {{ .Values.cnpgOperator.chart }}
+    targetRevision: {{ .Values.cnpgOperator.version | quote }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ .Values.cnpgOperator.namespace }}
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+{{- end }}

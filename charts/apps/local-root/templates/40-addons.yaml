@@ -1,0 +1,166 @@
+{{- $a := .Values.addons -}}
+{{- /* OCI helm repos must be registered with Argo (public, no auth). */ -}}
+{{- if $a.agentgateway.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repo-agentgateway
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+    app.kubernetes.io/part-of: local-root
+stringData:
+  type: helm
+  name: agentgateway
+  url: {{ $a.agentgateway.ociRepo | quote }}
+  enableOCI: "true"
+---
+{{- end }}
+{{- if $a.kagent.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repo-kagent
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+    app.kubernetes.io/part-of: local-root
+stringData:
+  type: helm
+  name: kagent
+  url: {{ $a.kagent.ociRepo | quote }}
+  enableOCI: "true"
+---
+{{- end }}
+
+{{- define "lr.appHeader" -}}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .name }}
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ .wave | quote }}
+  labels:
+    app.kubernetes.io/part-of: local-root
+    environment: local
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+{{- end -}}
+
+{{- /* wave 5: Gateway API CRDs (upstream git, cluster-scoped) */ -}}
+{{- if $a.gatewayApiCrds.enabled }}
+{{ include "lr.appHeader" (dict "name" "05-gateway-api-crds" "wave" "5") }}
+spec:
+  project: {{ .Values.project }}
+  source:
+    repoURL: {{ $a.gatewayApiCrds.repoURL }}
+    targetRevision: {{ $a.gatewayApiCrds.targetRevision }}
+    path: {{ $a.gatewayApiCrds.path }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [ServerSideApply=true]
+---
+{{- end }}
+
+{{- /* wave 5: Kyverno (public helm repo) */ -}}
+{{- if $a.kyverno.enabled }}
+{{ include "lr.appHeader" (dict "name" "15-kyverno" "wave" "5") }}
+spec:
+  project: {{ .Values.project }}
+  source:
+    repoURL: {{ $a.kyverno.repoURL }}
+    chart: {{ $a.kyverno.chart }}
+    targetRevision: {{ $a.kyverno.version | quote }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ $a.kyverno.namespace }}
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+{{- end }}
+
+{{- /* waves 6 (crds) + 7: agentgateway (OCI helm) */ -}}
+{{- if $a.agentgateway.enabled }}
+{{ include "lr.appHeader" (dict "name" "30-agentgateway-crds" "wave" "6") }}
+spec:
+  project: {{ .Values.project }}
+  source:
+    repoURL: {{ $a.agentgateway.ociRepo }}
+    chart: agentgateway-crds
+    targetRevision: {{ $a.agentgateway.version | quote }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ $a.agentgateway.namespace }}
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+{{ include "lr.appHeader" (dict "name" "31-agentgateway" "wave" "7") }}
+spec:
+  project: {{ .Values.project }}
+  source:
+    repoURL: {{ $a.agentgateway.ociRepo }}
+    chart: agentgateway
+    targetRevision: {{ $a.agentgateway.version | quote }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ $a.agentgateway.namespace }}
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+{{- end }}
+
+{{- /* waves 6 (crds) + 7: kagent (OCI helm) */ -}}
+{{- if $a.kagent.enabled }}
+{{ include "lr.appHeader" (dict "name" "34-kagent-crds" "wave" "6") }}
+spec:
+  project: {{ .Values.project }}
+  source:
+    repoURL: {{ $a.kagent.ociRepo }}
+    chart: kagent-crds
+    targetRevision: {{ $a.kagent.version | quote }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ $a.kagent.namespace }}
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+{{ include "lr.appHeader" (dict "name" "35-kagent" "wave" "7") }}
+spec:
+  project: {{ .Values.project }}
+  source:
+    repoURL: {{ $a.kagent.ociRepo }}
+    chart: kagent
+    targetRevision: {{ $a.kagent.version | quote }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ $a.kagent.namespace }}
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+{{- end }}
+
+{{- /* wave 7: Portkey (no upstream chart — tiny in-repo chart via Gitea) */ -}}
+{{- if $a.portkey.enabled }}
+{{ include "lr.appHeader" (dict "name" "54-portkey" "wave" "7") }}
+spec:
+  project: {{ .Values.project }}
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: {{ $a.portkey.path }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ $a.portkey.namespace }}
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+{{- end }}

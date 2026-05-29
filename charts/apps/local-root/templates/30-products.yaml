@@ -1,0 +1,33 @@
+{{- range $name, $p := .Values.products }}
+{{- if $p.enabled }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ $p.wave }}-{{ $name }}
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $p.wave | quote }}
+  labels:
+    app.kubernetes.io/part-of: local-root
+    environment: local
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: {{ $.Values.project }}
+  source:
+    repoURL: {{ $.Values.repoURL }}
+    targetRevision: {{ $.Values.targetRevision }}
+    path: {{ $p.path }}
+    helm:
+      valueFiles:
+        - {{ $p.valuesFile }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ $p.namespace }}
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true
+{{- end }}
+{{- end }}

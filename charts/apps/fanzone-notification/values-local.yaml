@@ -1,0 +1,68 @@
+# =============================================================================
+# LOCAL / kind overlay for fanzone-notification. Does NOT touch prod.
+# Use with:
+#   helm upgrade --install fanzone-notification charts/apps/fanzone-notification \
+#     -n fanzone -f charts/apps/fanzone-notification/values-local.yaml
+#
+# Prereqs: shared local-infra chart deployed first (CNPG Postgres + NATS), then
+# secrets.yaml applied. Shared password comes from reflected 'local-infra-creds'.
+#
+# Image is built locally and loaded into kind:
+#   docker build -t fanzone-notification:local -f apps/notification/Dockerfile .
+#   kind load docker-image fanzone-notification:local
+# =============================================================================
+
+image:
+  tag: "local"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 1
+autoscaling:
+  enabled: false
+keda:
+  enabled: false
+knative:
+  enabled: false
+
+affinity: {}
+
+serviceAccount:
+  annotations: {}
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "local"
+
+# Shared local-infra CNPG Postgres (fanzone DB, role 'fanzone'). Password from
+# the reflected Secret 'local-infra-creds'. sslmode=disable.
+database:
+  host: "local-pg-rw.local-infra.svc.cluster.local"
+  port: "5432"
+  user: "fanzone"
+  name: "fanzone"
+  sslmode: "disable"
+  passwordSecretName: "local-infra-creds"
+  passwordSecretKey: "POSTGRES_PASSWORD"
+
+env:
+  GO_ENV: development
+  LOG_LEVEL: debug
+  LOG_FORMAT: console
+  SERVER_PORT: "8086"
+  NATS_URL: "nats://nats.local-infra.svc.cluster.local:4222"
+  NATS_STREAM_NAME: "FANZONE_NOTIFICATIONS"
+  NATS_PREDICTION_STREAM_NAME: "FANZONE_PREDICTION"
+  NATS_PREDICTION_CONSUMER_NAME: "notification-predictions"
+  NATS_QUIZ_STREAM_NAME: "FANZONE_QUIZ"
+  NATS_QUIZ_CONSUMER_NAME: "notification-quiz"
+  NATS_SPORTSBOOK_STREAM_NAME: "fanzone-sportsbook"
+  NATS_SPORTSBOOK_CONSUMER_NAME: "notification-sportsbook"
+  NATS_GAME_STREAM_NAME: "FANZONE_GAME"
+  NATS_GAME_CONSUMER_NAME: "notification-game"
+  SCHEDULER_INTERVAL: "1m"
+  REMINDER_LEAD_TIME: "30m"

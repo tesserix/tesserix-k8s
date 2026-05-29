@@ -1,0 +1,34 @@
+{{- if .Values.cnpg.enabled -}}
+# CloudNativePG Cluster (12Gi). The operator is installed by
+# `sandboxctl up --with-cnpg`. postInitSQL creates one role + DB(s) per product
+# so every product gets its own logical database inside the one shared cluster.
+# enableSuperuserAccess gives the per-product cleanup jobs a postgres login to
+# DROP/CREATE individual databases.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.cnpg.clusterName }}
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "local-infra.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.cnpg.instances }}
+  imageName: {{ .Values.cnpg.image }}
+  enableSuperuserAccess: true
+  storage:
+    size: {{ .Values.cnpg.storage }}
+  postgresql:
+    parameters:
+      max_connections: "300"
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+      postInitSQL:
+        {{- range .Values.products }}
+        {{- $role := .pgRole }}
+        - "CREATE ROLE {{ $role }} LOGIN PASSWORD '{{ $.Values.sharedPassword }}' CREATEDB;"
+        {{- range .pgDatabases }}
+        - "CREATE DATABASE {{ . }} OWNER {{ $role }};"
+        {{- end }}
+        {{- end }}
+{{- end }}

@@ -1,0 +1,36 @@
+# Tesserix local sandbox — ROOT app-of-apps.
+#
+# Applying this one Application makes Argo manage the whole local stack in
+# sync-wave order: cnpg-operator (wave 0) -> local-infra shared datastores
+# (wave 10) -> products (wave 20+, opt-in). It sources the local-root chart,
+# which renders the child Applications.
+#
+# Quickest path on kind: charts/apps/local-root/apply-local.sh (renders + applies
+# the children directly). This manifest is the declarative equivalent — point
+# repoURL at a repo your local Argo can read.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: 00-root
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: local-root
+    environment: local
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git   # CHANGE ME to a repo your local Argo can read
+    targetRevision: HEAD
+    path: charts/apps/local-root
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=true

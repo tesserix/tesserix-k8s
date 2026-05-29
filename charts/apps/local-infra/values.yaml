@@ -1,0 +1,106 @@
+# Shared local infrastructure for the sandbox. Everything lives in one namespace
+# (default: local-infra) with stable DNS so products auto-connect:
+#
+#   Postgres : local-pg-rw.local-infra.svc.cluster.local:5432   (CNPG)
+#   Redis    : redis.local-infra.svc.cluster.local:6379
+#   NATS     : nats.local-infra.svc.cluster.local:4222
+#   MongoDB  : mongodb.local-infra.svc.cluster.local:27017
+#
+# One shared password (POSTGRES/REDIS/MONGO) lives in Secret `local-infra-creds`
+# and is REFLECTED into every product namespace (reflector ships with sandboxctl),
+# so a product's values-local just references local-infra-creds — no copying.
+
+namespace: local-infra
+
+# Storage: "pvc" mounts real disks; "emptyDir" needs no provisioner (data lost on
+# restart). CNPG always uses a PVC (12Gi).
+persistence: pvc
+
+# One throwaway password shared by all local datastores (local sandbox only).
+sharedPassword: "local-sandbox-dev"
+
+# Reflector targets — the product namespaces that get a copy of local-infra-creds.
+reflectNamespaces:
+  - agentic-registry
+  - devai
+  - homechef
+  - marketplace
+  - fanzone
+
+# ── CloudNativePG (operator comes from `sandboxctl up --with-cnpg`) ──
+cnpg:
+  enabled: true
+  clusterName: local-pg
+  instances: 1            # single instance locally (HA is prod-only)
+  image: ghcr.io/cloudnative-pg/postgresql:16
+  storage: 12Gi
+
+# ── Redis ──
+redis:
+  enabled: true
+  image: redis:7-alpine
+  storage: 2Gi
+  resources:
+    requests: { memory: 64Mi }
+    limits: { memory: 256Mi }
+
+# ── NATS (JetStream) ──
+nats:
+  enabled: true
+  image: nats:2-alpine
+  storage: 2Gi
+  resources:
+    requests: { memory: 64Mi }
+    limits: { memory: 256Mi }
+
+# ── MongoDB ──
+mongodb:
+  enabled: true
+  image: mongo:7
+  storage: 4Gi
+  rootUser: root
+  resources:
+    requests: { memory: 128Mi }
+    limits: { memory: 512Mi }
+
+# ── Per-product "slices" ──
+# Each product owns: a Postgres role + DB(s), a Redis logical DB index, an
+# optional Mongo database, and an optional NATS stream prefix. The per-product
+# cleanup CronJob wipes exactly this slice — so you can reset one product and
+# keep the others. `make`/scripts/clean-product.sh <product> triggers it.
+products:
+  - name: agentic-registry
+    namespace: agentic-registry
+    pgRole: registry
+    pgDatabases: [registry]
+    redisDb: 4
+    mongoDatabase: ""
+    natsPrefix: ""
+  - name: devai
+    namespace: devai
+    pgRole: devai
+    pgDatabases: [devai_db]
+    redisDb: 0
+    mongoDatabase: ""
+    natsPrefix: "devai"
+  - name: homechef
+    namespace: homechef
+    pgRole: homechef
+    pgDatabases: [homechef_db]
+    redisDb: 1
+    mongoDatabase: ""
+    natsPrefix: ""
+  - name: mark8ly
+    namespace: marketplace
+    pgRole: mark8ly
+    pgDatabases: [mark8ly_platform_api, mark8ly_marketplace_api, mark8ly_openfga]
+    redisDb: 2
+    mongoDatabase: mark8ly_otto
+    natsPrefix: ""
+  - name: fanzone
+    namespace: fanzone
+    pgRole: fanzone
+    pgDatabases: [fanzone, fanzone_auth, fanzone_db]
+    redisDb: 3
+    mongoDatabase: ""
+    natsPrefix: "fanzone"

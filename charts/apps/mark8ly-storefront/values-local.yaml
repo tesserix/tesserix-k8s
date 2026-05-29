@@ -1,0 +1,57 @@
+# LOCAL / kind overlay for mark8ly-storefront (Next.js customer storefront).
+# Use with:
+#   helm upgrade --install mark8ly-storefront charts/apps/mark8ly-storefront \
+#     -n mark8ly -f charts/apps/mark8ly-storefront/values-local.yaml
+#
+#   docker build -t mark8ly-storefront:local -f apps/storefront/Dockerfile .
+#   kind load docker-image mark8ly-storefront:local
+#
+# Reach the UI via:
+#   kubectl -n mark8ly port-forward svc/mark8ly-storefront 4203:4203
+
+namespace: mark8ly
+name: mark8ly-storefront
+
+image:
+  repository: mark8ly-storefront
+  tag: local
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+keda:
+  enabled: false
+pdb:
+  enabled: false
+
+platformApiUrl: "http://mark8ly-platform-api:8086"
+marketplaceApiUrl: "http://mark8ly-marketplace-api-storefront:8080"
+authBffUrl: "http://mark8ly-auth-bff:8087"
+platformInternalAuthSecret:
+  secretName: mark8ly-local-secrets
+  secretKey: INTERNAL_AUTH_SECRET
+marketplaceInternalAuthSecret:
+  secretName: mark8ly-local-secrets
+  secretKey: INTERNAL_AUTH_SECRET
+storefrontKey:
+  secretName: mark8ly-local-secrets
+  secretKey: STOREFRONT_KEY
+
+gipProjectId: "mark8ly-local"
+gipCustomerTenantId: "local-customer"
+
+# Otto points at the in-namespace local otto Deployment (NOT the shared
+# support-platform one, which isn't installed on kind).
+ottoEnabled: true
+ottoServiceName: mark8ly-otto
+ottoServiceNamespace: mark8ly
+ottoServicePort: 8089
+
+# No separate UAT cluster locally — the prod wildcard's UAT routes are
+# irrelevant on kind.
+uatRoutes:
+  enabled: false
+
+secrets:
+  gip: mark8ly-local-secrets
+  session: mark8ly-local-secrets
+  otto: mark8ly-local-secrets

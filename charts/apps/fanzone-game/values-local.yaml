@@ -1,0 +1,74 @@
+# =============================================================================
+# LOCAL / kind overlay for fanzone-game. Does NOT touch prod.
+# Use with:
+#   helm upgrade --install fanzone-game charts/apps/fanzone-game \
+#     -n fanzone -f charts/apps/fanzone-game/values-local.yaml
+#
+# Prereqs: shared local-infra chart deployed first (CNPG Postgres + Redis +
+# NATS), then secrets.yaml applied. Shared password comes from the reflected
+# Secret 'local-infra-creds'.
+#
+# Image is built locally and loaded into kind:
+#   docker build -t fanzone-game:local -f apps/game/Dockerfile .
+#   kind load docker-image fanzone-game:local
+# =============================================================================
+
+image:
+  tag: "local"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 1
+autoscaling:
+  enabled: false
+keda:
+  enabled: false
+knative:
+  enabled: false
+
+affinity: {}
+
+serviceAccount:
+  annotations: {}
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "local"
+
+# Shared local-infra CNPG Postgres (fanzone DB, role 'fanzone'). Postgres + Redis
+# passwords from the reflected Secret 'local-infra-creds'. sslmode=disable.
+database:
+  host: "local-pg-rw.local-infra.svc.cluster.local"
+  port: "5432"
+  user: "fanzone"
+  name: "fanzone"
+  sslmode: "disable"
+  passwordSecretName: "local-infra-creds"
+  passwordSecretKey: "POSTGRES_PASSWORD"
+
+redis:
+  passwordSecretName: "local-infra-creds"
+  passwordSecretKey: "REDIS_PASSWORD"
+
+env:
+  GO_ENV: development
+  LOG_LEVEL: debug
+  LOG_FORMAT: console
+  PORT: "8088"
+  NATS_URL: "nats://nats.local-infra.svc.cluster.local:4222"
+  NATS_STREAM_NAME: "FANZONE_GAME"
+  REDIS_HOST: "redis.local-infra.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DB: "3"
+  TURN_TIMEOUT_SECONDS: "30"
+  MAX_PLAYERS_PER_ROOM: "5"
+  MIN_PLAYERS_TO_START: "2"
+  DECK_SIZE: "52"
+  MATCHMAKER_INTERVAL: "5s"
+  READ_TIMEOUT: "15s"
+  WRITE_TIMEOUT: "15s"
+  SHUTDOWN_TIMEOUT: "30s"

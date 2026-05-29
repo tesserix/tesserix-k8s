@@ -1,0 +1,89 @@
+# =============================================================================
+# LOCAL / kind overlay for fanzone-auth-bff. Does NOT touch prod.
+# Use with:
+#   helm upgrade --install fanzone-auth-bff charts/apps/fanzone-auth-bff \
+#     -n fanzone -f charts/apps/fanzone-auth-bff/values-local.yaml
+#
+# NOTE: the deployment reads REDIS_PASSWORD + SESSION_SECRET from a Secret named
+# 'fanzone-auth-bff-secrets' (the ExternalSecret target name, hardcoded via the
+# chart fullname). With externalSecrets.enabled=false below, no ExternalSecret
+# is created — so the local secrets bundle
+# (FanZone-Battle-Ground/k8s/secrets.example.yaml) creates that plain Secret
+# directly so the pod can start.
+#
+# This BFF verifies Firebase/GIP ID tokens via Workload Identity in prod. Locally
+# there is no GIP credential, so end-to-end login won't work without a real GIP
+# tenant — the overlay just makes the service boot for local API/Redis wiring.
+#
+# Image is built locally and loaded into kind:
+#   docker build -t fanzone-auth-bff:local -f apps/auth-bff/Dockerfile .
+#   kind load docker-image fanzone-auth-bff:local
+# =============================================================================
+
+image:
+  tag: "local"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 1
+autoscaling:
+  enabled: false
+keda:
+  enabled: false
+knative:
+  enabled: false
+vpa:
+  enabled: false
+
+affinity: {}
+
+# No ExternalSecret locally — fanzone-auth-bff-secrets comes from secrets.yaml.
+externalSecrets:
+  enabled: false
+
+# No GCP Workload Identity locally — empty SA disables the annotation.
+serviceAccount:
+  annotations: {}
+gcp:
+  projectId: ""
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "local"
+
+# No public VirtualService locally — reach via port-forward.
+virtualService:
+  enabled: false
+
+# Point the session store at the shared local-infra Redis (logical DB 3 is the
+# fanzone slice; this BFF builds a redis:// URL without a DB index, so it lands
+# on DB 0 — harmless for local session storage).
+redis:
+  host: "redis.local-infra.svc.cluster.local"
+  port: "6379"
+
+# Local GIP placeholders — replace with a real tenant for end-to-end auth.
+gip:
+  projectId: "tesseracthub-480811"
+  tenantId: "Fanzone-ut25f"
+  additionalTenantIds: ""
+
+# Override only the env that differs locally.
+env:
+  PORT: "8090"
+  HOST: "0.0.0.0"
+  NODE_ENV: development
+  LOG_LEVEL: debug
+  TRUST_PROXY: "true"
+  SESSION_MAX_AGE: "86400"
+  SESSION_COOKIE_NAME: "fanzone_bff_session"
+  SESSION_COOKIE_DOMAIN: ""
+  SESSION_COOKIE_SECURE: "false"
+  SESSION_COOKIE_HTTPONLY: "true"
+  SESSION_COOKIE_SAMESITE: "lax"
+  BASE_DOMAIN: "localhost"
+  ALLOWED_ORIGINS: "fanzone://,http://localhost:3000,http://localhost:5173"
+  FANZONE_BASE_URL: "http://fanzone-auth.fanzone.svc.cluster.local"
+  INTERNAL_API_KEY: "fz-internal-local-exchange-key"
+  TWILIO_VERIFY_SERVICE_SID: ""

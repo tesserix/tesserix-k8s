@@ -1,0 +1,65 @@
+# LOCAL / kind overlay for mark8ly-auth-bff. Use with:
+#   helm upgrade --install mark8ly-auth-bff charts/apps/mark8ly-auth-bff \
+#     -n mark8ly -f charts/apps/mark8ly-auth-bff/values-local.yaml
+#
+#   docker build -t mark8ly-auth-bff:local services/auth-bff
+#   kind load docker-image mark8ly-auth-bff:local
+
+namespace: mark8ly
+name: mark8ly-auth-bff
+
+image:
+  repository: mark8ly-auth-bff
+  tag: local
+  pullPolicy: IfNotPresent
+  migrateTarget: mark8ly-auth-bff
+imagePullSecrets: []
+
+keda:
+  enabled: false
+pdb:
+  enabled: false
+
+# Shares the platform_api database on the shared local-infra CNPG Postgres;
+# username (mark8ly) / password (local-sandbox-dev) live in the one local Secret.
+database:
+  host: local-pg-rw.local-infra.svc.cluster.local
+  port: 5432
+  name: mark8ly_platform_api
+  secretName: mark8ly-local-secrets
+  sslmode: disable
+
+openfga:
+  apiUrl: "http://mark8ly-openfga:8080"
+  storeId: ""
+
+# GIP is a no-op locally — keep the IDs nominal; the web API key comes from
+# the local Secret (key may be empty).
+gip:
+  projectId: "mark8ly-local"
+  projectNumber: "0"
+  internalTenantId: "local-internal"
+  customerTenantId: "local-customer"
+  platformTenantId: "local-platform"
+
+oauth:
+  clientId: "local"
+
+session:
+  cookieName: "m8_session"
+  cookieDomain: "localhost"    # plain host so the cookie sticks on kind
+
+marketplaceApiUrl: "http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080"
+marketplaceInternalAuthSecret:
+  secretName: mark8ly-local-secrets
+  secretKey: INTERNAL_AUTH_SECRET
+
+# All auth-bff secret refs collapse onto the single local Secret. Keys must
+# exist (GIP_WEB_API_KEY, OAUTH_CLIENT_SECRET, SESSION_ENCRYPT_KEY are NOT
+# optional in the deployment) — provide them (empty is acceptable for GIP/OAuth
+# locally) in mark8ly-local-secrets.
+secrets:
+  gip: mark8ly-local-secrets
+  oauth: mark8ly-local-secrets
+  session: mark8ly-local-secrets
+  auditIngest: mark8ly-local-secrets

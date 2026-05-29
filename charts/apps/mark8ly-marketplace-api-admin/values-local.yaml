@@ -1,0 +1,94 @@
+# LOCAL / kind overlay for mark8ly-marketplace-api-admin. Use with:
+#   helm upgrade --install mark8ly-marketplace-api-admin \
+#     charts/apps/mark8ly-marketplace-api-admin -n mark8ly \
+#     -f charts/apps/mark8ly-marketplace-api-admin/values-local.yaml
+#
+# Build + load the shared marketplace-api image into kind:
+#   docker build -t mark8ly-marketplace-api:local services/marketplace-api
+#   kind load docker-image mark8ly-marketplace-api:local
+#
+# Requires the single local Secret (mark8ly-local-secrets) and the shared
+# local-infra chart (CNPG Postgres + Redis + Mongo) to be deployed first.
+
+namespace: mark8ly
+name: mark8ly-marketplace-api-admin
+
+image:
+  repository: mark8ly-marketplace-api
+  tag: local
+  pullPolicy: IfNotPresent
+  migrateTarget: mark8ly-marketplace-api
+imagePullSecrets: []
+
+keda:
+  enabled: false              # no KEDA operator on kind
+pdb:
+  enabled: false
+
+# Shared local-infra CNPG Postgres; username (mark8ly) / password
+# (local-sandbox-dev) live in the one local Secret.
+database:
+  host: local-pg-rw.local-infra.svc.cluster.local
+  port: 5432
+  name: mark8ly_marketplace_api
+  secretName: mark8ly-local-secrets
+  sslmode: disable
+
+mode: admin
+
+# In-cluster sibling URLs (services share the mark8ly namespace).
+fgaApiUrl: "http://mark8ly-openfga.mark8ly.svc.cluster.local:8080"
+platformApiUrl: "http://mark8ly-platform-api.mark8ly.svc.cluster.local:8086"
+authBffUrl: "http://mark8ly-auth-bff.mark8ly.svc.cluster.local:8087"
+
+# Collapse every cross-service / secret ref onto the single local Secret.
+internalAuthSecret:
+  secretName: mark8ly-local-secrets
+  secretKey: INTERNAL_AUTH_SECRET
+platformApiSecret:
+  secretName: mark8ly-local-secrets
+  secretKey: INTERNAL_AUTH_SECRET
+customerSessionSecret:
+  secretName: mark8ly-local-secrets
+  secretKey: SESSION_ENCRYPT_KEY
+encryptionKey:
+  secretName: mark8ly-local-secrets
+  secretKey: ENCRYPTION_KEY
+
+gipProjectId: "mark8ly-local"
+gcsBucket: "mark8ly-local"
+# No Workload Identity locally — empty disables the GCS signer SA env block.
+gcpServiceAccount: ""
+mediaPublicBaseURL: ""
+mediaCacheControl: ""
+
+# Carrier credential store: keep secrets inline/local rather than GCP SM.
+encryptionMode: "aes"
+carrierSecretStore: "inline"
+gcpProjectId: "mark8ly-local"
+carrierSecretPrefix: "mark8ly-local"
+carrierIamBootstrap:
+  enabled: false
+corsAllowedOrigins: "*"
+metricsPort: 9090
+
+# Optional secrets all point at the single local Secret (keys may be empty;
+# the deployment marks them optional so the pod still starts).
+sentryDsn:
+  secretName: mark8ly-local-secrets
+  secretKey: SENTRY_DSN
+stripeBilling:
+  secretName: mark8ly-local-secrets
+  secretKeyKey: STRIPE_BILLING_SECRET_KEY
+  webhookSecretKey: STRIPE_BILLING_WEBHOOK_SECRET
+sendgrid:
+  secretName: mark8ly-local-secrets
+  apiKeyKey: SENDGRID_API_KEY
+  emailFrom: noreply@localhost
+
+# Tracking-sync CronJob hits the carrier APIs every 2m — off locally.
+trackingSyncCron:
+  enabled: false
+
+auditIngest:
+  secretName: mark8ly-local-secrets

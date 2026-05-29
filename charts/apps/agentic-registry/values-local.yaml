@@ -1,0 +1,57 @@
+# Local / kind overlay. Use with:
+#   helm upgrade --install agentic-registry deploy/helm \
+#     -n agentic-registry -f deploy/helm/values-local.yaml
+#
+# Assumes you applied k8s/secrets.yaml first (see k8s/secrets.example.yaml).
+
+# Image is built locally and loaded into kind (no registry push):
+#   docker build -f deploy/Dockerfile -t agentic-registry:local .
+#   kind load docker-image agentic-registry:local
+image:
+  repository: agentic-registry
+  tag: local
+  pullPolicy: IfNotPresent   # never tries to pull from a registry
+
+# DATABASE_URL comes from the Secret you applied, not GCP Secret Manager.
+# It points at the SHARED local-infra CNPG cluster:
+#   local-pg-rw.local-infra.svc.cluster.local:5432  db "registry"  role "registry"
+# (see k8s/secrets.example.yaml — password "local-sandbox-dev", sslmode=disable).
+database:
+  mode: existingSecret
+  existingSecret:
+    name: agentic-registry-secrets
+    key: DATABASE_URL
+
+externalSecret:
+  enabled: false             # no External Secrets Operator needed locally
+
+# No bundled Postgres locally — this product now uses the SHARED local-infra
+# CNPG cluster (local-pg-rw.local-infra.svc.cluster.local:5432). Deploy the
+# local-infra chart FIRST (see SETUP_LOCAL.md); products auto-connect via the
+# reflected local-infra-creds Secret + stable DNS. Per-product data reset:
+#   ../tesserix-k8s/charts/apps/local-infra/clean-product.sh agentic-registry
+postgresql:
+  enabled: false
+
+# No GCP Workload Identity locally — empty string disables the SA annotation.
+serviceAccount:
+  create: true
+  name: agentic-registry
+  gcpServiceAccount: ""
+  annotations: {}
+
+config:
+  storeBackend: postgres
+  autoMigrate: "true"        # app applies the embedded schema (no db-schema-bootstrap locally)
+  authMode: anonymous        # local = full access; switch to jwks against a local IdP if you want
+  multiTenant: "false"
+  publicBaseUrl: http://localhost:8080
+  corsOrigins: "*"
+  webDir: /app/web
+
+# kind usually has neither KEDA nor Istio — turn them off. Reach the UI/API via
+# `kubectl port-forward svc/agentic-registry 8080:8080 -n agentic-registry`.
+keda:
+  enabled: false
+istio:
+  enabled: false

@@ -1,0 +1,107 @@
+# Local / kind overlay for devai-api. Use with:
+#   helm upgrade --install devai-api charts/apps/devai-api \
+#     -n devai -f charts/apps/devai-api/values-local.yaml
+#
+# Prerequisites (see the devai repo k8s/secrets.example.yaml + README):
+#   1. Deploy the SHARED local-infra chart FIRST (CNPG Postgres + Redis + NATS +
+#      Mongo in the local-infra namespace). It reflects the local-infra-creds
+#      Secret into the devai namespace.
+#        sandboxctl deploy --chart ../tesserix-k8s/charts/apps/local-infra \
+#          --name local-infra --no-build
+#   2. kubectl -n devai apply -f k8s/secrets.yaml   (creates
+#      postgresql-devai-password, redis-devai-password, devai-api-secrets,
+#      devai-github-pat — all carrying the shared "local-sandbox-dev" password)
+#
+# This overlay NEVER changes prod behaviour — it only flips values that already
+# exist in values.yaml (image, database/redis hosts, gcp.workloadIdentity, keda,
+# autoscaling). The hardcoded Secret refs in deployment.yaml are satisfied by the
+# plain Secrets you applied in step 2 (same names as prod, local values).
+
+# Image is built locally and loaded into kind (no registry pull):
+#   docker build -t devai-api:local -f services/api/Dockerfile .   # adjust path
+#   kind load docker-image devai-api:local
+image:
+  repository: devai-api
+  tag: local
+  pullPolicy: IfNotPresent
+
+# No GHCR/GAR pull secret needed for a kind-loaded image.
+imagePullSecrets: []
+
+# Point at the SHARED local-infra CNPG Postgres (devai's slice: role devai,
+# database devai_db). DEVAI_DATABASE_URL is assembled from these by
+# deployment.yaml (it appends ?sslmode=disable). The DB_PASSWORD secretKeyRef
+# (postgresql-devai-password/password) is applied locally and must equal the
+# shared CNPG role password "local-sandbox-dev" (see secrets.example.yaml; the
+# reflected local-infra-creds Secret carries the same value).
+database:
+  host: "local-pg-rw.local-infra.svc.cluster.local"
+  port: "5432"
+  user: "devai"
+  name: "devai_db"
+
+# Shared local-infra Redis (devai uses logical DB 0 — the default the URL maps
+# to, so no index suffix is needed). REDIS_PASSWORD comes from the
+# redis-devai-password Secret ("local-sandbox-dev").
+redis:
+  host: "redis.local-infra.svc.cluster.local"
+  port: "6379"
+
+# Shared local-infra NATS/JetStream (devai stream prefix "devai").
+nats:
+  url: "nats://nats.local-infra.svc.cluster.local:4222"
+
+# Disable GCP Workload Identity — no metadata server in kind. This empties the
+# iam.gke.io/gcp-service-account annotation on the ServiceAccount.
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+
+# Point local LLM clients at the public APIs (no in-cluster gateway locally).
+llm:
+  anthropicBaseUrl: ""
+  openaiBaseUrl: ""
+
+# ── Decouple from GKE prod ──────────────────────────────────────────────
+# Helm deep-merges the env map, so these keys override the prod-pointing
+# defaults baked into values.yaml WITHOUT restating the whole block. This
+# guarantees a locally-deployed devai-api never reaches prod GCP / GKE /
+# Keycloak / the prod dashboard origin.
+#   - DEVAI_GKE_PROJECT="" stops any GCP Secret Manager fetch from dialing
+#     the prod project (tesseracthub-480811).
+#   - DEVAI_KEYCLOAK_URL="" stops local token validation hitting prod IdP.
+#   - DEVAI_DASHBOARD_BASE_URL points at localhost, not devai.tesserix.app.
+#   - DEVAI_GKE_USE_IN_CLUSTER stays true → talks ONLY to the local kind
+#     apiserver via its in-cluster SA (never a prod kubeconfig).
+env:
+  DEVAI_GKE_PROJECT: ""
+  DEVAI_GKE_CLUSTER: "kind-sandboxctl"
+  DEVAI_GKE_REGION: "local"
+  DEVAI_GKE_USE_IN_CLUSTER: "true"
+  DEVAI_KEYCLOAK_URL: ""
+  DEVAI_DASHBOARD_BASE_URL: "http://localhost:8080"
+  DEVAI_LANGCHAIN_TRACING_V2: ""
+
+# No KEDA / HPA in kind — run a single static replica.
+autoscaling:
+  enabled: false
+keda:
+  enabled: false
+
+# Locally devai-api doesn't orchestrate ArgoCD / spawn K8s Jobs, so skip the
+# ClusterRole and the namespaced runner Role. NB: k8sRuntime must be present as
+# a map here — the base values.yaml omits it (it lives only in values-prod.yaml),
+# so rendering devai-api with just values.yaml fails on runtime-rbac.yaml. This
+# overlay supplies it for the local path without touching prod.
+rbac:
+  create: false
+k8sRuntime:
+  enabled: false
+  # Rendered (as a default) even when disabled — point it at a local domain
+  # so nothing references the prod preview host.
+  previewDomain: "localhost"
+
+# Reach the API via:
+#   kubectl port-forward svc/devai-api 8080:8080 -n devai
