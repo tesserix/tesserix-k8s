@@ -53,8 +53,16 @@ spec:
             {{- end }}
             - name: GCP_SECRET_PREFIX
               value: {{ .Values.gcp.secretManager.secretPrefix | quote }}
+            {{- if .Values.local.enabled }}
+            # LOCAL / kind: no GCP Secret Manager. Credentials come from the
+            # plain Secret referenced by .Values.local.secretName. Prod path is
+            # unchanged (local.enabled defaults to false).
+            - name: USE_GCP_SECRET_MANAGER
+              value: "false"
+            {{- else }}
             - name: USE_GCP_SECRET_MANAGER
               value: "true"
+            {{- end }}
                         # Database connection settings
             - name: DB_HOST
               value: {{ .Values.database.host | quote }}
@@ -66,13 +74,35 @@ spec:
               value: {{ .Values.database.name | quote }}
             - name: DB_SSLMODE
               value: {{ .Values.database.sslmode | quote }}
-
+            {{- if .Values.local.enabled }}
+            # Plain secret-backed credentials for local/kind (no GCP SM).
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.local.secretName | quote }}
+                  key: DB_PASSWORD
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.local.secretName | quote }}
+                  key: REDIS_PASSWORD
+                  optional: true
+            {{- range $key := .Values.local.extraSecretKeys }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.local.secretName | quote }}
+                  key: {{ $key }}
+                  optional: true
+            {{- end }}
+            {{- else }}
             # Database password from GCP Secret Manager
             - name: DB_PASSWORD_SECRET_NAME
               value: {{ printf "%s-%s-postgresql-password" .Values.gcp.secretManager.secretPrefix (.Values.gcp.namespace | default .Release.Namespace) | quote }}
             # Redis password from GCP Secret Manager
             - name: REDIS_PASSWORD_SECRET_NAME
               value: {{ printf "%s-%s-redis-password" .Values.gcp.secretManager.secretPrefix (.Values.gcp.namespace | default .Release.Namespace) | quote }}
+            {{- end }}
           {{- if .Values.livenessProbe }}
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
@@ -99,6 +129,23 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.local.enabled }}
+          # readOnlyRootFilesystem ⇒ writable scratch via emptyDir locally
+          # (kind has no provisioner for the prod uploads PVC). Prod path is
+          # unchanged (local.enabled defaults to false).
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: uploads
+              mountPath: {{ (index .Values.env "UPLOAD_DIR") | default "/app/uploads" | quote }}
+          {{- end }}
+      {{- if .Values.local.enabled }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: uploads
+          emptyDir: {}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
