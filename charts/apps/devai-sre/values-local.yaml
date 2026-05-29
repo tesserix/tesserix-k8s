@@ -1,0 +1,52 @@
+# Local / kind overlay for devai-sre. Use with:
+#   helm upgrade --install devai-sre charts/apps/devai-sre \
+#     -n devai -f charts/apps/devai-sre/values-local.yaml
+#
+# Prerequisites (see the devai repo k8s/secrets.example.yaml + README):
+#   1. Deploy the SHARED local-infra chart FIRST (CNPG Postgres + Redis + NATS +
+#      Mongo). It reflects local-infra-creds into the devai namespace.
+#        sandboxctl deploy --chart ../tesserix-k8s/charts/apps/local-infra \
+#          --name local-infra --no-build
+#   2. kubectl -n devai apply -f k8s/secrets.yaml
+#
+# Only flips values that already exist in values.yaml — prod behaviour unchanged.
+
+# Image built locally and loaded into kind:
+#   docker build -t devai-sre:local -f services/sre/Dockerfile .   # adjust path
+#   kind load docker-image devai-sre:local
+image:
+  repository: devai-sre
+  tag: local
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Shared local-infra Postgres + Redis (same Secret refs as prod, local values).
+# devai's slice: role devai / database devai_db / Redis logical DB 0 (default).
+# Passwords ("local-sandbox-dev") come from the postgresql-devai-password /
+# redis-devai-password Secrets, matching the reflected local-infra-creds.
+database:
+  host: "local-pg-rw.local-infra.svc.cluster.local"
+  port: "5432"
+  user: "devai"
+  name: "devai_db"
+
+redis:
+  host: "redis.local-infra.svc.cluster.local"
+  port: "6379"
+
+# No GCP Workload Identity in kind.
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+
+# No KEDA / HPA locally.
+autoscaling:
+  enabled: false
+keda:
+  enabled: false
+
+# Reach the service via:
+#   kubectl port-forward svc/devai-sre 8090:8090 -n devai

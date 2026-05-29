@@ -1,0 +1,76 @@
+# Tesserix local app-of-apps. Renders sync-wave-ordered child Argo Applications:
+#
+#   wave 0  : cnpg-operator        (CloudNativePG operator)
+#   wave 10 : local-infra          (shared CNPG cluster + Redis + NATS + Mongo)
+#   wave 20 : products             (agentic-registry, devai, homechef, mark8ly, fanzone)
+#
+# Argo applies lower waves first and waits for health before the next, so the
+# shared datastores exist before any product starts.
+
+# Git source Argo pulls the in-repo charts (local-infra + product charts) from.
+# In the kind sandbox, set this to a repo your local Argo can read (your
+# tesserix-k8s remote, or the in-cluster Gitea URL sandboxctl prints).
+repoURL: https://github.com/tesserix/tesserix-k8s.git
+targetRevision: HEAD
+
+# CNPG operator — wave 0. Pulled from the public CloudNativePG helm repo.
+cnpgOperator:
+  enabled: true
+  namespace: cnpg-system
+  chartRepo: https://cloudnative-pg.github.io/charts
+  chart: cloudnative-pg
+  version: "0.28.2"
+
+# Shared datastores — wave 10. The local-infra chart in THIS repo.
+localInfra:
+  enabled: true
+  namespace: local-infra
+  path: charts/apps/local-infra
+  valuesFile: values.yaml
+
+# Products — wave 20+. DISABLED by default: their images must be built + loaded
+# into the kind registry first (use `sandboxctl deploy` per each repo's
+# SETUP_LOCAL.md, which builds images). Enable one with, e.g.:
+#   apply-local.sh --set products.agentic-registry.enabled=true
+# (map keys make --set reliable). agentic-registry is a single chart; the
+# multi-service products list a representative core chart — add keys as needed.
+products:
+  agentic-registry:     { enabled: false, namespace: agentic-registry, path: charts/apps/agentic-registry,      valuesFile: values-local.yaml, wave: 20 }
+  devai-api:            { enabled: false, namespace: devai,             path: charts/apps/devai-api,             valuesFile: values-local.yaml, wave: 21 }
+  homechef-api:         { enabled: false, namespace: homechef,          path: charts/apps/homechef-api,          valuesFile: values-local.yaml, wave: 21 }
+  mark8ly-platform-api: { enabled: false, namespace: marketplace,       path: charts/apps/mark8ly-platform-api,  valuesFile: values-local.yaml, wave: 21 }
+  fanzone-api:          { enabled: false, namespace: fanzone,           path: charts/apps/fanzone-api,           valuesFile: values-local.yaml, wave: 21 }
+
+# ── Agentic add-ons (public charts) — waves 5–7 ─────────────────────────────
+# Self-contained Argo apps for the upstream components (no sandboxctl --with-*
+# needed). Coords mirror what sandboxctl installs. OCI charts get an Argo
+# repository Secret (public, no auth). Toggle any off if you don't need it.
+addons:
+  gatewayApiCrds:                 # wave 5 — Kubernetes Gateway API CRDs (upstream git)
+    enabled: true
+    repoURL: https://github.com/kubernetes-sigs/gateway-api
+    targetRevision: v1.5.0
+    path: config/crd/standard
+  kyverno:                        # wave 5 — policy engine (public helm repo)
+    enabled: true
+    repoURL: https://kyverno.github.io/kyverno
+    chart: kyverno
+    version: "3.2.6"              # override if your platform pins a different one
+    namespace: kyverno
+  agentgateway:                   # waves 6 (crds) + 7 — OCI helm (cr.agentgateway.dev)
+    enabled: true
+    ociRepo: cr.agentgateway.dev/charts
+    version: v1.2.0
+    namespace: agentgateway-system
+  kagent:                         # waves 6 (crds) + 7 — OCI helm (ghcr.io/kagent-dev)
+    enabled: true
+    ociRepo: ghcr.io/kagent-dev/kagent/helm
+    version: "0.9.4"
+    namespace: kagent-system
+  portkey:                        # wave 7 — no upstream chart; tiny in-repo chart
+    enabled: true
+    path: charts/apps/portkey-local
+    namespace: portkey
+
+# Argo project + destination for all children.
+project: default

@@ -1,0 +1,63 @@
+# LOCAL / kind overlay for mark8ly-marketplace-api-storefront (same image as
+# the admin engine, differentiated by MODE=storefront). Use with:
+#   helm upgrade --install mark8ly-marketplace-api-storefront \
+#     charts/apps/mark8ly-marketplace-api-storefront -n mark8ly \
+#     -f charts/apps/mark8ly-marketplace-api-storefront/values-local.yaml
+#
+#   docker build -t mark8ly-marketplace-api:local services/marketplace-api
+#   kind load docker-image mark8ly-marketplace-api:local
+
+namespace: mark8ly
+name: mark8ly-marketplace-api-storefront
+
+image:
+  repository: mark8ly-marketplace-api
+  tag: local
+  pullPolicy: IfNotPresent
+  migrateTarget: mark8ly-marketplace-api
+imagePullSecrets: []
+
+keda:
+  enabled: false
+pdb:
+  enabled: false
+
+# Shared local-infra CNPG Postgres; username (mark8ly) / password
+# (local-sandbox-dev) live in the one local Secret.
+database:
+  host: local-pg-rw.local-infra.svc.cluster.local
+  port: 5432
+  name: mark8ly_marketplace_api
+  secretName: mark8ly-local-secrets
+  sslmode: disable
+
+mode: storefront
+
+# Storefront trust-boundary key — onto the single local Secret.
+storefrontKey:
+  secretName: mark8ly-local-secrets
+  secretKey: STOREFRONT_KEY
+
+fgaApiUrl: "http://mark8ly-openfga.mark8ly.svc.cluster.local:8080"
+platformApiUrl: "http://mark8ly-platform-api.mark8ly.svc.cluster.local:8086"
+platformApiSecret:
+  secretName: mark8ly-local-secrets
+  secretKey: INTERNAL_AUTH_SECRET
+customerSessionSecret:
+  secretName: mark8ly-local-secrets
+  secretKey: SESSION_ENCRYPT_KEY
+encryptionKey:
+  secretName: mark8ly-local-secrets
+  secretKey: ENCRYPTION_KEY
+
+corsAllowedOrigins: "*"
+encryptionMode: "aes"
+carrierSecretStore: "inline"
+gcpProjectId: "mark8ly-local"
+carrierSecretPrefix: "mark8ly-local"
+# No Workload Identity locally — empty disables the GCS signer SA env block.
+gcpServiceAccount: ""
+metricsPort: 9090
+sentryDsn:
+  secretName: mark8ly-local-secrets
+  secretKey: SENTRY_DSN

@@ -1,0 +1,55 @@
+# LOCAL / kind overlay for mark8ly-otto (support chat). Use with:
+#   helm upgrade --install mark8ly-otto charts/apps/mark8ly-otto \
+#     -n mark8ly -f charts/apps/mark8ly-otto/values-local.yaml
+#
+#   docker build -t mark8ly-otto:local services/otto
+#   kind load docker-image mark8ly-otto:local
+#
+# Otto needs MongoDB — provided by the shared local-infra chart (deploy it
+# first). mongo.url points at the shared Mongo with the root user and the
+# shared throwaway password (local-sandbox-dev), database mark8ly_otto.
+# (Otto does not read Redis in this chart; the mark8ly Redis logical DB 2 on
+# redis.local-infra.svc.cluster.local:6379 is reserved by local-infra for any
+# future Redis-backed mark8ly service.)
+
+namespace: mark8ly
+name: mark8ly-otto
+
+image:
+  repository: mark8ly-otto
+  tag: local
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# keda already defaults to enabled:false in values.yaml; kept explicit.
+keda:
+  enabled: false
+pdb:
+  enabled: false
+replicaCount: 1
+
+mongo:
+  url: "mongodb://root:local-sandbox-dev@mongodb.local-infra.svc.cluster.local:27017/mark8ly_otto?authSource=admin"
+  database: "mark8ly_otto"
+
+session:
+  cookieName: "otto_session"
+  cookieDomain: "localhost"
+  cookieSecure: false          # local is plain HTTP
+
+cors:
+  allowedOrigins: "*"
+
+otp:
+  fromEmail: "noreply@localhost"
+  fromName: "Otto Support"
+  codeTtlSeconds: 600
+  maxAttempts: 5
+  resendCooldownSeconds: 45
+
+# Both secret refs collapse onto the single local Secret. CUSTOMER_SESSION_SECRET
+# and INTERNAL_AUTH_SECRET are NOT optional — provide them in mark8ly-local-secrets.
+# SENDGRID_API_KEY is optional (falls back to a stdout mailer).
+secrets:
+  otto: mark8ly-local-secrets
+  sendgrid: mark8ly-local-secrets

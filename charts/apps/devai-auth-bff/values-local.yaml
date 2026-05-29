@@ -1,0 +1,59 @@
+# Local / kind overlay for devai-auth-bff (Go GIP session BFF). Use with:
+#   helm upgrade --install devai-auth-bff charts/apps/devai-auth-bff \
+#     -n devai -f charts/apps/devai-auth-bff/values-local.yaml
+#
+# Prerequisite: apply k8s/secrets.yaml first — it includes the
+# devai-auth-bff-secrets plain Secret (see the devai repo secrets.example.yaml).
+# With externalSecrets disabled, that Secret is NOT created by the chart, so it
+# must already exist for the deployment's secretKeyRefs to resolve.
+#
+# Only flips image / externalSecrets — prod behaviour unchanged. The chart's
+# ServiceAccount carries no Workload Identity annotation, so there is nothing to
+# disable for WI here.
+
+# Image built locally and loaded into kind:
+#   docker build -t devai-auth-bff:local -f services/auth-bff/Dockerfile .  # adjust path
+#   kind load docker-image devai-auth-bff:local
+image:
+  repository: devai-auth-bff
+  tag: local
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# No External Secrets Operator in kind — use the plain devai-auth-bff-secrets
+# Secret applied from k8s/secrets.yaml instead.
+externalSecrets:
+  enabled: false
+
+# Local hosts are the sandbox.app wildcard that sandboxctl serves over
+# https://*.sandbox.app:8443. The BFF's /auth/config matches the incoming Host
+# header against these to pick the GIP tenant pool, so they MUST be the real
+# sandbox.app hostnames (not localhost) for the login flow to resolve. The
+# session cookie is scoped to .sandbox.app (shared across devai./sre.) and
+# Secure (sandbox.app is TLS).
+#
+# GIP side (run once — see tesserix-k8s/local/gip-local-setup.sh):
+#   * sandbox.app must be an Authorized domain on the GIP project.
+#   * Use DEDICATED local tenants (DEVAI_BFF_*_TENANT_ID in k8s/secrets.yaml)
+#     so local logins never touch the prod tenant pools.
+# The project below is only the GIP token-verification audience (Google's
+# hosted identity service) — it is NOT the GKE cluster.
+env:
+  DEVAI_BFF_HTTP_PORT: ":8090"
+  DEVAI_BFF_GCP_PROJECT_ID: "tesseracthub-480811"
+  DEVAI_BFF_GIP_AUTH_DOMAIN: "tesseracthub-480811.firebaseapp.com"
+  DEVAI_BFF_SESSION_COOKIE_NAME: "devai_session"
+  DEVAI_BFF_SESSION_DOMAIN: ".sandbox.app"
+  DEVAI_BFF_SESSION_SECURE: "true"
+  DEVAI_BFF_SESSION_MAX_AGE_SECONDS: "86400"
+  DEVAI_BFF_ALM_HOST: "devai.sandbox.app"
+  DEVAI_BFF_SRE_HOST: "sre.sandbox.app"
+  DEVAI_BFF_KAGENT_UPSTREAM_URL: "http://kagent-ui.kagent-system.svc.cluster.local:8080"
+  DEVAI_BFF_AREGISTRY_UPSTREAM_URL: "http://aregistry-agentregistry.aregistry.svc.cluster.local:12121"
+  DEVAI_BFF_KAGENT_HOST: "kagent.sandbox.app"
+  DEVAI_BFF_AREGISTRY_HOST: "aregistry.sandbox.app"
+
+# Reach the BFF in-cluster via the sandbox URL (https://devai.sandbox.app:8443)
+# once routed, or directly:
+#   kubectl port-forward svc/devai-auth-bff 8090:8090 -n devai

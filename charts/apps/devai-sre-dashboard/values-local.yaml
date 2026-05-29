@@ -1,0 +1,32 @@
+# Local / kind overlay for devai-sre-dashboard (Next.js). Use with:
+#   helm upgrade --install devai-sre-dashboard charts/apps/devai-sre-dashboard \
+#     -n devai -f charts/apps/devai-sre-dashboard/values-local.yaml
+#
+# Pure frontend — no DB or secrets. emptyDir volumes for /tmp and
+# /app/.next/cache are already in the chart's deployment.yaml.
+
+# Image built locally and loaded into kind:
+#   docker build -t devai-sre-dashboard:local -f apps/sre-dashboard/Dockerfile .  # adjust path
+#   kind load docker-image devai-sre-dashboard:local
+image:
+  repository: devai-sre-dashboard
+  tag: local
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Talk to the in-cluster SRE API service.
+env:
+  NODE_ENV: "production"
+  HOSTNAME: "0.0.0.0"
+  NEXT_PUBLIC_API_URL: "http://devai-sre:8090"
+
+# No GCP Workload Identity in kind.
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+
+# Reach the UI via:
+#   kubectl port-forward svc/devai-sre-dashboard 3200:3200 -n devai

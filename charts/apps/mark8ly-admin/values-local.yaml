@@ -1,0 +1,52 @@
+# LOCAL / kind overlay for mark8ly-admin (Next.js merchant admin). Use with:
+#   helm upgrade --install mark8ly-admin charts/apps/mark8ly-admin \
+#     -n mark8ly -f charts/apps/mark8ly-admin/values-local.yaml
+#
+#   docker build -t mark8ly-admin:local -f apps/admin/Dockerfile .
+#   kind load docker-image mark8ly-admin:local
+#
+# Reach the UI via:
+#   kubectl -n mark8ly port-forward svc/mark8ly-admin 4202:4202
+
+namespace: mark8ly
+name: mark8ly-admin
+
+image:
+  repository: mark8ly-admin
+  tag: local
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+keda:
+  enabled: false
+pdb:
+  enabled: false
+
+platformApiUrl: "http://mark8ly-platform-api:8086"
+authBffUrl: "http://mark8ly-auth-bff:8087"
+marketplaceApiUrl: "http://mark8ly-marketplace-api-admin:8080"
+marketplaceInternalAuthSecret:
+  secretName: mark8ly-local-secrets
+  secretKey: INTERNAL_AUTH_SECRET
+platformInternalAuthSecret:
+  secretName: mark8ly-local-secrets
+  secretKey: INTERNAL_AUTH_SECRET
+
+# Disables the tesserix-home cross-namespace integration AND its
+# ExternalSecret template (gated on tesserixInternal.enabled) — no External
+# Secrets Operator on kind.
+tesserixInternal:
+  enabled: false
+
+public:
+  gipProjectId: "mark8ly-local"
+  gipTenantId: "local"
+  googleClientId: "local"
+
+# All secret refs onto the single local Secret. NEXT_PUBLIC_GIP_API_KEY
+# (GIP_WEB_API_KEY) and SESSION_ENCRYPT_KEY are NOT optional — provide them
+# (empty acceptable for GIP) in mark8ly-local-secrets.
+secrets:
+  gip: mark8ly-local-secrets
+  otto: mark8ly-local-secrets
+  session: mark8ly-local-secrets

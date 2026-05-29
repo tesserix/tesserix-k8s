@@ -1,0 +1,33 @@
+# Local / kind overlay for devai-dashboard (Next.js). Use with:
+#   helm upgrade --install devai-dashboard charts/apps/devai-dashboard \
+#     -n devai -f charts/apps/devai-dashboard/values-local.yaml
+#
+# Pure frontend — no DB or secrets. Only flips image / WI / API URL. The chart
+# already mounts emptyDir at /tmp and /app/.next/cache for readOnlyRootFilesystem,
+# so no extra volumes are needed here.
+
+# Image built locally and loaded into kind:
+#   docker build -t devai-dashboard:local -f apps/dashboard/Dockerfile .  # adjust path
+#   kind load docker-image devai-dashboard:local
+image:
+  repository: devai-dashboard
+  tag: local
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Talk to the in-cluster API service.
+env:
+  NODE_ENV: "production"
+  HOSTNAME: "0.0.0.0"
+  NEXT_PUBLIC_API_URL: "http://devai-api:8080"
+
+# No GCP Workload Identity in kind.
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+
+# Reach the UI via:
+#   kubectl port-forward svc/devai-dashboard 3100:3100 -n devai

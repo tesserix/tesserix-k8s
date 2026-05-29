@@ -1,0 +1,84 @@
+# LOCAL / kind overlay for mark8ly-platform-api. Use with:
+#   helm upgrade --install mark8ly-platform-api charts/apps/mark8ly-platform-api \
+#     -n mark8ly -f charts/apps/mark8ly-platform-api/values-local.yaml
+#
+# Assumes you applied the single local Secret first (see the mark8ly product
+# repo: k8s/secrets.example.yaml -> mark8ly-local-secrets) and deployed the
+# shared local-infra chart (CNPG Postgres + Redis + Mongo) first. Postgres role
+# mark8ly + DBs are auto-created by local-infra; the shared password also lands
+# in this namespace via the reflected local-infra-creds Secret.
+#
+# Build + load the image into kind (no registry push):
+#   docker build -t mark8ly-platform-api:local services/platform-api
+#   kind load docker-image mark8ly-platform-api:local
+
+namespace: mark8ly
+name: mark8ly-platform-api
+
+image:
+  repository: mark8ly-platform-api
+  tag: local
+  pullPolicy: IfNotPresent     # never tries to pull from a registry
+  migrateTarget: mark8ly-platform-api   # same local image runs the migrate entrypoint
+# No GHCR pull secret locally.
+imagePullSecrets: []
+
+# KEDA off — kind has no KEDA operator; a single replica is enough.
+keda:
+  enabled: false
+pdb:
+  enabled: false
+
+# Point at the shared local-infra CNPG Postgres. The username (mark8ly) /
+# password (local-sandbox-dev) keys come from the same Secret as everything
+# else local; that password matches the shared CNPG role + reflected
+# local-infra-creds.
+database:
+  host: local-pg-rw.local-infra.svc.cluster.local
+  port: 5432
+  name: mark8ly_platform_api
+  secretName: mark8ly-local-secrets
+  sslmode: disable             # shared local CNPG has no client TLS
+
+openfga:
+  apiUrl: "http://mark8ly-openfga:8080"
+  storeId: ""
+
+# In-cluster sibling URLs stay the same (services run in the mark8ly ns).
+marketplaceApiUrl: "http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080"
+# All shared internal-auth / secret refs collapse onto the one local Secret.
+# The Go services treat an empty/absent INTERNAL_AUTH_SECRET as permissive, so
+# a single shared value across services keeps cross-service calls working.
+marketplaceInternalAuthSecret:
+  secretName: mark8ly-local-secrets
+  secretKey: INTERNAL_AUTH_SECRET
+internalAuthSecret:
+  secretName: mark8ly-local-secrets
+  secretKey: INTERNAL_AUTH_SECRET
+
+# Local link templates (point at localhost / nip.io as you prefer).
+adminBaseUrlTemplate: "http://{slug}-admin.localhost"
+storefrontBaseUrlTemplate: "http://{slug}.localhost"
+onboardingBaseUrl: "http://localhost"
+emailFrom: "noreply@localhost"
+gcsBucket: "mark8ly-local"     # GCS calls no-op locally (no WI)
+adminResetBaseUrl: "http://admin.localhost"
+
+# GIP is a no-op locally — point the webApiKey secret at the local Secret
+# (key may be empty; the service degrades gracefully).
+gip:
+  projectId: "mark8ly-local"
+  tenantId: "local"
+  webApiKeySecret:
+    name: mark8ly-local-secrets
+    key: GIP_WEB_API_KEY
+
+# Run the seed binary once after install (countries/states/currencies/timezones).
+seed:
+  enabled: true
+
+# Collapse SendGrid + audit-ingest onto the single local Secret. Keys may be
+# empty — the service falls back to a stdout mailer / permissive ingest.
+secrets:
+  sendgrid: mark8ly-local-secrets
+  auditIngest: mark8ly-local-secrets

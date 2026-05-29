@@ -1,0 +1,111 @@
+# LOCAL / kind overlay for homechef-api. Use with:
+#   helm upgrade --install homechef-api charts/apps/homechef-api \
+#     -n homechef -f charts/apps/homechef-api/values-local.yaml
+#
+# Prereqs:
+#   1. Deploy the shared local infra ONCE (CNPG Postgres + Redis + NATS + Mongo):
+#        sandboxctl deploy --chart ../tesserix-k8s/charts/apps/local-infra \
+#          --name local-infra --no-build
+#      It provisions the homechef slice (Postgres db homechef_db / role homechef,
+#      Redis logical DB 1) and reflects Secret `local-infra-creds` into the
+#      homechef namespace (same throwaway password: local-sandbox-dev).
+#   2. kubectl apply -f Home-Chef-App/k8s/secrets.yaml   (Secret homechef-local-secrets)
+#
+# Build + load the image into kind first (no registry push):
+#   docker build -t homechef-api:local -f apps/api/Dockerfile .
+#   kind load docker-image homechef-api:local
+image:
+  repository: homechef-api
+  tag: local
+  pullPolicy: IfNotPresent   # never tries to pull from a registry
+
+# Local image is loaded into kind directly — no ghcr-secret needed.
+imagePullSecrets: []
+
+# Turn on local mode: no GCP Secret Manager, creds from homechef-local-secrets,
+# emptyDir scratch for the readOnlyRootFilesystem (no PVC provisioner needed).
+local:
+  enabled: true
+  secretName: homechef-local-secrets
+  extraSecretKeys:
+    - JWT_SECRET
+    - JWT_REFRESH_SECRET
+    - BFF_INTERNAL_HMAC_KEY
+
+# Single replica locally.
+replicaCount: 1
+
+# Point the DB at the SHARED local-infra Postgres (CNPG, local-infra chart).
+# DB homechef_db / role homechef — the homechef slice of the shared cluster.
+# sslmode=disable — the local CNPG cluster has no client TLS in sandbox mode.
+database:
+  host: "local-pg-rw.local-infra.svc.cluster.local"
+  port: "5432"
+  user: "homechef"
+  name: "homechef_db"
+  sslmode: "disable"
+
+# Redis: SHARED local-infra Redis (requirepass). HomeChef owns logical DB 1.
+# The app reads REDIS_URL (go-redis ParseURL honours the /1 db index); the
+# password is the shared throwaway local-sandbox-dev (also in local-infra-creds).
+redis:
+  host: "redis.local-infra.svc.cluster.local"
+  port: "6379"
+
+env:
+  PORT: "8080"
+  GIN_MODE: "debug"
+  HOMECHEF_ENV: "local"
+  DATABASE_HOST: "local-pg-rw.local-infra.svc.cluster.local"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "homechef_db"
+  DATABASE_SSLMODE: "disable"
+  REDIS_HOST: "redis.local-infra.svc.cluster.local"
+  REDIS_PORT: "6379"
+  # Logical DB 1 + shared requirepass; go-redis ParseURL reads the /1 db index.
+  REDIS_URL: "redis://:local-sandbox-dev@redis.local-infra.svc.cluster.local:6379/1"
+  NATS_URL: "nats://nats.local-infra.svc.cluster.local:4222"
+  JWT_EXPIRY: "24h"
+  REFRESH_TOKEN_EXPIRY: "168h"
+  CORS_ORIGINS: "*"
+  UPLOAD_DIR: "/app/uploads"
+  MAX_UPLOAD_SIZE: "10485760"
+
+# No GCP project / Secret Manager locally.
+gcp:
+  projectId: ""
+  secretManager:
+    enabled: false
+    secretPrefix: "local"
+
+# No Workload Identity SA annotation locally.
+serviceAccount:
+  create: true
+  annotations: {}
+
+# Bundled local Postgres provides storage; the prod uploads PVC is replaced by
+# an emptyDir (mounted via local.enabled). Disable the standalone PVC.
+persistence:
+  enabled: false
+
+# kind usually has neither KEDA nor a metrics-server for HPA — turn both off.
+# Reach the API via:
+#   kubectl -n homechef port-forward svc/homechef-api 8080:8080
+keda:
+  enabled: false
+autoscaling:
+  enabled: false
+vpa:
+  enabled: false
+
+# No PDB on a single-replica local deploy.
+podDisruptionBudget:
+  enabled: false
+
+# No Kong ingress / TLS locally — use port-forward.
+ingress:
+  enabled: false
+
+# Knative not installed on kind by default.
+knative:
+  enabled: false

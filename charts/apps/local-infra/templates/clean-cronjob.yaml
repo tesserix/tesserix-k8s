@@ -1,0 +1,100 @@
+{{- /*
+Per-product data cleanup. One SUSPENDED CronJob per product; trigger the one
+for the product you're switching AWAY from to reset just its slice:
+
+  kubectl -n local-infra create job --from=cronjob/local-infra-clean-<product> reset-<product>-$(date +%s)
+  # or: scripts/clean-product.sh <product>
+
+Each job, in order: drops+recreates the product's Postgres DB(s) (superuser),
+FLUSHes its Redis logical DB, drops its Mongo DB (if any), and removes its NATS
+JetStream streams by prefix (if any). The other products are untouched.
+*/ -}}
+{{- $ns := .Values.namespace -}}
+{{- $pgHost := include "local-infra.pgHost" . -}}
+{{- range .Values.products }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: local-infra-clean-{{ .name }}
+  namespace: {{ $ns }}
+  labels: {{- include "local-infra.labels" $ | nindent 4 }}
+  annotations:
+    local-infra/product: {{ .name | quote }}
+spec:
+  schedule: "0 0 31 2 *"      # Feb 31 = never; trigger-only
+  suspend: true
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 600
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            seccompProfile: { type: RuntimeDefault }
+          initContainers:
+            # 1. Postgres — DROP+CREATE this product's databases (superuser).
+            - name: pg-clean
+              image: {{ $.Values.cnpg.image }}
+              securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsUser: 26, capabilities: { drop: ["ALL"] } }
+              env:
+                - { name: PGHOST, value: {{ $pgHost | quote }} }
+                - { name: PGDATABASE, value: "postgres" }
+                - name: PGUSER
+                  valueFrom: { secretKeyRef: { name: {{ $.Values.cnpg.clusterName }}-superuser, key: username } }
+                - name: PGPASSWORD
+                  valueFrom: { secretKeyRef: { name: {{ $.Values.cnpg.clusterName }}-superuser, key: password } }
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  for db in {{ join " " .pgDatabases }}; do
+                    echo "drop+create $db"
+                    psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS $db WITH (FORCE);"
+                    psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE $db OWNER {{ .pgRole }};"
+                  done
+            # 2. Redis — flush this product's logical DB only.
+            - name: redis-clean
+              image: {{ $.Values.redis.image }}
+              securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsUser: 999, capabilities: { drop: ["ALL"] } }
+              env:
+                - name: REDIS_PASSWORD
+                  valueFrom: { secretKeyRef: { name: local-infra-creds, key: REDIS_PASSWORD } }
+              command: ["sh", "-c", "redis-cli -h redis.{{ $ns }}.svc.cluster.local -a \"$REDIS_PASSWORD\" -n {{ .redisDb }} FLUSHDB && echo 'flushed redis db {{ .redisDb }}'"]
+            {{- if .mongoDatabase }}
+            # 3. Mongo — drop this product's database.
+            - name: mongo-clean
+              image: {{ $.Values.mongodb.image }}
+              securityContext: { allowPrivilegeEscalation: false, runAsUser: 999, capabilities: { drop: ["ALL"] } }
+              env:
+                - name: MONGO_PASSWORD
+                  valueFrom: { secretKeyRef: { name: local-infra-creds, key: MONGO_PASSWORD } }
+                - name: MONGO_ROOT_USER
+                  valueFrom: { secretKeyRef: { name: local-infra-creds, key: MONGO_ROOT_USER } }
+              command: ["sh", "-c", "mongosh \"mongodb://$MONGO_ROOT_USER:$MONGO_PASSWORD@mongodb.{{ $ns }}.svc.cluster.local:27017/admin\" --quiet --eval 'db.getSiblingDB(\"{{ .mongoDatabase }}\").dropDatabase()' && echo 'dropped mongo {{ .mongoDatabase }}'"]
+            {{- end }}
+          containers:
+            # 4. NATS — remove this product's JetStream streams by prefix (if any).
+            - name: nats-clean
+              image: natsio/nats-box:latest
+              securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsUser: 1000, capabilities: { drop: ["ALL"] } }
+              command:
+                - sh
+                - -c
+                {{- if .natsPrefix }}
+                - |
+                  S="nats://nats.{{ $ns }}.svc.cluster.local:4222"
+                  for st in $(nats --server "$S" stream ls -n 2>/dev/null); do
+                    case "$st" in
+                      {{ .natsPrefix }}*) nats --server "$S" stream rm -f "$st" && echo "removed stream $st" ;;
+                    esac
+                  done
+                  echo "nats cleanup done for prefix {{ .natsPrefix }}"
+                {{- else }}
+                - echo "no nats slice for {{ .name }}"
+                {{- end }}
+{{- end }}

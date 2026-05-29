@@ -1,0 +1,101 @@
+# =============================================================================
+# LOCAL / kind overlay for fanzone-auth. Does NOT touch prod (values-prod.yaml).
+# Use with:
+#   helm upgrade --install fanzone-auth charts/apps/fanzone-auth \
+#     -n fanzone -f charts/apps/fanzone-auth/values-local.yaml
+#
+# NOTE: the deployment hardcodes a JWT_SECRET from Secret 'fanzone-jwt-secret'
+# (key 'jwt-secret') — this is prod behaviour and not overridable via values.
+# The local secrets bundle (FanZone-Battle-Ground/k8s/secrets.example.yaml)
+# therefore ALSO creates that Secret so the pod can start.
+#
+# Image is built locally and loaded into kind:
+#   docker build -t fanzone-auth:local -f apps/auth/Dockerfile .
+#   kind load docker-image fanzone-auth:local
+# =============================================================================
+
+image:
+  tag: "local"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 1
+autoscaling:
+  enabled: false
+keda:
+  enabled: false
+knative:
+  enabled: false
+vpa:
+  enabled: false
+podDisruptionBudget:
+  enabled: false
+serviceMonitor:
+  enabled: false
+
+affinity: {}
+
+serviceAccount:
+  annotations: {}
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "local"
+
+# Shared local-infra CNPG Postgres, fanzone_auth database (role 'fanzone').
+# Password from the reflected Secret 'local-infra-creds'. sslmode=disable.
+database:
+  host: "local-pg-rw.local-infra.svc.cluster.local"
+  port: "5432"
+  user: "fanzone"
+  name: "fanzone_auth"
+  sslmode: "disable"
+  passwordSecretName: "local-infra-creds"
+  passwordSecretKey: "POSTGRES_PASSWORD"
+
+redis:
+  enabled: true
+  passwordSecretName: "local-infra-creds"
+  passwordSecretKey: "REDIS_PASSWORD"
+
+# Override only the env that differs locally. OAuth providers default off
+# locally (no real credentials); enable as needed. Cookies non-secure for http.
+env:
+  GO_ENV: development
+  GIN_MODE: debug
+  LOG_LEVEL: debug
+  LOG_FORMAT: console
+  NATS_URL: "nats://nats.local-infra.svc.cluster.local:4222"
+  SERVER_PORT: "8081"
+  API_SERVICE_URL: "http://fanzone-api.fanzone.svc.cluster.local:80"
+  WEB_SERVICE_URL: "http://localhost:3000"
+  REDIS_HOST: "redis.local-infra.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DB: "3"
+  JWT_ACCESS_TOKEN_EXPIRY: "15m"
+  JWT_REFRESH_TOKEN_EXPIRY: "7d"
+  JWT_ISSUER: "fanzone-auth"
+  INTERNAL_API_KEY: "fz-internal-local-exchange-key"
+  OAUTH_GOOGLE_ENABLED: "false"
+  OAUTH_META_ENABLED: "false"
+  OAUTH_INSTAGRAM_ENABLED: "false"
+  OAUTH_TWITTER_ENABLED: "false"
+  OAUTH_WHATSAPP_ENABLED: "false"
+  RATE_LIMIT_ENABLED: "false"
+  SESSION_STORE: "redis"
+  SESSION_COOKIE_SECURE: "false"
+  SESSION_COOKIE_HTTPONLY: "true"
+  SESSION_COOKIE_SAMESITE: "lax"
+  SESSION_MAX_AGE: "86400"
+  FRONTEND_URL: "http://localhost:3000"
+  GOOGLE_REDIRECT_URL: "http://localhost:3000/auth/google/callback"
+  META_REDIRECT_URL: "http://localhost:3000/auth/meta/callback"
+  TWITTER_REDIRECT_URL: "http://localhost:3000/auth/twitter/callback"
+  SUPER_ADMIN_EMAILS: "samyak.rout@gmail.com"
+  ADMIN_PASSWORD_LOGIN_ENABLED: "true"
+  GCS_BUCKET_NAME: ""
+  GCS_PROJECT_ID: ""

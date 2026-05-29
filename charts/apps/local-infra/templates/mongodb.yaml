@@ -1,0 +1,67 @@
+{{- if .Values.mongodb.enabled -}}
+{{- if eq .Values.persistence "pvc" }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "local-infra.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.mongodb.storage }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "local-infra.labels" . | nindent 4 }}
+spec:
+  selector: { app: mongodb }
+  ports:
+    - { name: mongo, port: 27017, targetPort: 27017 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "local-infra.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: mongodb } }
+  template:
+    metadata:
+      labels: { app: mongodb }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 999, fsGroup: 999, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: mongodb
+          image: {{ .Values.mongodb.image }}
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom: { secretKeyRef: { name: local-infra-creds, key: MONGO_ROOT_USER } }
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom: { secretKeyRef: { name: local-infra-creds, key: MONGO_PASSWORD } }
+          ports:
+            - { name: mongo, containerPort: 27017 }
+          readinessProbe:
+            exec: { command: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"] }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{- toYaml .Values.mongodb.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /data/db }
+      volumes:
+        - name: data
+          {{- if eq .Values.persistence "pvc" }}
+          persistentVolumeClaim: { claimName: mongodb }
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- end }}

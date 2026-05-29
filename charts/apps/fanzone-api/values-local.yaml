@@ -1,0 +1,112 @@
+# =============================================================================
+# LOCAL / kind overlay for fanzone-api. Does NOT touch prod (values-prod.yaml).
+# Use with:
+#   helm upgrade --install fanzone-api charts/apps/fanzone-api \
+#     -n fanzone -f charts/apps/fanzone-api/values-local.yaml
+#
+# Prereqs (see FanZone-Battle-Ground/SETUP_LOCAL.md):
+#   - Deploy the shared local-infra chart FIRST (CNPG Postgres + Redis + NATS).
+#   - kubectl apply -n fanzone -f FanZone-Battle-Ground/k8s/secrets.yaml
+#   - The shared password lives in Secret 'local-infra-creds', reflected into the
+#     fanzone namespace; the local secrets bundle uses the same password.
+#
+# Image is built locally and loaded into kind (no registry pull):
+#   docker build -t fanzone-api:local -f apps/api/Dockerfile .
+#   kind load docker-image fanzone-api:local
+# =============================================================================
+
+image:
+  # Local tag; IfNotPresent so kind never tries to pull from GAR.
+  tag: "local"
+  pullPolicy: IfNotPresent
+
+# No GHCR pull secret needed for a locally-loaded image.
+imagePullSecrets: []
+
+# Single replica, no autoscalers locally.
+replicaCount: 1
+autoscaling:
+  enabled: false
+keda:
+  enabled: false
+knative:
+  enabled: false
+vpa:
+  enabled: false
+podDisruptionBudget:
+  enabled: false
+serviceMonitor:
+  enabled: false
+
+# No node anti-affinity on a single-node kind cluster.
+affinity: {}
+
+# No GCP Workload Identity locally — disable the SA annotation.
+serviceAccount:
+  annotations: {}
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "local"
+
+# No ExternalSecret / GCP Secret Manager locally — the API docs key is optional.
+docsApiKey:
+  enabled: false
+
+# Point at the shared local-infra CNPG Postgres (fanzone DB, role 'fanzone').
+# Password from the reflected Secret 'local-infra-creds'. sslmode=disable.
+database:
+  host: "local-pg-rw.local-infra.svc.cluster.local"
+  port: "5432"
+  user: "fanzone"
+  name: "fanzone"
+  sslmode: "disable"
+  passwordSecretName: "local-infra-creds"
+  passwordSecretKey: "POSTGRES_PASSWORD"
+
+# Redis password from the reflected shared Secret 'local-infra-creds'.
+redis:
+  enabled: true
+  passwordSecretName: "local-infra-creds"
+  passwordSecretKey: "REDIS_PASSWORD"
+
+# Override only the env that differs locally (NATS + Redis hosts + dev origins).
+# Everything else is inherited from values.yaml.
+env:
+  GO_ENV: development
+  GIN_MODE: debug
+  LOG_LEVEL: debug
+  LOG_FORMAT: console
+  NATS_URL: "nats://nats.local-infra.svc.cluster.local:4222"
+  AUTH_SERVICE_URL: "http://fanzone-auth.fanzone.svc.cluster.local:80"
+  WS_SERVICE_URL: "http://fanzone-ws.fanzone.svc.cluster.local:80"
+  REDIS_HOST: "redis.local-infra.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DB: "3"
+  REDIS_POOL_SIZE: "100"
+  REDIS_MIN_IDLE_CONNS: "10"
+  SERVER_PORT: "8080"
+  GRPC_PORT: "9090"
+  SERVER_READ_TIMEOUT: "30s"
+  SERVER_WRITE_TIMEOUT: "30s"
+  SERVER_IDLE_TIMEOUT: "120s"
+  TENANT_MODE: "multi"
+  TENANT_HEADER: "X-Tenant-ID"
+  DEFAULT_TENANT: "default"
+  DATABASE_MAX_OPEN_CONNS: "25"
+  DATABASE_MAX_IDLE_CONNS: "5"
+  DATABASE_CONN_MAX_LIFETIME: "5m"
+  RATE_LIMIT_ENABLED: "false"
+  CACHE_ENABLED: "true"
+  CACHE_TTL: "5m"
+  API_ALLOWED_HOSTS: "localhost,127.0.0.1,fanzone-api.fanzone.svc.cluster.local"
+  API_ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173"
+  ENABLE_FANTASY: "true"
+  ENABLE_AUCTION: "true"
+  ENABLE_PREDICTIONS: "true"
+  ENABLE_CHAT: "true"
+  CHAT_MODERATION_ENABLED: "false"
+  CHAT_ENCRYPTION_ENABLED: "false"

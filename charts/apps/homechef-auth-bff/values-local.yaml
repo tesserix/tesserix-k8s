@@ -1,0 +1,46 @@
+# LOCAL / kind overlay for homechef-auth-bff. Use with:
+#   helm upgrade --install homechef-auth-bff charts/apps/homechef-auth-bff \
+#     -n homechef -f charts/apps/homechef-auth-bff/values-local.yaml
+#
+# Build + load the image into kind first (no registry push):
+#   docker build -t homechef-auth-bff:local -f <auth-bff Dockerfile> .
+#   kind load docker-image homechef-auth-bff:local
+# Reach the BFF via:
+#   kubectl -n homechef port-forward svc/homechef-auth-bff 8090:8080
+#
+# All secretKeyRef keys the deployment reads (GIP_WEB_API_KEY,
+# HOMECHEF_*_CLIENT_SECRET, SESSION_ENCRYPT_KEY, BFF_INTERNAL_HMAC_KEY,
+# HOMECHEF_ADMIN_ALLOWED_EMAILS) must be present in homechef-local-secrets —
+# see Home-Chef-App/k8s/secrets.example.yaml.
+image:
+  repository: homechef-auth-bff
+  tag: local
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# No GCP Workload Identity SA annotation locally (override the prod default).
+serviceAccount:
+  create: true
+  annotations: {}
+
+# Read all BFF secrets from the single local Secret instead of the
+# ExternalSecret-produced homechef-auth-bff-secrets.
+secrets:
+  authBff: homechef-local-secrets
+
+# Proxy to the local Go API in-cluster.
+apiBaseURL: "http://homechef-api.homechef.svc.cluster.local:8080"
+
+# No subdomain cookie sharing locally; keep cookies host-scoped.
+session:
+  cookieDomain: ""
+  maxAgeHours: 168
+
+# kind has no KEDA — turn it off (deployment falls back to replicas: 2; the
+# pdb below is disabled so a single node is fine).
+keda:
+  enabled: false
+
+pdb:
+  enabled: false

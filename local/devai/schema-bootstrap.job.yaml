@@ -1,0 +1,52 @@
+# Applies the DevAI Postgres schema into the SHARED local-infra CNPG cluster.
+#
+# In prod the db-schema-bootstrap CronJob owns the schema. On kind there's no
+# CronJob, so this one-shot Job loads the same canonical schema into the
+# devai_db database on the shared local-infra Postgres (local-pg-rw.local-infra),
+# which the local-infra chart created empty. Run it AFTER local-infra is up.
+#
+# The schema text is mounted from a ConfigMap you create from the real file:
+#
+#   kubectl -n devai create configmap devai-schema \
+#     --from-file=devai.sql=tesserix-k8s/charts/apps/db-schema-bootstrap/schemas/devai/devai_db/devai.sql
+#
+#   kubectl -n devai apply -f tesserix-k8s/local/devai/schema-bootstrap.job.yaml
+#   kubectl -n devai wait --for=condition=complete job/devai-schema-bootstrap --timeout=120s
+#
+# Re-runnable: the schema is idempotent (CREATE ... IF NOT EXISTS). Delete
+# the Job (kubectl delete job devai-schema-bootstrap -n devai) before re-applying.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: devai-schema-bootstrap
+  namespace: devai
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: psql
+          image: pgvector/pgvector:pg16
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "Applying DevAI schema to shared local-infra Postgres (devai_db)..."
+              PGPASSWORD="$POSTGRES_PASSWORD" psql \
+                -h local-pg-rw.local-infra.svc.cluster.local -p 5432 -U devai -d devai_db \
+                -v ON_ERROR_STOP=1 -f /schema/devai.sql
+              echo "Schema applied."
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: devai-secrets
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - { name: schema, mountPath: /schema }
+      volumes:
+        - name: schema
+          configMap:
+            name: devai-schema
