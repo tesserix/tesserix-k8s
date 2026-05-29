@@ -57,10 +57,11 @@ addons:
     chart: kyverno
     version: "3.2.6"              # override if your platform pins a different one
     namespace: kyverno
-  agentgateway:                   # waves 6 (crds) + 7 — OCI helm (cr.agentgateway.dev)
+  agentgateway:                   # waves 6 (crds) + 7 — OCI helm (matches prod registry)
     enabled: true
-    ociRepo: cr.agentgateway.dev/charts
-    version: v1.2.0
+    ociRepo: ghcr.io/agentgateway/agentgateway/charts  # same source as prod (argocd/prod/infrastructure/agentgateway.yaml)
+    version: v1.2.1               # gateway chart — latest STABLE (v1.3.0 is alpha-only; track stable)
+    crdsVersion: v1.0.1           # crds chart tracks a separate 1.0.x release line
     namespace: agentgateway-system
   kagent:                         # waves 6 (crds) + 7 — OCI helm (ghcr.io/kagent-dev)
     enabled: true
@@ -71,6 +72,17 @@ addons:
     enabled: true
     path: charts/apps/portkey-local
     namespace: portkey
+  temporal:                       # wave 15 — latest official Temporal SERVER chart (git), for DevAI
+    # The latest chart is server-only — it bundles no datastore. We wire its
+    # persistence to EXTERNAL stores from local-infra (wave 10, so this lands
+    # after): default store = PostgreSQL on the shared CNPG, visibility =
+    # Elasticsearch. The inline memory-only values live in
+    # templates/40-addons.yaml. Toggle off to skip Temporal on a small sandbox.
+    enabled: true
+    repoURL: https://github.com/temporalio/helm-charts
+    targetRevision: main          # latest (server 1.31.0 / chart 1.2.0); pin a commit for reproducibility
+    path: charts/temporal
+    namespace: temporal-system
 
 # Argo project + destination for all children.
 project: default

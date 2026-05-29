@@ -1,0 +1,72 @@
+{{- if .Values.elasticsearch.enabled -}}
+{{- /* Single-node Elasticsearch (v7) — Temporal visibility store for the
+       local-root `temporal` addon. No security (throwaway sandbox). */ -}}
+{{- if eq .Values.persistence "pvc" }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: elasticsearch
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "local-infra.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.elasticsearch.storage }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "local-infra.labels" . | nindent 4 }}
+spec:
+  selector: { app: elasticsearch }
+  ports:
+    - { name: http, port: 9200, targetPort: 9200 }
+    - { name: transport, port: 9300, targetPort: 9300 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticsearch
+  namespace: {{ .Values.namespace }}
+  labels: {{- include "local-infra.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: elasticsearch } }
+  template:
+    metadata:
+      labels: { app: elasticsearch }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: elasticsearch
+          image: {{ .Values.elasticsearch.image }}
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
+          env:
+            - { name: discovery.type, value: single-node }
+            - { name: xpack.security.enabled, value: "false" }
+            - { name: ES_JAVA_OPTS, value: {{ .Values.elasticsearch.javaOpts | quote }} }
+            - { name: bootstrap.memory_lock, value: "false" }
+          ports:
+            - { name: http, containerPort: 9200 }
+            - { name: transport, containerPort: 9300 }
+          readinessProbe:
+            httpGet: { path: /_cluster/health, port: 9200 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 12
+          resources: {{- toYaml .Values.elasticsearch.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /usr/share/elasticsearch/data }
+      volumes:
+        - name: data
+          {{- if eq .Values.persistence "pvc" }}
+          persistentVolumeClaim: { claimName: elasticsearch }
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- end }}

@@ -1,0 +1,110 @@
+# Temporal — latest official SERVER chart (server 1.31.0), for DevAI going forward.
+# Datastores are EXTERNAL (this chart bundles none): default store = PostgreSQL
+# on a dedicated CNPG cluster; visibility store = Elasticsearch.
+#
+# ── STAGED / NOT LIVE ────────────────────────────────────────────────────────
+# Intentionally NOT referenced from argocd/prod/infrastructure/kustomization.yaml,
+# so ArgoCD does not manage it yet and nothing deploys to tesseract-prod-in-gke.
+# Prod twin of the local-root `60-temporal` addon. Distinct from the scrapper
+# single-node Temporal (argocd/prod/apps/ai-apps/temporal.yaml), left untouched.
+#
+# ── GO-LIVE PREREQUISITES (do all, then add to kustomization) ─────────────────
+#  1. Project `infrastructure` (argocd/prod/projects/infrastructure.yaml):
+#       - add sourceRepo:  https://github.com/temporalio/helm-charts
+#       - add destination namespace: temporal-system
+#  2. Default store — dedicated CNPG cluster `temporal-postgres` in
+#     temporal-system (follow charts/apps/*-postgres + cnpg-migration-guide.md),
+#     database `temporal`, role `temporal`. ArgoCD app under
+#     argocd/prod/apps/... Endpoint assumed below: temporal-postgres-rw:5432.
+#  3. Visibility store — Elasticsearch in temporal-system (elastic helm chart,
+#     see the decommissioned argocd/prod/infrastructure/elasticsearch.yaml for
+#     the resource shape). Endpoint assumed below.
+#  4. Secrets in GCP Secret Manager (project tesseracthub-480811) + ExternalSecrets
+#     under external-secrets/prod/temporal-system/: `temporal-db-credentials`
+#     (key password) and `temporal-es-credentials` (key password).
+#  5. Public Web UI: manifests/agentic-istio/temporal-virtualservice.yaml
+#     (temporal.tesserix.app -> devai-auth-bff) + DEVAI_BFF_TEMPORAL_* env in
+#     charts/apps/devai-auth-bff/values.yaml + the devai auth-bff Go change.
+#  6. Register the `devai` Temporal namespace (admintools `tctl namespace register`).
+#  7. Add `- temporal-platform.yaml` to argocd/prod/infrastructure/kustomization.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: temporal-platform
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: workflow-engine
+spec:
+  project: infrastructure
+  source:
+    # Official server chart (subdir). Pinned commit (reproducible) — chart 1.2.0 / server 1.31.0.
+    # https://github.com/temporalio/helm-charts/tree/main/charts/temporal
+    repoURL: https://github.com/temporalio/helm-charts
+    targetRevision: 1ad0a8045e1032588234f41d631e5a78370ba014
+    path: charts/temporal
+    helm:
+      releaseName: temporal
+      # MEMORY-ONLY everywhere (no cpu requests/limits — platform policy).
+      values: |
+        server:
+          replicaCount: 2
+          resources:
+            requests: { memory: 512Mi }
+            limits: { memory: 2Gi }
+          config:
+            persistence:
+              defaultStore: default
+              visibilityStore: visibility
+              numHistoryShards: 512
+              datastores:
+                default:
+                  sql:
+                    pluginName: postgres12
+                    driverName: postgres12
+                    databaseName: temporal
+                    connectAddr: "temporal-postgres-rw.temporal-system.svc.cluster.local:5432"
+                    connectProtocol: tcp
+                    user: temporal
+                    existingSecret: temporal-db-credentials   # go-live: ExternalSecret from GCP SM
+                    secretKey: password
+                    createDatabase: false
+                    manageSchema: true
+                    maxConns: 30
+                    # TODO go-live: CNPG enforces TLS — add sql.tls with the cluster CA.
+                visibility:
+                  elasticsearch:
+                    version: v7
+                    url:
+                      scheme: https
+                      host: "temporal-es-http.temporal-system.svc.cluster.local:9200"
+                    username: elastic
+                    existingSecret: temporal-es-credentials
+                    secretKey: password
+                    indices:
+                      visibility: temporal_visibility_v1
+        web:
+          enabled: true                  # exposed via devai-auth-bff at go-live
+          resources:
+            requests: { memory: 128Mi }
+            limits: { memory: 512Mi }
+        schema:
+          useHelmHooks: true             # Argo maps helm hooks to sync hooks
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: temporal-system
+  syncPolicy:
+    automated:
+      prune: false                       # cautious first rollout
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
