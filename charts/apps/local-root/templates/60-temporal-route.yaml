@@ -1,0 +1,26 @@
+{{- /* LOCAL SANDBOX ONLY. temporal.sandbox.app -> Temporal Web UI.
+       Placed in the istio-ingress namespace (always present) so it doesn't
+       depend on temporal-system creation order, and binds the shared
+       sandbox-gateway that sandboxctl manages. Applied directly by
+       apply-local.sh (helm template | kubectl apply); not an Argo Application. */ -}}
+{{- if .Values.addons.temporal.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: temporal-web-sandbox
+  namespace: istio-ingress
+  labels:
+    app.kubernetes.io/part-of: local-root
+    environment: local
+spec:
+  gateways:
+    - istio-ingress/sandbox-gateway
+  hosts:
+    - temporal.sandbox.app
+  http:
+    - route:
+        - destination:
+            host: temporal-web.temporal-system.svc.cluster.local
+            port:
+              number: 8080
+{{- end }}
