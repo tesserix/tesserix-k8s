@@ -1,9 +1,13 @@
 # Default values for yes-hospital
-replicaCount: 0
+replicaCount: 2
 
 image:
-  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/yes-hospital
-  pullPolicy: Always
+  # Pulled directly from ghcr.io with the namespace ghcr-secret. The image
+  # lives in the Tesseract-Nexus org (private) which the shared GAR ghcr.io
+  # mirror token (tesserix-scoped) can't read, so we pull direct rather than
+  # via asia-south1-docker.pkg.dev/.../ghcr-remote like the tesserix-org apps.
+  repository: ghcr.io/tesseract-nexus/yes-hospital
+  pullPolicy: IfNotPresent
   tag: "latest"
 
 imagePullSecrets:
@@ -80,7 +84,10 @@ readinessProbe:
   failureThreshold: 3
 
 autoscaling:
-  enabled: true
+  # Disabled: a static marketing site runs a fixed 2 replicas. (HPA also
+  # can't bootstrap a Deployment up from 0 replicas, which previously left
+  # this stuck at 0.) replicaCount above is authoritative.
+  enabled: false
   minReplicas: 1
   maxReplicas: 5
   targetCPUUtilizationPercentage: 70

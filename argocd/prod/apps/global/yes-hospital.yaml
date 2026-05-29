@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: yes-hospital
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: frontend
+    environment: prod
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/yes-hospital
+    helm:
+      valueFiles:
+        - values.yaml
+      parameters:
+        # Pin the per-commit SHA tag rather than `latest` so a rollout
+        # always pulls the intended digest. Bump this when promoting a new
+        # yes-hospital build (ghcr.io/tesseract-nexus/yes-hospital).
+        - name: image.tag
+          value: "main-be17906"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: yes-hospital
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
