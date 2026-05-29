@@ -1,0 +1,33 @@
+# Prod overlay for GKE (tesserix-prod-in-gke). Base defaults live in values.yaml;
+# this only sets the concrete prod image + endpoints. Local/kind uses
+# values-local.yaml instead.
+image:
+  repository: ghcr.io/tesserix/agentic-registry
+  tag: latest
+
+config:
+  storeBackend: postgres
+  autoMigrate: "false"        # schema owned by db-schema-bootstrap
+  authMode: jwks
+  authJwksUrl: "https://identity-devai.tesserix.app/realms/devai/protocol/openid-connect/certs"
+  authIssuer: "https://identity-devai.tesserix.app/realms/devai"
+  authAudience: agentic-registry
+  multiTenant: "true"
+  publicBaseUrl: "https://registry.tesserix.app"
+
+database:
+  mode: externalSecret
+
+externalSecret:
+  enabled: true
+
+postgresql:
+  enabled: false              # prod uses external CNPG, not the bundled DB
+
+keda:
+  enabled: true
+
+istio:
+  enabled: true
+  gateway: istio-ingress/custom-domain-gateway
+  host: registry.tesserix.app

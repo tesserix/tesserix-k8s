@@ -1,0 +1,58 @@
+{{- if and .Values.postgresql.enabled .Values.postgresql.cleanup.enabled -}}
+# Suspended CronJob for LOCAL/dev data cleanup. It never runs on a schedule
+# (suspend: true) — you trigger it on demand:
+#
+#   kubectl -n agentic-registry create job --from=cronjob/agentic-registry-cleanup wipe-$(date +%s)
+#
+# mode "clean" => TRUNCATE registry.artifacts (keep schema)
+# mode "wipe"  => DROP SCHEMA registry CASCADE (next app start re-migrates if AUTO_MIGRATE=true)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "agentic-registry.fullname" . }}-cleanup
+  labels: {{- include "agentic-registry.labels" . | nindent 4 }}
+spec:
+  schedule: "0 0 31 2 *"     # Feb 31 = never; this job is trigger-only
+  suspend: true
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 300
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: cleanup
+              image: {{ .Values.postgresql.cleanup.image }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: PGHOST
+                  value: {{ include "agentic-registry.fullname" . }}-postgresql
+                - name: PGUSER
+                  value: {{ .Values.postgresql.user | quote }}
+                - name: PGDATABASE
+                  value: {{ .Values.postgresql.database | quote }}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.postgresql.passwordSecret.name | quote }}
+                      key: {{ .Values.postgresql.passwordSecret.key | quote }}
+              command:
+                - sh
+                - -c
+                {{- if eq .Values.postgresql.cleanup.mode "wipe" }}
+                - psql -v ON_ERROR_STOP=1 -c 'DROP SCHEMA IF EXISTS registry CASCADE;' && echo "wiped: schema registry dropped"
+                {{- else }}
+                - psql -v ON_ERROR_STOP=1 -c 'TRUNCATE registry.artifacts;' && echo "cleaned: registry.artifacts truncated"
+                {{- end }}
+{{- end }}

@@ -1,0 +1,19 @@
+{{- if .Values.keda.enabled -}}
+# Scale on MEMORY only. A CPU trigger fails KEDA admission when the pod has no
+# requests.cpu (this platform sets memory-only resources).
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "agentic-registry.fullname" . }}
+  labels: {{- include "agentic-registry.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "agentic-registry.fullname" . }}
+  minReplicaCount: {{ .Values.keda.minReplicas }}
+  maxReplicaCount: {{ .Values.keda.maxReplicas }}
+  triggers:
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: {{ .Values.keda.memoryUtilizationPercent | quote }}
+{{- end }}

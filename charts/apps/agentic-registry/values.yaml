@@ -1,0 +1,116 @@
+# Default values for agentic-registry.
+# Platform policy: memory requests/limits only — NEVER set CPU requests/limits.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/tesserix/agentic-registry
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Memory-only resources (no CPU keys — see KEDA memory-trigger policy).
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# Non-secret configuration (becomes a ConfigMap → env).
+config:
+  storeBackend: postgres
+  autoMigrate: "false"        # Tesserix prod: schema owned by db-schema-bootstrap
+  authMode: jwks              # anonymous | trusted-header | jwks
+  authJwksUrl: ""
+  authIssuer: ""
+  authAudience: agentic-registry
+  authGroupsClaim: groups
+  authTrustedProxy: "false"
+  multiTenant: "true"
+  publicBaseUrl: https://registry.tesserix.app
+  corsOrigins: "*"
+  webDir: /app/web
+
+# Where the DATABASE_URL secret comes from:
+#   externalSecret → synced from GCP Secret Manager (prod)
+#   existingSecret → a Secret you applied yourself, e.g. from k8s/secrets.yaml (local/kind)
+database:
+  mode: externalSecret
+  existingSecret:
+    name: agentic-registry-secrets
+    key: DATABASE_URL
+
+# PROD: secret DATABASE_URL delivered by an ExternalSecret synced from GCP
+# Secret Manager — never stored in this chart or the registry DB.
+externalSecret:
+  enabled: true
+  secretStoreRef:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+  # GCP Secret Manager secret holding the full Postgres DSN.
+  databaseUrlKey: prod-agentic-registry-database-url
+  refreshInterval: 1h
+
+# LOCAL/KIND: bundle a PostgreSQL inside the chart. OFF in prod (prod uses an
+# external CNPG cluster + the schema owned by db-schema-bootstrap). When on, the
+# password is read from the same Secret as DATABASE_URL (key POSTGRES_PASSWORD).
+postgresql:
+  enabled: false
+  image: postgres:16-alpine
+  user: registry
+  database: registry
+  passwordSecret:
+    name: agentic-registry-secrets
+    key: POSTGRES_PASSWORD
+  # persistence: "pvc" mounts a real disk (size below) — a simple 8Gi disk for
+  # quick local testing. "emptyDir" needs NO storage provisioner (data is lost
+  # on pod restart) — use it on clusters without a default StorageClass.
+  persistence: pvc
+  storage: 8Gi
+  # Memory-only (platform policy — no CPU keys, ever).
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+  # Triggerable data cleanup (local/dev). Renders a SUSPENDED CronJob you fire on
+  # demand to clean or wipe the registry's data — see scripts/wipe-data.sh.
+  cleanup:
+    enabled: true
+    image: postgres:16-alpine
+    mode: clean      # "clean" = TRUNCATE registry.artifacts; "wipe" = DROP SCHEMA registry CASCADE
+
+serviceAccount:
+  create: true
+  name: agentic-registry
+  # Workload Identity — bind to the GCP SA so GCS access uses no key files.
+  # Set to "" (e.g. in values-local.yaml) to disable WI entirely for kind/dev.
+  gcpServiceAccount: app-secrets-agentic-registry-prod@tesseracthub-480811.iam.gserviceaccount.com
+  annotations: {}
+
+# KEDA: scale on MEMORY only (CPU triggers fail admission without requests.cpu).
+keda:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 4
+  memoryUtilizationPercent: 75
+
+# Istio VirtualService for the public marketplace + API.
+istio:
+  enabled: true
+  gateway: istio-ingress/custom-domain-gateway
+  host: registry.tesserix.app
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
