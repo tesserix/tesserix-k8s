@@ -134,12 +134,17 @@ resources:
   # Agentic control planes — sourced from upstream OCI Helm charts.
   # Order:
   #   CRDs (wave -6)        ── kagent-crds + agentgateway-crds
-  #   aregistry (wave -5)   ── catalog of skills / MCP / agents / prompts
   #   agentgateway (wave -4) ── data plane; reads the catalog
   #   kagent (wave -3)      ── runtime; reconciles Agent CRs into Deployments
+  #
+  # The agent catalog (aregistry, wave -5) is no longer the third-party
+  # agentregistry-dev deployment — it is now our own agentic-registry, synced
+  # from argocd/prod/apps/ai-apps/agentic-registry.yaml into the same
+  # agentregistry-system namespace (Service agentregistry:12121). The former
+  # `agentregistry.yaml` infra app has been removed so ArgoCD prunes the
+  # upstream Deployment + its bundled Postgres.
   - kagent-crds.yaml
   - agentgateway-crds.yaml
-  - agentregistry.yaml
   - agentgateway.yaml
   - kagent.yaml
   # NOTE: The standalone oauth2-proxy-{kagent,aregistry} apps are
