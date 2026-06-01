@@ -1,0 +1,76 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: agentregistry-postgres
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: ai-apps
+    app.kubernetes.io/component: database
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # Reuse the generic per-product CNPG chart (same one devai-postgres uses),
+    # overriding only the registry-specific values. Gives agentic-registry its
+    # OWN in-namespace Postgres — the platform pattern (per-namespace DBs) — so
+    # the existing agentregistry-cnpg-postgres-dr DestinationRule +
+    # agentregistry-cnpg-port-exception PeerAuthentication + intra-namespace
+    # NetworkPolicy already make it reachable. No cross-namespace mesh surgery.
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/apps/devai-postgres
+    targetRevision: HEAD
+    helm:
+      releaseName: agentregistry-postgres
+      values: |
+        namespace: agentregistry-system
+        # CNPG creates the Service agentregistry-postgres-rw — this name matches
+        # the DestinationRule istio-config already ships for this namespace.
+        clusterName: agentregistry-postgres
+        instances: 1
+        # ghcr.io/cloudnative-pg/postgresql:16.4 has no pgvector, so the registry
+        # runs with VECTOR_SEARCH=false (matches the schema-bootstrap DDL).
+        imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+        storageSize: 8Gi
+        storageClass: standard-rwo-retain
+        walStorageSize: 4Gi
+        resources:
+          requests:
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+        bootstrap:
+          database: agentic_registry_db
+          owner: agentregistry
+          # The chart's ExternalSecret syncs this basic-auth secret from GCP SM.
+          secret: agentregistry-postgres-app-credentials
+          gcpSecretName: prod-aregistry-pg-password
+          postInitSQL: []
+        # No GCS backup wiring for the registry catalog (re-seedable); keep it
+        # simple and avoid the devai backup SA / bucket.
+        backup:
+          enabled: false
+        pooler:
+          enabled: false
+        monitoring:
+          enablePodMonitor: false
+        replication:
+          minSyncReplicas: 0
+          maxSyncReplicas: 0
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentregistry-system
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
