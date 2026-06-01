@@ -218,16 +218,13 @@ spec:
     matchLabels:
       cnpg.io/cluster: devai-postgres
   action: ALLOW
+  # Allow all mesh-internal sources, matching the other CNPG clusters in this
+  # cluster (e.g. allow-mesh-internal-homechef). A namespace/principal-scoped
+  # rule can't authorize the CloudNativePG operator: it runs in cnpg-system
+  # outside the ambient mesh, so its connection to the instance status endpoint
+  # (:8000) carries no SPIFFE identity and matches no source selector — leaving
+  # the cluster permanently in "Instance Status Extraction Error". PostgreSQL
+  # password auth remains the real access control for 5432; this only lifts the
+  # mesh-layer deny-all so the operator can manage the cluster.
   rules:
-    # DevAI services + intra-cluster traffic (Postgres self, pooler, replication).
-    - from:
-        - source:
-            namespaces: ["devai"]
-    # CloudNativePG operator — instance status probe (:8000) + management.
-    - from:
-        - source:
-            namespaces: ["cnpg-system"]
-    # Prometheus scraping the Postgres exporter.
-    - from:
-        - source:
-            namespaces: ["monitoring"]
+    - {}
