@@ -1,0 +1,32 @@
+{{- if .Values.localAuth.enabled }}
+# LOCAL auth user seed (sandbox/kind ONLY — gated by localAuth.enabled,
+# default false). The auth-seed init container applies this to devai_db so the
+# local_db identity adapter authenticates against a real Postgres table
+# (devai_local_users) instead of an env var. In PROD this is OFF and auth is
+# terminated by the auth-bff (GIP) — the table never exists there.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "devai-api.fullname" . }}-auth-seed
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+data:
+  seed.sql: |
+    -- Local-only username/password roster. Throwaway sandbox credentials.
+    CREATE TABLE IF NOT EXISTS devai_local_users (
+        username   TEXT PRIMARY KEY,
+        password   TEXT NOT NULL,
+        email      TEXT NOT NULL DEFAULT '',
+        name       TEXT NOT NULL DEFAULT '',
+        roles      JSONB NOT NULL DEFAULT '[]'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    {{- range .Values.localAuth.users }}
+    INSERT INTO devai_local_users (username, password, email, name, roles)
+    VALUES ('{{ .username }}', '{{ .password }}', '{{ .email | default "" }}',
+            '{{ .name | default "" }}', '{{ .roles | default list | toJson }}'::jsonb)
+    ON CONFLICT (username) DO UPDATE
+      SET password = EXCLUDED.password, email = EXCLUDED.email,
+          name = EXCLUDED.name, roles = EXCLUDED.roles;
+    {{- end }}
+{{- end }}

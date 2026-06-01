@@ -66,6 +66,22 @@ database:
   user: "devai"
   name: "devai_db"
 
+# LOCAL/sandbox schema bootstrap. OFF by default — in prod the schema is applied
+# by the db-schema-bootstrap CronJob (tesserix-k8s). values-local.yaml flips this
+# on so a fresh kind cluster gets devai_db's tables via an init container.
+schemaBootstrap:
+  enabled: false
+  image: "postgres:16-alpine"
+
+# LOCAL/sandbox username-password auth seed. OFF by default — in prod auth is
+# terminated by the auth-bff (GIP). When enabled, the auth-seed init container
+# upserts `users` into devai_local_users and the local_db identity adapter
+# authenticates against that table.
+localAuth:
+  enabled: false
+  image: "postgres:16-alpine"
+  users: []
+
 redis:
   host: "redis.redis.svc.cluster.local"
   port: "6379"
@@ -99,3 +115,32 @@ podAnnotations:
   proxy.istio.io/holdApplicationUntilProxyStarts: "true"
 
 podLabels: {}
+
+# ─── Durable orchestration (Temporal) ───────────────────────────────────────
+# Leave `temporal` unset → devai-api executes blueprints IN-PROCESS (the default,
+# unchanged). Define it (see values-prod.yaml) to route every blueprint through
+# the ONE generic BlueprintWorkflow on the Temporal cluster. The same config is
+# shared by devai-api (enqueues runs) and devai-worker (executes them) via the
+# `devai-api.containerEnv` helper, so the two can never drift.
+#
+# PREREQUISITE: the devai image must include the `temporalio` SDK. It is a hard
+# dependency in pyproject.toml, so any image built after that change ships it —
+# just rebuild/push the devai image, then enable. (devai-api degrades to
+# in-process automatically if temporalio is somehow absent; the worker pod imports
+# it at startup, so only enable `worker` once the image actually ships it.)
+#
+# temporal:
+#   provider: temporal                                    # temporal | inproc | noop
+#   host: temporal.scrapper.svc.cluster.local:7233
+#   namespace: default
+#   taskQueue: devai
+#   tlsEnabled: false
+#   maxConcurrentActivities: 50
+#   maxStageAttempts: 3
+
+# devai-worker Deployment — runs `python -m devai.orchestration.worker`. OFF by
+# default; enable together with the `temporal` block above.
+worker:
+  enabled: false
+  replicaCount: 1
+  # resources: {}   # falls back to the API's `resources` when unset

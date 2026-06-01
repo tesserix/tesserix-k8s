@@ -1,0 +1,223 @@
+# devai-stack — LOCAL / kind (sandboxctl) overlay.
+#
+# Brings up the whole DevAI stack as ONE release, wired to the SHARED
+# local-infra datastores (NO bundled Postgres) and the in-cluster image
+# registry. Every child is configured for kind: no ESO, no Workload Identity,
+# no KEDA, no Istio.
+#
+# IMAGES: the umbrella nests image keys per subchart, which sandboxctl's
+# auto-pinner does NOT rewrite — so we reference the in-cluster registry
+# (localhost:5050) explicitly. `sandboxctl deploy` builds + pushes each image
+# named in the devai repo's sandboxctl.yaml as localhost:5050/<name>:latest.
+# pullPolicy: Always because the :latest tag is a moving target across rebuilds.
+#   registry today: localhost:5050/{devai, deploy(=agentic-registry)}
+#   sandboxctl.yaml now also builds: devai-sre, devai-dashboard,
+#                                    devai-sre-dashboard, devai-auth-bff
+#
+# NAMES: a Helm umbrella prefixes child resources with the release name
+# (devai-stack-devai-api). fullnameOverride pins them back to the prod-style
+# names (devai-api, devai-sre, …) so in-cluster URLs and port-forwards work.
+#
+# DEPLOY (from the devai repo root):
+#   connect-local
+#   sandboxctl deploy --chart ../tesserix-k8s/charts/apps/local-infra      --name local-infra --no-build
+#   sandboxctl deploy --chart ../tesserix-k8s/charts/apps/agentic-registry --name agentic-registry --purge-old-tags
+#   sandboxctl deploy --chart ../tesserix-k8s/charts/apps/devai-stack --name devai-stack --purge-old-tags
+#
+# Namespace: the whole stack lands in the sandboxctl-derived namespace
+# (`devai-stack`). sandboxctl auto-applies k8s/secrets.yaml into that namespace
+# (it rewrites the manifest's namespace), and the ai-gateway inherits it via
+# .Release.Namespace (namespace: "" below). No --namespace flag needed.
+
+# ─────────────────────────────────────────────────────────────────────────
+devai-api:
+  enabled: true
+  fullnameOverride: devai-api
+  image:
+    repository: localhost:5050/devai      # the API image (devai serve)
+    tag: latest
+    pullPolicy: Always
+  imagePullSecrets: []
+  database:
+    host: "local-pg-rw.local-infra.svc.cluster.local"
+    port: "5432"
+    user: "devai"
+    name: "devai_db"
+  # Bootstrap devai_db's schema on deploy (kind has no db-schema-bootstrap
+  # CronJob). Init container applies the canonical schema as the devai role
+  # before the API starts. Idempotent; safe on every restart.
+  schemaBootstrap:
+    enabled: true
+    image: "postgres:16-alpine"
+  # LOCAL ONLY: seed the username/password team logins into devai_local_users
+  # via the auth-seed init container. The local_db identity adapter then
+  # authenticates against this table. Prod leaves this off (auth-bff/GIP).
+  localAuth:
+    enabled: true
+    users:
+      - { username: admin,    password: "Qwertyuiop@123", email: admin@devai.local,    name: Admin,     roles: [admin] }
+      - { username: dev,      password: "Qwertyuiop@123", email: dev@devai.local,      name: Developer, roles: [developer] }
+      - { username: qa,       password: "Qwertyuiop@123", email: qa@devai.local,       name: QA,        roles: [qa] }
+      - { username: designer, password: "Qwertyuiop@123", email: designer@devai.local, name: Designer,  roles: [designer] }
+  redis:
+    host: "redis.local-infra.svc.cluster.local"
+    port: "6379"
+  nats:
+    url: "nats://nats.local-infra.svc.cluster.local:4222"
+  gcp:
+    projectId: ""
+    workloadIdentity:
+      enabled: false
+      gcpServiceAccount: ""
+  llm:
+    anthropicBaseUrl: ""
+    openaiBaseUrl: ""
+  env:
+    DEVAI_GKE_PROJECT: ""
+    DEVAI_GKE_CLUSTER: "kind-sandboxctl"
+    DEVAI_GKE_REGION: "local"
+    DEVAI_GKE_USE_IN_CLUSTER: "true"
+    DEVAI_KEYCLOAK_URL: ""
+    DEVAI_DASHBOARD_BASE_URL: "http://localhost:8080"
+    DEVAI_LANGCHAIN_TRACING_V2: ""
+    # LOCAL ONLY: select the username/password identity backend. Users are
+    # seeded into devai_local_users by the auth-seed init (see localAuth above),
+    # not passed via env. Prod leaves this unset (defaults to keycloak) and auth
+    # is terminated by the auth-bff.
+    DEVAI_AUTH_PROVIDER: "local_db"
+  autoscaling:
+    enabled: false
+  keda:
+    enabled: false
+  rbac:
+    create: false
+  k8sRuntime:
+    enabled: false
+    previewDomain: "localhost"
+
+# ─────────────────────────────────────────────────────────────────────────
+devai-sre:
+  enabled: true
+  fullnameOverride: devai-sre
+  image:
+    repository: localhost:5050/devai-sre  # SRE server (Dockerfile.sre)
+    tag: latest
+    pullPolicy: Always
+  imagePullSecrets: []
+  database:
+    host: "local-pg-rw.local-infra.svc.cluster.local"
+    port: "5432"
+    user: "devai"
+    name: "devai_db"
+  redis:
+    host: "redis.local-infra.svc.cluster.local"
+    port: "6379"
+  gcp:
+    projectId: ""
+    workloadIdentity:
+      enabled: false
+      gcpServiceAccount: ""
+  autoscaling:
+    enabled: false
+  keda:
+    enabled: false
+
+# ─────────────────────────────────────────────────────────────────────────
+devai-dashboard:
+  enabled: true
+  fullnameOverride: devai-dashboard
+  # One umbrella = one Argo app = one sandboxctl route. Mark the ALM dashboard
+  # primary so that single devai-stack.sandbox.app URL lands on the UI (not a
+  # backend). The SRE dashboard has no URL here — reach it via port-forward, or
+  # deploy the dashboards as their own charts if you need a URL each.
+  service:
+    primary: true
+  image:
+    repository: localhost:5050/devai-dashboard
+    tag: latest
+    pullPolicy: Always
+  imagePullSecrets: []
+  env:
+    NODE_ENV: "production"
+    HOSTNAME: "0.0.0.0"
+    # Server-side proxy target read by next.config.ts (NOT the browser).
+    # Same-namespace short name works via fullnameOverride.
+    DEVAI_API_INTERNAL_URL: "http://devai-api:8080"
+    # LOCAL ONLY: render the username/password form and proxy /auth/* to
+    # devai-api. Unset in prod → the Google/GIP button + auth-bff flow.
+    DEVAI_AUTH_MODE: "local_db"
+  gcp:
+    projectId: ""
+    workloadIdentity:
+      enabled: false
+      gcpServiceAccount: ""
+
+# ─────────────────────────────────────────────────────────────────────────
+devai-sre-dashboard:
+  enabled: true
+  fullnameOverride: devai-sre-dashboard
+  image:
+    repository: localhost:5050/devai-sre-dashboard
+    tag: latest
+    pullPolicy: Always
+  imagePullSecrets: []
+  env:
+    NODE_ENV: "production"
+    HOSTNAME: "0.0.0.0"
+    # Server-side proxy target read by next.config.ts (NOT the browser).
+    # Same-namespace short name works via fullnameOverride.
+    DEVAI_SRE_API_INTERNAL_URL: "http://devai-sre:8090"
+  gcp:
+    projectId: ""
+    workloadIdentity:
+      enabled: false
+      gcpServiceAccount: ""
+
+# ─────────────────────────────────────────────────────────────────────────
+devai-ai-gateway:
+  enabled: true
+  # Empty namespace → the chart falls back to .Release.Namespace (the umbrella's
+  # namespace), so the gateway lands wherever the stack is deployed instead of
+  # its prod default (agentgateway-system). Keeps the whole stack in one ns.
+  namespace: ""
+  externalSecrets:
+    enabled: false
+  localSecret:
+    create: true
+    anthropicApiKey: ""
+    openaiApiKey: ""
+  serviceAccount:
+    create: true
+    name: devai-ai-gateway
+
+# ─────────────────────────────────────────────────────────────────────────
+# Optional — the GIP login flow needs sandbox.app routing + dedicated tenants.
+# (No fullnameOverride: this chart has no _helpers fullname helper.)
+devai-auth-bff:
+  enabled: false
+  image:
+    repository: localhost:5050/devai-auth-bff
+    tag: latest
+    pullPolicy: Always
+  imagePullSecrets: []
+  externalSecrets:
+    enabled: false
+  env:
+    DEVAI_BFF_HTTP_PORT: ":8090"
+    DEVAI_BFF_GCP_PROJECT_ID: "tesseracthub-480811"
+    DEVAI_BFF_GIP_AUTH_DOMAIN: "tesseracthub-480811.firebaseapp.com"
+    DEVAI_BFF_SESSION_COOKIE_NAME: "devai_session"
+    DEVAI_BFF_SESSION_DOMAIN: ".sandbox.app"
+    DEVAI_BFF_SESSION_SECURE: "true"
+    DEVAI_BFF_SESSION_MAX_AGE_SECONDS: "86400"
+    DEVAI_BFF_ALM_HOST: "devai.sandbox.app"
+    DEVAI_BFF_SRE_HOST: "sre.sandbox.app"
+    DEVAI_BFF_KAGENT_UPSTREAM_URL: "http://kagent-ui.kagent-system.svc.cluster.local:8080"
+    DEVAI_BFF_AREGISTRY_UPSTREAM_URL: "http://aregistry-agentregistry.aregistry.svc.cluster.local:12121"
+    DEVAI_BFF_KAGENT_HOST: "kagent.sandbox.app"
+    DEVAI_BFF_AREGISTRY_HOST: "aregistry.sandbox.app"
+
+# ─────────────────────────────────────────────────────────────────────────
+# Seeds the agentic-registry catalog. Enable AFTER agentic-registry is up.
+devai-registry-bootstrap:
+  enabled: false

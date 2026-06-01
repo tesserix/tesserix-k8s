@@ -41,3 +41,237 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Shared container env for the API server and the Temporal worker.
+Both run the same image and the same blueprint stages, so they need an
+identical environment — defined once here so the two never drift.
+*/}}
+{{- define "devai-api.containerEnv" -}}
+{{- range $key, $value := .Values.env }}
+- name: {{ $key }}
+  value: {{ $value | quote }}
+{{- end }}
+# Database — password must be defined before URL for $(VAR) expansion
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: postgresql-devai-password
+      key: password
+- name: DEVAI_DATABASE_URL
+  # ?sslmode=disable so asyncpg / sqlalchemy don't attempt
+  # SSL startTLS against the CNPG pooler (which resets the
+  # connection mid-upgrade). Intra-cluster encryption is
+  # handled by Istio.
+  value: "postgresql://{{ .Values.database.user }}:$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode=disable"
+# Redis — password must be defined before URL for $(VAR) expansion
+- name: REDIS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: redis-devai-password
+      key: password
+- name: DEVAI_REDIS_URL
+  value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+# NATS
+- name: DEVAI_NATS_URL
+  value: {{ .Values.nats.url | quote }}
+# ─── Fiber-style blueprint runtime + adapters ─────────
+{{- if .Values.pipeline }}
+- name: DEVAI_PIPELINE_ENABLED
+  value: {{ .Values.pipeline.enabled | default false | quote }}
+- name: DEVAI_PIPELINE_BLUEPRINT_DIR
+  value: {{ .Values.pipeline.blueprintDir | default "blueprints" | quote }}
+- name: DEVAI_PIPELINE_DEFAULT_BLUEPRINT
+  value: {{ .Values.pipeline.defaultBlueprint | default "alm-pipeline" | quote }}
+- name: DEVAI_PIPELINE_PR_REVIEW_BLUEPRINT
+  value: {{ .Values.pipeline.prReviewBlueprint | default "pr-review" | quote }}
+- name: DEVAI_PIPELINE_SRE_BLUEPRINT
+  value: {{ .Values.pipeline.sreBlueprint | default "sre-monitor" | quote }}
+- name: DEVAI_PIPELINE_CONCURRENCY
+  value: {{ .Values.pipeline.concurrency | default 4 | quote }}
+- name: DEVAI_PIPELINE_DEFAULT_STAGE_TIMEOUT
+  value: {{ .Values.pipeline.defaultStageTimeout | default 900 | quote }}
+{{- end }}
+{{- if .Values.specializations }}
+- name: DEVAI_SPECIALIZATIONS_ENABLED
+  value: {{ .Values.specializations.enabled | default true | quote }}
+- name: DEVAI_SPECIALIZATIONS_DIR
+  value: {{ .Values.specializations.dir | default "specializations" | quote }}
+{{- end }}
+{{- if .Values.memory }}
+- name: DEVAI_MEMORY_PROVIDER
+  value: {{ .Values.memory.provider | default "noop" | quote }}
+{{- end }}
+# ─── K8s Job runtime (SDD blueprint runner) ──────────
+{{- if .Values.k8sRuntime }}
+- name: DEVAI_K8S_RUNTIME_ENABLED
+  value: {{ .Values.k8sRuntime.enabled | default false | quote }}
+- name: DEVAI_K8S_RUNTIME_NAMESPACE
+  value: {{ .Values.k8sRuntime.namespace | default "devai" | quote }}
+- name: DEVAI_K8S_RUNNER_SERVICE_ACCOUNT
+  value: {{ .Values.k8sRuntime.runnerServiceAccount | default "devai-runner" | quote }}
+- name: DEVAI_K8S_PULL_SECRET_NAME
+  value: {{ .Values.k8sRuntime.pullSecretName | default "" | quote }}
+- name: DEVAI_K8S_JOB_TTL_SECONDS
+  value: {{ .Values.k8sRuntime.jobTtlSeconds | default 3600 | quote }}
+- name: DEVAI_K8S_JOB_BACKOFF_LIMIT
+  value: {{ .Values.k8sRuntime.jobBackoffLimit | default 0 | quote }}
+- name: DEVAI_RUNNER_IMAGE
+  value: {{ .Values.k8sRuntime.runnerImage | default "ghcr.io/tesserix/devai/devai-runner:main" | quote }}
+- name: DEVAI_RUNNER_IMAGE_PER_STACK
+  # pydantic-settings parses dict fields from a JSON-encoded
+  # string when supplied via env. Keep this as a single line.
+  value: {{ .Values.k8sRuntime.runnerImagePerStack | default "{}" | quote }}
+- name: DEVAI_PREVIEW_DOMAIN
+  value: {{ .Values.k8sRuntime.previewDomain | default "devai.tesserix.app" | quote }}
+- name: DEVAI_EDITOR_BRIDGE_IMAGE
+  value: {{ .Values.k8sRuntime.editorBridgeImage | default "ghcr.io/tesserix/devai/devai-editor-bridge:main" | quote }}
+{{- end }}
+# Agentic control planes (aregistry / agentgateway / kagent)
+{{- if .Values.agenticControlPlane }}
+- name: DEVAI_AREGISTRY_URL
+  value: {{ .Values.agenticControlPlane.aregistryUrl | default "" | quote }}
+# DEVAI_REGISTRY_URL is what the new src/devai/registry/
+# client reads — alias to the same URL. (Older code paths
+# still read DEVAI_AREGISTRY_URL; the two stay in sync.)
+- name: DEVAI_REGISTRY_URL
+  value: {{ .Values.agenticControlPlane.aregistryUrl | default "" | quote }}
+# Publish-on-author — when an operator composes an agent / skill / tool /
+# blueprint in the dashboard, devai-api publishes it to the shared
+# registry (writes are mesh-gated to the devai-api SA; see the agentic
+# AuthorizationPolicy). registryPublishOnBoot reconciles the catalog after
+# a registry wipe or a devai redeploy.
+- name: DEVAI_REGISTRY_PUBLISH_ENABLED
+  value: {{ .Values.agenticControlPlane.registryPublishEnabled | default false | quote }}
+- name: DEVAI_REGISTRY_DEFAULT_TENANT
+  value: {{ .Values.agenticControlPlane.registryDefaultTenant | default "devai" | quote }}
+- name: DEVAI_REGISTRY_PUBLISH_ON_BOOT
+  value: {{ .Values.agenticControlPlane.registryPublishOnBoot | default false | quote }}
+- name: DEVAI_AGENTGATEWAY_URL
+  value: {{ .Values.agenticControlPlane.agentgatewayUrl | default "" | quote }}
+- name: DEVAI_KAGENT_ENABLED
+  value: {{ .Values.agenticControlPlane.kagentEnabled | default false | quote }}
+# kagent control-plane URL — the runner reads this to route
+# A2A handoffs through kagent's lifecycle controller. Empty
+# means "no kagent, dispatch Jobs directly to K8s" (current
+# production default; kagent is deployed but not yet in the
+# critical path — see docs/agentic/AGENTIC-INTEGRATION.md).
+- name: DEVAI_KAGENT_URL
+  value: {{ .Values.agenticControlPlane.kagentUrl | default "" | quote }}
+{{- end }}
+# GCP project
+- name: GCP_PROJECT
+  value: {{ .Values.gcp.projectId | default "" | quote }}
+# Secrets from ExternalSecret
+- name: DEVAI_OPENAI_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_OPENAI_API_KEY
+- name: DEVAI_ANTHROPIC_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_ANTHROPIC_API_KEY
+# LLM gateway routing — Anthropic adapter dials this base
+# URL instead of api.anthropic.com directly. The gateway
+# (devai-ai-gateway in agentgateway-system NS) injects the
+# x-api-key header itself, so future rotations don't need
+# a devai-api restart. Empty value falls back to the SDK's
+# default (direct to public Anthropic API).
+- name: DEVAI_ANTHROPIC_BASE_URL
+  value: {{ .Values.llm.anthropicBaseUrl | default "" | quote }}
+- name: DEVAI_OPENAI_BASE_URL
+  value: {{ .Values.llm.openaiBaseUrl | default "" | quote }}
+- name: DEVAI_GROQ_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_GROQ_API_KEY
+- name: DEVAI_GITHUB_APP_ID
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_GITHUB_APP_ID
+- name: DEVAI_GITHUB_APP_PRIVATE_KEY
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_GITHUB_APP_PRIVATE_KEY
+- name: DEVAI_GITHUB_APP_INSTALLATION_ID
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_GITHUB_APP_INSTALLATION_ID
+- name: DEVAI_GITHUB_WEBHOOK_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_GITHUB_WEBHOOK_SECRET
+- name: DEVAI_GITHUB_OAUTH_CLIENT_ID
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_GITHUB_OAUTH_CLIENT_ID
+- name: DEVAI_GITHUB_OAUTH_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_GITHUB_OAUTH_CLIENT_SECRET
+# PAT for SCM operations (list repos, create repos, list
+# issues for the Workflows kanban). Source: the
+# devai-github-pat Secret synced from GCP SM key
+# prod-devai-github-pat via the ExternalSecret in
+# external-secrets/prod/devai/. Setting DEVAI_SCM_TOKEN +
+# DEVAI_SCM_AUTH_METHOD=pat makes the SCM factory use the
+# PAT branch instead of GitHub App tokens; the rest of the
+# client surface (list_installation_repos / create_repo /
+# list_issues) works the same.
+- name: DEVAI_SCM_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: devai-github-pat
+      key: token
+- name: DEVAI_SCM_AUTH_METHOD
+  value: "pat"
+- name: DEVAI_KEYCLOAK_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_KEYCLOAK_CLIENT_SECRET
+- name: DEVAI_LANGCHAIN_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_LANGCHAIN_API_KEY
+# NOTE: DEVAI_OPENAI_API_KEY is already declared above (next to
+# DEVAI_ANTHROPIC_API_KEY). A second entry here was a duplicate —
+# harmless under client-side apply but rejected by ArgoCD's
+# ServerSideApply ("duplicate entries for key"). Removed.
+- name: DEVAI_GEMINI_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_GEMINI_API_KEY
+{{- if .Values.temporal }}
+# ─── Durable orchestration (Temporal) ────────────────────
+# Shared by devai-api (enqueues blueprint runs) and devai-worker
+# (executes them). provider=temporal routes every blueprint through
+# the one generic BlueprintWorkflow; absent/inproc keeps in-process
+# execution. Same config on both so they can never drift.
+- name: DEVAI_WORKFLOW_PROVIDER
+  value: {{ .Values.temporal.provider | default "temporal" | quote }}
+- name: DEVAI_TEMPORAL_HOST
+  value: {{ .Values.temporal.host | default "temporal.scrapper.svc.cluster.local:7233" | quote }}
+- name: DEVAI_TEMPORAL_NAMESPACE
+  value: {{ .Values.temporal.namespace | default "default" | quote }}
+- name: DEVAI_TEMPORAL_TASK_QUEUE
+  value: {{ .Values.temporal.taskQueue | default "devai" | quote }}
+- name: DEVAI_TEMPORAL_TLS_ENABLED
+  value: {{ .Values.temporal.tlsEnabled | default false | quote }}
+- name: DEVAI_TEMPORAL_MAX_CONCURRENT_ACTIVITIES
+  value: {{ .Values.temporal.maxConcurrentActivities | default 50 | quote }}
+- name: DEVAI_TEMPORAL_MAX_STAGE_ATTEMPTS
+  value: {{ .Values.temporal.maxStageAttempts | default 3 | quote }}
+{{- end }}
+{{- end }}

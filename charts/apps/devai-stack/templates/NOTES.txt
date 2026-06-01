@@ -1,0 +1,19 @@
+devai-stack deployed (release {{ .Release.Name }}, namespace {{ .Release.Namespace }}).
+
+Enabled components:
+{{- range $name := (list "devai-api" "devai-sre" "devai-dashboard" "devai-sre-dashboard" "devai-ai-gateway" "devai-auth-bff" "devai-registry-bootstrap") }}
+{{- $cfg := index $.Values $name | default dict }}
+  - {{ $name }}: {{ if (index $cfg "enabled") }}enabled{{ else }}disabled{{ end }}
+{{- end }}
+
+Reminder: this stack uses the SHARED local-infra Postgres/Redis (no DB here).
+Make sure local-infra is deployed and k8s/secrets.yaml is applied.
+
+Port-forward:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/devai-api 8080:8080
+  kubectl -n {{ .Release.Namespace }} port-forward svc/devai-dashboard 3100:3100
+  kubectl -n {{ .Release.Namespace }} port-forward svc/devai-sre 8090:8090
+  kubectl -n {{ .Release.Namespace }} port-forward svc/devai-sre-dashboard 3200:3200
+
+Smoke-test the blueprint-graph endpoint (data-driven UI flow):
+  curl -s localhost:8080/api/pipeline/blueprints/alm-pipeline | jq '{title, lanes, nodes:(.nodes|length)}'

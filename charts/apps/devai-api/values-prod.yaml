@@ -114,6 +114,14 @@ memory:
 # below under `llm:`. Don't conflate it with the agentgateway.
 agenticControlPlane:
   aregistryUrl: "http://agentregistry.agentregistry-system.svc.cluster.local:12121"
+  # Publish-on-author — agents/skills/tools/blueprints composed in the
+  # dashboard are published back to the shared registry. Writes are
+  # mesh-gated to the devai-api SA (see manifests/agentic-istio). On boot,
+  # re-publish every stored authored artifact so the catalog self-heals
+  # after a registry wipe or a devai redeploy.
+  registryPublishEnabled: true
+  registryDefaultTenant: "devai"
+  registryPublishOnBoot: true
   # agentgateway in this cluster is CONTROL PLANE ONLY — the agentgateway
   # Service exposes 9978 (xDS gRPC), 9093 (health), 9092 (metrics).
   # There is NO HTTP data-plane port for /mcp/<name> traffic; solo.io
@@ -143,3 +151,23 @@ agenticControlPlane:
 llm:
   anthropicBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/anthropic"
   openaiBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/openai"
+
+# ─── Durable orchestration (Temporal) — READY TO ENABLE ─────────────────────
+# Uncomment BOTH blocks to route prod blueprint runs through the Temporal cluster
+# (ArgoCD app `temporal`, namespace `scrapper`, frontend service `temporal:7233`).
+# PREREQUISITE: the devai image must ship the temporalio SDK. It is now a hard
+# dependency in pyproject.toml, so just rebuild/push the devai image, then enable.
+# devai-api degrades to in-process if temporalio is missing or the cluster is
+# unreachable; the worker pod imports temporalio at startup, so only enable
+# `worker` once the rebuilt image is rolled out (else it crashloops).
+# temporal:
+#   provider: temporal
+#   host: temporal.scrapper.svc.cluster.local:7233
+#   namespace: default
+#   taskQueue: devai
+#   tlsEnabled: false
+#   maxConcurrentActivities: 50
+#   maxStageAttempts: 3
+# worker:
+#   enabled: true
+#   replicaCount: 1

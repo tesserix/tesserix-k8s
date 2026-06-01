@@ -1,0 +1,33 @@
+# Local / kind overlay — NO External Secrets Operator, NO GCP.
+# Mirrors charts/apps/agentic-registry/values-local.yaml.
+#
+# The prod chart syncs the LLM keys from GCP Secret Manager via an
+# ExternalSecret. On kind there is no ESO / gcp-secret-store, so we turn that
+# off and let the chart render a plain devai-ai-gateway-secrets Secret instead
+# (templates/secret.yaml). Keys are NOT committed — inject them at deploy time:
+#
+#   helm upgrade --install devai-ai-gateway charts/apps/devai-ai-gateway \
+#     -n agentgateway-system -f charts/apps/devai-ai-gateway/values-local.yaml \
+#     --set localSecret.anthropicApiKey="$(gcloud secrets versions access latest \
+#            --secret=prod-devai-anthropic-api-key --project=tesseracthub-480811)" \
+#     --set localSecret.openaiApiKey="$(gcloud secrets versions access latest \
+#            --secret=prod-devai-openai-api-key --project=tesseracthub-480811)"
+#
+# (The gateway stays Healthy even with empty keys; it just can't proxy real LLM
+# calls until they're set.) Reach it:
+#   kubectl -n agentgateway-system port-forward svc/ai-gateway 8080:8080
+
+# No External Secrets Operator on kind — render a plain Secret instead.
+externalSecrets:
+  enabled: false
+
+# Plain devai-ai-gateway-secrets created from these values. Keys empty here so
+# nothing sensitive lands in git; inject at deploy via --set (see above).
+localSecret:
+  create: true
+  anthropicApiKey: ""
+  openaiApiKey: ""
+
+serviceAccount:
+  create: true
+  name: devai-ai-gateway

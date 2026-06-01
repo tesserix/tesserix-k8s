@@ -1,0 +1,16 @@
+{{- if .Values.schemaBootstrap.enabled }}
+# LOCAL schema bootstrap (sandbox/kind only — gated by schemaBootstrap.enabled,
+# default false). Mirrors the canonical schema from
+# charts/apps/db-schema-bootstrap/schemas/devai/devai_db/devai_db.sql into a
+# ConfigMap the init container applies to devai_db before the API starts.
+# In PROD this is OFF; schemas come from the db-schema-bootstrap CronJob.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "devai-api.fullname" . }}-schema
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+data:
+  devai_db.sql: |
+{{ .Files.Get "files/devai_db.sql" | indent 4 }}
+{{- end }}

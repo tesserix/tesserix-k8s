@@ -40,6 +40,15 @@ database:
   user: "devai"
   name: "devai_db"
 
+# Bootstrap devai_db's schema on deploy (kind has no db-schema-bootstrap CronJob).
+# An init container waits for Postgres and applies the canonical schema
+# (mirrored at files/devai_db.sql) as the devai role before the API starts.
+# Needs the pgvector `vector` extension; local-infra grants the devai role
+# SUPERUSER (pgSuperuser) so a fresh cluster can create it.
+schemaBootstrap:
+  enabled: true
+  image: "postgres:16-alpine"
+
 # Shared local-infra Redis (devai uses logical DB 0 — the default the URL maps
 # to, so no index suffix is needed). REDIS_PASSWORD comes from the
 # redis-devai-password Secret ("local-sandbox-dev").
@@ -105,3 +114,16 @@ k8sRuntime:
 
 # Reach the API via:
 #   kubectl port-forward svc/devai-api 8080:8080 -n devai
+
+# ─── Durable orchestration (Temporal) — local sandbox ───────────────────────
+# Local Temporal runs in the `temporal-system` namespace (addons.temporal). Uncomment
+# to run blueprints durably in the kind sandbox. temporalio is a hard dependency,
+# so a freshly built local devai image already ships it. Verify the frontend
+# service name (`kubectl get svc -n temporal-system`) — adjust `host` if it differs.
+# temporal:
+#   provider: temporal
+#   host: temporal-frontend.temporal-system.svc.cluster.local:7233
+#   namespace: default
+#   taskQueue: devai
+# worker:
+#   enabled: true

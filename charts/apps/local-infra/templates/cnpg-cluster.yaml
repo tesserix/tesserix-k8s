@@ -26,7 +26,11 @@ spec:
       postInitSQL:
         {{- range .Values.products }}
         {{- $role := .pgRole }}
-        - "CREATE ROLE {{ $role }} LOGIN PASSWORD '{{ $.Values.sharedPassword }}' CREATEDB;"
+        # pgSuperuser (LOCAL ONLY): lets a product role create extensions that
+        # require superuser (e.g. pgvector `vector`) so the app's own schema
+        # bootstrap is self-sufficient on a fresh kind cluster. Throwaway local
+        # password — never set this in prod.
+        - "CREATE ROLE {{ $role }} LOGIN PASSWORD '{{ $.Values.sharedPassword }}' CREATEDB{{ if .pgSuperuser }} SUPERUSER{{ end }};"
         {{- range .pgDatabases }}
         - "CREATE DATABASE {{ . }} OWNER {{ $role }};"
         {{- end }}
