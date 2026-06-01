@@ -1,0 +1,21 @@
+kagent-agent-sync ({{ .Values.namespace }}) installed.
+
+  CronJob/kagent-agent-sync ({{ .Values.cron.schedule }}) renders agents matching
+  "{{ .Values.registry.labelSelector }}" (registry ns "{{ .Values.registry.sourceNamespace }}")
+  into kagent.dev Agent + ToolServer CRs in "{{ .Values.registry.targetNamespace }}",
+  via {{ .Values.registry.endpoint }}/v0/export/kagent.
+
+Verify (read-only):
+  kubectl create job --from=cronjob/kagent-agent-sync sync-now -n {{ .Values.namespace }}
+  kubectl get agents.kagent.dev,toolservers.kagent.dev -n {{ .Values.registry.targetNamespace }} \
+    -l app.kubernetes.io/managed-by=agentic-registry
+  kubectl get agent <name> -n {{ .Values.registry.targetNamespace }} -o jsonpath='{.status}'
+
+PREREQUISITES:
+  • The rendered Agents reference ModelConfig "{{ .Values.registry.modelConfig }}" — it
+    must exist (kubectl get modelconfigs.kagent.dev -n {{ .Values.registry.targetNamespace }}).
+  • Agents are synced only if labelled "{{ .Values.registry.labelSelector }}". Authoring
+    sets this on agents the operator wants controller-managed; ephemeral agents
+    stay Job-dispatched.
+
+FOLLOW-UP: prune-on-delete (objects carry app.kubernetes.io/managed-by=agentic-registry).

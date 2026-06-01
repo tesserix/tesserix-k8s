@@ -1,0 +1,94 @@
+# Agent-sync: pull long-lived (labelled) agents from the registry as ready-to-
+# apply kagent.dev Agent + ToolServer YAML (rendered server-side by
+# /v0/export/kagent, reusing the registry's tested adapter), then apply them so
+# the kagent controller reconciles managed Deployments. Idempotent. Runs in
+# kagent-system, whose SA the registry authz already allows to GET /v0/*; the
+# consumer-egress NetworkPolicy already permits the :12121 hop.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kagent-agent-sync
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "kagent-agent-sync.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cron.schedule | quote }}
+  concurrencyPolicy: {{ .Values.cron.concurrencyPolicy }}
+  startingDeadlineSeconds: {{ .Values.cron.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ .Values.cron.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cron.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: {{ .Values.cron.activeDeadlineSeconds }}
+      backoffLimit: {{ .Values.cron.backoffLimit }}
+      ttlSecondsAfterFinished: {{ .Values.cron.ttlSecondsAfterFinished }}
+      template:
+        metadata:
+          labels:
+            {{- include "kagent-agent-sync.labels" . | nindent 12 }}
+        spec:
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: render
+              image: "{{ .Values.images.curl.repository }}:{{ .Values.images.curl.tag }}"
+              imagePullPolicy: {{ .Values.images.pullPolicy }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  URL="{{ .Values.registry.endpoint }}/v0/export/kagent"
+                  URL="${URL}?namespace={{ .Values.registry.sourceNamespace }}"
+                  URL="${URL}&targetNamespace={{ .Values.registry.targetNamespace }}"
+                  URL="${URL}&modelConfig={{ .Values.registry.modelConfig }}"
+                  {{- if .Values.registry.gatewayUrl }}
+                  URL="${URL}&gatewayUrl={{ .Values.registry.gatewayUrl | urlquery }}"
+                  {{- end }}
+                  {{- if .Values.registry.labelSelector }}
+                  URL="${URL}&labelSelector={{ .Values.registry.labelSelector | urlquery }}"
+                  {{- end }}
+                  echo "GET ${URL}"
+                  curl -sS --fail-with-body --max-time 30 "${URL}" -o /work/agents.yaml
+                  echo "rendered $(grep -c '^kind:' /work/agents.yaml || echo 0) object(s)"
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+          containers:
+            - name: apply
+              image: "{{ .Values.images.kubectl.repository }}:{{ .Values.images.kubectl.tag }}"
+              imagePullPolicy: {{ .Values.images.pullPolicy }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  if [ -s /work/agents.yaml ] && grep -q '^kind:' /work/agents.yaml; then
+                    kubectl apply --server-side --force-conflicts -f /work/agents.yaml
+                  else
+                    echo "no long-lived agents to sync — nothing to apply"
+                  fi
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+                  readOnly: true
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+          volumes:
+            - name: work
+              emptyDir: {}
