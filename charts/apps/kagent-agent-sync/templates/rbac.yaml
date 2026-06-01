@@ -1,0 +1,38 @@
+{{- if .Values.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "kagent-agent-sync.labels" . | nindent 4 }}
+---
+{{- end }}
+# Scoped to exactly the kagent kinds the sync manages, in the target namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: {{ .Values.registry.targetNamespace }}
+  labels:
+    {{- include "kagent-agent-sync.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kagent.dev"]
+    resources: ["agents", "toolservers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.serviceAccount.name }}
+  namespace: {{ .Values.registry.targetNamespace }}
+  labels:
+    {{- include "kagent-agent-sync.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.serviceAccount.name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.serviceAccount.name }}
+    namespace: {{ .Values.namespace }}

@@ -1,0 +1,54 @@
+# kagent-agent-sync — defaults
+#
+# A CronJob that curls the registry's server-side kagent export and applies the
+# rendered kagent.dev Agent + ToolServer CRs. Only agents carrying the
+# long-lived label (registry.labelSelector) are synced — ephemeral agents stay
+# Job-dispatched. Idempotent server-side apply.
+
+namespace: kagent-system
+
+registry:
+  endpoint: http://agentregistry.agentregistry-system.svc.cluster.local:12121
+  # Registry namespace to read agents from.
+  sourceNamespace: devai
+  # Only sync agents marked long-lived. Authoring sets this label on agents the
+  # operator wants controller-managed rather than Job-dispatched.
+  labelSelector: "devai.io/runtime=kagent"
+  # Namespace the rendered kagent CRs are created in (the controller watches it).
+  targetNamespace: kagent-system
+  # kagent ModelConfig CR the rendered Agents reference (cluster-specific).
+  modelConfig: default-model-config
+  # agentgateway base URL the rendered ToolServers reach MCP tools through.
+  # Empty → ToolServers use each MCP server's own remote URL.
+  gatewayUrl: ""
+
+cron:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  activeDeadlineSeconds: 180
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+
+images:
+  curl:
+    repository: curlimages/curl
+    tag: "8.11.1"
+  kubectl:
+    repository: bitnami/kubectl
+    tag: "1.31"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+serviceAccount:
+  create: true
+  name: kagent-agent-sync
