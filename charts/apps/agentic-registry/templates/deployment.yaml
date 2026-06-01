@@ -20,6 +20,8 @@ spec:
       {{- end }}
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1000           # `aregistry` user baked into the image (see deploy/Dockerfile)
+        runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       {{- if .Values.postgresql.enabled }}
@@ -64,6 +66,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.existingSecret.name | quote }}
                   key: {{ .Values.database.existingSecret.key | quote }}
+            {{- end }}
+            {{- if and .Values.externalSecret.enabled .Values.externalSecret.signingKeyEnabled }}
+            - name: SIGNING_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentic-registry.fullname" . }}-secrets
+                  key: SIGNING_PRIVATE_KEY
             {{- end }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }

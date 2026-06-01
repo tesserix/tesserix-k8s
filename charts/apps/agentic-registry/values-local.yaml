@@ -10,7 +10,11 @@
 image:
   repository: agentic-registry
   tag: local
-  pullPolicy: IfNotPresent   # never tries to pull from a registry
+  # Always pull in the local sandbox: sandboxctl rebuilds and re-pushes the
+  # same moving tag (localhost:5050/deploy:latest) on every deploy, so a
+  # rollout restart or Argo sync must re-pull to pick up the new image —
+  # IfNotPresent would silently reuse the node's stale cached layer.
+  pullPolicy: Always
 
 # DATABASE_URL comes from the Secret you applied, not GCP Secret Manager.
 # It points at the SHARED local-infra CNPG cluster:
@@ -48,6 +52,10 @@ config:
   publicBaseUrl: http://localhost:8080
   corsOrigins: "*"
   webDir: /app/web
+  vectorSearch: "true"       # pgvector cosine ranking (needs the `vector` extension in the DB)
+  seedExamples: "true"       # auto-apply the embedded starter catalog when the store is empty
+  immutableTags: "true"      # released version tags are permanent (latest stays mutable)
+  signingDev: "true"         # ephemeral Ed25519 signing key (prod injects SIGNING_PRIVATE_KEY)
 
 # kind usually has neither KEDA nor Istio — turn them off. Reach the UI/API via
 # `kubectl port-forward svc/agentic-registry 8080:8080 -n agentic-registry`.
