@@ -4,6 +4,15 @@ metadata:
   name: {{ include "devai-api.fullname" . }}
   labels:
     {{- include "devai-api.labels" . | nindent 4 }}
+    # Bypass the namespace waypoint (the devai ns sets
+    # istio.io/use-waypoint=waypoint). devai-api-authz is a source-identity
+    # policy enforced at L4 by ztunnel; routing through the waypoint replaces
+    # the caller's identity with the waypoint SA (not in the allow-list), so
+    # every request is reset ("upstream connect error / connection
+    # termination"). Going ztunnel-direct preserves the real client identity
+    # (devai-dashboard proxies /api, istio-ingressgateway hits /webhook) so the
+    # policy authorizes correctly. Matches the Postgres use-waypoint:none fix.
+    istio.io/use-waypoint: "none"
 spec:
   type: {{ .Values.service.type }}
   ports:
