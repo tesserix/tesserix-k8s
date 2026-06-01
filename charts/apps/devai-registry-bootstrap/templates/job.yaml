@@ -35,21 +35,30 @@ spec:
         - name: fetch-seeds
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          env:
-            # `git` reads $GIT_CONFIG_GLOBAL as the user-level config; we
-            # point it at the Secret-projected file under /workspace
-            # (writable tmpfs the workload owns). The image's default
-            # /etc/gitconfig is a regular file owned by root, so a file-
-            # over-directory mount fails — using a fresh path under
-            # /workspace avoids that and keeps file mode at 0400.
-            - name: GIT_CONFIG_GLOBAL
-              value: /workspace/.gitconfig
+          # Resilient clone: try the credentialed clone first (private repo via
+          # the url.insteadOf rewrite in the mounted .gitconfig). If the PAT is
+          # missing/expired AND the repo is public, fall back to an anonymous
+          # clone so the seed sync is never blocked on token rotation. Once the
+          # repo is private again with a valid PAT, the first path is used.
+          command:
+            - /bin/sh
+            - -c
           args:
-            - clone
-            - --depth=1
-            - --branch={{ .Values.seedSource.ref }}
-            - {{ .Values.seedSource.repoUrl }}
-            - /workspace/devai
+            - |
+              set -e
+              REPO="{{ .Values.seedSource.repoUrl }}"
+              REF="{{ .Values.seedSource.ref }}"
+              if GIT_CONFIG_GLOBAL=/workspace/.gitconfig \
+                   git clone --depth=1 --branch="$REF" "$REPO" /workspace/devai 2>/tmp/clone.err; then
+                echo "fetch-seeds: cloned (authenticated)"
+              else
+                echo "fetch-seeds: authenticated clone failed — falling back to anonymous (public repo)"
+                sed 's/x-access-token:[^@]*@/x-access-token:***@/g' /tmp/clone.err || true
+                rm -rf /workspace/devai
+                GIT_CONFIG_GLOBAL=/dev/null \
+                  git clone --depth=1 --branch="$REF" "$REPO" /workspace/devai
+                echo "fetch-seeds: cloned (anonymous)"
+              fi
           volumeMounts:
             - name: workspace
               mountPath: /workspace
