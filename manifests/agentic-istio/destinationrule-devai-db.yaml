@@ -1,0 +1,30 @@
+##############################################################################
+# mTLS exception so the registry can talk plain PostgreSQL to devai-postgres.
+#
+# devai-postgres is ambient-captured (ambient.istio.io/redirection=enabled) and
+# accepts plaintext on 5432 via the devai-cnpg-port-exception PeerAuthentication.
+# Clients must therefore NOT wrap the connection in mTLS. istio-config ships a
+# `devai-cnpg-postgres-dr` (DISABLE) for devai-namespace clients, but a
+# DestinationRule only applies to clients in its own namespace — so cross-ns
+# callers in agentregistry-system need their own. Without it the mesh defaults
+# to ISTIO_MUTUAL and the PG handshake blackholes (connect timeout).
+#
+# Shipped here (agentic-istio app) rather than istio-config because that chart's
+# sync is wedged by the unrelated supportPlatform invalid-name bug.
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: agentregistry-to-devai-postgres-dr
+  namespace: agentregistry-system
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: routing
+spec:
+  host: devai-postgres-rw.devai.svc.cluster.local
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        connectTimeout: 30s
+        maxConnections: 100
+    tls:
+      mode: DISABLE
