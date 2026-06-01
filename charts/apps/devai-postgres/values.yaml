@@ -3,6 +3,16 @@ hibernate: false
 namespace: devai
 clusterName: devai-postgres
 
+# The devai namespace is an Istio ambient namespace that binds an L7 waypoint
+# (istio.io/use-waypoint=waypoint). The waypoint mangles raw PostgreSQL traffic:
+# clients connect but the stream is closed mid-handshake ("connection was closed
+# in the middle of operation"), and the CNPG operator can't reach the instance
+# status endpoint either. Routing DB traffic L4-only (ztunnel) via this label —
+# propagated by CNPG to the cluster pods AND the rw/ro/r services — bypasses the
+# waypoint and restores connectivity.
+inheritedLabels:
+  istio.io/use-waypoint: none
+
 instances: 1
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
