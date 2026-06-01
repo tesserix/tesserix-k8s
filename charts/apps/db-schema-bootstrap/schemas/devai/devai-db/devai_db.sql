@@ -595,3 +595,44 @@ CREATE TABLE IF NOT EXISTS user_settings (
     PRIMARY KEY (scope, scope_id, connector_key, instance_id)
 );
 CREATE INDEX IF NOT EXISTS idx_user_settings_scope ON user_settings(scope, scope_id);
+
+-- ============================================================
+-- SRE Studio — config drafts (author → dry-run → publish)
+-- Drafts are the unpublished form of a user-authored SRE artifact composed
+-- in DevAI. On publish they go to the agentic-registry, which the SRE
+-- runtime consumes + schedules. See devai/src/devai/sre_studio/.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sre_config_drafts (
+    id              TEXT PRIMARY KEY,
+    kind            TEXT NOT NULL,                       -- blueprint | agent
+    name            TEXT NOT NULL,
+    yaml            TEXT NOT NULL,
+    description     TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'draft',       -- draft | published
+    dry_run_summary JSONB,
+    created_by      TEXT NOT NULL DEFAULT 'operator',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_at    TIMESTAMPTZ,
+    last_dry_run_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_sre_drafts_status ON sre_config_drafts(status, updated_at DESC);
+
+-- ============================================================
+-- SRE Studio — schedules (cadence for published blueprints)
+-- The SRE runtime polls enabled rows and runs the named blueprint on its
+-- cadence (sre/server.py _schedule_loop). cron holds a duration/cadence
+-- string ("hourly", "daily", "15m", "6h", "every 5 minutes").
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sre_schedules (
+    id          TEXT PRIMARY KEY,
+    blueprint   TEXT NOT NULL,
+    cron        TEXT NOT NULL,
+    cluster_id  TEXT NOT NULL DEFAULT 'default',
+    enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+    last_run_at TIMESTAMPTZ,
+    created_by  TEXT NOT NULL DEFAULT 'operator',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sre_schedules_enabled ON sre_schedules(enabled);
