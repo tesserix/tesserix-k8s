@@ -7,6 +7,13 @@ metadata:
     app.kubernetes.io/part-of: ai-apps
     app.kubernetes.io/component: registry
     environment: prod
+  annotations:
+    # Authorizes the kargo-devai:prod Stage to rewrite spec.source.helm
+    # parameters (image.tag) on this Application — agentic-registry is promoted
+    # alongside the rest of the DevAI stack. Without this, Kargo refuses to
+    # mutate it. selfHeal reverts are prevented by the ignoreDifferences on
+    # /spec/source/helm/parameters in ai-apps-app-of-apps.
+    kargo.akuity.io/authorized-stage: kargo-devai:prod
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -20,8 +27,10 @@ spec:
         - values.yaml
         - values-prod.yaml
       parameters:
+        # Seed tag for the first roll-out; Kargo (kargo-devai:prod) overwrites
+        # this with the newest main-<sha> Freight on every subsequent build.
         - name: image.tag
-          value: "latest"
+          value: "main-c2e2547"
   destination:
     server: https://kubernetes.default.svc
     # Occupies the agentregistry-system slot vacated by the third-party
