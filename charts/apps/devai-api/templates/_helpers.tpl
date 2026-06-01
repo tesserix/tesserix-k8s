@@ -161,6 +161,14 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.agenticControlPlane.registryDefaultTenant | default "devai" | quote }}
 - name: DEVAI_REGISTRY_PUBLISH_ON_BOOT
   value: {{ .Values.agenticControlPlane.registryPublishOnBoot | default false | quote }}
+# Auth-bff session key — the dashboard proxies /api straight to devai-api
+# (bypassing the bff), so devai-api decrypts the bff's AES-GCM devai_session
+# cookie itself to authenticate the caller. Same key the bff mints with.
+- name: DEVAI_BFF_SESSION_ENCRYPT_KEY
+  valueFrom:
+    secretKeyRef:
+      name: devai-auth-bff-secrets
+      key: DEVAI_BFF_SESSION_ENCRYPT_KEY
 - name: DEVAI_AGENTGATEWAY_URL
   value: {{ .Values.agenticControlPlane.agentgatewayUrl | default "" | quote }}
 - name: DEVAI_KAGENT_ENABLED
