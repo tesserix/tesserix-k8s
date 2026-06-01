@@ -146,7 +146,11 @@ spec:
             # and restart — the env var populates and the fan-out starts using
             # it. Every ref is `optional: true`, so the pod starts cleanly while
             # a provider is unconfigured (the adapter just treats it as absent).
-            # In-cluster Prometheus needs nothing here — it's the default source.
+            # In-cluster Prometheus + Grafana URLs are already set as plain
+            # values above (.Values.env), so they're intentionally NOT repeated
+            # here — listing a name twice (once value:, once valueFrom:) makes
+            # the strategic-merge patch fuse them into one invalid entry and the
+            # Deployment is rejected. Only keys NOT in .Values.env belong here.
             {{- $obsKeys := list
                 "DEVAI_PROMETHEUS_TOKEN"
                 "DEVAI_DATADOG_API_KEY" "DEVAI_DATADOG_APP_KEY" "DEVAI_DATADOG_SITE"
@@ -154,7 +158,7 @@ spec:
                 "DEVAI_AWS_REGION" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "DEVAI_CLOUDWATCH_LOG_GROUP"
                 "DEVAI_AZURE_WORKSPACE_ID" "DEVAI_AZURE_RESOURCE_ID"
                 "DEVAI_ELASTICSEARCH_URL" "DEVAI_ELASTICSEARCH_API_KEY" "DEVAI_ELASTICSEARCH_USERNAME" "DEVAI_ELASTICSEARCH_PASSWORD" "DEVAI_ELASTICSEARCH_INDEX"
-                "DEVAI_GRAFANA_URL" "DEVAI_GRAFANA_TOKEN" "DEVAI_GRAFANA_DATASOURCE_UID"
+                "DEVAI_GRAFANA_TOKEN" "DEVAI_GRAFANA_DATASOURCE_UID"
             }}
             {{- range $obsKeys }}
             - name: {{ . }}
