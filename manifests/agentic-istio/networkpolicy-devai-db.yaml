@@ -1,0 +1,61 @@
+##############################################################################
+# Cross-namespace DB allowance for agentic-registry.
+#
+# Our registry runs in agentregistry-system but reuses the shared
+# devai-postgres CNPG cluster (the `registry` schema lives inside devai_db),
+# so it must reach devai-postgres-rw.devai.svc:5432. The baseline
+# allow-agentregistry-egress / allow-devai-ingress policies were written for a
+# bundled in-namespace DB and drop this cross-namespace 5432 traffic — which
+# crash-looped the registry on a hung /healthz (pool.Ping).
+#
+# These are ADDITIVE policies (NetworkPolicy allowances are unioned), delivered
+# here via the agentic-istio Application rather than the istio-config chart,
+# whose sync is currently wedged by an unrelated pre-existing bug (the
+# supportPlatform appNamespaces key renders invalid RFC-1123 resource names).
+# Fold back into istio-config once that is fixed.
+##############################################################################
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-agentregistry-to-devai-db-egress
+  namespace: agentregistry-system
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devai
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-devai-db-from-agentregistry-ingress
+  namespace: devai
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+spec:
+  # Scope to the devai-postgres CNPG pods (primary + replicas).
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: devai-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentregistry-system
+      ports:
+        - protocol: TCP
+          port: 5432
