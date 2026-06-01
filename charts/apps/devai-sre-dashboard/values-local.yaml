@@ -5,21 +5,29 @@
 # Pure frontend — no DB or secrets. emptyDir volumes for /tmp and
 # /app/.next/cache are already in the chart's deployment.yaml.
 
-# Image built locally and loaded into kind:
-#   docker build -t devai-sre-dashboard:local -f apps/sre-dashboard/Dockerfile .  # adjust path
-#   kind load docker-image devai-sre-dashboard:local
+# Image: built + pushed to the in-cluster registry by `sandboxctl deploy`
+# (the devai repo's sandboxctl.yaml builds `devai-sre-dashboard`). pullPolicy:
+# Always because :latest is a moving target across rebuilds.
 image:
-  repository: devai-sre-dashboard
-  tag: local
-  pullPolicy: IfNotPresent
+  repository: localhost:5050/devai-sre-dashboard
+  tag: latest
+  pullPolicy: Always
 
 imagePullSecrets: []
 
-# Talk to the in-cluster SRE API service.
+# This is the ONLY SRE component that gets a public sandbox.app URL.
+# The browser only ever talks to THIS origin — the Next.js server proxies
+# /api/* server-side to the internal devai-sre Service (see next.config.ts,
+# which reads DEVAI_SRE_API_INTERNAL_URL). So devai-sre stays internal: the
+# browser never hits it directly.
+#
+# Per-chart `sandboxctl deploy` lands devai-sre in namespace `devai-sre`, so
+# the dashboard (namespace `devai-sre-dashboard`) reaches it cross-namespace
+# via the fully-qualified in-cluster service DNS name.
 env:
   NODE_ENV: "production"
   HOSTNAME: "0.0.0.0"
-  NEXT_PUBLIC_API_URL: "http://devai-sre:8090"
+  DEVAI_SRE_API_INTERNAL_URL: "http://devai-sre.devai-sre.svc.cluster.local:8090"
 
 # No GCP Workload Identity in kind.
 gcp:
@@ -28,5 +36,6 @@ gcp:
     enabled: false
     gcpServiceAccount: ""
 
-# Reach the UI via:
-#   kubectl port-forward svc/devai-sre-dashboard 3200:3200 -n devai
+# Public URL after `sandboxctl deploy --chart .../devai-sre-dashboard
+#   --name devai-sre-dashboard`:  https://devai-sre-dashboard.sandbox.app:8443
+# Or port-forward: kubectl port-forward svc/devai-sre-dashboard 3200:3200 -n devai-sre-dashboard

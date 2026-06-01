@@ -1,0 +1,66 @@
+{{- if .Values.worker.enabled }}
+# ─────────────────────────────────────────────────────────────────────────────
+# devai-worker — the Temporal worker that executes blueprint runs durably.
+#
+# Same image, same StageDeps, same blueprint stages as devai-api — it just runs
+# `python -m devai.orchestration.worker` instead of the API server, polls the
+# Temporal task queue, and runs the ONE generic BlueprintWorkflow + run_stage
+# activity. Because that workflow is blueprint-agnostic, this single worker
+# executes every blueprint (and every future one) with no per-blueprint code.
+#
+# The container env is the shared `devai-api.containerEnv` helper, so the worker
+# and the API can never drift. Its selector carries an extra `-worker` name so it
+# never overlaps the API Deployment's pods.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "devai-api.fullname" . }}-worker
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal-worker
+spec:
+  replicas: {{ .Values.worker.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "devai-api.name" . }}-worker
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        app.kubernetes.io/name: {{ include "devai-api.name" . }}-worker
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: temporal-worker
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "devai-api.serviceAccountName" . }}
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The worker requires temporalio, which is a hard dependency of the
+          # devai package — any freshly built devai image ships it.
+          command: ["python", "-m", "devai.orchestration.worker"]
+          env:
+            {{- include "devai-api.containerEnv" . | trimPrefix "\n" | nindent 12 }}
+          # No HTTP server, so no readiness/liveness HTTP probe. A crashed worker
+          # exits non-zero and is restarted by the kubelet; a poll stall is caught
+          # by Temporal's own worker heartbeat on the server side.
+          {{- with .Values.worker.resources | default .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

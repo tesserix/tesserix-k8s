@@ -6,21 +6,29 @@
 # already mounts emptyDir at /tmp and /app/.next/cache for readOnlyRootFilesystem,
 # so no extra volumes are needed here.
 
-# Image built locally and loaded into kind:
-#   docker build -t devai-dashboard:local -f apps/dashboard/Dockerfile .  # adjust path
-#   kind load docker-image devai-dashboard:local
+# Image: built + pushed to the in-cluster registry by `sandboxctl deploy`
+# (the devai repo's sandboxctl.yaml builds `devai-dashboard`). pullPolicy:
+# Always because :latest is a moving target across rebuilds.
 image:
-  repository: devai-dashboard
-  tag: local
-  pullPolicy: IfNotPresent
+  repository: localhost:5050/devai-dashboard
+  tag: latest
+  pullPolicy: Always
 
 imagePullSecrets: []
 
-# Talk to the in-cluster API service.
+# This is the ONLY ALM component that gets a public sandbox.app URL.
+# The browser only ever talks to THIS origin — the Next.js server proxies
+# /api/* server-side to the internal devai-api Service (see next.config.ts,
+# which reads DEVAI_API_INTERNAL_URL). So devai-api stays internal: the
+# browser never hits it directly.
+#
+# Per-chart `sandboxctl deploy` lands devai-api in namespace `devai-api`, so
+# the dashboard (namespace `devai-dashboard`) reaches it cross-namespace via
+# the fully-qualified in-cluster service DNS name.
 env:
   NODE_ENV: "production"
   HOSTNAME: "0.0.0.0"
-  NEXT_PUBLIC_API_URL: "http://devai-api:8080"
+  DEVAI_API_INTERNAL_URL: "http://devai-api.devai-api.svc.cluster.local:8080"
 
 # No GCP Workload Identity in kind.
 gcp:
@@ -29,5 +37,6 @@ gcp:
     enabled: false
     gcpServiceAccount: ""
 
-# Reach the UI via:
-#   kubectl port-forward svc/devai-dashboard 3100:3100 -n devai
+# Public URL after `sandboxctl deploy --chart .../devai-dashboard
+#   --name devai-dashboard`:  https://devai-dashboard.sandbox.app:8443
+# Or port-forward: kubectl port-forward svc/devai-dashboard 3100:3100 -n devai-dashboard

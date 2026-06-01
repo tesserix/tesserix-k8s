@@ -21,11 +21,24 @@ resources:
     memory: 128Mi
 
 # ExternalSecret pulls both LLM keys (Anthropic + OpenAI) from GCP SM.
+# PROD default: enabled. Local/kind overlays (values-local.yaml /
+# values-sandbox.yaml) flip this to false — see localSecret below.
 externalSecrets:
   enabled: true
   secretStoreRef: gcp-secret-store
   anthropicKey: prod-devai-anthropic-api-key
   openaiKey: prod-devai-openai-api-key
+
+# LOCAL ONLY — when externalSecrets.enabled=false (kind/sandbox, no External
+# Secrets Operator) the chart renders a plain devai-ai-gateway-secrets Secret
+# from these values instead of an ExternalSecret (templates/secret.yaml).
+# Keys stay empty in git; inject real values at deploy time via --set (see
+# values-local.yaml). In prod this stays create=false and the ExternalSecret
+# is authoritative, so prod rendering is unchanged.
+localSecret:
+  create: false
+  anthropicApiKey: ""
+  openaiApiKey: ""
 
 # Service account — no special IAM today; future SPIFFE identity will
 # pin the gateway as the only egress channel from devai → external LLMs.

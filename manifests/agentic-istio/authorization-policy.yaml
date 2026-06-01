@@ -108,13 +108,16 @@ spec:
         - operation:
             methods: ["GET"]
             paths: ["/v0/*"]
-    # Catalog WRITES — only the registry-bootstrap Job's SA may
-    # POST / PUT / PATCH / DELETE. A compromised devai-api pod cannot
-    # publish fake agents / MCP servers.
+    # Catalog WRITES — the registry-bootstrap Job's SA (seed reconcile)
+    # and the devai-api SA (publish-on-author: when an operator composes
+    # an agent / skill / tool / blueprint in the dashboard, devai-api
+    # publishes it to the shared catalog). Both are mesh-identified SAs;
+    # a workload outside this list cannot publish fake artifacts.
     - from:
         - source:
             principals:
               - "cluster.local/ns/devai/sa/devai-registry-bootstrap"
+              - "cluster.local/ns/devai/sa/devai-api"
       to:
         - operation:
             methods: ["POST", "PUT", "PATCH", "DELETE"]
@@ -199,8 +202,10 @@ spec:
 # rule overrides it.
 ##############################################################################
 
-# Catalog WRITE protection — only devai-registry-bootstrap (and the bff
-# for authenticated human edits) may mutate the catalog.
+# Catalog WRITE protection — only devai-registry-bootstrap (seed
+# reconcile), devai-api (publish-on-author) and devai-auth-bff (the UI
+# proxy for authenticated human edits) may mutate the catalog. Everything
+# else is denied even though allow-mesh-internal would otherwise pass it.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -217,6 +222,7 @@ spec:
         - source:
             notPrincipals:
               - "cluster.local/ns/devai/sa/devai-registry-bootstrap"
+              - "cluster.local/ns/devai/sa/devai-api"
               - "cluster.local/ns/devai/sa/devai-auth-bff"
       to:
         - operation:

@@ -2,6 +2,13 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "devai-dashboard.fullname" . }}
+  {{- if .Values.service.primary }}
+  annotations:
+    # Tells sandboxctl to route <chart>.sandbox.app to THIS service. Used inside
+    # the devai-stack umbrella (one Argo app → one route) so the single URL lands
+    # on the ALM dashboard UI rather than a backend service.
+    sandboxctl.io/primary: "true"
+  {{- end }}
   labels:
     {{- include "devai-dashboard.labels" . | nindent 4 }}
 spec:

@@ -1,0 +1,43 @@
+# HAND-TUNED for sandbox (committed) — sandboxctl reuses an existing
+# sandbox-flavour values file and does NOT regenerate it, so edits here stick.
+# Local twin of values.yaml: no External Secrets Operator on kind, so ESO is
+# off and the chart renders a plain devai-ai-gateway-secrets Secret instead
+# (templates/secret.yaml). Ingress stays off (sandboxctl owns Istio routing);
+# images pinned to the in-cluster registry where the build manifest matches.
+
+# devai-ai-gateway — defaults
+namespace: agentgateway-system
+image:
+    repository: nginx
+    tag: "1.27-alpine"
+    pullPolicy: IfNotPresent
+service:
+    type: ClusterIP
+    port: 8080
+replicaCount: 1
+resources:
+    requests:
+        cpu: 25m
+        memory: 32Mi
+    limits:
+        cpu: 200m
+        memory: 128Mi
+# No External Secrets Operator on kind — disable ESO and render a plain Secret.
+externalSecrets:
+    enabled: false
+    secretStoreRef: gcp-secret-store
+    anthropicKey: prod-devai-anthropic-api-key
+    openaiKey: prod-devai-openai-api-key
+# Plain devai-ai-gateway-secrets created by templates/secret.yaml. Keys empty
+# in git — gateway stays Healthy; inject real keys to actually proxy LLM calls
+# (e.g. add a devai-ai-gateway-secrets Secret out-of-band, or set these here
+# locally without committing).
+localSecret:
+    create: true
+    anthropicApiKey: ""
+    openaiApiKey: ""
+# Service account — no special IAM today; future SPIFFE identity will
+# pin the gateway as the only egress channel from devai → external LLMs.
+serviceAccount:
+    create: true
+    name: devai-ai-gateway
