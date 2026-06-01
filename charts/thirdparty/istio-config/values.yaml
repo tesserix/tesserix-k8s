@@ -138,7 +138,13 @@ appNamespaces:
   stockpilot: stockpilot   # AI stock analysis platform
   scrapper: scrapper       # Social media scrapper platform
   devai: devai             # AI-powered ALM + SRE platform
-  supportPlatform: support-platform # Shared Otto/SLM/MCP support platform — slm-router needs ingress to per-product MCP servers
+  # NOTE: support-platform is intentionally NOT listed here. It manages its own
+  # mesh/NetworkPolicies via the dedicated `support-platform-namespace` ArgoCD
+  # app (allow-egress-broad, support-platform-to-*-dr, etc.). The old camelCase
+  # `supportPlatform` key here only generated invalid RFC-1123 resource names
+  # (allow-supportPlatform-egress, supportPlatform-cnpg-*, ...) that wedged the
+  # entire istio-config sync ("must consist of lower case alphanumeric..."),
+  # blocking every other namespace's mesh updates. Removed.
   # Agentic control planes (DevAI consumers). Each needs ingress allowance
   # to istio-system so istio-proxy can dial istiod for CSR signing.
   agentregistry: agentregistry-system
