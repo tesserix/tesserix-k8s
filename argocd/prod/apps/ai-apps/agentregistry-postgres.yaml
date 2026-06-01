@@ -29,6 +29,12 @@ spec:
         # the DestinationRule istio-config already ships for this namespace.
         clusterName: agentregistry-postgres
         instances: 1
+        # agentregistry-system binds an L7 Istio waypoint (for the registry's
+        # API authz) which mangles raw PostgreSQL. Exclude the DB pods/services
+        # from the waypoint so client traffic stays L4 (ztunnel) — without this
+        # the registry's DB connection resets ("server closed unexpectedly").
+        inheritedLabels:
+          istio.io/use-waypoint: none
         # ghcr.io/cloudnative-pg/postgresql:16.4 has no pgvector, so the registry
         # runs with VECTOR_SEARCH=false (matches the schema-bootstrap DDL).
         imageName: ghcr.io/cloudnative-pg/postgresql:16.4
