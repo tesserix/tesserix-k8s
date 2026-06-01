@@ -23,6 +23,22 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: cnpg-system
+  # K8s 1.36+ surfaces .status.terminatingReplicas on Deployments/StatefulSets,
+  # which ArgoCD's structured-merge-diff can't yet build a typed value for —
+  # producing a ComparisonError that blocks the whole app from syncing. That
+  # left the operator's MutatingWebhookConfiguration unapplied, so the CNPG
+  # operator crash-looped ("unable to setup PKI infrastructure ... not found")
+  # and no new CNPG clusters could be provisioned. Ignore the field so the diff
+  # succeeds and the app syncs.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /status/terminatingReplicas
   syncPolicy:
     automated:
       prune: true
