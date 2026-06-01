@@ -196,3 +196,38 @@ spec:
         - operation:
             paths: ["/healthz", "/readyz"]
             methods: ["GET"]
+---
+# --- devai-postgres Authorization ---
+#
+# The mesh baseline is deny-all (istio-system/deny-all-default). Once the devai
+# namespace runs under ambient, ztunnel enforces that baseline at L4 — so the
+# CloudNativePG Postgres workload needs an explicit allow or every connection is
+# rejected ("connection closed due to policy rejection: allow policies exist,
+# but none allowed"). Without this, devai-api / devai-sre / devai-auth-bff can't
+# reach 5432 and the CNPG operator can't reach the instance status endpoint
+# (8000), so the DB looks down and DB-backed routes (e.g. the Repos onboarding
+# catalog) return 502. Selecting cnpg.io/cluster covers both the instance pods
+# and the PgBouncer pooler pods.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: devai-postgres-authz
+  namespace: devai
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: devai-postgres
+  action: ALLOW
+  rules:
+    # DevAI services + intra-cluster traffic (Postgres self, pooler, replication).
+    - from:
+        - source:
+            namespaces: ["devai"]
+    # CloudNativePG operator — instance status probe (:8000) + management.
+    - from:
+        - source:
+            namespaces: ["cnpg-system"]
+    # Prometheus scraping the Postgres exporter.
+    - from:
+        - source:
+            namespaces: ["monitoring"]
