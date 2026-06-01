@@ -114,6 +114,56 @@ spec:
                 secretKeyRef:
                   name: devai-api-secrets
                   key: DEVAI_LANGCHAIN_API_KEY
+            # SCM (GitHub) — lets the SRE code_remediator read a failing
+            # service's repo, open a fix PR, and file a classified issue.
+            # Creds are the same GitHub App the ALM side uses (devai-api-secrets).
+            - name: DEVAI_SCM_PROVIDER
+              value: "github"
+            - name: DEVAI_SCM_AUTH_METHOD
+              value: "github_app"
+            - name: DEVAI_GITHUB_ORG
+              value: {{ .Values.github | default dict | dig "org" "tesserix" | quote }}
+            - name: DEVAI_GITHUB_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: devai-api-secrets
+                  key: DEVAI_GITHUB_APP_ID
+            - name: DEVAI_GITHUB_APP_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: devai-api-secrets
+                  key: DEVAI_GITHUB_APP_PRIVATE_KEY
+            - name: DEVAI_GITHUB_APP_INSTALLATION_ID
+              valueFrom:
+                secretKeyRef:
+                  name: devai-api-secrets
+                  key: DEVAI_GITHUB_APP_INSTALLATION_ID
+            # ── Observability connectors (Datadog / New Relic / CloudWatch /
+            # Azure Monitor / Elasticsearch / Grafana). Configured in DevAI
+            # Settings → Observability, which writes the secret to GCP Secret
+            # Manager. To light a provider up: add the matching key to the
+            # `devai-api-secrets` ExternalSecret (external-secrets/prod/devai/)
+            # and restart — the env var populates and the fan-out starts using
+            # it. Every ref is `optional: true`, so the pod starts cleanly while
+            # a provider is unconfigured (the adapter just treats it as absent).
+            # In-cluster Prometheus needs nothing here — it's the default source.
+            {{- $obsKeys := list
+                "DEVAI_PROMETHEUS_TOKEN"
+                "DEVAI_DATADOG_API_KEY" "DEVAI_DATADOG_APP_KEY" "DEVAI_DATADOG_SITE"
+                "DEVAI_NEWRELIC_API_KEY" "DEVAI_NEWRELIC_ACCOUNT_ID"
+                "DEVAI_AWS_REGION" "AWS_ACCESS_KEY_ID" "AWS_SECRET_ACCESS_KEY" "DEVAI_CLOUDWATCH_LOG_GROUP"
+                "DEVAI_AZURE_WORKSPACE_ID" "DEVAI_AZURE_RESOURCE_ID"
+                "DEVAI_ELASTICSEARCH_URL" "DEVAI_ELASTICSEARCH_API_KEY" "DEVAI_ELASTICSEARCH_USERNAME" "DEVAI_ELASTICSEARCH_PASSWORD" "DEVAI_ELASTICSEARCH_INDEX"
+                "DEVAI_GRAFANA_URL" "DEVAI_GRAFANA_TOKEN" "DEVAI_GRAFANA_DATASOURCE_UID"
+            }}
+            {{- range $obsKeys }}
+            - name: {{ . }}
+              valueFrom:
+                secretKeyRef:
+                  name: devai-api-secrets
+                  key: {{ . }}
+                  optional: true
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
