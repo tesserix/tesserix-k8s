@@ -102,6 +102,20 @@ identical environment — defined once here so the two never drift.
 - name: DEVAI_MEMORY_PROVIDER
   value: {{ .Values.memory.provider | default "noop" | quote }}
 {{- end }}
+# ─── Settings capability (per-user/per-tenant connectors + secrets) ──
+# Connectors are persisted in the user_settings table; secret VALUES are
+# auto-provisioned into GCP Secret Manager via the secrets adapter (the
+# devai SA needs Secret Manager write IAM for gcp_sm to provision — until
+# then non-secret prefs work and secret writes return 409). See
+# devai/docs/SETTINGS_CAPABILITY.md.
+{{- if .Values.settings }}
+- name: DEVAI_SETTINGS_ENABLED
+  value: {{ .Values.settings.enabled | default true | quote }}
+- name: DEVAI_SECRETS_PROVIDER
+  value: {{ .Values.settings.secretsProvider | default "noop" | quote }}
+- name: DEVAI_SECRETS_GCP_PROJECT
+  value: {{ .Values.settings.secretsGcpProject | default .Values.gcp.projectId | default "" | quote }}
+{{- end }}
 # ─── K8s Job runtime (SDD blueprint runner) ──────────
 {{- if .Values.k8sRuntime }}
 - name: DEVAI_K8S_RUNTIME_ENABLED

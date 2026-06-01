@@ -574,3 +574,24 @@ CREATE INDEX IF NOT EXISTS idx_agent_crews_team ON agent_crews(team_id);
 ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS team_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS crew_id TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_runs_team ON pipeline_runs(team_id, created_at DESC);
+
+-- ============================================================
+-- Settings capability — per-user/per-tenant connectors + secret REFERENCES.
+-- Secret VALUES live only in GCP Secret Manager; this table stores prefs and
+-- the secret-name references, never the values. Resolution order at runtime is
+-- user -> team -> tenant -> global. See devai/docs/SETTINGS_CAPABILITY.md.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS user_settings (
+    scope         TEXT NOT NULL,                  -- user | team | tenant | global
+    scope_id      TEXT NOT NULL DEFAULT '',       -- uid / team_id / tenant_id; '' for global
+    connector_key TEXT NOT NULL,                  -- llm | scm | memory | slack | mcp | web_search
+    instance_id   TEXT NOT NULL DEFAULT 'default',-- stable id for multi connectors (MCP)
+    provider      TEXT NOT NULL DEFAULT '',       -- selected provider value
+    prefs         JSONB NOT NULL DEFAULT '{}'::jsonb,  -- non-secret field values
+    secret_refs   JSONB NOT NULL DEFAULT '{}'::jsonb,  -- field -> GCP SM secret id (NEVER values)
+    enabled       BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_by    TEXT NOT NULL DEFAULT '',
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (scope, scope_id, connector_key, instance_id)
+);
+CREATE INDEX IF NOT EXISTS idx_user_settings_scope ON user_settings(scope, scope_id);

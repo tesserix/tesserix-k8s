@@ -100,6 +100,19 @@ k8sRuntime:
 memory:
   provider: "pgvector"
 
+# Settings capability — per-user/per-tenant connectors + secrets.
+# secretsProvider stays "noop" until the devai SA
+# (app-secrets-devai-prod@…) is granted Secret Manager write IAM
+# (roles/secretmanager.admin). Flip to "gcp_sm" in the SAME commit that
+# grants the IAM so secret provisioning lights up; the user_settings
+# table is created by the db-schema-bootstrap CronJob. Until then the
+# Settings UI serves the catalog + non-secret prefs and secret writes
+# return a clear 409. See devai/docs/SETTINGS_CAPABILITY.md.
+settings:
+  enabled: true
+  secretsProvider: "noop"  # noop | env | gcp_sm
+  secretsGcpProject: "tesseracthub-480811"
+
 # Agentic control planes — these URLs become valid once the
 # infrastructure/agentregistry, agentgateway, kagent ArgoCD apps sync.
 # Port 12121 is aregistry's HTTP API (verified live 2026-05-25); 8080
