@@ -1,18 +1,18 @@
 -- Agentic Registry schema — single source of truth (db-schema-bootstrap owns it
 -- in production; the app's AUTO_MIGRATE is "false" there). Idempotent.
 --
--- PROD placement: the registry reuses the shared devai-postgres CNPG cluster.
--- This file is named devai_db.sql so the bootstrap applies it to the EXISTING
--- `devai_db` database (no CREATE DATABASE needed — the `devai` owner role has
--- no CREATEDB on this enableSuperuserAccess:false cluster). The registry lives
--- in its own `registry` schema, isolated from devai's `public` tables; the app
--- fully schema-qualifies every statement (registry.artifacts, ...).
+-- PROD placement: applied to the registry's OWN in-namespace CNPG cluster
+-- (agentregistry-postgres) by db-schema-bootstrap. The database
+-- `agentic_registry_db` is created by CNPG bootstrap, so the file is named
+-- agentic_registry_db.sql and the bootstrap just applies this idempotent DDL as
+-- its owner (`agentregistry`) — no CREATE DATABASE needed. The app fully
+-- schema-qualifies every statement (registry.artifacts, ...).
 --
--- NOTE: pgvector is intentionally omitted here — devai-postgres runs
--- ghcr.io/cloudnative-pg/postgresql:16.4 which has no `vector` extension. The
--- app is deployed with VECTOR_SEARCH=false. If the cluster image gains
--- pgvector later, add back the `CREATE EXTENSION vector` + embedding column +
--- hnsw index block (see the OSS embedded schema in internal/store/postgres.go).
+-- NOTE: pgvector is intentionally omitted — the CNPG image
+-- ghcr.io/cloudnative-pg/postgresql:16.4 has no `vector` extension, so the app
+-- runs with VECTOR_SEARCH=false. To enable semantic search later, switch the
+-- cluster to a pgvector-capable image and add back the `CREATE EXTENSION vector`
+-- + embedding column + hnsw index block (see internal/store/postgres.go).
 
 CREATE SCHEMA IF NOT EXISTS registry;
 

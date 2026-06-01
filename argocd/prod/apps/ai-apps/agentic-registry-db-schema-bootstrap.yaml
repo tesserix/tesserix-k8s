@@ -20,24 +20,24 @@ spec:
       values: |
         app: agentic-registry
 
-        # Provisions the registry's `registry` schema inside the EXISTING
-        # devai_db on the shared devai-postgres CNPG cluster. The schema file
-        # is named devai_db.sql so the bootstrap targets that database (it
-        # already exists, so no CREATE DATABASE — the `devai` owner role has no
-        # CREATEDB here). DDL is idempotent (CREATE ... IF NOT EXISTS).
-        # See charts/apps/db-schema-bootstrap/schemas/agentic-registry/devai/devai_db.sql
+        # Provisions the `registry` schema inside agentic_registry_db on the
+        # registry's OWN in-namespace CNPG cluster (agentregistry-postgres). The
+        # database is created by CNPG bootstrap, so the file is named
+        # agentic_registry_db.sql and the bootstrap just applies the (idempotent)
+        # DDL as its owner. See
+        # charts/apps/db-schema-bootstrap/schemas/agentic-registry/agentregistry-postgres/agentic_registry_db.sql
         targets:
-          - name: devai
-            host: devai-postgres-rw.devai.svc.cluster.local
+          - name: agentregistry-postgres
+            host: agentregistry-postgres-rw.agentregistry-system.svc.cluster.local
             port: 5432
-            user: devai
-            database: devai_db
-            secretName: devai-postgres-app-credentials
+            user: agentregistry
+            database: agentic_registry_db
+            secretName: agentregistry-postgres-app-credentials
             secretKey: password
   destination:
     server: https://kubernetes.default.svc
-    # Runs in the devai namespace where devai-postgres-app-credentials lives.
-    namespace: devai
+    # Runs in agentregistry-system where the CNPG credentials secret lives.
+    namespace: agentregistry-system
   syncPolicy:
     automated:
       prune: false
