@@ -1,0 +1,21 @@
+# The agentgateway data-plane Gateway. The agentgateway controller
+# (gatewayClassName: agentgateway) reconciles this into a proxy Deployment +
+# Service that serves the HTTPRoutes the route-sync CronJob renders. Without
+# this, the cluster has only the agentgateway control plane (xDS) and no port
+# serving /mcp/<name> traffic.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.gateway.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  gatewayClassName: {{ .Values.gateway.className }}
+  listeners:
+    - name: mcp
+      protocol: HTTP
+      port: {{ .Values.gateway.port }}
+      allowedRoutes:
+        namespaces:
+          from: {{ .Values.gateway.allowedRoutesFrom }}

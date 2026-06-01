@@ -1,0 +1,65 @@
+# agentgateway-route-sync — defaults
+#
+# Two pieces:
+#   1. A Gateway (gatewayClassName: agentgateway) whose listener the
+#      agentgateway controller reconciles into a data-plane proxy — this is
+#      what actually serves /mcp/<name> traffic (the agentgateway Service in
+#      this cluster is control-plane-only: 9978 xDS / 9093 / 9092).
+#   2. A CronJob that curls the registry's server-side export endpoint and
+#      applies the rendered AgentgatewayBackend + HTTPRoute objects. Re-runs
+#      are idempotent (server-side apply on stable resource names).
+
+namespace: agentgateway-system
+
+# The data-plane Gateway the HTTPRoutes attach to.
+gateway:
+  name: agentgateway-mcp
+  className: agentgateway
+  # HTTP listener the proxy serves /mcp/<name> on.
+  port: 8080
+  # Which namespaces' HTTPRoutes may attach. The route-sync writes routes into
+  # this same namespace, so "Same" is sufficient and tightest.
+  allowedRoutesFrom: Same
+
+# Registry connection — the export endpoint returns ready-to-apply YAML. Reads
+# are anonymous + mesh-gated (the agentgateway-system SA is allowed GET /v0/*),
+# so no bearer token is needed.
+registry:
+  endpoint: http://agentregistry.agentregistry-system.svc.cluster.local:12121
+  # Registry namespace to pull MCP servers from (where authored tools land).
+  sourceNamespace: devai
+  # Namespace image/package MCP servers run in (sandbox). The rendered Backend
+  # targets <name>.<sandboxNamespace>.svc.cluster.local for non-remote servers.
+  sandboxNamespace: agentgateway-sandbox
+
+# CronJob cadence + safety.
+cron:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  activeDeadlineSeconds: 180
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+
+images:
+  curl:
+    repository: curlimages/curl
+    tag: "8.11.1"
+  kubectl:
+    repository: bitnami/kubectl
+    tag: "1.31"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi
+
+serviceAccount:
+  create: true
+  name: agentgateway-route-sync

@@ -1,0 +1,95 @@
+# Route-sync: pull the registry's MCP servers as ready-to-apply agentgateway
+# routing YAML (rendered server-side by /v0/export/agentgateway, which reuses
+# the registry's tested adapter), then apply it. Idempotent — server-side apply
+# on stable resource names. Runs in agentgateway-system, whose SA the registry
+# authz already allows to GET /v0/*; the consumer-egress NetworkPolicy already
+# permits the :12121 hop, so no extra wiring is needed.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: agentgateway-route-sync
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cron.schedule | quote }}
+  concurrencyPolicy: {{ .Values.cron.concurrencyPolicy }}
+  startingDeadlineSeconds: {{ .Values.cron.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ .Values.cron.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cron.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: {{ .Values.cron.activeDeadlineSeconds }}
+      backoffLimit: {{ .Values.cron.backoffLimit }}
+      ttlSecondsAfterFinished: {{ .Values.cron.ttlSecondsAfterFinished }}
+      template:
+        metadata:
+          labels:
+            {{- include "agentgateway-route-sync.labels" . | nindent 12 }}
+        spec:
+          serviceAccountName: {{ .Values.serviceAccount.name }}
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            # Render: fetch the agentgateway routing YAML for every MCP server
+            # in the source namespace, parented to our data-plane Gateway.
+            - name: render
+              image: "{{ .Values.images.curl.repository }}:{{ .Values.images.curl.tag }}"
+              imagePullPolicy: {{ .Values.images.pullPolicy }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  URL="{{ .Values.registry.endpoint }}/v0/export/agentgateway"
+                  URL="${URL}?namespace={{ .Values.registry.sourceNamespace }}"
+                  URL="${URL}&targetNamespace={{ .Values.namespace }}"
+                  URL="${URL}&gateway={{ .Values.gateway.name }}"
+                  URL="${URL}&sandboxNamespace={{ .Values.registry.sandboxNamespace }}"
+                  echo "GET ${URL}"
+                  curl -sS --fail-with-body --max-time 30 "${URL}" -o /work/routes.yaml
+                  echo "rendered $(grep -c '^kind:' /work/routes.yaml || echo 0) object(s)"
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+          containers:
+            # Apply: server-side apply the rendered routes. Empty render (no MCP
+            # servers) is a no-op. NOTE: this create/updates only — pruning the
+            # routes of a deleted MCP server is a follow-up (objects carry the
+            # app.kubernetes.io/managed-by=agentic-registry label for that).
+            - name: apply
+              image: "{{ .Values.images.kubectl.repository }}:{{ .Values.images.kubectl.tag }}"
+              imagePullPolicy: {{ .Values.images.pullPolicy }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  if [ -s /work/routes.yaml ] && grep -q '^kind:' /work/routes.yaml; then
+                    kubectl apply --server-side --force-conflicts -f /work/routes.yaml
+                  else
+                    echo "no MCP servers to route — nothing to apply"
+                  fi
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+                  readOnly: true
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+          volumes:
+            - name: work
+              emptyDir: {}
