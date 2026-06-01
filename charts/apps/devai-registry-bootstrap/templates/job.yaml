@@ -58,24 +58,15 @@ spec:
               subPath: .gitconfig
               readOnly: true
       containers:
-        # Step 2: walk architecture/registry-seeds/ and POST each entry
-        # to aregistry's v0 HTTP API. The on-disk seeds use a K8s-CRD-
-        # like envelope (apiVersion / kind / metadata.name / spec) for
-        # readability + future reconciler use, but aregistry's API
-        # expects flat JSON bodies whose schemas it documents in
-        # /openapi.json. So we translate inline: load YAML, project
-        # metadata + spec into one flat dict, POST as application/json.
-        #
-        # Directory → endpoint map (verified live against /openapi.json
-        # on 2026-05-25):
-        #   skills/      → POST /v0/skills    (SkillJSON)
-        #   prompts/     → POST /v0/prompts   (PromptJSON)
-        #   mcp-servers/ → POST /v0/servers   (McpServerType)
-        #   agents/      → POST /v0/agents    (AgentJSON)
-        # `projects/` is NOT a real aregistry resource — those YAMLs
-        # describe DevAI's catalogue membership in tree-only form and
-        # are skipped here. Order matters: servers + skills + prompts
-        # must land before agents (which reference them).
+        # Step 2: walk architecture/registry-seeds/ and POST each entry to the
+        # registry. The seeds are full apiVersion/kind/metadata/spec envelopes,
+        # and our agentic-registry accepts them AS-IS at POST /v0/apply
+        # (decodeMultiDoc parses the YAML, Normalized() canonicalizes the
+        # apiVersion, store.Apply upserts on kind/namespace/name/tag). So no
+        # per-kind flattening is needed — we just POST each file's raw YAML.
+        # Order matters: projects + skills + prompts + servers must land before
+        # agents (which reference them). Auth is anonymous (mesh-gated), so no
+        # Authorization header.
         - name: upsert
           image: python:3.12-alpine
           command:
@@ -84,189 +75,65 @@ spec:
           args:
             - |
               set -euo pipefail
-              # PyYAML + requests aren't in the base image; pip-install at
-              # boot keeps the image size small at the cost of ~10s pod
-              # startup. Cache could be wired in via an emptyDir, but a
-              # ~50KB / ~100KB wheel pair downloads in well under a second.
-              pip install --quiet --no-cache-dir 'pyyaml==6.*' 'requests==2.*'
+              # Only `requests` is needed — we POST the seed YAML verbatim, so
+              # no client-side YAML parsing. Pip-install at boot keeps the image
+              # tiny (~100KB wheel, well under a second).
+              pip install --quiet --no-cache-dir 'requests==2.*'
 
               cat > /tmp/upsert.py <<'PYEOF'
-              import os, sys, time, json, glob, pathlib, yaml, requests
+              import os, sys, pathlib, requests
 
               SEEDS = pathlib.Path(os.environ["SEEDS_DIR"])
               ENDPOINT = os.environ["AREGISTRY_ENDPOINT"].rstrip("/")
-              JWT = os.environ["AREGISTRY_JWT"]
-              # `mcp-servers/` on disk → `/v0/servers` on the wire (aregistry's
-              # endpoint name; `mcp-servers` was Fiber's old reconciler name).
-              DIR_TO_PATH = {
-                  "skills":      "/v0/skills",
-                  "prompts":     "/v0/prompts",
-                  "mcp-servers": "/v0/servers",
-                  "agents":      "/v0/agents",
-              }
+
+              # The seeds are full apiVersion/kind/metadata/spec envelopes; our
+              # agentic-registry accepts them as-is at POST /v0/apply
+              # (decodeMultiDoc parses YAML, Normalized() canonicalizes the
+              # apiVersion, store.Apply upserts on kind/namespace/name/tag).
+              # Anonymous auth on this cluster (mesh-gated) — no Authorization
+              # header (a bearer would make the registry try to verify a real
+              # signed token and 401).
               SESSION = requests.Session()
-              # aregistry is configured with enableAnonymousAuth=true on
-              # this cluster (single-tenant, mesh-gated). Sending an
-              # Authorization header makes aregistry try to verify it as
-              # a real signed JWT, which fails because the secret we
-              # have on disk is the SIGNING key, not a minted token —
-              # 401 even though anonymous would have allowed the call.
-              # So we deliberately omit the header.
-              SESSION.headers.update({
-                  "Content-Type": "application/json",
-              })
-              _ = JWT  # retained for the day we switch back to signed-token auth
+              SESSION.headers.update({"Content-Type": "application/yaml"})
 
-              # aregistry's schemas are deliberately slim (verified from
-              # /openapi.json on 2026-05-25). DevAI's seed YAML carries
-              # richer metadata (tools, handoverSchema, contextKeys,
-              # limits, runtime, …) that the registry's API doesn't accept
-              # — POSTing those triggers HTTP 422 "unexpected property".
-              # The rich fields stay in the on-disk YAML; DevAI's Python
-              # registry client layers them in at runtime when the loader
-              # falls back to local seeds. Here we project only the
-              # schema-allowed subset onto the wire body.
-              # MCP server body shape (ServerJSON, verified live):
-              # required = [$schema, name, description, version];
-              # remote endpoints go under `remotes: [{type, url, headers}]`,
-              # NOT top-level `type`/`url`. The McpServerType in the
-              # OpenAPI is the embedded form used elsewhere, not the
-              # POST body — easy to miss without trying.
-              ALLOWED = {
-                  "Skill":     {"name","description","version","category","packages","remotes","repository","status","title","websiteUrl"},
-                  "MCPServer": {"$schema","name","description","version","remotes","packages","repository","title","websiteUrl"},
-                  "Agent":     {"name","description","version","image","language","framework","modelProvider","modelName","mcpServers","packages","prompts","remotes","repository","skills","status","telemetryEndpoint","title","updatedAt","websiteUrl"},
-                  "Prompt":    {"name","version","content","description"},
-              }
+              # Apply in dependency order: projects + skills + prompts + servers
+              # before agents (which reference them). Any other *.yaml under the
+              # seeds tree is swept up by the rglob fallback.
+              ORDER = ["projects", "skills", "prompts", "mcp-servers", "agents"]
+              ordered, seen = [], set()
+              for d in ORDER:
+                  p = SEEDS / d
+                  if p.is_dir():
+                      for f in sorted(p.glob("*.yaml")):
+                          ordered.append(f); seen.add(f)
+              for f in sorted(SEEDS.rglob("*.yaml")):
+                  if f not in seen:
+                      ordered.append(f)
 
-              def translate(doc, kind):
-                  spec = doc.get("spec") or {}
-                  name = doc.get("metadata", {}).get("name") or spec.get("name")
-                  src = {**spec, "name": name}
-                  # Per-kind defaults the schema requires but the seed
-                  # may not carry.
-                  if kind == "Skill":
-                      src.setdefault("version", "1")
-                      src.setdefault("title", spec.get("displayName") or name)
-                  elif kind == "Prompt":
-                      src.setdefault("version", "1")
-                      src.setdefault("content", spec.get("template") or spec.get("body") or "")
-                  elif kind == "MCPServer":
-                      # ServerJSON shape (verified against /openapi.json
-                      # on 2026-05-25):
-                      #   required: [$schema, name, description, version]
-                      #   remotes:  [{type, url, headers}]  (NO top-level type/url)
-                      #   description: max 100 chars
-                      #   name: ^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$
-                      #
-                      # The McpServerType in OpenAPI is the embedded form
-                      # used as a sub-property elsewhere, not the POST
-                      # body — easy to miss without an empirical probe.
-                      if "/" not in src.get("name", ""):
-                          src["name"] = f"devai/{src['name']}"
-                      src["$schema"] = "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json"
-                      desc = (src.get("description") or spec.get("description") or name).strip()
-                      if len(desc) > 100:
-                          desc = desc[:97].rstrip() + "..."
-                      src["description"] = desc
-                      src["version"] = str(spec.get("version") or "1")
-                      # aregistry's validator enforces that the remote
-                      # URL's host matches the publisher portion of the
-                      # name (e.g. devai/analyst-mcp ⇒ URL must be
-                      # https://devai/…). That contract is for public
-                      # MCP registries where the publisher IS a real
-                      # hostname; our in-cluster MCPs live at K8s
-                      # Service names (devai-api.devai.svc…), which the
-                      # validator refuses.
-                      #
-                      # So we register MCPs as catalog-only entries
-                      # (no remotes[]): the registry advertises that
-                      # devai/analyst-mcp etc. exist, and the DevAI
-                      # runtime resolves the actual URL from the
-                      # on-disk seed's spec.endpoint at dial time.
-                      # Drop every legacy / runtime-only field the
-                      # validator rejects.
-                      for legacy in (
-                          "type", "url", "endpoint", "authMode", "tools",
-                          "remotes",
-                      ):
-                          src.pop(legacy, None)
-                  elif kind == "Agent":
-                      src.setdefault("version", "1")
-                      # Required-by-schema fields with safe defaults so we
-                      # don't fail on incomplete seeds. Override later by
-                      # editing the YAML.
-                      src.setdefault("description", spec.get("description") or name)
-                      src.setdefault("image", "ghcr.io/tesserix/devai/devai:latest")
-                      src.setdefault("language", "python")
-                      src.setdefault("framework", "langgraph")
-                      llm = spec.get("llm") or {}
-                      src.setdefault("modelProvider", llm.get("provider") or "claude")
-                      src.setdefault("modelName", llm.get("model") or "claude-sonnet-4-20250514")
-                  allowed = ALLOWED.get(kind, set())
-                  out = {k: v for k, v in src.items() if k in allowed and v is not None}
-                  # aregistry insists on string version; YAML parses
-                  # `version: 1` as an int. Cast every kind uniformly.
-                  if "version" in out:
-                      out["version"] = str(out["version"])
-                  return out
+              ok = err = 0
+              for f in ordered:
+                  label = str(f.relative_to(SEEDS))
+                  try:
+                      r = SESSION.post(f"{ENDPOINT}/v0/apply", data=f.read_bytes(), timeout=30)
+                  except Exception as e:
+                      print(f"  ERROR {label}: {e}"); err += 1; continue
+                  if r.status_code == 200:
+                      print(f"  ok {label}"); ok += 1
+                  elif r.status_code == 207:
+                      # MultiStatus — at least one object in the doc had an issue.
+                      print(f"  partial (207) {label}: {r.text[:200]}"); ok += 1
+                  else:
+                      print(f"  FAIL ({r.status_code}) {label}: {r.text[:200]}"); err += 1
 
-              # Track non-fatal validation failures so the operator sees
-              # which seeds were rejected, but they don't block the rest
-              # of the catalog from landing. Today this is most useful
-              # for MCP server entries: the registry's MCP descriptor
-              # schema is the upstream MCP spec, which exposes per-type
-              # required-property mismatches we haven't translated yet.
-              FAILURES: list[str] = []
-
-              def post(path, body, label):
-                  for attempt in range(3):
-                      r = SESSION.post(f"{ENDPOINT}{path}", data=json.dumps(body), timeout=20)
-                      if 200 <= r.status_code < 300:
-                          print(f"  ok ({r.status_code}) {label}")
-                          return
-                      if r.status_code == 409 or (
-                          r.status_code == 400 and "duplicate version" in r.text
-                      ):
-                          print(f"  exists ({r.status_code}) {label}")
-                          return
-                      if r.status_code == 422:
-                          # Validation rejection — record + move on.
-                          print(f"  REJECTED (422) {label}: {r.text[:160]}")
-                          FAILURES.append(label)
-                          return
-                      print(f"  attempt {attempt+1} HTTP {r.status_code} {label}: {r.text[:200]}")
-                      time.sleep(2 ** attempt)
-                  print(f"  FAILED {label}")
-                  FAILURES.append(label)
-
-              total = 0
-              for dirname in ("skills", "prompts", "mcp-servers", "agents"):
-                  d = SEEDS / dirname
-                  if not d.is_dir():
-                      continue
-                  print(f"--- {dirname} ---")
-                  for f in sorted(d.glob("*.yaml")):
-                      doc = yaml.safe_load(f.read_text()) or {}
-                      kind = doc.get("kind", dirname.rstrip("s").title())
-                      body = translate(doc, kind)
-                      label = f"{dirname}/{f.name}"
-                      post(DIR_TO_PATH[dirname], body, label)
-                      total += 1
-              print(f"registry bootstrap complete: {total} entries processed, {len(FAILURES)} rejected")
-              if FAILURES:
-                  print("rejected:")
-                  for f in FAILURES:
-                      print(f"  - {f}")
-              # Soft success: don't fail the Job if rejections are
-              # confined to a single kind (currently mcp-servers). The
-              # DevAI runtime falls back to local YAML for that kind
-              # until the upstream MCP spec mismatches are resolved.
+              print(f"registry bootstrap complete: {ok} applied, {err} failed")
+              # Soft success: a stray non-seed/template file shouldn't wedge the
+              # whole catalog (the app's health gates on this Job). Fail only if
+              # nothing landed at all.
+              sys.exit(0 if ok > 0 else 1)
               PYEOF
 
               SEEDS_DIR=/workspace/devai/{{ .Values.seedSource.subdir }} \
                 AREGISTRY_ENDPOINT={{ .Values.aregistry.endpoint }} \
-                AREGISTRY_JWT="${AREGISTRY_JWT}" \
                 python /tmp/upsert.py
           env:
             - name: AREGISTRY_JWT
