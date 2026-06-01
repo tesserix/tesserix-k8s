@@ -19,7 +19,12 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Istio ingress gateway (webhooks)
+    # Istio ingress gateway (webhooks). Port 15008 is Istio ambient's HBONE
+    # tunnel port: in ambient mode the ztunnel/waypoint delivers ALL L7 traffic
+    # to the pod over 15008, so without it every mesh-routed request is dropped
+    # at L4 (Envoy "upstream connect error / connection termination") even
+    # though the app serves :8080 fine to the kubelet. 8080 is kept for the
+    # node-local/direct path.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -27,11 +32,15 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
-    # Pods in devai namespace (dashboards, SRE)
+        - port: 15008
+          protocol: TCP
+    # Pods in devai namespace (dashboards, auth-bff, SRE, the waypoint).
     - from:
         - podSelector: {}
       ports:
         - port: 8080
+          protocol: TCP
+        - port: 15008
           protocol: TCP
     # Monitoring (Prometheus)
     - from:
@@ -41,7 +50,21 @@ spec:
       ports:
         - port: 8080
           protocol: TCP
+        - port: 15008
+          protocol: TCP
   egress:
+    # Istio ambient HBONE (15008) to every in-cluster namespace. In ambient
+    # mode devai-api's outbound mesh calls (Postgres pooler, Redis, NATS, the
+    # registry, ai-gateway, agentgateway, kagent, Keycloak) all egress through
+    # the local ztunnel over 15008 — port-scoping egress to the app ports below
+    # silently breaks those mesh hops (manifests as asyncpg
+    # ConnectionDoesNotExistError, registry timeouts, etc.). The per-service
+    # rules below remain for any non-meshed/direct destinations.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 15008
+          protocol: TCP
     # PostgreSQL
     - to:
         - namespaceSelector:
@@ -123,11 +146,14 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Pods in devai namespace (SRE dashboard, ALM API)
+    # Pods in devai namespace (SRE dashboard, ALM API). 15008 = Istio ambient
+    # HBONE — required for mesh-routed traffic to reach the pod (see devai-api).
     - from:
         - podSelector: {}
       ports:
         - port: 8090
+          protocol: TCP
+        - port: 15008
           protocol: TCP
     # Monitoring
     - from:
@@ -137,7 +163,15 @@ spec:
       ports:
         - port: 8090
           protocol: TCP
+        - port: 15008
+          protocol: TCP
   egress:
+    # Istio ambient HBONE (15008) to in-cluster namespaces — see devai-api.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 15008
+          protocol: TCP
     # PostgreSQL
     - to:
         - namespaceSelector:
