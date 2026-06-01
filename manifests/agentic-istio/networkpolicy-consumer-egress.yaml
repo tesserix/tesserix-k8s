@@ -8,14 +8,20 @@
 # allow-kagent-egress) don't list agentregistry-system, so the traffic was
 # dropped before reaching the waypoint (curl saw HTTP 000).
 #
-# These ADDITIVE egress policies open ONLY tcp/12121 to agentregistry-system —
-# the registry HTTP API — NOT 5432, so the consumers still cannot reach the
-# registry's Postgres. Writes remain denied at the waypoint
-# (agentregistry-deny-writes-from-non-bootstrap), so this grants read-only
-# catalog access and nothing more.
+# These ADDITIVE egress policies allow the consumers to reach
+# agentregistry-system. Note: this is full-namespace egress (all ports), which
+# matches devai's working allow-devai-egress rule — Istio ambient routes app
+# traffic over ztunnel HBONE (tcp/15008), so a port-scoped 12121-only rule is
+# dropped before it ever reaches the registry. The actual access control is NOT
+# the network port here but the defense-in-depth above it:
+#   * mTLS    — ztunnel auto-mTLS between consumer and registry.
+#   * waypoint AuthorizationPolicy — GETs on /v0/* allowed for these namespaces;
+#     all writes DENIED (agentregistry-deny-writes-from-non-bootstrap). So the
+#     consumers get a strict READ-ONLY role.
+#   * DB creds — the registry's Postgres needs credentials the consumers don't
+#     hold, so reaching tcp/5432 buys nothing.
 #
-# Delivered via the agentic-istio app (not istio-config) to keep the change
-# scoped and port-tight.
+# Delivered via the agentic-istio app (not istio-config) to keep it scoped.
 ##############################################################################
 ---
 apiVersion: networking.k8s.io/v1
@@ -35,9 +41,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: agentregistry-system
-      ports:
-        - protocol: TCP
-          port: 12121
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -56,6 +59,3 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: agentregistry-system
-      ports:
-        - protocol: TCP
-          port: 12121
