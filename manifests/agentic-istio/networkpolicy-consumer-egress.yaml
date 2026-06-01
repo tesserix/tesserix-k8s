@@ -1,0 +1,61 @@
+##############################################################################
+# Let the agentic control-plane consumers reach the registry API.
+#
+# agentgateway (agentgateway-system) and kagent (kagent-system) poll the
+# catalog from agentregistry.agentregistry-system.svc:12121, and the registry's
+# ingress + the L7 AuthorizationPolicy already permit their (read-only) calls.
+# But their egress NetworkPolicies (allow-agentgateway-egress /
+# allow-kagent-egress) don't list agentregistry-system, so the traffic was
+# dropped before reaching the waypoint (curl saw HTTP 000).
+#
+# These ADDITIVE egress policies open ONLY tcp/12121 to agentregistry-system —
+# the registry HTTP API — NOT 5432, so the consumers still cannot reach the
+# registry's Postgres. Writes remain denied at the waypoint
+# (agentregistry-deny-writes-from-non-bootstrap), so this grants read-only
+# catalog access and nothing more.
+#
+# Delivered via the agentic-istio app (not istio-config) to keep the change
+# scoped and port-tight.
+##############################################################################
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-agentgateway-to-registry-egress
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentregistry-system
+      ports:
+        - protocol: TCP
+          port: 12121
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kagent-to-registry-egress
+  namespace: kagent-system
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentregistry-system
+      ports:
+        - protocol: TCP
+          port: 12121
