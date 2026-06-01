@@ -127,6 +127,15 @@ spec:
       cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
       traffic.sidecar.istio.io/excludeInboundPorts: "5432,8000"
       traffic.istio.io/excludeInboundPorts: "5432,8000"
+    {{- with .Values.inheritedLabels }}
+    # In Istio ambient namespaces that bind an L7 waypoint (e.g.
+    # agentregistry-system), the waypoint mangles raw PostgreSQL traffic and the
+    # connection is reset ("server closed the connection unexpectedly"). Setting
+    # istio.io/use-waypoint: none here routes DB traffic L4-only (ztunnel),
+    # which is what clients need. Empty by default (devai etc. have no waypoint).
+    labels:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
 
   # =========================================================================
   # Affinity — spread replicas across different nodes
