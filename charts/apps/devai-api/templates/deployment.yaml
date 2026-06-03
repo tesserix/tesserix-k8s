@@ -23,6 +23,12 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      # Stop Kubernetes from injecting legacy Docker-link service env vars
+      # (e.g. DEVAI_MCP_HUB_PORT=tcp://<ip>:8095 from the devai-mcp-hub
+      # Service). With env_prefix=DEVAI_, those collide with typed Settings
+      # fields (mcp_hub_port:int) and crash pydantic on startup. The app reads
+      # everything it needs from explicit env, never service links.
+      enableServiceLinks: false
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
