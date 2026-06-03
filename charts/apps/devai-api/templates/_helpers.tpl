@@ -137,7 +137,9 @@ identical environment — defined once here so the two never drift.
   # string when supplied via env. Keep this as a single line.
   value: {{ .Values.k8sRuntime.runnerImagePerStack | default "{}" | quote }}
 - name: DEVAI_PREVIEW_DOMAIN
-  value: {{ .Values.k8sRuntime.previewDomain | default "devai.tesserix.app" | quote }}
+  value: {{ .Values.k8sRuntime.previewDomain | default "tesserix.app" | quote }}
+- name: DEVAI_PREVIEW_NAMESPACE
+  value: {{ .Values.k8sRuntime.previewNamespace | default "devai-previews" | quote }}
 - name: DEVAI_EDITOR_BRIDGE_IMAGE
   value: {{ .Values.k8sRuntime.editorBridgeImage | default "ghcr.io/tesserix/devai/devai-editor-bridge:main" | quote }}
 {{- end }}

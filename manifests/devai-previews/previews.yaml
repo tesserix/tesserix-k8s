@@ -1,0 +1,92 @@
+##############################################################################
+# devai-previews — namespace for ephemeral live-preview workloads.
+#
+# The devai-api pod (SA: devai-api in ns devai) runs the spin_preview_pod stage
+# inline, creating a PVC + Deployment (dev-server + editor-bridge) + Service +
+# VirtualService per preview session here. Routing + auth: the per-preview VS
+# sends preview-<id>.tesserix.app to devai-auth-bff (devai ns), which checks the
+# devai_session cookie and reverse-proxies to the Service of the same name here.
+#
+# Isolation: the mesh deny-all baseline + per-app AuthorizationPolicies in the
+# product namespaces already block a preview pod from reaching prod services
+# (its SPIFFE identity is in no allow-list). The policy below bounds INGRESS to
+# previews to the BFF + ingress gateway only.
+##############################################################################
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devai-previews
+  labels:
+    istio-injection: enabled
+    devai.tesserix.app/role: previews
+    pod-security.kubernetes.io/enforce: baseline
+---
+# Cap total preview footprint (memory-only per platform policy; no cpu limits).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: devai-previews-quota
+  namespace: devai-previews
+spec:
+  hard:
+    pods: "40"
+    requests.memory: 24Gi
+    limits.memory: 48Gi
+    persistentvolumeclaims: "30"
+    requests.storage: 300Gi
+---
+# Lets the devai-api SA (in ns devai) create/patch/delete the preview workloads
+# in this namespace. Read-only cluster access already comes from devai-api's
+# ClusterRole; this adds the WRITE grant, scoped to this namespace only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: devai-previews-manager
+  namespace: devai-previews
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["create", "get", "list", "watch", "patch", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "persistentvolumeclaims", "pods", "pods/log"]
+    verbs: ["create", "get", "list", "watch", "patch", "update", "delete"]
+  - apiGroups: ["networking.istio.io"]
+    resources: ["virtualservices"]
+    verbs: ["create", "get", "list", "watch", "patch", "update", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: devai-previews-manager
+  namespace: devai-previews
+subjects:
+  - kind: ServiceAccount
+    name: devai-api
+    namespace: devai
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: devai-previews-manager
+---
+# Ingress to preview pods is allowed only from the auth-bff (devai ns) and the
+# ingress gateway — never directly from other workloads. Kubelet probes carry
+# no identity, so health checks are allowed unauthenticated.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-bff-and-gateway
+  namespace: devai-previews
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/devai/sa/devai-auth-bff"]
+    - from:
+        - source:
+            namespaces: ["istio-ingress", "istio-system"]
+    # Kubelet readiness/liveness probes (no source identity).
+    - to:
+        - operation:
+            paths: ["/", "/healthz", "/__vite_ping"]
+            methods: ["GET"]
