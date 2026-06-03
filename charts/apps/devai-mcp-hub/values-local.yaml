@@ -1,0 +1,37 @@
+# Local / kind overlay for devai-mcp-hub. Use with:
+#   sandboxctl deploy --chart ../tesserix-k8s/charts/apps/devai-mcp-hub \
+#     --name devai-mcp-hub --values values-local.yaml
+#
+# Only flips values that already exist in values.yaml — prod behaviour unchanged.
+
+# Image built locally and loaded into kind (same ALM image devai-api uses).
+image:
+  repository: devai
+  tag: local
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Local aregistry (the kind sandbox registry, reached in-cluster).
+registry:
+  url: "http://agentregistry.agentregistry-system.svc.cluster.local:8080"
+  defaultTenant: "devai"
+
+# No downstream jwt token locally (downstreams run authMode=none).
+serviceToken:
+  secret:
+    name: ""
+    key: "DEVAI_MCP_HUB_SERVICE_TOKEN"
+
+# No GCP Workload Identity in kind.
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+
+autoscaling:
+  enabled: false
+
+# Reach the Hub via:
+#   kubectl port-forward svc/devai-mcp-hub 8095:8095 -n devai

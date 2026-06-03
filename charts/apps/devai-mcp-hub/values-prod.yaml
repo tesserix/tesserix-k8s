@@ -1,0 +1,30 @@
+# Production overrides for devai-mcp-hub.
+
+replicaCount: 1
+
+# Bump to roll the Deployment so :latest is re-pulled.
+podAnnotations:
+  deployedAt: "phase4"
+
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "devai-sre-monitor@tesseracthub-480811.iam.gserviceaccount.com"
+
+registry:
+  url: "http://agentregistry.agentregistry-system.svc.cluster.local:12121"
+  defaultTenant: "devai"
+
+# Downstream authMode=jwt service token, synced via the existing devai-api
+# ExternalSecret (key optional — pod starts cleanly if absent).
+serviceToken:
+  secret:
+    name: "devai-api-secrets"
+    key: "DEVAI_MCP_HUB_SERVICE_TOKEN"

@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "devai-mcp-hub.fullname" . }}
+  labels:
+    {{- include "devai-mcp-hub.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "devai-mcp-hub.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "devai-mcp-hub.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "devai-mcp-hub.serviceAccountName" . }}
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Shares the ALM `devai` image; run the Hub ASGI app instead of `serve`.
+          command: ["python", "-m", "devai.mcphub"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            # Registry = discovery source of truth (both env names kept in sync,
+            # matching devai-api: the new src/devai/registry client reads
+            # DEVAI_REGISTRY_URL, older agentic code reads DEVAI_AREGISTRY_URL).
+            - name: DEVAI_REGISTRY_URL
+              value: {{ .Values.registry.url | quote }}
+            - name: DEVAI_AREGISTRY_URL
+              value: {{ .Values.registry.url | quote }}
+            - name: DEVAI_REGISTRY_DEFAULT_TENANT
+              value: {{ .Values.registry.defaultTenant | default "devai" | quote }}
+            {{- if .Values.serviceToken.secret.name }}
+            # Downstream authMode=jwt service token (optional — pod starts if absent).
+            - name: DEVAI_MCP_HUB_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.serviceToken.secret.name }}
+                  key: {{ .Values.serviceToken.secret.key | default "DEVAI_MCP_HUB_SERVICE_TOKEN" }}
+                  optional: true
+            {{- end }}
+            - name: GCP_PROJECT
+              value: {{ .Values.gcp.projectId | default "" | quote }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 5
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

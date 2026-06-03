@@ -1,0 +1,73 @@
+# Default values for devai-mcp-hub.
+#
+# The Hub shares the ALM `devai` image and overrides the container command to
+# `python -m devai.mcphub` (its own ASGI app on its own Deployment, isolated so a
+# downstream MCP outage or a chatty client can't take down devai-api). It is
+# fully registry-driven: it discovers downstream MCPServers from the registry, so
+# there is nothing topological to configure here — only operational knobs.
+
+replicaCount: 1
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8095
+  targetPort: 8095
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+env:
+  DEVAI_HOST: "0.0.0.0"
+  DEVAI_MCP_HUB_PORT: "8095"
+  DEVAI_LOG_LEVEL: "info"
+  DEVAI_MCP_HUB_ENABLED: "true"
+  DEVAI_MCP_HUB_REFRESH_SECONDS: "60"
+  DEVAI_MCP_HUB_CONNECT_TIMEOUT: "15"
+
+# Registry = discovery source of truth. The Hub reads kind:MCPServer from here.
+registry:
+  # aregistry HTTP API base URL (same value devai-api uses).
+  url: "http://agentregistry.agentregistry-system.svc.cluster.local:12121"
+  defaultTenant: "devai"
+
+# Service token presented DOWNSTREAM for authMode=jwt servers. When
+# secret.name is set, DEVAI_MCP_HUB_SERVICE_TOKEN is sourced from it (optional);
+# otherwise no bearer is injected (fine for authMode=none/header downstreams).
+serviceToken:
+  secret:
+    name: ""
+    key: "DEVAI_MCP_HUB_SERVICE_TOKEN"
+
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+
+podAnnotations:
+  holdApplicationUntilProxyStarts: "true"
+
+podLabels: {}
