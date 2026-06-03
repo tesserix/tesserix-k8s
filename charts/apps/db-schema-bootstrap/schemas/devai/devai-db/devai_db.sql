@@ -636,3 +636,25 @@ CREATE TABLE IF NOT EXISTS sre_schedules (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_sre_schedules_enabled ON sre_schedules(enabled);
+
+-- ============================================================
+-- Live previews — per-task ephemeral preview environments
+-- One row per running preview (devai/src/devai/preview/). Runtime resources
+-- (PVC/Deployment/Service/VirtualService) live in the devai-previews namespace,
+-- named after `deployment`. fe_url is the unique forwarded host
+-- (preview-<id>.tesserix.app) gated by devai-auth-bff.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS preview_sessions (
+    id             TEXT PRIMARY KEY,
+    repo           TEXT NOT NULL,
+    ref            TEXT NOT NULL DEFAULT 'main',
+    owner          TEXT NOT NULL DEFAULT 'operator',
+    fe_url         TEXT NOT NULL DEFAULT '',
+    deployment     TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'starting',   -- starting | running | failed | stopped
+    last_access_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_preview_owner ON preview_sessions(owner, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_preview_target ON preview_sessions(repo, ref, owner) WHERE status <> 'stopped';
