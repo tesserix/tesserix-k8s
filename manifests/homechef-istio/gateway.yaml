@@ -1,0 +1,45 @@
+# =============================================================================
+# HomeChef Istio Gateway
+# =============================================================================
+# Lives in the `homechef` namespace and selects the dedicated gateway workload
+# provisioned by argocd/prod/infrastructure/homechef-ingress-gateway.yaml.
+#
+# Why a dedicated gateway:
+#   The shared istio-ingressgateway in `istio-ingress` namespace has
+#   RequestAuthentication policies (jwt-auth-customer / jwt-auth-internal)
+#   that validate every `Authorization: Bearer` against legacy Keycloak
+#   realms. HomeChef is fully on Google Identity Platform — its auth-bff
+#   mints AES-GCM-encrypted session blobs that aren't JWTs, so the shared
+#   gateway rejects mobile login traffic at the filter level. Other
+#   workloads (Fanzone) still depend on those Keycloak policies, so we
+#   can't remove them. A dedicated workload with a different `istio`
+#   label is the cleanest separation.
+#
+# Routing chain:
+#   Cloudflare → cloudflared (homechef-prod tunnel) → this gateway
+#   (homechef-ingressgateway ClusterIP) → homechef VirtualServices.
+#
+# TLS terminates at the Cloudflare edge, so this Gateway only serves
+# plain HTTP on port 80. Cluster-internal traffic between cloudflared
+# and the gateway is in-mesh and trusted; no need to terminate again
+# inside the cluster.
+# =============================================================================
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: homechef-gateway
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+    app.kubernetes.io/component: gateway
+spec:
+  selector:
+    istio: homechef-ingressgateway
+  servers:
+    - hosts:
+        - fe3dr.com
+        - "*.fe3dr.com"
+      port:
+        name: http
+        number: 80
+        protocol: HTTP
