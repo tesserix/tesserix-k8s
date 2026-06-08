@@ -21,12 +21,14 @@ spec:
       valueFiles:
         - values.yaml
         - values-prod.yaml
-      # CHART-7: seed with a concrete main-<sha> (mcp-hub shares the `devai`
-      # image), not :latest. Kargo (kargo-devai:prod) overwrites this on each
-      # promotion; ignoreDifferences keeps selfHeal from reverting it.
+      # mcp-hub shares the `devai` image with devai-api. It is NOT in the Kargo
+      # `prod` stage's app list (which updates api/sre/dashboards/auth-bff/
+      # registry), so this Git value is the source of truth — pin it to the same
+      # main-<sha> the api runs and bump it when the api image advances. TODO:
+      # add devai-mcp-hub to the Kargo prod stage so it tracks api automatically.
       parameters:
         - name: image.tag
-          value: "main-922249b"
+          value: "main-2a4c0b6"
   destination:
     server: https://kubernetes.default.svc
     namespace: devai
