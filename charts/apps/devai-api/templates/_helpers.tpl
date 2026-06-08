@@ -271,13 +271,18 @@ identical environment — defined once here so the two never drift.
 # PAT branch instead of GitHub App tokens; the rest of the
 # client surface (list_installation_repos / create_repo /
 # list_issues) works the same.
+# PAT kept as a fallback credential, but auth method is now the GitHub App
+# (App ID + private key + installation 138842580, synced via devai-api-secrets
+# from GCP SM prod-devai-github-app-*). The App isn't subject to the org's
+# classic-PAT block, so org-level GraphQL (Projects v2) works once the App has
+# the Organization → Projects: R/W permission granted.
 - name: DEVAI_SCM_TOKEN
   valueFrom:
     secretKeyRef:
       name: devai-github-pat
       key: token
 - name: DEVAI_SCM_AUTH_METHOD
-  value: "pat"
+  value: "github_app"
 - name: DEVAI_KEYCLOAK_CLIENT_SECRET
   valueFrom:
     secretKeyRef:
