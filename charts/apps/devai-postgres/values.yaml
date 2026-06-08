@@ -68,6 +68,12 @@ postgresql:
 backup:
   enabled: true
   destinationPath: "gs://tesseract-prod-backups-in/devai-postgres"
+  # Fresh archive serverName: the default (cluster name "devai-postgres")
+  # collided with a deleted incarnation's archive (base backups dated
+  # 2026-04-15) left in the bucket, so barman refused to archive and WAL filled
+  # the disk. Archiving to a clean path fixes ContinuousArchiving. The orphaned
+  # .../devai-postgres/devai-postgres/ prefix can be deleted at leisure.
+  serverName: "devai-postgres-v2"
   retentionPolicy: "30d"
   serviceAccount: "app-secrets-devai-prod@tesseracthub-480811.iam.gserviceaccount.com"
 

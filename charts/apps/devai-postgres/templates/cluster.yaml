@@ -89,6 +89,13 @@ spec:
   backup:
     barmanObjectStore:
       destinationPath: {{ .Values.backup.destinationPath | quote }}
+      {{- with .Values.backup.serverName }}
+      # Pin the archive serverName to a fresh path. The default (cluster name)
+      # collided with a deleted devai-postgres incarnation's archive still in
+      # the bucket, so barman refused to archive ("Expected empty archive") and
+      # WAL piled up until the disk filled. A clean serverName archives fresh.
+      serverName: {{ . | quote }}
+      {{- end }}
       googleCredentials:
         gkeEnvironment: true
       wal:
