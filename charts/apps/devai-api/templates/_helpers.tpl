@@ -151,7 +151,7 @@ identical environment — defined once here so the two never drift.
 - name: DEVAI_K8S_JOB_BACKOFF_LIMIT
   value: {{ .Values.k8sRuntime.jobBackoffLimit | default 0 | quote }}
 - name: DEVAI_RUNNER_IMAGE
-  value: {{ .Values.k8sRuntime.runnerImage | default "ghcr.io/tesserix/devai/devai-runner:main" | quote }}
+  value: {{ .Values.k8sRuntime.runnerImage | default "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main" | quote }}
 - name: DEVAI_RUNNER_IMAGE_PER_STACK
   # pydantic-settings parses dict fields from a JSON-encoded
   # string when supplied via env. Keep this as a single line.
@@ -161,7 +161,7 @@ identical environment — defined once here so the two never drift.
 - name: DEVAI_PREVIEW_NAMESPACE
   value: {{ .Values.k8sRuntime.previewNamespace | default "devai-previews" | quote }}
 - name: DEVAI_EDITOR_BRIDGE_IMAGE
-  value: {{ .Values.k8sRuntime.editorBridgeImage | default "ghcr.io/tesserix/devai/devai-editor-bridge:main" | quote }}
+  value: {{ .Values.k8sRuntime.editorBridgeImage | default "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-editor-bridge:main" | quote }}
 {{- end }}
 # Agentic control planes (aregistry / agentgateway / kagent)
 {{- if .Values.agenticControlPlane }}
