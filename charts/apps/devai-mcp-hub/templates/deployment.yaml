@@ -33,6 +33,15 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Container hardening — drop all caps, no privilege escalation,
+          # RuntimeDefault seccomp.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           # Shares the ALM `devai` image; run the Hub ASGI app instead of `serve`.
           command: ["python", "-m", "devai.mcphub"]
           ports:

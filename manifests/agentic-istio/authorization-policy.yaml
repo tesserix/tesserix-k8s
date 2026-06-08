@@ -100,19 +100,22 @@ spec:
     - from:
         - source:
             principals: ["cluster.local/ns/devai/sa/devai-auth-bff"]
-    # Catalog READS — any agentic-stack consumer may GET /v0/*.
+    # Catalog READS — any agentic-stack consumer may GET /v0/* and /v0.1/*
+    # (the v0.1 MCP-interop read surface mirrors v0).
     - from:
         - source:
             namespaces: ["agentgateway-system", "kagent-system", "devai"]
       to:
         - operation:
             methods: ["GET"]
-            paths: ["/v0/*"]
+            paths: ["/v0/*", "/v0.1/*"]
     # Catalog WRITES — the registry-bootstrap Job's SA (seed reconcile)
     # and the devai-api SA (publish-on-author: when an operator composes
     # an agent / skill / tool / blueprint in the dashboard, devai-api
     # publishes it to the shared catalog). Both are mesh-identified SAs;
-    # a workload outside this list cannot publish fake artifacts.
+    # a workload outside this list cannot publish fake artifacts. Paths
+    # cover the full write surface (/v0/*, /v0.1/*, /mcp) so the matching
+    # DENY below can't strand a legitimate writer.
     - from:
         - source:
             principals:
@@ -121,7 +124,7 @@ spec:
       to:
         - operation:
             methods: ["POST", "PUT", "PATCH", "DELETE"]
-            paths: ["/v0/*"]
+            paths: ["/v0/*", "/v0.1/*", "/mcp", "/mcp/*"]
     # Kubelet probes
     - to:
         - operation:
@@ -218,6 +221,12 @@ spec:
       name: waypoint
   action: DENY
   rules:
+    # /v0.1/* carries the same write surface as /v0/* (publish, status
+    # PATCH, MCP interop). With the app at anonymous=admin, scoping the
+    # DENY to only /v0/* left /v0.1/publish and PATCH /v0.1/.../status
+    # reachable by any in-mesh workload (CHART-5). /mcp is included too so
+    # an in-mesh caller can't drive mutating hub tools without going
+    # through an allowed writer SA.
     - from:
         - source:
             notPrincipals:
@@ -227,7 +236,7 @@ spec:
       to:
         - operation:
             methods: ["POST", "PUT", "PATCH", "DELETE"]
-            paths: ["/v0/*"]
+            paths: ["/v0/*", "/v0.1/*", "/mcp", "/mcp/*"]
 ---
 # ai-gateway DENY — close access from anything outside devai.
 # allow-mesh-internal would let intra-cluster pods (including pods in

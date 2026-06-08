@@ -22,6 +22,21 @@ spec:
             summary: "CNPG instance {{ "{{" }} $labels.pod {{ "}}" }} is down"
             description: "PostgreSQL instance {{ "{{" }} $labels.pod {{ "}}" }} in cluster {{ .Values.clusterName }} has been down for more than 5 minutes."
 
+        # Cluster not Ready — surfaces the CNPG blind spot where ArgoCD reports
+        # the Application Healthy while the underlying Cluster CR has
+        # Ready=False (the failure mode that hid the 2026-06 outage). The CNPG
+        # exporter stops publishing cnpg_collector_up for the instance when the
+        # primary can't start, so absent()/== 0 catches a fully-down cluster.
+        - alert: CNPGClusterNotReady
+          expr: absent(cnpg_collector_up{cluster={{ .Values.clusterName | quote }}}) == 1 or max(cnpg_collector_up{cluster={{ .Values.clusterName | quote }}}) == 0
+          for: 5m
+          labels:
+            severity: critical
+            cluster: {{ .Values.clusterName }}
+          annotations:
+            summary: "CNPG cluster {{ .Values.clusterName }} is not Ready"
+            description: "No healthy instance is reporting for cluster {{ .Values.clusterName }}. The database is likely fully down even if ArgoCD shows the app Healthy. Check the Cluster CR status, WAL volume usage, and continuous archiving."
+
         # Replication lag (standby is behind primary)
         - alert: CNPGReplicationLag
           expr: cnpg_pg_replication_lag{cluster={{ .Values.clusterName | quote }}} > 30

@@ -2,6 +2,27 @@
 
 replicaCount: 1
 
+# CHART-7: prod must never resolve to a floating :latest. Concrete main-<sha>
+# seed; the ArgoCD app's helm parameter (also pinned) is what Kargo overwrites
+# per promotion, and ignoreDifferences on /spec/source/helm/parameters keeps
+# selfHeal from reverting it.
+image:
+  tag: "main-922249b"
+
+# ─── Auth gate (DELIBERATE FLIP — sequence AFTER new images ship) ────────────
+# Turns the in-app auth check from advisory into blocking so anonymous mutating
+# pipeline / scm / onboarding / preview / approval calls are rejected (401)
+# instead of falling through with a synthetic principal. This is the chart half
+# of CODE-1; the matching DEVAI_AUTH_BFF_SHARED_SECRET (wired in
+# templates/_helpers.tpl from the devai-auth-bff-secrets ExternalSecret) lets
+# the X-Forwarded-* trust path be validated. Per the runbook this values flip is
+# applied ONLY after the auth-aware images are rolled, otherwise legitimate
+# unauthenticated callers break.
+# WAVE-2 flip — keep FALSE until the auth-aware images are live, then set true
+# (tesserix-k8s/docs/devai-security-hardening-runbook.md §5). Flipping before
+# the new images roll WILL break login.
+requireAuth: false
+
 # Bumping this annotation rolls the deployment so :main gets re-pulled.
 # fee0326 = drawio fix; carries everything since e417d62 including:
 #   - c450608 feat(agentic): aregistry profile + agentgateway wiring

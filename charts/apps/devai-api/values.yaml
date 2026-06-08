@@ -5,7 +5,10 @@ replicaCount: 1
 image:
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai
   pullPolicy: Always
-  tag: "latest"
+  # CHART-7: no floating :latest. Concrete main-<sha> seed tag; Kargo
+  # (kargo-devai:prod) overwrites this via the ArgoCD app's helm parameter on
+  # every promotion, with ignoreDifferences keeping selfHeal from reverting it.
+  tag: "main-922249b"
 
 imagePullSecrets:
   - name: ghcr-secret
@@ -20,6 +23,12 @@ service:
 
 rbac:
   create: true  # ClusterRole for ArgoCD CRDs, K8s resources, Istio, cert-manager
+
+# Namespaced Role/RoleBinding letting devai-api spawn the SDD runtime's Jobs/
+# Deployments/Services/VirtualServices (runtime-rbac.yaml). Default off so a
+# bare `helm template` renders; values-prod.yaml enables it in prod.
+k8sRuntime:
+  enabled: false
 
 serviceAccount:
   create: true

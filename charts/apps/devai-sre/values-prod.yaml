@@ -2,6 +2,15 @@
 
 replicaCount: 1
 
+# ─── Auth gate (DELIBERATE FLIP — sequence AFTER new images ship) ────────────
+# Blocks anonymous mutating / sensitive SRE reads (costs/incidents/topology)
+# instead of falling through with a synthetic principal. Chart half of CODE-1;
+# DEVAI_AUTH_BFF_SHARED_SECRET (wired in templates/deployment.yaml from the
+# devai-auth-bff-secrets ExternalSecret) validates the X-Forwarded-* trust
+# path. Applied per runbook only after the auth-aware images are rolled.
+# WAVE-2 flip — keep FALSE until the auth-aware images are live (runbook §5).
+requireAuth: false
+
 # Bumping this annotation rolls the deployment so :latest gets re-pulled.
 podAnnotations:
   deployedAt: "fe42b87"
@@ -55,5 +64,12 @@ memory:
 
 # Agentic control planes (read-only for SRE — it doesn't create agents).
 agenticControlPlane:
-  aregistryUrl: "http://agentregistry.agentregistry-system.svc.cluster.local:8080"
-  agentgatewayUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local"
+  # CHART-14: the registry Service exposes HTTP on 12121 (-> targetPort 8080),
+  # not 8080. Port 8080 is the container port and is unrouted, so SRE registry
+  # reads silently failed. Match the route-sync / registry-bootstrap endpoints.
+  aregistryUrl: "http://agentregistry.agentregistry-system.svc.cluster.local:12121"
+  # The devai-ai-gateway chart renders its Service as `ai-gateway` (verified
+  # live in agentgateway-system, owned by the devai-ai-gateway ArgoCD app);
+  # there is NO `devai-ai-gateway` Service. It listens on 8080 (the original
+  # value omitted the port and defaulted to 80, which was unrouted).
+  agentgatewayUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080"

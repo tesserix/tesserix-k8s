@@ -54,6 +54,15 @@ spec:
         - name: worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Container hardening — drop all caps, no privilege escalation,
+          # RuntimeDefault seccomp. Mirrors the API container.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           # The worker requires temporalio, which is a hard dependency of the
           # devai package — any freshly built devai image ships it.
           command: ["python", "-m", "devai.orchestration.worker"]

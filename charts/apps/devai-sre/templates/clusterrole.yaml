@@ -7,6 +7,14 @@ metadata:
     {{- include "devai-sre.labels" . | nindent 4 }}
 rules:
   # Core resources
+  #
+  # NOTE: `secrets` is intentionally NOT granted here. The SRE agent is
+  # LLM-fed and also holds GitHub write creds, so cluster-wide secret read
+  # is the single largest privilege concentration + a secrets→LLM exfil
+  # path (CHART-4). For secret existence/age the agent reads the
+  # ExternalSecret / SecretStore CRs already granted below; if it ever needs
+  # the live Secret objects, scope a namespaced Role to the audited
+  # namespaces only — never a cluster-wide get/list/watch on Secrets.
   - apiGroups: [""]
     resources:
       - namespaces
@@ -15,7 +23,6 @@ rules:
       - services
       - endpoints
       - configmaps
-      - secrets
       - events
       - nodes
       - persistentvolumes

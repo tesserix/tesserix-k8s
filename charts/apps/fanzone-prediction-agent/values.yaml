@@ -131,6 +131,19 @@ jwt:
   secretName: "fanzone-jwt-secret"
   secretKey: "jwt-secret"
 
+# DEP-6: in the Istio ambient namespace the user container can start before
+# ztunnel redirection is ready, so the first DB connect hits ConnectionRefused
+# and the Knative revision fails with ExitCode3. This initContainer blocks the
+# main container until fanzone-postgres-rw:5432 is reachable through the mesh,
+# giving redirection time to settle (and surviving a slow DB rollout). Disable
+# only if the app's own startup retry budget is sufficient.
+waitForPostgres:
+  enabled: true
+  # busybox `nc -z` is enough for a TCP reachability probe (no DB auth needed).
+  image: "busybox:1.36"
+  timeoutSeconds: 180
+  intervalSeconds: 3
+
 # Knative
 knative:
   enabled: false

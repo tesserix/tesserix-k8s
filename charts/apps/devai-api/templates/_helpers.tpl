@@ -52,6 +52,26 @@ identical environment — defined once here so the two never drift.
 - name: {{ $key }}
   value: {{ $value | quote }}
 {{- end }}
+# ─── Auth gate ────────────────────────────────────────
+# DEVAI_REQUIRE_AUTH flips the in-app enforce_auth check from advisory to
+# blocking: when true, anonymous mutating calls are rejected (401) instead
+# of falling through with a synthetic principal. Default false preserves
+# the current (pre-flip) behavior — the deliberate prod flip lives in
+# values-prod.yaml and is sequenced AFTER the new images ship.
+- name: DEVAI_REQUIRE_AUTH
+  value: {{ .Values.requireAuth | default false | quote }}
+# Shared secret the auth-bff stamps as X-Auth-Bff-Secret so the
+# X-Forwarded-* trust path can be validated (identity._forward_trusted).
+# Sourced from the same secret the auth-bff is provisioned from. Marked
+# optional so the pod still starts before the key is added to the
+# devai-auth-bff-secrets ExternalSecret (auth-bff lane owns that file);
+# until both sides carry it, the gate fails closed on forwarded identity.
+- name: DEVAI_AUTH_BFF_SHARED_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: devai-auth-bff-secrets
+      key: DEVAI_AUTH_BFF_SHARED_SECRET
+      optional: true
 # Database — password must be defined before URL for $(VAR) expansion
 - name: DB_PASSWORD
   valueFrom:

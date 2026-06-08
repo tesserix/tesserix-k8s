@@ -108,24 +108,44 @@ spec:
         app.kubernetes.io/part-of: devai
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
+      # Pod hardening — run rootless. The nginx-unprivileged image (uid 101)
+      # listens on 8080 and writes its pid to /tmp by default, so no root is
+      # needed. RuntimeDefault seccomp.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: nginx
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          # nginx doesn't natively envsubst its config; expand the
-          # template into /etc/nginx/nginx.conf at startup, then exec
-          # nginx -g daemon=off. We use envsubst (preinstalled in
-          # nginx:alpine via gettext) restricted to the two variables
-          # we care about so unrelated $vars in the template (e.g.
-          # $request_uri, $http_accept) survive intact.
+          # Container hardening — drop all caps, no privilege escalation,
+          # read-only root fs. The rendered config + cache + run + pid all
+          # live on emptyDir mounts (below), so the root fs stays read-only.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          # nginx doesn't natively envsubst its config; expand the template
+          # into a writable scratch path (/tmp/nginx.conf — the root fs is
+          # read-only), then exec `nginx -c` against it. We use envsubst
+          # (preinstalled via gettext) restricted to the two variables we
+          # care about so unrelated $vars in the template (e.g. $request_uri,
+          # $http_accept) survive intact.
           command:
             - /bin/sh
             - -c
             - >
               envsubst '$ANTHROPIC_API_KEY $OPENAI_API_KEY'
               < /etc/nginx/templates/nginx.conf.template
-              > /etc/nginx/nginx.conf
-              && exec nginx -g 'daemon off;'
+              > /tmp/nginx.conf
+              && exec nginx -c /tmp/nginx.conf -g 'daemon off;'
           env:
             - name: ANTHROPIC_API_KEY
               valueFrom:
@@ -159,6 +179,10 @@ spec:
               mountPath: /var/cache/nginx
             - name: run
               mountPath: /var/run
+            # Writable scratch for the rendered config + nginx pid file
+            # (the root fs is read-only).
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
@@ -168,6 +192,8 @@ spec:
         - name: cache
           emptyDir: {}
         - name: run
+          emptyDir: {}
+        - name: tmp
           emptyDir: {}
 ---
 apiVersion: v1

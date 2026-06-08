@@ -21,6 +21,30 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: devai
+  # DEP-2: ArgoCD has no built-in health assessment for the CNPG Cluster CR, so
+  # a Ready=False / continuous-archiving-broken cluster reported the Application
+  # Healthy and hid the 2026-06 outage. The durable fix is a cluster-scoped
+  # ArgoCD resource health customization for postgresql.cnpg.io/Cluster in the
+  # argocd-cm ConfigMap (Lua: degraded unless status.phase == "Cluster in
+  # healthy state" and a Ready=True condition). That ConfigMap is managed
+  # outside this repo's app-of-apps; until it lands, the CNPGClusterNotReady /
+  # CNPGWALArchiveFailing PrometheusRule alerts (devai-postgres chart) are the
+  # surfacing path. Apply the same to agentregistry-postgres.
+  ignoreDifferences:
+    # DEP-8: the external-secrets.io admission webhook defaults several fields
+    # on ExternalSecret that are not present in the rendered manifest, so the
+    # app drifts to OutOfSync forever. RespectIgnoreDifferences in syncOptions
+    # is a no-op without an explicit spec.ignoreDifferences, so list them here.
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /spec/target/deletionPolicy
+        - /spec/template/engineVersion
+        - /spec/template/mergePolicy
+      jqPathExpressions:
+        - .spec.data[].remoteRef.conversionStrategy
+        - .spec.data[].remoteRef.decodingStrategy
+        - .spec.data[].remoteRef.metadataPolicy
   syncPolicy:
     automated:
       prune: false

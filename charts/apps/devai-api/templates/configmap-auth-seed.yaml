@@ -21,10 +21,12 @@ data:
         roles      JSONB NOT NULL DEFAULT '[]'::jsonb,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    {{- /* CHART-14: double single quotes so a value containing ' can't break
+           out of the SQL literal (escaping/injection in the local seed). */}}
     {{- range .Values.localAuth.users }}
     INSERT INTO devai_local_users (username, password, email, name, roles)
-    VALUES ('{{ .username }}', '{{ .password }}', '{{ .email | default "" }}',
-            '{{ .name | default "" }}', '{{ .roles | default list | toJson }}'::jsonb)
+    VALUES ('{{ .username | replace "'" "''" }}', '{{ .password | replace "'" "''" }}', '{{ .email | default "" | replace "'" "''" }}',
+            '{{ .name | default "" | replace "'" "''" }}', '{{ .roles | default list | toJson | replace "'" "''" }}'::jsonb)
     ON CONFLICT (username) DO UPDATE
       SET password = EXCLUDED.password, email = EXCLUDED.email,
           name = EXCLUDED.name, roles = EXCLUDED.roles;

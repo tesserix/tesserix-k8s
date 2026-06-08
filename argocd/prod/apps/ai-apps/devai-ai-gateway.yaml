@@ -27,6 +27,19 @@ spec:
       kind: Deployment
       jsonPointers:
         - /status/terminatingReplicas
+    # DEP-8: external-secrets.io webhook-defaulted fields drift to OutOfSync
+    # forever; ignore them explicitly (RespectIgnoreDifferences alone is a
+    # no-op without spec.ignoreDifferences).
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /spec/target/deletionPolicy
+        - /spec/template/engineVersion
+        - /spec/template/mergePolicy
+      jqPathExpressions:
+        - .spec.data[].remoteRef.conversionStrategy
+        - .spec.data[].remoteRef.decodingStrategy
+        - .spec.data[].remoteRef.metadataPolicy
   syncPolicy:
     automated:
       prune: true

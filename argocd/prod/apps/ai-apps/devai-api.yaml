@@ -21,9 +21,13 @@ spec:
       valueFiles:
         - values.yaml
         - values-prod.yaml
+      # CHART-7: seed with a concrete main-<sha> (not :latest). The ArgoCD helm
+      # parameter overrides the chart value, so it must also be pinned here.
+      # Kargo (kargo-devai:prod) overwrites it on each promotion;
+      # ignoreDifferences (ai-apps-app-of-apps) keeps selfHeal from reverting.
       parameters:
         - name: image.tag
-          value: "latest"
+          value: "main-922249b"
   destination:
     server: https://kubernetes.default.svc
     namespace: devai

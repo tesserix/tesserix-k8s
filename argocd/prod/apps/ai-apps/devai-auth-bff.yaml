@@ -18,13 +18,14 @@ spec:
     targetRevision: HEAD
     path: charts/apps/devai-auth-bff
     helm:
-      # Kargo-managed: kargo-devai:prod writes the freight tag into
-      # this parameter on every promotion. The `latest` default keeps
-      # the chart deployable by hand before Kargo has produced its
-      # first freight.
+      # Kargo-managed: kargo-devai:prod writes the freight tag into this
+      # parameter on every promotion. CHART-7: seed with a concrete main-<sha>
+      # (not :latest) so selfHeal never reconciles the auth boundary to a
+      # floating tag before Kargo's first promotion. ignoreDifferences on
+      # /spec/source/helm/parameters (ai-apps-app-of-apps) lets Kargo overwrite.
       parameters:
         - name: image.tag
-          value: "latest"
+          value: "main-eab49a8"
   destination:
     server: https://kubernetes.default.svc
     namespace: devai

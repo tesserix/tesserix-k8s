@@ -14,9 +14,15 @@ resources:
 
 gcp:
   projectId: "tesseracthub-480811"
+  # CHART-14: the hub previously reused the devai-sre-monitor GCP SA via Workload
+  # Identity, bleeding that SA's monitoring/secret access into a hub pod that
+  # only needs the registry, Redis, and its mounted ExternalSecret K8s Secret
+  # (devai-api-secrets) — none of which require a GCP identity. Disable WI so the
+  # pod has no GCP credential. If the hub ever needs direct GCP SM access, give
+  # it its OWN minimal SA (e.g. devai-mcp-hub@...) rather than reusing SRE's.
   workloadIdentity:
-    enabled: true
-    gcpServiceAccount: "devai-sre-monitor@tesseracthub-480811.iam.gserviceaccount.com"
+    enabled: false
+    gcpServiceAccount: ""
 
 registry:
   url: "http://agentregistry.agentregistry-system.svc.cluster.local:12121"

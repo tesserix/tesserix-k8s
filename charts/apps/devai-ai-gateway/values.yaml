@@ -1,8 +1,12 @@
 # devai-ai-gateway — defaults
 namespace: agentgateway-system
 
+# Rootless nginx — the unprivileged image runs as uid 101, listens on 8080,
+# and writes its pid/temp under /tmp + /var/cache, so the pod can run
+# non-root with a read-only root fs (see deployment securityContext). Drop-in
+# config-compatible with stock nginx:alpine (same envsubst + gettext).
 image:
-  repository: nginx
+  repository: nginxinc/nginx-unprivileged
   tag: "1.27-alpine"
   pullPolicy: IfNotPresent
 
@@ -14,10 +18,8 @@ replicaCount: 1
 
 resources:
   requests:
-    cpu: 25m
     memory: 32Mi
   limits:
-    cpu: 200m
     memory: 128Mi
 
 # ExternalSecret pulls both LLM keys (Anthropic + OpenAI) from GCP SM.

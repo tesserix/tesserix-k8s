@@ -36,6 +36,15 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Container hardening — drop all caps, no privilege escalation,
+          # RuntimeDefault seccomp.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
@@ -64,6 +73,25 @@ spec:
                   key: password
             - name: DEVAI_REDIS_URL
               value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            # ─── Auth gate ────────────────────────────────────────
+            # DEVAI_REQUIRE_AUTH flips the in-app enforce_auth check from
+            # advisory to blocking (401 on anonymous mutating / sensitive
+            # SRE calls). Default false preserves current behavior; the
+            # deliberate prod flip lives in values-prod.yaml, sequenced
+            # AFTER the new images ship.
+            - name: DEVAI_REQUIRE_AUTH
+              value: {{ .Values.requireAuth | default false | quote }}
+            # Shared secret the auth-bff stamps as X-Auth-Bff-Secret so the
+            # X-Forwarded-* trust path can be validated. Sourced from the
+            # same secret the auth-bff is provisioned from; optional so the
+            # pod still starts before the key lands in the
+            # devai-auth-bff-secrets ExternalSecret (auth-bff lane owns it).
+            - name: DEVAI_AUTH_BFF_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: devai-auth-bff-secrets
+                  key: DEVAI_AUTH_BFF_SHARED_SECRET
+                  optional: true
             # ─── Fiber-style blueprint runtime + adapters ─────────
             {{- if .Values.pipeline }}
             - name: DEVAI_PIPELINE_ENABLED
