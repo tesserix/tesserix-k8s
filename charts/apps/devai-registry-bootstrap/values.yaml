@@ -17,10 +17,12 @@ seedSource:
 # (chart upstream — verified live: kubectl get svc -n agentregistry-system
 # agentregistry → ports{http: 12121 → targetPort 8080}). Pointing at
 # :8080 directly fails because that's the container port, not the
-# Service port we route through. Auth is anonymous (mesh-gated) — no JWT
-# secret is wired (the old aregistry.jwtSecret was dead config).
+# Service port we route through.
 aregistry:
   endpoint: http://agentregistry.agentregistry-system.svc.cluster.local:12121
+  jwtSecret:
+    name: aregistry-jwt
+    key: jwt-secret
 
 # Authenticated git clone — the source repo (tesserix/devai) is private,
 # so we drop in the `devai-github-pat-gitconfig` ExternalSecret (managed
@@ -31,29 +33,18 @@ aregistry:
 github:
   gitconfigSecret: devai-github-pat-gitconfig
 
-# fetch-seeds (clone) image — alpine + git is all we need. There is no
-# values-prod.yaml for this chart, so THIS file's values render in prod; set
-# `digest` to pin immutably once a known-good digest is recorded.
 image:
+  # alpine + curl + git is all we need. Pinned via digest in real values-prod.
   repository: alpine/git
   tag: v2.40.1
-  # digest: "sha256:<pin-here>"   # when set, takes precedence over tag
-  pullPolicy: IfNotPresent
-
-# upsert (POST seeds) image. Prefer a small internal image with `requests`
-# pre-baked over installing it from PyPI at every Job start (supply-chain +
-# availability risk; the script still falls back to a pip install only if
-# requests isn't importable). Pin by digest in prod.
-upsertImage:
-  repository: python
-  tag: "3.12-alpine"
-  # digest: "sha256:<pin-here>"   # when set, takes precedence over tag
   pullPolicy: IfNotPresent
 
 resources:
   requests:
+    cpu: 50m
     memory: 64Mi
   limits:
+    cpu: 200m
     memory: 256Mi
 
 # Run via Argo as a normal sync (we won't use Argo's `hook` lifecycle so
