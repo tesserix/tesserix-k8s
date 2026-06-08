@@ -110,6 +110,16 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Container hardening — drop all caps, no privilege escalation,
+          # RuntimeDefault seccomp. (readOnlyRootFilesystem is NOT set: the
+          # app/runtime writes to paths that aren't emptyDir-backed here.)
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - name: http
               containerPort: {{ .Values.service.targetPort }}

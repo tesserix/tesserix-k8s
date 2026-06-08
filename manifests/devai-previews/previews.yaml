@@ -7,10 +7,18 @@
 # sends preview-<id>.tesserix.app to devai-auth-bff (devai ns), which checks the
 # devai_session cookie and reverse-proxies to the Service of the same name here.
 #
-# Isolation: the mesh deny-all baseline + per-app AuthorizationPolicies in the
-# product namespaces already block a preview pod from reaching prod services
-# (its SPIFFE identity is in no allow-list). The policy below bounds INGRESS to
-# previews to the BFF + ingress gateway only.
+# Isolation: preview pods execute ARBITRARY untrusted repo code (npm/pip/go
+# install + dev servers). Two independent controls bound the blast radius:
+#   * INGRESS — the mesh deny-all baseline + per-app AuthorizationPolicies in
+#     the product namespaces block a preview pod from reaching prod services
+#     (its SPIFFE identity is in no allow-list). The AuthorizationPolicy below
+#     bounds INGRESS to previews to the BFF + ingress gateway only.
+#   * EGRESS — the NetworkPolicy below denies all egress except cluster DNS,
+#     so a malicious dependency cannot hit the GKE metadata server
+#     (169.254.169.254) for Workload-Identity token theft or exfiltrate the
+#     mounted secrets to the internet / product namespaces. (Mesh
+#     AuthorizationPolicies do NOT bound egress to non-mesh destinations like
+#     the metadata IP — only a NetworkPolicy does.)
 ##############################################################################
 apiVersion: v1
 kind: Namespace
@@ -19,7 +27,12 @@ metadata:
   labels:
     istio-injection: enabled
     devai.tesserix.app/role: previews
-    pod-security.kubernetes.io/enforce: baseline
+    # restricted PSA — preview pods run untrusted code, so enforce the
+    # strictest Pod Security Standard (non-root, drop ALL caps, no
+    # privilege escalation, seccomp RuntimeDefault). The preview pod spec
+    # in job_spec.py must satisfy these or admission rejects the pod.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
 ---
 # Cap total preview footprint (memory-only per platform policy; no cpu limits).
 apiVersion: v1
@@ -34,6 +47,90 @@ spec:
     limits.memory: 48Gi
     persistentvolumeclaims: "30"
     requests.storage: 300Gi
+---
+# ServiceAccount for the preview pods themselves. Preview pods need NO Kubernetes
+# API access — automountServiceAccountToken is false so no SA token is projected
+# into the (untrusted) container, and the SA carries NO Workload-Identity
+# annotation so even a stolen token grants zero GCP IAM. The preview pod spec
+# (job_spec.py) references this SA by name; it must exist in THIS namespace or
+# SA admission rejects the pod (the devai-runner SA only exists in ns devai).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: devai-preview-runner
+  namespace: devai-previews
+  labels:
+    app.kubernetes.io/name: devai-preview-runner
+    app.kubernetes.io/part-of: devai
+    app.kubernetes.io/component: preview-runner
+automountServiceAccountToken: false
+---
+# Default-DENY egress for preview pods. Untrusted repo code runs here, so the
+# only allowed egress is cluster DNS (so the dev server / editor-bridge can
+# resolve their own in-namespace Service). Everything else — the GKE metadata
+# server (169.254.169.254/32), product namespace pod/service CIDRs, and the
+# public internet — is implicitly denied by the absence of a matching rule.
+#
+# If a future preview flow needs package installs, do NOT widen this to
+# 0.0.0.0/0; add a dedicated egress rule to an allow-listed package
+# proxy / egress gateway Service and keep the metadata IP + product CIDRs out.
+# (The explicit ipBlock except entries below document the deny intent and stay
+# correct even if a broader egress rule is ever appended.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: devai-previews-default-deny-egress
+  namespace: devai-previews
+  labels:
+    app.kubernetes.io/name: devai-previews
+    app.kubernetes.io/component: security
+spec:
+  # Scope to preview workloads only (so any future namespace utility pod is
+  # governed by its own policy).
+  podSelector:
+    matchLabels:
+      devai.tesserix.app/role: preview
+  policyTypes:
+    - Egress
+  egress:
+    # Cluster DNS only (kube-dns in kube-system). No other egress is allowed.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Belt-and-braces: a second, pod-wide egress policy that, even if a broader
+# egress allow is ever added, keeps the metadata server and the RFC1918
+# product CIDRs unreachable. NetworkPolicy is additive, so this does not by
+# itself grant any egress — it documents and pins the deny boundary by
+# selecting all pods with only the DNS allow.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: devai-previews-egress-dns-only
+  namespace: devai-previews
+  labels:
+    app.kubernetes.io/name: devai-previews
+    app.kubernetes.io/component: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
 ---
 # Lets the devai-api SA (in ns devai) create/patch/delete the preview workloads
 # in this namespace. Read-only cluster access already comes from devai-api's
@@ -50,6 +147,16 @@ rules:
   - apiGroups: [""]
     resources: ["services", "persistentvolumeclaims", "pods", "pods/log"]
     verbs: ["create", "get", "list", "watch", "patch", "update", "delete"]
+  # ConfigMaps — the preview flow seeds a per-session ConfigMap (e.g. the
+  # dev-server bootstrap / editor config). Without create the seeder 403s.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "get", "list", "watch", "patch", "update", "delete"]
+  # Events — the dashboard surfaces preview pod failures with
+  # kubectl-describe-style output, which reads the Pod's events.
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["networking.istio.io"]
     resources: ["virtualservices"]
     verbs: ["create", "get", "list", "watch", "patch", "update", "delete"]

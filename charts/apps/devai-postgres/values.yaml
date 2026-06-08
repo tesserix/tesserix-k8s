@@ -18,7 +18,9 @@ imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
 storageSize: 10Gi
 storageClass: standard-rwo-retain
-walStorageSize: 5Gi
+# WAL volume sized to comfortably hold the inactive-slot retention cap
+# (max_slot_wal_keep_size below) plus headroom for checkpoint/archive lag.
+walStorageSize: 10Gi
 
 resources:
   requests:
@@ -54,8 +56,11 @@ postgresql:
   log_min_duration_statement: "1000"
   # Replica query safety
   hot_standby_feedback: "on"
-  # WAL safety cap — prevent unbounded growth from inactive slots
-  max_slot_wal_keep_size: "10GB"
+  # WAL safety cap — prevent unbounded growth from inactive slots.
+  # Kept well below walStorageSize (10Gi) so a stuck/inactive replication slot
+  # is force-trimmed before it can fill the WAL volume and crash the instance
+  # (the cause of the 2026-06 outage where the 10GB cap exceeded a 5Gi PVC).
+  max_slot_wal_keep_size: "2GB"
   # Performance monitoring (CNPG auto-loads extension)
   pg_stat_statements.track: "all"
   pg_stat_statements.max: "10000"

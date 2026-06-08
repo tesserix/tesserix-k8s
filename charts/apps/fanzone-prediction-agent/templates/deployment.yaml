@@ -31,6 +31,29 @@ spec:
       serviceAccountName: {{ include "fanzone-prediction-agent.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.waitForPostgres.enabled }}
+      # DEP-6: wait for Postgres reachability through the ambient mesh before the
+      # app starts (avoids the ztunnel-redirection startup race).
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.waitForPostgres.image | quote }}
+          command:
+            - sh
+            - -c
+            - |
+              end=$(( $(date +%s) + {{ .Values.waitForPostgres.timeoutSeconds }} ))
+              until nc -z {{ .Values.database.host }} {{ .Values.database.port }}; do
+                if [ "$(date +%s)" -ge "$end" ]; then
+                  echo "timed out waiting for {{ .Values.database.host }}:{{ .Values.database.port }}" >&2
+                  exit 1
+                fi
+                echo "waiting for {{ .Values.database.host }}:{{ .Values.database.port }}..."
+                sleep {{ .Values.waitForPostgres.intervalSeconds }}
+              done
+              echo "postgres reachable"
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:

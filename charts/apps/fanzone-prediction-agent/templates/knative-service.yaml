@@ -34,6 +34,32 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "fanzone-prediction-agent.serviceAccountName" . }}
+      {{- if .Values.waitForPostgres.enabled }}
+      # DEP-6: wait for Postgres to be reachable through the ambient mesh before
+      # starting the app, avoiding the ztunnel-redirection startup race that
+      # failed Knative revision 00006 (ConnectionRefused -> ExitCode3).
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.waitForPostgres.image | quote }}
+          command:
+            - sh
+            - -c
+            - |
+              end=$(( $(date +%s) + {{ .Values.waitForPostgres.timeoutSeconds }} ))
+              until nc -z {{ .Values.database.host }} {{ .Values.database.port }}; do
+                if [ "$(date +%s)" -ge "$end" ]; then
+                  echo "timed out waiting for {{ .Values.database.host }}:{{ .Values.database.port }}" >&2
+                  exit 1
+                fi
+                echo "waiting for {{ .Values.database.host }}:{{ .Values.database.port }}..."
+                sleep {{ .Values.waitForPostgres.intervalSeconds }}
+              done
+              echo "postgres reachable"
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- end }}
       containers:
         - image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
