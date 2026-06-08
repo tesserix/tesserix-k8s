@@ -112,14 +112,17 @@ k8sRuntime:
   jobTtlSeconds: 3600
   jobBackoffLimit: 0
   # Single runner base image until per-stack variants ship.
-  runnerImage: "ghcr.io/tesserix/devai/devai-runner:main"
+  # MUST be the asia-south1 GAR mirror, never ghcr.io — runner Job pods pull via
+  # the node GCP SA (no ghcr pull secret), so a ghcr image ImagePullBackOffs and
+  # the stage times out. The GAR pull-through (ghcr-remote) mirrors ghcr lazily.
+  runnerImage: "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main"
   # Stack-specific runner images. Until per-stack variants ship, every
   # stack falls back to the base devai-runner — the runner entrypoint
   # discovers what to do from the agent's metadata, not the image tag.
-  runnerImagePerStack: '{"default":"ghcr.io/tesserix/devai/devai-runner:main","nextjs":"ghcr.io/tesserix/devai/devai-runner:main","vite":"ghcr.io/tesserix/devai/devai-runner:main","go":"ghcr.io/tesserix/devai/devai-runner:main","python":"ghcr.io/tesserix/devai/devai-runner:main"}'
+  runnerImagePerStack: '{"default":"asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main","nextjs":"asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main","vite":"asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main","go":"asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main","python":"asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main"}'
   previewDomain: "tesserix.app"
   previewNamespace: "devai-previews"
-  editorBridgeImage: "ghcr.io/tesserix/devai/devai-editor-bridge:main"
+  editorBridgeImage: "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-editor-bridge:main"
 
 # Memory adapter — pgvector is the production default (reuses the
 # same Postgres + pgvector cluster the rest of DevAI already uses).
