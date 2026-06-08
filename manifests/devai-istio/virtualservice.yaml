@@ -197,6 +197,15 @@ spec:
     - match:
         - uri:
             prefix: /
+      headers:
+        response:
+          # Edge override of the SRE dashboard CSP — same hash-vs-unsafe-inline
+          # bug as the ALM dashboard (a script-src hash makes browsers ignore
+          # 'unsafe-inline', blocking Next.js inline scripts -> blank screen).
+          # Overwrite with a working CSP (no hash; frame-src 'none' since the SRE
+          # dashboard frames nothing). Remove once the corrected app image ships.
+          set:
+            content-security-policy: "default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebaseapp.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.tesserix.app wss://*.tesserix.app https://cloudflareinsights.com; frame-src 'none'; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'"
       route:
         - destination:
             host: devai-sre-dashboard.devai.svc.cluster.local
