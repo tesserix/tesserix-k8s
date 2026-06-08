@@ -154,6 +154,17 @@ spec:
     - from:
         - source:
             namespaces: ["kagent-system"]
+    # The agentgateway DATA PLANE (Gateway "agentgateway-mcp", SA
+    # agentgateway-mcp in this namespace) dials the controller's xDS on
+    # :9978 for its routing config. Without this the waypoint returns
+    # "RBAC: access denied" on every XDS pull (controller shows clients:0)
+    # and the data-plane pod crashloops, so MCP traffic never flows.
+    - from:
+        - source:
+            principals: ["cluster.local/ns/agentgateway-system/sa/agentgateway-mcp"]
+      to:
+        - operation:
+            ports: ["9978"]
     # Metrics scrape from the monitoring stack on :9092.
     - from:
         - source:
