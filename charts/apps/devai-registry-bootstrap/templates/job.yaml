@@ -22,14 +22,6 @@ spec:
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       restartPolicy: OnFailure
-      # Pod hardening — run non-root with RuntimeDefault seccomp. Both the
-      # clone and upsert images run fine as an unprivileged user.
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        runAsGroup: 65532
-        seccompProfile:
-          type: RuntimeDefault
       initContainers:
         # Step 1: shallow-clone the DevAI repo to /workspace.
         #
@@ -43,15 +35,6 @@ spec:
         - name: fetch-seeds
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          # Container hardening — drop all caps, no privilege escalation,
-          # RuntimeDefault seccomp.
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            seccompProfile:
-              type: RuntimeDefault
           # Resilient clone: try the credentialed clone first (private repo via
           # the url.insteadOf rewrite in the mounted .gitconfig). If the PAT is
           # missing/expired AND the repo is public, fall back to an anonymous
@@ -94,34 +77,17 @@ spec:
         # agents (which reference them). Auth is anonymous (mesh-gated), so no
         # Authorization header.
         - name: upsert
-          # Pinned via digest in values (.Values.upsertImage). Prefer an image
-          # with `requests` pre-baked (a small internal python+requests image)
-          # so the Job doesn't reach out to PyPI at every start (supply-chain +
-          # availability risk). The pip-install below is a fallback that only
-          # runs when requests isn't already importable.
-          image: "{{ .Values.upsertImage.repository }}{{ if .Values.upsertImage.digest }}@{{ .Values.upsertImage.digest }}{{ else }}:{{ .Values.upsertImage.tag }}{{ end }}"
-          imagePullPolicy: {{ .Values.upsertImage.pullPolicy }}
-          # Container hardening — drop all caps, no privilege escalation,
-          # RuntimeDefault seccomp.
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-            seccompProfile:
-              type: RuntimeDefault
+          image: python:3.12-alpine
           command:
             - /bin/sh
             - -c
           args:
             - |
               set -euo pipefail
-              # `requests` is the only dependency (we POST the seed YAML
-              # verbatim — no client-side YAML parsing). Use it if already
-              # baked into the image; only fall back to a PyPI install when
-              # it's missing, so the happy path never touches the network.
-              python -c 'import requests' 2>/dev/null \
-                || pip install --quiet --no-cache-dir 'requests==2.*'
+              # Only `requests` is needed — we POST the seed YAML verbatim, so
+              # no client-side YAML parsing. Pip-install at boot keeps the image
+              # tiny (~100KB wheel, well under a second).
+              pip install --quiet --no-cache-dir 'requests==2.*'
 
               cat > /tmp/upsert.py <<'PYEOF'
               import os, sys, pathlib, requests
@@ -178,11 +144,12 @@ spec:
               SEEDS_DIR=/workspace/devai/{{ .Values.seedSource.subdir }} \
                 AREGISTRY_ENDPOINT={{ .Values.aregistry.endpoint }} \
                 python /tmp/upsert.py
-          # NOTE: no Authorization env — auth is anonymous (mesh-gated) on this
-          # cluster, so the upsert POSTs carry no bearer (a real bearer would
-          # make the registry try to verify a signed token and 401). The old
-          # AREGISTRY_JWT secret wiring was dead (never read by the script) and
-          # has been removed.
+          env:
+            - name: AREGISTRY_JWT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.aregistry.jwtSecret.name }}
+                  key: {{ .Values.aregistry.jwtSecret.key }}
           volumeMounts:
             - name: workspace
               mountPath: /workspace
