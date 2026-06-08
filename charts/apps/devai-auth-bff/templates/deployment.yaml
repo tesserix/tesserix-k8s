@@ -85,6 +85,15 @@ spec:
                 secretKeyRef:
                   name: devai-auth-bff-secrets
                   key: DEVAI_BFF_GIP_WEB_API_KEY
+            # WAVE-2: the proxy stamps this as X-Auth-Bff-Secret (CODE-5) so
+            # devai-api/sre trust forwarded identity only from the bff. Optional
+            # so the pod still starts before the ESO key-sync completes.
+            - name: DEVAI_AUTH_BFF_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: devai-auth-bff-secrets
+                  key: DEVAI_AUTH_BFF_SHARED_SECRET
+                  optional: true
           livenessProbe:
             httpGet:
               path: /healthz
