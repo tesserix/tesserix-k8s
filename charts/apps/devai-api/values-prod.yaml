@@ -111,18 +111,17 @@ k8sRuntime:
   pullSecretName: ""
   jobTtlSeconds: 3600
   jobBackoffLimit: 0
-  # Single runner base image until per-stack variants ship.
-  # MUST be the asia-south1 GAR mirror, never ghcr.io — runner Job pods pull via
-  # the node GCP SA (no ghcr pull secret), so a ghcr image ImagePullBackOffs and
-  # the stage times out. The GAR pull-through (ghcr-remote) mirrors ghcr lazily.
-  # Pinned to an immutable :main-<sha> tag (NOT the moving :main): the runner
-  # Job uses imagePullPolicy=IfNotPresent, so a moving tag would serve a node's
-  # stale cached layer. Bump this when the devai-runner image changes.
-  runnerImage: "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main-7a09b3e"
-  # Stack-specific runner images. Until per-stack variants ship, every
-  # stack falls back to the base devai-runner — the runner entrypoint
-  # discovers what to do from the agent's metadata, not the image tag.
-  runnerImagePerStack: '{"default":"asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main-7a09b3e","nextjs":"asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main-7a09b3e","vite":"asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main-7a09b3e","go":"asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main-7a09b3e","python":"asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:main-7a09b3e"}'
+  # Runner base image — set DYNAMICALLY by the Kargo prod Stage to the GAR
+  # mirror at main-<commit sha7> (see kargo-manifests/projects/devai/stages/prod.yaml,
+  # var `runnerImage`). This value is only the fallback before the first Kargo
+  # promotion. MUST be the asia-south1 GAR mirror, never ghcr.io — runner Job
+  # pods pull via the node GCP SA (no ghcr pull secret), so a ghcr image
+  # ImagePullBackOffs and the stage times out.
+  runnerImage: "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:latest"
+  # Empty so the runner resolves to the single (Kargo-managed) runnerImage above
+  # for every stack. Populate only if per-stack runner variants ship; until then
+  # a non-empty map here would shadow the dynamic runnerImage.
+  runnerImagePerStack: '{}'
   previewDomain: "tesserix.app"
   previewNamespace: "devai-previews"
   editorBridgeImage: "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-editor-bridge:main"
