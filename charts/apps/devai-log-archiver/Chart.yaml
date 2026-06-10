@@ -1,0 +1,13 @@
+apiVersion: v2
+name: devai-log-archiver
+description: |
+  Archives DevAI pod logs to GCS and purges old archives. Two CronJobs:
+    - archive: every 6h, reads pod logs via the Kubernetes API and uploads
+      gzipped objects to gs://devai-prod-logs-in (Workload Identity).
+    - purge: daily, deletes archived objects older than purgeDays (belt and
+      braces on top of the bucket's lifecycle delete rule).
+  The bucket's lifecycle keeps cost low: Standard → Nearline (2d) →
+  Coldline (7d) → Delete (15d).
+type: application
+version: 1.0.0
+appVersion: "1.0"

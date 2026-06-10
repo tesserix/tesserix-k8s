@@ -1,0 +1,37 @@
+# devai-log-archiver — pod logs → GCS + purge.
+
+image:
+  # Pure-stdlib Python scripts (no pip installs at runtime).
+  repository: python
+  tag: "3.12-slim"
+  pullPolicy: IfNotPresent
+
+gcp:
+  # GSA with roles/storage.objectAdmin on the bucket; WIF-bound to the
+  # devai/devai-log-archiver KSA.
+  serviceAccount: devai-log-archiver@tesseracthub-480811.iam.gserviceaccount.com
+
+bucket: devai-prod-logs-in
+
+# Namespaces whose pod logs get archived. RBAC below grants pods/log read in
+# each of these.
+namespaces:
+  - devai
+  - observability
+
+archive:
+  schedule: "15 */6 * * *" # every 6h
+  sinceSeconds: 21600 # matches the schedule — each run picks up the last 6h
+
+purge:
+  schedule: "30 21 * * *" # daily 03:00 IST
+  # Objects older than this many days are deleted. Mirrors the bucket
+  # lifecycle's delete rule (15d) — change both together.
+  days: 15
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

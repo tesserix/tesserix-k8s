@@ -1,0 +1,143 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devai-log-archiver-scripts
+  namespace: devai
+  labels:
+    app.kubernetes.io/name: devai-log-archiver
+    app.kubernetes.io/part-of: devai
+data:
+  # Both scripts are pure Python stdlib (urllib/ssl/gzip/json) so the plain
+  # python:slim image runs them with zero installs. Auth:
+  #   - Kubernetes API: the pod's projected SA token + cluster CA.
+  #   - GCS JSON API: the GKE metadata server mints a Workload Identity
+  #     access token for the bound GSA.
+  common.py: |
+    import json, ssl, urllib.request, urllib.parse
+
+    K8S = "https://kubernetes.default.svc"
+    SA_DIR = "/var/run/secrets/kubernetes.io/serviceaccount"
+    META_TOKEN_URL = (
+        "http://metadata.google.internal/computeMetadata/v1/"
+        "instance/service-accounts/default/token"
+    )
+
+    def k8s_get(path, raw=False):
+        with open(SA_DIR + "/token") as f:
+            token = f.read().strip()
+        ctx = ssl.create_default_context(cafile=SA_DIR + "/ca.crt")
+        req = urllib.request.Request(K8S + path)
+        req.add_header("Authorization", "Bearer " + token)
+        with urllib.request.urlopen(req, context=ctx, timeout=60) as resp:
+            body = resp.read()
+        return body if raw else json.loads(body)
+
+    def gcp_token():
+        req = urllib.request.Request(META_TOKEN_URL)
+        req.add_header("Metadata-Flavor", "Google")
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())["access_token"]
+
+    def gcs_request(method, url, body=None, content_type=None):
+        req = urllib.request.Request(url, data=body, method=method)
+        req.add_header("Authorization", "Bearer " + gcp_token())
+        if content_type:
+            req.add_header("Content-Type", content_type)
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            return resp.read()
+
+  archive.py: |
+    """Read pod logs since the last run and upload gzipped objects to GCS.
+
+    Object layout: logs/<YYYY-MM-DD>/<HHMM>/<namespace>/<pod>_<container>.log.gz
+    Failures on individual pods are logged and skipped — one bad pod must not
+    sink the whole archive run.
+    """
+    import gzip, os, sys, time, urllib.parse
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from common import k8s_get, gcs_request
+
+    BUCKET = os.environ["BUCKET"]
+    NAMESPACES = [n for n in os.environ.get("NAMESPACES", "devai").split(",") if n]
+    SINCE = int(os.environ.get("SINCE_SECONDS", "21600"))
+
+    stamp = time.strftime("%Y-%m-%d/%H%M", time.gmtime())
+    uploaded = skipped = failed = 0
+
+    for ns in NAMESPACES:
+        try:
+            pods = k8s_get("/api/v1/namespaces/%s/pods" % ns).get("items", [])
+        except Exception as e:
+            print("ERROR listing pods in %s: %s" % (ns, e))
+            failed += 1
+            continue
+        for pod in pods:
+            name = pod["metadata"]["name"]
+            containers = [c["name"] for c in pod.get("spec", {}).get("containers", [])]
+            for container in containers:
+                try:
+                    path = (
+                        "/api/v1/namespaces/%s/pods/%s/log"
+                        "?container=%s&sinceSeconds=%d&timestamps=true"
+                        % (ns, name, urllib.parse.quote(container), SINCE)
+                    )
+                    logs = k8s_get(path, raw=True)
+                    if not logs.strip():
+                        skipped += 1
+                        continue
+                    obj = "logs/%s/%s/%s_%s.log.gz" % (stamp, ns, name, container)
+                    url = (
+                        "https://storage.googleapis.com/upload/storage/v1/b/%s/o"
+                        "?uploadType=media&name=%s" % (BUCKET, urllib.parse.quote(obj, safe=""))
+                    )
+                    gcs_request("POST", url, body=gzip.compress(logs), content_type="application/gzip")
+                    uploaded += 1
+                    print("uploaded gs://%s/%s (%d bytes raw)" % (BUCKET, obj, len(logs)))
+                except Exception as e:
+                    failed += 1
+                    print("WARN %s/%s[%s]: %s" % (ns, name, container, e))
+
+    print("archive done: uploaded=%d skipped=%d failed=%d" % (uploaded, skipped, failed))
+    sys.exit(1 if uploaded == 0 and failed > 0 else 0)
+
+  purge.py: |
+    """Delete archived objects older than PURGE_DAYS.
+
+    Belt-and-braces on top of the bucket lifecycle's age-15 delete rule —
+    PURGE_DAYS is the configurable knob (values.yaml purge.days).
+    """
+    import datetime, json, os, sys, urllib.parse
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from common import gcs_request
+
+    BUCKET = os.environ["BUCKET"]
+    DAYS = int(os.environ.get("PURGE_DAYS", "15"))
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=DAYS)
+
+    deleted = kept = 0
+    page = ""
+    while True:
+        url = (
+            "https://storage.googleapis.com/storage/v1/b/%s/o"
+            "?fields=items(name,timeCreated),nextPageToken&maxResults=500" % BUCKET
+        )
+        if page:
+            url += "&pageToken=" + urllib.parse.quote(page)
+        listing = json.loads(gcs_request("GET", url))
+        for item in listing.get("items", []):
+            created = datetime.datetime.fromisoformat(item["timeCreated"].replace("Z", "+00:00"))
+            if created < cutoff:
+                gcs_request(
+                    "DELETE",
+                    "https://storage.googleapis.com/storage/v1/b/%s/o/%s"
+                    % (BUCKET, urllib.parse.quote(item["name"], safe="")),
+                )
+                deleted += 1
+                print("deleted %s (created %s)" % (item["name"], item["timeCreated"]))
+            else:
+                kept += 1
+        page = listing.get("nextPageToken", "")
+        if not page:
+            break
+
+    print("purge done: deleted=%d kept=%d cutoff=%s (PURGE_DAYS=%d)" % (deleted, kept, cutoff.isoformat(), DAYS))
