@@ -1,0 +1,73 @@
+{{- $jobs := list
+  (dict "name" "devai-log-archive" "schedule" .Values.archive.schedule "script" "archive.py"
+        "env" (dict "SINCE_SECONDS" (printf "%d" (int .Values.archive.sinceSeconds))
+                    "NAMESPACES" (join "," .Values.namespaces)))
+  (dict "name" "devai-log-purge" "schedule" .Values.purge.schedule "script" "purge.py"
+        "env" (dict "PURGE_DAYS" (printf "%d" (int .Values.purge.days))))
+}}
+{{- range $job := $jobs }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $job.name }}
+  namespace: devai
+  labels:
+    app.kubernetes.io/name: devai-log-archiver
+    app.kubernetes.io/part-of: devai
+spec:
+  schedule: {{ $job.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: devai-log-archiver
+            app: devai-log-archiver
+          annotations:
+            # No mesh sidecar needed — talks only to the k8s API, the GKE
+            # metadata server, and storage.googleapis.com.
+            sidecar.istio.io/inject: "false"
+        spec:
+          serviceAccountName: devai-log-archiver
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: {{ $job.name }}
+              image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+              imagePullPolicy: {{ $.Values.image.pullPolicy }}
+              command: ["python3", "/scripts/{{ $job.script }}"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              env:
+                - name: BUCKET
+                  value: {{ $.Values.bucket | quote }}
+                {{- range $k, $v := $job.env }}
+                - name: {{ $k }}
+                  value: {{ $v | quote }}
+                {{- end }}
+              resources:
+                {{- toYaml $.Values.resources | nindent 16 }}
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+          volumes:
+            - name: scripts
+              configMap:
+                name: devai-log-archiver-scripts
+{{- end }}
