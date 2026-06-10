@@ -225,3 +225,33 @@ spec:
       ports:
         - port: 443
           protocol: TCP
+---
+##############################################################################
+# ADDITIVE egress: devai → observability (OpenTelemetry collector).
+#
+# devai-api / devai-sre export OTLP/HTTP telemetry to
+# otel-collector.observability.svc:4318 (DEVAI_OTEL_ENDPOINT). The pod-scoped
+# netpols above and allow-devai-egress don't list the observability namespace,
+# so exports read-timed out. NetworkPolicy semantics are union-of-allows, so
+# this single additive policy unblocks every devai pod. Full-namespace egress
+# (all ports) matches the established additive pattern (see
+# manifests/agentic-istio/networkpolicy-consumer-egress.yaml) — the collector
+# only listens on OTLP/scrape ports, and holds no credentials.
+##############################################################################
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-devai-to-observability-egress
+  namespace: devai
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
