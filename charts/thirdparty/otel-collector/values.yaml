@@ -1,0 +1,62 @@
+# OpenTelemetry Collector — defaults. Prod overrides go inline in
+# argocd/prod/infrastructure/otel-collector.yaml (the redis-global pattern).
+
+replicaCount: 1
+
+image:
+  # contrib distribution — the `prometheus` exporter (OTLP→scrape) lives there.
+  repository: otel/opentelemetry-collector-contrib
+  tag: "0.116.0"
+  pullPolicy: IfNotPresent
+
+# Conservative for a single collector at ~19% cluster memory utilization.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+service:
+  type: ClusterIP
+
+# OTLP receiver + Prometheus exporter + collector self-metrics ports.
+ports:
+  otlpGrpc: 4317
+  otlpHttp: 4318
+  prometheus: 8889 # app metrics rendered for Prometheus scrape
+  metrics: 8888 # the collector's own metrics
+
+# The existing Prometheus (community chart) keeps its default kubernetes-pods
+# job, which scrapes pods carrying these annotations — so app telemetry lands
+# in Prometheus with no scrape-config edit.
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8889"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Memory limiter keeps the collector inside its limit under bursty load.
+memoryLimiter:
+  checkInterval: 5s
+  limitPercentage: 80
+  spikeLimitPercentage: 25
+
+# Extra trace/metric exporters can be appended here later (e.g. a Tempo OTLP
+# endpoint). When empty, traces go to the debug exporter (collector logs).
+tracesExporters:
+  - debug

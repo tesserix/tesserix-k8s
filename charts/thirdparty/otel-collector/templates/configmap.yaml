@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "otel-collector.name" . }}-config
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    extensions:
+      # Serves liveness/readiness on :13133 (the deployment probes hit it).
+      health_check:
+        endpoint: 0.0.0.0:13133
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:{{ .Values.ports.otlpGrpc }}
+          http:
+            endpoint: 0.0.0.0:{{ .Values.ports.otlpHttp }}
+
+    processors:
+      memory_limiter:
+        check_interval: {{ .Values.memoryLimiter.checkInterval }}
+        limit_percentage: {{ .Values.memoryLimiter.limitPercentage }}
+        spike_limit_percentage: {{ .Values.memoryLimiter.spikeLimitPercentage }}
+      batch: {}
+
+    exporters:
+      # Pull-based: Prometheus scrapes this endpoint (pod annotations point here).
+      prometheus:
+        endpoint: 0.0.0.0:{{ .Values.ports.prometheus }}
+        resource_to_telemetry_conversion:
+          enabled: true
+      # Traces have no backend yet — log them. Add a Tempo/Jaeger OTLP exporter
+      # to `service.pipelines.traces.exporters` to fan out later.
+      debug:
+        verbosity: basic
+
+    service:
+      extensions: [health_check]
+      telemetry:
+        metrics:
+          address: 0.0.0.0:{{ .Values.ports.metrics }}
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus, debug]
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [{{ join ", " .Values.tracesExporters }}]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [debug]
