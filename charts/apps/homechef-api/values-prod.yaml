@@ -28,6 +28,15 @@ resources:
 env:
   GIN_MODE: "release"
   LOG_LEVEL: "warn"
+  # The Go API reads ENVIRONMENT (config/config.go) for its log/trace "env"
+  # label and as the Sentry environment fallback. Base values.yaml never sets
+  # it, so prod was defaulting to "development" — tagging all prod logs, Cloud
+  # Trace spans, and Sentry events as dev. Set it explicitly here.
+  ENVIRONMENT: "production"
+  SENTRY_ENVIRONMENT: "production"
+  # HOMECHEF_ENV is not read by the Go env label, but base values.yaml sets it
+  # to "development"; override for consistency in prod (matches values-local's "local").
+  HOMECHEF_ENV: "production"
   # Enables the Bearer-token fallback in middleware.BFFAuth so mobile/SPA
   # clients holding a BFF-minted session_token directly (rather than routing
   # every call through the BFF's HMAC-signing proxy) can authenticate.
