@@ -114,6 +114,15 @@ spec:
             {{- if .Values.memory }}
             - name: DEVAI_MEMORY_PROVIDER
               value: {{ .Values.memory.provider | default "noop" | quote }}
+            # Embeddings for memory writes from the SRE learn stage —
+            # records written here must be searchable by the same model
+            # the API side queries with (text-embedding-3-small, 1536d).
+            - name: DEVAI_EMBEDDING_PROVIDER
+              value: {{ .Values.memory.embeddingProvider | default "auto" | quote }}
+            - name: DEVAI_EMBEDDING_MODEL
+              value: {{ .Values.memory.embeddingModel | default "text-embedding-3-small" | quote }}
+            - name: DEVAI_EMBEDDING_DIMENSIONS
+              value: {{ .Values.memory.embeddingDimensions | default 1536 | quote }}
             {{- end }}
             {{- if .Values.agenticControlPlane }}
             - name: DEVAI_AREGISTRY_URL
