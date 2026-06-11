@@ -50,7 +50,7 @@ spec:
               containerPort: {{ .Values.service.targetPort | default 3000 }}
               protocol: TCP
           env:
-            {{- $secretKeys := list "MONGODB_URI" "KEYCLOAK_CLIENT_SECRET" "SESSION_SECRET" "SENDGRID_API_KEY" }}
+            {{- $secretKeys := list "MONGODB_URI" "KEYCLOAK_CLIENT_SECRET" "SESSION_SECRET" "SENDGRID_API_KEY" "RESEND_API_KEY" }}
             {{- range $key, $value := .Values.env }}
             {{- if not (and $.Values.externalSecrets.enabled (has $key $secretKeys)) }}
             - name: {{ $key }}
@@ -89,6 +89,15 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-secrets
                   key: SENDGRID_API_KEY
+                  optional: true
+            # Resend — always-on fallback email provider behind SendGrid.
+            # Optional so the pod still starts before the secret syncs;
+            # the app then runs SendGrid-only and logs a warning.
+            - name: RESEND_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: RESEND_API_KEY
                   optional: true
             {{- end }}
           {{- if .Values.startupProbe.enabled }}
