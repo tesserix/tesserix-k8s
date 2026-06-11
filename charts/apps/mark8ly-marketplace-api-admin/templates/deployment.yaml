@@ -200,6 +200,15 @@ spec:
             - name: EMAIL_FROM
               value: {{ .Values.sendgrid.emailFrom | quote }}
             {{- end }}
+            # Resend — always-on fallback email provider behind SendGrid.
+            {{- if .Values.resend }}
+            - name: RESEND_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.resend.secretName }}
+                  key: {{ .Values.resend.apiKeyKey }}
+                  optional: true
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /health

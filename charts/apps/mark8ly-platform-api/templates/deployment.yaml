@@ -82,6 +82,15 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.sendgrid }}
                   key: SENDGRID_API_KEY
+            # Resend — always-on fallback email provider behind SendGrid.
+            # Optional so the pod still starts before the secret syncs;
+            # the service then runs SendGrid-only and logs a warning.
+            - name: RESEND_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.resend }}
+                  key: RESEND_API_KEY
+                  optional: true
             - name: ADMIN_RESET_BASE_URL
               value: {{ .Values.adminResetBaseUrl | quote }}
             - name: GIP_PROJECT_ID

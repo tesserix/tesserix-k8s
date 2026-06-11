@@ -67,6 +67,24 @@ spec:
             # Pre-built DATABASE_URL for pgx driver
             - name: DATABASE_URL
               value: "postgres://{{ .Values.database.user }}:$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslmode }}"
+            # SendGrid — primary email provider. Optional so the pod still
+            # starts before the secret syncs; the service then runs without
+            # email notifications.
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.sendgrid }}
+                  key: SENDGRID_API_KEY
+                  optional: true
+            # Resend — always-on fallback email provider behind SendGrid.
+            # Optional so the pod still starts before the secret syncs;
+            # the service then runs SendGrid-only and logs a warning.
+            - name: RESEND_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.resend }}
+                  key: RESEND_API_KEY
+                  optional: true
           {{- if .Values.livenessProbe }}
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
