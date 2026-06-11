@@ -68,6 +68,28 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.storefrontKey.secretName }}
                   key: {{ .Values.storefrontKey.secretKey }}
+            # Email — the storefront engine sends gift-card deliveries and
+            # order documents (invoices/receipts) too. SendGrid primary,
+            # Resend always-on fallback; both optional so the pod starts
+            # before the secrets sync (the engine then log-mails and warns).
+            {{- if .Values.sendgrid }}
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sendgrid.secretName }}
+                  key: {{ .Values.sendgrid.apiKeyKey }}
+                  optional: true
+            - name: EMAIL_FROM
+              value: {{ .Values.sendgrid.emailFrom | quote }}
+            {{- end }}
+            {{- if .Values.resend }}
+            - name: RESEND_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.resend.secretName }}
+                  key: {{ .Values.resend.apiKeyKey }}
+                  optional: true
+            {{- end }}
             # Service discovery
             - name: MARKETPLACE_FGA_API_URL
               value: {{ .Values.fgaApiUrl | quote }}
