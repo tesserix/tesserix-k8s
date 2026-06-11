@@ -23,11 +23,19 @@ spec:
           # secret mount) and MUST be RFC-1123 (no underscores). The actual
           # database name is derived from the SQL filename (devai_db.sql ->
           # devai_db), so this label is decoupled from it.
+          #
+          # Runs AS SUPERUSER: the schema needs CREATE EXTENSION vector
+          # (agent_memories has a vector(1536) column + HNSW index) and
+          # pgvector is not a trusted extension, so the devai app role
+          # cannot install it — as user devai the extension create was
+          # silently skipped and agent_memories failed on every cycle.
+          # devai-postgres-superuser is materialized by
+          # enableSuperuserAccess: true on the devai-postgres Cluster.
           - name: devai-db
             host: devai-postgres-rw.devai.svc.cluster.local
             port: 5432
-            user: devai
-            secretName: devai-postgres-app-credentials
+            user: postgres
+            secretName: devai-postgres-superuser
             secretKey: password
   destination:
     server: https://kubernetes.default.svc

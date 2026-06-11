@@ -80,7 +80,11 @@ spec:
   #   - Client CA for mTLS (optional, for future app cert auth)
   #   - Replication TLS between primary and replicas
   # =========================================================================
-  enableSuperuserAccess: false
+  # Superuser ON: the devai-db-schema-bootstrap CronJob needs the postgres
+  # role for CREATE EXTENSION vector — pgvector ships without `trusted = true`
+  # in its control file, so the database owner (devai) cannot install it.
+  # CNPG materializes the credential as the `devai-postgres-superuser` secret.
+  enableSuperuserAccess: true
 
   # =========================================================================
   # Continuous backup to GCS via Barman Cloud

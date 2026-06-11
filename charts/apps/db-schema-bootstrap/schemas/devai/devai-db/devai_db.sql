@@ -658,3 +658,22 @@ CREATE TABLE IF NOT EXISTS preview_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_preview_owner ON preview_sessions(owner, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_preview_target ON preview_sessions(repo, ref, owner) WHERE status <> 'stopped';
+
+-- ============================================================
+-- Ownership / grants — the bootstrap connects as the postgres
+-- superuser (CREATE EXTENSION vector requires it; pgvector is not a
+-- trusted extension), so hand every object in public back to the
+-- devai app role. Idempotent; runs on every cycle.
+-- ============================================================
+GRANT ALL ON SCHEMA public TO devai;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO devai;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO devai;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO devai;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO devai;
+DO $$
+DECLARE r RECORD;
+BEGIN
+  FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER TABLE public.%I OWNER TO devai', r.tablename);
+  END LOOP;
+END $$;
