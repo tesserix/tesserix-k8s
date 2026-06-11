@@ -121,6 +121,16 @@ identical environment — defined once here so the two never drift.
 {{- if .Values.memory }}
 - name: DEVAI_MEMORY_PROVIDER
   value: {{ .Values.memory.provider | default "noop" | quote }}
+# Embedding provider for memory semantic search (pgvector). "auto" uses
+# OpenAI when DEVAI_OPENAI_API_KEY is present (wired below from the
+# ExternalSecret); without it pgvector degrades to keyword recall.
+# Dimensions must match the agent_memories.embedding column: vector(1536).
+- name: DEVAI_EMBEDDING_PROVIDER
+  value: {{ .Values.memory.embeddingProvider | default "auto" | quote }}
+- name: DEVAI_EMBEDDING_MODEL
+  value: {{ .Values.memory.embeddingModel | default "text-embedding-3-small" | quote }}
+- name: DEVAI_EMBEDDING_DIMENSIONS
+  value: {{ .Values.memory.embeddingDimensions | default 1536 | quote }}
 {{- end }}
 # ─── Settings capability (per-user/per-tenant connectors + secrets) ──
 # Connectors are persisted in the user_settings table; secret VALUES are
