@@ -200,7 +200,26 @@ quotas + Vertex budget alert, VPC Service Controls perimeter (requires widening 
 
 ---
 
-## 6. Rollback
+## 6. Access control — who can reach Vertex from where (verified 2026-06-12)
+
+`aiplatform.googleapis.com` is Google's shared public frontend — it cannot be taken off
+the internet. What is controlled is **whose credentials work, and from where**:
+
+| Credential | From GKE/VPC | From outside (Mac/internet) | Why |
+|---|---|---|---|
+| Workload Identity (devai pods, runner Jobs, gateway) | ✅ works | ❌ impossible | WI tokens are mintable only by bound KSAs inside the cluster; **zero user-managed keys exist** on either GSA (verified) |
+| `prod-devai-vertex-api-key` | ✅ (VPC source ranges) | ❌ **403 verified** | API key now carries an IP restriction (10.20/16, 10.10/20, 10.30/20) + API restriction (aiplatform only) |
+| Human owner accounts (gmail) | ✅ | ⚠️ still works | Cannot be network-restricted without **VPC Service Controls** |
+
+**The full "VPC-only even with valid credentials" guarantee requires VPC Service
+Controls, which requires a GCP Organization — this account has none** (standalone
+project). Path when wanted: Cloud Identity Free on a owned domain (e.g. tesserix.app)
+→ creates the Organization → migrate `tesseracthub-480811` into it
+(`gcloud beta projects move`) → Access Context Manager policy → perimeter around
+`aiplatform.googleapis.com` (+ Secret Manager) in **dry-run** first, with an access
+level for admin identities (else the console from the Mac is locked out too) → enforce.
+
+## 7. Rollback
 
 Reverse order; DNS first restores default (public-VIP) resolution instantly:
 
