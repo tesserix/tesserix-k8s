@@ -30,8 +30,13 @@ spec:
       activeDeadlineSeconds: {{ .Values.uptimeProbe.timeoutSeconds }}
       template:
         metadata:
+          # Deliberately NOT company.labels: the probe pods must not match
+          # the deployment's PDB selector. Completed cron pods counted as
+          # "expected but unhealthy", which pinned disruptionsAllowed at 0
+          # and made every node hosting the company pod undrainable.
           labels:
-            {{- include "company.labels" . | nindent 12 }}
+            app.kubernetes.io/name: company-uptime-probe
+            app.kubernetes.io/instance: {{ .Release.Name }}-uptime-probe
             app.kubernetes.io/component: uptime-probe-trigger
           annotations:
             sidecar.istio.io/inject: "false"
