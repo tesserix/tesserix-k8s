@@ -125,6 +125,11 @@ spec:
       labels:
         app.kubernetes.io/name: devai-ai-gateway
         app.kubernetes.io/part-of: devai
+        # Opt out of the namespace waypoint (istio.io/use-waypoint on the
+        # ns). The waypoint's L7 hop re-frames proxied POST bodies as
+        # chunked, which Google's PSC frontend rejects with 411 — and this
+        # pod IS a proxy; it needs raw L4 egress, not mesh L7 handling.
+        istio.io/use-waypoint: none
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       # Pod hardening — run rootless. The nginx-unprivileged image (uid 101)
