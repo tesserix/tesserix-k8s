@@ -100,6 +100,30 @@ spec:
                   name: {{ .Values.database.mark8ly.secretName | quote }}
                   key: password
             {{- end }}
+            {{- if .Values.database.homechef.enabled }}
+            # homechef-postgres cross-namespace read/write (super-admin).
+            # Connects as homechef_platform_admin (CRUD, no DDL/superuser).
+            # Single database (homechef_db), so the name is pinned here.
+            # Gated by .enabled — keep false until the role + secret exist
+            # (see Home-Chef-App/docs/ops/CUTOVER-RUNBOOK.md), else the pod
+            # would crash on a missing secretKeyRef.
+            - name: HOMECHEF_DB_HOST
+              value: {{ .Values.database.homechef.host | quote }}
+            - name: HOMECHEF_DB_PORT
+              value: {{ .Values.database.homechef.port | quote }}
+            - name: HOMECHEF_DB_NAME
+              value: {{ .Values.database.homechef.name | quote }}
+            - name: HOMECHEF_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.homechef.secretName | quote }}
+                  key: username
+            - name: HOMECHEF_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.homechef.secretName | quote }}
+                  key: password
+            {{- end }}
           {{- if .Values.livenessProbe }}
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
