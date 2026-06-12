@@ -31,11 +31,22 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-system
+  # istiod injects caBundle (and flips failurePolicy once ready) into its
+  # validating webhooks at runtime; the chart renders them empty. Without
+  # ignoring those fields the app is perpetually OutOfSync, which stalls
+  # the kargo-infra istio promotions' health wait.
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[].clientConfig.caBundle
+        - .webhooks[].failurePolicy
   syncPolicy:
     automated:
       prune: false
       selfHeal: true
     syncOptions:
+      - RespectIgnoreDifferences=true
       - CreateNamespace=true
       - ServerSideApply=true
       - Replace=true
