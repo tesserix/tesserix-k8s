@@ -74,4 +74,11 @@ metadata:
   labels:
     {{- include "devai-api.labels" . | nindent 4 }}
     app.kubernetes.io/component: runner
+  {{- if and .Values.gcp .Values.gcp.workloadIdentity .Values.gcp.workloadIdentity.enabled }}
+  annotations:
+    # Workload Identity: in-Job agents mint ADC for Vertex/Secret Manager.
+    # The IAM-side binding ([devai/devai-runner] → this GSA) is owned by
+    # terraform-new/stacks/12-vertex.
+    iam.gke.io/gcp-service-account: {{ .Values.gcp.workloadIdentity.gcpServiceAccount }}
+  {{- end }}
 {{- end }}
