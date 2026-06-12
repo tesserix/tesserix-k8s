@@ -20,23 +20,12 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
-  # Kargo's infra auto-upgrade stages (kargo-manifests projects/infra) bump
-  # child Application spec.source.targetRevision live when an upstream chart
-  # publishes a new version inside the allowed semver range. Ignore that
-  # field so selfHeal doesn't revert promotions — the revision in Git is the
-  # bootstrap/minimum value; the live value is Kargo-managed.
-  ignoreDifferences:
-    - group: argoproj.io
-      kind: Application
-      jsonPointers:
-        - /spec/source/targetRevision
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
