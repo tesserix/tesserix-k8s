@@ -1,72 +1,66 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "petstore-api.fullname" . }}
+  name: {{ include "petstore-api.fullname" . }}-config
   labels:
     {{- include "petstore-api.labels" . | nindent 4 }}
 data:
-  # Node.js runtime configuration
-  NODE_ENV: {{ .Values.app.nodeEnv | quote }}
-  PORT: {{ .Values.service.targetPort | quote }}
+  # Application Configuration
+  NODE_ENV: {{ .Values.env.NODE_ENV | quote }}
+  PORT: {{ .Values.env.PORT | quote }}
+  API_VERSION: {{ .Values.env.API_VERSION | quote }}
   
-  # Next.js configuration
-  NEXT_TELEMETRY_DISABLED: "1"
-  {{- if .Values.app.apiUrl }}
-  NEXT_PUBLIC_API_URL: {{ .Values.app.apiUrl | quote }}
-  {{- end }}
+  # Database Configuration
+  POSTGRES_HOST: {{ .Values.env.POSTGRES_HOST | quote }}
+  POSTGRES_PORT: {{ .Values.env.POSTGRES_PORT | quote }}
+  POSTGRES_DB: {{ .Values.env.POSTGRES_DB | quote }}
+  POSTGRES_SSL: {{ .Values.env.POSTGRES_SSL | quote }}
   
-  # Database configuration
-  {{- if .Values.database.enabled }}
-  DB_HOST: {{ .Values.database.host | quote }}
-  DB_PORT: {{ .Values.database.port | quote }}
-  DB_NAME: {{ .Values.database.name | quote }}
-  DB_SSL: {{ .Values.database.ssl | quote }}
-  DB_POOL_MIN: {{ .Values.database.pool.min | quote }}
-  DB_POOL_MAX: {{ .Values.database.pool.max | quote }}
-  DB_POOL_IDLE_TIMEOUT: {{ .Values.database.pool.idleTimeout | quote }}
-  {{- end }}
+  # Redis Configuration  
+  REDIS_HOST: {{ .Values.env.REDIS_HOST | quote }}
+  REDIS_PORT: {{ .Values.env.REDIS_PORT | quote }}
+  REDIS_DB: {{ .Values.env.REDIS_DB | quote }}
+  REDIS_TTL: {{ .Values.env.REDIS_TTL | quote }}
   
-  # Redis configuration
-  {{- if .Values.redis.enabled }}
-  REDIS_HOST: {{ .Values.redis.host | quote }}
-  REDIS_PORT: {{ .Values.redis.port | quote }}
-  REDIS_DB: {{ .Values.redis.db | quote }}
-  {{- if .Values.redis.tls }}
-  REDIS_TLS: "true"
-  {{- end }}
-  {{- end }}
+  # API Configuration
+  API_RATE_LIMIT: {{ .Values.env.API_RATE_LIMIT | quote }}
+  API_TIMEOUT: {{ .Values.env.API_TIMEOUT | quote }}
+  JWT_EXPIRES_IN: {{ .Values.env.JWT_EXPIRES_IN | quote }}
   
-  # External service URLs
-  {{- if .Values.app.stripeWebhookEndpoint }}
-  STRIPE_WEBHOOK_ENDPOINT: {{ .Values.app.stripeWebhookEndpoint | quote }}
-  {{- end }}
-  {{- if .Values.app.emailServiceUrl }}
-  EMAIL_SERVICE_URL: {{ .Values.app.emailServiceUrl | quote }}
-  {{- end }}
+  # Logging Configuration
+  LOG_LEVEL: {{ .Values.env.LOG_LEVEL | quote }}
+  LOG_FORMAT: {{ .Values.env.LOG_FORMAT | quote }}
   
-  # SMTP configuration
-  {{- if .Values.smtp.enabled }}
-  SMTP_HOST: {{ .Values.smtp.host | quote }}
-  SMTP_PORT: {{ .Values.smtp.port | quote }}
-  SMTP_SECURE: {{ .Values.smtp.secure | quote }}
-  SMTP_FROM_EMAIL: {{ .Values.smtp.fromEmail | quote }}
-  SMTP_FROM_NAME: {{ .Values.smtp.fromName | quote }}
-  {{- end }}
+  # CORS Configuration
+  CORS_ORIGIN: {{ .Values.env.CORS_ORIGIN | quote }}
+  CORS_CREDENTIALS: {{ .Values.env.CORS_CREDENTIALS | quote }}
   
-  # Application features
-  {{- if .Values.features }}
-  {{- range $key, $value := .Values.features }}
-  FEATURE_{{ $key | upper }}: {{ $value | quote }}
-  {{- end }}
-  {{- end }}
+  # File Upload Configuration
+  UPLOAD_MAX_SIZE: {{ .Values.env.UPLOAD_MAX_SIZE | quote }}
+  UPLOAD_ALLOWED_TYPES: {{ .Values.env.UPLOAD_ALLOWED_TYPES | quote }}
   
-  # Logging configuration
-  LOG_LEVEL: {{ .Values.app.logLevel | default "info" | quote }}
-  LOG_FORMAT: {{ .Values.app.logFormat | default "json" | quote }}
+  # Payment Configuration (Non-sensitive)
+  STRIPE_API_VERSION: {{ .Values.env.STRIPE_API_VERSION | quote }}
   
-  # Additional environment variables
-  {{- with .Values.env }}
-  {{- range $key, $value := . }}
-  {{ $key }}: {{ $value | quote }}
-  {{- end }}
-  {{- end }}
+  # Email Configuration (Non-sensitive)
+  SMTP_HOST: {{ .Values.env.SMTP_HOST | quote }}
+  SMTP_PORT: {{ .Values.env.SMTP_PORT | quote }}
+  SMTP_SECURE: {{ .Values.env.SMTP_SECURE | quote }}
+  EMAIL_FROM_NAME: {{ .Values.env.EMAIL_FROM_NAME | quote }}
+  EMAIL_FROM_ADDRESS: {{ .Values.env.EMAIL_FROM_ADDRESS | quote }}
+  
+  # Feature Flags
+  FEATURE_WISHLIST_ENABLED: {{ .Values.env.FEATURE_WISHLIST_ENABLED | quote }}
+  FEATURE_REVIEWS_ENABLED: {{ .Values.env.FEATURE_REVIEWS_ENABLED | quote }}
+  FEATURE_INVENTORY_TRACKING: {{ .Values.env.FEATURE_INVENTORY_TRACKING | quote }}
+  FEATURE_ANALYTICS_ENABLED: {{ .Values.env.FEATURE_ANALYTICS_ENABLED | quote }}
+  FEATURE_RECOMMENDATIONS_ENABLED: {{ .Values.env.FEATURE_RECOMMENDATIONS_ENABLED | quote }}
+  
+  # Search Configuration
+  SEARCH_INDEX_NAME: {{ .Values.env.SEARCH_INDEX_NAME | quote }}
+  SEARCH_RESULTS_LIMIT: {{ .Values.env.SEARCH_RESULTS_LIMIT | quote }}
+  
+  # Cache Configuration
+  CACHE_DEFAULT_TTL: {{ .Values.env.CACHE_DEFAULT_TTL | quote }}
+  CACHE_USER_SESSION_TTL: {{ .Values.env.CACHE_USER_SESSION_TTL | quote }}
+  CACHE_PRODUCT_TTL: {{ .Values.env.CACHE_PRODUCT_TTL | quote }}
