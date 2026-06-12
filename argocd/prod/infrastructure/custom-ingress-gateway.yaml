@@ -19,6 +19,12 @@ spec:
     chart: gateway
     targetRevision: 1.29.4
     helm:
+      # The ArgoCD 3.4 repo-server's helm applies the gateway chart's
+      # values schema $defs to the root document and rejects every root
+      # key (including the chart's own _internal_defaults_do_not_set).
+      # Local helm 3/4 validate the identical chart+values fine. Skip
+      # schema validation until upstream ships a compatible schema.
+      skipSchemaValidation: true
       releaseName: custom-ingress
       values: |
         # =================================================================
