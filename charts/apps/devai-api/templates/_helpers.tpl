@@ -260,6 +260,12 @@ identical environment — defined once here so the two never drift.
 - name: DEVAI_LLM_SYSTEM_PRINCIPAL
   value: {{ .Values.llm.systemPrincipal | quote }}
 {{- end }}
+{{- if .Values.llm.trialTokenBudget }}
+# Free-trial allowance for users without their own connector: metered on
+# the platform chain, permanently revoked at exhaustion (Redis counter).
+- name: DEVAI_LLM_TRIAL_TOKEN_BUDGET
+  value: {{ .Values.llm.trialTokenBudget | quote }}
+{{- end }}
 {{- if .Values.llm.requireUserConnector }}
 # Strict tenant isolation: human principals MUST bring their own LLM
 # connector (Settings) — the shared platform keys are never used for
