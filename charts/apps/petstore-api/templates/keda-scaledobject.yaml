@@ -1,0 +1,102 @@
+{{- if .Values.keda.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "petstore-api.fullname" . }}
+  labels:
+    {{- include "petstore-api.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "petstore-api.fullname" . }}
+  pollingInterval: {{ .Values.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
+  idleReplicaCount: {{ .Values.keda.idleReplicaCount }}
+  minReplicaCount: {{ .Values.keda.minReplicaCount }}
+  maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
+  fallback:
+    failureThreshold: {{ .Values.keda.fallback.failureThreshold }}
+    replicas: {{ .Values.keda.fallback.replicas }}
+  triggers:
+    {{- if .Values.keda.triggers.cpu.enabled }}
+    - type: cpu
+      metadata:
+        type: Utilization
+        value: "{{ .Values.keda.triggers.cpu.targetUtilization }}"
+      {{- if .Values.keda.triggers.cpu.metricName }}
+        metricName: {{ .Values.keda.triggers.cpu.metricName }}
+      {{- end }}
+    {{- end }}
+    
+    {{- if .Values.keda.triggers.memory.enabled }}
+    - type: memory
+      metadata:
+        type: Utilization
+        value: "{{ .Values.keda.triggers.memory.targetUtilization }}"
+      {{- if .Values.keda.triggers.memory.metricName }}
+        metricName: {{ .Values.keda.triggers.memory.metricName }}
+      {{- end }}
+    {{- end }}
+    
+    {{- if .Values.keda.triggers.http.enabled }}
+    - type: prometheus
+      metadata:
+        serverAddress: {{ .Values.keda.triggers.http.prometheusAddress }}
+        metricName: http_requests_per_second
+        threshold: "{{ .Values.keda.triggers.http.targetRPS }}"
+        query: |
+          sum(rate(http_requests_total{job="{{ include "petstore-api.fullname" . }}"}[1m]))
+    {{- end }}
+    
+    {{- if .Values.keda.triggers.queue.enabled }}
+    - type: redis
+      metadata:
+        address: {{ .Values.redis.host }}:{{ .Values.redis.port }}
+        listName: {{ .Values.keda.triggers.queue.listName }}
+        listLength: "{{ .Values.keda.triggers.queue.targetLength }}"
+        {{- if .Values.redis.auth }}
+        passwordFromEnv: REDIS_SECRET
+        {{- end }}
+        {{- if .Values.redis.db }}
+        databaseIndex: "{{ .Values.redis.db }}"
+        {{- end }}
+      authenticationRef:
+        name: {{ include "petstore-api.fullname" . }}-keda-auth
+    {{- end }}
+    
+    {{- with .Values.keda.triggers.custom }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  
+  {{- if .Values.keda.scaledJob.enabled }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: {{ .Values.keda.behavior.scaleDown.stabilizationWindowSeconds }}
+          policies:
+            - type: Percent
+              value: {{ .Values.keda.behavior.scaleDown.percentPolicy }}
+              periodSeconds: {{ .Values.keda.behavior.scaleDown.periodSeconds }}
+        scaleUp:
+          stabilizationWindowSeconds: {{ .Values.keda.behavior.scaleUp.stabilizationWindowSeconds }}
+          policies:
+            - type: Percent
+              value: {{ .Values.keda.behavior.scaleUp.percentPolicy }}
+              periodSeconds: {{ .Values.keda.behavior.scaleUp.periodSeconds }}
+  {{- end }}
+
+---
+{{- if and .Values.keda.triggers.queue.enabled .Values.redis.auth }}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ include "petstore-api.fullname" . }}-keda-auth
+  labels:
+    {{- include "petstore-api.labels" . | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: password
+      name: {{ include "petstore-api.fullname" . }}-secrets
+      key: REDIS_SECRET
+{{- end }}
+{{- end }}
