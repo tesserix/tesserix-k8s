@@ -219,8 +219,23 @@ llm:
   # the PSC endpoint (terraform-new/stacks/12-vertex). Project defaults to
   # gcp.projectId. asia-south1 is validated end to end; "global" also works.
   vertexEnabled: true
-  vertexLocation: "asia-south1"
+  vertexLocation: "global"
   vertexGeminiModel: "gemini-2.5-flash"
+  # Route Vertex through the devai-ai-gateway (/vertex/* injects the
+  # prod-devai-vertex-api-key from GCP SM; caller needs no credentials).
+  # Unset to fall back to direct PSC + Workload Identity ADC.
+  vertexBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/vertex"
+  # Cost tiers — "provider:model". light/standard ride Vertex Gemini;
+  # heavy/frontier stay on Claude/o3 via the same gateway. Only
+  # gemini-2.5-flash is model-enabled in the project today; after enabling
+  # more models in console (Agent Platform → Models) flip:
+  #   light    → vertex_gemini:gemini-3.1-flash-lite
+  #   standard → vertex_gemini:gemini-3.5-flash
+  #   heavy    → vertex_gemini:gemini-3.1-pro-preview (or keep Claude)
+  tierLight: "vertex_gemini:gemini-2.5-flash"
+  tierStandard: "vertex_gemini:gemini-2.5-flash"
+  tierHeavy: "anthropic:claude-sonnet-4-20250514"
+  tierFrontier: "openai:o3"
 
 # ─── Durable orchestration (Temporal) — READY TO ENABLE ─────────────────────
 # Uncomment BOTH blocks to route prod blueprint runs through the Temporal cluster
