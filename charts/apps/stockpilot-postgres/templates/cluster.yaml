@@ -4,6 +4,15 @@ kind: Cluster
 metadata:
   name: {{ .Values.clusterName }}
   namespace: {{ .Values.namespace }}
+  {{- if .Values.hibernation }}
+  # Declarative CNPG hibernation: the operator scales the cluster to zero
+  # while KEEPING the PVCs (and WAL/base backups in GCS) intact. Flip
+  # hibernation back to false to resume exactly where the data left off.
+  # This is NOT the destructive `hibernate` flag above, which removes the
+  # Cluster resource entirely.
+  annotations:
+    cnpg.io/hibernation: "on"
+  {{- end }}
   labels:
     app.kubernetes.io/part-of: home-chef-app
     app.kubernetes.io/component: database
