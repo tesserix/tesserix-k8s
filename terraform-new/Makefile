@@ -12,10 +12,10 @@ REGION ?= us-central1
 # Stacks in execution order
 STACKS = 01-foundation 02-network 03-storage 04-gke 05-k8s-bootstrap \
          06-workload-identity 07-app-secrets 08-communication-services 09-github-arc \
-         11-identity-platform
+         11-identity-platform 12-vertex
 
 # Stacks in destroy order (reverse)
-DESTROY_STACKS = 11-identity-platform 09-github-arc 08-communication-services 07-app-secrets \
+DESTROY_STACKS = 12-vertex 11-identity-platform 09-github-arc 08-communication-services 07-app-secrets \
                  06-workload-identity 05-k8s-bootstrap 04-gke 03-storage 02-network 01-foundation
 
 # Default target
@@ -52,6 +52,7 @@ help:
 	@echo "  08-communication-services Email, SMS, Push"
 	@echo "  09-github-arc           GitHub Actions Runners"
 	@echo "  11-identity-platform    Google Identity Platform Tenants"
+	@echo "  12-vertex               Vertex AI PSC, DNS pinning, gateway IAM"
 	@echo ""
 	@echo "Environment Variables:"
 	@echo "  ENVIRONMENT   Target environment (default: prod)"
@@ -431,6 +432,39 @@ apply-11-identity-platform: init-11-identity-platform
 
 destroy-11-identity-platform: init-11-identity-platform
 	@cd stacks/11-identity-platform && \
+	terraform destroy -auto-approve \
+		-var-file="../../environments/$(ENVIRONMENT)/terraform.tfvars" \
+		-var="project_id=$(PROJECT_ID)" \
+		-var="environment=$(ENVIRONMENT)" \
+		-var="state_bucket=$(STATE_BUCKET)"
+
+# 12-vertex
+init-12-vertex:
+	@cd stacks/12-vertex && \
+	terraform init \
+		-backend-config="bucket=$(STATE_BUCKET)" \
+		-backend-config="prefix=stacks/$(ENVIRONMENT)/vertex" \
+		-reconfigure
+
+plan-12-vertex: init-12-vertex
+	@cd stacks/12-vertex && \
+	terraform plan \
+		-var-file="../../environments/$(ENVIRONMENT)/terraform.tfvars" \
+		-var="project_id=$(PROJECT_ID)" \
+		-var="environment=$(ENVIRONMENT)" \
+		-var="state_bucket=$(STATE_BUCKET)" \
+		-out=12-vertex.tfplan
+
+apply-12-vertex: init-12-vertex
+	@cd stacks/12-vertex && \
+	terraform apply -auto-approve \
+		-var-file="../../environments/$(ENVIRONMENT)/terraform.tfvars" \
+		-var="project_id=$(PROJECT_ID)" \
+		-var="environment=$(ENVIRONMENT)" \
+		-var="state_bucket=$(STATE_BUCKET)"
+
+destroy-12-vertex: init-12-vertex
+	@cd stacks/12-vertex && \
 	terraform destroy -auto-approve \
 		-var-file="../../environments/$(ENVIRONMENT)/terraform.tfvars" \
 		-var="project_id=$(PROJECT_ID)" \

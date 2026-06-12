@@ -3711,3 +3711,13 @@ identity_platform_tenants = [
     allow_password_signup = true
   }
 ]
+
+# =============================================================================
+# 12-vertex — Vertex AI private access (PSC + DNS pinning + gateway IAM)
+# =============================================================================
+vertex_psc_address_name = "vertex-psc-ip"
+vertex_psc_ip           = "10.255.0.2"
+vertex_psc_rule_name    = "vertexapis"
+vertex_dns_zone_name    = "vertex-aiplatform"
+devai_workload_sa_email = "app-secrets-devai-prod@tesseracthub-480811.iam.gserviceaccount.com"
+agentgateway_ksa        = "agentgateway-system/agentgateway"
