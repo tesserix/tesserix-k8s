@@ -177,6 +177,19 @@ cd terraform-new && make plan-12-vertex             # expect: No changes.
 
 **Validated 2026-06-12:** `generateContent` returns 200 as `agentgateway-llm@` (impersonated)
 against both `global` and `asia-south1`; both Google MCP endpoints answer `tools/list`.
+**In-cluster proof (same day):** from the devai-api pod, the pod's Workload Identity token
+against `aiplatform.googleapis.com` → resolved to 10.255.0.2 (PSC) → HTTP 200. This —
+keyless ADC, direct from the pod — is the production path.
+
+**Known issue — gateway /vertex parked:** pod egress in `agentgateway-system` (istio
+ambient + waypoint) re-frames POST bodies as chunked; Google's PSC frontend rejects
+chunked POSTs with **411 Length Required**. Anthropic/OpenAI tolerate chunked, so those
+gateway routes work; Vertex via the gateway does not until the namespace's L7 egress
+handling is fixed (likely with the upstream agentgateway chart adoption). The /vertex
+route, ExternalSecret key injection, and `istio.io/use-waypoint: none` opt-out are all in
+place and tested up to that hop. Required NetworkPolicy fix (committed): the hand-applied
+`allow-agentgateway-egress` excluded all of 10.0.0.0/8 on 443, silently blocking the PSC
+IP — adopted into git with a leading allow for 10.255.0.2/32.
 **Gotcha:** impersonated/user ADC tokens MUST send `x-goog-user-project` (otherwise Vertex
 404s); GKE Workload Identity metadata tokens don't need it. DevAI's adapter and MCP hub
 always send it.
