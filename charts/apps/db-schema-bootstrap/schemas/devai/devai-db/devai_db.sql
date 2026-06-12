@@ -660,6 +660,28 @@ CREATE INDEX IF NOT EXISTS idx_preview_owner ON preview_sessions(owner, created_
 CREATE INDEX IF NOT EXISTS idx_preview_target ON preview_sessions(repo, ref, owner) WHERE status <> 'stopped';
 
 -- ============================================================
+-- agent_evals — quality scores per run/stage (analytics Evals view).
+-- Captured from the quality gates DevAI already runs (review loop,
+-- security scan, tests). score is 0..1; triggered_by enables per-user
+-- (tenant-isolated) eval analytics.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS agent_evals (
+    id             BIGSERIAL PRIMARY KEY,
+    run_id         TEXT,
+    stage          TEXT,
+    agent_name     TEXT,
+    evaluator      TEXT NOT NULL,              -- review | security | tests | …
+    score          DOUBLE PRECISION NOT NULL DEFAULT 0,  -- 0..1
+    passed         BOOLEAN NOT NULL DEFAULT FALSE,
+    triggered_by   TEXT,                       -- the user the run belongs to
+    detail         JSONB DEFAULT '{}'::jsonb,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_evals_run ON agent_evals(run_id);
+CREATE INDEX IF NOT EXISTS idx_evals_user ON agent_evals(triggered_by, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_evals_evaluator ON agent_evals(evaluator, created_at DESC);
+
+-- ============================================================
 -- Ownership / grants — the bootstrap connects as the postgres
 -- superuser (CREATE EXTENSION vector requires it; pgvector is not a
 -- trusted extension), so hand every object in public back to the
