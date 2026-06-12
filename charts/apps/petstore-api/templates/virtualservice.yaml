@@ -1,0 +1,60 @@
+{{- if .Values.istio.enabled }}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "petstore-api.fullname" . }}
+  labels:
+    {{- include "petstore-api.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.istio.host }}
+  gateways:
+    - {{ .Values.istio.gateway }}
+  http:
+    - match:
+        - uri:
+            prefix: {{ .Values.istio.pathPrefix }}
+      rewrite:
+        {{- if ne .Values.istio.pathPrefix "/" }}
+        uri: /
+        {{- end }}
+      route:
+        - destination:
+            host: {{ include "petstore-api.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+      timeout: {{ .Values.istio.timeout }}
+      retries:
+        attempts: {{ .Values.istio.retries.attempts }}
+        perTryTimeout: {{ .Values.istio.retries.perTryTimeout }}
+        retryOn: {{ .Values.istio.retries.retryOn }}
+      corsPolicy:
+        {{- if .Values.istio.cors.enabled }}
+        allowOrigins:
+          {{- range .Values.istio.cors.allowOrigins }}
+          - exact: {{ . }}
+          {{- end }}
+        allowMethods:
+          {{- range .Values.istio.cors.allowMethods }}
+          - {{ . }}
+          {{- end }}
+        allowHeaders:
+          {{- range .Values.istio.cors.allowHeaders }}
+          - {{ . }}
+          {{- end }}
+        {{- if .Values.istio.cors.allowCredentials }}
+        allowCredentials: true
+        {{- end }}
+        maxAge: {{ .Values.istio.cors.maxAge }}
+        {{- end }}
+      headers:
+        request:
+          add:
+            x-forwarded-proto: https
+        response:
+          add:
+            x-content-type-options: nosniff
+            x-frame-options: DENY
+            x-xss-protection: "1; mode=block"
+            referrer-policy: strict-origin-when-cross-origin
+{{- end }}
