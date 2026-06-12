@@ -154,11 +154,17 @@ sendgrid:
   secretName: mark8ly-sendgrid
   apiKeyKey: SENDGRID_API_KEY
   emailFrom: noreply@mark8ly.com
-# Resend — always-on fallback email provider behind SendGrid. Backed by
-# the platform-wide prod-resend-api-key GCP secret via mark8ly-resend.
+# Resend — second email provider. Backed by the platform-wide
+# prod-resend-api-key GCP secret via mark8ly-resend.
 resend:
   secretName: mark8ly-resend
   apiKeyKey: RESEND_API_KEY
+# Email provider chain order. The named provider sends first; every other
+# configured provider is its per-message fallback. Valid: resend | sendgrid
+# (or a comma-separated preference list). Flip to sendgrid to restore
+# SendGrid-primary — no code change needed.
+email:
+  primaryProvider: resend
 # ── Tracking sync CronJob ───────────────────────────────────────
 # Hits /api/v1/internal/shipments/tracking/sync on the admin engine
 # every 2 minutes. Advances every open shipment's status from the

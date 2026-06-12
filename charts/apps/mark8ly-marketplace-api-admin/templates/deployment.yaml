@@ -200,7 +200,8 @@ spec:
             - name: EMAIL_FROM
               value: {{ .Values.sendgrid.emailFrom | quote }}
             {{- end }}
-            # Resend — always-on fallback email provider behind SendGrid.
+            # Resend — second email provider; chain order is configured
+            # below via EMAIL_PRIMARY_PROVIDER.
             {{- if .Values.resend }}
             - name: RESEND_API_KEY
               valueFrom:
@@ -208,6 +209,13 @@ spec:
                   name: {{ .Values.resend.secretName }}
                   key: {{ .Values.resend.apiKeyKey }}
                   optional: true
+            {{- end }}
+            # Orders the provider chain: the named provider sends first,
+            # every other configured provider is its per-message fallback.
+            # Flip to "sendgrid" to restore SendGrid-primary — config only.
+            {{- if .Values.email }}
+            - name: EMAIL_PRIMARY_PROVIDER
+              value: {{ .Values.email.primaryProvider | quote }}
             {{- end }}
           livenessProbe:
             httpGet:

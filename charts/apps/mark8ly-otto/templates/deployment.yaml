@@ -78,13 +78,19 @@ spec:
                   name: {{ .Values.secrets.sendgrid }}
                   key: SENDGRID_API_KEY
                   optional: true
-            # Resend — always-on fallback email provider behind SendGrid.
+            # Resend — second email provider; chain order is configured
+            # below via EMAIL_PRIMARY_PROVIDER.
             - name: RESEND_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.secrets.resend }}
                   key: RESEND_API_KEY
                   optional: true
+            # Orders the provider chain: the named provider sends first,
+            # every other configured provider is its per-message fallback.
+            # Flip to "sendgrid" to restore SendGrid-primary — config only.
+            - name: EMAIL_PRIMARY_PROVIDER
+              value: {{ .Values.email.primaryProvider | quote }}
             - name: OTP_FROM_EMAIL
               value: {{ .Values.otp.fromEmail | quote }}
             - name: OTP_FROM_NAME
