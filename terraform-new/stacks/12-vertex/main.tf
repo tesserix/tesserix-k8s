@@ -109,3 +109,13 @@ resource "google_project_iam_member" "devai_workload_aiplatform" {
   role    = "roles/aiplatform.user"
   member  = "serviceAccount:${var.devai_workload_sa_email}"
 }
+
+# ADK runner Jobs (DevAI agents dispatched as K8s Jobs, KSA devai/devai-runner)
+# impersonate the DevAI workload GSA so in-Job agents mint ADC for Vertex.
+# The api/sre/dashboard KSA bindings on this GSA pre-date Terraform and stay
+# unmanaged; this stack owns only the runner binding it introduced.
+resource "google_service_account_iam_member" "devai_runner_wi" {
+  service_account_id = "projects/${var.project_id}/serviceAccounts/${var.devai_workload_sa_email}"
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.devai_runner_ksa}]"
+}
