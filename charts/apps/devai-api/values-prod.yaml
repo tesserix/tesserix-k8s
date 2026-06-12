@@ -219,9 +219,12 @@ llm:
   # the PSC endpoint (terraform-new/stacks/12-vertex). Project defaults to
   # gcp.projectId. asia-south1 is validated end to end; "global" also works.
   vertexEnabled: true
-  # If Anthropic (the platform default) errors, retry on keyless Vertex
-  # Gemini over the private PSC path — agents never fail on an outage.
-  fallbackProvider: "vertex_gemini"
+  # Canonical provider order (user-directed): Vertex Gemini is the
+  # primary (keyless, VPC-private), then groq → openrouter → anthropic
+  # pick up failed calls in that order. Unconfigured links (e.g.
+  # openrouter until a key exists) are skipped automatically.
+  provider: "vertex_gemini"
+  fallbackProvider: "groq,openrouter,anthropic"
   vertexLocation: "global"
   vertexGeminiModel: "gemini-2.5-flash"
   # Vertex goes DIRECT from the pod (Workload Identity ADC over the PSC
