@@ -86,3 +86,9 @@ variable "agentgateway_ksa" {
   type        = string
   default     = "agentgateway-system/agentgateway"
 }
+
+variable "devai_runner_ksa" {
+  description = "Kubernetes SA (namespace/name) of the DevAI ADK runner Jobs, bound to the DevAI workload GSA so dispatched agents reach Vertex via ADC"
+  type        = string
+  default     = "devai/devai-runner"
+}

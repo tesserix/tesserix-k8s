@@ -168,8 +168,17 @@ cd terraform-new && make plan-12-vertex             # expect: No changes.
 
 | Caller | How |
 |---|---|
+| **devai-api / devai-sre pods** | `vertex_gemini` LLM adapter (REST + ADC, shipped in devai) — KSA `devai/devai-api` → WI → `app-secrets-devai-prod@`. Env: `DEVAI_VERTEX_PROJECT/LOCATION/GEMINI_MODEL` from `charts/apps/devai-api` (`llm.vertexEnabled` in values-prod). Selectable globally (`DEVAI_LLM_PROVIDER=vertex_gemini`) or per specialization. |
+| **ADK runner Jobs** (agents as K8s Jobs) | KSA `devai/devai-runner` → WI → same GSA (binding owned by `12-vertex` Terraform). Dispatched agents inherit the vertex env and mint ADC in-Job. |
+| **devai-ai-gateway (nginx)** | `/vertex/*` pass-through route to `aiplatform.googleapis.com` (caller attaches its own bearer; anthropic/openai routes keep gateway-injected keys). Rides the PSC DNS pin automatically. |
 | **agentgateway** (strategic) | pods run as KSA `agentgateway-system/agentgateway` → WI → `agentgateway-llm@` → ADC. Gateway config maps model aliases → Vertex/Anthropic/OpenAI backends. ⚠️ chart wrapper is `replicaCount: 0` until the upstream Helm chart (`oci://ghcr.io/agentgateway/agentgateway/charts/agentgateway`) is adopted with backend routes. |
-| **DevAI direct** (transition) | pods under `app-secrets-devai-prod@` use ADC; DevAI's planned `vertex_gemini` / `vertex_anthropic` adapters (see `devai/docs/plans/vertex-multi-model/`). DevAI's `gateway` LLM provider (`DEVAI_LLM_GATEWAY_BASE_URL`) is already registered for the gateway cutover. |
+| **MCP** | Google's system MCP servers are registered as DevAI registry seeds (`google-vertex-mcp` → `https://aiplatform.googleapis.com/mcp/generate`: generate_content/count_tokens/embed_content; `google-agent-registry-mcp` → `https://agentregistry.googleapis.com/mcp`: 20 discovery tools). DevAI's MCP Hub injects ADC bearers via the new `authMode: gcp_adc`. |
+
+**Validated 2026-06-12:** `generateContent` returns 200 as `agentgateway-llm@` (impersonated)
+against both `global` and `asia-south1`; both Google MCP endpoints answer `tools/list`.
+**Gotcha:** impersonated/user ADC tokens MUST send `x-goog-user-project` (otherwise Vertex
+404s); GKE Workload Identity metadata tokens don't need it. DevAI's adapter and MCP hub
+always send it.
 
 Still pending (deliberate): Claude Model Garden terms acceptance (console, once), per-model
 quotas + Vertex budget alert, VPC Service Controls perimeter (requires widening DNS to all of

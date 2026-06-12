@@ -237,6 +237,17 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.llm.anthropicBaseUrl | default "" | quote }}
 - name: DEVAI_OPENAI_BASE_URL
   value: {{ .Values.llm.openaiBaseUrl | default "" | quote }}
+{{- if .Values.llm.vertexEnabled }}
+# Vertex AI — keyless (Workload Identity ADC) + VPC-private (PSC-pinned
+# aiplatform DNS zone, terraform-new/stacks/12-vertex). Selectable as
+# llm_provider=vertex_gemini globally or per specialization.
+- name: DEVAI_VERTEX_PROJECT
+  value: {{ .Values.llm.vertexProject | default .Values.gcp.projectId | quote }}
+- name: DEVAI_VERTEX_LOCATION
+  value: {{ .Values.llm.vertexLocation | default "global" | quote }}
+- name: DEVAI_VERTEX_GEMINI_MODEL
+  value: {{ .Values.llm.vertexGeminiModel | default "gemini-2.5-flash" | quote }}
+{{- end }}
 - name: DEVAI_GROQ_API_KEY
   valueFrom:
     secretKeyRef:

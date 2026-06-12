@@ -80,9 +80,23 @@ data:
           proxy_pass https://api.openai.com;
         }
 
+        # Vertex AI — pass-through. Unlike the API-key upstreams above the
+        # gateway injects NOTHING here: callers attach their own OAuth bearer
+        # (Workload Identity ADC). Cluster DNS resolves this host through the
+        # vertex-aiplatform private zone to the PSC endpoint (10.255.0.2), so
+        # the hop to Google never leaves the VPC.
+        location /vertex/ {
+          proxy_ssl_name           aiplatform.googleapis.com;
+          proxy_set_header Host    aiplatform.googleapis.com;
+          proxy_set_header Content-Type        $content_type;
+          proxy_set_header Accept              $http_accept;
+          rewrite ^/vertex/(.*)$ /$1 break;
+          proxy_pass https://aiplatform.googleapis.com;
+        }
+
         # Catch-all — useful for debugging during rollout.
         location / {
-          return 404 '{"error":"unknown route — use /anthropic/* or /openai/*"}\n';
+          return 404 '{"error":"unknown route — use /anthropic/*, /openai/* or /vertex/*"}\n';
           add_header Content-Type application/json;
         }
       }
