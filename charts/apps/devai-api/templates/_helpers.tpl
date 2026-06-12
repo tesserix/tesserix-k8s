@@ -252,6 +252,14 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.llm.vertexBaseUrl | quote }}
 {{- end }}
 {{- end }}
+{{- if .Values.llm.requireUserConnector }}
+# Strict tenant isolation: human principals MUST bring their own LLM
+# connector (Settings) — the shared platform keys are never used for
+# them. Webhook/system principals keep the platform chain so automation
+# never breaks.
+- name: DEVAI_LLM_REQUIRE_USER_CONNECTOR
+  value: "true"
+{{- end }}
 {{- if .Values.llm.provider }}
 # The platform-default LLM backend (per-user/per-spec choices override it).
 - name: DEVAI_LLM_PROVIDER
