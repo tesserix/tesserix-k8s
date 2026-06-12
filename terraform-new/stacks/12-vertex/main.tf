@@ -110,6 +110,15 @@ resource "google_project_iam_member" "devai_workload_aiplatform" {
   member  = "serviceAccount:${var.devai_workload_sa_email}"
 }
 
+# Settings capability: devai provisions per-user connector secrets into
+# Secret Manager (create/version/delete on devai-* secrets), so the workload
+# GSA needs SM write — not just the accessor role ESO uses.
+resource "google_project_iam_member" "devai_workload_secretmanager_admin" {
+  project = var.project_id
+  role    = "roles/secretmanager.admin"
+  member  = "serviceAccount:${var.devai_workload_sa_email}"
+}
+
 # ADK runner Jobs (DevAI agents dispatched as K8s Jobs, KSA devai/devai-runner)
 # impersonate the DevAI workload GSA so in-Job agents mint ADC for Vertex.
 # The api/sre/dashboard KSA bindings on this GSA pre-date Terraform and stay
