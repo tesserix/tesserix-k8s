@@ -252,6 +252,12 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.llm.vertexBaseUrl | quote }}
 {{- end }}
 {{- end }}
+{{- if .Values.llm.fallbackProvider }}
+# Runtime resilience: calls that fail on the primary provider retry on
+# this backend (its own default model) — outages degrade, never fail runs.
+- name: DEVAI_LLM_FALLBACK_PROVIDER
+  value: {{ .Values.llm.fallbackProvider | quote }}
+{{- end }}
 {{- if .Values.llm.tierLight }}
 # Cost tiers — resolve_llm_tier() maps these "provider:model" pairs so
 # stages/specs can ask for light|standard|heavy|frontier instead of
