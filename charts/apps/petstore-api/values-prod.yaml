@@ -1,73 +1,184 @@
-# =============================================================================
-# Petstore API - Production Overrides
-# High-availability configuration for production environment
-# =============================================================================
+# Production overrides for petstore-api
+
+global:
+  environment: "prod"
 
 replicaCount: 3
 
 image:
-  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/test-repo/petstore-api
-  tag: "latest"
+  tag: "stable"
 
-# Production resource limits
 resources:
   limits:
+    cpu: 2000m
     memory: 2Gi
-    cpu: 1000m
   requests:
-    memory: 1Gi
     cpu: 500m
+    memory: 1Gi
 
-# Higher scaling for production
-autoscaling:
+# Enhanced health checks for production
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: http
+  initialDelaySeconds: 45
+  periodSeconds: 15
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/health/ready
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+# Production environment variables
+env:
+  NODE_ENV: production
+  LOG_LEVEL: "warn"
+  API_RATE_LIMIT: "5000"
+  
+  # Production database configuration
+  POSTGRES_HOST: "petstore-postgres-primary.petstore.svc.cluster.local"
+  POSTGRES_SSL: "require"
+  POSTGRES_MAX_CONNECTIONS: "20"
+  
+  # Production Redis configuration
+  REDIS_HOST: "redis-petstore-master.petstore.svc.cluster.local"
+  REDIS_TTL: "7200"
+  REDIS_MAX_CONNECTIONS: "50"
+  
+  # Enhanced caching for production
+  CACHE_DEFAULT_TTL: "600"
+  CACHE_USER_SESSION_TTL: "7200"
+  CACHE_PRODUCT_TTL: "3600"
+  
+  # Production CORS (stricter)
+  CORS_ORIGIN: "https://petstore.tesserix.app,https://admin.petstore.tesserix.app"
+  
+  # Feature flags for production
+  FEATURE_ANALYTICS_ENABLED: "true"
+  FEATURE_RECOMMENDATIONS_ENABLED: "true"
+  
+  # Production search configuration
+  SEARCH_RESULTS_LIMIT: "100"
+
+# Production autoscaling
+hpa:
+  enabled: true
   minReplicas: 3
   maxReplicas: 20
   targetCPUUtilizationPercentage: 60
   targetMemoryUtilizationPercentage: 70
+  scaleDownStabilizationWindowSeconds: 600
+  scaleUpStabilizationWindowSeconds: 30
 
-# KEDA production scaling
+# Production KEDA scaling
 keda:
+  enabled: true
   minReplicaCount: 3
-  maxReplicaCount: 20
+  maxReplicaCount: 25
   triggers:
     - type: cpu
       metricType: Utilization
-      metadata:
-        value: "60"
+      value: "60"
     - type: memory
       metricType: Utilization
-      metadata:
-        value: "70"
+      value: "70"
+    - type: redis
+      address: "redis-petstore-master.petstore.svc.cluster.local:6379"
+      listName: "api_queue"
+      listLength: "20"
+    - type: prometheus
+      serverAddress: "http://prometheus-server.monitoring.svc.cluster.local:80"
+      metricName: "nginx_ingress_controller_requests_rate"
+      threshold: "50"
+      query: 'sum(rate(nginx_ingress_controller_requests[2m]))'
 
-# Production hosts
+# Production VPA
+vpa:
+  enabled: true
+  updateMode: "Auto"
+  minCpu: "200m"
+  minMemory: "512Mi"
+  maxCpu: "4000m"
+  maxMemory: "4Gi"
+
+# Production PDB
+pdb:
+  enabled: true
+  minAvailable: 2
+
+# Production VirtualService with enhanced routing
 virtualService:
+  enabled: true
   hosts:
     - "api.petstore.tesserix.app"
+  gateways:
+    - "istio-system/tesserix-gateway"
+  http:
+    - match:
+        - uri:
+            prefix: "/api/"
+      route:
+        - destination:
+            host: "petstore-api.petstore.svc.cluster.local"
+            port:
+              number: 3000
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 20s
+        retryOn: "gateway-error,connect-failure,refused-stream"
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://petstore.tesserix.app"
+          - exact: "https://admin.petstore.tesserix.app"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - "authorization"
+          - "content-type"
+          - "x-api-key"
+          - "x-client-version"
+          - "x-request-id"
+        allowCredentials: true
+        maxAge: 86400s
+      headers:
+        response:
+          add:
+            x-frame-options: "DENY"
+            x-content-type-options: "nosniff"
+            x-xss-protection: "1; mode=block"
+            strict-transport-security: "max-age=31536000; includeSubDomains; preload"
+            referrer-policy: "strict-origin-when-cross-origin"
+            permissions-policy: "geolocation=(), camera=(), microphone=()"
 
-# Production environment variables
-env:
-  LOG_LEVEL: "info"
-  RATE_LIMIT_REQUESTS: "1000"
-  RATE_LIMIT_WINDOW: "3600"
-  CORS_ORIGINS: "https://petstore.tesserix.app,https://admin.petstore.tesserix.app"
-
-# Production VPA settings
-vpa:
-  updateMode: "Auto"
-  minAllowed:
-    memory: "512Mi"
-    cpu: "250m"
-  maxAllowed:
-    memory: "4Gi"
-    cpu: "2000m"
-
-# Production monitoring
-podAnnotations:
-  prometheus.io/scrape: "true"
-  prometheus.io/port: "3000"
-  prometheus.io/path: "/api/metrics"
-  
-# GCP production settings
-gcp:
-  secretManager:
-    secretPrefix: "prod"
+# Production affinity rules
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values:
+                - petstore-api
+        topologyKey: kubernetes.io/hostname
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: cloud.google.com/gke-nodepool
+              operator: In
+              values:
+                - default-pool
