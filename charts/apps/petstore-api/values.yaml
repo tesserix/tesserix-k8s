@@ -1,187 +1,267 @@
 # Default values for petstore-api
+# This is a YAML-formatted file.
 
-replicaCount: 1
+global:
+  imageRegistry: "gcr.io/tesserix-platform"
+  environment: "devtest"
+
+replicaCount: 2
 
 image:
-  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/petstore/petstore-api
+  repository: petstore-api
   pullPolicy: Always
-  # Concrete main-<sha> seed tag; Kargo will overwrite this via the ArgoCD app's helm parameter
-  # on every promotion, with ignoreDifferences keeping selfHeal from reverting it.
-  tag: "main-initial"
-
-imagePullSecrets:
-  - name: ghcr-secret
+  tag: "latest"
 
 nameOverride: ""
 fullnameOverride: ""
 
+serviceAccount:
+  create: true
+  annotations:
+    iam.gke.io/gcp-service-account: "petstore-api@tesserix-platform.iam.gserviceaccount.com"
+  name: "petstore-api"
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "3000"
+  prometheus.io/path: "/api/health/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  fsGroup: 1001
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 1001
+
 service:
   type: ClusterIP
   port: 3000
-  targetPort: 3000
+  targetPort: http
 
-serviceAccount:
-  create: true
-  automount: true
-  annotations: {}
-  name: ""
-
-env:
-  NODE_ENV: "production"
-  PORT: "3000"
-  PETSTORE_LOG_LEVEL: "info"
-  # Database configuration - secrets will be injected via External Secrets
-  DATABASE_URL: ""  # Will be set via externalsecret
-  # Redis configuration for sessions and caching
-  REDIS_URL: "redis://redis.redis.svc.cluster.local:6379"
-  # Next.js specific
-  NEXT_PUBLIC_API_URL: "https://api.petstore.tesserix.app"
-  NEXTAUTH_URL: "https://api.petstore.tesserix.app"
-  # Payment configuration (Stripe) - secrets will be injected
-  STRIPE_PUBLISHABLE_KEY: ""  # Will be set via externalsecret
-  # Email configuration
-  SMTP_HOST: "smtp.gmail.com"
-  SMTP_PORT: "587"
-  FROM_EMAIL: "noreply@petstore.tesserix.app"
-  # File upload configuration
-  UPLOAD_MAX_SIZE: "10485760" # 10MB
-  # CORS configuration
-  CORS_ORIGINS: "https://petstore.tesserix.app,https://admin.petstore.tesserix.app"
-
-database:
-  host: "petstore-postgres.petstore.svc.cluster.local"
-  port: "5432"
-  user: "petstore_user"
-  name: "petstore_db"
-
-redis:
-  host: "redis.redis.svc.cluster.local"
-  port: "6379"
-
-gcp:
-  projectId: "tesseracthub-480811"
-  workloadIdentity:
-    enabled: true
-    gcpServiceAccount: "petstore-api-sa@tesseracthub-480811.iam.gserviceaccount.com"
+ingress:
+  enabled: false
 
 resources:
-  requests:
-    memory: 256Mi
-    cpu: 100m
   limits:
-    memory: 1Gi
-    cpu: 500m
-
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 5
-  targetCPUUtilizationPercentage: 80
-  targetMemoryUtilizationPercentage: 80
-
-keda:
-  enabled: false
-
-podAnnotations:
-  kubectl.kubernetes.io/restartedAt: "2026-06-12T05:26:00Z"
-  proxy.istio.io/holdApplicationUntilProxyStarts: "true"
-
-podLabels: {}
-
-nodeSelector: {}
-
-tolerations: []
-
-affinity: {}
-
-# Pod Disruption Budget for high availability
-podDisruptionBudget:
-  enabled: false
-  minAvailable: 1
-
-# Vertical Pod Autoscaler
-vpa:
-  enabled: false
-  updateMode: "Auto"
-  minAllowed:
-    memory: 128Mi
-    cpu: 50m
-  maxAllowed:
-    memory: 2Gi
     cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
 
-# Health check configuration
-healthcheck:
-  enabled: true
-  path: "/api/health"
-  port: 3000
+# Health checks
+livenessProbe:
+  httpGet:
+    path: /api/health
+    port: http
   initialDelaySeconds: 30
   periodSeconds: 10
   timeoutSeconds: 5
   failureThreshold: 3
-  successThreshold: 1
 
-# Ingress configuration
-ingress:
+readinessProbe:
+  httpGet:
+    path: /api/health/ready
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Environment variables
+env:
+  NODE_ENV: production
+  PORT: "3000"
+  API_VERSION: "v1"
+  
+  # Database Configuration
+  POSTGRES_HOST: "petstore-postgres-primary.petstore.svc.cluster.local"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "petstore_db"
+  POSTGRES_SSL: "require"
+  
+  # Redis Configuration
+  REDIS_HOST: "redis-petstore-master.petstore.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  REDIS_TTL: "3600"
+  
+  # API Configuration
+  API_RATE_LIMIT: "1000"
+  API_TIMEOUT: "30000"
+  JWT_EXPIRES_IN: "24h"
+  
+  # Logging
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  
+  # CORS Configuration
+  CORS_ORIGIN: "https://petstore.tesserix.app,https://admin.petstore.tesserix.app"
+  CORS_CREDENTIALS: "true"
+  
+  # File Upload
+  UPLOAD_MAX_SIZE: "10485760" # 10MB
+  UPLOAD_ALLOWED_TYPES: "image/jpeg,image/png,image/webp"
+  
+  # Payment Configuration (Stripe)
+  STRIPE_WEBHOOK_ENDPOINT_SECRET: "whsec_placeholder"
+  STRIPE_API_VERSION: "2023-10-16"
+  
+  # Email Configuration (SMTP)
+  SMTP_HOST: "smtp.gmail.com"
+  SMTP_PORT: "587"
+  SMTP_SECURE: "false"
+  EMAIL_FROM_NAME: "Tesserix Petstore"
+  EMAIL_FROM_ADDRESS: "noreply@tesserix.com"
+  
+  # Feature Flags
+  FEATURE_WISHLIST_ENABLED: "true"
+  FEATURE_REVIEWS_ENABLED: "true"
+  FEATURE_INVENTORY_TRACKING: "true"
+  FEATURE_ANALYTICS_ENABLED: "true"
+  FEATURE_RECOMMENDATIONS_ENABLED: "true"
+  
+  # Search Configuration
+  SEARCH_INDEX_NAME: "petstore_products"
+  SEARCH_RESULTS_LIMIT: "50"
+  
+  # Cache Configuration
+  CACHE_DEFAULT_TTL: "300"
+  CACHE_USER_SESSION_TTL: "3600"
+  CACHE_PRODUCT_TTL: "1800"
+
+# External Secrets
+externalSecrets:
   enabled: true
-  className: "istio"
-  annotations:
-    cert-manager.io/issuer: "letsencrypt-prod"
-  hosts:
-    - host: api.petstore.tesserix.app
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: petstore-api-tls
-      hosts:
-        - api.petstore.tesserix.app
+  secretStore: gcpsm-secret-store
+  refreshInterval: 1h
+  secrets:
+    - name: POSTGRES_USER
+      key: petstore-postgres-user
+    - name: POSTGRES_PASSWORD
+      key: petstore-postgres-password
+    - name: REDIS_PASSWORD
+      key: redis-petstore-password
+    - name: JWT_SECRET
+      key: petstore-jwt-secret
+    - name: STRIPE_SECRET_KEY
+      key: petstore-stripe-secret-key
+    - name: STRIPE_PUBLISHABLE_KEY
+      key: petstore-stripe-publishable-key
+    - name: SMTP_USER
+      key: petstore-smtp-user
+    - name: SMTP_PASSWORD
+      key: petstore-smtp-password
+    - name: ENCRYPTION_KEY
+      key: petstore-encryption-key
+
+# Autoscaling
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  scaleDownStabilizationWindowSeconds: 300
+  scaleUpStabilizationWindowSeconds: 60
+
+# Pod Disruption Budget
+pdb:
+  enabled: true
+  minAvailable: 1
+
+# KEDA Scaling (Advanced)
+keda:
+  enabled: true
+  minReplicaCount: 2
+  maxReplicaCount: 15
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      value: "70"
+    - type: memory
+      metricType: Utilization
+      value: "80"
+    - type: redis
+      address: "redis-petstore-master.petstore.svc.cluster.local:6379"
+      listName: "api_queue"
+      listLength: "10"
+
+# VPA (Vertical Pod Autoscaler)
+vpa:
+  enabled: true
+  updateMode: "Off"  # Set to "Auto" for production
+  minCpu: "100m"
+  minMemory: "256Mi"
+  maxCpu: "2000m"
+  maxMemory: "2Gi"
 
 # Istio VirtualService
 virtualService:
   enabled: true
   hosts:
-    - api.petstore.tesserix.app
+    - "api.petstore.tesserix.app"
   gateways:
-    - istio-system/default-gateway
+    - "istio-system/tesserix-gateway"
   http:
     - match:
         - uri:
-            prefix: /
+            prefix: "/api/"
       route:
         - destination:
-            host: petstore-api.petstore.svc.cluster.local
+            host: "petstore-api.petstore.svc.cluster.local"
             port:
               number: 3000
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://petstore.tesserix.app"
+          - exact: "https://admin.petstore.tesserix.app"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        allowHeaders:
+          - "authorization"
+          - "content-type"
+          - "x-api-key"
+          - "x-client-version"
+        allowCredentials: true
+        maxAge: 86400s
+      headers:
+        response:
+          add:
+            x-frame-options: "DENY"
+            x-content-type-options: "nosniff"
+            x-xss-protection: "1; mode=block"
+            strict-transport-security: "max-age=31536000; includeSubDomains"
 
-# External Secrets for sensitive configuration
-externalSecrets:
-  enabled: true
-  secretStore: gcp-secret-manager
-  secrets:
-    - name: petstore-api-secrets
-      data:
-        - secretKey: database-url
-          remoteRef:
-            key: petstore-database-url
-        - secretKey: nextauth-secret
-          remoteRef:
-            key: petstore-nextauth-secret
-        - secretKey: stripe-publishable-key
-          remoteRef:
-            key: petstore-stripe-publishable-key
-        - secretKey: stripe-secret-key
-          remoteRef:
-            key: petstore-stripe-secret-key
-        - secretKey: stripe-webhook-secret
-          remoteRef:
-            key: petstore-stripe-webhook-secret
-        - secretKey: smtp-user
-          remoteRef:
-            key: petstore-smtp-user
-        - secretKey: smtp-password
-          remoteRef:
-            key: petstore-smtp-password
-        - secretKey: jwt-secret
-          remoteRef:
-            key: petstore-jwt-secret
+# Node Selection
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - petstore-api
+          topologyKey: kubernetes.io/hostname
