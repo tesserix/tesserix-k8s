@@ -252,6 +252,11 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.llm.vertexBaseUrl | quote }}
 {{- end }}
 {{- end }}
+{{- if .Values.llm.provider }}
+# The platform-default LLM backend (per-user/per-spec choices override it).
+- name: DEVAI_LLM_PROVIDER
+  value: {{ .Values.llm.provider | quote }}
+{{- end }}
 {{- if .Values.llm.fallbackProvider }}
 # Runtime resilience: calls that fail on the primary provider retry on
 # this backend (its own default model) — outages degrade, never fail runs.
