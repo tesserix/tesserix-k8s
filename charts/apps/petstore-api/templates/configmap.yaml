@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "petstore-api.fullname" . }}
+  labels:
+    {{- include "petstore-api.labels" . | nindent 4 }}
+data:
+  # Node.js runtime configuration
+  NODE_ENV: {{ .Values.app.nodeEnv | quote }}
+  PORT: {{ .Values.service.targetPort | quote }}
+  
+  # Next.js configuration
+  NEXT_TELEMETRY_DISABLED: "1"
+  {{- if .Values.app.apiUrl }}
+  NEXT_PUBLIC_API_URL: {{ .Values.app.apiUrl | quote }}
+  {{- end }}
+  
+  # Database configuration
+  {{- if .Values.database.enabled }}
+  DB_HOST: {{ .Values.database.host | quote }}
+  DB_PORT: {{ .Values.database.port | quote }}
+  DB_NAME: {{ .Values.database.name | quote }}
+  DB_SSL: {{ .Values.database.ssl | quote }}
+  DB_POOL_MIN: {{ .Values.database.pool.min | quote }}
+  DB_POOL_MAX: {{ .Values.database.pool.max | quote }}
+  DB_POOL_IDLE_TIMEOUT: {{ .Values.database.pool.idleTimeout | quote }}
+  {{- end }}
+  
+  # Redis configuration
+  {{- if .Values.redis.enabled }}
+  REDIS_HOST: {{ .Values.redis.host | quote }}
+  REDIS_PORT: {{ .Values.redis.port | quote }}
+  REDIS_DB: {{ .Values.redis.db | quote }}
+  {{- if .Values.redis.tls }}
+  REDIS_TLS: "true"
+  {{- end }}
+  {{- end }}
+  
+  # External service URLs
+  {{- if .Values.app.stripeWebhookEndpoint }}
+  STRIPE_WEBHOOK_ENDPOINT: {{ .Values.app.stripeWebhookEndpoint | quote }}
+  {{- end }}
+  {{- if .Values.app.emailServiceUrl }}
+  EMAIL_SERVICE_URL: {{ .Values.app.emailServiceUrl | quote }}
+  {{- end }}
+  
+  # SMTP configuration
+  {{- if .Values.smtp.enabled }}
+  SMTP_HOST: {{ .Values.smtp.host | quote }}
+  SMTP_PORT: {{ .Values.smtp.port | quote }}
+  SMTP_SECURE: {{ .Values.smtp.secure | quote }}
+  SMTP_FROM_EMAIL: {{ .Values.smtp.fromEmail | quote }}
+  SMTP_FROM_NAME: {{ .Values.smtp.fromName | quote }}
+  {{- end }}
+  
+  # Application features
+  {{- if .Values.features }}
+  {{- range $key, $value := .Values.features }}
+  FEATURE_{{ $key | upper }}: {{ $value | quote }}
+  {{- end }}
+  {{- end }}
+  
+  # Logging configuration
+  LOG_LEVEL: {{ .Values.app.logLevel | default "info" | quote }}
+  LOG_FORMAT: {{ .Values.app.logFormat | default "json" | quote }}
+  
+  # Additional environment variables
+  {{- with .Values.env }}
+  {{- range $key, $value := . }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  {{- end }}
