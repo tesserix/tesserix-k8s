@@ -88,8 +88,13 @@ data:
         location /vertex/ {
           proxy_ssl_name           aiplatform.googleapis.com;
           proxy_set_header Host    aiplatform.googleapis.com;
+          proxy_set_header x-goog-api-key      "${VERTEX_API_KEY}";
           proxy_set_header Content-Type        $content_type;
           proxy_set_header Accept              $http_accept;
+          # Strip caller auth so the injected key always wins (same
+          # pattern as /anthropic). Callers that need ADC instead of the
+          # key talk to aiplatform.googleapis.com directly over PSC.
+          proxy_set_header Authorization       "";
           rewrite ^/vertex/(.*)$ /$1 break;
           proxy_pass https://aiplatform.googleapis.com;
         }
@@ -156,7 +161,7 @@ spec:
             - /bin/sh
             - -c
             - >
-              envsubst '$ANTHROPIC_API_KEY $OPENAI_API_KEY'
+              envsubst '$ANTHROPIC_API_KEY $OPENAI_API_KEY $VERTEX_API_KEY'
               < /etc/nginx/templates/nginx.conf.template
               > /tmp/nginx.conf
               && exec nginx -c /tmp/nginx.conf -g 'daemon off;'

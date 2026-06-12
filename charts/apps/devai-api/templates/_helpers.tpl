@@ -247,6 +247,23 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.llm.vertexLocation | default "global" | quote }}
 - name: DEVAI_VERTEX_GEMINI_MODEL
   value: {{ .Values.llm.vertexGeminiModel | default "gemini-2.5-flash" | quote }}
+{{- if .Values.llm.vertexBaseUrl }}
+- name: DEVAI_VERTEX_BASE_URL
+  value: {{ .Values.llm.vertexBaseUrl | quote }}
+{{- end }}
+{{- end }}
+{{- if .Values.llm.tierLight }}
+# Cost tiers — resolve_llm_tier() maps these "provider:model" pairs so
+# stages/specs can ask for light|standard|heavy|frontier instead of
+# hardcoding a provider.
+- name: DEVAI_LLM_TIER_LIGHT
+  value: {{ .Values.llm.tierLight | quote }}
+- name: DEVAI_LLM_TIER_STANDARD
+  value: {{ .Values.llm.tierStandard | default .Values.llm.tierLight | quote }}
+- name: DEVAI_LLM_TIER_HEAVY
+  value: {{ .Values.llm.tierHeavy | default "" | quote }}
+- name: DEVAI_LLM_TIER_FRONTIER
+  value: {{ .Values.llm.tierFrontier | default "" | quote }}
 {{- end }}
 - name: DEVAI_GROQ_API_KEY
   valueFrom:
