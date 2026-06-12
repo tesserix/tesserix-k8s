@@ -1,0 +1,125 @@
+# Adopted from the live cluster 2026-06-12 — this policy was created by hand
+# 18 days earlier and never committed; ArgoCD now owns it. One functional
+# change vs the hand-applied version: the first egress rule allows tcp/443 to
+# 10.255.0.2/32, the Private Service Connect endpoint for Google APIs
+# (terraform-new/stacks/12-vertex). The catch-all 443 rule excludes all of
+# 10.0.0.0/8, which silently blocked the devai-ai-gateway /vertex upstream
+# (nginx 502) while public Anthropic/OpenAI egress kept working.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-agentgateway-egress
+  namespace: agentgateway-system
+spec:
+  egress:
+  - ports:
+    - port: 443
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 10.255.0.2/32
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    - ipBlock:
+        cidr: 10.30.0.10/32
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: global
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: nats
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: identity-customer
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: identity-internal
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: growthbook
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: typesense
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: agentgateway-system
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-system
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-ingress
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: knative-serving
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: email
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: translation
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: ''
+  - to:
+    - ipBlock:
+        cidr: 169.254.169.254/32
+  - to:
+    - ipBlock:
+        cidr: 169.254.0.0/16
+  - ports:
+    - port: 443
+      protocol: TCP
+    to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: default
+  - ports:
+    - port: 443
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 10.30.0.1/32
+  - ports:
+    - port: 443
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 172.16.0.0/12
+  - ports:
+    - port: 443
+      protocol: TCP
+    to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+  podSelector: {}
+  policyTypes:
+  - Egress
