@@ -1,0 +1,40 @@
+{{- if not .Values.hibernate }}
+# Cross-namespace super-admin DB access: lets tesserix-home (the `company`
+# chart) reach homechef-postgres:5432 as the homechef_platform_admin role
+# (payout/orders/delivery admin — Home Chef 5B). NetworkPolicies are additive
+# (union of allows), so this is purely additive to the broad
+# allow-homechef-ingress policy — homechef's own services keep their existing
+# same-namespace DB access. Mirrors the mark8ly-postgres cross-namespace rule.
+# See tesserix-k8s/docs/cross-db-admin.md §6.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.clusterName }}-tesserix-admin-ingress
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: homechef
+    app.kubernetes.io/component: database
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: {{ .Values.clusterName }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tesserix
+          podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - company
+                  - tesserix-home
+                  - tesserix-auth-bff
+                  - tesserix-admin-api
+      ports:
+        - protocol: TCP
+          port: 5432
+{{- end }}
