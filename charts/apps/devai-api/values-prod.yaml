@@ -221,10 +221,13 @@ llm:
   vertexEnabled: true
   vertexLocation: "global"
   vertexGeminiModel: "gemini-2.5-flash"
-  # Route Vertex through the devai-ai-gateway (/vertex/* injects the
-  # prod-devai-vertex-api-key from GCP SM; caller needs no credentials).
-  # Unset to fall back to direct PSC + Workload Identity ADC.
-  vertexBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/vertex"
+  # Vertex goes DIRECT from the pod (Workload Identity ADC over the PSC
+  # endpoint) — verified end to end in-cluster 2026-06-12. The gateway
+  # /vertex route exists and injects the API key, but agentgateway-system
+  # pod egress re-frames POST bodies as chunked (istio ambient L7), which
+  # Google's PSC frontend rejects with 411 — Anthropic/OpenAI tolerate it,
+  # GFE doesn't. Re-point at the gateway only after that's resolved:
+  # vertexBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/vertex"
   # Cost tiers — "provider:model". light/standard ride Vertex Gemini;
   # heavy/frontier stay on Claude/o3 via the same gateway. Only
   # gemini-2.5-flash is model-enabled in the project today; after enabling
