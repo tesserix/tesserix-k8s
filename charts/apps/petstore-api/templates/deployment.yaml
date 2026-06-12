@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "petstore-api.labels" . | nindent 4 }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
+  {{- if not .Values.hpa.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
   selector:
@@ -13,11 +13,10 @@ spec:
       {{- include "petstore-api.selectorLabels" . | nindent 6 }}
   template:
     metadata:
+      {{- with .Values.podAnnotations }}
       annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-        {{- end }}
+      {{- end }}
       labels:
         {{- include "petstore-api.selectorLabels" . | nindent 8 }}
     spec:
@@ -32,43 +31,42 @@ spec:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: "{{ .Values.global.imageRegistry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ .Values.service.targetPort }}
+              containerPort: {{ .Values.service.port }}
               protocol: TCP
           env:
-            {{- include "petstore-api.environment" . | nindent 12 }}
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if .Values.externalSecrets.enabled }}
           envFrom:
-            - configMapRef:
-                name: {{ include "petstore-api.fullname" . }}
+            - secretRef:
+                name: {{ include "petstore-api.fullname" . }}-secrets
+          {{- end }}
           livenessProbe:
-            httpGet:
-              path: {{ .Values.healthCheck.liveness.path }}
-              port: http
-            initialDelaySeconds: {{ .Values.healthCheck.liveness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.healthCheck.liveness.periodSeconds }}
-            timeoutSeconds: {{ .Values.healthCheck.liveness.timeoutSeconds }}
-            failureThreshold: {{ .Values.healthCheck.liveness.failureThreshold }}
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
-            httpGet:
-              path: {{ .Values.healthCheck.readiness.path }}
-              port: http
-            initialDelaySeconds: {{ .Values.healthCheck.readiness.initialDelaySeconds }}
-            periodSeconds: {{ .Values.healthCheck.readiness.periodSeconds }}
-            timeoutSeconds: {{ .Values.healthCheck.readiness.timeoutSeconds }}
-            failureThreshold: {{ .Values.healthCheck.readiness.failureThreshold }}
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- with .Values.volumeMounts }}
           volumeMounts:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-      {{- with .Values.volumes }}
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/.next/cache
+            - name: uploads
+              mountPath: /app/uploads
       volumes:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+        - name: uploads
+          emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
