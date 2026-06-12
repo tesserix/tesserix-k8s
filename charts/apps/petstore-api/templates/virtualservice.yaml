@@ -1,4 +1,4 @@
-{{- if .Values.istio.enabled }}
+{{- if .Values.virtualService.enabled }}
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -7,54 +7,88 @@ metadata:
     {{- include "petstore-api.labels" . | nindent 4 }}
 spec:
   hosts:
-    - {{ .Values.istio.host }}
+    {{- range .Values.virtualService.hosts }}
+    - {{ . | quote }}
+    {{- end }}
   gateways:
-    - {{ .Values.istio.gateway }}
+    {{- range .Values.virtualService.gateways }}
+    - {{ . | quote }}
+    {{- end }}
   http:
+    {{- range .Values.virtualService.http }}
     - match:
+        {{- range .match }}
         - uri:
-            prefix: {{ .Values.istio.pathPrefix }}
-      rewrite:
-        {{- if ne .Values.istio.pathPrefix "/" }}
-        uri: /
+            {{- if .uri.prefix }}
+            prefix: {{ .uri.prefix | quote }}
+            {{- end }}
+            {{- if .uri.exact }}
+            exact: {{ .uri.exact | quote }}
+            {{- end }}
+            {{- if .uri.regex }}
+            regex: {{ .uri.regex | quote }}
+            {{- end }}
         {{- end }}
       route:
+        {{- range .route }}
         - destination:
-            host: {{ include "petstore-api.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+            host: {{ .destination.host | quote }}
             port:
-              number: {{ .Values.service.port }}
-      timeout: {{ .Values.istio.timeout }}
+              number: {{ .destination.port.number }}
+        {{- end }}
+      {{- if .timeout }}
+      timeout: {{ .timeout }}
+      {{- end }}
+      {{- if .retries }}
       retries:
-        attempts: {{ .Values.istio.retries.attempts }}
-        perTryTimeout: {{ .Values.istio.retries.perTryTimeout }}
-        retryOn: {{ .Values.istio.retries.retryOn }}
+        {{- toYaml .retries | nindent 8 }}
+      {{- end }}
+      {{- if .corsPolicy }}
       corsPolicy:
-        {{- if .Values.istio.cors.enabled }}
+        {{- if .corsPolicy.allowOrigins }}
         allowOrigins:
-          {{- range .Values.istio.cors.allowOrigins }}
-          - exact: {{ . }}
+          {{- range .corsPolicy.allowOrigins }}
+          {{- if .exact }}
+          - exact: {{ .exact | quote }}
           {{- end }}
+          {{- if .prefix }}
+          - prefix: {{ .prefix | quote }}
+          {{- end }}
+          {{- if .regex }}
+          - regex: {{ .regex | quote }}
+          {{- end }}
+          {{- end }}
+        {{- end }}
+        {{- if .corsPolicy.allowMethods }}
         allowMethods:
-          {{- range .Values.istio.cors.allowMethods }}
-          - {{ . }}
+          {{- range .corsPolicy.allowMethods }}
+          - {{ . | quote }}
           {{- end }}
+        {{- end }}
+        {{- if .corsPolicy.allowHeaders }}
         allowHeaders:
-          {{- range .Values.istio.cors.allowHeaders }}
-          - {{ . }}
+          {{- range .corsPolicy.allowHeaders }}
+          - {{ . | quote }}
           {{- end }}
-        {{- if .Values.istio.cors.allowCredentials }}
-        allowCredentials: true
         {{- end }}
-        maxAge: {{ .Values.istio.cors.maxAge }}
+        {{- if .corsPolicy.allowCredentials }}
+        allowCredentials: {{ .corsPolicy.allowCredentials }}
         {{- end }}
+        {{- if .corsPolicy.maxAge }}
+        maxAge: {{ .corsPolicy.maxAge }}
+        {{- end }}
+      {{- end }}
+      {{- if .headers }}
       headers:
-        request:
-          add:
-            x-forwarded-proto: https
+        {{- if .headers.response }}
         response:
+          {{- if .headers.response.add }}
           add:
-            x-content-type-options: nosniff
-            x-frame-options: DENY
-            x-xss-protection: "1; mode=block"
-            referrer-policy: strict-origin-when-cross-origin
+            {{- range $key, $value := .headers.response.add }}
+            {{ $key }}: {{ $value | quote }}
+            {{- end }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+    {{- end }}
 {{- end }}
