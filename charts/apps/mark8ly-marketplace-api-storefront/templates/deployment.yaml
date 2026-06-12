@@ -90,6 +90,13 @@ spec:
                   key: {{ .Values.resend.apiKeyKey }}
                   optional: true
             {{- end }}
+            # Orders the provider chain: the named provider sends first,
+            # every other configured provider is its per-message fallback.
+            # Flip to "sendgrid" to restore SendGrid-primary — config only.
+            {{- if .Values.email }}
+            - name: EMAIL_PRIMARY_PROVIDER
+              value: {{ .Values.email.primaryProvider | quote }}
+            {{- end }}
             # Service discovery
             - name: MARKETPLACE_FGA_API_URL
               value: {{ .Values.fgaApiUrl | quote }}
