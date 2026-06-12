@@ -346,11 +346,18 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
+  # The grafana PVC predates GitOps adoption; PVC spec fields are
+  # immutable, so the rendered diff can never converge. Ignore it.
+  ignoreDifferences:
+    - kind: PersistentVolumeClaim
+      jsonPointers:
+        - /spec
   syncPolicy:
     automated:
       prune: false
       selfHeal: true
     syncOptions:
+      - RespectIgnoreDifferences=true
       - CreateNamespace=true
       - ServerSideApply=true
     retry:
