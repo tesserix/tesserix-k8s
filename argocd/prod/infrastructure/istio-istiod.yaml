@@ -147,10 +147,12 @@ spec:
     - group: admissionregistration.k8s.io
       kind: ValidatingWebhookConfiguration
       jqPathExpressions:
-        - .webhooks[]?.clientConfig.caBundle
-        # istiod flips Ignore->Fail once it's ready; the chart renders the
-        # pre-ready value, leaving a permanent diff that stalls promotions.
-        - .webhooks[]?.failurePolicy
+        # istiod owns this webhook at runtime (caBundle injection,
+        # failurePolicy flip, field-manager rewrites under SSA); the chart
+        # only creates the skeleton. Ignore the whole array per upstream
+        # guidance — partial ignores kept leaving a permanent diff that
+        # stalled kargo-infra promotions.
+        - .webhooks
   syncPolicy:
     automated:
       prune: false
