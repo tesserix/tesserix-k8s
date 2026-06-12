@@ -103,10 +103,12 @@ spec:
               readOnlyRootFilesystem: true
               capabilities:
                 drop: ["ALL"]
-          # Don't expose a Service — Reloader is internal-only,
-          # talks to apiserver only.
+          # The chart has no service.enabled switch — it always renders the
+          # Service, and an empty block yields an invalid port: 0 that can
+          # never sync (this kept reloader perpetually OutOfSync and blocked
+          # kargo-infra promotions). Give it the metrics port instead.
           service:
-            enabled: false
+            port: 9090
           # ServiceAccount is auto-created; tag it so audits can find it.
           serviceAccount:
             labels:
