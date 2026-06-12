@@ -252,6 +252,14 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.llm.vertexBaseUrl | quote }}
 {{- end }}
 {{- end }}
+{{- if .Values.llm.systemPrincipal }}
+# Service principal: SRE/webhook/cron runs resolve THIS user's Settings
+# LLM connector (same overlay + gateway path), so automation also uses a
+# tenant connector instead of the raw shared keys. Falls back to the
+# platform chain only when this user has no connector.
+- name: DEVAI_LLM_SYSTEM_PRINCIPAL
+  value: {{ .Values.llm.systemPrincipal | quote }}
+{{- end }}
 {{- if .Values.llm.requireUserConnector }}
 # Strict tenant isolation: human principals MUST bring their own LLM
 # connector (Settings) — the shared platform keys are never used for
