@@ -6,11 +6,12 @@
 # below become GF_AUTH_GITHUB_CLIENT_ID / GF_AUTH_GITHUB_CLIENT_SECRET env
 # vars, which Grafana maps onto auth.github.client_id / client_secret.
 #
-# These are the org's existing GitHub OAuth App credentials (the same pair
-# DevAI syncs). The OAuth App MUST list
-#   https://grafana.tesserix.app/login/github
-# as an authorized callback URL (alongside any existing DevAI callback —
-# GitHub OAuth Apps accept multiple) or GitHub returns redirect_uri_mismatch.
+# Credentials are the "Tesserix Platform SSO" GitHub App — the SAME real App
+# ArgoCD and Kargo already use for GitHub login (prod-argocd-github-client-*).
+# Reusing it means one SSO identity across the platform consoles. That App MUST
+# list https://grafana.tesserix.app/login/github as a callback URL (GitHub Apps
+# accept multiple, alongside the existing ArgoCD/Kargo callbacks) or GitHub
+# returns redirect_uri_mismatch.
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
@@ -27,7 +28,7 @@ spec:
   data:
     - secretKey: GF_AUTH_GITHUB_CLIENT_ID
       remoteRef:
-        key: prod-devai-github-oauth-client-id
+        key: prod-argocd-github-client-id
     - secretKey: GF_AUTH_GITHUB_CLIENT_SECRET
       remoteRef:
-        key: prod-devai-github-oauth-client-secret
+        key: prod-argocd-github-client-secret
