@@ -269,7 +269,13 @@ spec:
             disable_login_form: false
           auth.anonymous:
             enabled: false
-          # GitHub OAuth configuration
+          # GitHub OAuth — client_id/secret come from the grafana-github-oauth
+          # secret (GF_AUTH_GITHUB_CLIENT_ID/SECRET), synced from GCP Secret
+          # Manager by external-secrets/prod/monitoring/grafana-github-oauth.yaml.
+          # The callback URL (https://grafana.tesserix.app/login/github) is
+          # derived from server.root_url above; it must be registered on the
+          # GitHub OAuth App. read:org scope is what lets allowed_organizations
+          # verify membership.
           auth.github:
             enabled: true
             allow_sign_up: true
@@ -278,11 +284,8 @@ spec:
             auth_url: https://github.com/login/oauth/authorize
             token_url: https://github.com/login/oauth/access_token
             api_url: https://api.github.com/user
-            # Restrict to specific GitHub organization (optional)
-            # allowed_organizations: tesserix
-            # Role mapping based on GitHub teams (optional)
-            # team_ids:
-            # allowed_teams:
+            # Only tesserix org members may sign in.
+            allowed_organizations: tesserix
           security:
             admin_user: admin
           users:

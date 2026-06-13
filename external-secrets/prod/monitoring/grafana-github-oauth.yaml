@@ -1,0 +1,33 @@
+# Grafana GitHub OAuth credentials — synced from GCP Secret Manager so users
+# log into grafana.tesserix.app with their GitHub (tesserix org) identity.
+#
+# The grafana chart references this secret via `envFromSecrets:
+# grafana-github-oauth` (argocd/prod/infrastructure/grafana.yaml); the keys
+# below become GF_AUTH_GITHUB_CLIENT_ID / GF_AUTH_GITHUB_CLIENT_SECRET env
+# vars, which Grafana maps onto auth.github.client_id / client_secret.
+#
+# These are the org's existing GitHub OAuth App credentials (the same pair
+# DevAI syncs). The OAuth App MUST list
+#   https://grafana.tesserix.app/login/github
+# as an authorized callback URL (alongside any existing DevAI callback —
+# GitHub OAuth Apps accept multiple) or GitHub returns redirect_uri_mismatch.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: grafana-github-oauth
+  namespace: monitoring
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: grafana-github-oauth
+    creationPolicy: Owner
+  data:
+    - secretKey: GF_AUTH_GITHUB_CLIENT_ID
+      remoteRef:
+        key: prod-devai-github-oauth-client-id
+    - secretKey: GF_AUTH_GITHUB_CLIENT_SECRET
+      remoteRef:
+        key: prod-devai-github-oauth-client-secret
