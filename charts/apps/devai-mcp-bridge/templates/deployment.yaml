@@ -26,6 +26,11 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "devai-mcp-bridge.serviceAccountName" . }}
+      # Disable the legacy Docker service-link env vars. Without this, the
+      # devai-mcp-hub Service injects DEVAI_MCP_HUB_PORT=tcp://<ip>:8095, which
+      # collides with the pydantic Settings `mcp_hub_port: int` and crashes the
+      # pod on boot ("unable to parse 'tcp://...' as integer").
+      enableServiceLinks: false
       securityContext:
         runAsUser: 1000
         runAsNonRoot: true
