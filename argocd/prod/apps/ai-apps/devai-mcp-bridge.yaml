@@ -19,12 +19,14 @@ spec:
       valueFiles:
         - values.yaml
       # The bridge is its OWN image (python + node, Dockerfile.mcpbridge), not
-      # the shared `devai` image — so it isn't on the Kargo `prod` stage. It
-      # ships via :latest + pullPolicy Always; the mcpbridge-build CI workflow
-      # rollout-restarts the deployment after pushing :latest.
+      # the shared `devai` image — so it isn't on the Kargo `prod` stage.
+      # Pin a concrete main-<sha>: the GCP Artifact Registry remote-proxy
+      # CACHES the :latest tag, so pullPolicy:Always still serves a stale image
+      # after a new :latest is pushed. Immutable main-<sha> tags bypass that.
+      # Bump this to the newest mcpbridge-build sha on each bridge change.
       parameters:
         - name: image.tag
-          value: "latest"
+          value: "main-7617f00"
   destination:
     server: https://kubernetes.default.svc
     namespace: devai
