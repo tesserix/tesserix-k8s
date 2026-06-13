@@ -1,0 +1,66 @@
+# devai-mcp-bridge — runs stdio MCP servers (npx) and fronts them as
+# streamable-https so the hub federates them like any other downstream.
+# Uses its OWN image (python + node), built from Dockerfile.mcpbridge.
+
+replicaCount: 1
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-mcp-bridge
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8099
+  targetPort: 8099
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+env:
+  DEVAI_HOST: "0.0.0.0"
+  DEVAI_MCPBRIDGE_PORT: "8099"
+  DEVAI_MCPBRIDGE_ENABLED: "true"
+  DEVAI_LOG_LEVEL: "info"
+  # Only npx may be spawned from a catalog launch spec (basename match).
+  DEVAI_MCPBRIDGE_ALLOWED_COMMANDS: "npx"
+
+registry:
+  url: "http://agentregistry.agentregistry-system.svc.cluster.local:12121"
+  defaultTenant: "devai"
+
+gcp:
+  projectId: ""
+  workloadIdentity:
+    enabled: false
+    gcpServiceAccount: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# SAs allowed to dial the bridge (the hub federates it per-user; api/runner may
+# resolve catalog tools too). Restricts inbound at L4 via ztunnel.
+allowedCallers:
+  - devai-mcp-hub
+  - devai-api
+  - devai-runner
+  - devai-sre
+
+podAnnotations:
+  holdApplicationUntilProxyStarts: "true"
+
+podLabels: {}

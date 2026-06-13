@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devai-mcp-bridge
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: devai
+    app.kubernetes.io/component: mcp-bridge
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/devai-mcp-bridge
+    helm:
+      valueFiles:
+        - values.yaml
+      # The bridge is its OWN image (python + node, Dockerfile.mcpbridge), not
+      # the shared `devai` image — so it isn't on the Kargo `prod` stage. It
+      # ships via :latest + pullPolicy Always; the mcpbridge-build CI workflow
+      # rollout-restarts the deployment after pushing :latest.
+      parameters:
+        - name: image.tag
+          value: "latest"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devai
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
