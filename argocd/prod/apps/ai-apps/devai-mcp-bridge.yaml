@@ -9,6 +9,15 @@ metadata:
     environment: prod
   finalizers:
     - resources-finalizer.argocd.argoproj.io
+  annotations:
+    # Kargo's kargo-devai:prod stage owns image.tag now (7th devai image on the
+    # shared `services` warehouse). It's its OWN image (python+node,
+    # Dockerfile.mcpbridge) but ensure-image-tags re-tags its :latest as
+    # main-<sha> every commit, so the commit-derived tag always resolves —
+    # exactly like the other six images. Kargo overwrites the value below on
+    # each promotion; the app-of-apps ignoreDifferences on helm/parameters keeps
+    # selfHeal from reverting it.
+    kargo.akuity.io/authorized-stage: kargo-devai:prod
 spec:
   project: default
   source:
@@ -18,12 +27,8 @@ spec:
     helm:
       valueFiles:
         - values.yaml
-      # The bridge is its OWN image (python + node, Dockerfile.mcpbridge), not
-      # the shared `devai` image — so it isn't on the Kargo `prod` stage.
-      # Pin a concrete main-<sha>: the GCP Artifact Registry remote-proxy
-      # CACHES the :latest tag, so pullPolicy:Always still serves a stale image
-      # after a new :latest is pushed. Immutable main-<sha> tags bypass that.
-      # Bump this to the newest mcpbridge-build sha on each bridge change.
+      # Seeded concrete (Kargo overwrites on promotion). A concrete main-<sha>
+      # also dodges the GAR remote-proxy :latest cache.
       parameters:
         - name: image.tag
           value: "main-19b4edb"
