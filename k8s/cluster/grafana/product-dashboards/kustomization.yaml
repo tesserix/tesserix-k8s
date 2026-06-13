@@ -1,0 +1,47 @@
+# =============================================================================
+# Product Grafana dashboards — DevAI, mark8ly, fe3dr (HomeChef)
+# =============================================================================
+# Self-contained: the dashboard JSON files live IN this directory, so the
+# configMapGenerator references them with no `../` escape — no load-restrictor
+# loosening needed (unlike the older subscription set under ../dashboards/).
+# Grafana's sidecar (label grafana_dashboard=1) auto-loads each ConfigMap.
+# disableNameSuffixHash keeps names stable so ArgoCD doesn't thrash.
+# =============================================================================
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+
+configMapGenerator:
+  # DevAI — agent/LLM/pipeline/memory observability (devai_* OTel metrics) +
+  # a pointer to agent traces in Tempo.
+  - name: devai-dashboards
+    options:
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/part-of: devai
+        product: devai
+    files:
+      - devai-observability.json
+
+  # mark8ly — platform health from the istio mesh (admin/storefront/onboarding).
+  - name: mark8ly-platform-dashboards
+    options:
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/part-of: mark8ly
+        product: mark8ly
+    files:
+      - mark8ly-platform.json
+
+  # fe3dr / HomeChef — app metrics (homechef_*): HTTP, DB, and business KPIs.
+  - name: fe3dr-homechef-dashboards
+    options:
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/part-of: homechef
+        product: fe3dr
+    files:
+      - fe3dr-homechef.json
+
+generatorOptions:
+  disableNameSuffixHash: true

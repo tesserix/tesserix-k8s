@@ -31,7 +31,10 @@ spec:
   source:
     repoURL: https://github.com/tesserix/tesserix-k8s.git
     targetRevision: HEAD
-    path: k8s/cluster/grafana/dashboards
+    # Self-contained kustomization — JSON files live alongside it, so no
+    # load-restrictor loosening is needed (the older ../dashboards/ set that
+    # references repo-root JSON is intentionally left out).
+    path: k8s/cluster/grafana/product-dashboards
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
@@ -42,9 +45,6 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-      # configMapGenerator references grafana/dashboards/*.json at the repo
-      # root (outside the kustomization dir) — loosen the load restriction.
-      - LoadRestrictionsNone=true
     retry:
       limit: 5
       backoff:
