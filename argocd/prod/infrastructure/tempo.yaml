@@ -22,13 +22,16 @@ spec:
     # (devai.adapters.telemetry) actually viewable.
     repoURL: https://grafana.github.io/helm-charts
     chart: tempo
-    targetRevision: 1.10.3
+    targetRevision: 1.24.4
     helm:
       releaseName: tempo
       values: |
-        # Single-binary monolithic deployment.
+        # Single-binary monolithic deployment. The Tempo HTTP API (queried by
+        # Grafana) listens on 3200; the OTLP gRPC receiver on 4317 — the
+        # collector's otlp/tempo exporter targets that.
         tempo:
-          # Accept OTLP over gRPC (4317) and HTTP (4318) from the collector.
+          # Only OTLP receivers — the collector speaks OTLP/gRPC (4317) +
+          # HTTP (4318); the chart's other default receivers stay off.
           receivers:
             otlp:
               protocols:
@@ -36,8 +39,8 @@ spec:
                   endpoint: 0.0.0.0:4317
                 http:
                   endpoint: 0.0.0.0:4318
-          # Local filesystem storage — traces are short-lived debug data, no
-          # object store needed. 72h retention matches the analytics window.
+          # Local block storage — traces are short-lived debug data, no object
+          # store needed. 72h retention matches the analytics window.
           retention: 72h
           resources:
             requests:
@@ -49,7 +52,7 @@ spec:
           enabled: true
           size: 10Gi
           storageClassName: standard-rwo-retain
-        # Tempo's own metrics → the cluster Prometheus via the collector path.
+        # Tempo's own metrics — scraped via the collector path, no ServiceMonitor.
         serviceMonitor:
           enabled: false
   destination:
