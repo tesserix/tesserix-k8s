@@ -46,7 +46,7 @@ CREATE INDEX IF NOT EXISTS idx_runs_trigger ON pipeline_runs(trigger_type, trigg
 
 CREATE TABLE IF NOT EXISTS agent_executions (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    run_id          TEXT NOT NULL REFERENCES pipeline_runs(id),
+    run_id          TEXT NOT NULL,
     agent_name      TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'pending',
     started_at      TIMESTAMPTZ,
@@ -75,7 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_exec_status ON agent_executions(status);
 
 CREATE TABLE IF NOT EXISTS a2a_messages (
     id              TEXT PRIMARY KEY,
-    run_id          TEXT NOT NULL REFERENCES pipeline_runs(id),
+    run_id          TEXT NOT NULL,
     from_agent      TEXT NOT NULL,
     to_agent        TEXT NOT NULL,
     message_type    TEXT NOT NULL,
@@ -157,7 +157,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
 
 CREATE TABLE IF NOT EXISTS approval_gates (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    run_id          TEXT NOT NULL REFERENCES pipeline_runs(id),
+    run_id          TEXT NOT NULL,
     gate_name       TEXT NOT NULL,
     agent_name      TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'pending',
@@ -177,7 +177,7 @@ CREATE INDEX IF NOT EXISTS idx_gates_status ON approval_gates(status) WHERE stat
 
 CREATE TABLE IF NOT EXISTS db_migration_audit (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    run_id          TEXT NOT NULL REFERENCES pipeline_runs(id),
+    run_id          TEXT NOT NULL,
     repo            TEXT NOT NULL,
     migration_type  TEXT NOT NULL,
     migration_file  TEXT NOT NULL,
@@ -204,7 +204,7 @@ CREATE INDEX IF NOT EXISTS idx_db_migration_repo ON db_migration_audit(repo);
 
 CREATE TABLE IF NOT EXISTS security_findings (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    run_id          TEXT NOT NULL REFERENCES pipeline_runs(id),
+    run_id          TEXT NOT NULL,
     repo            TEXT NOT NULL,
     pr_number       INTEGER,
     scanner         TEXT NOT NULL,
@@ -530,3 +530,8 @@ ALTER TABLE repo_onboarding ADD COLUMN IF NOT EXISTS draft BOOLEAN NOT NULL DEFA
 
 CREATE INDEX IF NOT EXISTS idx_repo_onboarding_state ON repo_onboarding(state);
 CREATE INDEX IF NOT EXISTS idx_repo_onboarding_updated ON repo_onboarding(updated_at DESC);
+
+-- Drop the legacy run_id FKs on databases created before the Fiber cutover
+-- (active pipeline keeps runs in Redis; pipeline_runs is legacy-only).
+ALTER TABLE agent_executions DROP CONSTRAINT IF EXISTS agent_executions_run_id_fkey;
+ALTER TABLE a2a_messages DROP CONSTRAINT IF EXISTS a2a_messages_run_id_fkey;
