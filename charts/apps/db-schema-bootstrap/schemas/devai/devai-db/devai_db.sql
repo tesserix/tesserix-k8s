@@ -44,9 +44,13 @@ CREATE INDEX IF NOT EXISTS idx_runs_trigger ON pipeline_runs(trigger_type, trigg
 -- ALM: AGENT EXECUTIONS
 -- ============================================================================
 
+-- NB: run_id intentionally has NO foreign key to pipeline_runs. The active
+-- Fiber pipeline persists runs to Redis, not pipeline_runs (only the retired
+-- LangGraph orchestrator wrote that table), so an FK rejects every row the
+-- LLM-call accounting writes. Same applies to a2a_messages below.
 CREATE TABLE IF NOT EXISTS agent_executions (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    run_id          TEXT NOT NULL REFERENCES pipeline_runs(id),
+    run_id          TEXT NOT NULL,
     agent_name      TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'pending',
     started_at      TIMESTAMPTZ,
@@ -75,7 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_exec_status ON agent_executions(status);
 
 CREATE TABLE IF NOT EXISTS a2a_messages (
     id              TEXT PRIMARY KEY,
-    run_id          TEXT NOT NULL REFERENCES pipeline_runs(id),
+    run_id          TEXT NOT NULL,
     from_agent      TEXT NOT NULL,
     to_agent        TEXT NOT NULL,
     message_type    TEXT NOT NULL,
@@ -574,6 +578,13 @@ CREATE INDEX IF NOT EXISTS idx_agent_crews_team ON agent_crews(team_id);
 ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS team_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS crew_id TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_runs_team ON pipeline_runs(team_id, created_at DESC);
+
+-- Drop the legacy run_id FKs on databases created before the Fiber cutover.
+-- The active pipeline keeps runs in Redis (pipeline_runs is legacy-only), so
+-- these constraints rejected every agent_executions/a2a_messages insert —
+-- the analytics LLM-call accounting could never write a row.
+ALTER TABLE agent_executions DROP CONSTRAINT IF EXISTS agent_executions_run_id_fkey;
+ALTER TABLE a2a_messages DROP CONSTRAINT IF EXISTS a2a_messages_run_id_fkey;
 
 -- ============================================================
 -- Settings capability — per-user/per-tenant connectors + secret REFERENCES.
