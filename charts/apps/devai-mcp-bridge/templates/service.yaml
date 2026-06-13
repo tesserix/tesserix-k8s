@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "devai-mcp-bridge.fullname" . }}
+  labels:
+    {{- include "devai-mcp-bridge.labels" . | nindent 4 }}
+    # Bypass the namespace waypoint (same as devai-api / devai-mcp-hub): the
+    # authz policy below is a source-identity ALLOW enforced at L4 by ztunnel,
+    # and waypoint routing would replace the caller identity with the waypoint
+    # SA (not in the allow-list), 503-ing every hub→bridge call.
+    istio.io/use-waypoint: "none"
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "devai-mcp-bridge.selectorLabels" . | nindent 4 }}
