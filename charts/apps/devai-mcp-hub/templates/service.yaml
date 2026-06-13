@@ -4,6 +4,13 @@ metadata:
   name: {{ include "devai-mcp-hub.fullname" . }}
   labels:
     {{- include "devai-mcp-hub.labels" . | nindent 4 }}
+    # Bypass the namespace waypoint, same as devai-api: devai-mcp-hub-authz is
+    # a source-identity ALLOW policy enforced at L4 by ztunnel, and routing
+    # through the waypoint replaces the caller's identity with the waypoint SA
+    # (not in the allow-list) — every pod→hub request 503s. Going
+    # ztunnel-direct preserves the real client identity (devai-api / devai-sre
+    # / runner jobs calling the /mcp aggregate).
+    istio.io/use-waypoint: "none"
 spec:
   type: {{ .Values.service.type }}
   ports:
