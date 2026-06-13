@@ -1,0 +1,69 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tempo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: monitoring
+  annotations:
+    # Wave 0 — alongside the collector. The collector exports traces here; if
+    # Tempo isn't up yet the collector's OTLP exporter just retries.
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: infrastructure
+  source:
+    # Grafana Tempo — distributed tracing backend. Monolithic single-binary
+    # mode (one pod, local PVC) is plenty for DevAI's agent-trace volume; the
+    # OTel collector fans spans here over OTLP and Grafana queries it as a
+    # datasource. This is what makes the agent → stage → llm-call spans
+    # (devai.adapters.telemetry) actually viewable.
+    repoURL: https://grafana.github.io/helm-charts
+    chart: tempo
+    targetRevision: 1.10.3
+    helm:
+      releaseName: tempo
+      values: |
+        # Single-binary monolithic deployment.
+        tempo:
+          # Accept OTLP over gRPC (4317) and HTTP (4318) from the collector.
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: 0.0.0.0:4317
+                http:
+                  endpoint: 0.0.0.0:4318
+          # Local filesystem storage — traces are short-lived debug data, no
+          # object store needed. 72h retention matches the analytics window.
+          retention: 72h
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+        persistence:
+          enabled: true
+          size: 10Gi
+          storageClassName: standard-rwo-retain
+        # Tempo's own metrics → the cluster Prometheus via the collector path.
+        serviceMonitor:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
