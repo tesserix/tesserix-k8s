@@ -11,6 +11,24 @@ rules:
     resources: ["applications", "applicationsets", "appprojects"]
     verbs: ["get", "list", "watch", "patch"]
 
+  # Kargo CRDs — stage/freight visibility + promotions (gitops MCP + release agents).
+  # Promotions are created as CRs; Kargo additionally authorizes via the
+  # `promote` verb on Stages.
+  - apiGroups: ["kargo.akuity.io"]
+    resources: ["projects", "stages", "freights", "promotions", "warehouses"]
+    verbs: ["get", "list", "watch", "create", "patch"]
+  - apiGroups: ["kargo.akuity.io"]
+    resources: ["stages"]
+    verbs: ["promote"]
+
+  # Flux CRDs — status reads + reconcile (annotate) + suspend/resume (patch)
+  - apiGroups: ["kustomize.toolkit.fluxcd.io", "helm.toolkit.fluxcd.io"]
+    resources: ["kustomizations", "helmreleases"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources: ["gitrepositories", "helmrepositories", "ocirepositories", "buckets"]
+    verbs: ["get", "list", "watch", "patch"]
+
   # Core resources — read-only for SRE monitoring and discovery
   - apiGroups: [""]
     resources: ["namespaces", "pods", "services", "configmaps", "events", "nodes"]
