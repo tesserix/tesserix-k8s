@@ -239,3 +239,36 @@ spec:
   # mesh-layer deny-all so the operator can manage the cluster.
   rules:
     - {}
+---
+# --- devai-mcp-hub Authorization ---
+#
+# The MCP Hub (the one /mcp surface multiplexing every registry MCP server)
+# accepts calls only from the DevAI workloads that consume tools: the ALM
+# api (chat + agents), the SRE backend, runner jobs, and the dashboards'
+# SSR. Without this policy the namespace waypoint's allow-list denies every
+# pod→hub request (503) — the Hub could dial its downstreams but nothing
+# could dial the Hub.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: devai-mcp-hub-authz
+  namespace: devai
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: devai-mcp-hub
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/devai/sa/devai-api"
+              - "cluster.local/ns/devai/sa/devai-sre"
+              - "cluster.local/ns/devai/sa/devai-runner"
+              - "cluster.local/ns/devai/sa/devai-dashboard"
+              - "cluster.local/ns/devai/sa/devai-sre-dashboard"
+              - "cluster.local/ns/devai/sa/devai-mcp-hub"
+    # Monitoring namespace (Prometheus scraping), same as the other services.
+    - from:
+        - source:
+            namespaces: ["monitoring"]
