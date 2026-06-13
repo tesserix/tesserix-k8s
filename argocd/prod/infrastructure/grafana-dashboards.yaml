@@ -1,0 +1,53 @@
+# =============================================================================
+# grafana-dashboards — ArgoCD Application
+# =============================================================================
+# Deploys the Grafana dashboard ConfigMaps (sidecar label grafana_dashboard=1)
+# from the configMapGenerator at k8s/cluster/grafana/dashboards/. That
+# kustomization holds every product's dashboards — DevAI, mark8ly, fe3dr
+# (HomeChef), and the mark8ly subscription set — each rendered from the JSON
+# under grafana/dashboards/.
+#
+# This is the product-neutral, dashboards-only activation: it does NOT pull in
+# the mark8ly P17 PrometheusRule/AlertmanagerConfig slice (that's the separate,
+# still-inactive subscription-observability.yaml). LoadRestrictionsNone lets
+# the generator reference the JSON files at the repo root.
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana-dashboards
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: monitoring
+    environment: prod
+  annotations:
+    # Wave 2 — after Grafana (wave 1) so the sidecar is up to pick up the CMs.
+    argocd.argoproj.io/sync-wave: "2"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: k8s/cluster/grafana/dashboards
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      # configMapGenerator references grafana/dashboards/*.json at the repo
+      # root (outside the kustomization dir) — loosen the load restriction.
+      - LoadRestrictionsNone=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
