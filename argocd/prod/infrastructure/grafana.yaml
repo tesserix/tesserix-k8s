@@ -24,6 +24,18 @@ spec:
         # Replicas
         replicas: 1
 
+        # Stakater Reloader auto-rolls Grafana whenever a referenced Secret/
+        # ConfigMap changes — so a GitHub-OAuth credential rotation in
+        # grafana-github-oauth (or a grafana.ini edit) takes effect without a
+        # manual restart.
+        annotations:
+          reloader.stakater.com/auto: "true"
+        # One-time declarative restart so the running pod (which started before
+        # the grafana-github-oauth secret existed) injects GF_AUTH_GITHUB_*.
+        # Bump the date to force a future redeploy if ever needed.
+        podAnnotations:
+          devai.io/oauth-rollout: "2026-06-13"
+
         # Resource configuration (required for AKS Azure Policy)
         resources:
           requests:
