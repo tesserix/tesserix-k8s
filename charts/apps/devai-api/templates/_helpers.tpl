@@ -72,6 +72,17 @@ identical environment — defined once here so the two never drift.
       name: devai-auth-bff-secrets
       key: DEVAI_AUTH_BFF_SHARED_SECRET
       optional: true
+# MCP Hub ↔ devai-api shared service bearer: the Hub presents it toward the
+# per-domain MCP servers (authMode=jwt) and devai-api verifies it
+# (identity._principal_from_service_bearer). Same key the devai-mcp-hub
+# chart reads from devai-api-secrets. Optional so the pod starts before the
+# ExternalSecret key lands — until then Hub federation of jwt domains 401s.
+- name: DEVAI_MCP_HUB_SERVICE_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_MCP_HUB_SERVICE_TOKEN
+      optional: true
 # Database — password must be defined before URL for $(VAR) expansion
 - name: DB_PASSWORD
   valueFrom:
