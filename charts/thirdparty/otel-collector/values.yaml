@@ -59,7 +59,16 @@ memoryLimiter:
   limitPercentage: 80
   spikeLimitPercentage: 25
 
-# Extra trace/metric exporters can be appended here later (e.g. a Tempo OTLP
-# endpoint). When empty, traces go to the debug exporter (collector logs).
+# Grafana Tempo trace backend (tempo.yaml ArgoCD app). When enabled the
+# collector fans the traces pipeline to Tempo over OTLP/gRPC so the DevAI
+# agent spans are queryable in Grafana; disable to fall back to debug-only.
+tempo:
+  enabled: true
+  endpoint: "tempo.observability.svc.cluster.local:4317"
+
+# Traces pipeline exporters. otlp/tempo is the queryable backend; debug keeps
+# a log trail. Referenced exporters must exist in the configmap exporters block
+# (otlp/tempo is rendered only when tempo.enabled).
 tracesExporters:
+  - otlp/tempo
   - debug

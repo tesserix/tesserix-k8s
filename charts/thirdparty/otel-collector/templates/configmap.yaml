@@ -32,8 +32,17 @@ data:
         endpoint: 0.0.0.0:{{ .Values.ports.prometheus }}
         resource_to_telemetry_conversion:
           enabled: true
-      # Traces have no backend yet — log them. Add a Tempo/Jaeger OTLP exporter
-      # to `service.pipelines.traces.exporters` to fan out later.
+      # Traces → Grafana Tempo over OTLP/gRPC. Tempo (tempo.yaml ArgoCD app)
+      # is the queryable backend behind the agent → stage → llm-call spans the
+      # DevAI telemetry adapter emits. tls.insecure: in-cluster, mTLS handled
+      # by the mesh, not the app.
+      {{- if .Values.tempo.enabled }}
+      otlp/tempo:
+        endpoint: {{ .Values.tempo.endpoint | quote }}
+        tls:
+          insecure: true
+      {{- end }}
+      # Always available — span/log debug dump to the collector's own logs.
       debug:
         verbosity: basic
 
