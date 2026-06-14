@@ -148,16 +148,12 @@ spec:
                 allowUiUpdates: true
                 options:
                   path: /var/lib/grafana/dashboards/kubernetes
-              # Sidecar-provisioned dashboards (from ConfigMaps)
-              - name: 'sidecar'
-                orgId: 1
-                folder: 'Sidecar'
-                type: file
-                disableDeletion: false
-                editable: true
-                allowUiUpdates: true
-                options:
-                  path: /tmp/dashboards
+              # NOTE: the ConfigMap dashboards (/tmp/dashboards) are handled by
+              # the chart's auto sidecarProvider (sidecar.dashboards below). A
+              # second manual provider on the SAME path provisioned every
+              # dashboard TWICE under one UID ("the same UID is used more than
+              # once"), which corrupted permissions and caused "Access denied
+              # to this dashboard". Removed — one provider per path.
 
         # Download dashboards from Grafana.com
         # These will be downloaded and provisioned automatically
@@ -330,6 +326,13 @@ spec:
             # Use /tmp/dashboards to avoid shadowing downloaded dashboards
             folder: /tmp/dashboards
             searchNamespace: ALL
+            # The single provider for all ConfigMap dashboards. A named folder
+            # groups DevAI/mark8ly/fe3dr together so they're easy to find;
+            # default org permissions on the folder let any logged-in user
+            # (Viewer) open them.
+            provider:
+              folder: "Tesserix Apps"
+              allowUiUpdates: true
           datasources:
             enabled: true
             label: grafana_datasource
