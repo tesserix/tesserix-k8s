@@ -1,0 +1,79 @@
+# =============================================================================
+# Mirror third-party images -> ghcr.io/tesserix/third-party/*
+# -----------------------------------------------------------------------------
+# Copies every upstream image listed in image-mirror/images.yaml into our own
+# GHCR namespace. The existing Artifact Registry pull-through repo `ghcr-remote`
+# then serves them in-region, so the cluster pulls them over Private Google
+# Access (no Cloud NAT egress) even as 100%-spot nodes churn.
+#
+# MUST run on ubuntu-latest (GitHub-hosted): the upstream pulls happen on
+# GitHub's network, NOT inside our cluster — that's the whole point. Never move
+# this to the self-hosted ARC runners or the NAT cost comes straight back.
+# =============================================================================
+name: Mirror Third-Party Images
+
+on:
+  schedule:
+    # Fortnightly-ish: 1st and 15th at 03:00 UTC.
+    - cron: "0 3 1,15 * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Resolve + log only, do not copy"
+        type: boolean
+        default: false
+      only:
+        description: "Comma-separated image names to limit the run (optional)"
+        type: string
+        default: ""
+
+concurrency:
+  group: mirror-third-party
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Mirror images
+    runs-on: ubuntu-latest # do NOT change — see header
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up crane
+        run: |
+          VERSION=v0.20.2
+          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin crane
+          crane version
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install --quiet pyyaml
+
+      - name: Log in to GHCR (push target)
+        run: crane auth login ghcr.io -u "${{ github.actor }}" -p "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Log in to Docker Hub (optional, avoids anon rate limits)
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            crane auth login index.docker.io -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_TOKEN"
+            echo "Logged in to Docker Hub."
+          else
+            echo "No Docker Hub creds set; using anonymous pulls."
+          fi
+
+      - name: Mirror
+        env:
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
+          ONLY: ${{ inputs.only }}
+        run: python image-mirror/mirror.py
