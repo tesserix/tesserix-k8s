@@ -1,0 +1,321 @@
+# =============================================================================
+# Third-party image mirror manifest
+# -----------------------------------------------------------------------------
+# Every entry here is a NON-Google upstream container image the cluster pulls.
+# The fortnightly workflow (.github/workflows/mirror-third-party.yml) copies
+# each one into ghcr.io/tesserix/third-party/<name>, which the existing AR
+# pull-through repo `ghcr-remote` then serves at:
+#
+#   asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/<name>
+#
+# Charts pull from that AR path -> internal via Private Google Access -> NO
+# Cloud NAT data-processing cost, even when 100%-spot nodes churn and re-pull.
+#
+# WHY only non-Google registries: gcr.io / gke.gcr.io / *.pkg.dev are Google
+# endpoints reachable over Private Google Access and are excluded on purpose
+# (knative-releases, kubecost, gke-release, etc.). They do not traverse NAT.
+#
+# -----------------------------------------------------------------------------
+# Schema (per entry):
+#   name:        target repo under ghcr.io/tesserix/third-party/<name>
+#   source:      upstream image reference (no tag)
+#   mode:        "semver" | "tag"
+#                  semver -> workflow resolves the newest upstream tag matching
+#                            `constraint` (+ optional `tagFilter`) and copies
+#                            that exact version tag. Kargo tracks with the
+#                            SemVer strategy. Use for versioned releases.
+#                  tag    -> workflow copies the fixed/floating tag verbatim.
+#                            Kargo tracks with the Digest strategy (re-promotes
+#                            when the digest behind the tag changes). Use for
+#                            :latest / rolling tags that never change name.
+#   constraint:  (semver) range the mirror is allowed to track. THIS IS THE
+#                SAFETY KNOB — it bounds "track latest" so Kargo never jumps a
+#                breaking major/minor unattended. Widen deliberately when you
+#                plan an upgrade.
+#   tagFilter:   (semver, optional) regex the raw upstream tag must match
+#                before semver parsing (strips -alpine / rc / arch suffixes).
+#   tag:         (tag mode) the tag to copy verbatim.
+#   notes:       free text.
+# =============================================================================
+
+registry: ghcr.io/tesserix/third-party
+
+images:
+  # ---------------------------------------------------------------------------
+  # AI / inference (the Jun 12-13 NAT spike originated here: support-platform
+  # HF + llama.cpp images re-pulled across spot churn). Large images.
+  # ---------------------------------------------------------------------------
+  - name: text-embeddings-inference
+    source: ghcr.io/huggingface/text-embeddings-inference
+    mode: tag
+    tag: cpu-1.8
+    notes: TEI CPU build; HF uses a rolling cpu-<minor> tag, track by digest.
+
+  - name: llama.cpp
+    source: ghcr.io/ggml-org/llama.cpp
+    mode: tag
+    tag: server
+    notes: llama.cpp server build; rolling tag, track by digest.
+
+  # ---------------------------------------------------------------------------
+  # CloudNativePG (Postgres operator + bundled images)
+  # ---------------------------------------------------------------------------
+  - name: cloudnative-pg
+    source: ghcr.io/cloudnative-pg/cloudnative-pg
+    mode: semver
+    constraint: ">=1.24.0 <1.25.0"
+  - name: cloudnative-pg-pgbouncer
+    source: ghcr.io/cloudnative-pg/pgbouncer
+    mode: semver
+    constraint: ">=1.23.0 <1.24.0"
+  - name: cloudnative-pg-postgresql
+    source: ghcr.io/cloudnative-pg/postgresql
+    mode: semver
+    constraint: ">=16.0 <17.0"
+    tagFilter: '^[0-9]+\.[0-9]+$'
+
+  # ---------------------------------------------------------------------------
+  # Platform controllers (ghcr.io)
+  # ---------------------------------------------------------------------------
+  - name: dex
+    source: ghcr.io/dexidp/dex
+    mode: semver
+    constraint: ">=2.44.0 <3.0.0"
+    tagFilter: '^v[0-9]+\.[0-9]+\.[0-9]+$'
+  - name: external-secrets
+    source: ghcr.io/external-secrets/external-secrets
+    mode: semver
+    constraint: ">=0.9.0 <0.10.0"
+    tagFilter: '^v[0-9]+\.[0-9]+\.[0-9]+$'
+  - name: keda
+    source: ghcr.io/kedacore/keda
+    mode: semver
+    constraint: ">=2.20.0 <2.21.0"
+  - name: keda-metrics-apiserver
+    source: ghcr.io/kedacore/keda-metrics-apiserver
+    mode: semver
+    constraint: ">=2.20.0 <2.21.0"
+  - name: keda-admission-webhooks
+    source: ghcr.io/kedacore/keda-admission-webhooks
+    mode: semver
+    constraint: ">=2.20.0 <2.21.0"
+  - name: reloader
+    source: ghcr.io/stakater/reloader
+    mode: semver
+    constraint: ">=1.4.0 <2.0.0"
+    tagFilter: '^v[0-9]+\.[0-9]+\.[0-9]+$'
+  - name: opencost
+    source: ghcr.io/opencost/opencost
+    mode: semver
+    constraint: ">=1.113.0 <2.0.0"
+  - name: opencost-ui
+    source: ghcr.io/opencost/opencost-ui
+    mode: semver
+    constraint: ">=1.113.0 <2.0.0"
+  - name: kargo
+    source: ghcr.io/akuity/kargo
+    mode: semver
+    constraint: ">=1.10.0 <1.11.0"
+    tagFilter: '^v[0-9]+\.[0-9]+\.[0-9]+$'
+    notes: Kargo controls promotions itself — keep on a tight patch range.
+  - name: gha-runner-scale-set-controller
+    source: ghcr.io/actions/gha-runner-scale-set-controller
+    mode: semver
+    constraint: ">=0.13.0 <0.14.0"
+
+  # ---------------------------------------------------------------------------
+  # kagent / agentgateway (custom registries cr.kagent.dev / cr.agentgateway.dev)
+  # ---------------------------------------------------------------------------
+  - name: kagent-controller
+    source: cr.kagent.dev/kagent-dev/kagent/controller
+    mode: semver
+    constraint: ">=0.9.0 <0.10.0"
+  - name: kagent-ui
+    source: cr.kagent.dev/kagent-dev/kagent/ui
+    mode: semver
+    constraint: ">=0.9.0 <0.10.0"
+  - name: kagent-app
+    source: cr.kagent.dev/kagent-dev/kagent/app
+    mode: semver
+    constraint: ">=0.9.0 <0.10.0"
+    notes: Currently digest-pinned in-cluster; mirror tracks the matching tag.
+  - name: kagent-tools
+    source: ghcr.io/kagent-dev/kagent/tools
+    mode: semver
+    constraint: ">=0.2.0 <0.3.0"
+  - name: kagent-doc2vec-mcp
+    source: ghcr.io/kagent-dev/doc2vec/mcp
+    mode: semver
+    constraint: ">=1.1.0 <2.0.0"
+  - name: kmcp-controller
+    source: ghcr.io/kagent-dev/kmcp/controller
+    mode: semver
+    constraint: ">=0.3.0 <0.4.0"
+  - name: agentgateway
+    source: cr.agentgateway.dev/agentgateway
+    mode: semver
+    constraint: ">=1.0.0 <2.0.0"
+    tagFilter: '^v[0-9]+\.[0-9]+\.[0-9]+$'
+  - name: agentgateway-controller
+    source: cr.agentgateway.dev/controller
+    mode: semver
+    constraint: ">=1.0.0 <2.0.0"
+    tagFilter: '^v[0-9]+\.[0-9]+\.[0-9]+$'
+
+  # ---------------------------------------------------------------------------
+  # Istio (Docker Hub images; chart versions tracked separately by the
+  # existing infra/istio warehouse). Pinned to the mesh minor 1.29.
+  # ---------------------------------------------------------------------------
+  - name: istio-pilot
+    source: docker.io/istio/pilot
+    mode: semver
+    constraint: ">=1.29.0 <1.30.0"
+  - name: istio-proxyv2
+    source: docker.io/istio/proxyv2
+    mode: semver
+    constraint: ">=1.29.0 <1.30.0"
+  - name: istio-ztunnel
+    source: docker.io/istio/ztunnel
+    mode: semver
+    constraint: ">=1.29.0 <1.30.0"
+  - name: istio-install-cni
+    source: docker.io/istio/install-cni
+    mode: semver
+    constraint: ">=1.29.0 <1.30.0"
+
+  # ---------------------------------------------------------------------------
+  # Observability (Docker Hub)
+  # ---------------------------------------------------------------------------
+  - name: grafana
+    source: docker.io/grafana/grafana
+    mode: semver
+    constraint: ">=11.6.0 <12.0.0"
+  - name: tempo
+    source: docker.io/grafana/tempo
+    mode: semver
+    constraint: ">=2.9.0 <3.0.0"
+  - name: opentelemetry-collector-contrib
+    source: docker.io/otel/opentelemetry-collector-contrib
+    mode: semver
+    constraint: ">=0.116.0 <0.117.0"
+
+  # ---------------------------------------------------------------------------
+  # Datastores / messaging (Docker Hub library + official)
+  # ---------------------------------------------------------------------------
+  - name: postgres
+    source: docker.io/library/postgres
+    mode: tag
+    tag: 16-alpine
+    notes: Also 14-alpine / 18.3-alpine in use; add entries if those stay.
+  - name: postgres-18-alpine
+    source: docker.io/library/postgres
+    mode: tag
+    tag: 18.3-alpine
+  - name: postgres-14-alpine
+    source: docker.io/library/postgres
+    mode: tag
+    tag: 14-alpine
+  - name: redis-alpine
+    source: docker.io/library/redis
+    mode: tag
+    tag: 8.0-alpine
+  - name: mongo
+    source: docker.io/library/mongo
+    mode: tag
+    tag: "7.0"
+  - name: mysql
+    source: docker.io/library/mysql
+    mode: tag
+    tag: "8.0"
+  - name: nats
+    source: docker.io/library/nats
+    mode: tag
+    tag: alpine
+  - name: clickhouse-server
+    source: docker.io/clickhouse/clickhouse-server
+    mode: semver
+    constraint: ">=25.0.0 <26.0.0"
+
+  # ---------------------------------------------------------------------------
+  # App-like 3rd-party services (Docker Hub / ghcr.io)
+  # ---------------------------------------------------------------------------
+  - name: postal
+    source: ghcr.io/postalserver/postal
+    mode: tag
+    tag: latest
+    notes: Upstream only ships :latest — track by digest.
+  - name: postfix
+    source: docker.io/boky/postfix
+    mode: tag
+    tag: latest
+  - name: growthbook
+    source: docker.io/growthbook/growthbook
+    mode: tag
+    tag: latest
+  - name: openpanel-api
+    source: docker.io/lindesvard/openpanel-api
+    mode: tag
+    tag: 2.0.1-rc
+  - name: openpanel-dashboard
+    source: docker.io/lindesvard/openpanel-dashboard
+    mode: tag
+    tag: 2.0.1-rc
+  - name: openpanel-worker
+    source: docker.io/lindesvard/openpanel-worker
+    mode: tag
+    tag: 2.0.1-rc
+
+  # ---------------------------------------------------------------------------
+  # Sealed Secrets / Bitnami (note: Bitnami catalog is migrating; bitnamilegacy
+  # is the pinned fallback). Tracked as fixed tags.
+  # ---------------------------------------------------------------------------
+  - name: sealed-secrets-controller
+    source: docker.io/bitnami/sealed-secrets-controller
+    mode: semver
+    constraint: ">=0.37.0 <0.38.0"
+  - name: bitnami-postgresql
+    source: docker.io/bitnami/postgresql
+    mode: tag
+    tag: latest
+  - name: bitnami-redis
+    source: docker.io/bitnami/redis
+    mode: tag
+    tag: latest
+  - name: bitnamilegacy-kubectl
+    source: docker.io/bitnamilegacy/kubectl
+    mode: tag
+    tag: "1.31"
+
+  # ---------------------------------------------------------------------------
+  # Small utility / base images pulled by init containers, jobs, sidecars.
+  # These are tiny but pulled on EVERY spot node, so mirroring them removes
+  # a steady trickle of NAT pulls.
+  # ---------------------------------------------------------------------------
+  - name: curl
+    source: docker.io/curlimages/curl
+    mode: tag
+    tag: 8.11.1
+    notes: Several pinned curl tags in use (8.5.0/8.8.0/8.9.1/8.10.1); converge
+           callers onto one mirrored tag over time.
+  - name: busybox
+    source: docker.io/library/busybox
+    mode: tag
+    tag: "1.36"
+  - name: python-slim
+    source: docker.io/library/python
+    mode: tag
+    tag: 3.11-slim
+  - name: nginx-unprivileged
+    source: docker.io/nginxinc/nginx-unprivileged
+    mode: tag
+    tag: 1.27-alpine
+
+# =============================================================================
+# Intentionally NOT mirrored (already NAT-free via Private Google Access, or
+# they are our own apps already routed through ghcr-remote/ghcr-nexus-remote):
+#   - gcr.io/knative-releases/*        (Google-hosted, digest-pinned)
+#   - gcr.io/kubecost1/*               (Google-hosted)
+#   - gke.gcr.io/*, gcr.io/gke-release (Google-hosted, GKE system)
+#   - ghcr.io/tesseract-nexus/*        (our apps; ghcr-nexus-remote)
+#   - asia-south1-docker.pkg.dev/...   (already in Artifact Registry)
+# =============================================================================
