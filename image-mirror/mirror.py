@@ -112,8 +112,13 @@ def main():
         mode = entry["mode"]
 
         try:
+            # Tags to mirror = the tracked tag (fixed or newest-in-range) PLUS
+            # any `extraTags` (the EXACT tags currently deployed). Mirroring the
+            # deployed tags is what makes the chart repoint a pure registry swap
+            # with zero behavior change; the tracked tag is what Kargo promotes.
+            tags = []
             if mode == "tag":
-                tag = str(entry["tag"])
+                tags.append(str(entry["tag"]))
             elif mode == "semver":
                 tag = resolve_semver_tag(
                     source, entry["constraint"], entry.get("tagFilter")
@@ -122,19 +127,25 @@ def main():
                     raise RuntimeError(
                         f"no upstream tag satisfies {entry['constraint']!r}"
                     )
-            else:
+                tags.append(tag)
+            elif mode != "extra-only":
                 raise RuntimeError(f"unknown mode {mode!r}")
+            for t in entry.get("extraTags", []):
+                tags.append(str(t))
+            # de-dup, preserve order
+            tags = list(dict.fromkeys(tags))
+            if not tags:
+                raise RuntimeError("no tags resolved to mirror")
 
-            src = f"{source}:{tag}"
-            dst = f"{registry}/{name}:{tag}"
-            print(f"==> {name}: {src}  ->  {dst}", flush=True)
-
-            if DRY_RUN:
-                skipped.append((name, tag))
-                continue
-
-            run(["crane", "copy", src, dst])
-            copied.append((name, tag))
+            for tag in tags:
+                src = f"{source}:{tag}"
+                dst = f"{registry}/{name}:{tag}"
+                print(f"==> {name}: {src}  ->  {dst}", flush=True)
+                if DRY_RUN:
+                    skipped.append((name, tag))
+                    continue
+                run(["crane", "copy", src, dst])
+                copied.append((name, tag))
         except subprocess.CalledProcessError as exc:
             msg = (exc.stderr or "").strip() or str(exc)
             print(f"!! {name}: crane failed: {msg}", file=sys.stderr, flush=True)
