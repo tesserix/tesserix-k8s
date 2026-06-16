@@ -63,6 +63,15 @@ spec:
         - source:
             principals: ["cluster.local/ns/devai/sa/devai-mcp-hub"]
 
+    # Rule 5c: kagent-agent-sync (kagent-system) curls /api/settings/kagent/
+    # active-variants to learn which model variants users enabled in Settings,
+    # so it provisions exactly those Agent pods on demand. ztunnel enforces only
+    # the L4 principal here; the endpoint itself requires the shared service
+    # bearer (identity._principal_from_service_bearer), so this is principal-only.
+    - from:
+        - source:
+            principals: ["cluster.local/ns/kagent-system/sa/kagent-agent-sync"]
+
     # Rule 6: Prometheus scraping
     - from:
         - source:
