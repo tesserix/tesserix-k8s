@@ -45,7 +45,11 @@ spec:
                   URL="{{ .Values.registry.endpoint }}/v0/export/kagent"
                   URL="${URL}?namespace={{ .Values.registry.sourceNamespace }}"
                   URL="${URL}&targetNamespace={{ .Values.registry.targetNamespace }}"
-                  URL="${URL}&modelConfig={{ .Values.registry.modelConfig }}"
+                  {{- /* variants = "<suffix>:kagent-mc-<suffix>,..." from kagentModels →
+                         one Agent variant per provider, each on its passthrough ModelConfig */}}
+                  {{- $pairs := list }}
+                  {{- range .Values.kagentModels }}{{ $pairs = append $pairs (printf "%s:kagent-mc-%s" .suffix .suffix) }}{{- end }}
+                  URL="${URL}&variants={{ join "," $pairs | urlquery }}"
                   {{- if .Values.registry.gatewayUrl }}
                   URL="${URL}&gatewayUrl={{ .Values.registry.gatewayUrl | urlquery }}"
                   {{- end }}

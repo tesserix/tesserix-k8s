@@ -1,16 +1,17 @@
-# The ModelConfig the synced kagent agents reference (registry.modelConfig).
-# apiKeyPassthrough=true → no shared API key; instead the agent forwards the
-# Bearer token from each incoming A2A request to the LLM provider as the key.
-# DevAI sets that Bearer to the TRIGGERING USER's own key, so a single shared
-# agent runs on each user's own credentials (no per-user secret in kagent).
+# One passthrough ModelConfig per catalog entry (kagentModels). apiKeyPassthrough
+# =true → no shared API key; the agent forwards the Bearer token from each A2A
+# request to the provider as the key. DevAI sets that Bearer to the TRIGGERING
+# USER's own key, so a single shared agent runs on each user's own credentials.
 {{- if .Values.modelConfig.enabled }}
+{{- range .Values.kagentModels }}
+---
 apiVersion: kagent.dev/v1alpha2
 kind: ModelConfig
 metadata:
-  name: {{ .Values.registry.modelConfig }}
-  namespace: {{ .Values.namespace }}
+  name: kagent-mc-{{ .suffix }}
+  namespace: {{ $.Values.namespace }}
   labels:
-    {{- include "kagent-agent-sync.labels" . | nindent 4 }}
+    {{- include "kagent-agent-sync.labels" $ | nindent 4 }}
   annotations:
     # The Agent + ModelConfig CRDs are multi-version (v1alpha1 served +
     # v1alpha2 storage). ArgoCD server-side apply mis-negotiates the schema for
@@ -19,7 +20,8 @@ metadata:
     # client-side apply.
     argocd.argoproj.io/sync-options: Replace=true
 spec:
-  provider: {{ .Values.modelConfig.provider | quote }}
-  model: {{ .Values.modelConfig.model | quote }}
-  apiKeyPassthrough: {{ .Values.modelConfig.apiKeyPassthrough }}
+  provider: {{ .provider | quote }}
+  model: {{ .model | quote }}
+  apiKeyPassthrough: true
+{{- end }}
 {{- end }}
