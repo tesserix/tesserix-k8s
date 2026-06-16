@@ -11,6 +11,11 @@ metadata:
   annotations:
     # Re-run on every sync; aregistry POSTs are idempotent.
     argocd.argoproj.io/sync-options: Force=true,Replace=true
+    # Bump `reseedNonce` in values to force a fresh seed sync: it changes the
+    # rendered manifest so ArgoCD goes OutOfSync and Replace re-runs the
+    # clone+POST. Lets us pull new/changed registry seeds (e.g. a newly
+    # labelled agent) without any other infra change.
+    devai.io/reseed: {{ .Values.reseedNonce | default "" | quote }}
 spec:
   ttlSecondsAfterFinished: {{ .Values.job.ttlSecondsAfterFinished }}
   backoffLimit: {{ .Values.job.backoffLimit }}
