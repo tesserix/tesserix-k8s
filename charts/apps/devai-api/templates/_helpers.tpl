@@ -214,13 +214,17 @@ identical environment — defined once here so the two never drift.
       key: DEVAI_BFF_SESSION_ENCRYPT_KEY
 - name: DEVAI_AGENTGATEWAY_URL
   value: {{ .Values.agenticControlPlane.agentgatewayUrl | default "" | quote }}
+# Master switch for kagent A2A dispatch (the platform default). A
+# user/team/org/tenant can override it dynamically via the Settings
+# "kagent" connector (on/off) — that takes effect on the next run
+# with no restart. Off here = every agent runs as a Job.
 - name: DEVAI_KAGENT_ENABLED
   value: {{ .Values.agenticControlPlane.kagentEnabled | default false | quote }}
-# kagent control-plane URL — the runner reads this to route
-# A2A handoffs through kagent's lifecycle controller. Empty
-# means "no kagent, dispatch Jobs directly to K8s" (current
-# production default; kagent is deployed but not yet in the
-# critical path — see docs/agentic/AGENTIC-INTEGRATION.md).
+# kagent control-plane URL. The dispatcher routes an agent over
+# A2A through kagent's lifecycle controller ONLY when that agent's
+# registry record carries `devai.io/runtime=kagent`; every other
+# agent still dispatches as a K8s Job. Empty here disables kagent
+# routing entirely (Jobs only). See docs/agentic/AGENTIC-INTEGRATION.md.
 - name: DEVAI_KAGENT_URL
   value: {{ .Values.agenticControlPlane.kagentUrl | default "" | quote }}
 {{- end }}
