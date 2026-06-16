@@ -87,7 +87,18 @@ spec:
                   {{- end }}
                   echo "GET ${URL}"
                   curl -sS --fail-with-body --max-time 30 "${URL}" -o /work/agents.yaml
-                  echo "rendered $(grep -c '^kind:' /work/agents.yaml || echo 0) object(s)"
+                  COUNT=$(grep -c '^kind:' /work/agents.yaml || echo 0)
+                  echo "rendered ${COUNT} object(s)"
+                  if [ "${COUNT}" = "0" ]; then
+                    # Variants were wanted, but NO labelled agent renders them —
+                    # the definitive "nothing should stand" state (e.g. every
+                    # agent unlabelled / kagent decommissioned). The export curl
+                    # already succeeded (--fail-with-body), so this empty render
+                    # is real, not a registry blip — REAP rather than keep-last,
+                    # else the last variants orphan forever.
+                    echo reap > /work/mode
+                    echo "no labelled agents render the wanted variants — will reap"
+                  fi
               env:
                 - name: DEVAI_SERVICE_TOKEN
                   valueFrom:
