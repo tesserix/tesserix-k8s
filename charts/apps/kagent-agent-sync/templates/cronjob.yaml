@@ -87,7 +87,18 @@ spec:
                     # --validate=false skips the cluster OpenAPI download/parse
                     # that otherwise OOMs the container (the API server still
                     # validates the object on apply).
-                    kubectl apply --validate=false -f /work/agents.yaml
+                    #
+                    # --prune (scoped to the registry-managed label) self-heals:
+                    # any Agent/ToolServer the registry no longer renders — an
+                    # unlabelled/removed agent, a stale provider/model variant —
+                    # is deleted, instead of orphaning. Safe because the guard
+                    # above only runs apply on a non-empty render, so a transient
+                    # empty export never prunes everything.
+                    kubectl apply --validate=false --prune \
+                      --prune-allowlist=kagent.dev/v1alpha2/Agent \
+                      --prune-allowlist=kagent.dev/v1alpha1/ToolServer \
+                      -l app.kubernetes.io/managed-by=agentic-registry \
+                      -f /work/agents.yaml
                   else
                     echo "no long-lived agents to sync — nothing to apply"
                   fi
