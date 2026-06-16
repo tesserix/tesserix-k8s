@@ -236,6 +236,13 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.agenticControlPlane.kagentPassthrough | default false | quote }}
 - name: DEVAI_KAGENT_MODEL_PROVIDER
   value: {{ .Values.agenticControlPlane.kagentModelProvider | default "anthropic" | quote }}
+{{- if .Values.agenticControlPlane.kagentCatalog }}
+# JSON catalog of kagent (provider, model)→suffix variants — MUST mirror the
+# kagent-agent-sync chart's kagentModels (providers lowercased). DevAI maps the
+# user's chosen (provider, model) to the variant `<agent>-<suffix>`.
+- name: DEVAI_KAGENT_CATALOG
+  value: {{ .Values.agenticControlPlane.kagentCatalog | toJson | quote }}
+{{- end }}
 {{- end }}
 # GCP project
 - name: GCP_PROJECT
