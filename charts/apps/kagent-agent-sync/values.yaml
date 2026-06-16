@@ -23,10 +23,27 @@ registry:
   # Empty → ToolServers use each MCP server's own remote URL.
   gatewayUrl: ""
 
-# Per-provider passthrough ModelConfig catalog. Each entry renders a ModelConfig
-# `kagent-mc-<suffix>` (apiKeyPassthrough) AND, for every labelled agent, an Agent
-# variant `<agent>-<suffix>` that references it. DevAI dispatches a user to the
-# variant matching their Settings provider and forwards their OWN key as the A2A
+# DevAI — source of truth for WHICH variants to provision (dynamic, UI-driven).
+# The render step curls DevAI for the union of every user's Settings-enabled
+# kagent models, so a variant's Agent (and its pod) exists exactly when ≥1 user
+# enabled that model — enable it in Settings and the pod appears next cycle;
+# the last user disabling it makes the pod go away. The ModelConfigs below stay
+# provisioned for the WHOLE catalog (cheap CRs, no pods), so dispatch never races
+# a missing ModelConfig.
+devai:
+  # In-cluster devai-api base URL (the active-variants endpoint lives here).
+  endpoint: http://devai-api.devai.svc.cluster.local:8080
+  # Secret (this namespace) holding the shared service bearer devai-api accepts
+  # (identity._principal_from_service_bearer — the SAME token the MCP Hub
+  # presents). Synced from GCP SM by external-secrets/prod/kagent-system.
+  serviceTokenSecret: kagent-agent-sync-devai-token
+  serviceTokenKey: DEVAI_MCP_HUB_SERVICE_TOKEN
+
+# Per-provider passthrough ModelConfig catalog — the SUPPORTED menu the operator
+# curates. Each entry renders a ModelConfig `kagent-mc-<suffix>` (apiKeyPassthrough);
+# the Agent variant `<agent>-<suffix>` that references it is provisioned on demand
+# (see `devai` above), not statically. DevAI dispatches a user to the variant
+# matching their Settings (provider, model) and forwards their OWN key as the A2A
 # Bearer. `model` must be a DIRECT-provider-valid id (not a DevAI gateway alias).
 # Anthropic + OpenAI use static API keys (clean passthrough); Vertex/Gemini use
 # GCP OAuth tokens and need separate handling — added later.

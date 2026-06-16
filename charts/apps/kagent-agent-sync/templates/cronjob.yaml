@@ -42,14 +42,43 @@ spec:
               args:
                 - |
                   set -eu
+                  # 1. Ask DevAI which model variants are wanted RIGHT NOW — the
+                  #    union of every user's Settings-enabled kagent models (∩ the
+                  #    supported catalog). DevAI is the source of truth; enabling a
+                  #    model in Settings makes its variant appear next cycle, and the
+                  #    last user disabling it makes the variant (and its pod) go away.
+                  #    Gated by a shared service bearer devai-api accepts via
+                  #    identity._principal_from_service_bearer (the SAME token the MCP
+                  #    Hub presents — one key, one rotation).
+                  ACTIVE="{{ .Values.devai.endpoint }}/api/settings/kagent/active-variants"
+                  echo "GET ${ACTIVE}"
+                  if ! curl -sS --fail-with-body --max-time 20 \
+                        -H "Authorization: Bearer ${DEVAI_SERVICE_TOKEN}" \
+                        "${ACTIVE}" -o /work/active.json; then
+                    echo "active-variants fetch failed (DevAI unreachable / token"
+                    echo "missing) — KEEP the last-applied variant set this cycle"
+                    echo "(init fails -> job fails -> apply never runs -> no prune)."
+                    exit 1
+                  fi
+                  # {"variants":[...],"param":"anthropic:kagent-mc-anthropic,..."}
+                  VARIANTS=$(sed -n 's/.*"param"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' /work/active.json)
+                  echo "active variants: [${VARIANTS}]"
+                  if [ -z "${VARIANTS}" ]; then
+                    # Nobody has any model enabled -> no Agent variant should exist.
+                    # Tell the apply step to reap every managed variant. The
+                    # ModelConfigs (cheap, no pods) stay provisioned regardless.
+                    echo reap > /work/mode
+                    : > /work/agents.yaml
+                    echo "no models enabled by any user — will reap all variants"
+                    exit 0
+                  fi
+                  echo apply > /work/mode
+                  # 2. Render exactly those variants from the registry (same tested
+                  #    adapter as before — one Agent CR per (agent, variant)).
                   URL="{{ .Values.registry.endpoint }}/v0/export/kagent"
                   URL="${URL}?namespace={{ .Values.registry.sourceNamespace }}"
                   URL="${URL}&targetNamespace={{ .Values.registry.targetNamespace }}"
-                  {{- /* variants = "<suffix>:kagent-mc-<suffix>,..." from kagentModels →
-                         one Agent variant per provider, each on its passthrough ModelConfig */}}
-                  {{- $pairs := list }}
-                  {{- range .Values.kagentModels }}{{ $pairs = append $pairs (printf "%s:kagent-mc-%s" .suffix .suffix) }}{{- end }}
-                  URL="${URL}&variants={{ join "," $pairs | urlquery }}"
+                  URL="${URL}&variants=${VARIANTS}"
                   {{- if .Values.registry.gatewayUrl }}
                   URL="${URL}&gatewayUrl={{ .Values.registry.gatewayUrl | urlquery }}"
                   {{- end }}
@@ -59,6 +88,15 @@ spec:
                   echo "GET ${URL}"
                   curl -sS --fail-with-body --max-time 30 "${URL}" -o /work/agents.yaml
                   echo "rendered $(grep -c '^kind:' /work/agents.yaml || echo 0) object(s)"
+              env:
+                - name: DEVAI_SERVICE_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.devai.serviceTokenSecret }}
+                      key: {{ .Values.devai.serviceTokenKey }}
+                      # optional: the pod still starts if the ExternalSecret hasn't
+                      # synced yet; the fetch then 401s and we keep the last set.
+                      optional: true
               volumeMounts:
                 - name: work
                   mountPath: /work
@@ -77,7 +115,17 @@ spec:
               args:
                 - |
                   set -eu
-                  if [ -s /work/agents.yaml ] && grep -q '^kind:' /work/agents.yaml; then
+                  MODE=$(cat /work/mode 2>/dev/null || echo "")
+                  if [ "${MODE}" = "reap" ]; then
+                    # No user has any model enabled — delete every registry-managed
+                    # Agent variant (and its ToolServers). The ModelConfigs are owned
+                    # by ArgoCD/Helm, not this job, so they stay.
+                    echo "reaping all registry-managed Agent variants (none enabled)"
+                    kubectl delete agents.kagent.dev,toolservers.kagent.dev \
+                      -n {{ .Values.registry.targetNamespace }} \
+                      -l app.kubernetes.io/managed-by=agentic-registry \
+                      --ignore-not-found
+                  elif [ -s /work/agents.yaml ] && grep -q '^kind:' /work/agents.yaml; then
                     # Client-side apply (NOT --server-side): the kagent Agent CRD
                     # serves v1alpha1 + v1alpha2 (storage), and kubectl's
                     # server-side apply mis-negotiates the schema for the v1alpha2
@@ -100,7 +148,8 @@ spec:
                       -l app.kubernetes.io/managed-by=agentic-registry \
                       -f /work/agents.yaml
                   else
-                    echo "no long-lived agents to sync — nothing to apply"
+                    # apply mode but an empty/garbled render — keep the last set.
+                    echo "render empty in apply mode — nothing to apply (keeping last)"
                   fi
               volumeMounts:
                 - name: work
