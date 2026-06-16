@@ -74,7 +74,13 @@ spec:
                 - |
                   set -eu
                   if [ -s /work/agents.yaml ] && grep -q '^kind:' /work/agents.yaml; then
-                    kubectl apply --server-side --force-conflicts -f /work/agents.yaml
+                    # Client-side apply (NOT --server-side): the kagent Agent CRD
+                    # serves v1alpha1 + v1alpha2 (storage), and kubectl's
+                    # server-side apply mis-negotiates the schema for the v1alpha2
+                    # object — it rejects spec.type/spec.declarative with
+                    # ".spec.type: field not declared in schema". Client-side apply
+                    # validates against the object's own version and succeeds.
+                    kubectl apply -f /work/agents.yaml
                   else
                     echo "no long-lived agents to sync — nothing to apply"
                   fi
