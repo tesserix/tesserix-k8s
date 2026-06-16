@@ -59,3 +59,26 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: agentregistry-system
+---
+# kagent-agent-sync also curls devai-api (devai namespace) for the active
+# variant set — the union of every user's Settings-enabled models — so it can
+# provision exactly those Agent pods on demand. Same additive, full-namespace
+# pattern as the registry egress above (devai-api isn't in the ambient mesh, so
+# this is plain pod-to-pod; the L7 gate is devai-api's service-bearer check).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kagent-to-devai-egress
+  namespace: kagent-system
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devai
