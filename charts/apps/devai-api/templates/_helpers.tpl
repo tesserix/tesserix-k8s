@@ -227,6 +227,15 @@ identical environment — defined once here so the two never drift.
 # routing entirely (Jobs only). See docs/agentic/AGENTIC-INTEGRATION.md.
 - name: DEVAI_KAGENT_URL
   value: {{ .Values.agenticControlPlane.kagentUrl | default "" | quote }}
+# Per-user kagent keys. When true, the dispatcher forwards the triggering
+# user's OWN LLM key as the A2A Bearer token, so a shared kagent agent
+# (apiKeyPassthrough ModelConfig) runs on each user's own key; a user with no
+# own key for kagentModelProvider falls back to a Job. Must match the kagent
+# ModelConfig's provider (kagent-agent-sync values.modelConfig.provider).
+- name: DEVAI_KAGENT_PASSTHROUGH
+  value: {{ .Values.agenticControlPlane.kagentPassthrough | default false | quote }}
+- name: DEVAI_KAGENT_MODEL_PROVIDER
+  value: {{ .Values.agenticControlPlane.kagentModelProvider | default "anthropic" | quote }}
 {{- end }}
 # GCP project
 - name: GCP_PROJECT
