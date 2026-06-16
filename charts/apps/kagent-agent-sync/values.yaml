@@ -16,25 +16,29 @@ registry:
   labelSelector: "devai.io/runtime=kagent"
   # Namespace the rendered kagent CRs are created in (the controller watches it).
   targetNamespace: kagent-system
-  # kagent ModelConfig CR the rendered Agents reference. Points at the
-  # passthrough ModelConfig below (created by templates/modelconfig.yaml) so
-  # each agent runs on the triggering user's own key (DevAI forwards it as the
-  # A2A Bearer token). Set to an apiKeySecret ModelConfig instead for a shared
-  # platform key.
-  modelConfig: devai-anthropic-passthrough
+  # The agents now render one variant per entry in `kagentModels` (below); the
+  # export `variants` param is derived from it, so there's no single modelConfig
+  # here anymore.
   # agentgateway base URL the rendered ToolServers reach MCP tools through.
   # Empty → ToolServers use each MCP server's own remote URL.
   gatewayUrl: ""
 
-# The ModelConfig the synced agents reference. apiKeyPassthrough=true → no
-# shared key; DevAI forwards each user's own LLM key as the A2A Bearer token
-# (DEVAI_KAGENT_PASSTHROUGH on devai-api). Provider fixes the LLM vendor; the
-# key varies per user. Disable to use an externally-managed ModelConfig.
+# Per-provider passthrough ModelConfig catalog. Each entry renders a ModelConfig
+# `kagent-mc-<suffix>` (apiKeyPassthrough) AND, for every labelled agent, an Agent
+# variant `<agent>-<suffix>` that references it. DevAI dispatches a user to the
+# variant matching their Settings provider and forwards their OWN key as the A2A
+# Bearer. `model` must be a DIRECT-provider-valid id (not a DevAI gateway alias).
+# Anthropic + OpenAI use static API keys (clean passthrough); Vertex/Gemini use
+# GCP OAuth tokens and need separate handling — added later.
 modelConfig:
   enabled: true
-  provider: Anthropic
-  model: claude-sonnet-4-5-20250929
-  apiKeyPassthrough: true
+kagentModels:
+  - suffix: anthropic
+    provider: Anthropic
+    model: claude-sonnet-4-5-20250929
+  - suffix: openai
+    provider: OpenAI
+    model: gpt-4.1
 
 cron:
   schedule: "*/5 * * * *"
