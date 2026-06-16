@@ -200,11 +200,15 @@ agenticControlPlane:
   # this to the proxy's Service URL — devai-runner picks it up on the
   # next Job dispatch with no code change.
   agentgatewayUrl: ""
-  kagentEnabled: true
-  # kagent-controller HTTP API. Reserved for the future A2A handoff
-  # path — the runner reads this when an agent dispatches a child
-  # agent. Today the pipeline submits Jobs directly to the K8s API,
-  # so this URL is set but unused until A2A flips on.
+  # Platform default: kagent A2A dispatch is OFF — every agent runs as a K8s
+  # Job. Turn it on platform-wide here, or let a user/team/org/tenant enable it
+  # for themselves via the Settings "kagent" connector (resolved per run).
+  kagentEnabled: false
+  # kagent-controller HTTP API. The dispatcher reaches an agent over
+  # A2A here when the agent's registry record is labelled
+  # `devai.io/runtime=kagent` (the same agents kagent-agent-sync
+  # reconciles into Deployments); all other agents stay Job-dispatched.
+  # Non-kagent agents are unaffected by this URL being set.
   kagentUrl: "http://kagent-controller.kagent-system.svc.cluster.local:8083"
 
 # LLM routing — when set, the Anthropic/OpenAI adapters dial these
