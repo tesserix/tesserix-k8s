@@ -21,6 +21,16 @@ spec:
     targetRevision: 0.0.6
     helm:
       releaseName: substrate
+      values: |
+        auth:
+          jwt:
+            # GKE mints SA tokens with the cluster's OIDC issuer, NOT the
+            # in-cluster default (kubernetes.default.svc.cluster.local). Without
+            # this the ate-api rejects the kagent controller's token
+            # ("Unauthenticated: unexpected issuer …") and SandboxAgents stay
+            # ActorTemplateNotReady. Value = this cluster's issuer
+            # (kubectl get --raw /.well-known/openid-configuration).
+            issuer: https://container.googleapis.com/v1/projects/tesseracthub-480811/locations/asia-south1/clusters/tesseract-prod-in-gke
   destination:
     server: https://kubernetes.default.svc
     namespace: ate-system
