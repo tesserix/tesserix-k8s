@@ -20,8 +20,14 @@ serviceAccount:
 podAnnotations:
   # Istio sidecar configuration
   proxy.istio.io/holdApplicationUntilProxyStarts: "true"
-  # Exclude NATS port from Istio sidecar to fix JetStream timeout issues
-  # Exclude GCP metadata server from Istio for Workload Identity
+  # Exclude NATS (4222) from the Istio sidecar — JetStream's long-lived control
+  # streams (stream/consumer create, PubAck, pull fetch) time out when routed
+  # through the proxy. Restored after the value was lost (only the comment
+  # remained); now that the API publishes/consumes via JetStream this is load-
+  # bearing, not cosmetic.
+  traffic.sidecar.istio.io/excludeOutboundPorts: "4222"
+  # Exclude the GCP metadata server from Istio for Workload Identity.
+  traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
   # Prometheus metrics
   prometheus.io/scrape: "true"
   prometheus.io/port: "8080"
@@ -171,6 +177,9 @@ env:
   REDIS_PORT: "6379"
   # NATS
   NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+  # JetStream stream replica factor — 3 to match the 3-node JetStream HA cluster
+  # so stream data survives a node loss (local/dev defaults to 1).
+  NATS_STREAM_REPLICAS: "3"
   # Temporal (durable execution, #116). Commented until a Temporal cluster is
   # actually deployed — setting TEMPORAL_HOSTPORT makes the API dial Temporal on
   # boot (it falls back gracefully on failure, but there's no point dialing a

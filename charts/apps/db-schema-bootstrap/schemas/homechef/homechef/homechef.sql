@@ -474,3 +474,48 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_staff_members_user_id
 
 CREATE INDEX IF NOT EXISTS idx_staff_members_role
   ON staff_members (staff_role);
+
+-- ---------------------------------------------------------------------------
+-- 7. Reliable event backbone — transactional outbox + consumer idempotency
+--    Models: apps/api/models/outbox.go, processed_event.go
+--    The API stages domain events in outbox_events inside the same transaction
+--    as the business write; the OutboxRelay publishes them to JetStream with
+--    PubAck. processed_events dedups at-least-once consumer redelivery.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS outbox_events (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject         VARCHAR(255) NOT NULL,
+  msg_id          VARCHAR(64) NOT NULL,
+  aggregate_type  VARCHAR(64),
+  aggregate_id    VARCHAR(64),
+  payload         TEXT NOT NULL,
+  status          VARCHAR(16) NOT NULL DEFAULT 'pending',
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  last_error      TEXT,
+  next_retry_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  published_at    TIMESTAMPTZ
+);
+
+-- One row per event; the msg_id is also the Nats-Msg-Id used for dedup.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_outbox_events_msg_id
+  ON outbox_events (msg_id);
+
+-- Hot path: the relay claims due, pending rows oldest-first.
+CREATE INDEX IF NOT EXISTS idx_outbox_dispatch
+  ON outbox_events (status, next_retry_at);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_events_aggregate
+  ON outbox_events (aggregate_type, aggregate_id);
+
+CREATE TABLE IF NOT EXISTS processed_events (
+  consumer      VARCHAR(64) NOT NULL,
+  msg_id        VARCHAR(64) NOT NULL,
+  subject       VARCHAR(255),
+  processed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (consumer, msg_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_processed_events_processed_at
+  ON processed_events (processed_at);
