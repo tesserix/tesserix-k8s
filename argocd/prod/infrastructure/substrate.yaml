@@ -1,0 +1,39 @@
+# Agent Substrate controller/runtime (ate-system). The controller is a normal pod
+# (no gVisor) — only the WorkerPool's worker needs the sandbox node. Lands after the
+# CRDs (-6) and before kagent enables substrate (-3). devai/docs/agentic/SUBSTRATE-SETUP.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: substrate
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: agent-substrate
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/kagent-dev/substrate/helm
+    chart: substrate
+    targetRevision: 0.0.6
+    helm:
+      releaseName: substrate
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ate-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
