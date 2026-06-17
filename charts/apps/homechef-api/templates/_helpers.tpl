@@ -61,3 +61,111 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Prod container env shared by the API (knative-service) and the Temporal worker
+so they stay in lockstep. Use as:  env:\n{{- include "homechef-api.containerEnv" . | nindent 12 }}
+(Note: deployment.yaml has its own local/kind-mode env and is intentionally not
+refactored here; the worker is a prod-only concern.)
+*/}}
+{{- define "homechef-api.containerEnv" -}}
+{{- range $key, $value := .Values.env }}
+{{- if ne $key "PORT" }}
+- name: {{ $key }}
+  value: {{ $value | quote }}
+{{- end }}
+{{- end }}
+- name: DB_HOST
+  value: {{ .Values.database.host | quote }}
+- name: DB_PORT
+  value: {{ .Values.database.port | quote }}
+- name: DB_USER
+  value: {{ .Values.database.user | quote }}
+- name: DB_NAME
+  value: {{ .Values.database.name | quote }}
+- name: DB_SSLMODE
+  value: {{ .Values.database.sslmode | quote }}
+- name: DB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: DB_PASSWORD
+- name: REDIS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: REDIS_PASSWORD
+- name: REDIS_URL
+  value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+- name: JWT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: JWT_SECRET
+- name: JWT_REFRESH_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: JWT_REFRESH_SECRET
+- name: OPENEXCHANGERATES_APP_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: OPENEXCHANGERATES_APP_ID
+      optional: true
+- name: EXCHANGERATES_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: EXCHANGERATES_API_KEY
+      optional: true
+- name: RAZORPAY_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: RAZORPAY_KEY_ID
+      optional: true
+- name: RAZORPAY_KEY_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: RAZORPAY_KEY_SECRET
+      optional: true
+- name: RAZORPAY_WEBHOOK_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: RAZORPAY_WEBHOOK_SECRET
+      optional: true
+- name: SENDGRID_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: SENDGRID_API_KEY
+      optional: true
+- name: RESEND_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: RESEND_API_KEY
+      optional: true
+- name: BFF_INTERNAL_HMAC_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: BFF_INTERNAL_HMAC_KEY
+{{- if .Values.email }}
+- name: FROM_EMAIL
+  value: {{ .Values.email.fromEmail | quote }}
+- name: FROM_NAME
+  value: {{ .Values.email.fromName | quote }}
+{{- end }}
+{{- if .Values.gcs }}
+- name: GCS_PROJECT_ID
+  value: {{ .Values.gcs.projectId | quote }}
+- name: GCS_PUBLIC_BUCKET
+  value: {{ .Values.gcs.publicBucket | quote }}
+- name: GCS_PRIVATE_BUCKET
+  value: {{ .Values.gcs.privateBucket | quote }}
+{{- end }}
+{{- end }}
