@@ -1,0 +1,158 @@
+{{- if and .Values.autoheal.enabled (not .Values.hibernate) }}
+# Self-healing controller for the CNPG cluster.
+# Detects a wedged NON-primary instance and rebuilds it automatically, removing
+# the need to run `kubectl cnpg destroy` by hand after a disk-full / lost-slot
+# deadlock. See docs/incident-homechef-postgres-disk-full.md.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.clusterName }}-autoheal
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: {{ .Values.clusterName }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.clusterName }}-autoheal
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: {{ .Values.clusterName }}
+rules:
+  # Read cluster status (primary, desired/ready instances, phase)
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get"]
+  # Inspect instance pods and delete a wedged one so the operator rebuilds it
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "delete"]
+  # Delete the wedged instance's PVCs so the rebuild is from a clean volume
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.clusterName }}-autoheal
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: {{ .Values.clusterName }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.clusterName }}-autoheal
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.clusterName }}-autoheal
+    namespace: {{ .Values.namespace }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.clusterName }}-autoheal
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: {{ .Values.clusterName }}
+spec:
+  schedule: {{ .Values.autoheal.schedule | quote }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          serviceAccountName: {{ .Values.clusterName }}-autoheal
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: autoheal
+              image: {{ .Values.autoheal.image | quote }}
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: CLUSTER
+                  value: {{ .Values.clusterName | quote }}
+                - name: NAMESPACE
+                  value: {{ .Values.namespace | quote }}
+                - name: STUCK_MINUTES
+                  value: {{ .Values.autoheal.stuckMinutes | quote }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  echo "[autoheal] cluster=$CLUSTER ns=$NAMESPACE stuckMinutes=$STUCK_MINUTES"
+
+                  primary=$(kubectl get cluster "$CLUSTER" -n "$NAMESPACE" -o jsonpath='{.status.currentPrimary}' || true)
+                  desired=$(kubectl get cluster "$CLUSTER" -n "$NAMESPACE" -o jsonpath='{.spec.instances}' || true)
+                  ready=$(kubectl get cluster "$CLUSTER" -n "$NAMESPACE" -o jsonpath='{.status.readyInstances}' || true)
+                  phase=$(kubectl get cluster "$CLUSTER" -n "$NAMESPACE" -o jsonpath='{.status.phase}' || true)
+                  echo "[autoheal] primary=$primary desired=$desired ready=$ready phase=$phase"
+
+                  # Guard: need a known primary as the rebuild source.
+                  if [ -z "$primary" ]; then echo "[autoheal] no currentPrimary; refusing to act"; exit 0; fi
+                  # Guard: do nothing when the cluster is already fully healthy.
+                  if [ -n "$ready" ] && [ "$ready" = "$desired" ]; then echo "[autoheal] healthy ($ready/$desired); nothing to do"; exit 0; fi
+                  # Guard: the primary itself must be Ready before we touch any replica.
+                  pstatus=$(kubectl get pod "$primary" -n "$NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' || true)
+                  if [ "$pstatus" != "True" ]; then echo "[autoheal] primary $primary not Ready (=$pstatus); refusing to act"; exit 0; fi
+
+                  now=$(date +%s)
+                  acted=0
+                  for pod in $(kubectl get pods -n "$NAMESPACE" -l "cnpg.io/cluster=$CLUSTER" -o jsonpath='{.items[*].metadata.name}'); do
+                    # Never the primary; only real instance pods named <cluster>-<serial>.
+                    [ "$pod" = "$primary" ] && continue
+                    printf '%s' "$pod" | grep -Eq "^${CLUSTER}-[0-9]+$" || continue
+
+                    rs=$(kubectl get pod "$pod" -n "$NAMESPACE" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' || true)
+                    [ "$rs" = "True" ] && continue
+
+                    start=$(kubectl get pod "$pod" -n "$NAMESPACE" -o jsonpath='{.status.startTime}' || true)
+                    [ -z "$start" ] && continue
+                    start_s=$(date -d "$start" +%s 2>/dev/null || echo "$now")
+                    age_min=$(( (now - start_s) / 60 ))
+                    if [ "$age_min" -lt "$STUCK_MINUTES" ]; then
+                      echo "[autoheal] $pod not-Ready but only ${age_min}m old (< $STUCK_MINUTES); likely rebuilding, skip"
+                      continue
+                    fi
+
+                    echo "[autoheal] REMEDIATE $pod (not-Ready ${age_min}m, primary healthy) -> delete pod+PVCs; operator rebuilds"
+                    kubectl delete pvc "$pod" "${pod}-wal" -n "$NAMESPACE" --ignore-not-found --wait=false || true
+                    kubectl delete pod "$pod" -n "$NAMESPACE" --grace-period=10 --ignore-not-found || true
+                    acted=$((acted + 1))
+                  done
+                  echo "[autoheal] done; remediated $acted instance(s)"
+          volumes:
+            - name: tmp
+              emptyDir: {}
+{{- end }}
