@@ -273,14 +273,12 @@ temporal:
   # Worker Deployment — runs the homechef workflows/activities (same image as the
   # API, command override /usr/local/bin/worker). Memory-only per platform policy.
   #
-  # GATED OFF until Kargo promotes an image built from a commit that includes the
-  # worker binary (Dockerfile `go build ./cmd/worker` — first present in main-8573387).
-  # The currently-promoted tag (main-702c363) predates that and has no worker binary,
-  # so deploying the worker now RunContainerErrors and wedges the ArgoCD app health,
-  # which in turn blocks Kargo from promoting main-8573387 (a deadlock). Keep this off
-  # until the prod stage is on >= main-8573387, then flip to true.
+  # Prod stage is now on >= main-8573387 (worker binary present at /usr/local/bin/worker)
+  # and homechef->scrapper:7233 connectivity is verified (the API logs "Temporal
+  # connected"). The worker shares the API image with a /usr/local/bin/worker command
+  # override and runs the homechef workflows/activities. Memory-only per platform policy.
   worker:
-    enabled: false
+    enabled: true
     replicas: 1
     resources:
       requests:
