@@ -1,0 +1,38 @@
+# Agent Substrate CRDs (WorkerPool, ActorTemplate, …). Lands before the substrate
+# controller and before kagent enables substrate. See devai/docs/agentic/SUBSTRATE-SETUP.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: substrate-crds
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: agent-substrate
+  annotations:
+    argocd.argoproj.io/sync-wave: "-6"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/kagent-dev/substrate/helm
+    chart: substrate-crds
+    targetRevision: 0.0.6
+    helm:
+      releaseName: substrate-crds
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ate-system
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
