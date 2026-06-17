@@ -475,6 +475,16 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Values.appNamespaces.supportPlatform }}
+    {{- if .Values.appNamespaces.homechef }}
+    # Allow from homechef — the shared Temporal frontend (temporal.scrapper.svc:7233)
+    # lives here; the homechef API, worker, and namespace-register Job reach it for
+    # durable execution (#116). Ambient mesh tunnels this over HBONE (port 15008),
+    # which default-deny-ingress blocks unless the source namespace is allowlisted.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.appNamespaces.homechef }}
+    {{- end }}
     - from:
         - namespaceSelector:
             matchLabels:
