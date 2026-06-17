@@ -11,7 +11,9 @@ service:
 
 server:
   image:
-    repository: temporalio/auto-setup
+    # Mirrored into AR (image-mirror/images.yaml) — the cluster cannot pull bare
+    # Docker Hub refs (Private Google Access only); bare temporalio/* ImagePullBackOff.
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/temporal-auto-setup
     tag: "1.28.1"
     pullPolicy: IfNotPresent
   # Bumped for multi-product load — HomeChef + PostSocial + future products now
@@ -25,7 +27,7 @@ server:
 # Embedded Postgres for Temporal state.
 postgres:
   image:
-    repository: postgres
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/postgres
     tag: "16-alpine"
     pullPolicy: IfNotPresent
   storage:
@@ -43,9 +45,12 @@ postgres:
     database: temporal
     gcpSecretName: prod-temporal-postgresql-password
 
-# Single-node Elasticsearch for custom search-attribute visibility.
+# Single-node Elasticsearch for custom search-attribute visibility. Disabled for
+# the initial HomeChef bring-up — HomeChef's workflows fit Temporal's SQL
+# visibility (no custom search attributes). Re-enable + mirror the elasticsearch
+# image if a product (e.g. PostSocial) needs custom search attributes.
 elasticsearch:
-  enabled: true
+  enabled: false
   image:
     repository: elasticsearch
     tag: "7.17.27"
