@@ -260,12 +260,9 @@ local:
     - BFF_INTERNAL_HMAC_KEY
 
 # Temporal durable-execution wiring (#116).
-# GATED OFF: no Temporal cluster is actually deployed yet — the charts/apps/temporal
-# app-def is dormant (not referenced by any ArgoCD kustomization; no temporal pods
-# exist in any namespace). Enabling the worker/namespace-Job without a live cluster
-# crashloops the worker. Flip enabled -> true AFTER deploying the Temporal cluster
-# (add ai-apps/temporal.yaml to the ai-apps kustomization, or deploy
-# temporal-platform.yaml). The API stays graceful regardless (logs a warning and
+# Cluster is LIVE: charts/apps/temporal (single-node auto-setup) runs in the
+# `scrapper` namespace, reachable at temporal.scrapper.svc.cluster.local:7233.
+# The API dials it on boot and stays graceful regardless (logs a warning and
 # uses inline fallbacks when it can't reach Temporal).
 temporal:
   enabled: true
@@ -277,11 +274,13 @@ temporal:
   # API, command override /usr/local/bin/worker). Memory-only per platform policy.
   #
   # GATED OFF until Kargo promotes an image built from a commit that includes the
-  # worker binary (Dockerfile `go build ./cmd/worker`). Deploying it against an
-  # older image would crashloop (no /usr/local/bin/worker). Flip to true once a
-  # current image is promoted to the homechef prod stage.
+  # worker binary (Dockerfile `go build ./cmd/worker` — first present in main-8573387).
+  # The currently-promoted tag (main-702c363) predates that and has no worker binary,
+  # so deploying the worker now RunContainerErrors and wedges the ArgoCD app health,
+  # which in turn blocks Kargo from promoting main-8573387 (a deadlock). Keep this off
+  # until the prod stage is on >= main-8573387, then flip to true.
   worker:
-    enabled: true
+    enabled: false
     replicas: 1
     resources:
       requests:
