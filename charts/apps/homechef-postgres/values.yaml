@@ -84,6 +84,23 @@ pooler:
 monitoring:
   enablePodMonitor: true
 
+# Self-healing — automatically rebuild a wedged replica with no human action.
+# A CronJob detects a NON-primary instance that has been stuck (CrashLoopBackOff
+# or not-Ready) beyond stuckMinutes while the primary is healthy, then destroys
+# it (pod + its data/WAL PVCs) so the operator re-bootstraps a fresh replica
+# from the primary. This is the automated form of `kubectl cnpg destroy` and
+# recovers from the "Not enough disk space" / lost-replication-slot deadlock
+# (see docs/incident-homechef-postgres-disk-full.md) without intervention.
+# The primary is NEVER touched, and it only acts when a healthy rebuild source
+# exists — so it can never cause data loss.
+autoheal:
+  enabled: true
+  schedule: "*/10 * * * *"
+  # A replica must be continuously not-Ready for this long before it is rebuilt.
+  # Comfortably longer than a normal rolling restart so upgrades aren't disrupted.
+  stuckMinutes: 15
+  image: bitnami/kubectl:1.31.0
+
 # Replication
 affinity:
   podAntiAffinityType: preferred
