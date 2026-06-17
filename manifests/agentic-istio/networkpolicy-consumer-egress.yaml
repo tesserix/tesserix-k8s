@@ -82,3 +82,28 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: devai
+---
+# The kagent controller dials the Agent Substrate API (ate-system: api:443 +
+# atenet-router:80) to schedule SandboxAgents as gVisor Actors. kagent-system
+# egress is default-deny, so without this the controller's dial to the ate-api
+# times out ("context deadline exceeded") and the substrate-enabled controller
+# CrashLoopBackOffs. Same additive full-namespace pattern as the registry/devai
+# egress above (ate-system isn't in the mesh — plain pod-to-pod; the ate-api has
+# its own token auth).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kagent-to-ate-egress
+  namespace: kagent-system
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ate-system
