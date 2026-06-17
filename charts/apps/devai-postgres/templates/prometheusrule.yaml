@@ -113,4 +113,52 @@ spec:
           annotations:
             summary: "Long-running transaction on {{ .Values.clusterName }}"
             description: "A transaction has been running for more than {{ "{{" }} $value {{ "}}" }}s."
+
+        # Cluster has fewer ready instances than desired.
+        # Uses count() so a crashlooping / absent instance (which emits NO
+        # cnpg_collector_up series) is still detected — the plain `== 0` check
+        # in CNPGInstanceDown never fires for an absent series, which is why the
+        # 2026-05-12 outage went unnoticed for 5 weeks (see
+        # docs/incident-homechef-postgres-disk-full.md).
+        - alert: CNPGClusterInstancesNotReady
+          expr: count(cnpg_collector_up{cluster={{ .Values.clusterName | quote }}} == 1) < {{ .Values.instances }}
+          for: 15m
+          labels:
+            severity: critical
+            cluster: {{ .Values.clusterName }}
+          annotations:
+            summary: "{{ .Values.clusterName }} has fewer than {{ .Values.instances }} ready instances"
+            description: "Only {{ "{{" }} $value {{ "}}" }} of {{ .Values.instances }} instances are healthy. HA/failover is degraded — a wedged or crashlooping replica may be pinning the cluster."
+
+        # Data or WAL volume critically low on free space — the direct guard the
+        # original disk-full incident lacked. Fires per-PVC, so the
+        # persistentvolumeclaim label tells you if it is the data or -wal volume.
+        - alert: CNPGVolumeSpaceCritical
+          expr: |
+            min by (persistentvolumeclaim) (
+              kubelet_volume_stats_available_bytes{namespace={{ .Values.namespace | quote }},persistentvolumeclaim=~"{{ .Values.clusterName }}.*"}
+              / kubelet_volume_stats_capacity_bytes{namespace={{ .Values.namespace | quote }},persistentvolumeclaim=~"{{ .Values.clusterName }}.*"}
+            ) * 100 < 10
+          for: 5m
+          labels:
+            severity: critical
+            cluster: {{ .Values.clusterName }}
+          annotations:
+            summary: "Volume {{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }} below 10% free"
+            description: "PVC {{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }} has {{ "{{" }} $value {{ "}}" }}% space left. A full WAL/data volume stops PostgreSQL and can deadlock the cluster — expand the PVC (resizeInUseVolumes is enabled)."
+
+        # Data or WAL volume low on free space (early warning).
+        - alert: CNPGVolumeSpaceLow
+          expr: |
+            min by (persistentvolumeclaim) (
+              kubelet_volume_stats_available_bytes{namespace={{ .Values.namespace | quote }},persistentvolumeclaim=~"{{ .Values.clusterName }}.*"}
+              / kubelet_volume_stats_capacity_bytes{namespace={{ .Values.namespace | quote }},persistentvolumeclaim=~"{{ .Values.clusterName }}.*"}
+            ) * 100 < 25
+          for: 15m
+          labels:
+            severity: warning
+            cluster: {{ .Values.clusterName }}
+          annotations:
+            summary: "Volume {{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }} below 25% free"
+            description: "PVC {{ "{{" }} $labels.persistentvolumeclaim {{ "}}" }} has {{ "{{" }} $value {{ "}}" }}% space left. Check WAL growth / inactive replication slots and plan a volume expansion."
 {{- end }}

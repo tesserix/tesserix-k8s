@@ -79,7 +79,7 @@ spec:
 
         # High connection usage (>80% of max_connections)
         - alert: CNPGHighConnectionUsage
-          expr: cnpg_collector_pg_stat_activity{cluster={{ .Values.clusterName | quote }},state="active"} > 80
+          expr: cnpg_collector_pg_stat_activity{cluster={{ .Values.clusterName | quote }},state="active"} > ({{ if .Values.postgresql }}{{ .Values.postgresql.max_connections | default "100" }}{{ else }}100{{ end }} * 0.8)
           for: 5m
           labels:
             severity: warning
