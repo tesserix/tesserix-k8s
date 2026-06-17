@@ -79,11 +79,20 @@ metadata:
   labels:
     app.kubernetes.io/name: temporal
     app.kubernetes.io/part-of: temporal
+    # The scrapper namespace enrolls all its Services behind an L7 waypoint
+    # (istio.io/use-waypoint: waypoint). The Temporal frontend speaks gRPC
+    # (HTTP/2) on 7233; an L7 waypoint without an appProtocol hint mishandles
+    # the long-lived gRPC stream and cross-namespace clients (e.g. homechef)
+    # time out with "context deadline exceeded". Temporal is an internal
+    # control-plane service that does its own auth, so opt it out of the
+    # waypoint — traffic still gets L4 mTLS + L4 authz via ztunnel directly.
+    istio.io/use-waypoint: "none"
 spec:
   type: ClusterIP
   ports:
     - port: {{ .Values.service.frontendPort }}
       targetPort: frontend
       name: frontend
+      appProtocol: grpc
   selector:
     app.kubernetes.io/name: temporal
