@@ -44,6 +44,28 @@ spec:
             limits:
               cpu: 2
               memory: 2Gi
+          # Agent Substrate (gVisor WorkerPool + Actor) — agents labelled for
+          # Substrate run as gVisor Actors in the shared WorkerPool, not a
+          # Deployment per agent. Endpoints match the ate-system services
+          # (api:443, atenet-router:80). Needs the sandbox-gvisor node pool.
+          substrate:
+            enabled: true
+            defaultWorkerPool:
+              namespace: kagent-system
+              name: kagent-default
+            ateApiEndpoint: "dns:///api.ate-system.svc:443"
+            ateApiInsecure: true
+            atenetRouterURL: "http://atenet-router.ate-system.svc:80"
+            ateApiTokenFile: "/var/run/secrets/tokens/ate-api/token"
+        # The shared WorkerPool the controller schedules Actors onto. One gVisor
+        # worker (replicas: 1) multiplexes all Actors — not a node per agent. Its
+        # pod runs under runtimeClassName=gvisor → lands on sandbox-gvisor (which
+        # autoscales 0->1 on demand).
+        substrateWorkerPool:
+          create: true
+          name: kagent-default
+          replicas: 1
+          ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.6
         # The bundled Postgres provisions a PVC for the vector store.
         # standard-rwo is the default storage class on this GKE cluster.
         postgresql:
