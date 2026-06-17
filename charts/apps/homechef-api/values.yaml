@@ -171,6 +171,13 @@ env:
   REDIS_PORT: "6379"
   # NATS
   NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
+  # Temporal (durable execution, #116) — reuses the shared cluster running in
+  # the `scrapper` namespace (do NOT deploy a new one). Setting TEMPORAL_HOSTPORT
+  # opts the API in as a workflow producer; without it the API uses inline
+  # fallbacks. Workflows run on the `homechef` Temporal namespace (registered by
+  # the homechef-temporal-namespace Job).
+  TEMPORAL_HOSTPORT: "temporal.scrapper.svc.cluster.local:7233"
+  TEMPORAL_NAMESPACE: "homechef"
   # JWT
   JWT_EXPIRY: "24h"
   REFRESH_TOKEN_EXPIRY: "168h"
@@ -242,3 +249,15 @@ local:
     - JWT_SECRET
     - JWT_REFRESH_SECRET
     - BFF_INTERNAL_HMAC_KEY
+
+# Temporal durable-execution wiring (#116). REUSES the shared Temporal cluster
+# already running in the `scrapper` namespace — do NOT deploy a new one. The API
+# (producer) reads TEMPORAL_HOSTPORT/TEMPORAL_NAMESPACE from the env: map above;
+# this block drives the one-shot Job that registers the `homechef` Temporal
+# namespace. The worker Deployment is a follow-up (see #119 hand-off notes).
+temporal:
+  enabled: true
+  hostPort: "temporal.scrapper.svc.cluster.local:7233"
+  namespace: "homechef"
+  retention: "168h"
+  adminToolsImage: "temporalio/admin-tools:1.28.1"
