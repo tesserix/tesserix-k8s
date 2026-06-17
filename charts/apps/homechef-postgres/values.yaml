@@ -68,7 +68,11 @@ postgresql:
 backup:
   enabled: true
   destinationPath: "gs://tesseract-prod-backups-in/homechef-postgres"
-  retentionPolicy: "30d"
+  # 90-day recovery window. CNPG/Barman is the chain-aware pruner (deletes whole
+  # base backups + their WAL together so PITR never breaks); it is aligned with
+  # the bucket's lifecycle Delete-at-90-days backstop. See
+  # docs/cnpg-backup-restore.md.
+  retentionPolicy: "90d"
   # GCP Service Account for Workload Identity. Must have
   # roles/storage.objectAdmin on the backup bucket.
   serviceAccount: "app-secrets-homechef-prod@tesseracthub-480811.iam.gserviceaccount.com"
