@@ -1,0 +1,36 @@
+# STAGED — not wired into any kustomization; MANUAL sync (no automated).
+# Installs the Agent Substrate controller/runtime in ate-system. The CONTROLLER
+# is a normal pod (no gVisor) and runs on the existing pool; only the WorkerPool
+# worker (created later via the kagent chart, step 4) needs the sandbox node.
+# Gated behind the runbook: devai/docs/agentic/SUBSTRATE-SETUP.md. Pin
+# targetRevision (step 2) before syncing. Sync substrate-crds FIRST.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: substrate
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: agent-substrate
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/kagent-dev/substrate/helm
+    chart: substrate
+    targetRevision: PIN-ME # `helm show chart oci://ghcr.io/kagent-dev/substrate/helm/substrate`
+    helm:
+      releaseName: substrate
+      # Add resource requests/limits here once the chart's defaults are known —
+      # keep the controller bounded so it can't crowd the 3-node baseline.
+      values: |
+        {}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ate-system
+  # MANUAL sync on purpose — operator syncs per the runbook, after the CRDs.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
