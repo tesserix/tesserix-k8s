@@ -16,12 +16,24 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
+  # company (tesserix-home) is Kargo-managed: kargo-tesserix-home:prod
+  # writes image.tag onto the live company Application. Without this
+  # ignoreDifferences, this app-of-apps' selfHeal reverts that write back
+  # to the git-seeded image.tag and the deploy flaps. Mirrors blog-/
+  # ai-apps-/homechef-app-of-apps; a no-op for non-Kargo global apps
+  # (their helm params already match git).
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /spec/source/helm/parameters
   syncPolicy:
     automated:
       prune: false
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
