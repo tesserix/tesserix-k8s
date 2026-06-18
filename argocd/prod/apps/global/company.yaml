@@ -4,7 +4,7 @@ metadata:
   name: company
   namespace: argocd
   annotations:
-    kargo.akuity.io/authorized-stage: tesserix-prod:company-prod
+    kargo.akuity.io/authorized-stage: kargo-tesserix-home:prod
   labels:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: frontend
@@ -23,8 +23,9 @@ spec:
       parameters:
       # Per-commit SHA tag rather than `latest`. The GAR remote-repository
       # mirror caches the digest behind `latest` aggressively; pinning the
-      # SHA forces a fresh pull on every CI build. CI's post-build step
-      # rewrites this value when bumping the deployment.
+      # SHA forces a fresh pull on every CI build. Kargo's prod Stage
+      # (kargo-tesserix-home:prod) rewrites this value when a new
+      # main-<sha> image lands — see kargo-manifests/projects/tesserix-home.
       - name: image.tag
         value: "main-c52f072"
       - name: ingress.hosts[0].host
@@ -65,19 +66,13 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: tesserix
-  # CI sets the deployment's image to a specific SHA tag after each build
-  # (see tesserix-home/.github/workflows/ci.yml). This is necessary because
-  # the GAR remote-repository mirror caches :latest's digest aggressively
-  # and would otherwise serve stale content to kubelet on rollout. We
-  # therefore exclude the image field from reconciliation — Argo will not
-  # revert CI's pinned SHA back to whatever the chart renders.
-  ignoreDifferences:
-  - group: apps
-    kind: Deployment
-    name: company
-    namespace: tesserix
-    jsonPointers:
-    - /spec/template/spec/containers/0/image
+  # Deploy is owned by Kargo (kargo-tesserix-home:prod), which rewrites
+  # the `image.tag` Helm parameter above to the freshly-built main-<sha>
+  # tag. Because that tag is unique per build (never :latest), the chart
+  # renders a distinct image every time and the GAR mirror always pulls
+  # fresh — so the old ignoreDifferences/RespectIgnoreDifferences hack
+  # (which was needed when CI ran `kubectl set image`) is no longer
+  # required, and Argo reconciles the image normally.
   syncPolicy:
     automated:
       prune: false
@@ -85,12 +80,6 @@ spec:
     syncOptions:
     - CreateNamespace=true
     - PruneLast=true
-    # Without this, Argo's selfHeal applies the chart's rendered manifest
-    # (image: :latest) on every sync, overwriting CI's `kubectl set image`
-    # to the per-commit SHA tag. RespectIgnoreDifferences tells Argo to
-    # strip ignored fields from the applied manifest, not just from drift
-    # detection — so the live image stays whatever CI pinned it to.
-    - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
