@@ -7,17 +7,44 @@ metadata:
     app.kubernetes.io/part-of: homechef
     app.kubernetes.io/component: chat-database
     environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
+  # Percona Server for MongoDB (OSS) managed by the Percona Operator — replaces
+  # the hand-rolled single-node StatefulSet with an operator-managed 3-member
+  # replica set (HA, users-via-secret, TLS via cert-manager, PBM-ready). #53.
   source:
-    repoURL: https://github.com/tesserix/tesserix-k8s.git
-    targetRevision: HEAD
-    path: charts/apps/homechef-mongodb
+    repoURL: https://percona.github.io/percona-helm-charts/
+    chart: psmdb-db
+    targetRevision: 1.22.2
     helm:
-      valueFiles:
-        - values.yaml
+      values: |
+        fullnameOverride: homechef-mongodb
+        # Replica set only — no sharding for a single chat DB.
+        sharding:
+          enabled: false
+        replsets:
+          rs0:
+            name: rs0
+            size: 3
+            # Memory-only resources per the tesserix k8s convention (no CPU).
+            resources:
+              requests:
+                memory: "512Mi"
+              limits:
+                memory: "1Gi"
+            volumeSpec:
+              pvc:
+                storageClassName: standard-rwo
+                resources:
+                  requests:
+                    storage: 20Gi
+        # PBM backups can be enabled later (GCS target).
+        backup:
+          enabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: homechef
@@ -29,8 +56,8 @@ spec:
       - CreateNamespace=true
       - ServerSideApply=true
     retry:
-      limit: 5
+      limit: 10
       backoff:
-        duration: 5s
+        duration: 10s
         factor: 2
-        maxDuration: 3m
+        maxDuration: 5m
