@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homechef-mongodb-operator
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: homechef
+    app.kubernetes.io/component: chat-database
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://percona.github.io/percona-helm-charts/
+    chart: psmdb-operator
+    targetRevision: 1.22.0
+    helm:
+      values: |
+        # Namespaced operator — watch only homechef (the chat DB lives there).
+        watchNamespace: homechef
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homechef
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

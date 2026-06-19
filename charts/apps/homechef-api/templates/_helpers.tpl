@@ -97,6 +97,25 @@ refactored here; the worker is a prod-only concern.)
       key: REDIS_PASSWORD
 - name: REDIS_URL
   value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+# MongoDB — in-app chat (#53), backed by the Percona-operator replica set. The
+# operator generates the databaseAdmin credentials into <cluster>-secrets;
+# optional so the API still starts before the operator has provisioned them
+# (chat is then 503 until Mongo is reachable). TLS is the operator default
+# (cert-manager); tlsInsecure skips verifying the self-signed internal CA.
+- name: MONGODB_USER
+  valueFrom:
+    secretKeyRef:
+      name: homechef-mongodb-secrets
+      key: MONGODB_DATABASE_ADMIN_USER
+      optional: true
+- name: MONGODB_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: homechef-mongodb-secrets
+      key: MONGODB_DATABASE_ADMIN_PASSWORD
+      optional: true
+- name: MONGODB_URI
+  value: "mongodb://$(MONGODB_USER):$(MONGODB_PASSWORD)@homechef-mongodb-rs0.{{ .Release.Namespace }}.svc.cluster.local:27017/admin?replicaSet=rs0&tls=true&tlsInsecure=true"
 - name: JWT_SECRET
   valueFrom:
     secretKeyRef:
