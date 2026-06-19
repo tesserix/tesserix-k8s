@@ -1,0 +1,20 @@
+# Headless service so the single pod gets stable DNS
+# (<name>-0.<name>.<ns>.svc.cluster.local). The replica-set member registers
+# that pod-DNS, and clients connect with directConnection=true so the driver
+# skips topology discovery (which would fail against a headless round-robin).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "homechef-mongodb.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  ports:
+    - name: mongodb
+      port: {{ .Values.service.port }}
+      targetPort: 27017
+      protocol: TCP
+  selector:
+    {{- include "homechef-mongodb.selectorLabels" . | nindent 4 }}
