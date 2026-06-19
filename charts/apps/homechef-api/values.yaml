@@ -175,11 +175,10 @@ env:
   # Redis
   REDIS_HOST: "redis.redis.svc.cluster.local"
   REDIS_PORT: "6379"
-  # MongoDB — in-app chat (admin-mediated messaging) + document uploads (#53).
-  # Single-node replica set (rs0) via the headless service; directConnection
-  # skips topology discovery. The API connects optionally (graceful fallback
-  # when unset/unreachable), so this is safe before homechef-mongodb is synced.
-  MONGODB_URI: "mongodb://homechef-mongodb-0.homechef-mongodb.homechef.svc.cluster.local:27017/?replicaSet=rs0&directConnection=true"
+  # MongoDB — in-app chat + document uploads (#53). MONGODB_URI is assembled in
+  # _helpers.tpl from the Percona-operator credentials secret (it interpolates
+  # $(MONGODB_USER)/$(MONGODB_PASSWORD), so it must come after those env vars and
+  # can't live in this plain map). Only the DB name is a plain value here.
   MONGODB_DB: "homechef_chat"
   # NATS
   NATS_URL: "nats://nats.nats.svc.cluster.local:4222"
