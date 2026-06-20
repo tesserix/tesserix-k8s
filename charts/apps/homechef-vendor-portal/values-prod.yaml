@@ -4,16 +4,16 @@ podAnnotations:
 # Production overrides for homechef-vendor-portal
 # Use with: helm upgrade --values values.yaml --values values-prod.yaml
 
-# Knative Serving - always-on for SPA stability
+# Knative disabled — migrated to a plain Deployment + KEDA: always >=1 pod
+# (no scale-to-zero, no Knative references). Scaling config lives under keda:.
 knative:
-  enabled: true
-  minScale: 1
-  maxScale: 10
-  scaleDownDelay: "60s"
+  enabled: false
 
-replicaCount: 2
+# Baseline replicas; KEDA's ScaledObject owns the live count (min 1, max 7).
+replicaCount: 1
 
-# Production resource allocation
+# Production resource allocation — memory only (no CPU, per platform policy),
+# request + limit. Static SPA on nginx; bump if it gets memory-pressured.
 resources:
   limits:
     memory: 256Mi
@@ -24,12 +24,47 @@ resources:
 env:
   NODE_ENV: "production"
 
-# Disable HPA and KEDA — Knative handles autoscaling
+# The chart's own HPA stays off — KEDA's ScaledObject owns autoscaling.
 autoscaling:
   enabled: false
 
-keda:
+# No VerticalPodAutoscaler — it would fight KEDA's memory trigger and override
+# the explicit memory request/limit. KEDA owns replica scaling; resources are
+# fixed and memory-only.
+vpa:
   enabled: false
+
+# Prod ingress is the Istio VirtualService (manifests/homechef-istio), not a
+# k8s Ingress. The chart's Ingress is a dev-host artifact — keep it off in prod.
+ingress:
+  enabled: false
+
+# KEDA autoscaling — replaces Knative. Everything here is values-driven, so
+# scaling up later is a one-line change:
+#   • raise maxReplicaCount to allow more pods,
+#   • raise minReplicaCount for a bigger always-on floor,
+#   • lower the prometheus threshold to add pods sooner under traffic.
+# KEDA scales to the MAX of all triggers. No CPU triggers (platform is
+# memory-only); traffic is the primary signal, memory the safety net.
+keda:
+  enabled: true
+  pollingInterval: 15
+  cooldownPeriod: 300
+  minReplicaCount: 1   # always at least 1 pod
+  maxReplicaCount: 7   # ceiling — bump to scale higher
+  triggers:
+    # Traffic: Istio requests/sec to this service (Prometheus). threshold is
+    # the target req/s PER replica, so replicas ≈ total_rps / threshold.
+    - type: prometheus
+      metadata:
+        serverAddress: "http://prometheus-server.monitoring.svc.cluster.local:80"
+        threshold: "50"
+        query: 'sum(rate(istio_requests_total{destination_service_name="homechef-vendor-portal",destination_service_namespace="homechef",reporter="source"}[2m]))'
+    # Memory safety net (utilization %). Adds pods if memory climbs.
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "80"
 
 # Production GCP configuration
 gcp:
