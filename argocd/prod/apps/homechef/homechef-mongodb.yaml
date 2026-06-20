@@ -50,9 +50,46 @@ spec:
                 resources:
                   requests:
                     storage: 20Gi
-        # PBM backups can be enabled later (GCS target).
+        # Percona Backup for MongoDB (PBM) → GCS. The operator runs a pbm-agent
+        # sidecar in each mongod pod (percona/percona-backup-mongodb, which pulls
+        # fine) and streams scheduled backups of homechef_chat (chat #53) to GCS.
+        # This is the native replacement for the mongodump CronJob, whose shared
+        # db-backup-tools image was never published to Artifact Registry.
+        #
+        # PBM uses native GCS storage. It can't use Workload Identity — the CR
+        # requires a credentialsSecret — so a least-privilege GCS service-account
+        # key (GCS_CLIENT_EMAIL / GCS_PRIVATE_KEY) is synced from GCP Secret
+        # Manager into the homechef-mongodb-backup-gcs secret by
+        # external-secrets/prod/homechef. (SA JSON key, not HMAC: the Percona
+        # docs flag a known PBM+GCS-HMAC bug.)
         backup:
-          enabled: false
+          enabled: true
+          image:
+            repository: percona/percona-backup-mongodb
+            tag: 2.12.0
+          storages:
+            gcs-backups:
+              type: gcs
+              gcs:
+                bucket: tesseract-prod-backups-in
+                prefix: homechef-mongodb
+                credentialsSecret: homechef-mongodb-backup-gcs
+          tasks:
+            # Twice daily (00:00, 12:00 UTC). PBM retains ~90 days of sets
+            # (twice-daily x 90 ~= 180) and prunes its own from the bucket; the
+            # bucket lifecycle (NEARLINE 7d -> COLDLINE 15d -> ARCHIVE 30d ->
+            # delete 90d) does cost-tiering and is the backstop. Chat backups
+            # thus age out alongside the Postgres (ticket) backups in the same
+            # bucket.
+            - name: twice-daily-gcs
+              enabled: true
+              schedule: "0 0,12 * * *"
+              storageName: gcs-backups
+              compressionType: gzip
+              retention:
+                count: 180
+                type: count
+                deleteFromStorage: true
   destination:
     server: https://kubernetes.default.svc
     namespace: homechef
