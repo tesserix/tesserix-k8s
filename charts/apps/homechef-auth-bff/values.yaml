@@ -11,12 +11,32 @@ imagePullSecrets:
 service:
   type: ClusterIP
   port: 8080
+# KEDA autoscaling — Deployment + KEDA (no Knative). Everything here is
+# values-driven, so scaling up later is a one-line change:
+#   • raise maxReplicaCount to allow more pods,
+#   • raise minReplicaCount for a bigger always-on floor,
+#   • lower the prometheus threshold to add pods sooner under traffic.
+# KEDA scales to the MAX of all triggers. No CPU triggers (platform is
+# memory-only); traffic is the primary signal, memory the safety net.
 keda:
   enabled: true
   pollingInterval: 15
   cooldownPeriod: 300
-  minReplicaCount: 2
-  maxReplicaCount: 10
+  minReplicaCount: 1   # always at least 1 pod
+  maxReplicaCount: 7   # ceiling — bump to scale higher
+  triggers:
+    # Traffic: Istio requests/sec to this service (Prometheus). threshold is
+    # the target req/s PER replica, so replicas ≈ total_rps / threshold.
+    - type: prometheus
+      metadata:
+        serverAddress: "http://prometheus-server.monitoring.svc.cluster.local:80"
+        threshold: "50"
+        query: 'sum(rate(istio_requests_total{destination_service_name="homechef-auth-bff",destination_service_namespace="homechef",reporter="source"}[2m]))'
+    # Memory safety net (utilization %). Adds pods if memory climbs.
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "80"
 resources:
   requests:
     memory: 128Mi
