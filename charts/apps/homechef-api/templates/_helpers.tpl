@@ -100,8 +100,10 @@ refactored here; the worker is a prod-only concern.)
 # MongoDB — in-app chat (#53), backed by the Percona-operator replica set. The
 # operator generates the databaseAdmin credentials into <cluster>-secrets;
 # optional so the API still starts before the operator has provisioned them
-# (chat is then 503 until Mongo is reachable). TLS is the operator default
-# (cert-manager); tlsInsecure skips verifying the self-signed internal CA.
+# (chat is then 503 until Mongo is reachable). Plaintext (no app-level TLS): the
+# mongod listener is non-TLS and the wire is already encrypted by Istio ambient
+# (ztunnel mTLS). The mongod pods opt out of the L7 waypoint so the wire protocol
+# isn't mangled.
 - name: MONGODB_USER
   valueFrom:
     secretKeyRef:
@@ -115,7 +117,7 @@ refactored here; the worker is a prod-only concern.)
       key: MONGODB_DATABASE_ADMIN_PASSWORD
       optional: true
 - name: MONGODB_URI
-  value: "mongodb://$(MONGODB_USER):$(MONGODB_PASSWORD)@homechef-mongodb-rs0.{{ .Release.Namespace }}.svc.cluster.local:27017/admin?replicaSet=rs0&tls=true&tlsInsecure=true"
+  value: "mongodb://$(MONGODB_USER):$(MONGODB_PASSWORD)@homechef-mongodb-rs0.{{ .Release.Namespace }}.svc.cluster.local:27017/admin?replicaSet=rs0"
 - name: JWT_SECRET
   valueFrom:
     secretKeyRef:
