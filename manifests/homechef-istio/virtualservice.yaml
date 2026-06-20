@@ -1,10 +1,8 @@
 ##############################################################################
 # HomeChef Istio VirtualService Configuration
-# All services run as plain Deployments behind ClusterIP Services (KEDA-scaled).
-# Traffic routes DIRECTLY to each Service (no knative-local-gateway, no Host
-# header rewrite) — the original request Host (fe3dr.com etc.) flows through so
-# the auth-bff can resolve its GIP tenant and nginx/api see the real host.
-# All portals authenticate via customer Keycloak realm (homechef).
+# All services run in-cluster via Knative Serving
+# Traffic routes through knative-local-gateway with Host header rewriting
+# All portals authenticate via customer Keycloak realm (homechef)
 ##############################################################################
 
 # --- Customer-facing SPA (fe3dr.com / www.fe3dr.com) ---
@@ -51,9 +49,11 @@ spec:
       timeout: 30s
 
     # GIP auth-bff — handles /auth/login, /auth/callback, /auth/logout,
-    # /auth/refresh, /auth/whoami. Routes directly to the homechef-auth-bff
-    # ClusterIP service (8080). No retries — auth callbacks consume state on
-    # first read (non-idempotent).
+    # /auth/refresh, /auth/whoami. Replaces the legacy /bff/* and
+    # /driver-bff/* Keycloak prefixes (deleted 2026-05-15 cutover).
+    # Routes directly to the homechef-auth-bff ClusterIP service (8080),
+    # mirroring mark8ly-auth-bff. No retries — auth callbacks consume
+    # state on first read (non-idempotent).
     - match:
         - uri:
             prefix: /auth/
@@ -129,54 +129,70 @@ spec:
     # (the secret must never reach the browser). nginx rewrites
     # /api/otto/* -> /api/v1/storefront/otto/* and forwards to
     # support-platform-otto. Long timeout for the SSE-shaped queue
-    # poll, no retries. Routes directly to the web Service.
+    # poll, no retries.
     - match:
         - uri:
             prefix: /api/otto/
+      headers:
+        request:
+          set:
+            Host: homechef-web.homechef.svc.cluster.local
       route:
         - destination:
-            host: homechef-web.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
               number: 80
       timeout: 120s
 
-    # API routes -> HomeChef API Service (direct)
+    # API routes -> HomeChef API Knative service
     - match:
         - uri:
             prefix: /api
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: homechef-api.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
-              number: 8080
+              number: 80
       timeout: 60s
 
-    # WebSocket routes -> API Service (direct). 3600s, no retries.
+    # WebSocket routes -> API Knative service
     - match:
         - uri:
             prefix: /ws
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
       route:
         - destination:
-            host: homechef-api.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
-              number: 8080
+              number: 80
       timeout: 3600s
 
-    # All other routes -> Web SPA Service (direct)
+    # All other routes -> Web SPA Knative service
     - match:
         - uri:
             prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-web.homechef.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: homechef-web.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
               number: 80
       timeout: 30s
@@ -195,6 +211,11 @@ metadata:
     external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
 spec:
   gateways:
+    # Dual-bind during the dedicated-gateway cutover so both code paths
+    # serve fe3dr.com while we flip the Cloudflare tunnel hostname from
+    # istio-ingressgateway → homechef-ingressgateway. Remove the legacy
+    # binding in a follow-up commit once the tunnel is pointed at the
+    # new gateway and we've confirmed traffic is flowing through it.
     - istio-ingress/tesseract-gateway
     - homechef/homechef-gateway
   hosts:
@@ -214,8 +235,9 @@ spec:
               number: 8080
       timeout: 30s
 
-    # GIP auth-bff — handles /auth/* for the vendor portal. Routes directly
-    # to the homechef-auth-bff ClusterIP service (8080).
+    # GIP auth-bff — handles /auth/* for the vendor portal. Replaces the
+    # legacy /bff/* Keycloak prefix (deleted 2026-05-15 cutover). Routes
+    # directly to the homechef-auth-bff ClusterIP service (8080).
     - match:
         - uri:
             prefix: /auth/
@@ -225,7 +247,6 @@ spec:
             port:
               number: 8080
       timeout: 30s
-      # Anchor is per-document in YAML, so (re)define it here for this VS.
       corsPolicy: &homechef-cors
         allowOrigins:
           - exact: "https://fe3dr.com"
@@ -252,44 +273,56 @@ spec:
         allowCredentials: true
         maxAge: "86400s"
 
-    # API routes -> API Service (direct)
+    # API routes
     - match:
         - uri:
             prefix: /api
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: homechef-api.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
-              number: 8080
+              number: 80
       timeout: 60s
       corsPolicy: *homechef-cors
 
-    # WebSocket routes -> API Service (direct)
+    # WebSocket routes
     - match:
         - uri:
             prefix: /ws
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
       route:
         - destination:
-            host: homechef-api.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
-              number: 8080
+              number: 80
       timeout: 3600s
 
-    # All other routes -> Vendor Portal SPA (direct)
+    # All other routes -> Vendor Portal SPA
     - match:
         - uri:
             prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-vendor-portal.homechef.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: homechef-vendor-portal.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
               number: 80
       timeout: 30s
@@ -310,6 +343,11 @@ metadata:
     external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
 spec:
   gateways:
+    # Dual-bind during the dedicated-gateway cutover so both code paths
+    # serve fe3dr.com while we flip the Cloudflare tunnel hostname from
+    # istio-ingressgateway → homechef-ingressgateway. Remove the legacy
+    # binding in a follow-up commit once the tunnel is pointed at the
+    # new gateway and we've confirmed traffic is flowing through it.
     - istio-ingress/tesseract-gateway
     - homechef/homechef-gateway
   hosts:
@@ -331,7 +369,9 @@ spec:
 
     # GIP auth-bff — handles /auth/* for the admin portal. The BFF resolves
     # the internal GIP tenant (HomeChef-Internal-gyofe) from the request
-    # Host header (admin.fe3dr.com) — which now flows through unmodified.
+    # Host header (admin.fe3dr.com) via homechef-products.yaml, so we no
+    # longer need x-auth-context / x-forwarded-host injection here.
+    # Replaces the legacy /bff/* Keycloak prefix (deleted 2026-05-15 cutover).
     - match:
         - uri:
             prefix: /auth/
@@ -368,19 +408,23 @@ spec:
         allowCredentials: true
         maxAge: "86400s"
 
-    # API routes -> API Service (direct)
+    # API routes
     - match:
         - uri:
             prefix: /api
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: homechef-api.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
-              number: 8080
+              number: 80
       timeout: 60s
 
     # WebSocket routes -> homechef-api directly (bypass BFF, which can't
@@ -388,24 +432,32 @@ spec:
     - match:
         - uri:
             prefix: /ws
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
       route:
         - destination:
-            host: homechef-api.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
-              number: 8080
+              number: 80
       timeout: 3600s
 
-    # All other routes -> Admin Portal SPA (direct)
+    # All other routes -> Admin Portal SPA
     - match:
         - uri:
             prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-admin-portal.homechef.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: homechef-admin-portal.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
               number: 80
       timeout: 30s
@@ -424,6 +476,11 @@ metadata:
     external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
 spec:
   gateways:
+    # Dual-bind during the dedicated-gateway cutover so both code paths
+    # serve fe3dr.com while we flip the Cloudflare tunnel hostname from
+    # istio-ingressgateway → homechef-ingressgateway. Remove the legacy
+    # binding in a follow-up commit once the tunnel is pointed at the
+    # new gateway and we've confirmed traffic is flowing through it.
     - istio-ingress/tesseract-gateway
     - homechef/homechef-gateway
   hosts:
@@ -446,6 +503,8 @@ spec:
     # GIP auth-bff — handles /auth/* for the delivery portal. Drivers and
     # fleet staff both authenticate against the HomeChef-Business GIP
     # tenant (resolved by the BFF from the request Host header).
+    # Replaces the legacy /bff/* and /driver-bff/* Keycloak prefixes
+    # (deleted 2026-05-15 cutover).
     - match:
         - uri:
             prefix: /auth/
@@ -481,19 +540,23 @@ spec:
         allowCredentials: true
         maxAge: "86400s"
 
-    # API routes -> API Service (direct)
+    # API routes
     - match:
         - uri:
             prefix: /api
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: homechef-api.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
-              number: 8080
+              number: 80
       timeout: 60s
       corsPolicy:
         allowOrigins:
@@ -521,28 +584,36 @@ spec:
         allowCredentials: true
         maxAge: "86400s"
 
-    # WebSocket routes (for delivery tracking) -> API Service (direct)
+    # WebSocket routes (for delivery tracking)
     - match:
         - uri:
             prefix: /ws
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
       route:
         - destination:
-            host: homechef-api.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
-              number: 8080
+              number: 80
       timeout: 3600s
 
-    # All other routes -> Delivery Portal SPA (direct)
+    # All other routes -> Delivery Portal SPA
     - match:
         - uri:
             prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-delivery-portal.homechef.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: homechef-delivery-portal.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
               number: 80
       timeout: 30s
@@ -561,35 +632,48 @@ metadata:
     external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
 spec:
   gateways:
+    # Dual-bind during the dedicated-gateway cutover so both code paths
+    # serve fe3dr.com while we flip the Cloudflare tunnel hostname from
+    # istio-ingressgateway → homechef-ingressgateway. Remove the legacy
+    # binding in a follow-up commit once the tunnel is pointed at the
+    # new gateway and we've confirmed traffic is flowing through it.
     - istio-ingress/tesseract-gateway
     - homechef/homechef-gateway
   hosts:
     - api.fe3dr.com
   http:
-    # WebSocket routes -> API Service (direct)
+    # WebSocket routes
     - match:
         - uri:
             prefix: /ws
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
       route:
         - destination:
-            host: homechef-api.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
-              number: 8080
+              number: 80
       timeout: 3600s
 
-    # All API routes -> API Service (direct)
+    # All API routes
     - match:
         - uri:
             prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: homechef-api.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
-              number: 8080
+              number: 80
       timeout: 60s
       corsPolicy:
         allowOrigins:
@@ -631,6 +715,11 @@ metadata:
     external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
 spec:
   gateways:
+    # Dual-bind during the dedicated-gateway cutover so both code paths
+    # serve fe3dr.com while we flip the Cloudflare tunnel hostname from
+    # istio-ingressgateway → homechef-ingressgateway. Remove the legacy
+    # binding in a follow-up commit once the tunnel is pointed at the
+    # new gateway and we've confirmed traffic is flowing through it.
     - istio-ingress/tesseract-gateway
     - homechef/homechef-gateway
   hosts:
@@ -671,23 +760,23 @@ spec:
             host: keycloak.identity-customer.svc.cluster.local
             port:
               number: 8080
-    # Auth BFF routes — handles /auth/*, /bff/* for OIDC redirect flows.
-    # Routes directly to the auth-bff Service; the BFF reads x-forwarded-host
-    # for the tenant (the original Host is identity.fe3dr.com).
-    # NOTE: No retry policy — auth callbacks consume state on first read.
+    # Auth BFF routes — handles /auth/*, /bff/* for OIDC redirect flows
+    # NOTE: No retry policy — auth callbacks consume state on first read (non-idempotent).
+    # Retrying causes invalid_state errors because the state is deleted after retrieval.
     - match:
         - uri:
             prefix: /
       headers:
         request:
           set:
+            Host: homechef-auth-bff.homechef.svc.cluster.local
             x-forwarded-host: identity.fe3dr.com
             x-forwarded-proto: https
       route:
         - destination:
-            host: homechef-auth-bff.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
-              number: 8080
+              number: 80
       timeout: 60s
       corsPolicy:
         allowOrigins:
@@ -729,12 +818,18 @@ metadata:
     external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
 spec:
   gateways:
+    # Dual-bind during the dedicated-gateway cutover so both code paths
+    # serve fe3dr.com while we flip the Cloudflare tunnel hostname from
+    # istio-ingressgateway → homechef-ingressgateway. Remove the legacy
+    # binding in a follow-up commit once the tunnel is pointed at the
+    # new gateway and we've confirmed traffic is flowing through it.
     - istio-ingress/tesseract-gateway
     - homechef/homechef-gateway
   hosts:
     - analytics.fe3dr.com
   http:
-    # GIP auth-bff — handles /auth/* for the analytics portal.
+    # GIP auth-bff — handles /auth/* for the analytics portal. Replaces
+    # the legacy /bff/* Keycloak prefix (deleted 2026-05-15 cutover).
     - match:
         - uri:
             prefix: /auth/
@@ -770,34 +865,40 @@ spec:
         allowCredentials: true
         maxAge: "86400s"
 
-    # API routes -> API Service (direct)
+    # API routes
     - match:
         - uri:
             prefix: /api
+      headers:
+        request:
+          set:
+            Host: homechef-api.homechef.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: homechef-api.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
-              number: 8080
+              number: 80
       timeout: 60s
 
-    # All other routes -> Analytics Portal SPA (direct). NOTE: there is no
-    # homechef-analytics chart/Service yet — this host is a pre-existing
-    # placeholder and will 503 until an analytics service is deployed.
+    # All other routes -> Analytics Portal SPA
     - match:
         - uri:
             prefix: /
+      headers:
+        request:
+          set:
+            Host: homechef-analytics.homechef.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: homechef-analytics.homechef.svc.cluster.local
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
             port:
               number: 80
       timeout: 30s
@@ -805,3 +906,4 @@ spec:
 # NOTE: internal-identity.fe3dr.com is handled by the identity-internal Keycloak
 # VirtualService (in identity-internal namespace), NOT by the homechef BFF.
 # The admin portal auth flow uses admin.fe3dr.com/bff/* -> auth-bff -> Keycloak.
+# The browser then visits internal-identity.fe3dr.com/realms/* for login pages.
