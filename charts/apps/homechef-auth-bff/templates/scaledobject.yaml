@@ -12,10 +12,17 @@ spec:
   minReplicaCount: {{ .Values.keda.minReplicaCount }}
   maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
   triggers:
-    - type: cpu
-      metricType: Utilization
+    # Istio request-rate (prometheus), NOT cpu. The platform runs memory-only
+    # resources (no CPU requests), so a KEDA `cpu` trigger is invalid here — the
+    # KEDA admission webhook rejects a ScaledObject with a cpu trigger when the
+    # target container has no cpu request, which made every auth-bff ArgoCD sync
+    # fail and froze the deployment on a stale image. Mirrors the working live
+    # config (request-rate scale-out + memory ceiling).
+    - type: prometheus
       metadata:
-        value: "70"
+        serverAddress: http://prometheus-server.monitoring.svc.cluster.local:80
+        query: sum(rate(istio_requests_total{destination_service_name="{{ .Values.name }}",destination_service_namespace="{{ .Values.namespace }}",reporter="source"}[2m]))
+        threshold: "50"
     - type: memory
       metricType: Utilization
       metadata:
