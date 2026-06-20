@@ -1,3 +1,121 @@
-# Cloud Run DestinationRules are no longer needed.
-# All HomeChef services now run in-cluster via Knative Serving.
-# No TLS configuration required for in-cluster routing.
+##############################################################################
+# HomeChef session affinity (sticky sessions).
+#
+# Now that services are plain Deployments + KEDA (multiple pods, no Knative
+# single-revision routing), pin each client to a stable pod so sessions and
+# WebSocket-adjacent state aren't lost as we scale 1..7.
+#
+# Hashing is COOKIE-based, not source-IP: all external traffic arrives via the
+# Cloudflare tunnel, so every request shares a small set of CF edge IPs —
+# source-IP hashing would pin everyone to one pod. Istio generates the
+# affinity cookie on the first response and hashes on it thereafter, so
+# stickiness is per-user. mTLS is left to the ambient mesh (no tls block).
+##############################################################################
+
+# auth-bff — session/OIDC flows: stickiness matters most here.
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: homechef-auth-bff
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+spec:
+  host: homechef-auth-bff.homechef.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpCookie:
+          name: homechef_aff
+          ttl: 3600s
+          path: /
+---
+# api — REST + WebSocket; keep a client on one pod for the session lifetime.
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: homechef-api
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+spec:
+  host: homechef-api.homechef.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpCookie:
+          name: homechef_aff
+          ttl: 3600s
+          path: /
+---
+# web SPA
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: homechef-web
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+spec:
+  host: homechef-web.homechef.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpCookie:
+          name: homechef_aff
+          ttl: 3600s
+          path: /
+---
+# vendor portal SPA
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: homechef-vendor-portal
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+spec:
+  host: homechef-vendor-portal.homechef.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpCookie:
+          name: homechef_aff
+          ttl: 3600s
+          path: /
+---
+# admin portal SPA
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: homechef-admin-portal
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+spec:
+  host: homechef-admin-portal.homechef.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpCookie:
+          name: homechef_aff
+          ttl: 3600s
+          path: /
+---
+# delivery portal SPA
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: homechef-delivery-portal
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: home-chef-app
+spec:
+  host: homechef-delivery-portal.homechef.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpCookie:
+          name: homechef_aff
+          ttl: 3600s
+          path: /
