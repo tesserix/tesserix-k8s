@@ -30,6 +30,14 @@ spec:
           rs0:
             name: rs0
             size: 3
+            # Opt the mongod pods out of the namespace L7 waypoint
+            # (istio.io/use-waypoint=waypoint). The waypoint mangles raw,
+            # non-HTTP protocols — the same fix devai-postgres uses for raw
+            # PostgreSQL and temporal uses for gRPC — so MongoDB wire traffic
+            # rides ztunnel L4 (mTLS) directly. Without this the API's
+            # connection is closed mid-handshake (EOF).
+            labels:
+              istio.io/use-waypoint: none
             # Memory-only resources per the tesserix k8s convention (no CPU).
             resources:
               requests:
