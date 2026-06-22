@@ -145,6 +145,23 @@ spec:
                   key: {{ .Values.sentryDsn.secretKey }}
                   optional: true
             {{- end }}
+            # GIP project — verifies mobile customers' Firebase ID tokens
+            # for the support-chat BFF (#118). Empty disables the mount.
+            - name: GIP_PROJECT_ID
+              value: {{ .Values.gipProjectId | quote }}
+            # Otto support-chat bridge (mobile BFF #118). Same shared otto +
+            # INTERNAL_AUTH_SECRET the Next.js apps use; optional so the
+            # support routes degrade to 503 when otto isn't wired.
+            - name: OTTO_URL
+              value: "http://{{ .Values.otto.serviceName }}.{{ .Values.otto.serviceNamespace }}.svc.cluster.local:{{ .Values.otto.servicePort }}"
+            - name: OTTO_INTERNAL_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.otto.secretName }}
+                  key: {{ .Values.otto.secretKey }}
+                  optional: true
+            - name: OTTO_WS_PUBLIC_BASE
+              value: {{ .Values.otto.wsPublicBase | quote }}
           livenessProbe:
             httpGet:
               path: /health

@@ -77,6 +77,33 @@ spec:
             port:
               number: {{ .Values.authBffServicePort }}
       timeout: 30s
+    {{- if and .Values.apiHost .Values.apiHost.enabled }}
+    # api.mark8ly.com → marketplace-api (mobile BFF gateway). The otto
+    # path rules at the top of this VS already peel off the WebSocket +
+    # otto REST for every host, so only the mobile REST API reaches here:
+    # /api/v1/mobile/admin/* goes to the admin engine, everything else
+    # (mobile storefront incl. the support chat) to the storefront engine.
+    - match:
+        - authority:
+            exact: "api.mark8ly.com"
+          uri:
+            prefix: /api/v1/mobile/admin/
+      route:
+        - destination:
+            host: {{ .Values.apiHost.adminServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.apiHost.servicePort }}
+      timeout: 30s
+    - match:
+        - authority:
+            exact: "api.mark8ly.com"
+      route:
+        - destination:
+            host: {{ .Values.apiHost.storefrontServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.apiHost.servicePort }}
+      timeout: 30s
+    {{- end }}
     {{- if and .Values.uatRoutes .Values.uatRoutes.enabled }}
     # {slug}-admin-uat.mark8ly.com → UAT admin (cross-namespace).
     # Per-tenant UAT admin subdomains fall through this wildcard VS
