@@ -217,6 +217,20 @@ spec:
             - name: EMAIL_PRIMARY_PROVIDER
               value: {{ .Values.email.primaryProvider | quote }}
             {{- end }}
+            # Otto support-chat bridge — merchant->platform support (#119).
+            # Same shared otto + INTERNAL_AUTH_SECRET the Next.js apps use;
+            # optional so the platform-support routes degrade to 503 when
+            # otto isn't wired.
+            - name: OTTO_URL
+              value: "http://{{ .Values.otto.serviceName }}.{{ .Values.otto.serviceNamespace }}.svc.cluster.local:{{ .Values.otto.servicePort }}"
+            - name: OTTO_INTERNAL_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.otto.secretName }}
+                  key: {{ .Values.otto.secretKey }}
+                  optional: true
+            - name: OTTO_WS_PUBLIC_BASE
+              value: {{ .Values.otto.wsPublicBase | quote }}
           livenessProbe:
             httpGet:
               path: /health
