@@ -75,7 +75,11 @@ routes:
       # marketplace-api so a durable ticket lands in the merchant's
       # dashboard. Idempotent on conversation_id; safe to retry.
       escalationHook:
-        url: http://marketplace-api.marketplace.svc.cluster.local/internal/v1/tickets/from-conversation
+        # marketplace-api moved to the mark8ly namespace + per-mode services;
+        # the old marketplace-api.marketplace host no longer resolves (the
+        # hook was failing with "no such host"). Point at the admin engine,
+        # which registers /internal/v1/tickets/from-conversation.
+        url: http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080/internal/v1/tickets/from-conversation
         authHeader: X-Internal-Auth
         authEnvVar: MARKETPLACE_INTERNAL_AUTH
     fanzone:
