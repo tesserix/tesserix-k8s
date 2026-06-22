@@ -53,6 +53,21 @@ spec:
             {{- end }}
       timeout: 30s
 
+    # Otto support-chat realtime — the WebSocket (and SSE) leave the Next.js
+    # app and connect straight to the shared otto in support-platform, with a
+    # long timeout for the long-lived stream. REST otto calls go through the
+    # app's /api/otto proxy (which injects the internal-auth secret), so only
+    # the realtime path needs this direct route. Must precede the catch-all.
+    - match:
+        - uri:
+            regex: ^/api/v1/storefront/otto/conversations/[^/]+/(ws|sse)$
+      route:
+        - destination:
+            host: support-platform-otto.support-platform.svc.cluster.local
+            port:
+              number: 8089
+      timeout: 3600s
+
     # Default route to company frontend
     - route:
         - destination:

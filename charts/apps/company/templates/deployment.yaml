@@ -124,6 +124,13 @@ spec:
                   name: {{ .Values.database.homechef.secretName | quote }}
                   key: password
             {{- end }}
+            # Otto support-chat — the /api/otto proxy forwards to the shared
+            # otto in support-platform. OTTO_INTERNAL_AUTH arrives via envFrom
+            # (company-secrets, synced from prod-support-platform-otto-internal-auth).
+            - name: OTTO_URL
+              value: {{ .Values.otto.url | default "http://support-platform-otto.support-platform.svc.cluster.local:8089" | quote }}
+            - name: OTTO_SESSION_COOKIE
+              value: {{ .Values.otto.sessionCookie | default "otto_session_tesserix" | quote }}
           {{- if .Values.livenessProbe }}
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
