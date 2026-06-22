@@ -1,0 +1,51 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-mcp
+  namespace: argocd
+  annotations:
+    # Kargo's prod stage writes image.tag via argocd-update.
+    kargo.akuity.io/authorized-stage: kargo-support-platform:prod
+  labels:
+    app.kubernetes.io/part-of: support-platform
+    app.kubernetes.io/component: mcp-stub
+    mcp.tesserix.app/tenant: platform
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/mcp-gateway
+    helm:
+      parameters:
+        - name: tenant
+          value: "platform"
+        # tesserix-home (the company app) routes its Otto chats to the
+        # platform tenant. The MCP runs in support-platform alongside
+        # slm-router (intra-namespace call, no cross-ns ingress policy)
+        # and reaches the company app via the TESSERIX_HOME_URL default
+        # (company.tesserix.svc) for contact-lead capture.
+        - name: namespace
+          value: "support-platform"
+        # Kargo support-platform/prod overwrites image.tag with the
+        # newest mcp-gateway main-<sha> on every CI build.
+        - name: image.tag
+          value: "main"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: support-platform
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
