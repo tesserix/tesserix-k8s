@@ -29,6 +29,17 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "--config=/conf/config.yaml"
+          {{- if .Values.clickhouse }}
+          env:
+            # Resolves the ${env:CLICKHOUSE_PASSWORD} placeholder in the
+            # clickhouse exporter config. Sourced from a Secret so the password
+            # never lands in the ConfigMap.
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.clickhouse.env.secretName }}
+                  key: {{ .Values.clickhouse.env.secretKey }}
+          {{- end }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           ports:

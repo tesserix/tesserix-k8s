@@ -71,4 +71,21 @@ tempo:
 # (otlp/tempo is rendered only when tempo.enabled).
 tracesExporters:
   - otlp/tempo
+  - clickhouse
   - debug
+
+# ClickHouse trace/metric/log backend via the collector-contrib
+# clickhouseexporter (contrib-only). createSchema bootstraps the otel tables on
+# first run. The password is NOT stored here — it's injected into the collector
+# pod as the CLICKHOUSE_PASSWORD env var (see deployment.yaml / clickhouse.env*)
+# and resolved by the collector's ${env:...} config expansion.
+clickhouse:
+  endpoint: "tcp://clickhouse-otel.observability.svc.cluster.local:9000?dial_timeout=10s"
+  database: "otel"
+  username: "default"
+  createSchema: true
+  # Source of the CLICKHOUSE_PASSWORD env var. Defaults to a Secret reference so
+  # prod can point it at an external-secret; override in the ArgoCD app values.
+  env:
+    secretName: clickhouse-otel
+    secretKey: password

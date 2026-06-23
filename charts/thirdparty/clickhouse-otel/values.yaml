@@ -1,0 +1,52 @@
+# Dedicated ClickHouse for OpenTelemetry — defaults. Prod overrides go inline
+# in argocd/prod/infrastructure/clickhouse-otel.yaml (the redis-global pattern).
+
+# Single node: ClickHouse replication needs ClickHouse Keeper/ZooKeeper, which
+# is overkill for an OTel sink. One replica + a Retain PVC is the standard
+# single-node deployment.
+replicaCount: 1
+
+image:
+  repository: clickhouse/clickhouse-server
+  tag: "25.10.2.65"
+  pullPolicy: IfNotPresent
+
+# OTel sink: native protocol (clickhouseexporter) carries the write load; the
+# HTTP port is for ad-hoc queries / health checks only.
+httpPort: 8123
+nativePort: 9000
+
+# Database the OTel clickhouseexporter targets. The exporter auto-creates its
+# tables (otel_traces, otel_logs, otel_metrics_* …) inside this DB when
+# `create_schema: true`, so this chart only guarantees the DB exists.
+database: otel
+
+# Auth. The default user's password is read from a Secret at startup via the
+# CLICKHOUSE_PASSWORD env var (the official image's entrypoint applies it).
+auth:
+  user: default
+  # Secret holding key `clickhouse-password`. In prod this is created by an
+  # ExternalSecret synced from GCP Secret Manager (see chart NOTES / the
+  # commented manifest in argocd/prod/infrastructure/clickhouse-otel.yaml).
+  existingSecret: clickhouse-otel-secrets
+  secretKey: clickhouse-password
+  # Dev-only: render an in-chart placeholder Secret so the chart is
+  # self-contained without an ExternalSecret. MUST stay false in prod.
+  createPlaceholderSecret: false
+  # Value used ONLY when createPlaceholderSecret=true. Never set in prod.
+  placeholderPassword: "changeme"
+
+persistence:
+  enabled: true
+  size: 20Gi
+  storageClassName: standard-rwo
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+  limits:
+    memory: 4Gi
+
+service:
+  type: ClusterIP
