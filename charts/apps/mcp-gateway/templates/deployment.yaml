@@ -61,13 +61,16 @@ spec:
                   name: {{ .Values.mcpAuthKeySecret.name }}
                   key: {{ .Values.mcpAuthKeySecret.key }}
             {{- end }}
-            {{- if .Values.marketplaceInternalAuthSecret.enabled }}
+            {{- if or .Values.marketplaceInternalAuthSecret.enabled (eq .Values.tenant "mark8ly") }}
             # Shared secret for marketplace-api /internal routes — lets the
             # create_support_ticket tool POST to the from-conversation endpoint.
+            # Auto-enabled for mark8ly (other tenants opt in via the value).
+            # Driven by the CHART (not app helm parameters) so Kargo's image
+            # promotion can't drop it from the Application spec.
             - name: MARKETPLACE_INTERNAL_AUTH
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.marketplaceInternalAuthSecret.name }}
+                  name: {{ .Values.marketplaceInternalAuthSecret.name | default (printf "%s-marketplace-api-internal-auth" .Values.tenant) }}
                   key: {{ .Values.marketplaceInternalAuthSecret.key }}
             {{- end }}
             {{- if .Values.openapi.headers.secret.enabled }}
