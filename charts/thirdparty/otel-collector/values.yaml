@@ -84,8 +84,11 @@ clickhouse:
   database: "otel"
   username: "default"
   createSchema: true
-  # Source of the CLICKHOUSE_PASSWORD env var. Defaults to a Secret reference so
-  # prod can point it at an external-secret; override in the ArgoCD app values.
+  # Source of the CLICKHOUSE_PASSWORD env var. Must match the secret the
+  # clickhouse-otel chart's StatefulSet reads (auth.existingSecret /
+  # auth.secretKey) so the collector authenticates with the SAME password
+  # the ClickHouse server was started with. Provisioned by the ExternalSecret
+  # in external-secrets/prod/observability (GCP SM prod-clickhouse-otel-password).
   env:
-    secretName: clickhouse-otel
-    secretKey: password
+    secretName: clickhouse-otel-secrets
+    secretKey: clickhouse-password
