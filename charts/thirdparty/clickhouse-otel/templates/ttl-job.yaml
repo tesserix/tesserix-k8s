@@ -7,16 +7,17 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "clickhouse-otel.name" . }}-ttl
+  # Name carries the day count: a NORMAL tracked resource (not a hook), so
+  # ArgoCD applies it on the sync that introduces it and runs it once. Changing
+  # ttl.days yields a new name → fresh run, and prune removes the stale Job.
+  name: {{ include "clickhouse-otel.name" . }}-ttl-{{ .Values.ttl.days }}d
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "clickhouse-otel.labels" . | nindent 4 }}
   annotations:
-    argocd.argoproj.io/hook: PostSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "5"
 spec:
   backoffLimit: 4
-  ttlSecondsAfterFinished: 1800
   template:
     metadata:
       labels:
