@@ -100,6 +100,20 @@ spec:
                   name: {{ .Values.database.mark8ly.secretName | quote }}
                   key: password
             {{- end }}
+            {{- if .Values.clickhouseOtel.enabled }}
+            # Dedicated OTel ClickHouse (clickhouse-otel.observability) — powers
+            # the platform Observability page (read-only service health/traces).
+            # Password from the tesserix-clickhouse-otel Secret (synced by ESO).
+            - name: CLICKHOUSE_OTEL_URL
+              value: {{ .Values.clickhouseOtel.url | quote }}
+            - name: CLICKHOUSE_OTEL_USER
+              value: {{ .Values.clickhouseOtel.user | quote }}
+            - name: CLICKHOUSE_OTEL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.clickhouseOtel.secretName | quote }}
+                  key: password
+            {{- end }}
             {{- if .Values.database.homechef.enabled }}
             # homechef-postgres cross-namespace read/write (super-admin).
             # Connects as homechef_platform_admin (CRUD, no DDL/superuser).
