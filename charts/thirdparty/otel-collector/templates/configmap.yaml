@@ -52,6 +52,9 @@ data:
         username: {{ .Values.clickhouse.username | quote }}
         password: ${env:CLICKHOUSE_PASSWORD}
         create_schema: {{ .Values.clickhouse.createSchema }}
+        # Retention — tables are created with a TTL so the otel DB stays bounded
+        # well under the 20Gi PVC. Tune via clickhouse.ttl (e.g. "720h" = 30d).
+        ttl: {{ .Values.clickhouse.ttl | default "720h" | quote }}
       # Always available — span/log debug dump to the collector's own logs.
       debug:
         verbosity: basic
