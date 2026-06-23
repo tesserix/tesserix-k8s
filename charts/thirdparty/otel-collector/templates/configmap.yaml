@@ -42,6 +42,16 @@ data:
         tls:
           insecure: true
       {{- end }}
+      # Traces, metrics and logs → ClickHouse via the collector-contrib
+      # clickhouseexporter (contrib-only). create_schema bootstraps the otel
+      # tables on first run. Password is injected via the CLICKHOUSE_PASSWORD
+      # env var (deployment), resolved by the collector's ${env:...} expansion.
+      clickhouse:
+        endpoint: {{ .Values.clickhouse.endpoint | quote }}
+        database: {{ .Values.clickhouse.database | quote }}
+        username: {{ .Values.clickhouse.username | quote }}
+        password: ${env:CLICKHOUSE_PASSWORD}
+        create_schema: {{ .Values.clickhouse.createSchema }}
       # Always available — span/log debug dump to the collector's own logs.
       debug:
         verbosity: basic
@@ -55,7 +65,7 @@ data:
         metrics:
           receivers: [otlp]
           processors: [memory_limiter, batch]
-          exporters: [prometheus, debug]
+          exporters: [prometheus, clickhouse, debug]
         traces:
           receivers: [otlp]
           processors: [memory_limiter, batch]
@@ -63,4 +73,4 @@ data:
         logs:
           receivers: [otlp]
           processors: [memory_limiter, batch]
-          exporters: [debug]
+          exporters: [clickhouse, debug]

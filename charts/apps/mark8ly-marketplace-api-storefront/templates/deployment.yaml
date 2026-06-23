@@ -62,6 +62,13 @@ spec:
               value: {{ .Values.mode | quote }}
             - name: HTTP_PORT
               value: {{ .Values.service.port | quote }}
+            {{- if and .Values.otel .Values.otel.exporterOtlpEndpoint }}
+            # OpenTelemetry — OTLP traces+metrics to the in-cluster collector
+            # (internal/observability no-ops when empty). Shared image with
+            # the admin deploy, which is instrumented identically.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.exporterOtlpEndpoint | quote }}
+            {{- end }}
 {{ include "mark8ly-marketplace-api-storefront.dbEnv" . | indent 12 }}
             - name: STOREFRONT_KEY
               valueFrom:
