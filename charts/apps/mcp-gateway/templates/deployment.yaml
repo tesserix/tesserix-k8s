@@ -73,6 +73,18 @@ spec:
                   name: {{ .Values.marketplaceInternalAuthSecret.name | default (printf "%s-marketplace-api-internal-auth" .Values.tenant) }}
                   key: {{ .Values.marketplaceInternalAuthSecret.key }}
             {{- end }}
+            {{- if or .Values.homechefBffHmacSecret.enabled (eq .Values.tenant "homechef") }}
+            # Shared HMAC key for HomeChef's BFF auth — lets the homechef order
+            # tools sign requests the way the BFF does so they can act for a
+            # verified customer (the backend scopes each order to that user).
+            # Auto-enabled for homechef; driven by the CHART (not app helm
+            # parameters) so Kargo's image promotion can't drop it.
+            - name: HOMECHEF_BFF_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.homechefBffHmacSecret.name | default "homechef-api-secrets" }}
+                  key: {{ .Values.homechefBffHmacSecret.key }}
+            {{- end }}
             {{- if .Values.openapi.headers.secret.enabled }}
             # Project the secret value as an env var so the
             # MCP_OPENAPI_HEADERS template below can interpolate it
