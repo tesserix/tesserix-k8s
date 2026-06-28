@@ -39,6 +39,17 @@ spec:
           limits:
             memory: 2Gi
 
+        # Liveness probe relaxed: typesense intermittently stops answering
+        # /health under load/compaction and was liveness-killed every few
+        # minutes (1097 restarts in ~3 days). Give it more grace before restart.
+        healthCheck:
+          enabled: true
+          path: /health
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 10
+          failureThreshold: 6
+
         # Typesense configuration
         config:
           dataDir: /data
