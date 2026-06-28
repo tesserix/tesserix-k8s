@@ -53,6 +53,11 @@ spec:
               value: {{ .Values.env.ROUTE_RELOAD_INTERVAL | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.env.OTEL_EXPORTER_OTLP_ENDPOINT | quote }}
+            # Disable the OTel SDK: the main-<sha> image crashloops on a fatal
+            # semconv schema-URL conflict (1.41.0 vs 1.26.0) during otel init.
+            # Lets the pod boot until the image bug is fixed upstream.
+            - name: OTEL_SDK_DISABLED
+              value: "true"
             # Compose pgvector DSN from the CNPG-managed password secret.
             - name: VECTOR_DB_PASSWORD
               valueFrom:

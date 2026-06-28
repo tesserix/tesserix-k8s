@@ -1219,6 +1219,14 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-egress
+    # Allow from support-platform — its ambient waypoint needs istiod XDS/CA on
+    # 15012; support-platform manages its own netpols/authz so it is not in the
+    # appNamespaces/infrastructureNamespaces ranges above (was the cause of the
+    # waypoint crashloop: "failed to sign CSR ... istiod:15012 i/o timeout").
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: support-platform
     # Allow from monitoring
     - from:
         - namespaceSelector:
