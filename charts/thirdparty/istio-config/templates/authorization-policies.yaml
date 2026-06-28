@@ -326,6 +326,25 @@ spec:
     - {}
 
 # =============================================================================
+# OpenPanel Namespace Policies (web analytics)
+# Was missing an allow-mesh-internal policy, so the mesh-wide deny-all reset
+# intra-namespace traffic (openpanel-api/worker -> openpanel-redis, ECONNRESET),
+# crashlooping the api/worker. Allow mesh-internal traffic like other namespaces.
+# =============================================================================
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-mesh-internal-openpanel
+  namespace: {{ .Values.infrastructureNamespaces.openpanel }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - {}
+
+# =============================================================================
 # Database Access Policies
 # Each app namespace can only access its own database namespace
 # =============================================================================
