@@ -519,3 +519,44 @@ CREATE TABLE IF NOT EXISTS processed_events (
 
 CREATE INDEX IF NOT EXISTS idx_processed_events_processed_at
   ON processed_events (processed_at);
+
+-- Cancellation with vendor arbitration + tiered refund (Home-Chef-App #475).
+-- One request per order; the vendor picks a reason that selects a food-refund
+-- tier. The refund breakdown is a paise SNAPSHOT computed when the tier is
+-- decided; the platform fee is always in platform_kept_paise (nonrefundable).
+CREATE TABLE IF NOT EXISTS cancellation_requests (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id             UUID NOT NULL,
+  customer_id          UUID NOT NULL,
+  chef_id              UUID NOT NULL,
+  status               VARCHAR(24) NOT NULL DEFAULT 'pending_vendor',
+  customer_reason      TEXT,
+  vendor_reason        VARCHAR(32),
+  refund_destination   VARCHAR(16),
+  food_refund_paise     INTEGER NOT NULL DEFAULT 0,
+  delivery_refund_paise INTEGER NOT NULL DEFAULT 0,
+  tax_refund_paise      INTEGER NOT NULL DEFAULT 0,
+  refund_total_paise    INTEGER NOT NULL DEFAULT 0,
+  vendor_kept_paise     INTEGER NOT NULL DEFAULT 0,
+  platform_kept_paise   INTEGER NOT NULL DEFAULT 0,
+  refund_executed      BOOLEAN NOT NULL DEFAULT FALSE,
+  refund_ref           VARCHAR(64),
+  disputed             BOOLEAN NOT NULL DEFAULT FALSE,
+  dispute_reason       TEXT,
+  admin_resolved_by    UUID,
+  admin_note           TEXT,
+  vendor_respond_by    TIMESTAMPTZ,
+  resolved_at          TIMESTAMPTZ,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cancellation_requests_order
+  ON cancellation_requests (order_id);
+CREATE INDEX IF NOT EXISTS idx_cancellation_requests_chef_status
+  ON cancellation_requests (chef_id, status);
+CREATE INDEX IF NOT EXISTS idx_cancellation_requests_customer
+  ON cancellation_requests (customer_id);
+-- The timeout sweep scans pending requests past their deadline.
+CREATE INDEX IF NOT EXISTS idx_cancellation_requests_pending_deadline
+  ON cancellation_requests (status, vendor_respond_by);
