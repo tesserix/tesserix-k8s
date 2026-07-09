@@ -1,0 +1,80 @@
+{{- if .Values.refundSweepCron.enabled }}
+# Stuck-refund sweeper — every 5 minutes, re-drives refund_transactions
+# rows stuck in 'pending' (the never-lost guarantee). A row goes stuck when
+# the gateway refund call succeeded but the process crashed (or the DB
+# blipped) before the finalize transaction committed. The sweeper re-calls
+# the gateway with the SAME idempotency key (a provider no-op if the money
+# already moved) and completes the DB finalize + bookkeeping.
+#
+# Unlike tracking-sync (a curl job that pokes an in-cluster HTTP endpoint),
+# this runs the marketplace-api Go IMAGE directly with the bundled
+# refund-sweep-cron entrypoint — mirroring how the migrate init container
+# reuses the same image. It talks to Postgres directly, so it needs the
+# same dbEnv block the server + migrate containers use.
+#
+# istio injection is DISABLED: a Job with an istio sidecar never terminates
+# (the sidecar keeps the pod Running forever), and the DB connection to CNPG
+# bypasses the mesh anyway (the server excludes outbound 5432). No sidecar
+# keeps the Job short-lived and clean.
+#
+# concurrencyPolicy=Forbid: the sweep self-bounds to a 2-minute context
+# deadline, well under the 5-minute schedule, so overlap should not happen;
+# idempotency keys make overlap safe even if it did.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.name }}-refund-sweep
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}-refund-sweep
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: cron
+spec:
+  schedule: {{ .Values.refundSweepCron.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 60
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # Slightly above the binary's own 2-minute (120s) self-deadline so a
+      # healthy run finishes on its own; a hung run is killed before the
+      # next tick. concurrencyPolicy=Forbid is the primary guard.
+      activeDeadlineSeconds: 150
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: {{ .Values.name }}-refund-sweep
+            app.kubernetes.io/part-of: mark8ly
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ .Values.name }}
+          imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: refund-sweep
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["/usr/local/bin/refund-sweep-cron"]
+              env:
+{{ include "mark8ly-marketplace-api-admin.dbEnv" . | indent 16 }}
+              resources:
+                requests:
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+{{- end }}

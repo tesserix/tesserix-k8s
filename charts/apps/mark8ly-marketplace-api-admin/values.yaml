@@ -1,5 +1,10 @@
 namespace: mark8ly
 name: mark8ly-marketplace-api-admin
+# Kill switch for the order-refund payment-gateway wiring. "false" keeps
+# refunds dark (admin/return/paid-cancel refunds return 503 refunds_disabled).
+# Prod stays "false" until UAT validates a refund per gateway; UAT overlay
+# flips it to "true". Quoted string — consumed as a bool env by the binary.
+refundGatewayEnabled: "false"
 # marketplace-api-admin and marketplace-api-storefront deploy from the SAME
 # image (mark8ly-marketplace-api) — one Go binary, two Knative/Deployment
 # instances differentiated by the MODE env var. See spec §14.8.
@@ -190,6 +195,18 @@ email:
 trackingSyncCron:
   enabled: true
   schedule: "*/2 * * * *"
+
+# Stuck-refund sweeper — runs the marketplace-api image with the
+# refund-sweep-cron entrypoint (bundled at /usr/local/bin/refund-sweep-cron)
+# every 5 minutes to re-drive refund_transactions rows stuck in 'pending'
+# (the never-lost guarantee). Gated by enabled so it only runs on images
+# that carry the binary. Prod stays disabled until the prod image tag is
+# bumped to a build that includes the binary; UAT overlay enables it.
+# The sweeper always runs with enabled=true internally — it is the recovery
+# path for the refundGatewayEnabled kill switch, independent of that flag.
+refundSweepCron:
+  enabled: false
+  schedule: "*/5 * * * *"
 
 # Audit-ingest secret consumed by the marketplace-api admin engine.
 # Override in values-uat.yaml to point at mark8ly-uat-audit-ingest.
