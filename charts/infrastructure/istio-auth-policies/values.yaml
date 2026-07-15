@@ -30,8 +30,31 @@ appNamespaces:
   # Add other namespaces as needed
 
 # =============================================================================
+# Google Identity Platform (GIP) Configuration
+#
+# Every product EXCEPT FanZone is on GIP; FanZone remains on Keycloak below.
+# Only native mobile clients present a Bearer JWT at the ingress — the web apps
+# use session cookies + HeaderTrustAuth — so this rule exists solely to stop
+# Envoy rejecting GIP tokens with "Jwt issuer is not configured".
+#
+# Disabled by default; enable per-environment (see values-prod.yaml).
+# =============================================================================
+gip:
+  enabled: false
+  # issuer/aud are both the GCP project id for GIP-issued id_tokens,
+  # regardless of which GIP tenant the user signed into.
+  issuer: ""
+  jwksUri: "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+  audiences: []
+
+# =============================================================================
 # Keycloak IDP Configuration
 # Dual IDP setup: customer (B2C) and internal (staff/admin)
+#
+# NOTE: only FanZone still uses Keycloak. `internal` below points at a DEVTEST
+# host and its audiences (admin-web, admin-bff, marketplace-dashboard) belong to
+# mark8ly, which migrated to GIP — it is stale. Left as-is deliberately; removing
+# it is a separate change from adding GIP.
 # =============================================================================
 keycloak:
   # Customer IDP - for mobile apps, web storefronts, B2C customers, and tenant staff
