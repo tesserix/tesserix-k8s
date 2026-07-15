@@ -3,7 +3,58 @@
 # Applied at istio-ingressgateway to validate tokens at the edge
 # Claims are extracted and forwarded as headers to backend services
 # Creates a policy for each gateway defined in ingressGateways
+#
+# Istio MERGES jwtRules across every RequestAuthentication selecting the same
+# workload. Keycloak (FanZone) and GIP (everything else) therefore coexist —
+# adding one does not disturb the other.
+#
+# A request carrying a JWT whose issuer matches NO rule here is rejected at the
+# mesh with 401 "Jwt issuer is not configured", before it ever reaches the
+# service. A request with no JWT passes through untouched. That asymmetry is
+# why a missing issuer looks like "auth is broken for exactly one client".
 # =============================================================================
+
+{{- if .Values.gip.enabled | default false }}
+{{- range .Values.ingressGateways }}
+---
+# =============================================================================
+# JWT AUTHENTICATION - Google Identity Platform for {{ .labelValue }}
+# Validates GIP id_tokens from native mobile clients (mobile-admin), which are
+# the only clients that present a Bearer JWT to the ingress — the web apps use
+# session cookies + HeaderTrustAuth and never trip this filter.
+#
+# No outputClaimToHeaders: these routes authenticate with GIPBearerAuth in the
+# service itself (see marketplace-api mobile_routes.go — "Uses GIPBearerAuth
+# instead of HeaderTrustAuth"), so the service re-verifies the forwarded token
+# and reads its own claims. forwardOriginalToken is therefore REQUIRED: without
+# it Envoy strips the Authorization header and the service sees nothing.
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: jwt-auth-gip{{ .name }}
+  namespace: {{ .namespace }}
+  labels:
+    app.kubernetes.io/name: jwt-auth
+    app.kubernetes.io/component: request-authentication
+    app.kubernetes.io/part-of: istio-auth-policies
+spec:
+  selector:
+    matchLabels:
+      {{ .labelKey }}: {{ .labelValue }}
+  jwtRules:
+    - issuer: {{ $.Values.gip.issuer | quote }}
+      jwksUri: {{ $.Values.gip.jwksUri | quote }}
+      audiences:
+        {{- range $.Values.gip.audiences }}
+        - {{ . | quote }}
+        {{- end }}
+      forwardOriginalToken: true
+      fromHeaders:
+        - name: Authorization
+          prefix: "Bearer "
+{{- end }}
+{{- end }}
 
 {{- if .Values.keycloak.customer.enabled | default true }}
 {{- range .Values.ingressGateways }}

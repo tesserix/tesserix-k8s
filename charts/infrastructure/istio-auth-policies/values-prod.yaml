@@ -150,7 +150,26 @@ frontendApps:
     hosts:
       - "astronomy.tesserix.app"
 
+# =============================================================================
+# Production Google Identity Platform Configuration
+#
+# Required by mobile-admin (and any future native client), which authenticates
+# with a GIP Bearer id_token. Without this rule Envoy rejects every GIP token at
+# the gateway with 401 "Jwt issuer is not configured" — the request never
+# reaches marketplace-api. Verified 2026-07-15 against prod with a real token.
+#
+# Additive: Istio merges jwtRules across policies on the same workload, so this
+# does not affect FanZone's Keycloak rules below.
+# =============================================================================
+gip:
+  enabled: true
+  issuer: "https://securetoken.google.com/tesseracthub-480811"
+  jwksUri: "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+  audiences:
+    - "tesseracthub-480811"
+
 # Production Keycloak IDP Configuration
+# FanZone only — every other product is on GIP (see gip: above).
 keycloak:
   customer:
     enabled: true
