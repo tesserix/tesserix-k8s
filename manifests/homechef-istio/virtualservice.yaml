@@ -68,7 +68,6 @@ spec:
           - exact: "https://fe3dr.com"
           - exact: "https://www.fe3dr.com"
           - exact: "https://vendors.fe3dr.com"
-          - exact: "https://admin.fe3dr.com"
           - exact: "https://delivery.fe3dr.com"
           - exact: "https://analytics.fe3dr.com"
         allowMethods:
@@ -252,7 +251,6 @@ spec:
           - exact: "https://fe3dr.com"
           - exact: "https://www.fe3dr.com"
           - exact: "https://vendors.fe3dr.com"
-          - exact: "https://admin.fe3dr.com"
           - exact: "https://delivery.fe3dr.com"
           - exact: "https://analytics.fe3dr.com"
         allowMethods:
@@ -327,141 +325,6 @@ spec:
               number: 80
       timeout: 30s
 ---
-# --- Admin Portal (admin.fe3dr.com) - App owner admin panel ---
-# Uses INTERNAL Keycloak realm (tesserix-internal) via internal-identity.fe3dr.com
-# This is separate from the customer/vendor auth at identity.fe3dr.com
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: homechef-admin-portal
-  namespace: homechef
-  labels:
-    app.kubernetes.io/part-of: home-chef-app
-    app.kubernetes.io/component: admin-portal
-  annotations:
-    external-dns.alpha.kubernetes.io/target: "03e498ae-dad7-4e6a-9744-6fa782956861.cfargotunnel.com"
-    external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
-spec:
-  gateways:
-    # Dual-bind during the dedicated-gateway cutover so both code paths
-    # serve fe3dr.com while we flip the Cloudflare tunnel hostname from
-    # istio-ingressgateway → homechef-ingressgateway. Remove the legacy
-    # binding in a follow-up commit once the tunnel is pointed at the
-    # new gateway and we've confirmed traffic is flowing through it.
-    - istio-ingress/tesseract-gateway
-    - homechef/homechef-gateway
-  hosts:
-    - admin.fe3dr.com
-  http:
-    # GIP auth-bff via legacy /bff/* prefix — admin portal frontend uses
-    # /bff as its same-origin base. Rewrite /bff/* → /* before routing.
-    - match:
-        - uri:
-            prefix: /bff/
-      rewrite:
-        uri: /
-      route:
-        - destination:
-            host: homechef-auth-bff.homechef.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 30s
-
-    # GIP auth-bff — handles /auth/* for the admin portal. The BFF resolves
-    # the internal GIP tenant (HomeChef-Internal-gyofe) from the request
-    # Host header (admin.fe3dr.com) via homechef-products.yaml, so we no
-    # longer need x-auth-context / x-forwarded-host injection here.
-    # Replaces the legacy /bff/* Keycloak prefix (deleted 2026-05-15 cutover).
-    - match:
-        - uri:
-            prefix: /auth/
-      route:
-        - destination:
-            host: homechef-auth-bff.homechef.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 30s
-      corsPolicy:
-        allowOrigins:
-          - exact: "https://fe3dr.com"
-          - exact: "https://www.fe3dr.com"
-          - exact: "https://vendors.fe3dr.com"
-          - exact: "https://admin.fe3dr.com"
-          - exact: "https://delivery.fe3dr.com"
-          - exact: "https://analytics.fe3dr.com"
-          - exact: "https://internal-identity.fe3dr.com"
-        allowMethods:
-          - GET
-          - POST
-          - PUT
-          - DELETE
-          - PATCH
-          - OPTIONS
-        allowHeaders:
-          - content-type
-          - authorization
-          - accept
-          - x-request-id
-          - x-auth-context
-          - x-csrf-token
-          - x-auth-token
-        allowCredentials: true
-        maxAge: "86400s"
-
-    # API routes
-    - match:
-        - uri:
-            prefix: /api
-      headers:
-        request:
-          set:
-            Host: homechef-api.homechef.svc.cluster.local
-      retries:
-        attempts: 3
-        perTryTimeout: 10s
-        retryOn: gateway-error,connect-failure,refused-stream
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      timeout: 60s
-
-    # WebSocket routes -> homechef-api directly (bypass BFF, which can't
-    # proxy WS upgrades). 3600s timeout to keep long-lived connections open.
-    - match:
-        - uri:
-            prefix: /ws
-      headers:
-        request:
-          set:
-            Host: homechef-api.homechef.svc.cluster.local
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      timeout: 3600s
-
-    # All other routes -> Admin Portal SPA
-    - match:
-        - uri:
-            prefix: /
-      headers:
-        request:
-          set:
-            Host: homechef-admin-portal.homechef.svc.cluster.local
-      retries:
-        attempts: 3
-        perTryTimeout: 10s
-        retryOn: gateway-error,connect-failure,refused-stream
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      timeout: 30s
----
 # --- Delivery Portal (delivery.fe3dr.com) - Delivery partner dashboard ---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
@@ -519,7 +382,6 @@ spec:
           - exact: "https://fe3dr.com"
           - exact: "https://www.fe3dr.com"
           - exact: "https://vendors.fe3dr.com"
-          - exact: "https://admin.fe3dr.com"
           - exact: "https://delivery.fe3dr.com"
           - exact: "https://analytics.fe3dr.com"
         allowMethods:
@@ -563,7 +425,6 @@ spec:
           - exact: "https://fe3dr.com"
           - exact: "https://www.fe3dr.com"
           - exact: "https://vendors.fe3dr.com"
-          - exact: "https://admin.fe3dr.com"
           - exact: "https://delivery.fe3dr.com"
           - exact: "https://analytics.fe3dr.com"
         allowMethods:
@@ -680,7 +541,6 @@ spec:
           - exact: "https://fe3dr.com"
           - exact: "https://www.fe3dr.com"
           - exact: "https://vendors.fe3dr.com"
-          - exact: "https://admin.fe3dr.com"
           - exact: "https://delivery.fe3dr.com"
           - exact: "https://analytics.fe3dr.com"
         allowMethods:
@@ -783,7 +643,6 @@ spec:
           - exact: "https://fe3dr.com"
           - exact: "https://www.fe3dr.com"
           - exact: "https://vendors.fe3dr.com"
-          - exact: "https://admin.fe3dr.com"
           - exact: "https://delivery.fe3dr.com"
           - exact: "https://analytics.fe3dr.com"
         allowMethods:
@@ -844,7 +703,6 @@ spec:
           - exact: "https://fe3dr.com"
           - exact: "https://www.fe3dr.com"
           - exact: "https://vendors.fe3dr.com"
-          - exact: "https://admin.fe3dr.com"
           - exact: "https://delivery.fe3dr.com"
           - exact: "https://analytics.fe3dr.com"
         allowMethods:
