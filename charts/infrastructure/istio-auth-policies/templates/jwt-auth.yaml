@@ -56,6 +56,45 @@ spec:
 {{- end }}
 {{- end }}
 
+{{- if and .Values.googleOidc .Values.googleOidc.enabled }}
+{{- range .Values.ingressGateways }}
+---
+# =============================================================================
+# JWT AUTHENTICATION - Google OIDC (Cloud Pub/Sub push) for {{ .labelValue }}
+# Pub/Sub push subscriptions authenticate with a Google-signed OIDC token whose
+# issuer is https://accounts.google.com. Without this rule Envoy rejects them at
+# the gateway with 401 "Jwt issuer is not configured" before they reach the
+# /pubsub/* delivery endpoints (e.g. marketplace-api /pubsub/merchant-push).
+#
+# No audience is pinned and no claims are extracted here: the receiving service
+# re-verifies the token's audience + service-account email, so this rule only
+# needs to stop the gateway from rejecting the token. forwardOriginalToken is
+# therefore REQUIRED — without it Envoy strips the Authorization header and the
+# service sees nothing.
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: jwt-auth-google-oidc{{ .name }}
+  namespace: {{ .namespace }}
+  labels:
+    app.kubernetes.io/name: jwt-auth
+    app.kubernetes.io/component: request-authentication
+    app.kubernetes.io/part-of: istio-auth-policies
+spec:
+  selector:
+    matchLabels:
+      {{ .labelKey }}: {{ .labelValue }}
+  jwtRules:
+    - issuer: {{ $.Values.googleOidc.issuer | quote }}
+      jwksUri: {{ $.Values.googleOidc.jwksUri | quote }}
+      forwardOriginalToken: true
+      fromHeaders:
+        - name: Authorization
+          prefix: "Bearer "
+{{- end }}
+{{- end }}
+
 {{- if .Values.keycloak.customer.enabled | default true }}
 {{- range .Values.ingressGateways }}
 ---
