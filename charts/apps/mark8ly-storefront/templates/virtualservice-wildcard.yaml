@@ -94,6 +94,22 @@ spec:
             port:
               number: {{ .Values.apiHost.servicePort }}
       timeout: 30s
+    # Pub/Sub push delivery for merchant device notifications. Must reach the
+    # ADMIN engine (where the handler + push-token store live), so it needs an
+    # explicit route BEFORE the storefront fallthrough. The endpoint is
+    # OIDC-verified in-handler, so exposing just this one path is safe;
+    # /internal/* stays unrouted (private).
+    - match:
+        - authority:
+            exact: "api.mark8ly.com"
+          uri:
+            prefix: /pubsub/merchant-push
+      route:
+        - destination:
+            host: {{ .Values.apiHost.adminServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.apiHost.servicePort }}
+      timeout: 30s
     - match:
         - authority:
             exact: "api.mark8ly.com"
