@@ -175,6 +175,13 @@ refactored here; the worker is a prod-only concern.)
     secretKeyRef:
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: BFF_INTERNAL_HMAC_KEY
+# Google Routes API key (#701) — optional: absent ⇒ haversine fallback, no startup block.
+- name: GOOGLE_MAPS_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: GOOGLE_MAPS_API_KEY
+      optional: true
 {{- if .Values.email }}
 - name: FROM_EMAIL
   value: {{ .Values.email.fromEmail | quote }}
