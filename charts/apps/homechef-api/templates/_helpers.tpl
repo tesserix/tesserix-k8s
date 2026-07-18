@@ -182,6 +182,13 @@ refactored here; the worker is a prod-only concern.)
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: GOOGLE_MAPS_API_KEY
       optional: true
+# Google Weather API key (#706) — optional: absent ⇒ weather surge neutral.
+- name: GOOGLE_WEATHER_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: GOOGLE_WEATHER_API_KEY
+      optional: true
 {{- if .Values.email }}
 - name: FROM_EMAIL
   value: {{ .Values.email.fromEmail | quote }}
