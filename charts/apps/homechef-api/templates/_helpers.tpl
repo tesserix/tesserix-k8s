@@ -189,6 +189,20 @@ refactored here; the worker is a prod-only concern.)
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: GOOGLE_WEATHER_API_KEY
       optional: true
+# Mappls (MapmyIndia) OAuth2 creds (#address-search) — primary geocoder.
+# Optional: either absent ⇒ Photon (OSM) fallback, no startup block.
+- name: MAPPLS_CLIENT_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: MAPPLS_CLIENT_ID
+      optional: true
+- name: MAPPLS_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: MAPPLS_CLIENT_SECRET
+      optional: true
 {{- if .Values.email }}
 - name: FROM_EMAIL
   value: {{ .Values.email.fromEmail | quote }}
