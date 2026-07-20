@@ -38,6 +38,11 @@ spec:
       annotations:
         sidecar.istio.io/inject: "true"
         traffic.sidecar.istio.io/excludeInboundPorts: "{{ .Values.redis.port }}"
+        # Ambient equivalent. These namespaces run ambient with sidecar
+        # injection disabled, so the sidecar annotation above is inert:
+        # ztunnel captures the port and kubelet's health probes are
+        # refused, which kills the container in a restart loop.
+        traffic.istio.io/excludeInboundPorts: "{{ .Values.redis.port }}"
         traffic.sidecar.istio.io/excludeOutboundPorts: "{{ .Values.redis.port }}"
       labels:
         {{- include "openpanel.selectorLabels" . | nindent 8 }}
