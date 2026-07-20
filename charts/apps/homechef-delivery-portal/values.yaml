@@ -44,6 +44,9 @@ service:
   type: ClusterIP
   port: 80
   targetPort: 80
+  # Set during the Knative migration only (the canonical name is still owned by
+  # the Knative Route). Cleared once the ksvc is removed.
+  nameOverride: ""
 
 ingress:
   enabled: true
@@ -69,6 +72,7 @@ resources:
   requests:
     memory: 256Mi
 
+# Retained only for the migration window. Removed in phase 3.
 knative:
   enabled: false
   minScale: 1
@@ -115,7 +119,7 @@ podDisruptionBudget:
   maxUnavailable: 1
 
 livenessProbe:
-  enabled: false
+  enabled: true
   httpGet:
     path: /
     port: http
@@ -126,7 +130,7 @@ livenessProbe:
   successThreshold: 1
 
 readinessProbe:
-  enabled: false
+  enabled: true
   httpGet:
     path: /
     port: http

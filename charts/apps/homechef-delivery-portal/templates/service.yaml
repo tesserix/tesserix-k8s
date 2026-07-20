@@ -1,8 +1,14 @@
-{{- if not .Values.knative.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "homechef-delivery-portal.fullname" . }}
+  {{- /*
+    During the Knative migration the canonical name `homechef-delivery-portal`
+    is still held by the Knative Route's ExternalName Service, so this Service
+    is published under `service.nameOverride` (e.g. -direct) and the
+    VirtualService is cut over to it. Once the ksvc is gone the override is
+    dropped and the canonical name is reclaimed.
+  */}}
+  name: {{ .Values.service.nameOverride | default (include "homechef-delivery-portal.fullname" .) }}
   labels:
     {{- include "homechef-delivery-portal.labels" . | nindent 4 }}
 spec:
@@ -14,4 +20,4 @@ spec:
       name: http
   selector:
     {{- include "homechef-delivery-portal.selectorLabels" . | nindent 4 }}
-{{- end }}
+    homechef.tesserix.io/stack: deployment
