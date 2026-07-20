@@ -18,10 +18,9 @@ serviceAccount:
   name: ""
 
 podAnnotations:
-  # Exclude ports from Istio sidecar for proper connectivity
-  # Exclude GCP metadata server from Istio for Workload Identity
-  # Istio sidecar configuration
-    holdApplicationUntilProxyStarts: "true"
+  # Istio sidecar configuration — hold the app container until the proxy is
+  # ready so early outbound calls are not dropped.
+  holdApplicationUntilProxyStarts: "true"
 
 podSecurityContext:
   runAsNonRoot: true
@@ -71,16 +70,6 @@ resources:
     memory: 512Mi
   requests:
     memory: 256Mi
-
-# Retained only for the migration window. Removed in phase 3.
-knative:
-  enabled: false
-  minScale: 1
-  maxScale: 10
-  scaleDownDelay: "60s"
-  concurrencyTarget: 100
-  containerConcurrency: 0
-  timeoutSeconds: 300
 
 autoscaling:
   enabled: true

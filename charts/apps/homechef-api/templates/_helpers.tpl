@@ -63,7 +63,7 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
-Prod container env shared by the API (knative-service) and the Temporal worker
+Prod container env shared by the API Deployment and the Temporal worker
 so they stay in lockstep. Use as:  env:\n{{- include "homechef-api.containerEnv" . | nindent 12 }}
 (Note: deployment.yaml has its own local/kind-mode env and is intentionally not
 refactored here; the worker is a prod-only concern.)
