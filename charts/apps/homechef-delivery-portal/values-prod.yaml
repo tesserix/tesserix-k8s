@@ -4,13 +4,6 @@ podAnnotations:
 # Production overrides for homechef-delivery-portal
 # Use with: helm upgrade --values values.yaml --values values-prod.yaml
 
-# Knative Serving - always-on for SPA stability
-knative:
-  enabled: true
-  minScale: 1
-  maxScale: 10
-  scaleDownDelay: "60s"
-
 replicaCount: 2
 
 # Production resource allocation
@@ -24,12 +17,15 @@ resources:
 env:
   NODE_ENV: "production"
 
-# Disable HPA and KEDA — Knative handles autoscaling
+# KEDA drives autoscaling (request-rate + memory). HPA stays off: the platform
+# runs memory-only resources with no CPU requests, so a CPU-target HPA cannot work.
 autoscaling:
   enabled: false
 
 keda:
-  enabled: false
+  enabled: true
+  minReplicaCount: 2
+  maxReplicaCount: 10
 
 # Production GCP configuration
 gcp:
@@ -39,3 +35,17 @@ gcp:
     gcpServiceAccount: "app-secrets-homechef-prod@tesseracthub-480811.iam.gserviceaccount.com"
   secretManager:
     secretPrefix: "prod"
+
+# Phase 1: Knative stays live and serving; the new Deployment/Service come up
+# alongside it. Phase 2 moves traffic; phase 3 deletes this block and the ksvc.
+knative:
+  enabled: true
+  minScale: 1
+  maxScale: 10
+  scaleDownDelay: "60s"
+
+# Migration phase 1: publish alongside the still-live Knative service.
+# Phase 2 points the VirtualService here; phase 3 removes the ksvc and this
+# override is dropped so the canonical name is reclaimed.
+service:
+  nameOverride: "homechef-delivery-portal-direct"

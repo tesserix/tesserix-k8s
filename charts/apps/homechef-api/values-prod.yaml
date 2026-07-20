@@ -43,7 +43,8 @@ env:
   # Points at the auth-bff Service's in-cluster DNS.
   BFF_SESSION_URL: "http://homechef-auth-bff.homechef.svc.cluster.local:8080/auth/session"
 
-# Disable HPA and KEDA — Knative handles autoscaling
+# KEDA drives autoscaling (request-rate + memory). HPA stays off: the platform
+# runs memory-only resources with no CPU requests, so a CPU-target HPA cannot work.
 autoscaling:
   enabled: false
 # Production GCP configuration
@@ -57,7 +58,9 @@ gcp:
     secretPrefix: "prod"
 
 keda:
-  enabled: false
+  enabled: true
+  minReplicaCount: 2
+  maxReplicaCount: 10
 
 # Email configuration (SendGrid primary, Resend fallback).
 # From-address lives on tesserix.app — the one domain verified with both
@@ -85,3 +88,8 @@ database:
 redis:
   host: "redis.redis-homechef.svc.cluster.local"
   port: "6379"
+
+# Migration phase 1: publish alongside the still-live Knative service. Phase 2
+# points the VirtualService here; phase 3 removes the ksvc.
+service:
+  nameOverride: "homechef-api-direct"
