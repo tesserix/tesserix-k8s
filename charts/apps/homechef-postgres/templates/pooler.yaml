@@ -9,6 +9,21 @@ spec:
     name: {{ .Values.clusterName }}
   instances: {{ .Values.pooler.instances }}
   type: rw
+  template:
+    metadata:
+      annotations:
+        # The homechef namespace runs Istio ambient (istio.io/dataplane-mode:
+        # ambient, injection disabled), so ztunnel captures inbound 5432 and
+        # kubelet's TCP readiness probe is refused:
+        #   Readiness probe failed: dial tcp <pod-ip>:5432: connect: connection refused
+        # which also cut pgbouncer's own watch of the Pooler API off
+        # ("Error calling Watch ... dial tcp 10.30.0.1:443: connection refused").
+        # The Cluster already excludes 5432 via inheritedMetadata, but that does
+        # not propagate to Pooler pods — they need their own annotation.
+        # Both forms are set to match the other datastore charts; the sidecar one
+        # is inert under ambient but harmless if the namespace ever flips back.
+        traffic.sidecar.istio.io/excludeInboundPorts: "5432"
+        traffic.istio.io/excludeInboundPorts: "5432"
   pgbouncer:
     poolMode: transaction
     parameters:
@@ -33,6 +48,21 @@ spec:
     name: {{ .Values.clusterName }}
   instances: {{ .Values.pooler.instances }}
   type: ro
+  template:
+    metadata:
+      annotations:
+        # The homechef namespace runs Istio ambient (istio.io/dataplane-mode:
+        # ambient, injection disabled), so ztunnel captures inbound 5432 and
+        # kubelet's TCP readiness probe is refused:
+        #   Readiness probe failed: dial tcp <pod-ip>:5432: connect: connection refused
+        # which also cut pgbouncer's own watch of the Pooler API off
+        # ("Error calling Watch ... dial tcp 10.30.0.1:443: connection refused").
+        # The Cluster already excludes 5432 via inheritedMetadata, but that does
+        # not propagate to Pooler pods — they need their own annotation.
+        # Both forms are set to match the other datastore charts; the sidecar one
+        # is inert under ambient but harmless if the namespace ever flips back.
+        traffic.sidecar.istio.io/excludeInboundPorts: "5432"
+        traffic.istio.io/excludeInboundPorts: "5432"
   pgbouncer:
     poolMode: transaction
     parameters:
