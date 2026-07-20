@@ -51,3 +51,15 @@ gcp:
 # points the VirtualService here; phase 3 removes the ksvc.
 service:
   nameOverride: "homechef-web-direct"
+
+# The Knative Service never rendered a securityContext, so these nginx SPAs have
+# always run as root in prod. The Deployment template does render one, and
+# runAsUser 1001 makes nginx fail at startup:
+#   nginx: [emerg] mkdir() "/var/cache/nginx/client_temp" failed (13: Permission denied)
+# Cleared here to preserve the exact runtime the ksvc had. Running these
+# non-root needs writable /var/cache/nginx, /var/run and /etc/nginx/conf.d
+# (emptyDir mounts or an nginx-unprivileged base image) — tracked separately so
+# the Knative removal stays behaviour-preserving.
+# (null, not {} — Helm deep-merges maps, so {} would not clear the base values.)
+podSecurityContext: null
+securityContext: null
