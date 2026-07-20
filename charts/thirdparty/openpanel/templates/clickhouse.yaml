@@ -323,6 +323,11 @@ spec:
       annotations:
         sidecar.istio.io/inject: "true"
         traffic.sidecar.istio.io/excludeInboundPorts: "{{ .Values.clickhouse.httpPort }},{{ .Values.clickhouse.nativePort }}"
+        # Ambient equivalent. These namespaces run ambient with sidecar
+        # injection disabled, so the sidecar annotation above is inert:
+        # ztunnel captures the port and kubelet's health probes are
+        # refused, which kills the container in a restart loop.
+        traffic.istio.io/excludeInboundPorts: "{{ .Values.clickhouse.httpPort }},{{ .Values.clickhouse.nativePort }}"
         traffic.sidecar.istio.io/excludeOutboundPorts: "{{ .Values.clickhouse.httpPort }},{{ .Values.clickhouse.nativePort }}"
       labels:
         {{- include "openpanel.selectorLabels" . | nindent 8 }}
