@@ -24,7 +24,8 @@ resources:
 env:
   NODE_ENV: "production"
 
-# Disable HPA and KEDA — Knative handles autoscaling
+# KEDA drives autoscaling (request-rate + memory). HPA stays off: the platform
+# runs memory-only resources with no CPU requests, so a CPU-target HPA cannot work.
 autoscaling:
   enabled: false
 # Production GCP configuration
@@ -33,7 +34,9 @@ gcp:
     secretPrefix: "prod"
 
 keda:
-  enabled: false
+  enabled: true
+  minReplicaCount: 2
+  maxReplicaCount: 10
 
 # Production GCP configuration
 gcp:
@@ -43,3 +46,8 @@ gcp:
     gcpServiceAccount: "app-secrets-homechef-prod@tesseracthub-480811.iam.gserviceaccount.com"
   secretManager:
     secretPrefix: "prod"
+
+# Migration phase 1: publish alongside the still-live Knative service. Phase 2
+# points the VirtualService here; phase 3 removes the ksvc.
+service:
+  nameOverride: "homechef-web-direct"
