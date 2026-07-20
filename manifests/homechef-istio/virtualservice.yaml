@@ -461,20 +461,19 @@ spec:
       timeout: 3600s
 
     # All other routes -> Delivery Portal SPA
+    # Phase 2 of the Knative removal: routed straight at the Deployment's
+    # ClusterIP Service. The Host rewrite is gone with it — it only existed so
+    # knative-local-gateway could pick the right ksvc.
     - match:
         - uri:
             prefix: /
-      headers:
-        request:
-          set:
-            Host: homechef-delivery-portal.homechef.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: homechef-delivery-portal-direct.homechef.svc.cluster.local
             port:
               number: 80
       timeout: 30s
