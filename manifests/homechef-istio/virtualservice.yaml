@@ -1,7 +1,6 @@
 ##############################################################################
 # HomeChef Istio VirtualService Configuration
-# All services run in-cluster via Knative Serving
-# Traffic routes through knative-local-gateway with Host header rewriting
+# All services run in-cluster as plain Deployments behind ClusterIP Services
 # All portals authenticate via customer Keycloak realm (homechef)
 ##############################################################################
 
@@ -436,14 +435,13 @@ spec:
       headers:
         request:
           set:
-            Host: homechef-auth-bff.homechef.svc.cluster.local
             x-forwarded-host: identity.fe3dr.com
             x-forwarded-proto: https
       route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: homechef-auth-bff.homechef.svc.cluster.local
             port:
-              number: 80
+              number: 8080
       timeout: 60s
       corsPolicy:
         allowOrigins:
@@ -543,24 +541,11 @@ spec:
               number: 8080
       timeout: 60s
 
-    # All other routes -> Analytics Portal SPA
-    - match:
-        - uri:
-            prefix: /
-      headers:
-        request:
-          set:
-            Host: homechef-analytics.homechef.svc.cluster.local
-      retries:
-        attempts: 3
-        perTryTimeout: 10s
-        retryOn: gateway-error,connect-failure,refused-stream
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      timeout: 30s
+    # No catch-all: there is no homechef-analytics workload in the cluster and
+    # no chart produces one, so this route pointed at a host that never existed
+    # and analytics.fe3dr.com/ already returned 404. Dropped rather than left
+    # dangling through knative-local-gateway. The /auth/ and /api routes above
+    # are real and still work; re-add a catch-all when an analytics SPA ships.
 
 # NOTE: internal-identity.fe3dr.com is handled by the identity-internal Keycloak
 # VirtualService (in identity-internal namespace), NOT by the homechef BFF.
