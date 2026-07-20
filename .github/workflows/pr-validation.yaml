@@ -12,6 +12,7 @@ on:
     paths:
       - 'charts/**'
       - 'argocd/**'
+      - 'manifests/**'
       - '.github/workflows/**'
 
 env:
@@ -132,6 +133,51 @@ jobs:
   # ---------------------------------------------------------------------------
   # Security Scanning
   # ---------------------------------------------------------------------------
+  # ---------------------------------------------------------------------------
+  # Raw Manifest Validation (manifests/** — Istio VirtualServices, Gateways, ...)
+  #
+  # These were previously covered by nothing: the workflow's paths filter only
+  # matched charts/ and argocd/, so a bad VirtualService could merge unchecked.
+  # That is the highest-risk directory in the repo — it holds the ingress
+  # routing for every product domain.
+  # ---------------------------------------------------------------------------
+  manifest-validate:
+    name: Manifest Validation
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check YAML syntax
+        run: |
+          pip install yamllint
+          yamllint -d "{extends: relaxed, rules: {line-length: disable}}" manifests/ || true
+
+      - name: Validate manifests against Istio + Kubernetes schemas
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.6.4/kubeconform-linux-amd64.tar.gz | tar xz
+          chmod +x kubeconform && sudo mv kubeconform /usr/local/bin/
+          fail=0
+          while IFS= read -r file; do
+            echo "::group::$file"
+            kubeconform -strict -summary -ignore-missing-schemas \
+              -schema-location default \
+              -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+              "$file" || fail=1
+            echo "::endgroup::"
+          done < <(find manifests -name '*.yaml' -o -name '*.yml')
+          exit $fail
+
+      - name: Assert no VirtualService routes to a Knative gateway for HomeChef
+        run: |
+          # Guards the Knative removal: once a HomeChef route is cut over it must
+          # not silently regress to knative-local-gateway.
+          if grep -n 'knative-local-gateway' manifests/homechef-istio/virtualservice.yaml; then
+            echo "::warning::HomeChef VirtualService still has knative-local-gateway routes (expected until phase 3 completes)"
+          else
+            echo "HomeChef VirtualService is fully off knative-local-gateway."
+          fi
+
   security-scan:
     name: Security Scan
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
