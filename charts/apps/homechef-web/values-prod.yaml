@@ -52,3 +52,11 @@ service:
 # (null, not {} — Helm deep-merges maps, so {} would not clear the base values.)
 podSecurityContext: null
 securityContext: null
+
+# No Kong in this cluster — `kubectl get ingressclass` returns nothing, so these
+# Ingress objects have sat with an empty status.loadBalancer since creation.
+# ArgoCD blocks on their health, which stalled the sync that prunes the Knative
+# Services. HomeChef serves through the Istio Gateway + VirtualServices in
+# manifests/homechef-istio, not through an Ingress controller.
+ingress:
+  enabled: false
