@@ -124,6 +124,14 @@ spec:
         memory: 640Mi
   resourceExclusions: "- apiGroups: [\"\", \"discovery.k8s.io\"]\n  kinds: [\"Endpoints\", \"EndpointSlice\"\
     ]\n- apiGroups: [\"coordination.k8s.io\"]\n  kinds: [\"Lease\"]\n"
+  resourceHealthChecks:
+  - check: "hs = {}\nif obj.status ~= nil and obj.status.phase ~= nil then\n  if obj.status.phase == \"\
+      Available\" then\n    hs.status = \"Healthy\"\n    hs.message = \"ArgoCD phase: Available\"\n  \
+      \  return hs\n  end\n  hs.status = \"Progressing\"\n  hs.message = \"ArgoCD phase: \" .. obj.status.phase\n\
+      \  return hs\nend\nhs.status = \"Progressing\"\nhs.message = \"Waiting for ArgoCD status\"\nreturn\
+      \ hs\n"
+    group: argoproj.io
+    kind: ArgoCD
   resourceTrackingMethod: annotation
   server:
     autoscale:
