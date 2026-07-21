@@ -29,15 +29,19 @@ data:
                            K8s secret backed by GCP Secret Manager.
 
     Per tenant the job will:
-      1. For every email in ADMIN_EMAILS, ensure a user exists in the
-         tenant. If missing, create it (email_verified=True so first
-         social-login auto-links the IdP identity).
-      2. Set {"admin": True} in the user's custom claims if not
-         already present.
-      3. For every OTHER user in the tenant, strip the admin claim if
+      1. For every email in ADMIN_EMAILS that EXISTS in the tenant,
+         set {"admin": True} in the user's custom claims if not
+         already present. GRANT-ONLY: a missing user is skipped, never
+         created. Creating credential-less accounts here squatted the
+         email — onboarding's signUp then hit EMAIL_EXISTS while the
+         account had no password or provider to sign in with, and
+         deleted ghost accounts were silently resurrected on the next
+         run. The user must onboard (or be invited) first; admin is
+         granted on the next reconcile after that.
+      2. For every OTHER user in the tenant, strip the admin claim if
          present (drift correction — e.g. claims granted ad-hoc via
          the Firebase Console).
-      4. Exit non-zero on partial failures.
+      3. Exit non-zero on partial failures.
 
     No-op fast path: a user that already has admin=True is skipped, so
     re-runs every 6h are cheap.
@@ -99,7 +103,7 @@ data:
     )
 
     overall_failures = 0
-    overall_totals = {"granted": 0, "already": 0, "revoked": 0, "created": 0}
+    overall_totals = {"granted": 0, "already": 0, "revoked": 0, "skipped": 0}
 
     for tenant_id in tenant_ids:
         print(f"\n--- tenant={tenant_id} ---")
@@ -111,18 +115,21 @@ data:
             continue
 
         per_failures = 0
-        granted = already = revoked = created = 0
+        granted = already = revoked = skipped = 0
         allow_uids = set()
 
-        # --- 1. Ensure allow-list users have admin=True ----------------
+        # --- 1. Grant admin=True to allow-list users that exist --------
+        # Grant-only: never create. See the module docstring for why
+        # creating accounts here broke onboarding and resurrected
+        # deleted ghosts.
         for email in allow_emails:
             try:
                 try:
                     user = client.get_user_by_email(email)
                 except auth.UserNotFoundError:
-                    user = client.create_user(email=email, email_verified=True)
-                    created += 1
-                    print(f"  created {email} -> uid={user.uid}")
+                    skipped += 1
+                    print(f"  skip {email}: no user in tenant (grant-only)")
+                    continue
                 allow_uids.add(user.uid)
                 current = (user.custom_claims or {}).get("admin")
                 if current is True:
@@ -158,14 +165,14 @@ data:
             page = page.get_next_page()
 
         print(
-            f"  [{tenant_id}] created={created} granted={granted} "
+            f"  [{tenant_id}] skipped={skipped} granted={granted} "
             f"already={already} revoked={revoked} failures={per_failures}"
         )
         overall_failures += per_failures
         overall_totals["granted"] += granted
         overall_totals["already"] += already
         overall_totals["revoked"] += revoked
-        overall_totals["created"] += created
+        overall_totals["skipped"] += skipped
 
     print(
         f"\n[done] {overall_totals} failures={overall_failures} at {int(time.time())}"
