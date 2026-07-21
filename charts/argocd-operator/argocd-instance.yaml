@@ -1,128 +1,155 @@
+# ArgoCD instance managed by argocd-operator v0.18.0 (Argo CD v3.3.10).
+# Prod-ready HA: redis-ha (3+3 haproxy), controller sharding replicas=3
+# (consistent-hashing), repo replicas=3, server replicas=2. Memory-only
+# resources (no CPU limits/requests). SSO = Dex/GitHub + local admin fallback.
+# resourceTrackingMethod=annotation (matches the 217 existing Applications).
+# This file is the canonical desired state, GitOps-managed self-referentially
+# via argocd/prod/infrastructure/argocd.yaml. Fields include operator-
+# materialized CRD defaults so the self-managing app stays Synced.
 apiVersion: argoproj.io/v1beta1
 kind: ArgoCD
 metadata:
   name: argocd
   namespace: argocd
 spec:
-  image: quay.io/argoproj/argocd
-  version: v3.3.10
-
-  # tracking: MUST match live 3.x (annotation) — label would mass-OutOfSync
-  resourceTrackingMethod: annotation
   applicationInstanceLabelKey: argocd.argoproj.io/instance
-  disableAdmin: false
-
-  # HA Redis (3 redis + 3 haproxy, one per zone)
-  ha:
-    enabled: true
-    resources:
-      requests: { memory: 256Mi }
-      limits:   { memory: 512Mi }
-  redis:
-    resources:
-      requests: { memory: 256Mi }
-      limits:   { memory: 512Mi }
-
-  # application controller: sharded, tuned processors + parallelism
-  controller:
-    sharding:
-      enabled: true
-      replicas: 3
-    processors:
-      status: 50
-      operation: 25
-    parallelismLimit: 25
-    resources:
-      requests: { memory: 1Gi }
-      limits:   { memory: 2Gi }
-    env:
-      - { name: ARGOCD_CONTROLLER_SHARDING_ALGORITHM, value: consistent-hashing }
-      - { name: ARGOCD_APPLICATION_CONTROLLER_REPO_SERVER_TIMEOUT_SECONDS, value: "120" }
-
-  # repo server: scaled up (was crash-restarting at 2)
-  repo:
-    replicas: 3
-    resources:
-      requests: { memory: 640Mi }
-      limits:   { memory: 1Gi }
-    env:
-      - { name: ARGOCD_EXEC_TIMEOUT, value: "300s" }
-
-  # server: HTTP behind Kong; operator Ingress + OpenShift Route OFF
-  server:
-    replicas: 2
-    insecure: true
-    service:
-      type: ClusterIP
-    route:
-      enabled: false
-    ingress:
-      enabled: false
-    resources:
-      requests: { memory: 256Mi }
-      limits:   { memory: 512Mi }
-
   applicationSet:
     enabled: true
     resources:
-      requests: { memory: 256Mi }
-      limits:   { memory: 512Mi }
-
+      limits:
+        memory: 512Mi
+      requests:
+        memory: 256Mi
+    webhookServer:
+      ingress:
+        enabled: false
+      route:
+        enabled: false
+  controller:
+    env:
+    - name: ARGOCD_CONTROLLER_SHARDING_ALGORITHM
+      value: consistent-hashing
+    - name: ARGOCD_APPLICATION_CONTROLLER_REPO_SERVER_TIMEOUT_SECONDS
+      value: '120'
+    parallelismLimit: 25
+    processors:
+      operation: 25
+      status: 50
+    resources:
+      limits:
+        memory: 2Gi
+      requests:
+        memory: 1Gi
+    sharding:
+      enabled: true
+      replicas: 3
+  disableAdmin: false
+  extraConfig:
+    admin.enabled: 'true'
+    application.sync.impersonation.enabled: 'false'
+    exec.enabled: 'false'
+    resource.customizations.ignoreResourceUpdates.all: "jsonPointers:\n  - /status\n"
+    resource.customizations.ignoreResourceUpdates.argoproj.io_Application: "jqPathExpressions:\n  - '.metadata.annotations.\"\
+      notified.notifications.argoproj.io\"'\n  - '.metadata.annotations.\"argocd.argoproj.io/refresh\"\
+      '\n  - '.operation'\n"
+    timeout.reconciliation: 180s
+  grafana:
+    enabled: false
+    ingress:
+      enabled: false
+    route:
+      enabled: false
+  ha:
+    enabled: true
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        memory: 256Mi
+  image: quay.io/argoproj/argocd
+  imageUpdater:
+    enabled: false
+  initialSSHKnownHosts: {}
+  monitoring:
+    enabled: false
+  networkPolicy: {}
   notifications:
     enabled: true
     replicas: 1
     resources:
-      requests: { memory: 128Mi }
-      limits:   { memory: 256Mi }
-
-  sso:
-    provider: dex
-    dex:
-      config: |
-        connectors:
-          - type: github
-            id: github
-            name: GitHub
-            config:
-              clientID: Iv23liR8HRPwZbCwTeCD
-              clientSecret: $argocd-github-oauth:client-secret
-              orgs: []
-              loadAllGroups: false
-              useLoginAsID: false
-
-  # SSO is Dex/GitHub only (intentional) + local admin fallback. The live
-  # Google oidc.config had an EMPTY clientID (non-functional) and is not used.
-  # The operator also forbids spec.sso and spec.oidcConfig together.
-
+      limits:
+        memory: 256Mi
+      requests:
+        memory: 128Mi
+  prometheus:
+    enabled: false
+    ingress:
+      enabled: false
+    route:
+      enabled: false
   rbac:
-    defaultPolicy: ""
-    policyMatcherMode: glob
-    scopes: "[email]"
-    policy: |
-      g, samyak.rout@gmail.com, role:admin
+    defaultPolicy: ''
+    policy: 'g, samyak.rout@gmail.com, role:admin
+
       p, role:admin, applications, *, */*, allow
+
       p, role:admin, clusters, *, *, allow
+
       p, role:admin, repositories, *, *, allow
+
       p, role:admin, projects, *, *, allow
+
       p, role:admin, logs, get, */*, allow
+
       p, role:admin, exec, create, */*, allow
 
-  resourceExclusions: |
-    - apiGroups: ["", "discovery.k8s.io"]
-      kinds: ["Endpoints", "EndpointSlice"]
-    - apiGroups: ["coordination.k8s.io"]
-      kinds: ["Lease"]
-
-  extraConfig:
-    admin.enabled: "true"
-    exec.enabled: "false"
-    application.sync.impersonation.enabled: "false"
-    timeout.reconciliation: "180s"
-    resource.customizations.ignoreResourceUpdates.all: |
-      jsonPointers:
-        - /status
-    resource.customizations.ignoreResourceUpdates.argoproj.io_Application: |
-      jqPathExpressions:
-        - '.metadata.annotations."notified.notifications.argoproj.io"'
-        - '.metadata.annotations."argocd.argoproj.io/refresh"'
-        - '.operation'
+      '
+    policyMatcherMode: glob
+    scopes: '[email]'
+  redis:
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        memory: 256Mi
+  repo:
+    env:
+    - name: ARGOCD_EXEC_TIMEOUT
+      value: 300s
+    replicas: 3
+    resources:
+      limits:
+        memory: 1Gi
+      requests:
+        memory: 640Mi
+  resourceExclusions: "- apiGroups: [\"\", \"discovery.k8s.io\"]\n  kinds: [\"Endpoints\", \"EndpointSlice\"\
+    ]\n- apiGroups: [\"coordination.k8s.io\"]\n  kinds: [\"Lease\"]\n"
+  resourceTrackingMethod: annotation
+  server:
+    autoscale:
+      enabled: false
+    grpc:
+      ingress:
+        enabled: false
+    ingress:
+      enabled: false
+    insecure: true
+    replicas: 2
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        memory: 256Mi
+    route:
+      enabled: false
+    service:
+      type: ClusterIP
+  sso:
+    dex:
+      config: "connectors:\n  - type: github\n    id: github\n    name: GitHub\n    config:\n      clientID:\
+        \ Iv23liR8HRPwZbCwTeCD\n      clientSecret: $argocd-github-oauth:client-secret\n      orgs: []\n\
+        \      loadAllGroups: false\n      useLoginAsID: false\n"
+    provider: dex
+  tls:
+    ca: {}
+  version: v3.3.10
