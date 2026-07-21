@@ -512,8 +512,16 @@ resource "kubernetes_secret" "argocd_oidc_secret" {
   depends_on = [kubernetes_namespace.argocd]
 }
 
+# DEPRECATED (2026-07-21): ArgoCD migrated off the argo-helm chart to the
+# argoproj-labs argocd-operator v0.18.0 (Argo CD v3.3.10). This resource is
+# disabled whenever var.argocd_use_operator is true (the default) so a future
+# apply never reinstalls the Helm control plane. The operator is bootstrapped
+# manually (kustomize) and its ArgoCD CR is GitOps-managed via
+# argocd/prod/infrastructure/argocd.yaml -> charts/argocd-operator/. Retained
+# for history / rollback only. See
+# docs/superpowers/plans/2026-07-21-argocd-operator-migration.md
 resource "helm_release" "argocd" {
-  count = var.install_argocd ? 1 : 0
+  count = var.install_argocd && !var.argocd_use_operator ? 1 : 0
 
   name             = "argocd"
   repository       = "https://argoproj.github.io/argo-helm"
