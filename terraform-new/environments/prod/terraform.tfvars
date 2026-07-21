@@ -2605,15 +2605,25 @@ kong_proxy_service_type = "LoadBalancer"
 kong_admin_enabled      = false
 kong_replicas           = 2 # HA for production
 
-# ArgoCD
+# ArgoCD — migrated 2026-07-21 to argocd-operator v0.18.0 (Argo CD v3.3.10).
+# The operator + ArgoCD CR are installed manually (kustomize) and GitOps-managed
+# via argocd/prod/infrastructure/argocd.yaml -> charts/argocd-operator/. With
+# argocd_use_operator=true the helm_release.argocd below is disabled so a future
+# apply never reinstalls the Helm control plane. The argocd_* chart/version vars
+# are retained only for the (disabled) helm_release / rollback path.
 install_argocd              = true
+argocd_use_operator         = true
 argocd_namespace            = "argocd"
-argocd_chart_version        = "7.7.23"
-argocd_image_tag            = "v2.13.4"
+# Operator-managed runtime (source of truth = charts/argocd-operator/argocd-instance.yaml):
+#   operator: argoproj-labs/argocd-operator v0.18.0 ; Argo CD image: quay.io/argoproj/argocd:v3.3.10
+#   HA redis (3+3 haproxy) ; controller sharding replicas=3 (consistent-hashing) ; repo replicas=3 ; server replicas=2
+# Legacy helm_release values (DISABLED via argocd_use_operator; NOT live — live was chart 9.5.21 / v3.4.3 before migration):
+argocd_chart_version        = "9.5.21"
+argocd_image_tag            = "v3.4.3"
 argocd_server_insecure      = true
-argocd_server_replicas      = 2 # HA for production
-argocd_controller_replicas  = 2
-argocd_repo_server_replicas = 2
+argocd_server_replicas      = 2
+argocd_controller_replicas  = 3
+argocd_repo_server_replicas = 3
 
 # ArgoCD Resources - Increased for production with many applications
 argocd_controller_resources = {

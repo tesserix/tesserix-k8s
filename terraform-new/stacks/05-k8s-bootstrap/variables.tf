@@ -253,6 +253,19 @@ variable "install_argocd" {
   default     = true
 }
 
+variable "argocd_use_operator" {
+  description = <<-EOT
+    ArgoCD is managed by the argoproj-labs argocd-operator (v0.18.0, Argo CD
+    v3.3.10) as of 2026-07-21, not the argo-helm chart. When true, the
+    helm_release.argocd resource is disabled so a future apply never reinstalls
+    the Helm-based control plane. The operator + ArgoCD CR are installed
+    manually (kustomize) and GitOps-managed via
+    argocd/prod/infrastructure/argocd.yaml -> charts/argocd-operator/.
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "argocd_namespace" {
   description = "Namespace for ArgoCD"
   type        = string
