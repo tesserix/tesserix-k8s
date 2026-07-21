@@ -1,162 +1,57 @@
 ---
-# ArgoCD self-management: adopts the existing `argocd` helm release (same
-# release name -> identical manifests). Values mirror the live release at
-# the 2026-06-12 v3.4.3 upgrade. targetRevision is Kargo-managed at
-# runtime (platform-tools warehouse) — Git holds the bootstrap minimum.
+# ArgoCD self-management — operator-managed (migrated 2026-07-21).
+#
+# This Application NO LONGER installs the argo-helm `argo-cd` chart. Argo CD
+# now runs under the argoproj-labs **argocd-operator v0.18.0** (Argo CD
+# v3.3.10), configured by the `ArgoCD` CR in `charts/argocd-operator/`. This
+# app GitOps-manages that CR only, so Argo CD is self-managed. The operator
+# itself is bootstrapped manually (kustomize) — see:
+#   docs/superpowers/plans/2026-07-21-argocd-operator-migration.md
+#
 # prune stays false: ArgoCD must never delete parts of itself mid-sync.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: argocd
-  annotations:
-    kargo.akuity.io/authorized-stage: "kargo-infra:platform-tools-prod"
   namespace: argocd
   labels:
     app.kubernetes.io/part-of: tesseract-platform
     app.kubernetes.io/component: infrastructure
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
-    repoURL: https://argoproj.github.io/argo-helm
-    chart: argo-cd
-    targetRevision: 9.5.21
-    helm:
-      releaseName: argocd
-      values: |
-        applicationSet:
-          replicas: 1
-        configs:
-          cm:
-            admin.enabled: "true"
-            application.instanceLabelKey: argocd.argoproj.io/instance
-            oidc.config: |
-              "clientID": ""
-              "clientSecret": "$argocd-oidc-secret:oidc.google.clientSecret"
-              "issuer": "https://accounts.google.com"
-              "name": "Google"
-              "requestedScopes":
-              - "openid"
-              - "profile"
-              - "email"
-            timeout.reconciliation: 180s
-            url: https://argocd.tesseracthub.app
-          params:
-            server.insecure: true
-          rbac:
-            policy.csv: |-
-              g, samyak.rout@gmail.com, role:admin
-              p, role:admin, applications, *, */*, allow
-              p, role:admin, clusters, *, *, allow
-              p, role:admin, repositories, *, *, allow
-              p, role:admin, projects, *, *, allow
-              p, role:admin, logs, get, */*, allow
-              p, role:admin, exec, create, */*, allow
-            policy.default: ""
-            scopes: '[email]'
-        controller:
-          # The chart derives ARGOCD_CONTROLLER_REPLICAS from replicas —
-          # setting it as an explicit env too creates a duplicate key that
-          # breaks server-side diffing.
-          replicas: 3
-          resources:
-            limits:
-              cpu: 2000m
-              memory: 4Gi
-            requests:
-              cpu: 500m
-              memory: 1Gi
-        notifications:
-          enabled: true
-          notifiers:
-            service.slack: |
-              token: $slack-token
-          secret:
-            create: false
-          subscriptions:
-          - recipients:
-            - slack:mark8ly-smoke-test-verification
-            triggers:
-            - on-mark8ly-uat-smoke-failed
-          templates:
-            template.mark8ly-uat-smoke-failed: "message: |\n  \U0001F6A8 *Mark8ly UAT smoke
-              test failed* — prod auto-promotion blocked\nslack:\n  attachments: |\n    [{\n
-              \     \"color\": \"#E01E5A\",\n      \"title\": \"{{.app.metadata.name}} failed
-              in UAT\",\n      \"title_link\": \"https://argocd.tesserix.app/applications/{{.app.metadata.name}}\",\n
-              \     \"fields\": [\n        {\n          \"title\": \"Failure\",\n          \"value\":
-              \"{{.app.status.operationState.message}}\",\n          \"short\": false\n        },\n
-              \       {\n          \"title\": \"Sync Revision\",\n          \"value\": \"`{{.app.status.operationState.syncResult.revision
-              | substr 0 12}}`\",\n          \"short\": true\n        },\n        {\n          \"title\":
-              \"Image Tag\",\n          \"value\": \"`{{(index .app.spec.source.helm.parameters
-              0).value}}`\",\n          \"short\": true\n        }\n        {{- range .app.status.operationState.syncResult.resources
-              }}\n        {{- if eq .hookPhase \"Failed\" }}\n        ,{\n          \"title\":
-              \"Failed Resource — {{.kind}}/{{.name}}\",\n          \"value\": \"```{{.message}}```\",\n
-              \         \"short\": false\n        }\n        {{- end }}\n        {{- end }}\n
-              \       ,{\n          \"title\": \"Triage commands\",\n          \"value\":
-              \"```# Find the latest failing pod\\nkubectl -n {{.app.spec.destination.namespace}}
-              get pods -l app.kubernetes.io/name={{.app.metadata.name}} --sort-by=.status.startTime\\n\\n#
-              Tail logs (replace POD with output above)\\nkubectl -n {{.app.spec.destination.namespace}}
-              logs <POD>\\n\\n# Open the Playwright report inside the pod\\nkubectl -n {{.app.spec.destination.namespace}}
-              cp <POD>:/app/playwright-report ./playwright-report\\nopen ./playwright-report/index.html```\",\n
-              \         \"short\": false\n        },\n        {\n          \"title\": \"Quick
-              links\",\n          \"value\": \"<https://argocd.tesserix.app/applications/{{.app.metadata.name}}|Argo
-              CD App> · <https://kargo.tesserix.app/project/kargo-mark8ly|Kargo Project> ·
-              <https://kargo.tesserix.app/project/kargo-mark8ly/stages/smoke|Smoke Stage>\",\n
-              \         \"short\": false\n        }\n      ],\n      \"footer\": \"Block prod
-              auto-promotion until smoke goes Healthy. To bypass for hot-fix, see runbook:
-              docs/mark8ly-uat-smoke-test-pipeline.md\",\n      \"ts\": {{ now | unixEpoch
-              }}\n    }]\n"
-          triggers:
-            trigger.on-mark8ly-uat-smoke-failed: |
-              - description: Fires when the mark8ly-uat e2e Job hits backoffLimit and Argo CD reports the App Failed.
-                send: [mark8ly-uat-smoke-failed]
-                when: |
-                  app.metadata.name == 'mark8ly-uat-e2e-tests'
-                  && app.status.operationState != nil
-                  && app.status.operationState.phase in ['Failed','Error']
-        repoServer:
-          replicas: 2
-          resources:
-            limits:
-              cpu: "1"
-              memory: 1Gi
-            requests:
-              cpu: 200m
-              memory: 256Mi
-        server:
-          ingress:
-            annotations:
-              cert-manager.io/cluster-issuer: letsencrypt-prod
-              konghq.com/protocol: https
-              konghq.com/protocols: https
-              konghq.com/strip-path: "false"
-            enabled: true
-            hosts:
-            - argocd.tesseracthub.app
-            ingressClassName: kong
-            pathType: Prefix
-            paths:
-            - /
-            tls:
-            - hosts:
-              - argocd.tesseracthub.app
-              secretName: argocd-server-tls
-          replicas: 2
-          resources:
-            limits:
-              cpu: 500m
-              memory: 512Mi
-            requests:
-              cpu: 100m
-              memory: 128Mi
-          service:
-            type: ClusterIP
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/argocd-operator
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
+  # The operator owns/reconciles all rendered workloads; Argo only ensures
+  # the CR matches Git. Ignore operator-injected spec defaults so the app
+  # stays Synced rather than flapping on fields the operator fills in.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: ArgoCD
+      name: argocd
+      jsonPointers:
+        - /spec/controller/resources
+        - /spec/repo/resources
+        - /spec/server/resources
+        - /spec/redis/resources
+        - /spec/ha/resources
   syncPolicy:
     automated:
       prune: false
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
+      - CreateNamespace=false
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
