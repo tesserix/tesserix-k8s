@@ -74,6 +74,13 @@ spec:
               mountPath: /var/run/secrets/devai/secret-service
               readOnly: true
           {{- end }}
+            {{- if .Values.nats.auth.enabled }}
+            # NATS account credentials (Home-Chef-App#758). The worker shares the
+            # same event-bus adapter as the API, so it needs the same creds when
+            # the cluster enforces operator/JWT auth. Inert while auth is off.
+            - name: DEVAI_NATS_CREDS
+              value: /etc/nats-creds/nats.creds
+            {{- end }}
           # No HTTP server, so no readiness/liveness HTTP probe. A crashed worker
           # exits non-zero and is restarted by the kubelet; a poll stall is caught
           # by Temporal's own worker heartbeat on the server side.
@@ -91,5 +98,20 @@ spec:
                   audience: {{ .Values.settings.brokerAudience | default "secret-service" | quote }}
                   expirationSeconds: 600
                   path: token
+          {{- if .Values.nats.auth.enabled }}
+          volumeMounts:
+            - name: nats-creds
+              mountPath: /etc/nats-creds
+              readOnly: true
+          {{- end }}
+      {{- if .Values.nats.auth.enabled }}
+      volumes:
+        # Projects the NATS_CREDS_FILE key from the ESO-synced secret as a file.
+        - name: nats-creds
+          secret:
+            secretName: {{ include "devai-api.fullname" . }}-nats-creds
+            items:
+              - key: NATS_CREDS_FILE
+                path: nats.creds
       {{- end }}
 {{- end }}

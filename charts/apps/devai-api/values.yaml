@@ -132,12 +132,29 @@ redis:
 
 nats:
   url: "nats://nats.nats.svc.cluster.local:4222"
+  # NATS operator/JWT account credentials (devai side of Home-Chef-App#758).
+  # OFF by default — the app connects anonymously while this is false, so the
+  # whole block stays inert until the cluster enforces NATS auth. When enabled
+  # (together with gcp.secretManager.enabled), the chart mounts the DevAI
+  # account .creds file and points DEVAI_NATS_CREDS at it.
+  auth:
+    enabled: false
 
 gcp:
   projectId: ""
   workloadIdentity:
     enabled: false
     gcpServiceAccount: ""
+  # ExternalSecret-backed sync of the NATS .creds file (see externalsecret.yaml).
+  # OFF by default. devai-api's primary secrets come from the standalone
+  # ExternalSecret in external-secrets/prod/devai/; this block only governs the
+  # dedicated, gated NATS-creds ExternalSecret this chart renders when NATS auth
+  # is turned on, so it never touches the existing devai-api-secrets Secret.
+  secretManager:
+    enabled: false
+    secretPrefix: "devtest"  # prod overrides to "prod" (GCP SM keys are prod-*)
+    secretStore: "gcp-secret-store"
+    refreshInterval: "1h"
 
 resources:
   requests:
