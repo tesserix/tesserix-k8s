@@ -70,10 +70,33 @@ spec:
               value: {{ .Values.gcp.secretManager.secretPrefix | quote }}
             - name: USE_GCP_SECRET_MANAGER
               value: "true"
+            {{- if .Values.nats.auth.enabled }}
+            # NATS FANZONE-account credentials (Home-Chef-App#758-fanzone). Only
+            # set when the cluster enforces operator/JWT auth; the service connects
+            # anonymously while empty, so this stays inert until the global cutover.
+            - name: NATS_CREDS
+              value: /etc/nats-creds/nats.creds
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.securityContext }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           {{- end }}
+          {{- if .Values.nats.auth.enabled }}
+          volumeMounts:
+            - name: nats-creds
+              mountPath: /etc/nats-creds
+              readOnly: true
+          {{- end }}
+      {{- if .Values.nats.auth.enabled }}
+      # Projects the NATS_CREDS_FILE key from the ESO-synced secret as a file.
+      volumes:
+        - name: nats-creds
+          secret:
+            secretName: {{ include "fanzone-cricket-quiz.fullname" . }}-secrets
+            items:
+              - key: NATS_CREDS_FILE
+                path: nats.creds
+      {{- end }}
 {{- end }}
