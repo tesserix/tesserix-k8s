@@ -1,13 +1,13 @@
-name: GHCR Cleanup (90-day retention)
+name: GHCR Cleanup (15-day retention)
 
-# Deletes container image versions older than 90 days from ghcr.io/tesserix/*
+# Deletes container image versions older than 15 days from ghcr.io/tesserix/*
 # to stop GHCR (and, downstream, the Artifact Registry `ghcr-remote` pull-through
 # cache) accumulating stale build layers forever.
 #
 # SAFETY — this must never delete an image the cluster still pulls:
-#   * keep-n-most-recent: 10  -> the 10 newest versions of every package survive
-#     regardless of age, so the currently-deployed tag is never removed even if
-#     its build is >90 days old.
+#   * keep-n-most-recent: 3   -> the 3 newest versions of every package survive
+#     regardless of age, so the currently-deployed tag (and the previous two)
+#     are never removed even when their builds are >15 days old.
 #   * protected tags (latest / prod-* / release-* / stable / vX.Y.Z semver) are
 #     skipped regardless of age — see `image-tags` exclusion below.
 #   * dry-run defaults to TRUE. The scheduled run passes dry-run=false; a manual
@@ -35,7 +35,7 @@ on:
       cut-off:
         description: 'Delete versions older than this (e.g. 90d, 6 months)'
         type: string
-        default: 90d
+        default: 15d
 
 concurrency:
   group: ghcr-cleanup
@@ -61,10 +61,11 @@ jobs:
           # ...but never touch these tags regardless of age (currently-deployed
           # / release-pinned). main-<sha> deploys are covered by keep-n-most-recent.
           image-tags: '!latest !stable !prod-* !release-* !v*.*.*'
-          cut-off: ${{ inputs.cut-off || '90d' }}
-          # Newest 10 versions of every package always survive (covers the live
-          # rolling main-<sha> tag even when its build is >90 days old).
-          keep-n-most-recent: 10
+          cut-off: ${{ inputs.cut-off || '15d' }}
+          # Newest 3 versions of every package ALWAYS survive (never deleted),
+          # covering the live rolling main-<sha> tag + the last couple of deploys
+          # even when their builds are >15 days old.
+          keep-n-most-recent: 3
           # Scheduled runs actually delete; manual runs honour the dry-run input
           # (defaults to true so you can preview safely).
           dry-run: ${{ github.event_name == 'schedule' && 'false' || inputs.dry-run }}
@@ -73,4 +74,4 @@ jobs:
         if: always()
         run: |
           echo "GHCR cleanup finished. Deleted list (if any) is in the step above." >> "$GITHUB_STEP_SUMMARY"
-          echo "Protected: newest 10 per package + tags latest/stable/prod-*/release-*/vX.Y.Z." >> "$GITHUB_STEP_SUMMARY"
+          echo "Protected: newest 3 per package + tags latest/stable/prod-*/release-*/vX.Y.Z." >> "$GITHUB_STEP_SUMMARY"
