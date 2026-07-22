@@ -1,0 +1,141 @@
+# postiz — self-hosted Postiz (upstream gitroomhq/postiz-app) with a public UI
+# at postiz.tesserix.app. Own namespace + own CNPG postgres + own redis
+# (postiz-postgres / postiz-redis sibling charts); shares the cluster-wide
+# Temporal frontend in the scrapper namespace.
+
+namespace: postiz
+
+replicaCount: 1
+
+image:
+  # Upstream ghcr.io/gitroomhq/postiz-app proxied through the AR ghcr-remote
+  # pull-through repo (Private Google Access — no Cloud NAT cost).
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/gitroomhq/postiz-app
+  # Pinned release — bump deliberately (upstream `latest` moves without notice).
+  tag: "v2.21.10"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+service:
+  type: ClusterIP
+  port: 5000
+  targetPort: 5000
+
+serviceAccount:
+  create: true
+  name: ""
+  automount: true
+
+# Public UI host — routed Cloudflare Tunnel -> istio-ingress/tesseract-gateway
+# -> VirtualService (templates/virtualservice.yaml). OAuth callbacks from
+# social platforms land here too.
+publicUrl: "https://postiz.tesserix.app"
+
+ingress:
+  enabled: true
+  gateway: istio-ingress/tesseract-gateway
+  host: postiz.tesserix.app
+
+# Internal datastore endpoints (managed by sibling charts)
+database:
+  host: "postiz-postgres-rw.postiz.svc.cluster.local"
+  port: "5432"
+  user: "postiz-user"
+  database: "postiz-db"
+  passwordSecret:
+    name: postiz-postgres-app-credentials
+    key: password
+
+redis:
+  host: "postiz-redis.postiz.svc.cluster.local"
+  port: "6379"
+  passwordSecret:
+    name: postiz-redis-auth
+    key: password
+
+# Shared cluster-wide Temporal (lives in scrapper ns — see charts/apps/temporal).
+# Cross-namespace reachability requires the postiz allowance in istio-config's
+# allow-scrapper-ingress NetworkPolicy.
+temporal:
+  address: "temporal.scrapper.svc.cluster.local:7233"
+
+# Postiz expects /uploads to be writable. PVC provides persistence across restarts.
+# economy-rwo-retain (pd-standard, Retain) — user uploads, infrequent IO.
+uploads:
+  pvc:
+    size: 10Gi
+    storageClass: economy-rwo-retain
+    accessMode: ReadWriteOnce
+
+# Public deployment — real auth required (notSecured MUST stay "false").
+# disableRegistration starts "false" for the initial account signup; flip to
+# "true" immediately after the admin account exists.
+flags:
+  isGeneral: "true"
+  notSecured: "false"
+  disableRegistration: "false"
+  apiLimit: "30"
+  storageProvider: "local"
+
+# Per-platform OAuth credentials (BOTH client IDs AND secrets) live in GCP
+# Secret Manager (prod-postiz-*) and are pulled in via the postiz-secrets
+# ExternalSecret. Client-ID secrets exist as empty placeholders until each
+# platform's developer app is registered with callback URLs on publicUrl.
+#
+# MASTODON_URL is the only literal value (no creds; just the instance URL).
+mastodonUrl: "https://mastodon.social"
+
+# Email disabled for initial bring-up — Postiz auto-activates accounts when no
+# email provider is configured. Enable (nodemailer/SendGrid or resend) once
+# password-reset / invitation emails are needed.
+email:
+  enabled: false
+  fromAddress: "noreply@tesserix.app"
+  fromName: "Tesserix Postiz"
+  host: "smtp.sendgrid.net"
+  port: "587"
+  secure: "false"
+  user: "apikey"  # literal SendGrid SMTP username
+
+# Optional Sentry monitoring — populate prod-postiz-sentry-dsn to enable
+sentry:
+  enabled: false
+  spotlight: false
+
+# Optional URL shorteners (Postiz auto-detects which is configured)
+shortLinks:
+  dub:
+    enabled: false
+    apiEndpoint: "https://api.dub.co"
+    domain: "dub.sh"
+  shortIo:
+    enabled: false
+  kutt:
+    enabled: false
+    apiEndpoint: "https://kutt.it/api/v2"
+    domain: "kutt.it"
+  linkDrip:
+    enabled: false
+    apiEndpoint: "https://api.linkdrip.com/v1/"
+    domain: "dripl.ink"
+
+# Optional Polotno design canvas — populate prod-postiz-polotno-key to enable
+polotnoEnabled: false
+
+# Memory-only requests per platform policy (spot nodes, no cpu requests).
+resources:
+  requests:
+    memory: 1Gi
+  limits:
+    memory: 4Gi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetMemoryUtilizationPercentage: 80
+
+podAnnotations: {}
+podLabels: {}

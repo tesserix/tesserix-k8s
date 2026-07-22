@@ -1,0 +1,67 @@
+# Namespace network posture: default-deny ingress + explicit allowlist,
+# mirroring istio-config's per-namespace pattern (managed here because the
+# postiz namespace is chart-owned, not istio-config-owned).
+#
+# Egress is left unrestricted (no Egress policy) — Postiz dials every social
+# platform's public API plus temporal.scrapper.svc:7233; the scrapper-side
+# ingress allowance for that lives in istio-config's allow-scrapper-ingress.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "postiz.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postiz-ingress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "postiz.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Public UI traffic via the Istio ingress gateway
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+    # Intra-namespace (app -> postgres/redis)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespace }}
+    # Prometheus scrapes (CNPG PodMonitor, app metrics)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    # Istio control plane / ambient dataplane
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+    # CloudNativePG operator (port 8000 status probes — replicas are never
+    # created without this; see docs/cnpg-migration-guide.md)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+    # kube-system DNS return traffic
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

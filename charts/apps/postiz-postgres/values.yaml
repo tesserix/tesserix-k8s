@@ -1,0 +1,70 @@
+hibernate: false
+
+namespace: postiz
+clusterName: postiz-postgres
+
+instances: 1
+imageName: ghcr.io/cloudnative-pg/postgresql:17.2
+
+storageSize: 10Gi
+storageClass: standard-rwo-retain
+walStorageSize: 5Gi
+
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+
+bootstrap:
+  database: postiz-db
+  owner: postiz-user
+  secret: postiz-postgres-app-credentials
+  gcpSecretName: prod-postiz-postgresql-password
+  postInitSQL: []
+
+postgresql:
+  max_connections: "200"
+  shared_buffers: "128MB"
+  effective_cache_size: "768MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "64MB"
+  wal_level: "logical"
+  max_replication_slots: "10"
+  max_wal_senders: "10"
+  ssl_min_protocol_version: "TLSv1.3"
+  ssl_max_protocol_version: "TLSv1.3"
+  idle_in_transaction_session_timeout: "300000"
+  statement_timeout: "120000"
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"
+  log_min_duration_statement: "1000"
+  hot_standby_feedback: "on"
+  max_slot_wal_keep_size: "10GB"
+  pg_stat_statements.track: "all"
+  pg_stat_statements.max: "10000"
+
+# TODO: enable once a Workload Identity binding exists for the postiz
+# namespace (the scrapper GSA binding does not cover KSAs in this namespace).
+# Fresh instance — nothing to back up on day 1; PVCs use Retain storage class.
+backup:
+  enabled: false
+  destinationPath: "gs://tesseract-prod-backups-in/postiz-postgres"
+  retentionPolicy: "30d"
+  serviceAccount: "app-secrets-scrapper-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+pooler:
+  enabled: false
+  instances: 1
+  maxClientConn: "500"
+  defaultPoolSize: "20"
+
+monitoring:
+  enablePodMonitor: true
+
+affinity:
+  podAntiAffinityType: preferred
+
+replication:
+  minSyncReplicas: 0
+  maxSyncReplicas: 0
