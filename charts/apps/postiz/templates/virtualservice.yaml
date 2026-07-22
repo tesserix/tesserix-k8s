@@ -1,0 +1,23 @@
+{{- if .Values.ingress.enabled }}
+# Public UI route: Cloudflare Tunnel (*.tesserix.app -> istio-ingressgateway:80)
+# -> tesseract-gateway -> this VirtualService -> postiz service (port 5000,
+# internal proxy fronting the NestJS backend + Next.js frontend).
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ include "postiz.fullname" . }}-vs
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "postiz.labels" . | nindent 4 }}
+spec:
+  gateways: [{{ .Values.ingress.gateway | quote }}]
+  hosts: [{{ .Values.ingress.host | quote }}]
+  http:
+    - route:
+        - destination:
+            host: {{ include "postiz.fullname" . }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+      # Media uploads + slow provider OAuth exchanges — keep generous.
+      timeout: 120s
+{{- end }}

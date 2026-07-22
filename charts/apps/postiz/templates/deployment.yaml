@@ -1,0 +1,279 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "postiz.fullname" . }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "postiz.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "postiz.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: Recreate   # PVC-backed uploads volume is RWO — single pod at a time
+  template:
+    metadata:
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "postiz.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "postiz.serviceAccountName" . }}
+      containers:
+        - name: postiz
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          env:
+            # ─── URLs ─────────────────────────────────────────────────────
+            - name: MAIN_URL
+              value: {{ .Values.publicUrl | quote }}
+            - name: FRONTEND_URL
+              value: {{ .Values.publicUrl | quote }}
+            - name: NEXT_PUBLIC_BACKEND_URL
+              value: {{ printf "%s/api" .Values.publicUrl | quote }}
+            - name: BACKEND_INTERNAL_URL
+              value: "http://localhost:3000"
+
+            # ─── Database ────────────────────────────────────────────────
+            # POSTIZ_DB_PASSWORD is interpolated into DATABASE_URL via $(VAR)
+            # at container start. The CNPG-issued ExternalSecret holds it.
+            - name: POSTIZ_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.passwordSecret.name }}
+                  key: {{ .Values.database.passwordSecret.key }}
+            - name: DATABASE_URL
+              value: "postgresql://{{ .Values.database.user }}:$(POSTIZ_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.database }}"
+
+            # ─── Redis ───────────────────────────────────────────────────
+            # REDIS_PASSWORD must come BEFORE REDIS_URL — k8s `$(VAR)` env
+            # substitution only resolves variables defined earlier in the list.
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.passwordSecret.name }}
+                  key: {{ .Values.redis.passwordSecret.key }}
+            - name: REDIS_URL
+              value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+
+            # ─── Temporal ────────────────────────────────────────────────
+            - name: TEMPORAL_ADDRESS
+              value: {{ .Values.temporal.address | quote }}
+
+            # ─── App secrets (ExternalSecret-mounted) ────────────────────
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: JWT_SECRET
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: OPENAI_API_KEY
+                  optional: true
+
+            # ─── Per-platform OAuth (BOTH ids and secrets from postiz-secrets) ──
+            {{- range $name := list
+              "X_API_KEY" "X_API_SECRET"
+              "LINKEDIN_CLIENT_ID" "LINKEDIN_CLIENT_SECRET"
+              "FACEBOOK_APP_ID" "FACEBOOK_APP_SECRET"
+              "THREADS_APP_ID" "THREADS_APP_SECRET"
+              "YOUTUBE_CLIENT_ID" "YOUTUBE_CLIENT_SECRET"
+              "TIKTOK_CLIENT_ID" "TIKTOK_CLIENT_SECRET"
+              "PINTEREST_CLIENT_ID" "PINTEREST_CLIENT_SECRET"
+              "REDDIT_CLIENT_ID" "REDDIT_CLIENT_SECRET"
+              "DISCORD_CLIENT_ID" "DISCORD_CLIENT_SECRET" "DISCORD_BOT_TOKEN_ID"
+              "SLACK_ID" "SLACK_SECRET" "SLACK_SIGNING_SECRET"
+              "MASTODON_CLIENT_ID" "MASTODON_CLIENT_SECRET"
+            }}
+            - name: {{ $name }}
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: {{ $name }}
+                  optional: true
+            {{- end }}
+            # MASTODON_URL is a literal (no cred), kept as a value
+            - name: MASTODON_URL
+              value: {{ .Values.mastodonUrl | quote }}
+
+            # ─── Misc tunables (ULTIMATE tier auto-resolves with Stripe absent) ──
+            - name: IS_GENERAL
+              value: {{ .Values.flags.isGeneral | quote }}
+            - name: NOT_SECURED
+              value: {{ .Values.flags.notSecured | quote }}
+            - name: DISABLE_REGISTRATION
+              value: {{ .Values.flags.disableRegistration | quote }}
+            - name: API_LIMIT
+              value: {{ .Values.flags.apiLimit | quote }}
+            - name: STORAGE_PROVIDER
+              value: {{ .Values.flags.storageProvider | quote }}
+            - name: UPLOAD_DIRECTORY
+              value: "/uploads"
+            - name: NEXT_PUBLIC_UPLOAD_DIRECTORY
+              value: "/uploads"
+            - name: NX_ADD_PLUGINS
+              value: "false"
+            # Empty Stripe envs → Postiz auto-resolves tier=ULTIMATE, totalChannels=10000
+            - name: STRIPE_PUBLISHABLE_KEY
+              value: ""
+            - name: STRIPE_SECRET_KEY
+              value: ""
+
+            # ─── Email (SendGrid via NodeMailer SMTP) ─────────────────────
+            {{- if .Values.email.enabled }}
+            - name: EMAIL_PROVIDER
+              value: "nodemailer"
+            - name: EMAIL_HOST
+              value: {{ .Values.email.host | quote }}
+            - name: EMAIL_PORT
+              value: {{ .Values.email.port | quote }}
+            - name: EMAIL_SECURE
+              value: {{ .Values.email.secure | quote }}
+            - name: EMAIL_USER
+              value: {{ .Values.email.user | quote }}
+            - name: EMAIL_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: SENDGRID_API_KEY
+                  optional: true
+            # Resend — always-on fallback email provider behind SendGrid.
+            # Postiz reads RESEND_API_KEY natively (EMAIL_PROVIDER=resend), so
+            # keeping the key mounted makes failover a values-only flip of
+            # email provider settings when the SendGrid SMTP relay is down.
+            - name: RESEND_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: RESEND_API_KEY
+                  optional: true
+            - name: EMAIL_FROM_ADDRESS
+              value: {{ .Values.email.fromAddress | quote }}
+            - name: EMAIL_FROM_NAME
+              value: {{ .Values.email.fromName | quote }}
+            {{- end }}
+
+            # ─── Sentry monitoring (optional) ─────────────────────────────
+            {{- if .Values.sentry.enabled }}
+            - name: NEXT_PUBLIC_SENTRY_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: SENTRY_DSN
+                  optional: true
+            {{- if .Values.sentry.spotlight }}
+            - name: SENTRY_SPOTLIGHT
+              value: "1"
+            {{- end }}
+            {{- end }}
+
+            # ─── URL shorteners (Postiz auto-picks the configured one) ────
+            {{- if .Values.shortLinks.dub.enabled }}
+            - name: DUB_API_ENDPOINT
+              value: {{ .Values.shortLinks.dub.apiEndpoint | quote }}
+            - name: DUB_SHORT_LINK_DOMAIN
+              value: {{ .Values.shortLinks.dub.domain | quote }}
+            - name: DUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: DUB_TOKEN
+                  optional: true
+            {{- end }}
+            {{- if .Values.shortLinks.shortIo.enabled }}
+            - name: SHORT_IO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: SHORT_IO_SECRET_KEY
+                  optional: true
+            {{- end }}
+            {{- if .Values.shortLinks.kutt.enabled }}
+            - name: KUTT_API_ENDPOINT
+              value: {{ .Values.shortLinks.kutt.apiEndpoint | quote }}
+            - name: KUTT_SHORT_LINK_DOMAIN
+              value: {{ .Values.shortLinks.kutt.domain | quote }}
+            - name: KUTT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: KUTT_API_KEY
+                  optional: true
+            {{- end }}
+            {{- if .Values.shortLinks.linkDrip.enabled }}
+            - name: LINK_DRIP_API_ENDPOINT
+              value: {{ .Values.shortLinks.linkDrip.apiEndpoint | quote }}
+            - name: LINK_DRIP_SHORT_LINK_DOMAIN
+              value: {{ .Values.shortLinks.linkDrip.domain | quote }}
+            - name: LINK_DRIP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: LINK_DRIP_API_KEY
+                  optional: true
+            {{- end }}
+
+            # ─── Polotno (optional canvas editor) ─────────────────────────
+            {{- if .Values.polotnoEnabled }}
+            - name: NEXT_PUBLIC_POLOTNO
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: POLOTNO_KEY
+                  optional: true
+            {{- end }}
+
+          volumeMounts:
+            - name: uploads
+              mountPath: /uploads
+
+          # Postiz boot is heavy: webpack bundles workflows for ~30 platforms,
+          # then NestJS registers ~150 routes. Total cold start is ~45-90s.
+          # startupProbe lets the slow boot complete before liveness kicks in.
+          startupProbe:
+            httpGet:
+              path: /api/auth/can-register
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30   # 30 × 10s = up to 5 min for cold start
+          livenessProbe:
+            httpGet:
+              path: /api/auth/can-register
+              port: http
+            periodSeconds: 30
+            failureThreshold: 5
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/auth/can-register
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: postiz-uploads
