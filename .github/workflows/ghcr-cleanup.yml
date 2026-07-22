@@ -36,6 +36,10 @@ on:
         description: 'Delete versions older than this (e.g. 90d, 6 months)'
         type: string
         default: 15d
+      extra-skip-tags:
+        description: 'Extra tags to protect this run, space-separated with ! (e.g. "!main-3a47f1d !sha-abc"). Use to shield currently-deployed images that are on stale tags.'
+        type: string
+        default: ''
 
 concurrency:
   group: ghcr-cleanup
@@ -60,7 +64,7 @@ jobs:
           tag-selection: both
           # ...but never touch these tags regardless of age (currently-deployed
           # / release-pinned). main-<sha> deploys are covered by keep-n-most-recent.
-          image-tags: '!latest !stable !prod-* !release-* !v*.*.*'
+          image-tags: '!latest !stable !prod-* !release-* !v*.*.* ${{ inputs.extra-skip-tags }}'
           cut-off: ${{ inputs.cut-off || '15d' }}
           # Newest 3 versions of every package ALWAYS survive (never deleted),
           # covering the live rolling main-<sha> tag + the last couple of deploys
