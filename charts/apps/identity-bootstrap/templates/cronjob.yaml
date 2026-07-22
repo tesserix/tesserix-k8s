@@ -61,6 +61,11 @@ spec:
             - name: secrets
               projected:
                 sources:
+                  {{- /* Dedupe IdP projections by alias across all targets —
+                         two realms sharing the same IdP (google) would
+                         otherwise project the same idp/<alias> path twice,
+                         which the kubelet rejects (conflicting duplicate paths). */ -}}
+                  {{- $seenIdp := dict }}
                   {{- range .Values.targets }}
                   - secret:
                       name: {{ .adminSecretName }}
@@ -70,7 +75,8 @@ spec:
                         - key: password
                           path: {{ .name }}/password
                   {{- range .identityProviders }}
-                  {{- if .gcpSecretClientId }}
+                  {{- if and .gcpSecretClientId (not (hasKey $seenIdp .alias)) }}
+                  {{- $_ := set $seenIdp .alias true }}
                   - secret:
                       name: {{ $.Release.Name }}-idp-secrets
                       optional: true
