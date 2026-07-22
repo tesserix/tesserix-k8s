@@ -126,6 +126,14 @@ spec:
               protocol: TCP
           env:
             {{- include "devai-api.containerEnv" . | trimPrefix "\n" | nindent 12 }}
+            {{- if .Values.nats.auth.enabled }}
+            # NATS account credentials (Home-Chef-App#758). Only set when the
+            # cluster enforces operator/JWT auth; the app connects anonymously
+            # while empty, so this stays inert until the global cutover. Uses the
+            # DEVAI_ prefix so pydantic Settings (env_prefix=DEVAI_) picks it up.
+            - name: DEVAI_NATS_CREDS
+              value: /etc/nats-creds/nats.creds
+            {{- end }}
           startupProbe:
             httpGet:
               path: /healthz
@@ -151,7 +159,13 @@ spec:
             timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      {{- if or .Values.schemaBootstrap.enabled .Values.localAuth.enabled }}
+          {{- if .Values.nats.auth.enabled }}
+          volumeMounts:
+            - name: nats-creds
+              mountPath: /etc/nats-creds
+              readOnly: true
+          {{- end }}
+      {{- if or .Values.schemaBootstrap.enabled .Values.localAuth.enabled .Values.nats.auth.enabled }}
       volumes:
         {{- if .Values.schemaBootstrap.enabled }}
         - name: schema-sql
@@ -162,5 +176,14 @@ spec:
         - name: auth-seed
           configMap:
             name: {{ include "devai-api.fullname" . }}-auth-seed
+        {{- end }}
+        {{- if .Values.nats.auth.enabled }}
+        # Projects the NATS_CREDS_FILE key from the ESO-synced secret as a file.
+        - name: nats-creds
+          secret:
+            secretName: {{ include "devai-api.fullname" . }}-nats-creds
+            items:
+              - key: NATS_CREDS_FILE
+                path: nats.creds
         {{- end }}
       {{- end }}
