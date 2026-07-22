@@ -1,0 +1,76 @@
+name: GHCR Cleanup (90-day retention)
+
+# Deletes container image versions older than 90 days from ghcr.io/tesserix/*
+# to stop GHCR (and, downstream, the Artifact Registry `ghcr-remote` pull-through
+# cache) accumulating stale build layers forever.
+#
+# SAFETY — this must never delete an image the cluster still pulls:
+#   * keep-n-most-recent: 10  -> the 10 newest versions of every package survive
+#     regardless of age, so the currently-deployed tag is never removed even if
+#     its build is >90 days old.
+#   * protected tags (latest / prod-* / release-* / stable / vX.Y.Z semver) are
+#     skipped regardless of age — see `image-tags` exclusion below.
+#   * dry-run defaults to TRUE. The scheduled run passes dry-run=false; a manual
+#     run lets you preview first. ALWAYS run once manually with dry-run=true and
+#     review the summary before trusting the schedule.
+#
+# The Artifact Registry pull-through cache (asia-south1-docker.pkg.dev/.../
+# ghcr-remote) re-fetches from GHCR on a cache miss, so anything deleted here
+# that a node later needs would fail to pull — which is exactly why the
+# keep-n-most-recent + protected-tag guards above exist.
+#
+# REQUIRES secret GHCR_CLEANUP_TOKEN: a fine-grained/classic PAT for the tesserix
+# org with `read:packages` + `delete:packages`. GITHUB_TOKEN cannot delete
+# org-level packages, so a PAT is mandatory.
+
+on:
+  schedule:
+    - cron: '0 3 * * 0' # Sundays 03:00 UTC (quiet window)
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Preview deletions without deleting (recommended first)'
+        type: boolean
+        default: true
+      cut-off:
+        description: 'Delete versions older than this (e.g. 90d, 6 months)'
+        type: string
+        default: 90d
+
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete GHCR image versions older than the cut-off
+        uses: snok/container-retention-policy@v3.0.0
+        with:
+          account: tesserix
+          token: ${{ secrets.GHCR_CLEANUP_TOKEN }}
+          # Every container package in the org. Add `!name` exclusions here to
+          # permanently protect a specific package.
+          image-names: '*'
+          # Consider both tagged and untagged versions...
+          tag-selection: both
+          # ...but never touch these tags regardless of age (currently-deployed
+          # / release-pinned). main-<sha> deploys are covered by keep-n-most-recent.
+          image-tags: '!latest !stable !prod-* !release-* !v*.*.*'
+          cut-off: ${{ inputs.cut-off || '90d' }}
+          # Newest 10 versions of every package always survive (covers the live
+          # rolling main-<sha> tag even when its build is >90 days old).
+          keep-n-most-recent: 10
+          # Scheduled runs actually delete; manual runs honour the dry-run input
+          # (defaults to true so you can preview safely).
+          dry-run: ${{ github.event_name == 'schedule' && 'false' || inputs.dry-run }}
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "GHCR cleanup finished. Deleted list (if any) is in the step above." >> "$GITHUB_STEP_SUMMARY"
+          echo "Protected: newest 10 per package + tags latest/stable/prod-*/release-*/vX.Y.Z." >> "$GITHUB_STEP_SUMMARY"
