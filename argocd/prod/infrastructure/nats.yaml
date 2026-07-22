@@ -18,88 +18,11 @@ spec:
     targetRevision: HEAD
     helm:
       releaseName: nats
-      values: |
-        # Use latest alpine image
-        image:
-          repository: nats
-          tag: alpine
-          pullPolicy: Always
-
-        # 3-replica StatefulSet for JetStream HA
-        replicaCount: 3
-
-        # Cluster mode enabled for high availability
-        cluster:
-          enabled: true
-
-        # JetStream for persistent messaging (requires StatefulSet)
-        jetstream:
-          enabled: true
-          memoryStore:
-            enabled: true
-            maxSize: 1Gi
-          fileStore:
-            enabled: true
-            size: 12Gi
-            storageClassName: standard-rwo-retain
-
-        # Production resource configuration
-        resources:
-          requests:
-            memory: 512Mi
-          limits:
-            memory: 2Gi
-
-        # Persistence for GKE - 12GB for JetStream data
-        persistence:
-          enabled: true
-          storageClassName: standard-rwo-retain
-          size: 12Gi
-
-        # Service configuration
-        service:
-          type: ClusterIP
-          port: 4222
-          clusterPort: 6222
-          monitorPort: 8222
-
-        # Pod Disruption Budget for HA
-        podDisruptionBudget:
-          enabled: true
-          minAvailable: 2
-
-        # Liveness and readiness probes
-        livenessProbe:
-          enabled: true
-          initialDelaySeconds: 10
-          periodSeconds: 30
-          timeoutSeconds: 5
-          failureThreshold: 3
-
-        readinessProbe:
-          enabled: true
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-
-        # Internal Load Balancer for Cloud Run VPC connector access
-        ilb:
-          enabled: false
-
-        # Spread NATS replicas across zones for HA
-        affinity:
-          podAntiAffinity:
-            preferredDuringSchedulingIgnoredDuringExecution:
-              - weight: 100
-                podAffinityTerm:
-                  labelSelector:
-                    matchExpressions:
-                      - key: app.kubernetes.io/name
-                        operator: In
-                        values:
-                          - nats
-                  topologyKey: topology.kubernetes.io/zone
+      # Single source of truth for prod config lives in the chart's
+      # values-prod.yaml (previously the values were inlined here and drifted
+      # from values-prod.yaml). Keep prod changes in that file.
+      valueFiles:
+        - values-prod.yaml
 
   destination:
     server: https://kubernetes.default.svc

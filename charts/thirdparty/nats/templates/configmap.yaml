@@ -18,6 +18,20 @@ data:
     # Max connections
     max_connections: {{ .Values.config.maxConnections | int }}
 
+    # Slow-consumer protection: disconnect a client whose outbound buffer
+    # cannot be flushed within this deadline (prevents server-side back-pressure).
+    {{- if .Values.config.writeDeadline }}
+    write_deadline: "{{ .Values.config.writeDeadline }}"
+    {{- end }}
+
+    # Graceful shutdown (lame duck mode) for zero-downtime rolling restarts.
+    {{- if .Values.config.lameDuckGracePeriod }}
+    lame_duck_grace_period: "{{ .Values.config.lameDuckGracePeriod }}"
+    {{- end }}
+    {{- if .Values.config.lameDuckDuration }}
+    lame_duck_duration: "{{ .Values.config.lameDuckDuration }}"
+    {{- end }}
+
     # Debug/Trace
     debug: {{ .Values.config.debug }}
     trace: {{ .Values.config.trace }}
@@ -43,6 +57,9 @@ data:
     cluster {
       name: nats-cluster
       listen: 0.0.0.0:6222
+      {{- if .Values.config.clusterConnectRetries }}
+      connect_retries: {{ .Values.config.clusterConnectRetries | int }}
+      {{- end }}
 
       routes = [
         {{- $releaseName := .Release.Name }}

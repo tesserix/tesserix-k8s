@@ -1,0 +1,19 @@
+{{- if and .Values.podDisruptionBudget.enabled (gt (int .Values.replicaCount) 1) }}
+# Keeps a JetStream quorum available during voluntary disruptions
+# (node drains, cluster upgrades). With 3 replicas, minAvailable: 2 preserves
+# Raft majority so streams stay writable throughout a rolling node upgrade.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: nats
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nats
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
