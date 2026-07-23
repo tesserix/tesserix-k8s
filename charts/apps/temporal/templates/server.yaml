@@ -70,6 +70,20 @@ spec:
             periodSeconds: 30
           resources:
             {{- toYaml .Values.server.resources | nindent 12 }}
+          {{- if .Values.server.keepAliveMaxConnectionAge }}
+          volumeMounts:
+            # subPath so we add base.yaml WITHOUT hiding the image's
+            # config_template.yaml / docker.yaml in the same directory.
+            - name: config-base
+              mountPath: /etc/temporal/config/base.yaml
+              subPath: base.yaml
+          {{- end }}
+      {{- if .Values.server.keepAliveMaxConnectionAge }}
+      volumes:
+        - name: config-base
+          configMap:
+            name: temporal-config-base
+      {{- end }}
 ---
 apiVersion: v1
 kind: Service
