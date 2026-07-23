@@ -480,6 +480,11 @@ CREATE TABLE public.chef_profiles (
     featured_until timestamp with time zone,
     stripe_account_id text,
     razorpay_account_id text,
+    razorpay_product_id text DEFAULT ''::text,
+    razorpay_settlement_status text DEFAULT ''::text,
+    razorpay_settlement_requirements text DEFAULT ''::text,
+    razorpay_stakeholder_created boolean DEFAULT false,
+    payout_auto_release character varying(8) DEFAULT ''::character varying,
     payout_method text DEFAULT ''::text,
     bank_account_number text DEFAULT ''::text,
     bank_ifsc text DEFAULT ''::text,
@@ -4965,6 +4970,25 @@ CREATE INDEX idx_winback_offers_user_id ON public.winback_offers USING btree (us
 
 CREATE UNIQUE INDEX idx_winback_one_open ON public.winback_offers USING btree (user_id) WHERE ((status)::text = 'offered'::text);
 
+
+--
+-- Post-dump idempotent column additions.
+--
+-- The bootstrap applies each CREATE TABLE with ON_ERROR_STOP=0, so on an
+-- EXISTING table the CREATE fails "already exists" and is skipped whole — any
+-- column added inside the CREATE body above never reaches the live table.
+-- These ALTERs are how new columns actually land on the running database; they
+-- are no-ops once the column exists (IF NOT EXISTS) and are folded back into
+-- the CREATE body on the next pg_dump regeneration.
+--
+-- Route settlement onboarding (Home-Chef-App #740/#741): a linked account can
+-- receive Route transfers but only pays them out once a settlement bank account
+-- is registered and Razorpay activates it. These columns record that state.
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_product_id text DEFAULT ''::text;
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_settlement_status text DEFAULT ''::text;
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_settlement_requirements text DEFAULT ''::text;
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_stakeholder_created boolean DEFAULT false;
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_release character varying(8) DEFAULT ''::character varying;
 
 --
 -- PostgreSQL database dump complete
