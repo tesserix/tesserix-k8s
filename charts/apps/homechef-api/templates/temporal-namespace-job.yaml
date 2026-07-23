@@ -1,9 +1,14 @@
 {{- if .Values.temporal.enabled }}
-# Registers the `homechef` Temporal namespace on the SHARED cluster (in the
-# scrapper namespace). Idempotent: describe first, register only if missing.
-# Runs as an ArgoCD PostSync hook so it re-runs on each sync and is recreated
-# cleanly. Sidecar injection is disabled so the Job can actually complete (an
-# Istio sidecar would keep the pod Running). See epic #116 / #119.
+# Registers the `homechef` Temporal namespace on HomeChef's dedicated Temporal.
+# Idempotent: describe first, register only if missing.
+#
+# PreSync (not PostSync): the worker Deployment FATALs on startup if its Temporal
+# namespace doesn't exist ("Namespace homechef is not found") and CrashLoops. On
+# a first cutover to a fresh Temporal the namespace isn't there yet, so it must
+# be registered BEFORE the worker/API pods roll — a PostSync hook never gets to
+# run because the sync never goes healthy (chicken-and-egg). PreSync breaks that.
+# Sidecar injection is disabled so the Job can actually complete (an Istio
+# sidecar would keep the pod Running). See epic #116 / #119.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -12,7 +17,7 @@ metadata:
     {{- include "homechef-api.labels" . | nindent 4 }}
     app.kubernetes.io/component: temporal-namespace
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 5
