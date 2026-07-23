@@ -36,6 +36,11 @@ server:
       memory: 1Gi
     limits:
       memory: 3Gi
+  # Stop the default 5-min gRPC keepAliveMaxConnectionAge from recycling the
+  # frontend connection and resetting the worker's long-poll streams (benign
+  # "connection reset by peer" bursts every ~5 min). Single-frontend instance =
+  # nothing to load-balance, so recycling is pure churn. See templates/config-base.yaml.
+  keepAliveMaxConnectionAge: "24h"
 
 # Embedded Postgres for this instance's Temporal state (separate from the
 # platform instance's postgres in `scrapper`). Reuses the platform

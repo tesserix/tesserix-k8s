@@ -1,0 +1,33 @@
+{{- if .Values.server.keepAliveMaxConnectionAge }}
+# base.yaml overlay for the Temporal server.
+#
+# `temporal-server --env docker start` loads base.yaml FIRST, then the
+# auto-setup-rendered docker.yaml, unmarshalling both into the same Config
+# struct — so fields set here that docker.yaml doesn't mention survive. We set
+# ONLY the frontend gRPC keepalive; docker.yaml still supplies persistence,
+# services, ports, everything else.
+#
+# Why: Temporal's default keepAliveMaxConnectionAge is 5 minutes. On a
+# single-frontend instance there is nothing to load-balance, so every 5 minutes
+# the frontend needlessly recycles the gRPC connection and resets all of a
+# worker's in-flight long-poll streams ("connection reset by peer" bursts).
+# Extending it stops that churn. Opt-in per instance via
+# server.keepAliveMaxConnectionAge (empty = image default, unchanged).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-config-base
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/part-of: temporal
+    app.kubernetes.io/component: server
+data:
+  base.yaml: |
+    services:
+      frontend:
+        rpc:
+          keepAliveServerConfig:
+            keepAliveServerParameters:
+              maxConnectionAge: {{ .Values.server.keepAliveMaxConnectionAge | quote }}
+{{- end }}
