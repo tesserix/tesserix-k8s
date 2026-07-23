@@ -1,0 +1,68 @@
+# Dedicated Temporal for HomeChef — deployed IN the `homechef` namespace.
+#
+# Why dedicated + in-namespace (Home-Chef-App push-notifications fix):
+# HomeChef's worker previously dialled the SHARED platform Temporal in the
+# `scrapper` namespace (temporal.scrapper.svc:7233). `scrapper` is Istio
+# *ambient* (ztunnel + waypoint); its Temporal frontend speaks long-lived gRPC
+# long-polls on 7233. `use-waypoint: none` bypassed the L7 waypoint, but the
+# destination-side ztunnel still intercepts inbound (ambient dest) and resets
+# the long-lived poll streams — so the homechef worker logged
+# "Failed to poll for task ... connection reset by peer" continuously (834/24h,
+# 0 tasks completed). Short RPCs (API StartWorkflow) survived; long-poll workers
+# did not. Result: the notification-dispatch activity that calls FCM never ran →
+# NO push notifications at all (also stalled email/SMS/order/delivery/cron).
+#
+# The `homechef` namespace is NOT in the ambient mesh (no istio.io/dataplane-mode
+# label), so a Temporal that lives here is reached by the worker over plain
+# pod-to-pod networking — no ztunnel, no waypoint, no stream resets — and it is
+# isolated from the other four tenants sharing the platform instance.
+
+namespace: homechef
+
+service:
+  frontendPort: 7233
+
+server:
+  image:
+    # Mirrored into AR (image-mirror/images.yaml) — the cluster cannot pull bare
+    # Docker Hub refs (Private Google Access only).
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/temporal-auto-setup
+    tag: "1.28.1"
+    pullPolicy: IfNotPresent
+  # Dedicated to HomeChef alone (the shared instance served 5 tenants on 566Mi).
+  # Memory-only per platform policy (no cpu requests/limits).
+  resources:
+    requests:
+      memory: 1Gi
+    limits:
+      memory: 3Gi
+
+# Embedded Postgres for this instance's Temporal state (separate from the
+# platform instance's postgres in `scrapper`). Reuses the platform
+# temporal-postgres password secret — this is a fresh DB initialised with that
+# value, so no coupling beyond the shared credential.
+postgres:
+  image:
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  storage:
+    size: 10Gi
+    storageClass: standard-rwo-retain
+  resources:
+    requests:
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+  auth:
+    user: temporal
+    database: temporal
+    gcpSecretName: prod-temporal-postgresql-password
+
+# HomeChef's workflows fit Temporal's SQL visibility (no custom search
+# attributes), so Elasticsearch stays off.
+elasticsearch:
+  enabled: false
+
+ui:
+  enabled: false
