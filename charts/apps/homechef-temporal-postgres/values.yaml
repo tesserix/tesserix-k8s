@@ -1,0 +1,73 @@
+# HA PostgreSQL for HomeChef's dedicated Temporal (replaces the single
+# temporal-postgres pod). 3 instances = 1 primary + 2 replicas with CNPG
+# unsupervised auto-failover, so a node/pod loss no longer takes Temporal down.
+hibernate: false
+
+namespace: homechef
+clusterName: homechef-temporal-postgres
+
+instances: 3
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+storageSize: 15Gi
+storageClass: standard-rwo-retain
+walStorageSize: 5Gi
+
+# Memory-only per platform policy (no cpu requests/limits).
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+bootstrap:
+  # Temporal's main store. Its visibility store (temporal_visibility) is created
+  # by postInitSQL below — Temporal needs both DBs.
+  database: temporal
+  owner: temporal
+  secret: homechef-temporal-postgres-app
+  # Reuse the existing platform temporal-postgres password secret — this is a
+  # fresh HA DB initialised with that value (no coupling beyond the credential).
+  gcpSecretName: prod-temporal-postgresql-password
+  postInitSQL:
+    - "CREATE DATABASE temporal_visibility OWNER temporal"
+
+postgresql:
+  # Temporal (multi-service × 2 replicas, each with its own pool) opens many
+  # connections; give headroom.
+  max_connections: "400"
+  shared_buffers: "256MB"
+  effective_cache_size: "1536MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "128MB"
+  wal_level: "logical"
+  max_replication_slots: "10"
+  max_wal_senders: "10"
+  ssl_min_protocol_version: "TLSv1.3"
+  ssl_max_protocol_version: "TLSv1.3"
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"
+  log_min_duration_statement: "1000"
+  hot_standby_feedback: "on"
+  max_slot_wal_keep_size: "10GB"
+  pg_stat_statements.track: "all"
+  pg_stat_statements.max: "10000"
+
+# Temporal state is durable in the DB but fully re-derivable at the app layer
+# (schedules re-register, workflows retry); the 3-instance replication is the
+# resilience. Skip GCS backup to keep this simple.
+backup:
+  enabled: false
+
+monitoring:
+  enablePodMonitor: true
+
+affinity:
+  podAntiAffinityType: preferred
+
+# Async replication (like scrapper) — favours Temporal's write throughput over
+# synchronous-commit latency; a failover may lose a few in-flight events, which
+# Temporal retries.
+replication:
+  minSyncReplicas: 0
+  maxSyncReplicas: 0
