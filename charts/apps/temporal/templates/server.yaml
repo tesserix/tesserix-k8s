@@ -19,6 +19,38 @@ spec:
         app.kubernetes.io/part-of: temporal
         app.kubernetes.io/component: server
     spec:
+      {{- if .Values.server.keepAliveMaxConnectionAge }}
+      # Bake the frontend gRPC keepAliveMaxConnectionAge into the image's own
+      # config_template.yaml BEFORE dockerize renders it, so it lands in the
+      # rendered docker.yaml. (A separate base.yaml overlay does NOT work: temporal
+      # loads base.yaml then docker.yaml, and docker.yaml's services.frontend map
+      # entry REPLACES base.yaml's, dropping the keepalive.) Temporal's 5-min
+      # default recycles the connection and resets the worker's in-flight
+      # long-poll streams — pointless on a single-frontend instance.
+      initContainers:
+        - name: inject-keepalive
+          image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              awk -v age='{{ .Values.server.keepAliveMaxConnectionAge }}' '
+                /^[[:space:]]*httpPort:/ && !done {
+                  print
+                  print "            keepAliveServerConfig:"
+                  print "              keepAliveServerParameters:"
+                  print "                maxConnectionAge: \"" age "\""
+                  done = 1
+                  next
+                }
+                { print }
+              ' /etc/temporal/config/config_template.yaml > /render/config_template.yaml
+              echo "inject-keepalive: set frontend maxConnectionAge={{ .Values.server.keepAliveMaxConnectionAge }}"
+              grep -n "keepAliveServerConfig" /render/config_template.yaml
+          volumeMounts:
+            - name: config-render
+              mountPath: /render
+      {{- end }}
       containers:
         - name: temporal
           image: "{{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}"
@@ -72,17 +104,17 @@ spec:
             {{- toYaml .Values.server.resources | nindent 12 }}
           {{- if .Values.server.keepAliveMaxConnectionAge }}
           volumeMounts:
-            # subPath so we add base.yaml WITHOUT hiding the image's
-            # config_template.yaml / docker.yaml in the same directory.
-            - name: config-base
-              mountPath: /etc/temporal/config/base.yaml
-              subPath: base.yaml
+            # Use the keepalive-injected template the init container produced,
+            # in place of the image's baked-in config_template.yaml. subPath so
+            # only this one file is replaced (docker.yaml is still rendered here).
+            - name: config-render
+              mountPath: /etc/temporal/config/config_template.yaml
+              subPath: config_template.yaml
           {{- end }}
       {{- if .Values.server.keepAliveMaxConnectionAge }}
       volumes:
-        - name: config-base
-          configMap:
-            name: temporal-config-base
+        - name: config-render
+          emptyDir: {}
       {{- end }}
 ---
 apiVersion: v1
