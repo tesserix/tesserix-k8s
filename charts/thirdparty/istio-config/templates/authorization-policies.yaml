@@ -81,62 +81,8 @@ spec:
 # FanZone Namespace Policies
 # Sports/gaming platform isolation
 # =============================================================================
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-ingress-to-fanzone
-  namespace: {{ .Values.appNamespaces.fanzone }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - istio-ingress
-
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-internal-fanzone
-  namespace: {{ .Values.appNamespaces.fanzone }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.fanzone }}
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.global }}
-    - from:
-        - source:
-            namespaces:
-              - monitoring
-              - istio-system
-
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: deny-cross-product-to-fanzone
-  namespace: {{ .Values.appNamespaces.fanzone }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: DENY
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.homechef }}
+# FanZone AuthorizationPolicies (allow-ingress / allow-internal /
+# deny-cross-product) removed 2026-07-23 — platform decommissioned.
 
 # =============================================================================
 # HomeChef Namespace Policies
@@ -201,21 +147,8 @@ spec:
   rules:
     - {}
 
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: deny-cross-product-to-homechef
-  namespace: {{ .Values.appNamespaces.homechef }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: DENY
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - {{ .Values.appNamespaces.fanzone }}
+# deny-cross-product-to-homechef removed 2026-07-23 — its only denied source
+# was fanzone (decommissioned); no other cross-product source was listed.
 
 # =============================================================================
 # StockPilot Namespace Policies
