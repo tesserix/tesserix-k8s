@@ -1,0 +1,132 @@
+{{- $root := . }}
+{{- range $svc, $cfg := .Values.services }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-{{ $svc }}
+  namespace: {{ $root.Values.namespace }}
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/part-of: temporal-ha
+    app.kubernetes.io/component: {{ $svc }}
+    temporal-service: {{ $svc }}
+spec:
+  replicas: {{ $cfg.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: temporal-ha
+      temporal-service: {{ $svc }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: temporal
+        app.kubernetes.io/part-of: temporal-ha
+        app.kubernetes.io/component: {{ $svc }}
+        temporal-service: {{ $svc }}
+    spec:
+      # Keep the two replicas of a service on different nodes, so a single node
+      # loss never takes the whole service down.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    temporal-service: {{ $svc }}
+      containers:
+        - name: temporal-{{ $svc }}
+          image: "{{ $root.Values.image.repository }}:{{ $root.Values.image.tag }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          # Render the config (the auto-setup image ships dockerize + the
+          # template) then run just this one service. We deliberately bypass the
+          # auto-setup entrypoint (schema + default-namespace + all services).
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              dockerize -template /etc/temporal/config/config_template.yaml:/etc/temporal/config/docker.yaml
+              exec temporal-server --env docker start --service={{ $svc }}
+          env:
+            - name: DB
+              value: postgres12
+            - name: DB_PORT
+              value: {{ $root.Values.db.port | quote }}
+            - name: POSTGRES_SEEDS
+              value: {{ $root.Values.db.seeds | quote }}
+            - name: POSTGRES_USER
+              value: {{ $root.Values.db.user | quote }}
+            - name: POSTGRES_PWD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $root.Values.db.passwordSecret }}
+                  key: {{ $root.Values.db.passwordKey }}
+            - name: DBNAME
+              value: {{ $root.Values.db.name | quote }}
+            - name: VISIBILITY_DBNAME
+              value: {{ $root.Values.db.visibilityName | quote }}
+            - name: NUM_HISTORY_SHARDS
+              value: {{ $root.Values.numHistoryShards | quote }}
+            - name: ENABLE_ES
+              value: "false"
+            - name: SQL_TLS_ENABLED
+              value: {{ $root.Values.db.tlsEnabled | quote }}
+            # DB-based membership: each service registers its pod IP in
+            # cluster_membership and reaches peers directly by IP.
+            - name: BIND_ON_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: TEMPORAL_BROADCAST_ADDRESS
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # The worker service's scheduler (our crons) + system workflows dial
+            # the frontend through this — must be the frontend Service, not the
+            # pod's own localhost.
+            - name: PUBLIC_FRONTEND_ADDRESS
+              value: "{{ $root.Values.frontendServiceName }}.{{ $root.Values.namespace }}.svc.cluster.local:7233"
+          ports:
+            - name: grpc
+              containerPort: {{ $cfg.grpcPort }}
+            - name: membership
+              containerPort: {{ $cfg.membershipPort }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ $cfg.grpcPort }}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            tcpSocket:
+              port: {{ $cfg.grpcPort }}
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            {{- toYaml $root.Values.resources | nindent 12 }}
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.frontendServiceName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: temporal
+    app.kubernetes.io/part-of: temporal-ha
+    app.kubernetes.io/component: frontend
+  annotations:
+    # Harmless in the non-ambient homechef namespace; matches the platform
+    # convention for Temporal's gRPC frontend.
+    istio.io/use-waypoint: "none"
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: 7233
+      targetPort: grpc
+      appProtocol: grpc
+  selector:
+    app.kubernetes.io/part-of: temporal-ha
+    temporal-service: frontend
