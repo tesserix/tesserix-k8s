@@ -61,13 +61,28 @@ redis:
 temporal:
   address: "temporal.scrapper.svc.cluster.local:7233"
 
-# Postiz expects /uploads to be writable. PVC provides persistence across restarts.
-# economy-rwo-retain (pd-standard, Retain) — user uploads, infrequent IO.
+# Legacy local-uploads PVC (STORAGE_PROVIDER=local era). The zonal RWO disk
+# (asia-south1-a) pinned the pod to one spot node — replaced by Cloudflare R2
+# (see `cloudflare:` below). `enabled: true` keeps the PVC object in ArgoCD so
+# the old uploads survive for later migration/cleanup (automated prune would
+# delete it otherwise); flip to false to prune the PVC — the PV itself is
+# Retain (economy-rwo-retain) so data outlives even that.
 uploads:
   pvc:
+    enabled: true   # TODO cleanup: set false once old /uploads data is confirmed unneeded
     size: 10Gi
     storageClass: economy-rwo-retain
     accessMode: ReadWriteOnce
+
+# Cloudflare R2 uploads storage (STORAGE_PROVIDER=cloudflare). Bucket
+# postiz-uploads (APAC) with public r2.dev access; access keys live in GCP SM
+# (prod-postiz-cf-access-key / prod-postiz-cf-secret-access-key) via the
+# postiz-secrets ExternalSecret.
+cloudflare:
+  accountId: "6fe6e1aa18c221b529ce76c9631ba4e0"
+  bucketName: "postiz-uploads"
+  bucketUrl: "https://pub-41deb29dcdba4de3968478e830c7a581.r2.dev"
+  region: "auto"
 
 # Public deployment — real auth required (notSecured MUST stay "false").
 # disableRegistration locked to "true" (2026-07-22) after the owner account
@@ -83,7 +98,9 @@ flags:
   # without an invite).
   disableRegistration: "true"
   apiLimit: "30"
-  storageProvider: "local"
+  # "cloudflare" = R2 object storage (stateless pod, RollingUpdate);
+  # "local" = legacy PVC mode (re-pins pod to the PVC's zone, Recreate strategy)
+  storageProvider: "cloudflare"
 
 # Per-platform OAuth credentials (BOTH client IDs AND secrets) live in GCP
 # Secret Manager (prod-postiz-*) and are pulled in via the postiz-secrets
