@@ -130,7 +130,7 @@ appNamespaces:
   global: global           # Shared platform services (auth, tenant, notification)
   marketplace: marketplace # E-commerce platform (Tesseract Hub)
   tesserix: tesserix       # Company website (tesserix-home, no database/redis)
-  fanzone: fanzone        # Sports/gaming platform
+  # fanzone: fanzone       # Sports/gaming platform — DECOMMISSIONED 2026-07-23
   homechef: homechef      # Food platform
   gameverse: gameverse     # Board games platform (stayandplays.com)
   stockpilot: stockpilot   # AI stock analysis platform
@@ -171,7 +171,7 @@ infrastructureNamespaces:
 # MongoDB namespaces that the backup namespace can access
 backupMongoNamespaces:
   - mongodb-blog
-  - mongodb-fanzone
+  # - mongodb-fanzone   # DECOMMISSIONED 2026-07-23
 
 # Infrastructure namespace to database namespace mapping
 # Maps infrastructure services to their database backends
@@ -207,8 +207,7 @@ crossProductNamespaceAccess:
   # per-product allow-<ns>-egress NetworkPolicy blocks the outbound dial.
   mark8ly:
     - support-platform
-  fanzone:
-    - support-platform
+  # fanzone decommissioned 2026-07-23
   homechef:
     - support-platform
     # Temporal worker + namespace-register Job dial the shared Temporal frontend
@@ -248,22 +247,19 @@ databaseNamespaces: {}
 redisNamespaces:
   marketplace: redis-marketplace     # Active - marketplace caching
   # global: redis-global             # Enable when global namespace needs Redis
-  fanzone: redis-fanzone             # FanZone caching (enabled for prod)
+  # fanzone: redis-fanzone           # FanZone — DECOMMISSIONED 2026-07-23
   homechef: redis-homechef           # HomeChef session store + caching
   stockpilot: redis-stockpilot       # StockPilot caching
   scrapper: redis-scrapper           # Scrapper caching
   devai: redis-devai                 # DevAI state, sessions, memory cache
 
 # MongoDB namespaces - product-specific document stores
-mongoNamespaces:
-  fanzone: mongodb-fanzone           # FanZone chat message persistence
+mongoNamespaces: {}   # fanzone (mongodb-fanzone) — DECOMMISSIONED 2026-07-23
 
 # External CIDR blocks allowed to access databases via ILB (e.g., Cloud Run VPC connector)
 # Key must match the corresponding namespace key; value is a list of CIDRs
 databaseExternalAccess:
-  fanzone:
-    - 10.10.16.0/28   # Cloud Run VPC connector (fz-prod-vpc-connector)
-    - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
+  # fanzone — DECOMMISSIONED 2026-07-23
   marketplace:
     - 10.10.16.16/28  # Cloud Run VPC connector (mp-prod-vpc-connector)
     - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
@@ -273,18 +269,13 @@ databaseExternalAccess:
     - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
 
 redisExternalAccess:
-  fanzone:
-    - 10.10.16.0/28   # Cloud Run VPC connector (fz-prod-vpc-connector)
-    - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
+  # fanzone — DECOMMISSIONED 2026-07-23
   marketplace:
     - 10.10.16.16/28  # Cloud Run VPC connector (mp-prod-vpc-connector)
     - 10.10.16.32/28  # Cloud Run VPC connector (gl-prod-vpc-connector) — global services use marketplace Redis
     - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
 
-mongoExternalAccess:
-  fanzone:
-    - 10.10.16.0/28   # Cloud Run VPC connector (fz-prod-vpc-connector)
-    - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
+mongoExternalAccess: {}   # fanzone — DECOMMISSIONED 2026-07-23
 
 # Ambient mesh — waypoint proxies for namespaces needing L7 features
 # (AuthorizationPolicies, DestinationRules, EnvoyFilters)
@@ -300,7 +291,7 @@ ambient:
   waypointNamespaces:
     - global
     - marketplace
-    - fanzone
+    # - fanzone   # DECOMMISSIONED 2026-07-23
     - homechef
     - devai
     - identity-customer
@@ -344,7 +335,7 @@ sidecarInjection:
     - global
     - marketplace
     - tesserix
-    - fanzone
+    # - fanzone   # DECOMMISSIONED 2026-07-23
     - homechef
     - stockpilot
     - scrapper
@@ -376,7 +367,7 @@ sidecarInjection:
   databaseAccessNamespaces:
     - marketplace
     - global
-    - fanzone
+    # - fanzone   # DECOMMISSIONED 2026-07-23
     - homechef
     - identity
     - identity-internal
@@ -393,12 +384,12 @@ sidecarInjection:
     - nats
     - redis-marketplace
     - redis-global
-    - redis-fanzone
+    # - redis-fanzone   # DECOMMISSIONED 2026-07-23
     - redis-homechef
     - redis-stockpilot
     - redis-scrapper
     - redis-devai
-    - mongodb-fanzone                 # MongoDB doesn't need sidecar
+    # - mongodb-fanzone   # DECOMMISSIONED 2026-07-23
     - db-backup-and-restore        # Backup jobs don't need sidecar
   # Namespaces in `namespaces` but NOT enrolled in Ambient mesh.
   # Keeps istio-injection=disabled + name labels but skips dataplane-mode=ambient.
