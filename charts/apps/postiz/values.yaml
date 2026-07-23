@@ -61,15 +61,14 @@ redis:
 temporal:
   address: "temporal.scrapper.svc.cluster.local:7233"
 
-# Legacy local-uploads PVC (STORAGE_PROVIDER=local era). The zonal RWO disk
-# (asia-south1-a) pinned the pod to one spot node — replaced by Cloudflare R2
-# (see `cloudflare:` below). `enabled: true` keeps the PVC object in ArgoCD so
-# the old uploads survive for later migration/cleanup (automated prune would
-# delete it otherwise); flip to false to prune the PVC — the PV itself is
-# Retain (economy-rwo-retain) so data outlives even that.
+# Legacy local-uploads PVC (STORAGE_PROVIDER=local era) — retired 2026-07-23
+# in favor of Cloudflare R2 (see `cloudflare:` below); the old PVC held no
+# uploads worth keeping so it was pruned. Re-enable + set
+# flags.storageProvider=local only to fall back to PVC mode (re-pins the pod
+# to the PVC's zone).
 uploads:
   pvc:
-    enabled: true   # TODO cleanup: set false once old /uploads data is confirmed unneeded
+    enabled: false
     size: 10Gi
     storageClass: economy-rwo-retain
     accessMode: ReadWriteOnce
