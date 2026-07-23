@@ -1,0 +1,66 @@
+# HA multi-service Temporal for HomeChef.
+#
+# Splits the single-pod auto-setup all-in-one into the four Temporal services,
+# each 2 replicas across nodes, so no single pod/node is a SPOF. Uses the SAME
+# auto-setup image (already mirrored) but overrides the command to render the
+# config and run ONE service (temporal-server ... --service=<name>). Services
+# discover each other via the DB-backed cluster_membership table (each broadcasts
+# its pod IP), so no headless service is needed — only the frontend gets a
+# ClusterIP that clients dial.
+namespace: homechef
+
+image:
+  # auto-setup image ships the temporal-server binary + dockerize + the config
+  # template; we just skip its auto-setup entrypoint.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/temporal-auto-setup
+  tag: "1.28.1"
+  pullPolicy: IfNotPresent
+
+adminToolsImage: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/temporal-admin-tools:1.28
+
+# External CNPG database (homechef-temporal-postgres). Temporal connects to the
+# -rw (primary) service directly; on failover CNPG repoints -rw to the new primary.
+db:
+  seeds: "homechef-temporal-postgres-rw.homechef.svc.cluster.local"
+  port: "5432"
+  user: "temporal"
+  passwordSecret: "homechef-temporal-postgres-app"
+  passwordKey: "password"
+  name: "temporal"
+  visibilityName: "temporal_visibility"
+  tlsEnabled: "false"
+
+# Fixed at cluster creation — 512 is the standard production shard count.
+numHistoryShards: "512"
+
+# The service that clients dial (worker/API TEMPORAL_HOSTPORT). Named -ha so it
+# runs ALONGSIDE the existing single-pod `temporal` service during verification;
+# cutover just repoints clients here.
+frontendServiceName: "temporal-ha"
+
+# Memory-only per platform policy (no cpu requests/limits).
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 1536Mi
+
+# Each Temporal role as its own Deployment. Ports are the Temporal defaults the
+# config template already renders for each service.
+services:
+  frontend:
+    replicas: 2
+    grpcPort: 7233
+    membershipPort: 6933
+  history:
+    replicas: 2
+    grpcPort: 7234
+    membershipPort: 6934
+  matching:
+    replicas: 2
+    grpcPort: 7235
+    membershipPort: 6935
+  worker:
+    replicas: 2
+    grpcPort: 7239
+    membershipPort: 6939
