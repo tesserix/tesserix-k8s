@@ -1,3 +1,8 @@
+# Legacy local-uploads PVC — kept while uploads.pvc.enabled=true even though
+# the pod no longer mounts it (STORAGE_PROVIDER=cloudflare), so ArgoCD's
+# automated prune doesn't delete the old data's claim. Flip enabled=false to
+# prune (the PV is Retain, so data survives even then).
+{{- if .Values.uploads.pvc.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -12,3 +17,4 @@ spec:
   resources:
     requests:
       storage: {{ .Values.uploads.pvc.size }}
+{{- end }}

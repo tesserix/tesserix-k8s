@@ -13,7 +13,11 @@ spec:
     matchLabels:
       {{- include "postiz.selectorLabels" . | nindent 6 }}
   strategy:
+    {{- if eq .Values.flags.storageProvider "local" }}
     type: Recreate   # PVC-backed uploads volume is RWO — single pod at a time
+    {{- else }}
+    type: RollingUpdate   # stateless (R2 uploads) — zero-downtime rollouts
+    {{- end }}
   template:
     metadata:
       annotations:
@@ -126,10 +130,32 @@ spec:
               value: {{ .Values.flags.apiLimit | quote }}
             - name: STORAGE_PROVIDER
               value: {{ .Values.flags.storageProvider | quote }}
+            {{- if eq .Values.flags.storageProvider "cloudflare" }}
+            # ─── Cloudflare R2 object storage ─────────────────────────────
+            - name: CLOUDFLARE_ACCOUNT_ID
+              value: {{ .Values.cloudflare.accountId | quote }}
+            - name: CLOUDFLARE_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: CLOUDFLARE_ACCESS_KEY
+            - name: CLOUDFLARE_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: postiz-secrets
+                  key: CLOUDFLARE_SECRET_ACCESS_KEY
+            - name: CLOUDFLARE_BUCKETNAME
+              value: {{ .Values.cloudflare.bucketName | quote }}
+            - name: CLOUDFLARE_BUCKET_URL
+              value: {{ .Values.cloudflare.bucketUrl | quote }}
+            - name: CLOUDFLARE_REGION
+              value: {{ .Values.cloudflare.region | quote }}
+            {{- else }}
             - name: UPLOAD_DIRECTORY
               value: "/uploads"
             - name: NEXT_PUBLIC_UPLOAD_DIRECTORY
               value: "/uploads"
+            {{- end }}
             - name: NX_ADD_PLUGINS
               value: "false"
             # Empty Stripe envs → Postiz auto-resolves tier=ULTIMATE, totalChannels=10000
@@ -242,9 +268,11 @@ spec:
                   optional: true
             {{- end }}
 
+          {{- if eq .Values.flags.storageProvider "local" }}
           volumeMounts:
             - name: uploads
               mountPath: /uploads
+          {{- end }}
 
           # Postiz boot is heavy: webpack bundles workflows for ~30 platforms,
           # then NestJS registers ~150 routes. Total cold start is ~45-90s.
@@ -274,7 +302,9 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
 
+      {{- if eq .Values.flags.storageProvider "local" }}
       volumes:
         - name: uploads
           persistentVolumeClaim:
             claimName: postiz-uploads
+      {{- end }}
