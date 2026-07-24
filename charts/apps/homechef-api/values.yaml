@@ -216,6 +216,14 @@ env:
   # EXPO_PUBLIC_WALLET_CHECKOUT_ENABLED flag, or the app offers a wallet toggle the API
   # ignores (customer charged full). The mobile "view wallet" flag is separate.
   WALLET_CHECKOUT_ENABLED: "true"
+  # Wallet -> double-entry ledger SHADOW dual-write (Home-Chef-App docs/wallet-ledger-plan.md).
+  # Every wallet credit/debit also posts a balanced ledger transaction (paise) IN THE SAME DB TX,
+  # so the ledger can be reconciled against the legacy float balance before reads ever flip.
+  # PREREQUISITE: the ledger_transactions/ledger_entries tables MUST already exist (they ship in
+  # db-schema-bootstrap) — enabling this before they exist would roll back live wallet writes. The
+  # ledger-reconcile cron self-seeds opening balances and asserts ledger==legacy; no reads use the
+  # ledger yet (shadow only). Turn OFF to stop dual-writing.
+  LEDGER_SHADOW_ENABLED: "true"
 
 # Persistence configuration for uploads.
 # DISABLED: prod uploads go to GCS, and the deployment only mounts a local
