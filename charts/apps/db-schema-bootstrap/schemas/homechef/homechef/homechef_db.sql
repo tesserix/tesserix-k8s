@@ -4996,6 +4996,50 @@ ALTER TABLE public.weekly_menu_items ADD COLUMN IF NOT EXISTS is_combo boolean D
 ALTER TABLE public.weekly_menu_items ADD COLUMN IF NOT EXISTS combo_components text[];
 
 --
+-- Wallet -> double-entry ledger (Home-Chef-App docs/wallet-ledger-plan.md). Runs in SHADOW
+-- alongside the legacy float wallet (wallets/wallet_txns) until reconciliation is clean; gated by
+-- the API flag LEDGER_SHADOW_ENABLED. Immutable + append-only: rows are never updated or deleted;
+-- a correction posts a new reversing transaction. Money is paise (bigint), never float. Balance
+-- invariant per transaction: SUM(debit) = SUM(credit). Idempotent DDL so the 30-min bootstrap is
+-- a no-op once created.
+--
+
+CREATE TABLE IF NOT EXISTS public.ledger_transactions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id character varying(64),
+    idempotency_key character varying(200) NOT NULL,
+    reason text,
+    ref_type character varying(32),
+    ref_id character varying(64),
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ledger_transactions_pkey PRIMARY KEY (id)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ledger_transactions_idempotency_key ON public.ledger_transactions USING btree (idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_ledger_transactions_tenant_id ON public.ledger_transactions USING btree (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_ledger_transactions_ref_type ON public.ledger_transactions USING btree (ref_type);
+CREATE INDEX IF NOT EXISTS idx_ledger_transactions_ref_id ON public.ledger_transactions USING btree (ref_id);
+
+CREATE TABLE IF NOT EXISTS public.ledger_entries (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    transaction_id uuid NOT NULL,
+    account_kind character varying(32) NOT NULL,
+    user_id uuid,
+    direction character varying(6) NOT NULL,
+    amount_minor bigint NOT NULL,
+    currency character varying(3) DEFAULT 'INR'::character varying NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ledger_entries_pkey PRIMARY KEY (id),
+    CONSTRAINT ledger_entries_amount_positive CHECK (amount_minor > 0),
+    CONSTRAINT ledger_entries_direction_check CHECK (direction IN ('debit', 'credit')),
+    CONSTRAINT ledger_entries_transaction_id_fkey FOREIGN KEY (transaction_id) REFERENCES public.ledger_transactions(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ledger_entries_transaction_id ON public.ledger_entries USING btree (transaction_id);
+CREATE INDEX IF NOT EXISTS idx_ledger_entries_account_kind ON public.ledger_entries USING btree (account_kind);
+CREATE INDEX IF NOT EXISTS idx_ledger_entries_user_id ON public.ledger_entries USING btree (user_id);
+
+--
 -- PostgreSQL database dump complete
 --
 
