@@ -4990,6 +4990,11 @@ ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_settlement_re
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_stakeholder_created boolean DEFAULT false;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_release character varying(8) DEFAULT ''::character varying;
 
+-- Weekly menu thali/combo (parity with daily_menu_items): a cell can be a
+-- bundled set (combo_components) at one price instead of a single dish.
+ALTER TABLE public.weekly_menu_items ADD COLUMN IF NOT EXISTS is_combo boolean DEFAULT false;
+ALTER TABLE public.weekly_menu_items ADD COLUMN IF NOT EXISTS combo_components text[];
+
 --
 -- PostgreSQL database dump complete
 --
