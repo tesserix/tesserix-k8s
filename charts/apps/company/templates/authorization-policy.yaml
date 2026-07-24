@@ -30,26 +30,12 @@ spec:
             namespaces:
               - monitoring
               - istio-system
----
-# Public endpoints (health, readiness, CORS preflight)
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: public-endpoints-tesserix
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "company.labels" . | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    # Health check endpoints
-    - to:
-        - operation:
-            paths:
-              - "/health"
-              - "/ready"
-              - "/metrics"
-    # CORS preflight
-    - to:
-        - operation:
-            methods: ["OPTIONS"]
+{{/*
+NOTE: `public-endpoints-tesserix` is intentionally NOT declared here. It is
+owned platform-wide by the istio-config chart (public-endpoints-{{ "{{" }} $key {{ "}}" }}
+over .Values.appNamespaces; tesserix is not in skipAuthPolicyNamespaces).
+istio-config's version is a superset (also allows /healthz). Declaring it here
+too made both the `company` and `istio-config` ArgoCD apps co-own the resource
+— a SharedResourceWarning that kept the `company` app permanently OutOfSync and
+caused Kargo promotions to time out.
+*/}}
