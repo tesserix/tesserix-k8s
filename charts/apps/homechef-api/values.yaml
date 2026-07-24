@@ -224,6 +224,14 @@ env:
   # ledger-reconcile cron self-seeds opening balances and asserts ledger==legacy; no reads use the
   # ledger yet (shadow only). Turn OFF to stop dual-writing.
   LEDGER_SHADOW_ENABLED: "true"
+  # Meal-plan / group-order refund v2 (skip-a-day / cancel-plan). >12h before cook-start auto-agrees
+  # a full refund; <=12h the chef decides Full/Half/None/Decline. Per RBI the CUSTOMER then picks the
+  # medium — HomeChef wallet (instant ledger credit) or their original method (Razorpay reversal,
+  # admin-executed via tesserix-home). Refund excludes platform fee + GST + delivery; wallet refunds
+  # gated to meal-plan/group only (on-demand a-la-carte blocked to source). Also fixes the cancel-500
+  # on plans with mid-skip days. The customer-side choose-medium UI ships in the mobile-customer build
+  # (main-8af48d51+) — cut that build alongside enabling this so >12h skips can be routed in-app.
+  MEALPLAN_REFUND_FLOW_V2_ENABLED: "true"
 
 # Persistence configuration for uploads.
 # DISABLED: prod uploads go to GCS, and the deployment only mounts a local
