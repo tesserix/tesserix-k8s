@@ -2,19 +2,14 @@
 Network policies for the company website in the tesserix namespace.
 Provides defense in depth alongside Istio AuthorizationPolicies.
 */}}
----
-# Default deny all ingress
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: default-deny-ingress
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "company.labels" . | nindent 4 }}
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
+{{/*
+NOTE: `default-deny-ingress` is intentionally NOT declared here. It is owned
+platform-wide by the istio-config chart (a per-namespace default-deny over
+.Values.appNamespaces, which includes tesserix, with identical content).
+Declaring it here too made both the `company` and `istio-config` ArgoCD apps
+co-own the resource — a SharedResourceWarning that kept the `company` app
+permanently OutOfSync and caused Kargo promotions to time out.
+*/}}
 ---
 # Allow ingress from istio-ingress, monitoring, and internal
 apiVersion: networking.k8s.io/v1
