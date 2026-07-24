@@ -4995,6 +4995,14 @@ ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_release ch
 ALTER TABLE public.weekly_menu_items ADD COLUMN IF NOT EXISTS is_combo boolean DEFAULT false;
 ALTER TABLE public.weekly_menu_items ADD COLUMN IF NOT EXISTS combo_components text[];
 
+-- v2 meal-plan/group-order refund workflow (Home-Chef-App docs/meal-plan-refund-flow-design.md).
+-- Sub-state fields on a skip_req day (Status is varchar(12), too short for the stage names):
+-- refund_stage = pending_chef | pending_admin | resolved; chef_refund_choice = full | half | none;
+-- refund_destination = wallet | source. Inert until MEALPLAN_REFUND_FLOW_V2_ENABLED.
+ALTER TABLE public.meal_plan_days ADD COLUMN IF NOT EXISTS refund_stage character varying(16) DEFAULT ''::character varying;
+ALTER TABLE public.meal_plan_days ADD COLUMN IF NOT EXISTS chef_refund_choice character varying(6) DEFAULT ''::character varying;
+ALTER TABLE public.meal_plan_days ADD COLUMN IF NOT EXISTS refund_destination character varying(8) DEFAULT ''::character varying;
+
 --
 -- Wallet -> double-entry ledger (Home-Chef-App docs/wallet-ledger-plan.md). Runs in SHADOW
 -- alongside the legacy float wallet (wallets/wallet_txns) until reconciliation is clean; gated by
