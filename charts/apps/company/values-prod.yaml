@@ -75,3 +75,15 @@ keda:
 # drain/scale-down. The template falls back to maxUnavailable: 1.
 pdb:
   enabled: true
+
+# Ingress disabled in prod. The chart default declares ingressClassName: kong,
+# but there is NO kong ingress controller in the cluster — tesserix.app reaches
+# the app via the istio tesseract-gateway + `company-vs` VirtualService, and
+# public TLS terminates at Cloudflare (no istio Gateway references company-tls).
+# The addressless Ingress sat permanently "Progressing" in Argo, so the
+# `company` app never reached Healthy and every Kargo prod promotion timed out
+# on the argocd-update health gate. Siblings tesserix-blog/tesserix-docs are
+# ingress-free for the same reason. Empty className => the ingress template is
+# not rendered (see charts/apps/company/templates/ingress.yaml guard).
+ingress:
+  className: ""
