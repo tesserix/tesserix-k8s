@@ -128,6 +128,12 @@ refactored here; the worker is a prod-only concern.)
     secretKeyRef:
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: JWT_REFRESH_SECRET
+- name: OTTO_INTERNAL_AUTH
+  valueFrom:
+    secretKeyRef:
+      name: homechef-otto
+      key: INTERNAL_AUTH_SECRET
+      optional: true
 - name: OPENEXCHANGERATES_APP_ID
   valueFrom:
     secretKeyRef:
