@@ -3,6 +3,13 @@ kind: Application
 metadata:
   name: homechef-web-app
   namespace: argocd
+  annotations:
+    # Lets the kargo-homechef prod Stage write image.tag into this Application.
+    # Without it Kargo refuses the update and the SPA can only be deployed by
+    # patching the Application by hand — which also drifts, because the
+    # app-of-apps sets ignoreDifferences on /spec/source/helm/parameters, so a
+    # tag committed to git here never reaches the cluster.
+    kargo.akuity.io/authorized-stage: kargo-homechef:prod
   labels:
     app.kubernetes.io/part-of: home-chef-app
     app.kubernetes.io/component: frontend
