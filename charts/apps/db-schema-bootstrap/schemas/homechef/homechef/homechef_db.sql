@@ -5127,3 +5127,93 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS loyalty_refunded     numeric(
 CREATE INDEX IF NOT EXISTS ix_loyalty_txn_redeem_window
   ON public.loyalty_transactions (user_id, created_at)
   WHERE type = 'debit' AND source IN ('redeem', 'order_redemption');
+
+--
+-- Login two-factor (opt-in) — see Home-Chef-App
+-- docs/superpowers/specs/2026-07-25-login-otp-2fa-design.md
+--
+-- Opt-in per account, challenged on every fresh login from a device the user has
+-- not chosen to remember. Delivered to the registered email (SendGrid→Resend) or
+-- the registered phone (Firebase phone verification).
+--
+-- Nothing here is populated until MFA_ENABLED is on AND a user turns the feature
+-- on for themselves, so these tables stay empty on deploy.
+--
+
+--
+-- One row per user who has touched two-factor. A MISSING row is not an error —
+-- the API reads absence as "never set up", which is the same as disabled.
+--
+-- enabled is separate from the two *_enrolled flags on purpose: enrolling a
+-- channel must not arm the gate. A user who closes the tab halfway through setup
+-- would otherwise be locked out with no backup codes issued.
+--
+-- The MFA phone is held HERE rather than reusing users.phone. Sharing that column
+-- would mean editing a profile silently relocates the second factor, which is an
+-- account-takeover path. Encrypted with the same envelope scheme as the other PII
+-- columns, with a blind index for lookup.
+--
+CREATE TABLE IF NOT EXISTS public.user_mfa_settings (
+  user_id         uuid PRIMARY KEY,
+  enabled         boolean NOT NULL DEFAULT false,
+  email_enrolled  boolean NOT NULL DEFAULT false,
+  phone_enrolled  boolean NOT NULL DEFAULT false,
+  phone_e164_enc  text,
+  phone_e164_bidx text,
+  enrolled_at     timestamptz,
+  disabled_at     timestamptz,
+  updated_at      timestamptz DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_user_mfa_settings_phone_bidx
+  ON public.user_mfa_settings (phone_e164_bidx);
+
+--
+-- Single-use recovery codes, for when both enrolled channels are out of reach.
+--
+-- Stored as HMAC-SHA256 under a server-side key (MFA_BACKUP_CODE_KEY), never as
+-- a bare hash: codes are short enough for a human to type, so a plain digest of
+-- a leaked table would fall to an offline brute force in seconds.
+--
+-- Regenerating DELETES the previous set rather than marking it superseded —
+-- people regenerate precisely because they believe the old sheet leaked.
+--
+CREATE TABLE IF NOT EXISTS public.mfa_backup_codes (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    uuid NOT NULL,
+  code_hmac  text NOT NULL,
+  used_at    timestamptz,
+  created_at timestamptz DEFAULT now()
+);
+-- Serves the remaining-codes count, which runs on the settings screen and after
+-- every redemption.
+CREATE INDEX IF NOT EXISTS ix_mfa_backup_codes_unused
+  ON public.mfa_backup_codes (user_id) WHERE used_at IS NULL;
+
+--
+-- Devices the user chose to remember, so the challenge does not repeat.
+--
+-- By product decision there is NO time-based expiry: trust ends only on explicit
+-- revocation, on two-factor being switched off, or on a password change. That is
+-- why revoked_at is nullable rather than there being an expires_at.
+--
+-- Scoped to one user AND one app, so a token lifted from the vendor app cannot
+-- vouch for admin. token_hash is SHA-256 of a 256-bit random token that is
+-- returned to the client exactly once and never stored; the unique index both
+-- enforces that and serves the per-request lookup.
+--
+CREATE TABLE IF NOT EXISTS public.trusted_devices (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      uuid NOT NULL,
+  app          text NOT NULL,
+  token_hash   text NOT NULL,
+  label        text,
+  platform     text,
+  created_at   timestamptz DEFAULT now(),
+  last_seen_at timestamptz DEFAULT now(),
+  revoked_at   timestamptz
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_trusted_devices_token
+  ON public.trusted_devices (token_hash);
+-- Serves the device list on the settings screen (active devices, newest first).
+CREATE INDEX IF NOT EXISTS ix_trusted_devices_user_active
+  ON public.trusted_devices (user_id, last_seen_at DESC) WHERE revoked_at IS NULL;
