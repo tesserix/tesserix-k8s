@@ -39,6 +39,11 @@ spec:
           securityContext:
             runAsNonRoot: true
             runAsUser: 65532
+            # Explicit high GID. Without runAsGroup the container inherits the
+            # image's group (root/0 on python:alpine), which Trivy flags as
+            # "runs with GID <= 10000" — a low GID can collide with host groups
+            # that carry real privileges.
+            runAsGroup: 65532
             fsGroup: 65532
             seccompProfile:
               type: RuntimeDefault
@@ -55,6 +60,8 @@ spec:
               env:
                 - name: DRY_RUN
                   value: {{ .Values.dryRun | quote }}
+                - name: PROMETHEUS_URL
+                  value: {{ .Values.prometheusUrl | quote }}
                 - name: USAGE_PERCENT
                   value: {{ .Values.thresholds.usagePercent | quote }}
                 - name: GROWTH_FACTOR

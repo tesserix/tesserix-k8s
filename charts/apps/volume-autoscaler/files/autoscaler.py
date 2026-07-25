@@ -29,6 +29,7 @@ import ssl
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from fnmatch import fnmatch
@@ -42,6 +43,7 @@ GIB = 1024 ** 3
 # Config (injected as env by the CronJob)
 # --------------------------------------------------------------------------
 DRY_RUN = os.environ.get("DRY_RUN", "true").lower() == "true"
+PROM_URL = os.environ.get("PROMETHEUS_URL", "http://prometheus-server.monitoring.svc.cluster.local")
 USAGE_PCT = float(os.environ.get("USAGE_PERCENT", "75"))
 GROWTH = float(os.environ.get("GROWTH_FACTOR", "1.5"))
 MIN_INC = int(os.environ.get("MIN_INCREMENT_GI", "5"))
@@ -133,42 +135,58 @@ def parse_quantity(q):
 # --------------------------------------------------------------------------
 # Usage collection
 # --------------------------------------------------------------------------
+def promql(query):
+    """Run an instant PromQL query and return its result vector."""
+    url = f"{PROM_URL.rstrip('/')}/api/v1/query?query={urllib.parse.quote(query)}"
+    req = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        body = json.loads(resp.read() or "{}")
+    if body.get("status") != "success":
+        raise RuntimeError(f"promql failed: {body.get('error', 'unknown')}")
+    return body.get("data", {}).get("result", [])
+
+
 def collect_usage():
     """
-    Map (namespace, pvc) -> (used_bytes, capacity_bytes) from each kubelet's
-    stats/summary. Only mounted volumes report usage; an unmounted PVC simply
-    does not appear and is skipped rather than guessed at.
+    Map (namespace, pvc) -> (used_bytes, capacity_bytes) from Prometheus.
+
+    Deliberately NOT read from the kubelet via /api/v1/nodes/<n>/proxy/...:
+    the `nodes/proxy` RBAC verb that requires is not scoped to /stats/summary,
+    it grants the whole kubelet API — including /exec and /run — which is a
+    privilege-escalation path (flagged as HIGH by Trivy, KSV045). Prometheus
+    already scrapes kubelet_volume_stats_*, so reading it there needs no
+    Kubernetes node permissions at all.
+
+    Only MOUNTED volumes report these metrics; an unmounted PVC simply does not
+    appear and is skipped rather than guessed at.
     """
     usage = {}
     try:
-        nodes = k8s("/api/v1/nodes")["items"]
+        used = promql("kubelet_volume_stats_used_bytes")
+        capacity = promql("kubelet_volume_stats_capacity_bytes")
     except Exception as exc:
-        fail("cannot list nodes", error=str(exc))
+        fail("cannot query Prometheus for volume stats",
+             url=PROM_URL, error=str(exc))
         return usage
 
-    for node in nodes:
-        name = node["metadata"]["name"]
-        try:
-            summary = k8s(f"/api/v1/nodes/{name}/proxy/stats/summary")
-        except Exception as exc:
-            # One unreachable kubelet must not abort the whole cycle.
-            log("WARN", "kubelet stats unreachable", node=name, error=str(exc))
+    def index(vec):
+        out = {}
+        for s in vec:
+            m = s.get("metric", {})
+            ns, pvc = m.get("namespace"), m.get("persistentvolumeclaim")
+            if not ns or not pvc:
+                continue
+            try:
+                out[(ns, pvc)] = float(s["value"][1])
+            except (KeyError, IndexError, ValueError):
+                continue
+        return out
+
+    used_by, cap_by = index(used), index(capacity)
+    for key, cap in cap_by.items():
+        if cap <= 0 or key not in used_by:
             continue
-        for pod in summary.get("pods", []):
-            ns = pod.get("podRef", {}).get("namespace")
-            for vol in pod.get("volume", []) or []:
-                ref = vol.get("pvcRef")
-                if not ref:
-                    continue
-                cap = vol.get("capacityBytes") or 0
-                used = vol.get("usedBytes") or 0
-                if cap <= 0:
-                    continue
-                key = (ref.get("namespace", ns), ref["name"])
-                # Keep the highest observation if a PVC somehow reports twice.
-                prev = usage.get(key, (0, 0))
-                if used >= prev[0]:
-                    usage[key] = (used, cap)
+        usage[key] = (used_by[key], cap)
     return usage
 
 

@@ -24,6 +24,13 @@ image:
   tag: "3.13-alpine"
   pullPolicy: IfNotPresent
 
+# Volume utilisation is read from Prometheus (kubelet_volume_stats_used_bytes /
+# _capacity_bytes) rather than from each kubelet's /stats/summary. Reaching the
+# kubelet through the API server needs the `nodes/proxy` RBAC verb, which cannot
+# be scoped to a single path and therefore grants the whole kubelet API
+# (including /exec) — a privilege-escalation path Trivy correctly flags as HIGH.
+prometheusUrl: "http://prometheus-server.monitoring.svc.cluster.local"
+
 # How often to evaluate. Volume growth is slow; 15m is responsive enough to beat
 # a fill event while keeping GitHub API and kubelet load negligible.
 schedule: "*/15 * * * *"

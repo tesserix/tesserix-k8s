@@ -14,16 +14,15 @@ metadata:
   labels:
     app.kubernetes.io/name: volume-autoscaler
 rules:
-  # Enumerate nodes, then read each kubelet's stats/summary for per-PVC
-  # used/capacity bytes. This is the only source of volume UTILISATION in a
-  # cluster without Prometheus — the PVC object itself only reports the
-  # requested size, never how full it is.
-  - apiGroups: [""]
-    resources: ["nodes"]
-    verbs: ["get", "list"]
-  - apiGroups: [""]
-    resources: ["nodes/proxy"]
-    verbs: ["get"]
+  # NOTE: volume UTILISATION is read from Prometheus (kubelet_volume_stats_*),
+  # NOT from the kubelet via nodes/proxy. An earlier revision granted
+  # `nodes` + `nodes/proxy` to reach /stats/summary directly; Trivy flagged that
+  # HIGH (KSV045) and was right — `nodes/proxy` cannot be scoped to one kubelet
+  # path, so it hands over the entire kubelet API including /exec and /run.
+  # That is a privilege-escalation path, and an unattended CronJob is the last
+  # thing that should hold it. Prometheus already scrapes these metrics, so the
+  # autoscaler needs no node-level permissions at all.
+  #
   # Read every PVC (to size them) and patch the non-CNPG ones in place.
   # StatefulSet volumeClaimTemplates are immutable, so an in-place patch is the
   # only way to grow an existing StatefulSet volume.
