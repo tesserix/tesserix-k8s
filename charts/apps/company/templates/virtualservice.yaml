@@ -68,6 +68,24 @@ spec:
               number: 8089
       timeout: 3600s
 
+    # Otto PLATFORM inbox realtime — the cross-tenant staff inbox WS and the
+    # per-thread WS leave the Next.js admin app and connect straight to the
+    # shared otto in support-platform, with a long timeout for the long-lived
+    # stream. Covers both /api/v1/platform/otto/ws (inbox) and
+    # /api/v1/platform/otto/conversations/<id>/ws (thread). REST platform
+    # calls go through the app's /api/admin/otto proxy (which injects the
+    # internal-auth secret + staff identity), so only the realtime path needs
+    # this direct route. Must precede the catch-all.
+    - match:
+        - uri:
+            regex: ^/api/v1/platform/otto/(ws|conversations/[^/]+/ws)$
+      route:
+        - destination:
+            host: support-platform-otto.support-platform.svc.cluster.local
+            port:
+              number: 8089
+      timeout: 3600s
+
     # Default route to company frontend
     - route:
         - destination:
