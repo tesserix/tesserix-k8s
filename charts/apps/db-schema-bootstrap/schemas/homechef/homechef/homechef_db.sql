@@ -5051,3 +5051,32 @@ CREATE INDEX IF NOT EXISTS idx_ledger_entries_user_id ON public.ledger_entries U
 -- PostgreSQL database dump complete
 --
 
+
+
+--
+-- Account lifecycle: deactivate / delete / restore
+-- (Home-Chef-App docs/superpowers/specs/2026-07-25-account-lifecycle-design.md)
+--
+-- Required for iOS + Android store submission: Apple 5.1.1(v) and Google Play
+-- both require in-app account deletion. Deleting sets users.deleted_at (the
+-- existing soft-delete column) and stamps purge_after; the account-purge cron
+-- hard-erases everything once purge_after elapses, 180 days later. Until then a
+-- returning user who signs up on the same email is offered a restore.
+--
+-- purge_after is stored rather than derived from deleted_at so the sweeper can
+-- index it, and so changing the retention window later does not retroactively
+-- reinterpret rows deleted under the old one.
+--
+-- NOTE: idx_users_email_per_pool is deliberately NOT made partial on deleted_at.
+-- The soft-deleted row keeping its (lower(email), auth_pool) slot is exactly
+-- what forces a returning user through the restore handshake in UpsertUser
+-- instead of silently creating a duplicate account.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS deactivated_at timestamp with time zone;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS purge_after timestamp with time zone;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS deletion_reason text DEFAULT ''::text;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS restored_at timestamp with time zone;
+
+-- Partial: only pending-deletion rows carry purge_after, so the sweeper's
+-- "purge_after <= now()" scan stays a tiny index regardless of table size.
+CREATE INDEX IF NOT EXISTS idx_users_purge_after ON public.users USING btree (purge_after)
+    WHERE (purge_after IS NOT NULL);
