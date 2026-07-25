@@ -5106,3 +5106,24 @@ CREATE TABLE IF NOT EXISTS public.loyalty_earn_batches (
 CREATE UNIQUE INDEX IF NOT EXISTS ux_loyalty_earn_batches_idem ON public.loyalty_earn_batches (idempotency_key);
 CREATE INDEX IF NOT EXISTS ix_loyalty_earn_batches_user ON public.loyalty_earn_batches (user_id, expires_at);
 CREATE INDEX IF NOT EXISTS ix_loyalty_earn_batches_expiry ON public.loyalty_earn_batches (expires_at) WHERE points_remaining > 0;
+
+--
+-- Checkout credits: per-order funding split.
+--
+-- wallet_applied already records the store credit applied at checkout. These add
+-- the loyalty side plus the two *_refunded counters. The counters exist so that
+-- repeated PARTIAL refunds cannot over-return a source: without them, two 60%
+-- refunds would each compute 60% of the ORIGINAL slice and together hand back
+-- 120% of what that rail actually funded.
+--
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS loyalty_applied      numeric(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS loyalty_points_spent numeric(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS wallet_refunded      numeric(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS loyalty_refunded     numeric(10,2) NOT NULL DEFAULT 0;
+
+-- Serves the rolling 30-day monthly-redemption-cap window, which filters
+-- loyalty_transactions by (user_id, type, source, created_at) on every checkout
+-- quote — i.e. on every slider drag.
+CREATE INDEX IF NOT EXISTS ix_loyalty_txn_redeem_window
+  ON public.loyalty_transactions (user_id, created_at)
+  WHERE type = 'debit' AND source IN ('redeem', 'order_redemption');
