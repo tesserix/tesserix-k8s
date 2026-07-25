@@ -30,6 +30,18 @@ env:
   # HOMECHEF_ENV is not read by the Go env label, but base values.yaml sets it
   # to "development"; override for consistency in prod (matches values-local's "local").
   HOMECHEF_ENV: "production"
+  # Browser origins allowed by the API's CORS middleware (gin-contrib/cors).
+  #
+  # This MUST live in a values file, not in the ArgoCD Application's
+  # helm.parameters: Kargo replaces spec.source.helm.parameters wholesale on
+  # every promotion, and the app-of-apps sets ignoreDifferences on that path,
+  # so any parameter declared there is silently dropped and never restored
+  # from git. That is exactly what happened — the API was left running
+  # values.yaml's dev defaults (dev-homechef.tesserix.app), so gin-contrib/cors
+  # answered a bare 403 to every request carrying Origin: https://fe3dr.com.
+  # Same-origin GETs send no Origin header and so kept working, which hid it
+  # until the first POST (placing an order).
+  CORS_ORIGINS: "https://fe3dr.com,https://www.fe3dr.com,https://vendors.fe3dr.com,https://admin.fe3dr.com,https://delivery.fe3dr.com,https://analytics.fe3dr.com"
   # Enables the Bearer-token fallback in middleware.BFFAuth so mobile/SPA
   # clients holding a BFF-minted session_token directly (rather than routing
   # every call through the BFF's HMAC-signing proxy) can authenticate.
