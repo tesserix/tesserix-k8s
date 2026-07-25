@@ -163,7 +163,82 @@ spec:
               number: 8080
       timeout: 3600s
 
-    # All other routes -> Web SPA Knative service
+    # Customer ordering SPA (apps/web) -> homechef-web-app.
+    #
+    # fe3dr.com is split by path between two apps on one origin: the Next.js
+    # marketing/SEO landing keeps everything not listed here (/, /explore,
+    # /chef/<slug>, /cuisine/<slug>, /area/<slug>, /download, and the legal
+    # pages), while the signed-in ordering app owns the routes below. One
+    # origin matters — auth-bff mints the session cookie for fe3dr.com and
+    # auth-service.ts calls /bff same-origin, so a separate host would break
+    # login.
+    #
+    # /assets/ is load-bearing: Vite emits the SPA's JS/CSS there. Without it
+    # the app's HTML loads and then fetches its bundle from the landing and
+    # 404s. The landing is Next.js and serves /_next/, so the two never
+    # collide.
+    #
+    # Deliberately NOT routed here even though the SPA also defines them:
+    # /privacy, /terms, /refund. The landing ships the canonical public copies
+    # at those URLs and they are indexed; routing them to the SPA would serve
+    # different legal text depending on how the user arrived.
+    - match:
+        - uri:
+            prefix: /assets/
+        - uri:
+            prefix: /login
+        - uri:
+            prefix: /register
+        - uri:
+            prefix: /forgot-password
+        - uri:
+            prefix: /user-info
+        - uri:
+            prefix: /chefs
+        - uri:
+            prefix: /cart
+        - uri:
+            prefix: /checkout
+        - uri:
+            prefix: /orders
+        - uri:
+            prefix: /profile
+        - uri:
+            prefix: /wallet
+        - uri:
+            prefix: /loyalty
+        - uri:
+            prefix: /referral
+        - uri:
+            prefix: /favorites
+        - uri:
+            prefix: /social
+        - uri:
+            prefix: /feed
+        - uri:
+            prefix: /subscriptions
+        - uri:
+            prefix: /catering
+        - uri:
+            prefix: /group-orders
+        - uri:
+            prefix: /group
+        - uri:
+            prefix: /settings
+        - uri:
+            prefix: /data-privacy
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: gateway-error,connect-failure,refused-stream
+      route:
+        - destination:
+            host: homechef-web-app-direct.homechef.svc.cluster.local
+            port:
+              number: 80
+      timeout: 30s
+
+    # All other routes -> the marketing landing (homechef-web slot).
     - match:
         - uri:
             prefix: /
