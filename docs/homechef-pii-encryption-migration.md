@@ -118,9 +118,21 @@ nonetheless safe — `replicas: 2` with `maxUnavailable: 25%` floors to 0, so a
 crash-looping pod never becomes Ready and the old pods keep serving. A bad init
 stalls the rollout instead of dropping traffic.
 
-One prerequisite remains **unverified**: that the wrapped DEK decrypts to
-exactly 32 bytes. IAM and secret existence were confirmed; the decrypt itself
-was not run, since it materialises key material. Confirm before merging:
+**Verified 2026-07-26 — all startup prerequisites confirmed:**
+
+| Check | Result |
+|-------|--------|
+| Wrapped DEK payload | 113 bytes (valid base64, decodes cleanly) |
+| **Unwrapped DEK** | **32 bytes — satisfies the `len != 32` fatal** |
+| Blind-index key | 32 bytes |
+| KMS decrypt via app SA | `roles/cloudkms.cryptoKeyDecrypter` present |
+| Secret access via app SA | `roles/secretmanager.secretAccessor` present |
+
+The KMS unwrap was executed end to end, so `piicrypto.Init` is known to
+succeed rather than assumed to. Key material was written only to a scratch file
+and shredded immediately; it was never printed.
+
+To re-verify after any key rotation:
 
 ```bash
 gcloud secrets versions access latest --secret=prod-homechef-pii-dek-wrapped \
@@ -131,3 +143,7 @@ gcloud kms decrypt --key=pii-dek --keyring=homechef-pii --location=asia-south1 \
 wc -c < /tmp/d.bin    # must be exactly 32
 shred -u /tmp/w.bin /tmp/d.bin
 ```
+
+Note that rotating the DEK is **not** a drop-in operation once P1 is live:
+existing `enc:v1:` ciphertext is bound to the current DEK, so a rotation needs a
+re-encrypt pass, not just a new wrapped secret.
