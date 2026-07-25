@@ -1,0 +1,119 @@
+# =============================================================================
+# volume-autoscaler
+# =============================================================================
+# Grows PVCs before they fill. Two write paths, because the two resource shapes
+# have genuinely different constraints:
+#
+#   CNPG clusters  -> commit the new size to this repo's values.yaml (GitOps).
+#                     A live `kubectl patch` would be reverted by ArgoCD
+#                     self-heal (enabled on every *-postgres app), and because
+#                     PVCs cannot shrink, that revert leaves the app wedged
+#                     permanently OutOfSync. Git is the only durable path.
+#
+#   Generic PVCs   -> patch the PVC object directly. StatefulSet
+#                     volumeClaimTemplates are immutable, so editing a chart
+#                     cannot resize an existing volume; the PVC itself must be
+#                     patched. Where the size ALSO appears in a chart value, it
+#                     is committed too so new replicas inherit the larger size.
+# =============================================================================
+
+namespace: volume-autoscaler
+
+image:
+  repository: python
+  tag: "3.13-alpine"
+  pullPolicy: IfNotPresent
+
+# How often to evaluate. Volume growth is slow; 15m is responsive enough to beat
+# a fill event while keeping GitHub API and kubelet load negligible.
+schedule: "*/15 * * * *"
+
+# ---------------------------------------------------------------------------
+# Safety
+# ---------------------------------------------------------------------------
+# dryRun leaves every mutation unmade and logs exactly what WOULD happen.
+# Ship with this true, read one cycle of logs, then flip it.
+dryRun: true
+
+thresholds:
+  # Grow once usage crosses this percentage of capacity.
+  usagePercent: 75
+  # Multiply current size by this factor.
+  growthFactor: 1.5
+  # Never grow by less than this (avoids 1Gi->2Gi dribbling on small volumes).
+  minIncrementGi: 5
+  # Never let a single step add more than this, so a runaway loop or a bad
+  # metric cannot provision a huge, expensive disk in one move.
+  maxIncrementGi: 200
+  # Refuse to act again on the same PVC within this window. GKE PD resize is
+  # online but not instant; without a cooldown a second cycle would see the old
+  # capacity and double-grow.
+  cooldownMinutes: 60
+
+# Absolute ceiling per volume. The autoscaler will grow toward this and then
+# stop and alert — it never grows without bound. Keyed by PVC name prefix;
+# `default` applies to anything unmatched.
+maxSizeGi:
+  default: 500
+  homechef-postgres: 1000
+  mark8ly-postgres: 1000
+
+# ---------------------------------------------------------------------------
+# Targets
+# ---------------------------------------------------------------------------
+cnpg:
+  enabled: true
+  # Discover CNPG clusters cluster-wide. For each, the chart is resolved by
+  # convention as charts/apps/<clusterName>/values.yaml and then VERIFIED by
+  # checking that file really declares the same clusterName. A mismatch is
+  # skipped and logged rather than guessed at, so a cluster whose chart does not
+  # follow the convention can never have the wrong file rewritten.
+  chartPathTemplate: "charts/apps/{cluster}/values.yaml"
+  # Clusters whose chart does not follow the convention. Empty string = never
+  # write back for this cluster (alert only).
+  chartPathOverrides:
+    mark8ly-uat-postgres: ""
+  # Namespaces to ignore entirely.
+  excludeNamespaces: []
+
+generic:
+  enabled: true
+  # Only PVCs in these namespaces are eligible for in-place patching. This is an
+  # allowlist on purpose: patching an arbitrary PVC cluster-wide is not
+  # something that should happen by accident.
+  includeNamespaces:
+    - homechef
+    - support-platform
+    - mark8ly
+    - devai
+  # PVCs matching these name patterns are never touched.
+  excludePatterns:
+    - "*-wal"          # CNPG WAL volumes are handled by the cnpg path
+    - "*-backup*"
+
+# ---------------------------------------------------------------------------
+# Git write-back
+# ---------------------------------------------------------------------------
+git:
+  owner: tesserix
+  repo: tesserix-k8s
+  branch: main
+  authorName: "volume-autoscaler"
+  authorEmail: "platform@tesserix.com"
+  # GitHub token with `contents: write` on tesserix-k8s only. Synced from GCP
+  # Secret Manager by the ExternalSecret in this chart.
+  secretName: volume-autoscaler-git
+  secretKey: token
+  gcpSecretName: prod-volume-autoscaler-git-token
+
+externalSecrets:
+  enabled: true
+  secretStoreRef:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+
+resources:
+  requests:
+    memory: 64Mi
+  limits:
+    memory: 256Mi

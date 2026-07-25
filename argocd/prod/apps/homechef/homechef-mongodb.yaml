@@ -74,20 +74,33 @@ spec:
                 bucket: tesseract-prod-backups-in
                 prefix: homechef-mongodb
                 credentialsSecret: homechef-mongodb-backup-gcs
+          # Point-in-time recovery. Without this, Mongo's RPO is the gap between
+          # base backups (6h) — i.e. up to six hours of chat history lost on a
+          # restore. PBM streams oplog slices continuously between backups,
+          # which brings Mongo to the same continuous-recovery posture CNPG
+          # already has via WAL archiving.
+          #
+          # PBM requires exactly ONE configured storage for PITR; gcs-backups is
+          # the only one, so this is valid. Oplog slices land under the same
+          # bucket prefix and are pruned with their parent backup set.
+          pitr:
+            enabled: true
+            oplogOnly: false
+            oplogSpanMin: 10
+            compressionType: gzip
           tasks:
-            # Twice daily (00:00, 12:00 UTC). PBM retains ~90 days of sets
-            # (twice-daily x 90 ~= 180) and prunes its own from the bucket; the
-            # bucket lifecycle (NEARLINE 7d -> COLDLINE 15d -> ARCHIVE 30d ->
-            # delete 90d) does cost-tiering and is the backstop. Chat backups
-            # thus age out alongside the Postgres (ticket) backups in the same
-            # bucket.
-            - name: twice-daily-gcs
+            # Every 6h (00:00, 06:00, 12:00, 18:00 UTC). 4/day x 30d = 120 sets,
+            # matching the 30-day recovery window used for the CNPG clusters.
+            # PBM is the chain-aware pruner and deletes its own sets (plus their
+            # oplog slices) from the bucket; the bucket lifecycle Delete rule is
+            # only a backstop for orphans and MUST stay longer than this window.
+            - name: six-hourly-gcs
               enabled: true
-              schedule: "0 0,12 * * *"
+              schedule: "0 */6 * * *"
               storageName: gcs-backups
               compressionType: gzip
               retention:
-                count: 180
+                count: 120
                 type: count
                 deleteFromStorage: true
   destination:

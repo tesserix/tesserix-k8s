@@ -1,0 +1,68 @@
+# =============================================================================
+# OPERATIONAL ENDPOINT DENY
+# =============================================================================
+# Blocks operator-only endpoints at the ingress gateway.
+#
+# Why this is needed: hosts like api.fe3dr.com route `prefix: /` straight to the
+# application, so EVERY path the app registers at its root is internet-facing —
+# including the Prometheus handler and the verbose health endpoint. Verified
+# reachable before this policy existed:
+#
+#   GET https://api.fe3dr.com/metrics       -> 200, 14KB
+#   GET https://api.fe3dr.com/health/stats  -> 200
+#
+# That leaked the Go runtime version, goroutine/CPU/DB-pool shape, the full
+# internal API surface (via per-path request-counter labels) and business
+# volume counters (registered users, chef signups, order values).
+#
+# Istio evaluates DENY before ALLOW, so this overrides the broad `/health/*`
+# grant in api-authz.yaml without having to restructure that policy.
+#
+# Scope: the ingress gateway ONLY. Prometheus scrapes pods directly over the
+# mesh and never traverses the gateway, so in-cluster scraping is unaffected.
+# /health, /health/live and /health/ready stay open for load-balancer and
+# uptime probes — only the verbose /health/stats is withdrawn.
+# =============================================================================
+
+{{- /*
+Deliberately driven by its own `opsEndpointDeny.gateways` list rather than the
+chart's `ingressGateways`. Adding a gateway to `ingressGateways` would also
+attach that list's broad ALLOW policies to it — and in Istio, once ANY ALLOW
+policy selects a workload, every path not explicitly allowed becomes denied.
+Doing that to homechef-ingressgateway would take the whole site down. A DENY
+policy only ever subtracts the paths it names, so it is safe to attach widely.
+*/ -}}
+{{- range .Values.opsEndpointDeny.gateways }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-ops-endpoints-{{ .name }}
+  namespace: {{ .namespace }}
+  labels:
+    app.kubernetes.io/name: authz-policy
+    app.kubernetes.io/component: ops-endpoint-deny
+    app.kubernetes.io/part-of: istio-auth-policies
+spec:
+  selector:
+    matchLabels:
+      istio: {{ .istioLabel }}
+  action: DENY
+  rules:
+    - to:
+        - operation:
+            paths:
+              # Prometheus exposition — infra fingerprint + business metrics.
+              - "/metrics"
+              - "/metrics/*"
+              - "/api/metrics"
+              # Verbose runtime stats (Go version, goroutines, memory, CPU).
+              - "/health/stats"
+              - "/api/health/stats"
+              # Go pprof. Not currently mounted, but if net/http/pprof is ever
+              # imported (directly or transitively) it self-registers on the
+              # default mux — this makes that a non-event rather than a heap
+              # dump on the public internet.
+              - "/debug"
+              - "/debug/*"
+{{- end }}
