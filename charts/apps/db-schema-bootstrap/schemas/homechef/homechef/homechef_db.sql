@@ -5217,3 +5217,105 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_trusted_devices_token
 -- Serves the device list on the settings screen (active devices, newest first).
 CREATE INDEX IF NOT EXISTS ix_trusted_devices_user_active
   ON public.trusted_devices (user_id, last_seen_at DESC) WHERE revoked_at IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- Test chef mode: per-kitchen live/test partitioning with dual Razorpay slots.
+--
+-- Lets us exercise the full order → cook → deliver → pay → refund → payout flow
+-- against PRODUCTION infrastructure without moving real money and without any
+-- real customer ever seeing the sandbox kitchen. Also lets an admin flip an
+-- established kitchen into a sandbox to reproduce a production issue against a
+-- clone of its real setup, then flip back with its live data untouched.
+--
+-- Everything defaults to 'live', so applying this file changes nothing until an
+-- admin explicitly marks a kitchen as test.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS mode varchar(4) NOT NULL DEFAULT 'live';
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS first_live_at timestamptz;
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS active_test_session_id uuid;
+CREATE INDEX IF NOT EXISTS ix_chef_profiles_mode ON public.chef_profiles (mode);
+
+-- Backfill: every existing kitchen is live and has been since it was verified,
+-- so it reads as ESTABLISHED (shown as closed if ever flipped to test) rather
+-- than born-test (hidden outright). Without this an existing kitchen flipped to
+-- test would vanish from its regulars' app instead of showing as closed.
+UPDATE public.chef_profiles
+   SET first_live_at = COALESCE(verified_at, created_at)
+ WHERE first_live_at IS NULL AND mode = 'live';
+
+-- Which live/test choice an admin made when approving a kitchen. Persisted on
+-- the approval so the durable Temporal activation reads it back on retry.
+ALTER TABLE public.approval_requests ADD COLUMN IF NOT EXISTS approved_mode varchar(4) DEFAULT 'live';
+
+-- One debugging episode for one kitchen. Every live→test flip opens a new
+-- numbered session with a fresh clone, so the evidence from a previous
+-- investigation is never overwritten by the next one.
+CREATE TABLE IF NOT EXISTS public.chef_test_sessions (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  chef_id           uuid NOT NULL,
+  session_no        integer NOT NULL,
+  status            varchar(10) NOT NULL DEFAULT 'open',
+  reason            text DEFAULT '',
+  order_window_days integer DEFAULT 30,
+  cloned_at         timestamptz,
+  clone_summary     jsonb DEFAULT '{}'::jsonb,
+  opened_by_id      uuid,
+  opened_at         timestamptz NOT NULL DEFAULT now(),
+  closed_by_id      uuid,
+  closed_at         timestamptz,
+  purged_at         timestamptz,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS ix_chef_test_sessions_chef ON public.chef_test_sessions (chef_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_chef_test_sessions_chef_no
+  ON public.chef_test_sessions (chef_id, session_no);
+
+-- Aggregate counters per (kitchen, mode). chef_profiles keeps the LIVE numbers
+-- so every customer-facing query reads them unchanged and a fake order can never
+-- move a real rating; this table is what the vendor and admin dashboards read
+-- for whichever mode is currently active.
+CREATE TABLE IF NOT EXISTS public.chef_mode_stats (
+  chef_id       uuid NOT NULL,
+  mode          varchar(4) NOT NULL DEFAULT 'live',
+  total_orders  integer NOT NULL DEFAULT 0,
+  rating        double precision NOT NULL DEFAULT 0,
+  total_reviews integer NOT NULL DEFAULT 0,
+  issue_count   integer NOT NULL DEFAULT 0,
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (chef_id, mode)
+);
+
+-- The partition triple on every chef-scoped table.
+--
+--   mode            which world the row belongs to, snapshotted at creation and
+--                   never changed — money operations read THIS, not the chef's
+--                   current mode, so a refund still routes to the gateway that
+--                   took the payment after a flip.
+--   test_session_id which debugging session produced the row, so sessions can be
+--                   listed and purged independently.
+--   cloned_from_id  set on rows produced by the live→test clone. A clone is a
+--                   replica of a REAL customer's order, so it must never surface
+--                   to that customer.
+--
+-- The index is PARTIAL: the overwhelming majority of rows are live and are not
+-- indexed at all, so the live hot path is unaffected.
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'orders','order_items','group_orders','meal_plans','meal_plan_days',
+    'meal_subscriptions','meal_trials','catering_requests','tips',
+    'chef_promotions','reviews','menu_items','weekly_menus','weekly_menu_items',
+    'daily_menus','daily_menu_items','chef_schedules'
+  ] LOOP
+    IF to_regclass('public.' || t) IS NOT NULL THEN
+      EXECUTE format('ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS mode varchar(4) NOT NULL DEFAULT ''live''', t);
+      EXECUTE format('ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS test_session_id uuid', t);
+      EXECUTE format('ALTER TABLE public.%I ADD COLUMN IF NOT EXISTS cloned_from_id uuid', t);
+      EXECUTE format('CREATE INDEX IF NOT EXISTS ix_%s_mode ON public.%I (mode) WHERE mode <> ''live''', t, t);
+      EXECUTE format('CREATE INDEX IF NOT EXISTS ix_%s_test_session ON public.%I (test_session_id) WHERE test_session_id IS NOT NULL', t, t);
+    END IF;
+  END LOOP;
+END $$;
