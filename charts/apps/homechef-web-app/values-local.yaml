@@ -1,0 +1,54 @@
+# LOCAL / kind overlay for homechef-web-app. Use with:
+#   helm upgrade --install homechef-web-app charts/apps/homechef-web-app \
+#     -n homechef -f charts/apps/homechef-web-app/values-local.yaml
+#
+# Build + load the image into kind first (no registry push):
+#   docker build -t homechef-web-app:local -f apps/web/Dockerfile . \
+#     --build-arg VITE_API_URL=http://localhost:8080/api/v1
+#   kind load docker-image homechef-web-app:local
+# Reach the SPA via:
+#   kubectl -n homechef port-forward svc/homechef-web-app 8080:80
+#
+# Note: VITE_* values are baked into the SPA at BUILD time (see the
+# --build-arg above) — they are not settable through this chart's env map.
+# The env below only feeds nginx's envsubst (OTTO_URL) at container start.
+image:
+  repository: homechef-web-app
+  tag: local
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 1
+
+# No GCP Workload Identity SA annotation locally.
+serviceAccount:
+  create: true
+  annotations: {}
+
+env:
+  # Point Otto at a local/in-cluster service if you run one; otherwise harmless.
+  OTTO_URL: "http://support-platform-otto.support-platform.svc.cluster.local:8089"
+
+# No cross-namespace Otto secret locally.
+envFromSecrets: []
+
+gcp:
+  projectId: ""
+  secretManager:
+    secretPrefix: "local"
+
+# kind has no metrics-server / KEDA / VPA — turn them all off.
+keda:
+  enabled: false
+autoscaling:
+  enabled: false
+vpa:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+
+# No Kong ingress / TLS locally — use port-forward.
+ingress:
+  enabled: false

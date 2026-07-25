@@ -1,0 +1,71 @@
+# Production overrides for homechef-web-app
+# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+#
+# Bump podAnnotations."homechef.fe3dr.com/redeploy-at" here (add the key,
+# any RFC3339 value) to force a rollout without a new image tag — see
+# homechef-web/values-prod.yaml for the pattern. Not set initially: there is
+# no prior revision to roll from.
+
+replicaCount: 2
+
+# Production resource allocation
+resources:
+  limits:
+    memory: 256Mi
+  requests:
+    memory: 64Mi
+
+# Production environment
+env:
+  NODE_ENV: "production"
+
+# KEDA drives autoscaling (request-rate + memory). HPA stays off: the platform
+# runs memory-only resources with no CPU requests, so a CPU-target HPA cannot work.
+autoscaling:
+  enabled: false
+# Production GCP configuration
+keda:
+  enabled: true
+  minReplicaCount: 2
+  maxReplicaCount: 10
+
+# Production GCP configuration
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-homechef-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  secretManager:
+    secretPrefix: "prod"
+
+# Service name for the Deployment, following the -direct convention set by
+# the other homechef-* frontend charts (homechef-web, homechef-vendor-portal):
+# each Deployment owns "<svc>-direct" rather than the bare "<svc>" name, so
+# a bare name stays free for whatever else may need to front the same app
+# (e.g. a routing layer) without a naming collision.
+service:
+  nameOverride: "homechef-web-app-direct"
+
+# apps/web's Dockerfile runs on ghcr.io/tesserix/base-nginx-spa, whose
+# non-root user is uid 10001 (baked into the image — /usr/share/nginx/html
+# and nginx's writable dirs are chowned to it at build time). The chart's
+# default podSecurityContext/securityContext hardcode runAsUser: 1001 — a
+# *different* uid that owns none of that, so nginx fails at startup:
+#   nginx: [emerg] mkdir() "/var/cache/nginx/client_temp" failed (13: Permission denied)
+# This is the identical mismatch homechef-web hit, so it's cleared here the
+# same way rather than "fixed" ad hoc. Running non-root correctly needs
+# runAsUser: 10001 (matching the image) plus writable /var/cache/nginx,
+# /var/run and /etc/nginx/conf.d (emptyDir mounts) — tracked together with
+# the same cleanup for homechef-web, not solved per-chart.
+# (null, not {} — Helm deep-merges maps, so {} would not clear the base values.)
+podSecurityContext: null
+securityContext: null
+
+# No Kong in this cluster — `kubectl get ingressclass` returns nothing, so an
+# Ingress object here would sit with an empty status.loadBalancer forever and
+# ArgoCD would block on its health. HomeChef serves through the Istio Gateway
+# + VirtualServices in manifests/homechef-istio, not through an Ingress
+# controller — routing for this app is added there in a separate change, not
+# by this chart.
+ingress:
+  enabled: false
