@@ -5080,3 +5080,29 @@ ALTER TABLE public.users ADD COLUMN IF NOT EXISTS restored_at timestamp with tim
 -- "purge_after <= now()" scan stays a tiny index regardless of table size.
 CREATE INDEX IF NOT EXISTS idx_users_purge_after ON public.users USING btree (purge_after)
     WHERE (purge_after IS NOT NULL);
+
+--
+-- Loyalty points: dated earn batches (Home-Chef-App loyalty phase 1).
+--
+-- Every point CREDIT writes one dated lot here (expires_at = earned_at + expiry_days).
+-- Redeem/expiry/refund-reversal FIFO-consume points_remaining from the soonest-expiring
+-- lots first; loyalty_accounts.balance stays the fast running total (= SUM of the
+-- account's non-expired lots' points_remaining). Idempotent on idempotency_key so a
+-- redelivered event or retried grant never writes a second lot.
+--
+
+CREATE TABLE IF NOT EXISTS public.loyalty_earn_batches (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  source varchar(20) NOT NULL,
+  points double precision NOT NULL,
+  points_remaining double precision NOT NULL,
+  earned_at timestamptz NOT NULL,
+  expires_at timestamptz NOT NULL,
+  order_id uuid,
+  idempotency_key varchar(160) NOT NULL,
+  created_at timestamptz DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_loyalty_earn_batches_idem ON public.loyalty_earn_batches (idempotency_key);
+CREATE INDEX IF NOT EXISTS ix_loyalty_earn_batches_user ON public.loyalty_earn_batches (user_id, expires_at);
+CREATE INDEX IF NOT EXISTS ix_loyalty_earn_batches_expiry ON public.loyalty_earn_batches (expires_at) WHERE points_remaining > 0;
