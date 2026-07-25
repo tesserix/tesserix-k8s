@@ -30,6 +30,32 @@ env:
   # HOMECHEF_ENV is not read by the Go env label, but base values.yaml sets it
   # to "development"; override for consistency in prod (matches values-local's "local").
   HOMECHEF_ENV: "production"
+  # ---------------------------------------------------------------------------
+  # PII column encryption (#710) — PHASE 1 of 4
+  # ---------------------------------------------------------------------------
+  # Turns apps/api/piicrypto from a pass-through into real AES-256-GCM under a
+  # KMS-wrapped DEK, and starts populating the *_enc / *_bidx companion columns
+  # with ciphertext and blind indexes.
+  #
+  # READ THIS BEFORE ASSUMING THE DATA IS PROTECTED: this is dual-write only.
+  # Per models/pii_dualwrite.go, reads still come from the PLAINTEXT columns and
+  # those columns remain populated. Phase 1 alone does NOT reduce exposure to an
+  # attacker with database access — it is the prerequisite for phases 2-4
+  # (backfill -> read from _enc -> drop plaintext columns).
+  #
+  # STARTUP HAZARD: main.go:150 is log.Fatalf — if Secret Manager or KMS is
+  # unreachable, or the unwrapped DEK is not exactly 32 bytes, the process exits
+  # on boot. Verified prerequisites before enabling:
+  #   - KMS key homechef-pii/pii-dek (asia-south1) exists
+  #   - secrets prod-homechef-pii-dek-wrapped + prod-homechef-pii-bidx-key exist
+  #   - the pod SA holds roles/cloudkms.cryptoKeyDecrypter + secretAccessor
+  #   - GCS_PROJECT_ID is set (piicrypto.Init takes the project from it)
+  # The rollout is safe regardless: replicas=2 with maxUnavailable 25% floors to
+  # 0, so a crash-looping new pod never becomes Ready and the old pods keep
+  # serving — the rollout stalls instead of causing an outage. To revert, set
+  # this back to "false"; decryption is backward-compatible because ciphertext
+  # is prefix-tagged ("enc:v1:") and untagged plaintext passes straight through.
+  PII_ENCRYPTION_ENABLED: "true"
   # Browser origins allowed by the API's CORS middleware (gin-contrib/cors).
   #
   # This MUST live in a values file, not in the ArgoCD Application's
