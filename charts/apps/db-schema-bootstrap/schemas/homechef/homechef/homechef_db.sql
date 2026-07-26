@@ -5319,3 +5319,83 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- App Store / Play Store compliance (2026-07-26)
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- Sign in with Apple refresh token, held only so account deletion can call
+-- Apple's /auth/revoke — required by App Review guideline 5.1.1(v). Deleting the
+-- Identity Platform user does not touch Apple's own record of the grant, so
+-- without this the app stays listed under Settings -> Apple ID -> Sign in with
+-- Apple after the user deletes their account.
+--
+-- text, not varchar: the value is stored via models.EncryptedString, whose
+-- prefixed-base64 ciphertext outgrows varchar(255). It is erased with the row by
+-- the purge sweeper, and is deliberately excluded from the DPDP export.
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS apple_refresh_token_enc text;
+
+-- User-facing content moderation (App Review guideline 1.2).
+--
+-- Any app carrying user-generated content must let users report objectionable
+-- content and block abusive users, and must actually filter what gets reported.
+-- Home Chef's UGC surfaces are chef social posts, comments on them, customer
+-- reviews, and order-scoped messaging; admin-side takedown tooling existed, but
+-- nothing user-facing did.
+--
+-- content_reports is generic over target type rather than one table per surface:
+-- the triage queue, rate limiting and audit trail are identical each time.
+-- There is deliberately NO foreign key on target_id — the target lives in one of
+-- several tables, and a report must outlive the content being deleted, which is
+-- exactly the case an auditor asks about.
+CREATE TABLE IF NOT EXISTS public.content_reports (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  reporter_id     uuid NOT NULL,
+  target_type     varchar(24) NOT NULL,
+  target_id       uuid NOT NULL,
+  -- Author of the reported content, resolved at report time. Denormalised so
+  -- triage can rank authors by upheld reports without a per-type join, and so
+  -- the report still names someone after the content row is gone.
+  target_owner_id uuid,
+  reason          varchar(24) NOT NULL,
+  details         text,
+  status          varchar(16) NOT NULL DEFAULT 'pending',
+  reviewed_by     uuid,
+  reviewed_at     timestamptz,
+  resolution_note text,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now(),
+  deleted_at      timestamptz
+);
+
+-- The auto-hide threshold counts distinct pending reporters per target, and the
+-- triage queue filters by status — both are served by these.
+CREATE INDEX IF NOT EXISTS ix_content_reports_target
+  ON public.content_reports (target_type, target_id);
+CREATE INDEX IF NOT EXISTS ix_content_reports_status
+  ON public.content_reports (status) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS ix_content_reports_reporter
+  ON public.content_reports (reporter_id);
+CREATE INDEX IF NOT EXISTS ix_content_reports_owner
+  ON public.content_reports (target_owner_id) WHERE target_owner_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_content_reports_deleted_at
+  ON public.content_reports (deleted_at);
+
+-- user_blocks: one row per (blocker, blocked) pair.
+--
+-- Asymmetric by design — A blocking B hides B from A and stops B messaging A,
+-- without telling B. The unique constraint makes BlockUser idempotent at the
+-- database level, not just in application code.
+CREATE TABLE IF NOT EXISTS public.user_blocks (
+  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  blocker_id uuid NOT NULL,
+  blocked_id uuid NOT NULL,
+  reason     varchar(24),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_user_blocks_pair
+  ON public.user_blocks (blocker_id, blocked_id);
+-- Reverse lookup: the messaging gate checks both directions.
+CREATE INDEX IF NOT EXISTS ix_user_blocks_blocked
+  ON public.user_blocks (blocked_id);
