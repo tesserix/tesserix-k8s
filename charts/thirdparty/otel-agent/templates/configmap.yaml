@@ -11,6 +11,11 @@ data:
       # this means an agent restart re-reads whole files or skips to the end.
       file_storage/checkpoints:
         directory: {{ .Values.checkpoints.hostPath }}/storage
+        # The hostPath volume creates /var/lib/otelcol-agent, but this is a
+        # SUBDIRECTORY of it and the extension refuses to start if the exact
+        # path is missing: "directory must exist: stat .../storage: no such
+        # file or directory". Every agent crash-looped on this.
+        create_directory: true
         timeout: 10s
       health_check:
         endpoint: 0.0.0.0:{{ .Values.ports.health }}
