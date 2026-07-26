@@ -234,7 +234,13 @@ metadata:
   name: <service>
   namespace: argocd
 spec:
-  project: tesserix-{dev|prod}
+  # Must name an AppProject that ACTUALLY EXISTS (argocd/prod/projects/) or the
+  # built-in `default`. There is no `tesserix-dev` / `tesserix-prod` project —
+  # that name used to be documented here and cost a silent failure (PR #86).
+  # Real ones: infrastructure, platform, homechef, fanzone, gameverse, guardix,
+  # horoscope, identity, postiz, release, scrapper, social, stockpilot,
+  # tesserix-blog, data, default.
+  project: infrastructure
   source:
     repoURL: https://github.com/tesserix/tesserix-k8s.git
     targetRevision: main
@@ -250,7 +256,28 @@ spec:
     automated:
       prune: true
       selfHeal: true
+      # NEVER write `prune: false`. It is the zero value for that bool, so the
+      # API server drops the key on write; the app-of-apps then diffs git
+      # (present) against live (absent) and the app is pinned OutOfSync
+      # forever. Omit it — false is the default — and explain the intent in a
+      # comment. 194 manifests had this and 24 apps could never converge.
 ```
+
+### Adding a new ArgoCD Application — three things, two of them silent
+
+1. **Create the manifest** in the right `argocd/<env>/...` directory.
+2. **Register it** in that directory's `kustomization.yaml` under `resources:`.
+   These directories are Kustomize apps, not directory apps — an unlisted file
+   is not an error, it is simply never built, and the app-of-apps keeps
+   reporting `Synced` while your Application does not exist.
+3. **Use a real `project:`** (see above).
+
+Only step 1 is visible if you get it wrong. Steps 2 and 3 fail silently: no
+error in `kubectl`, the ArgoCD UI, or the controller logs. The only symptom is
+the app never appearing.
+
+`scripts/validate-argocd-apps.py` checks all three and runs in PR validation, so
+CI now catches what the cluster will not tell you.
 
 ---
 
