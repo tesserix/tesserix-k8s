@@ -4,6 +4,20 @@ metadata:
   name: {{ include "homechef-api.fullname" . }}
   labels:
     {{- include "homechef-api.labels" . | nindent 4 }}
+  annotations:
+    # Restart the pods when a referenced Secret/ConfigMap actually changes.
+    #
+    # Env vars sourced via secretKeyRef are read once, at pod start — rotating a
+    # secret does nothing to running pods. That is how SUPER_ADMIN_EMAILS was
+    # added to this deployment and to the ExternalSecret, synced correctly into
+    # the Secret, and still had no effect: the pods predated the key and quietly
+    # fell back to the list hardcoded in models/staff.go.
+    #
+    # stakater/reloader has been running in this cluster for 60 days with NOTHING
+    # annotated to use it. `auto` only triggers on resources this Deployment
+    # actually references, and ExternalSecrets rewrite the Secret only when the
+    # upstream value changes, so this does not cause routine restarts.
+    reloader.stakater.com/auto: "true"
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
