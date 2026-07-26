@@ -69,10 +69,19 @@ server:
   # ERROR (retryable) instead of the kernel OOM-killing the whole server.
   maxServerMemoryUsageToRamRatio: 0.8
   maxConcurrentQueries: 100
-  # Merges are the main background memory consumer; cap them well under the
-  # server budget so ingestion is never starved by a large merge.
-  backgroundPoolSize: 8
-  backgroundSchedulePoolSize: 8
+  # MUST satisfy: backgroundPoolSize * background_merges_mutations_concurrency_ratio
+  #               >= number_of_free_entries_in_pool_to_execute_mutation
+  # With the ClickHouse defaults (ratio 2, mutation entries 20) anything below
+  # 10 fails the startup sanity check outright. 8 was chosen here to cap merge
+  # memory and the server refused to boot with:
+  #   "The value of 'number_of_free_entries_in_pool_to_execute_mutation'
+  #    setting (20) is greater than 'background_pool_size' *
+  #    'background_merges_mutations_concurrency_ratio' (16)"
+  # 16 is the upstream default and leaves margin above the threshold. Merge
+  # memory is bounded by max_server_memory_usage_to_ram_ratio instead, which is
+  # the correct lever for it.
+  backgroundPoolSize: 16
+  backgroundSchedulePoolSize: 16
   maxPartitionSizeToDrop: 0
   maxTableSizeToDrop: 0
 
