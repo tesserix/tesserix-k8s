@@ -31,8 +31,18 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      # Log shipping should not be evicted to make room for application pods.
-      priorityClassName: system-node-critical
+      # NO priorityClassName.
+      #
+      # system-node-critical was set here to keep log shipping from being
+      # evicted, and a cluster ResourceQuota reserves that class (and
+      # system-cluster-critical) for system namespaces. Every pod creation was
+      # rejected with "insufficient quota to match these scopes", so the
+      # DaemonSet sat at desired=7 current=0 and collected nothing — silently,
+      # because a DaemonSet with no pods looks the same as one still starting.
+      #
+      # If eviction ever becomes a real problem, create a dedicated
+      # PriorityClass for the observability namespace rather than borrowing a
+      # reserved system one.
       terminationGracePeriodSeconds: 30
       containers:
         - name: otel-collector
