@@ -95,18 +95,16 @@ resources:
   - prometheus.yaml
   - grafana.yaml
 
-  # OpenTelemetry Collector — OTLP ingestion for app telemetry (DevAI today).
-  # Receives OTLP/gRPC+HTTP and exposes a Prometheus scrape endpoint (:8889).
-  # Works standalone (traces/logs → debug); when prometheus.yaml above is
-  # re-enabled its kubernetes-pods job auto-scrapes the collector via the pod's
-  # prometheus.io/scrape annotation — no scrape-config edit needed.
-  - otel-collector.yaml
+  # otel-collector (single-node) — DECOMMISSIONED 2026-07-26. Superseded by
+  # the otel-gateway -> Redpanda -> otel-ingest pipeline. All 11 app charts
+  # were cut over first and this collector received nothing for hours before
+  # removal.
 
-  # ClickHouse (dedicated, single-node) — storage backend for the OTel
-  # collector's clickhouseexporter. HTTP :8123 / native :9000 in the
-  # observability namespace; the exporter auto-creates its tables in the
-  # `otel` database (create_schema: true).
-  - clickhouse-otel.yaml
+  # clickhouse-otel (single-node, 20Gi) — DECOMMISSIONED 2026-07-26.
+  # It had been 100% full since 2026-06-30, silently dropping every trace and
+  # metric write with 'Cannot reserve 1.00 MiB, not enough space' for 26 days.
+  # Replaced by the replicated clickhouse-ha (100Gi x 2) with TTL retention.
+  # Its PVC is on a Retain class, so the PV must be deleted by hand.
 
   # Grafana Tempo — DECOMMISSIONED 2026-07-26. Manifest deleted; restore from
   # git history if it is ever needed. An orphaned-but-retained file trips the
