@@ -136,6 +136,13 @@ resources:
   # Creates the otel database, the read-only user obs-api authenticates as, and
   # reconciles retention on tables the exporter has already created.
   - observability-db-schema-bootstrap.yaml
+  # Collection tier. otel-agent is a DaemonSet on EVERY node (blanket taint
+  # toleration) tailing /var/log/pods — this is what makes logs exist at all;
+  # otel_logs has held zero rows since fluent-bit was scaled to zero.
+  # otel-cluster is a singleton for Kubernetes events (90d, vs the ~1h etcd
+  # keeps them) and Prometheus metrics scraped at 60s for long-term history.
+  - otel-agent.yaml
+  - otel-cluster.yaml
 
   # Grafana dashboard ConfigMaps — DevAI, mark8ly, fe3dr (HomeChef) and the
   # mark8ly subscription set, loaded by the Grafana sidecar.

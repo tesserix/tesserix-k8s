@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "otel-agent.name" . }}-config
+  labels:
+    {{- include "otel-agent.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    extensions:
+      # Persists both the filelog read offsets and the exporter queue. Losing
+      # this means an agent restart re-reads whole files or skips to the end.
+      file_storage/checkpoints:
+        directory: {{ .Values.checkpoints.hostPath }}/storage
+        timeout: 10s
+      health_check:
+        endpoint: 0.0.0.0:{{ .Values.ports.health }}
+
+    receivers:
+      filelog:
+        include:
+          {{- range .Values.filelog.include }}
+          - {{ . | quote }}
+          {{- end }}
+        exclude:
+          {{- range .Values.filelog.exclude }}
+          - {{ . | quote }}
+          {{- end }}
+        start_at: {{ .Values.filelog.startAt }}
+        poll_interval: {{ .Values.filelog.pollInterval }}
+        max_log_size: {{ .Values.filelog.maxLogSize }}
+        max_concurrent_files: {{ .Values.filelog.maxConcurrentFiles }}
+        include_file_path: true
+        include_file_name: false
+        storage: file_storage/checkpoints
+        operators:
+          # Handles the CRI/containerd line format (timestamp, stream, tags,
+          # message) and recovers namespace/pod/container from the file path,
+          # which is the only place that information exists on disk.
+          - type: container
+            id: container-parser
+            format: {{ .Values.filelog.format }}
+            add_metadata_from_filepath: true
+
+    processors:
+      memory_limiter:
+        check_interval: {{ .Values.processors.memoryLimiter.checkInterval }}
+        limit_percentage: {{ .Values.processors.memoryLimiter.limitPercentage }}
+        spike_limit_percentage: {{ .Values.processors.memoryLimiter.spikeLimitPercentage }}
+
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        filter:
+          # Watch only pods on THIS node. Without this every agent lists every
+          # pod in the cluster, multiplying API server load by the node count.
+          node_from_env_var: K8S_NODE_NAME
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.deployment.name
+            - k8s.statefulset.name
+            - k8s.daemonset.name
+            - k8s.cronjob.name
+            - k8s.node.name
+            - k8s.container.name
+          labels:
+            - tag_name: app
+              key: app.kubernetes.io/name
+              from: pod
+            - tag_name: component
+              key: app.kubernetes.io/component
+              from: pod
+        pod_association:
+          # The container operator has already set pod name and namespace from
+          # the file path, so match on those rather than on connection IP,
+          # which is the agent's own address here.
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.name
+              - from: resource_attribute
+                name: k8s.namespace.name
+
+      resourcedetection:
+        detectors: [env, system]
+        system:
+          hostname_sources: [os]
+        override: false
+
+      batch:
+        send_batch_size: {{ .Values.processors.batch.sendBatchSize }}
+        send_batch_max_size: {{ .Values.processors.batch.sendBatchMaxSize }}
+        timeout: {{ .Values.processors.batch.timeout }}
+
+    exporters:
+      otlp:
+        endpoint: {{ .Values.gateway.endpoint | quote }}
+        tls:
+          # In-cluster hop to the gateway. The mesh handles transport security;
+          # the collector does not need to terminate TLS itself.
+          insecure: true
+        sending_queue:
+          enabled: true
+          storage: file_storage/checkpoints
+          queue_size: {{ .Values.queue.size }}
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 60s
+          # Retry indefinitely. Log files stay on disk and offsets are
+          # checkpointed, so a long gateway outage delays rather than drops.
+          max_elapsed_time: 0
+
+    service:
+      extensions:
+        - file_storage/checkpoints
+        - health_check
+      pipelines:
+        logs:
+          receivers: [filelog]
+          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          exporters: [otlp]
+      telemetry:
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: {{ .Values.ports.metrics }}

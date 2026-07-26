@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "otel-cluster.name" . }}
+  labels:
+    {{- include "otel-cluster.labels" . | nindent 4 }}
+spec:
+  # Hardcoded to 1 and not exposed as a value. Two replicas would watch the
+  # same event stream and scrape the same targets, storing everything twice.
+  replicas: 1
+  strategy:
+    # Recreate, not RollingUpdate: a rolling update briefly runs two pods,
+    # which is exactly the duplication this singleton exists to avoid. The
+    # cost is a few seconds of missed scrapes on redeploy; events are watched
+    # from the last resource version, so those are not lost.
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "otel-cluster.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "otel-cluster.selectorLabels" . | nindent 8 }}
+        {{- include "otel-cluster.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "otel-cluster.name" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: otel-collector
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          args:
+            - --config=/conf/config.yaml
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.ports.metrics }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.ports.health }}
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "otel-cluster.name" . }}-config

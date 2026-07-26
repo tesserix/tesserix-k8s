@@ -1,0 +1,22 @@
+apiVersion: v2
+name: otel-agent
+description: |
+  OpenTelemetry Collector — node agent. A DaemonSet that tails container logs
+  from /var/log/pods and forwards them to the otel-gateway over OTLP.
+
+  This is what finally makes logs exist. Before it, otel_logs held zero rows:
+  fluent-bit was scaled to zero, Elasticsearch was dead, and nothing else was
+  reading container stdout anywhere in the cluster.
+
+  Runs on EVERY node, including the tainted Spot observability pool, the gVisor
+  sandbox pool and the GPU pool — a node whose logs are not collected is a blind
+  spot, so the toleration is a blanket `operator: Exists`.
+
+  Read positions are checkpointed to a hostPath via the file_storage extension.
+  Without that, an agent restart either re-reads whole files (duplicates) or
+  jumps to the end (silent loss).
+
+  Config schema targets collector v0.156.0.
+type: application
+version: 1.0.0
+appVersion: "0.156.0"

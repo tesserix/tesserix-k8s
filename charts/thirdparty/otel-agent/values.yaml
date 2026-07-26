@@ -1,0 +1,101 @@
+# OTel Collector node agent — defaults. Prod overrides go inline in
+# argocd/prod/infrastructure/otel-agent.yaml (the redis-global pattern).
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: "0.156.0"
+  pullPolicy: IfNotPresent
+
+ports:
+  metrics: 8888
+  health: 13133
+
+gateway:
+  # Agents do not produce to Kafka directly. Funnelling through the gateway
+  # keeps one producer tier, so the disk-backed Kafka queue and the broker
+  # connection pool exist in exactly one place.
+  endpoint: otel-gateway.observability.svc.cluster.local:4317
+
+filelog:
+  include:
+    - /var/log/pods/*/*/*.log
+  exclude:
+    # Without this the agent's own logs become input, and any error it logs
+    # while failing to ship produces another log line. Feedback loop.
+    - /var/log/pods/observability_otel-agent-*/*/*.log
+  # `end` on first start so rolling this out does not replay every historical
+  # log file at once. Checkpoints take over from the second start onwards.
+  startAt: end
+  pollInterval: 500ms
+  # A single log line larger than this is truncated. Stack traces can be big.
+  maxLogSize: 2MiB
+  # GKE nodes are COS with containerd. The `container` operator handles the
+  # CRI log format and, with add_metadata_from_filepath, recovers pod,
+  # namespace and container name from the file path.
+  format: containerd
+  maxConcurrentFiles: 512
+
+checkpoints:
+  # hostPath rather than a PVC: a DaemonSet pod cannot own a per-node
+  # PersistentVolume, and the checkpoint is only meaningful on the node whose
+  # files it describes.
+  hostPath: /var/lib/otelcol-agent
+
+processors:
+  memoryLimiter:
+    checkInterval: 5s
+    limitPercentage: 80
+    spikeLimitPercentage: 25
+  batch:
+    sendBatchSize: 4096
+    sendBatchMaxSize: 8192
+    timeout: 5s
+
+queue:
+  # Small on-disk queue so a brief gateway outage does not drop lines. The
+  # real buffer is Redpanda, one tier downstream.
+  size: 1000
+
+# Memory-only per platform policy: no CPU requests or limits anywhere.
+# This runs on every node including production ones, so it is kept small.
+resources:
+  requests:
+    memory: 192Mi
+  limits:
+    memory: 384Mi
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8888"
+  prometheus.io/path: "/metrics"
+
+# Container log files on GKE are root-owned and not world-readable, so the
+# agent runs as root. It is otherwise locked down: no privilege escalation, all
+# capabilities dropped, immutable root filesystem, and /var/log mounted
+# read-only.
+podSecurityContext:
+  runAsUser: 0
+  runAsGroup: 0
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+rbac:
+  create: true
+
+# Run everywhere. A node whose logs are not collected is an invisible node, so
+# this tolerates every taint in the cluster: the Spot observability pool, the
+# gVisor sandbox pool, the GPU pool and any control-plane taints.
+tolerations:
+  - operator: Exists
+
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1

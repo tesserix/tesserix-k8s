@@ -1,0 +1,117 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "otel-agent.name" . }}
+  labels:
+    {{- include "otel-agent.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "otel-agent.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    {{- toYaml .Values.updateStrategy | nindent 4 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        # No mesh on a log shipper: it reads from disk and makes one outbound
+        # connection, so a sidecar adds startup ordering risk for no benefit.
+        sidecar.istio.io/inject: "false"
+      labels:
+        {{- include "otel-agent.selectorLabels" . | nindent 8 }}
+        {{- include "otel-agent.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "otel-agent.name" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Log shipping should not be evicted to make room for application pods.
+      priorityClassName: system-node-critical
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: otel-collector
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          args:
+            - --config=/conf/config.yaml
+          env:
+            # Read by the k8sattributes node filter so each agent watches only
+            # its own node's pods.
+            - name: K8S_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: K8S_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # Consumed by the resourcedetection `env` detector.
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "k8s.node.name=$(K8S_NODE_NAME)"
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.ports.metrics }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.ports.health }}
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+              readOnly: true
+            # The log files themselves. Read-only — the agent must never be
+            # able to modify or delete a container's logs.
+            - name: varlogpods
+              mountPath: /var/log/pods
+              readOnly: true
+            # /var/log/pods entries are symlinks into this directory, so it has
+            # to be mounted too or every read resolves to a dangling link.
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+            - name: checkpoints
+              mountPath: {{ .Values.checkpoints.hostPath }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "otel-agent.name" . }}-config
+        - name: varlogpods
+          hostPath:
+            path: /var/log/pods
+            type: Directory
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+            # DirectoryOrCreate, not Directory: containerd-only nodes may not
+            # have this path, and a hard Directory type would fail the pod.
+            type: DirectoryOrCreate
+        - name: checkpoints
+          hostPath:
+            path: {{ .Values.checkpoints.hostPath }}
+            type: DirectoryOrCreate
