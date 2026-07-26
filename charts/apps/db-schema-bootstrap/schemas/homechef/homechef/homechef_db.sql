@@ -5399,3 +5399,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_user_blocks_pair
 -- Reverse lookup: the messaging gate checks both directions.
 CREATE INDEX IF NOT EXISTS ix_user_blocks_blocked
   ON public.user_blocks (blocked_id);
+
+-- meal_subscriptions.day_variants: per-day veg/non-veg choice.
+--
+-- `variant` holds a single value applied to every day of the plan, so a
+-- household that wants veg midweek and non-veg at the weekend had to take one
+-- or the other for the whole subscription. This column carries the per-day
+-- override as a JSON object keyed by day-of-week (0=Sun .. 6=Sat), e.g.
+--   {"1":"veg","2":"nonveg","6":"nonveg"}
+--
+-- `variant` is deliberately kept and still populated: it remains the fallback
+-- for any day absent from this map, which keeps existing subscriptions and the
+-- billing/preview paths working unchanged when day_variants is NULL.
+ALTER TABLE public.meal_subscriptions
+  ADD COLUMN IF NOT EXISTS day_variants jsonb;
