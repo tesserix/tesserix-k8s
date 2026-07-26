@@ -2,15 +2,19 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: grafana
-  annotations:
-    kargo.akuity.io/authorized-stage: "kargo-infra:observability-prod"
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
   labels:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: monitoring
+  # These were two separate `annotations:` blocks. YAML keeps only the last
+  # occurrence of a duplicate key, so the Kargo authorization was being parsed
+  # away entirely and kargo-infra:observability-prod could not promote to this
+  # app. Merged into one block; no behaviour is intentionally changed here
+  # beyond the Kargo annotation now actually existing.
   annotations:
+    kargo.akuity.io/authorized-stage: "kargo-infra:observability-prod"
     argocd.argoproj.io/sync-wave: "1"
 spec:
   project: infrastructure
