@@ -35,7 +35,8 @@ spec:
         appNamespaces:
           global: global
           marketplace: marketplace
-          fanzone: fanzone
+          # fanzone removed — decommissioned namespace; this key generated an
+          # allow-mesh-internal policy into it, the second object that failed.
           # Agentic control planes (DevAI consumers): aregistry, agentgateway,
           # kagent. Each needs allow-mesh-internal so istio-proxy can dial
           # istiod for CSR signing and DevAI's pods can reach the catalog.
@@ -173,15 +174,22 @@ spec:
             label: openpanel
             hosts:
               - "analytics.tesserix.app"
-          - name: fanzone-web
-            label: fanzone-web
-            namespace: fanzone
+          # fanzone — DECOMMISSIONED. The namespace is gone, so this entry's
+          # namespace-scoped policy failed to apply with `namespaces "fanzone"
+          # not found`. ArgoCD applies a sync atomically, so that one dead
+          # object wedged the WHOLE app OutOfSync and every later host edit
+          # here silently never reached the cluster.
+          # observability — telemetry explorer (obs-ui) + query API (obs-api),
+          # split by path on one host. This entry is what puts the domain in
+          # the gateway ALLOW list; without it the gateway returns 403
+          # "RBAC: access denied" before any route is consulted. Public at the
+          # gateway on purpose: obs-api enforces Google sign-in itself, and the
+          # sign-in page must be reachable unauthenticated.
+          - name: observability
+            label: obs-ui
+            namespace: observability
             hosts:
-              - "fanzonebattleground.com"
-              - "www.fanzonebattleground.com"
-              - "api.fanzonebattleground.com"
-              - "ws.fanzonebattleground.com"
-              - "auth.fanzonebattleground.com"
+              - "observability.tesserix.app"
           - name: homechef-web
             label: homechef-web
             hosts:
