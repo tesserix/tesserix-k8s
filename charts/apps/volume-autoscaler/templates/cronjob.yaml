@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: volume-autoscaler-script
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: volume-autoscaler
+data:
+  autoscaler.py: |
+{{ .Files.Get "files/autoscaler.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: volume-autoscaler
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: volume-autoscaler
+    app.kubernetes.io/component: storage
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  # A resize can take minutes to settle; overlapping runs would read stale
+  # capacity and double-grow.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: volume-autoscaler
+        spec:
+          serviceAccountName: volume-autoscaler
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            # Explicit high GID. Without runAsGroup the container inherits the
+            # image's group (root/0 on python:alpine), which Trivy flags as
+            # "runs with GID <= 10000" — a low GID can collide with host groups
+            # that carry real privileges.
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: autoscaler
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["python3", "/opt/autoscaler/autoscaler.py"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: DRY_RUN
+                  value: {{ .Values.dryRun | quote }}
+                - name: PROMETHEUS_URL
+                  value: {{ .Values.prometheusUrl | quote }}
+                - name: USAGE_PERCENT
+                  value: {{ .Values.thresholds.usagePercent | quote }}
+                - name: GROWTH_FACTOR
+                  value: {{ .Values.thresholds.growthFactor | quote }}
+                - name: MIN_INCREMENT_GI
+                  value: {{ .Values.thresholds.minIncrementGi | quote }}
+                - name: MAX_INCREMENT_GI
+                  value: {{ .Values.thresholds.maxIncrementGi | quote }}
+                - name: COOLDOWN_MINUTES
+                  value: {{ .Values.thresholds.cooldownMinutes | quote }}
+                - name: MAX_SIZE_GI
+                  value: {{ .Values.maxSizeGi | toJson | quote }}
+                - name: CNPG_ENABLED
+                  value: {{ .Values.cnpg.enabled | quote }}
+                - name: CNPG_CHART_TEMPLATE
+                  value: {{ .Values.cnpg.chartPathTemplate | quote }}
+                - name: CNPG_CHART_OVERRIDES
+                  value: {{ .Values.cnpg.chartPathOverrides | toJson | quote }}
+                - name: CNPG_EXCLUDE_NAMESPACES
+                  value: {{ .Values.cnpg.excludeNamespaces | toJson | quote }}
+                - name: GENERIC_ENABLED
+                  value: {{ .Values.generic.enabled | quote }}
+                - name: GENERIC_NAMESPACES
+                  value: {{ .Values.generic.includeNamespaces | toJson | quote }}
+                - name: GENERIC_EXCLUDE_PATTERNS
+                  value: {{ .Values.generic.excludePatterns | toJson | quote }}
+                - name: GIT_OWNER
+                  value: {{ .Values.git.owner | quote }}
+                - name: GIT_REPO
+                  value: {{ .Values.git.repo | quote }}
+                - name: GIT_BRANCH
+                  value: {{ .Values.git.branch | quote }}
+                - name: GIT_AUTHOR_NAME
+                  value: {{ .Values.git.authorName | quote }}
+                - name: GIT_AUTHOR_EMAIL
+                  value: {{ .Values.git.authorEmail | quote }}
+                - name: GIT_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.git.secretName }}
+                      key: {{ .Values.git.secretKey }}
+              resources:
+{{ toYaml .Values.resources | indent 16 }}
+              volumeMounts:
+                - name: script
+                  mountPath: /opt/autoscaler
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: script
+              configMap:
+                name: volume-autoscaler-script
+                defaultMode: 0555
+            - name: tmp
+              emptyDir: {}
