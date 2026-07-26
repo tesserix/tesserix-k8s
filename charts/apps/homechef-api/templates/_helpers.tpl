@@ -164,6 +164,24 @@ refactored here; the worker is a prod-only concern.)
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: RAZORPAY_WEBHOOK_SECRET
       optional: true
+{{- /*
+Super-admin allowlist. Without this the API falls back to the list hardcoded in
+apps/api/models/staff.go (three personal Gmail addresses), and
+RequireStaffPermission auto-provisions a StaffMember with StaffRoleSuperAdmin
+for any caller whose signed X-User-Email matches it. Sourcing it from Secret
+Manager makes the list rotatable without a rebuild and keeps personal addresses
+out of the compiled binary.
+
+`optional: true` is deliberate: if the secret key is missing the app falls back
+to its built-in default rather than starting with an EMPTY allowlist, which
+would lock every super admin out of the console.
+*/}}
+- name: SUPER_ADMIN_EMAILS
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: SUPER_ADMIN_EMAILS
+      optional: true
 - name: SENDGRID_API_KEY
   valueFrom:
     secretKeyRef:

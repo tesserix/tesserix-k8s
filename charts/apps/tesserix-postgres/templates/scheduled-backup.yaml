@@ -7,7 +7,10 @@ metadata:
 spec:
   # Twice daily: 03:00 UTC and 15:00 UTC. Offset from mark8ly (02/14)
   # so the shared backup bucket isn't hit by both clusters at once.
-  schedule: "0 0 3,15 * * *"
+  # Base backup every 6h. Continuous WAL archiving (see cluster.yaml) is what
+  # actually bounds RPO to seconds; more frequent bases bound RTO instead, by
+  # shortening the WAL replay needed at restore. Overridable per product.
+  schedule: {{ .Values.backup.schedule | default "0 0 */6 * * *" | quote }}
   backupOwnerReference: self
   cluster:
     name: {{ .Values.clusterName }}

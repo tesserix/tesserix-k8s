@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: volume-autoscaler
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: volume-autoscaler
+    app.kubernetes.io/component: storage
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: volume-autoscaler
+  labels:
+    app.kubernetes.io/name: volume-autoscaler
+rules:
+  # NOTE: volume UTILISATION is read from Prometheus (kubelet_volume_stats_*),
+  # NOT from the kubelet via nodes/proxy. An earlier revision granted
+  # `nodes` + `nodes/proxy` to reach /stats/summary directly; Trivy flagged that
+  # HIGH (KSV045) and was right — `nodes/proxy` cannot be scoped to one kubelet
+  # path, so it hands over the entire kubelet API including /exec and /run.
+  # That is a privilege-escalation path, and an unattended CronJob is the last
+  # thing that should hold it. Prometheus already scrapes these metrics, so the
+  # autoscaler needs no node-level permissions at all.
+  #
+  # Read every PVC (to size them) and patch the non-CNPG ones in place.
+  # StatefulSet volumeClaimTemplates are immutable, so an in-place patch is the
+  # only way to grow an existing StatefulSet volume.
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "patch"]
+  # CNPG clusters are read to discover which PVCs belong to a database (those
+  # are grown via git, never patched). Read-only on purpose: the autoscaler
+  # must not be able to mutate a Cluster spec directly.
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: volume-autoscaler
+  labels:
+    app.kubernetes.io/name: volume-autoscaler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: volume-autoscaler
+subjects:
+  - kind: ServiceAccount
+    name: volume-autoscaler
+    namespace: {{ .Values.namespace }}
