@@ -108,12 +108,22 @@ resources:
   # `otel` database (create_schema: true).
   - clickhouse-otel.yaml
 
-  # Grafana Tempo — trace backend behind the collector's traces pipeline. Makes
-  # the DevAI agent → stage → llm-call spans queryable in Grafana (Tempo
-  # datasource registered in grafana.yaml).
-  # Scheduled for decommission once the replicated pipeline below carries
-  # traces (observability platform phase 6).
-  - tempo.yaml
+  # Grafana Tempo — DECOMMISSIONED 2026-07-26. File retained, uncomment to
+  # redeploy.
+  #
+  # ClickHouse is now the single trace store, queried through obs-ui. Unwired
+  # in two places at the same time, both of which matter:
+  #   - charts/thirdparty/otel-collector/values.yaml  tempo.enabled=false,
+  #     otlp/tempo dropped from tracesExporters. Left enabled, the collector
+  #     would retry every span against a dead endpoint and eventually push
+  #     backpressure onto its receivers.
+  #   - argocd/prod/infrastructure/grafana.yaml       Tempo datasource removed.
+  #
+  # Its PVC (observability/storage-tempo-0, 10Gi) is on a Retain storage class,
+  # so the PV survives as Released and must be deleted by hand to actually
+  # reclaim the disk. That is deliberate: the trace history outlives the app
+  # until someone confirms it is not needed.
+  # - tempo.yaml
 
   # --- Observability platform -------------------------------------------
   # Replicated telemetry pipeline replacing the single-node otel-collector +
@@ -169,10 +179,19 @@ resources:
   - knative-serving.yaml
   - knative-eventing.yaml
 
-  # Logging Stack (removed — unused, all components were scaled to 0)
-  - elasticsearch.yaml
-  - kibana.yaml
-  - fluent-bit.yaml
+  # Logging stack — DECOMMISSIONED 2026-07-26. Files retained, uncomment to
+  # redeploy.
+  #
+  # All three had been at zero replicas for months and their PVCs were already
+  # reclaimed, so nothing was collecting logs anywhere in the cluster — which
+  # is why otel_logs held zero rows. Log collection is now the otel-agent
+  # DaemonSet writing to ClickHouse.
+  #
+  # The Elasticsearch datasource has been removed from grafana.yaml; it pointed
+  # at an empty index.
+  # - elasticsearch.yaml
+  # - kibana.yaml
+  # - fluent-bit.yaml
 
   # Feature Flags (GrowthBook)
   - growthbook.yaml
