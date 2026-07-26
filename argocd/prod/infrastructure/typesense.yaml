@@ -68,7 +68,17 @@ spec:
         persistence:
           enabled: true
           size: 10Gi
-          storageClassName: standard-rwo-retain
+          # MUST match the live PVC's class. storageClassName is immutable
+          # after creation, so declaring standard-rwo-retain against an
+          # existing standard-rwo volume made ArgoCD retry a forbidden
+          # replace on a loop:
+          #   PersistentVolumeClaim "typesense-data" is invalid: spec:
+          #   Forbidden: spec is immutable after creation except
+          #   resources.requests
+          # The retain INTENT is preserved by setting the reclaim policy on
+          # the bound PV instead, which is mutable. Changing this value can
+          # only take effect by deleting and recreating the volume.
+          storageClassName: standard-rwo
 
   destination:
     server: https://kubernetes.default.svc
