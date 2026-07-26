@@ -111,6 +111,12 @@ podSecurityContext:
 
 containerSecurityContext:
   allowPrivilegeEscalation: false
+  # readOnlyRootFilesystem is deliberately NOT set on the clickhouse
+  # container. Trivy flags it (KSV-0014) and is right in principle, but the
+  # official entrypoint prepares directories outside the mounted paths on
+  # first boot, so an immutable root turns a working deploy into a crash
+  # loop. The init container above does run read-only. Revisit by testing in
+  # a scratch namespace, not by flipping it here untested.
   capabilities:
     drop:
       - ALL

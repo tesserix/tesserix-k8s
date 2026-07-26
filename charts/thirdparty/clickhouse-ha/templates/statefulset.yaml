@@ -66,6 +66,11 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+            # This container only copies into the mounted emptyDir, so it needs
+            # nothing writable on its own root. The main clickhouse container
+            # cannot do the same: the official entrypoint prepares directories
+            # outside the mounted paths on boot.
+            readOnlyRootFilesystem: true
           command:
             - /bin/bash
             - -c
