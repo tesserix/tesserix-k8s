@@ -1,8 +1,13 @@
-name: Audit Orphan Storage (Weekly)
+name: Reclaim Orphan Storage (Weekly)
 
 # Walks every GCE PD + k8s PV/PVC in the prod cluster, classifies each one
 # (CNPG member? StatefulSet member? Released? Zombie?), and reports anything
-# that needs human attention. Optionally auto-deletes the safest categories.
+# that needs human attention, then RECLAIMS the categories that are provably
+# safe to delete.
+#
+# The weekly scheduled run deletes automatically (age >= 7 days). Manual
+# dispatch stays report-only unless apply_safe_deletes is ticked, so you can
+# preview a sweep before trusting it.
 #
 # Workload-specific signals it understands:
 #  - CNPG cluster ordinals vs cluster.spec.instances
@@ -23,7 +28,7 @@ on:
         description: 'Minimum days since last detach before a disk is auto-deletable'
         required: false
         type: number
-        default: 14
+        default: 7
       apply_safe_deletes:
         description: 'Actually delete ZOMBIE_DISK + RELEASED_PV that exceed age_days (default: report only)'
         required: false
@@ -80,17 +85,47 @@ jobs:
 
       - name: Resolve inputs
         id: inputs
+        # Inputs come in via env rather than being interpolated straight into
+        # the script body. They are typed (number/boolean) so GitHub already
+        # validates them, but `${{ }}` inside run: is textual substitution — an
+        # env indirection keeps that from ever becoming a shell-injection point
+        # if the input types are later relaxed.
+        env:
+          IN_AGE_DAYS: ${{ github.event.inputs.age_days }}
+          IN_APPLY: ${{ github.event.inputs.apply_safe_deletes }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          age="${{ github.event.inputs.age_days }}"
-          apply="${{ github.event.inputs.apply_safe_deletes }}"
-          # Schedule runs always default to report-only with a 14-day window
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            age=14
-            apply=false
+          age="$IN_AGE_DAYS"
+          apply="$IN_APPLY"
+          # Scheduled runs now RECLAIM rather than merely report.
+          #
+          # Report-only was the original default, and the result was that
+          # nothing ever got reclaimed: an audit on 2026-07-26 found 31 Released
+          # PVs holding 1398Gi plus ~1552GB of unattached pd-balanced disks —
+          # roughly the size of the entire live cluster, billing every month.
+          #
+          # The cause is structural, not neglect. `standard-rwo-retain` sets
+          # reclaimPolicy=Retain, so every CNPG replica rebuild (the autoheal
+          # CronJob destroying a wedged replica so the operator recreates it)
+          # strands that replica's data+WAL disks permanently. homechef-postgres
+          # alone had ordinals 7 and 11-19 stranded at 130Gi per rebuild while
+          # the live cluster ran 20-22. That leak grows with every heal event,
+          # so it needs an automatic sweep, not a manual one nobody runs.
+          #
+          # Safe because the script only ever auto-deletes two categories:
+          #   RELEASED_PV  — PV phase=Released (the PVC is already gone)
+          #   ZOMBIE_DISK  — a GCE disk with no matching PV at all
+          # and only when the disk is currently UNATTACHED and has been detached
+          # for at least age_days. Anything still bound, in use by a running pod,
+          # or an in-scope CNPG/StatefulSet member is classified separately and
+          # never auto-deleted, regardless of age.
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            age=7
+            apply=true
           fi
-          echo "age=${age:-14}" >> "$GITHUB_OUTPUT"
+          echo "age=${age:-7}" >> "$GITHUB_OUTPUT"
           echo "apply=${apply:-false}" >> "$GITHUB_OUTPUT"
-          echo "Resolved: age=${age:-14}, apply=${apply:-false}"
+          echo "Resolved: age=${age:-7}, apply=${apply:-false}"
 
       - name: Run audit (report-only mode)
         if: steps.inputs.outputs.apply == 'false'
