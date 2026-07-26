@@ -6,7 +6,12 @@
 replicaCount: 3
 
 image:
-  repository: docker.redpanda.com/redpandadata/redpanda
+  # Pulled through the GAR docker.io mirror rather than docker.io directly.
+  # On a Spot pool every preemption re-pulls this image, so keeping the pull
+  # inside asia-south1 removes both the egress cost and a slow cold start.
+  # redpandadata/redpanda is published to docker.io as well as Redpanda's
+  # own registry, so the docker.io mirror covers it.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/redpandadata/redpanda
   # Pinned one patch behind the newest release: v26.1.14 was days old at pin
   # time and a buffer sits at the centre of the pipeline.
   tag: "v26.1.12"

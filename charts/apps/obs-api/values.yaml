@@ -4,9 +4,19 @@
 replicaCount: 2
 
 image:
-  repository: ghcr.io/tesserix/observability/obs-api
-  tag: latest
-  pullPolicy: IfNotPresent
+  # The GAR pull-through mirror, NOT ghcr.io directly.
+  #
+  # CI pushes to ghcr.io; ghcr-remote lazily mirrors it into asia-south1. Pods
+  # pull from inside the region, so image pulls cost no cross-region egress —
+  # which matters on a Spot pool, where every preemption re-pulls.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/observability/obs-api
+  # A moving branch tag. CI also publishes the immutable main-<sha7> that Kargo
+  # promotes for every other product; onboarding this one is the follow-up that
+  # replaces this tag with a pinned digest per release.
+  tag: main
+  # Required with a moving tag: IfNotPresent would keep serving whatever the
+  # node already cached and a redeploy would silently do nothing.
+  pullPolicy: Always
 
 imagePullSecrets:
   - name: ghcr-secret
