@@ -26,7 +26,13 @@ ports:
 kafka:
   brokers:
     - redpanda.observability.svc.cluster.local:9092
-  protocolVersion: "2.8.0"
+  # 2.5.0, not 2.8.0. protocol_version sets the MINIMUM API versions the
+  # client demands. At 2.8.0 franz-go requires JoinGroup (key 11) v7, but this
+  # Redpanda advertises max v6, so every consumer-group join failed with
+  # "max version 6 below the user defined min of 7" and the group sat Dead
+  # with 0 members. Producing was unaffected -- it uses a different API -- so
+  # data reached the topics and simply was never consumed.
+  protocolVersion: "2.5.0"
   # One group across all replicas: Redpanda then assigns partitions between
   # them and rebalances automatically when a Spot node is preempted.
   groupID: otel-ingest
