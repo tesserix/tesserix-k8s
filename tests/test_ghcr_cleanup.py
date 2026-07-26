@@ -160,6 +160,20 @@ class RetentionTests(unittest.TestCase):
 
 
 class ApiClientTests(unittest.TestCase):
+    def test_requests_current_github_api_version(self):
+        request = mock.Mock(
+            return_value=ghcr_cleanup.Response(200, {}, b"[]")
+        )
+        client = ghcr_cleanup.GitHubClient("token", request=request)
+
+        client.call("GET", "/items")
+
+        sent_request = request.call_args.args[0]
+        self.assertEqual(
+            "2026-03-10",
+            sent_request.headers["X-github-api-version"],
+        )
+
     def test_pagination_follows_next_link(self):
         responses = [
             ghcr_cleanup.Response(

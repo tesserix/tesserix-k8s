@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 
-API_VERSION = "2022-11-28"
+API_VERSION = "2026-03-10"
 DEFAULT_API_URL = "https://api.github.com"
 PARTIAL = "partial"
 COMPLETE = "complete"
@@ -248,7 +248,20 @@ class GitHubClient:
             if response.status in expected_statuses:
                 return response
 
-            last_error = f"HTTP {response.status}: {self._message(response)}"
+            diagnostic_headers = []
+            for header in (
+                "x-github-request-id",
+                "x-github-api-version-selected",
+                "x-accepted-github-permissions",
+            ):
+                if value := response.headers.get(header):
+                    diagnostic_headers.append(f"{header}={value}")
+            diagnostics = (
+                f" ({', '.join(diagnostic_headers)})" if diagnostic_headers else ""
+            )
+            last_error = (
+                f"HTTP {response.status}: {self._message(response)}{diagnostics}"
+            )
             retry = self._retry_delay(response, attempt)
             if retry is None or attempt + 1 >= self.max_attempts:
                 break
