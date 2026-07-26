@@ -57,26 +57,29 @@ jobs:
           helm repo update
 
       - name: Build chart dependencies
+        # NOT `|| true`. Swallowing a dependency-build failure does not skip the
+        # problem, it defers it: nothing gets vendored into charts/, and the next
+        # step fails with "chart directory is missing these dependencies" — which
+        # names the symptom and hides the cause. devai-stack sat broken on main
+        # this way. Collect every failure, print the real error, then fail.
         run: |
-          echo "Building dependencies for all charts..."
-          for chart in charts/apps/*/; do
-            if [ -f "$chart/Chart.yaml" ] && grep -q "dependencies:" "$chart/Chart.yaml"; then
-              echo "Building dependencies for $chart..."
-              helm dependency build "$chart" || true
+          set -uo pipefail
+          failed=0
+          for chart in charts/apps/*/ charts/infrastructure/*/ charts/thirdparty/*/; do
+            [ -f "$chart/Chart.yaml" ] || continue
+            grep -q "^dependencies:" "$chart/Chart.yaml" || continue
+            echo "Building dependencies for $chart..."
+            if ! helm dependency build "$chart" 2>&1 | tee /tmp/dep.log; then
+              echo "::error file=${chart}Chart.yaml::helm dependency build failed — $(grep -m1 -i 'error' /tmp/dep.log || echo 'see log above')"
+              failed=1
             fi
           done
-          for chart in charts/infrastructure/*/; do
-            if [ -f "$chart/Chart.yaml" ] && grep -q "dependencies:" "$chart/Chart.yaml"; then
-              echo "Building dependencies for $chart..."
-              helm dependency build "$chart" || true
-            fi
-          done
-          for chart in charts/thirdparty/*/; do
-            if [ -f "$chart/Chart.yaml" ] && grep -q "dependencies:" "$chart/Chart.yaml"; then
-              echo "Building dependencies for $chart..."
-              helm dependency build "$chart" || true
-            fi
-          done
+          if [ "$failed" -ne 0 ]; then
+            echo "One or more charts could not resolve their dependencies (see errors above)."
+            echo "For a file:// dependency this usually means the declared version no longer"
+            echo "matches the sibling chart's Chart.yaml version."
+            exit 1
+          fi
 
       - name: List changed charts
         id: list-changed
