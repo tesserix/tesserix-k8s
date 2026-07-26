@@ -14,7 +14,11 @@ spec:
   minReplicaCount: {{ .Values.keda.minReplicaCount }}
   maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
   triggers:
-    - type: cpu
+    # memory, not cpu. The platform sets NO cpu requests anywhere, and an
+    # HPA cannot compute CPU utilisation without a request to divide by --
+    # it reports FailedGetResourceMetric and the ScaledObject goes
+    # Degraded. memory works because memory requests ARE set.
+    - type: memory
       metricType: Utilization
       metadata:
         value: "75"
