@@ -101,11 +101,28 @@ jobs:
   argocd-validate:
     name: ArgoCD Validation
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
-    if: |
-      contains(github.event.pull_request.changed_files, 'argocd/')
+    # NOTE: this job previously guarded on
+    #   contains(github.event.pull_request.changed_files, 'argocd/')
+    # which is always false — changed_files is a COUNT, not a list, so
+    # contains(<number>, 'argocd/') never matches and the job silently skipped
+    # on every PR. It now always runs; the checks take a couple of seconds.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Catches the manifest mistakes that fail SILENTLY at runtime: an app not
+      # registered in its kustomization, an AppProject that does not exist, and
+      # `prune: false` (the zero value, dropped by the API server, which pins the
+      # app OutOfSync forever). All three have bitten this repo.
+      - name: Validate ArgoCD manifests (registration, project, prune)
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 scripts/validate-argocd-apps.py
 
       - name: Validate ArgoCD Application manifests
         run: |
