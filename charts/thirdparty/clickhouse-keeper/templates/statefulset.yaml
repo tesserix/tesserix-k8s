@@ -7,9 +7,16 @@ metadata:
 spec:
   serviceName: {{ include "clickhouse-keeper.headless" . }}
   replicas: {{ .Values.replicaCount }}
-  # Raft members must come up one at a time and in order so the first pod can
-  # bootstrap the quorum before its peers race it.
-  podManagementPolicy: OrderedReady
+  # Parallel is REQUIRED here, not a preference.
+  #
+  # OrderedReady deadlocks a Raft quorum: pod 0 cannot become Ready until it
+  # wins an election, an election needs a majority to answer, and its peers are
+  # never started because the StatefulSet is waiting for pod 0 to be Ready.
+  # Observed exactly that on first deploy — keeper-0 logged "total 1 nodes
+  # responded for pre-vote, at least 2 nodes should respond" on a loop while
+  # keeper-1 and keeper-2 were never created, which then blocked ClickHouse and
+  # crash-looped otel-ingest behind it.
+  podManagementPolicy: Parallel
   selector:
     matchLabels:
       {{- include "clickhouse-keeper.selectorLabels" . | nindent 6 }}
