@@ -1,0 +1,121 @@
+# OTel Collector gateway tier — defaults. Prod overrides go inline in
+# argocd/prod/infrastructure/otel-gateway.yaml (the redis-global pattern).
+
+# Two replicas so a Spot preemption never leaves the estate with no OTLP
+# endpoint. Each keeps its own disk queue, so they are not interchangeable
+# mid-flight — hence a StatefulSet rather than a Deployment.
+replicaCount: 2
+
+image:
+  # contrib distribution: the kafka exporter and k8sattributes processor are
+  # not in the core distribution.
+  repository: otel/opentelemetry-collector-contrib
+  tag: "0.156.0"
+  pullPolicy: IfNotPresent
+
+ports:
+  otlpGrpc: 4317
+  otlpHttp: 4318
+  # Collector's own self-telemetry, scraped by the existing Prometheus.
+  metrics: 8888
+  health: 13133
+
+kafka:
+  brokers:
+    - redpanda.observability.svc.cluster.local:9092
+  # Redpanda advertises Kafka 3.x; this is the client-side negotiated floor.
+  protocolVersion: "2.8.0"
+  topics:
+    logs: otel.logs
+    traces: otel.traces
+    metrics: otel.metrics
+  # -1 = wait for all in-sync replicas. With RF=3 this is the setting that
+  # makes an acknowledged produce durable against a broker loss. Do not relax
+  # it for throughput; the buffer exists precisely to absorb that cost.
+  requiredAcks: -1
+  compression: snappy
+  maxMessageBytes: 10000000
+
+# On-disk sending queue. This is the durability guarantee for the window where
+# Redpanda is unreachable — without it the queue is memory-only and a gateway
+# restart loses whatever it held.
+queue:
+  enabled: true
+  directory: /var/lib/otelcol/queue
+  # Queue size is counted in BATCHES once a storage backend is attached, not
+  # individual spans. 10k batches at ~8k records each is a deep buffer.
+  size: 10000
+  numConsumers: 4
+  # fsync per write is correct for a buffer of record but roughly halves
+  # throughput. Redpanda RF=3 is the durable copy; this queue only has to
+  # survive a process restart, which page cache already covers.
+  fsync: false
+
+persistence:
+  # Holds only the spool. 20Gi is ~2 hours of total estate telemetry at the
+  # measured rate, which comfortably outlasts a broker replacement.
+  size: 20Gi
+  storageClassName: standard-rwo
+
+processors:
+  memoryLimiter:
+    checkInterval: 5s
+    limitPercentage: 80
+    spikeLimitPercentage: 25
+  batch:
+    sendBatchSize: 8192
+    sendBatchMaxSize: 16384
+    timeout: 5s
+
+# Memory-only per platform policy: no CPU requests or limits anywhere.
+resources:
+  requests:
+    memory: 1Gi
+  limits:
+    memory: 1536Mi
+
+service:
+  type: ClusterIP
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8888"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  # The queue lives on a PVC, so the root filesystem stays immutable.
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+rbac:
+  # k8sattributes needs to read pods/namespaces cluster-wide to turn a source
+  # IP into pod, namespace, deployment and node attributes.
+  create: true
+
+podAntiAffinity:
+  enabled: true
+  topologyKey: kubernetes.io/hostname
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+nodeSelector:
+  workload: observability
+
+tolerations:
+  - key: workload
+    operator: Equal
+    value: observability
+    effect: NoSchedule

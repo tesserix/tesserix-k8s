@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-ingest
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: observability
+  annotations:
+    # Wave 0 — the Kafka consumer that writes to ClickHouse. Starts after storage
+    # and buffer. If it starts early it simply retries, and the backlog waits in
+    # Redpanda.
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/otel-ingest
+    targetRevision: HEAD
+    helm:
+      releaseName: otel-ingest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

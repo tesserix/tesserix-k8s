@@ -1,0 +1,23 @@
+apiVersion: v2
+name: clickhouse-ha
+description: |
+  Replicated ClickHouse for the observability platform — one shard, two
+  replicas, coordinated by the clickhouse-keeper chart.
+
+  Replaces the single-node charts/thirdparty/clickhouse-otel. The difference
+  that matters: tables are ReplicatedMergeTree created ON CLUSTER, so either
+  replica can serve reads and a lost replica re-syncs from its peer instead of
+  losing data.
+
+  Schema is NOT defined here. The OTel collector's clickhouseexporter creates
+  and migrates its own tables, and with `cluster_name` + `table_engine` set it
+  creates them as ReplicatedMergeTree ON CLUSTER. This chart guarantees the
+  server, the cluster topology, the Keeper wiring and the `otel` database; the
+  bootstrap SQL (database, readonly user, TTLs) lives in
+  charts/apps/db-schema-bootstrap/schemas/observability/clickhouse/.
+
+  Runs on the tainted Spot observability pool. Anti-affinity is required, not
+  preferred: two replicas on one node is not a replica pair.
+type: application
+version: 1.0.0
+appVersion: "25.10.2.65"

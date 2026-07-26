@@ -111,7 +111,31 @@ resources:
   # Grafana Tempo — trace backend behind the collector's traces pipeline. Makes
   # the DevAI agent → stage → llm-call spans queryable in Grafana (Tempo
   # datasource registered in grafana.yaml).
+  # Scheduled for decommission once the replicated pipeline below carries
+  # traces (observability platform phase 6).
   - tempo.yaml
+
+  # --- Observability platform -------------------------------------------
+  # Replicated telemetry pipeline replacing the single-node otel-collector +
+  # clickhouse-otel pair above. Everything below runs on the tainted Spot node
+  # pool (workload=observability) EXCEPT clickhouse-keeper, which stays on
+  # on-demand nodes so a preemption can never cost the Raft quorum.
+  #
+  # Flow: apps → otel-gateway → Redpanda → otel-ingest → ClickHouse
+  # Sync waves order it storage-first: keeper (-2), storage+buffer (-1),
+  # consumer (0), then the public OTLP endpoint (1).
+  #
+  # These are ADDITIVE. Applications keep pointing at the old otel-collector
+  # until they are cut over one at a time, so this can be rolled back by
+  # removing these six lines.
+  - clickhouse-keeper.yaml
+  - clickhouse-ha.yaml
+  - redpanda.yaml
+  - otel-ingest.yaml
+  - otel-gateway.yaml
+  # Creates the otel database, the read-only user obs-api authenticates as, and
+  # reconciles retention on tables the exporter has already created.
+  - observability-db-schema-bootstrap.yaml
 
   # Grafana dashboard ConfigMaps — DevAI, mark8ly, fe3dr (HomeChef) and the
   # mark8ly subscription set, loaded by the Grafana sidecar.

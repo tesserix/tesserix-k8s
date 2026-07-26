@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "otel-ingest.name" . }}-config
+  labels:
+    {{- include "otel-ingest.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:{{ .Values.ports.health }}
+
+    receivers:
+      # One receiver serves all three pipelines; the per-signal blocks select
+      # which topic feeds which. (Pre-0.150 this needed one alias per signal.)
+      kafka:
+        brokers:
+          {{- range .Values.kafka.brokers }}
+          - {{ . | quote }}
+          {{- end }}
+        protocol_version: {{ .Values.kafka.protocolVersion | quote }}
+        client_id: otel-ingest
+        group_id: {{ .Values.kafka.groupID | quote }}
+        initial_offset: {{ .Values.kafka.initialOffset }}
+        logs:
+          topics: [{{ .Values.kafka.topics.logs | quote }}]
+          encoding: otlp_proto
+        traces:
+          topics: [{{ .Values.kafka.topics.traces | quote }}]
+          encoding: otlp_proto
+        metrics:
+          topics: [{{ .Values.kafka.topics.metrics | quote }}]
+          encoding: otlp_proto
+        message_marking:
+          # Commit the offset only AFTER the batch has been exported. This is
+          # the setting that makes a crash replay instead of lose: the default
+          # commits on receipt, which drops anything in flight.
+          after: true
+          # Do not commit on error either — a failed write must be retried, not
+          # skipped.
+          on_error: false
+
+    processors:
+      memory_limiter:
+        check_interval: {{ .Values.processors.memoryLimiter.checkInterval }}
+        limit_percentage: {{ .Values.processors.memoryLimiter.limitPercentage }}
+        spike_limit_percentage: {{ .Values.processors.memoryLimiter.spikeLimitPercentage }}
+
+      batch:
+        send_batch_size: {{ .Values.processors.batch.sendBatchSize }}
+        send_batch_max_size: {{ .Values.processors.batch.sendBatchMaxSize }}
+        timeout: {{ .Values.processors.batch.timeout }}
+
+    exporters:
+      clickhouse:
+        endpoint: {{ .Values.clickhouse.endpoint | quote }}
+        database: {{ .Values.clickhouse.database | quote }}
+        username: {{ .Values.clickhouse.username | quote }}
+        # Resolved from the env var wired to the Secret in deployment.yaml, so
+        # the password never appears in the ConfigMap.
+        password: ${env:CLICKHOUSE_PASSWORD}
+        # These two together are what produce a replicated schema. Without
+        # cluster_name the exporter creates local MergeTree tables and the
+        # second replica stays permanently empty.
+        cluster_name: {{ .Values.clickhouse.clusterName | quote }}
+        table_engine:
+          name: {{ .Values.clickhouse.tableEngine | quote }}
+        create_schema: {{ .Values.clickhouse.createSchema }}
+        ttl: {{ .Values.clickhouse.ttl }}
+        async_insert: {{ .Values.clickhouse.asyncInsert }}
+        compress: {{ .Values.clickhouse.compress }}
+        sending_queue:
+          enabled: true
+          # Memory-only queue is correct here: the durable copy is Redpanda,
+          # and offsets are not committed until the write lands, so anything
+          # lost from this queue is simply re-consumed.
+          queue_size: 5000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 60s
+          # Retry forever. A permanent give-up would commit past unwritten data.
+          max_elapsed_time: 0
+
+    service:
+      extensions:
+        - health_check
+      pipelines:
+        traces:
+          receivers: [kafka]
+          processors: [memory_limiter, batch]
+          exporters: [clickhouse]
+        logs:
+          receivers: [kafka]
+          processors: [memory_limiter, batch]
+          exporters: [clickhouse]
+        metrics:
+          receivers: [kafka]
+          processors: [memory_limiter, batch]
+          exporters: [clickhouse]
+      telemetry:
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: {{ .Values.ports.metrics }}

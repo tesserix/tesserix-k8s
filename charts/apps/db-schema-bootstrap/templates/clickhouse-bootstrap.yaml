@@ -1,0 +1,142 @@
+{{- if .Values.clickhouse.enabled }}
+{{/*
+ClickHouse variant of the schema bootstrap.
+
+The main cronjob.yaml is PostgreSQL-only (psql, postgres image, postgres
+targets). ClickHouse needs a different client and different connection flags, so
+it gets its own CronJob rather than bending the postgres path into knots.
+
+Gated behind clickhouse.enabled, which defaults to false — existing per-product
+releases of this chart render exactly as before and are unaffected.
+
+Schemas come from schemas/<app>/clickhouse/*.sql, matching the same
+schemas/<project>/<database>/ layout every other product uses.
+*/}}
+{{- $schemaDir := printf "schemas/%s/clickhouse" .Values.app }}
+{{- $schemas := .Files.Glob (printf "%s/*.sql" $schemaDir) }}
+{{- if $schemas }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "db-schema-bootstrap.fullname" . }}-clickhouse-schemas
+  namespace: {{ include "db-schema-bootstrap.namespace" . }}
+  labels:
+    {{- include "db-schema-bootstrap.labels" . | nindent 4 }}
+data:
+  {{- range $path, $_ := $schemas }}
+  {{ base $path }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "db-schema-bootstrap.fullname" . }}-clickhouse
+  namespace: {{ include "db-schema-bootstrap.namespace" . }}
+  labels:
+    {{- include "db-schema-bootstrap.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.clickhouse.schedule | default .Values.schedule | quote }}
+  suspend: {{ .Values.suspend | default false }}
+  concurrencyPolicy: {{ .Values.concurrencyPolicy }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "db-schema-bootstrap.selectorLabels" . | nindent 8 }}
+    spec:
+      ttlSecondsAfterFinished: {{ .Values.ttlSecondsAfterFinished }}
+      backoffLimit: {{ .Values.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "db-schema-bootstrap.selectorLabels" . | nindent 12 }}
+          annotations:
+            # ClickHouse's native protocol is not HTTP.
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: OnFailure
+          {{- with .Values.clickhouse.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.clickhouse.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: bootstrap
+              image: {{ .Values.image.clickhouse }}
+              env:
+                - name: CLICKHOUSE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.clickhouse.secretName }}
+                      key: {{ .Values.clickhouse.secretKey }}
+                {{- if .Values.clickhouse.observerSecretKey }}
+                - name: OBSERVER_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.clickhouse.secretName }}
+                      key: {{ .Values.clickhouse.observerSecretKey }}
+                {{- end }}
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+
+                  HOST="{{ .Values.clickhouse.host }}"
+                  PORT="{{ .Values.clickhouse.port }}"
+                  USER="{{ .Values.clickhouse.user }}"
+
+                  echo "waiting for ClickHouse at ${HOST}:${PORT}..."
+                  for i in $(seq 1 60); do
+                    if clickhouse-client --host "${HOST}" --port "${PORT}" \
+                         --user "${USER}" --password "${CLICKHOUSE_PASSWORD}" \
+                         --query "SELECT 1" >/dev/null 2>&1; then
+                      echo "ClickHouse reachable"
+                      break
+                    fi
+                    if [ "$i" -eq 60 ]; then
+                      echo "ClickHouse unreachable after 5 minutes" >&2
+                      exit 1
+                    fi
+                    sleep 5
+                  done
+
+                  # Applied in filename order, so numeric prefixes control
+                  # dependency order (database before user before grants).
+                  for f in $(ls /schemas/*.sql | sort); do
+                    echo "=== applying $(basename "$f") ==="
+                    # Secrets are substituted into a tmpfs copy so the rendered
+                    # SQL containing a password never touches a real volume.
+                    sed -e "s|__OBSERVER_PASSWORD__|${OBSERVER_PASSWORD:-}|g" \
+                        "$f" > /tmp/rendered.sql
+                    clickhouse-client --host "${HOST}" --port "${PORT}" \
+                      --user "${USER}" --password "${CLICKHOUSE_PASSWORD}" \
+                      --multiquery < /tmp/rendered.sql
+                    rm -f /tmp/rendered.sql
+                  done
+
+                  echo "=== clickhouse bootstrap complete ==="
+              volumeMounts:
+                - name: clickhouse-schemas
+                  mountPath: /schemas
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+          volumes:
+            - name: clickhouse-schemas
+              configMap:
+                name: {{ include "db-schema-bootstrap.fullname" . }}-clickhouse-schemas
+            - name: tmp
+              emptyDir:
+                medium: Memory
+{{- end }}
+{{- end }}

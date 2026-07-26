@@ -1,0 +1,43 @@
+{{/*
+No data flows in through this service — the tier pulls from Redpanda. It exists
+only so the collector's self-telemetry has a stable scrape target and so
+`kubectl port-forward` can reach the health endpoint during debugging.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "otel-ingest.name" . }}
+  labels:
+    {{- include "otel-ingest.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.ports.metrics }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    - port: {{ .Values.ports.health }}
+      targetPort: health
+      protocol: TCP
+      name: health
+  selector:
+    {{- include "otel-ingest.selectorLabels" . | nindent 4 }}
+{{- if .Values.podDisruptionBudget.enabled }}
+---
+{{/*
+Keeps a drain from stopping consumption entirely. A fully stopped ingest tier
+is survivable — the backlog builds in Redpanda — but it burns retention, so
+avoid it during voluntary disruptions.
+*/}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "otel-ingest.name" . }}
+  labels:
+    {{- include "otel-ingest.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "otel-ingest.selectorLabels" . | nindent 6 }}
+{{- end }}

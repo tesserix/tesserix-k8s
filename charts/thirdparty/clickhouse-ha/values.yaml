@@ -1,0 +1,126 @@
+# Replicated ClickHouse — defaults. Prod overrides go inline in
+# argocd/prod/infrastructure/clickhouse-ha.yaml (the redis-global pattern).
+
+# One shard, two replicas. Raising this adds REPLICAS, not shards — the shard
+# count is fixed at 1 in the remote_servers template. At this data volume
+# (~1.2GiB/day compressed) a single shard is correct; sharding adds a
+# distributed-query hop for no benefit until the data outgrows one node's disk.
+replicaCount: 2
+
+image:
+  repository: clickhouse/clickhouse-server
+  tag: "25.10.2.65"
+  pullPolicy: IfNotPresent
+
+# Logical cluster name. MUST match the `cluster_name` set on the otel-ingest
+# collector's clickhouseexporter, otherwise the exporter creates plain
+# (unreplicated) MergeTree tables and replication silently does nothing.
+clusterName: otel
+
+# Database the exporter targets.
+database: otel
+
+ports:
+  http: 8123
+  native: 9000
+  # Replica-to-replica part transfer. Never exposed outside the namespace.
+  interserver: 9009
+  prometheus: 9363
+
+keeper:
+  # Client service of the clickhouse-keeper chart. Individual pods are listed
+  # rather than the load-balanced service so the client can fail over between
+  # quorum members itself.
+  headless: clickhouse-keeper-headless
+  service: clickhouse-keeper
+  replicaCount: 3
+  port: 9181
+  sessionTimeoutMs: 30000
+  operationTimeoutMs: 10000
+
+auth:
+  user: default
+  existingSecret: clickhouse-secrets
+  secretKey: clickhouse-password
+  # Least-privilege user for obs-api. Read-only: it can run SELECTs against the
+  # otel database and nothing else, so a compromised API cannot drop telemetry.
+  readonly:
+    enabled: true
+    user: observer
+    secretKey: observer-password
+  # Dev-only self-contained Secret. MUST stay false in prod, where the Secret
+  # named by existingSecret comes from an ExternalSecret.
+  createPlaceholderSecret: false
+  placeholderPassword: "changeme"
+
+# Server tuning. Memory ratios are relative to the container limit, so they
+# track `resources.limits.memory` automatically.
+server:
+  # Leave headroom under the cgroup limit so a query spike gets an out-of-memory
+  # ERROR (retryable) instead of the kernel OOM-killing the whole server.
+  maxServerMemoryUsageToRamRatio: 0.8
+  maxConcurrentQueries: 100
+  # Merges are the main background memory consumer; cap them well under the
+  # server budget so ingestion is never starved by a large merge.
+  backgroundPoolSize: 8
+  backgroundSchedulePoolSize: 8
+  maxPartitionSizeToDrop: 0
+  maxTableSizeToDrop: 0
+
+persistence:
+  # Measured: ~11.7GiB/day raw logs across the estate, ~1.2GiB/day after
+  # ClickHouse compression. 30 days ≈ 40GiB; 100Gi is ~2.5x that, leaving room
+  # for merge scratch space (a merge can transiently need 2x the part size).
+  # The storage class allows expansion, so grow this rather than over-buying.
+  size: 100Gi
+  # Retain: a chart deletion must never destroy telemetry history.
+  storageClassName: standard-rwo-retain
+
+# Memory-only per platform policy: no CPU requests or limits anywhere.
+resources:
+  requests:
+    memory: 6Gi
+  limits:
+    memory: 9Gi
+
+service:
+  type: ClusterIP
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9363"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  # uid/gid 101 is the `clickhouse` user in the official image.
+  runAsUser: 101
+  runAsGroup: 101
+  fsGroup: 101
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+podAntiAffinity:
+  enabled: true
+  topologyKey: kubernetes.io/hostname
+
+podDisruptionBudget:
+  enabled: true
+  # With 2 replicas, allow at most one down at a time.
+  maxUnavailable: 1
+
+# The Spot observability pool.
+nodeSelector:
+  workload: observability
+
+tolerations:
+  - key: workload
+    operator: Equal
+    value: observability
+    effect: NoSchedule

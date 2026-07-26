@@ -1,0 +1,108 @@
+# OTel Collector ingest tier — defaults. Prod overrides go inline in
+# argocd/prod/infrastructure/otel-ingest.yaml (the redis-global pattern).
+
+# Consumers in one Kafka consumer group. Scaling this up to the partition count
+# (6) increases ingest parallelism; beyond that the extra pods idle.
+replicaCount: 2
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: "0.156.0"
+  pullPolicy: IfNotPresent
+
+ports:
+  metrics: 8888
+  health: 13133
+
+kafka:
+  brokers:
+    - redpanda.observability.svc.cluster.local:9092
+  protocolVersion: "2.8.0"
+  # One group across all replicas: Redpanda then assigns partitions between
+  # them and rebalances automatically when a Spot node is preempted.
+  groupID: otel-ingest
+  # On a first start with no committed offset, read the whole retained backlog
+  # rather than only new messages — otherwise a rebuild silently skips data.
+  initialOffset: earliest
+  topics:
+    logs: otel.logs
+    traces: otel.traces
+    metrics: otel.metrics
+
+clickhouse:
+  endpoint: "tcp://clickhouse.observability.svc.cluster.local:9000?dial_timeout=10s"
+  database: otel
+  username: default
+  # MUST match clickhouse-ha's clusterName. If it does not, the exporter
+  # silently creates plain MergeTree tables and replication does nothing.
+  clusterName: otel
+  # ReplicatedMergeTree with no explicit parameters: ClickHouse fills them from
+  # its default_replica_path/default_replica_name settings, which resolve
+  # through the {shard} and {replica} macros the clickhouse-ha init container
+  # generates per pod.
+  tableEngine: ReplicatedMergeTree
+  createSchema: true
+  # Retention. TTL is applied to tables the exporter creates; changing it later
+  # requires an ALTER TABLE ... MODIFY TTL on the existing tables.
+  ttl: 720h
+  # Batches rows server-side, which suits many small inserts from several
+  # consumers far better than one synchronous insert per batch.
+  asyncInsert: true
+  compress: lz4
+  env:
+    secretName: clickhouse-secrets
+    secretKey: clickhouse-password
+
+processors:
+  memoryLimiter:
+    checkInterval: 5s
+    limitPercentage: 80
+    spikeLimitPercentage: 25
+  batch:
+    sendBatchSize: 8192
+    sendBatchMaxSize: 16384
+    timeout: 10s
+
+# Memory-only per platform policy: no CPU requests or limits anywhere.
+resources:
+  requests:
+    memory: 1Gi
+  limits:
+    memory: 1536Mi
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8888"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+podAntiAffinity:
+  enabled: true
+  topologyKey: kubernetes.io/hostname
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+nodeSelector:
+  workload: observability
+
+tolerations:
+  - key: workload
+    operator: Equal
+    value: observability
+    effect: NoSchedule
