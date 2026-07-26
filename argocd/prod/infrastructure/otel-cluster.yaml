@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-cluster
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: observability
+  annotations:
+    # Wave 2 — alongside otel-agent, after the gateway.
+    #
+    # Singleton by design: it watches the cluster-wide event stream and scrapes
+    # annotated pods, so a second replica would store everything twice. The
+    # chart hardcodes replicas: 1 and uses a Recreate strategy for that reason.
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/otel-cluster
+    targetRevision: HEAD
+    helm:
+      releaseName: otel-cluster
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

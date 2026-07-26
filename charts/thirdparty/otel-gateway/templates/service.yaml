@@ -1,0 +1,48 @@
+{{/*
+The estate's OTLP endpoint. Applications target:
+  otel-gateway.observability.svc.cluster.local:4317
+
+Note this keeps the same shape as the service the existing otel-collector chart
+exposes, so migrating an application is a one-line endpoint change.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "otel-gateway.name" . }}
+  labels:
+    {{- include "otel-gateway.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.ports.otlpGrpc }}
+      targetPort: otlp-grpc
+      protocol: TCP
+      name: otlp-grpc
+    - port: {{ .Values.ports.otlpHttp }}
+      targetPort: otlp-http
+      protocol: TCP
+      name: otlp-http
+    - port: {{ .Values.ports.metrics }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "otel-gateway.selectorLabels" . | nindent 4 }}
+{{- if .Values.podDisruptionBudget.enabled }}
+---
+{{/*
+Keeps a drain from removing the last OTLP endpoint, which would make every
+application's exporter start retrying at once.
+*/}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "otel-gateway.name" . }}
+  labels:
+    {{- include "otel-gateway.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "otel-gateway.selectorLabels" . | nindent 6 }}
+{{- end }}

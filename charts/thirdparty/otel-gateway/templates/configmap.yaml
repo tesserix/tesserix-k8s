@@ -1,0 +1,141 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "otel-gateway.name" . }}-config
+  labels:
+    {{- include "otel-gateway.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    extensions:
+      {{- if .Values.queue.enabled }}
+      # Backs the exporter's sending queue with the PVC. Without this the queue
+      # is memory-only and a restart drops whatever it was holding.
+      file_storage/queue:
+        directory: {{ .Values.queue.directory }}
+        timeout: 10s
+        fsync: {{ .Values.queue.fsync }}
+      {{- end }}
+      health_check:
+        endpoint: 0.0.0.0:{{ .Values.ports.health }}
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:{{ .Values.ports.otlpGrpc }}
+            # Applications send large trace batches; the 4MiB default rejects
+            # them with a confusing RESOURCE_EXHAUSTED.
+            max_recv_msg_size_mib: 16
+          http:
+            endpoint: 0.0.0.0:{{ .Values.ports.otlpHttp }}
+
+    processors:
+      # MUST be first in every pipeline. It sheds load by refusing new data
+      # when memory climbs, which turns an OOM kill into retryable backpressure.
+      memory_limiter:
+        check_interval: {{ .Values.processors.memoryLimiter.checkInterval }}
+        limit_percentage: {{ .Values.processors.memoryLimiter.limitPercentage }}
+        spike_limit_percentage: {{ .Values.processors.memoryLimiter.spikeLimitPercentage }}
+
+      # Turns the sender's pod IP into k8s.* attributes, so telemetry is
+      # attributable to a workload without every service having to set them.
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.deployment.name
+            - k8s.statefulset.name
+            - k8s.daemonset.name
+            - k8s.cronjob.name
+            - k8s.node.name
+            - k8s.container.name
+          labels:
+            - tag_name: app
+              key: app.kubernetes.io/name
+              from: pod
+            - tag_name: component
+              key: app.kubernetes.io/component
+              from: pod
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.ip
+          - sources:
+              - from: connection
+
+      batch:
+        send_batch_size: {{ .Values.processors.batch.sendBatchSize }}
+        send_batch_max_size: {{ .Values.processors.batch.sendBatchMaxSize }}
+        timeout: {{ .Values.processors.batch.timeout }}
+
+    exporters:
+      # One exporter serves all three signals; the per-signal blocks below pick
+      # the topic. (Pre-0.150 this needed one exporter alias per signal.)
+      kafka:
+        brokers:
+          {{- range .Values.kafka.brokers }}
+          - {{ . | quote }}
+          {{- end }}
+        protocol_version: {{ .Values.kafka.protocolVersion | quote }}
+        client_id: otel-gateway
+        logs:
+          topic: {{ .Values.kafka.topics.logs | quote }}
+          encoding: otlp_proto
+        traces:
+          topic: {{ .Values.kafka.topics.traces | quote }}
+          encoding: otlp_proto
+        metrics:
+          topic: {{ .Values.kafka.topics.metrics | quote }}
+          encoding: otlp_proto
+        producer:
+          required_acks: {{ .Values.kafka.requiredAcks }}
+          compression: {{ .Values.kafka.compression }}
+          max_message_bytes: {{ .Values.kafka.maxMessageBytes }}
+        sending_queue:
+          enabled: {{ .Values.queue.enabled }}
+          {{- if .Values.queue.enabled }}
+          storage: file_storage/queue
+          {{- end }}
+          queue_size: {{ .Values.queue.size }}
+          num_consumers: {{ .Values.queue.numConsumers }}
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 60s
+          # 0 = retry forever. Combined with the on-disk queue this is the
+          # "nothing is lost" guarantee: data is only dropped if the queue
+          # itself fills, which surfaces as an alertable metric.
+          max_elapsed_time: 0
+
+    service:
+      extensions:
+        {{- if .Values.queue.enabled }}
+        - file_storage/queue
+        {{- end }}
+        - health_check
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, batch]
+          exporters: [kafka]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, batch]
+          exporters: [kafka]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, batch]
+          exporters: [kafka]
+      telemetry:
+        metrics:
+          # The `readers` form; the older `address:` field is removed in 0.156.
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: {{ .Values.ports.metrics }}

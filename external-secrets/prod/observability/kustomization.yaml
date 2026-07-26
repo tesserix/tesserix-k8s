@@ -1,4 +1,14 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  # Existing single-node ClickHouse (clickhouse-otel chart). Kept until the
+  # migration to the replicated cluster completes and that chart is retired.
   - externalsecret.yaml
+  # Replicated ClickHouse (clickhouse-ha chart) + obs-api's read-only user.
+  - clickhouse-secrets.yaml
+  # obs-api session key + its dedicated Google OAuth client.
+  # NOTE: the two google-client GCP secrets are a manual prerequisite --
+  # see docs/observability-oauth-setup.md.
+  - obs-api-secrets.yaml
+  # Registry credentials for the private obs-api / obs-ui images.
+  - ghcr-secret.yaml

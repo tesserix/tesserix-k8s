@@ -1,0 +1,51 @@
+# obs-ui — defaults. Prod overrides go inline in
+# argocd/prod/infrastructure/obs-ui.yaml.
+
+replicaCount: 2
+
+image:
+  # GAR pull-through mirror — see charts/apps/obs-api/values.yaml for why.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/observability/obs-ui
+  tag: main
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+port: 3010
+
+# Memory-only per platform policy: no CPU requests or limits anywhere.
+# A Next.js standalone server serving a handful of routes is small.
+resources:
+  requests:
+    memory: 192Mi
+  limits:
+    memory: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  fsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+nodeSelector:
+  workload: observability
+
+tolerations:
+  - key: workload
+    operator: Equal
+    value: observability
+    effect: NoSchedule

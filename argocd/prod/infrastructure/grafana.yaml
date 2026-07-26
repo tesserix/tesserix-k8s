@@ -2,15 +2,19 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: grafana
-  annotations:
-    kargo.akuity.io/authorized-stage: "kargo-infra:observability-prod"
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
   labels:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: monitoring
+  # These were two separate `annotations:` blocks. YAML keeps only the last
+  # occurrence of a duplicate key, so the Kargo authorization was being parsed
+  # away entirely and kargo-infra:observability-prod could not promote to this
+  # app. Merged into one block; no behaviour is intentionally changed here
+  # beyond the Kargo annotation now actually existing.
   annotations:
+    kargo.akuity.io/authorized-stage: "kargo-infra:observability-prod"
     argocd.argoproj.io/sync-wave: "1"
 spec:
   project: infrastructure
@@ -80,33 +84,18 @@ spec:
                 isDefault: true
                 editable: true
 
-              # Tempo — distributed traces (DevAI agent → stage → llm-call
-              # spans, fanned in by the OTel collector). traceToLogs/Metrics
-              # left default; the trace_id correlates to Prometheus exemplars.
-              - name: Tempo
-                type: tempo
-                uid: tempo
-                # Single-binary Tempo serves its HTTP API on 3200.
-                url: http://tempo.observability.svc.cluster.local:3200
-                access: proxy
-                editable: true
-                jsonData:
-                  httpMethod: GET
-                  serviceMap:
-                    datasourceUid: Prometheus
-
-              # Elasticsearch datasource for logs
-              - name: Elasticsearch
-                type: elasticsearch
-                url: http://elasticsearch-master.logging.svc.cluster.local:9200
-                access: proxy
-                database: "fluentbit-*"
-                jsonData:
-                  timeField: "@timestamp"
-                  esVersion: "8.0.0"
-                  logMessageField: message
-                  logLevelField: level
-                editable: true
+              # DECOMMISSIONED 2026-07-26 — Tempo and Elasticsearch datasources
+              # removed with their backends.
+              #
+              # Traces now live in the replicated ClickHouse and are queried
+              # through obs-ui at observability.tesserix.app, which renders the
+              # waterfall directly. Logs were never in Elasticsearch at all:
+              # fluent-bit had been at zero replicas for weeks, so that
+              # datasource pointed at an empty index.
+              #
+              # Grafana keeps Prometheus and remains the metrics and alerting
+              # surface. It is deliberately NOT given a ClickHouse datasource —
+              # obs-ui is the query surface for logs, traces and events.
 
               # Loki datasource (optional, for log aggregation)
               # - name: Loki

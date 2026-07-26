@@ -1,0 +1,19 @@
+apiVersion: v2
+name: redpanda
+description: |
+  Redpanda — the durable buffer between the OTel gateway tier and ClickHouse.
+
+  Kafka-wire-compatible, so the collector's kafka exporter and kafka receiver
+  talk to it unmodified, but it is a single C++ binary with no ZooKeeper and no
+  JVM, which is roughly a third of Kafka's memory footprint. That is what makes
+  a genuinely replicated buffer affordable on a small Spot pool.
+
+  Three brokers with replication factor 3 and acks=all: a produce is
+  acknowledged only once a majority of replicas have it on disk, so a Spot
+  preemption costs availability while a broker is replaced, not data.
+
+  Topics are created explicitly by a post-install hook rather than relying on
+  auto-creation, so partition count and retention are deliberate.
+type: application
+version: 1.0.0
+appVersion: "v26.1.12"

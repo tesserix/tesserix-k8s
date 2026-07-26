@@ -108,10 +108,62 @@ resources:
   # `otel` database (create_schema: true).
   - clickhouse-otel.yaml
 
-  # Grafana Tempo — trace backend behind the collector's traces pipeline. Makes
-  # the DevAI agent → stage → llm-call spans queryable in Grafana (Tempo
-  # datasource registered in grafana.yaml).
-  - tempo.yaml
+  # Grafana Tempo — DECOMMISSIONED 2026-07-26. Manifest deleted; restore from
+  # git history if it is ever needed. An orphaned-but-retained file trips the
+  # ArgoCD validator, which is right to flag it: an unregistered manifest is
+  # indistinguishable from one someone forgot to register.
+  #
+  # ClickHouse is now the single trace store, queried through obs-ui. Unwired
+  # in two places at the same time, both of which matter:
+  #   - charts/thirdparty/otel-collector/values.yaml  tempo.enabled=false,
+  #     otlp/tempo dropped from tracesExporters. Left enabled, the collector
+  #     would retry every span against a dead endpoint and eventually push
+  #     backpressure onto its receivers.
+  #   - argocd/prod/infrastructure/grafana.yaml       Tempo datasource removed.
+  #
+  # Its PVC (observability/storage-tempo-0, 10Gi) is on a Retain storage class,
+  # so the PV survives as Released and must be deleted by hand to actually
+  # reclaim the disk. That is deliberate: the trace history outlives the app
+  # until someone confirms it is not needed.
+
+  # --- Observability platform -------------------------------------------
+  # Replicated telemetry pipeline replacing the single-node otel-collector +
+  # clickhouse-otel pair above. Everything below runs on the tainted Spot node
+  # pool (workload=observability) EXCEPT clickhouse-keeper, which stays on
+  # on-demand nodes so a preemption can never cost the Raft quorum.
+  #
+  # Flow: apps → otel-gateway → Redpanda → otel-ingest → ClickHouse
+  # Sync waves order it storage-first: keeper (-2), storage+buffer (-1),
+  # consumer (0), then the public OTLP endpoint (1).
+  #
+  # These are ADDITIVE. Applications keep pointing at the old otel-collector
+  # until they are cut over one at a time, so this can be rolled back by
+  # removing these six lines.
+  - clickhouse-keeper.yaml
+  - clickhouse-ha.yaml
+  - redpanda.yaml
+  - otel-ingest.yaml
+  - otel-gateway.yaml
+  # Creates the otel database, the read-only user obs-api authenticates as, and
+  # reconciles retention on tables the exporter has already created.
+  - observability-db-schema-bootstrap.yaml
+  # Collection tier. otel-agent is a DaemonSet on EVERY node (blanket taint
+  # toleration) tailing /var/log/pods — this is what makes logs exist at all;
+  # otel_logs has held zero rows since fluent-bit was scaled to zero.
+  # otel-cluster is a singleton for Kubernetes events (90d, vs the ~1h etcd
+  # keeps them) and Prometheus metrics scraped at 60s for long-term history.
+  - otel-agent.yaml
+  - otel-cluster.yaml
+  # Query API behind Google sign-in, restricted to an explicit three-address
+  # allowlist. Connects to ClickHouse as the read-only `observer` user.
+  # Needs a manual OAuth client first — docs/observability-oauth-setup.md.
+  - obs-api.yaml
+  # The explorer UI, and the routing that splits observability.tesserix.app
+  # between them: / to the UI, /api and /auth straight to obs-api. The split
+  # happens at the gateway rather than through a Next.js rewrite because a
+  # rewrite buffers SSE and freezes the live log tail.
+  - obs-ui.yaml
+  - observability-istio.yaml
 
   # Grafana dashboard ConfigMaps — DevAI, mark8ly, fe3dr (HomeChef) and the
   # mark8ly subscription set, loaded by the Grafana sidecar.
@@ -128,10 +180,16 @@ resources:
   - knative-serving.yaml
   - knative-eventing.yaml
 
-  # Logging Stack (removed — unused, all components were scaled to 0)
-  - elasticsearch.yaml
-  - kibana.yaml
-  - fluent-bit.yaml
+  # Logging stack — DECOMMISSIONED 2026-07-26. Manifests deleted; restore from
+  # git history if ever needed.
+  #
+  # All three had been at zero replicas for months and their PVCs were already
+  # reclaimed, so nothing was collecting logs anywhere in the cluster — which
+  # is why otel_logs held zero rows. Log collection is now the otel-agent
+  # DaemonSet writing to ClickHouse.
+  #
+  # The Elasticsearch datasource has been removed from grafana.yaml; it pointed
+  # at an empty index.
 
   # Feature Flags (GrowthBook)
   - growthbook.yaml

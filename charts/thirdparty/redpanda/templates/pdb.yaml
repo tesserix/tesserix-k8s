@@ -1,0 +1,18 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{/*
+minAvailable=2 of 3 is the Raft majority. Blocks a drain or upgrade from taking
+a second broker while one is already down, which would stall every produce
+(acks=all needs a majority) and back the pipeline up into the gateway queues.
+*/}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "redpanda.name" . }}
+  labels:
+    {{- include "redpanda.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "redpanda.selectorLabels" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,84 @@
+##############################################################################
+# Observability Istio routing
+#
+#   observability.tesserix.app/          → obs-ui   (explorer, Next.js)
+#   observability.tesserix.app/api/*     → obs-api  (queries + live tail)
+#   observability.tesserix.app/auth/*    → obs-api  (Google OAuth flow)
+#
+# One host, split by path, deliberately.
+#
+# The UI does NOT proxy /api through a Next.js rewrite. Proxying buffers
+# Server-Sent Events, which makes the live log tail appear frozen — the same
+# failure the devai dashboard hit, where Logs had to fall back to polling
+# because SSE never flushed through the rewrite layer. Splitting at the gateway
+# keeps the browser talking to obs-api directly on one origin, so the session
+# cookie is still same-site and the stream is never touched by Node.
+##############################################################################
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: observability
+  namespace: observability
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: routing
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - observability.tesserix.app
+  http:
+    # Live log tail. Matched BEFORE the general /api/ rule because it needs a
+    # long timeout: this is a persistent SSE stream, and the default timeout
+    # would sever it mid-session.
+    - match:
+        - uri:
+            prefix: /api/logs/tail
+      route:
+        - destination:
+            host: obs-api.observability.svc.cluster.local
+            port:
+              number: 80
+      timeout: 3600s
+
+    # Query API.
+    - match:
+        - uri:
+            prefix: /api/
+      headers:
+        request:
+          set:
+            x-forwarded-host: observability.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: obs-api.observability.svc.cluster.local
+            port:
+              number: 80
+      timeout: 60s
+
+    # Google OAuth login and callback. obs-api derives its redirect URI from
+    # OBS_API_PUBLIC_URL, so this prefix must stay in sync with the URI
+    # registered on the OAuth client.
+    - match:
+        - uri:
+            prefix: /auth/
+      headers:
+        request:
+          set:
+            x-forwarded-host: observability.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: obs-api.observability.svc.cluster.local
+            port:
+              number: 80
+      timeout: 30s
+
+    # Everything else is the UI.
+    - route:
+        - destination:
+            host: obs-ui.observability.svc.cluster.local
+            port:
+              number: 80
+      timeout: 30s

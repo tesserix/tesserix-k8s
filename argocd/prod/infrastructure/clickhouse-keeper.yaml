@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: clickhouse-keeper
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: observability
+  annotations:
+    # Wave -2 — the Raft quorum. Must be serving before ClickHouse starts, or
+    # ReplicatedMergeTree tables cannot be created and the servers come up
+    # read-only. Deliberately NOT on the Spot pool (see the chart's Chart.yaml).
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/clickhouse-keeper
+    targetRevision: HEAD
+    helm:
+      releaseName: clickhouse-keeper
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

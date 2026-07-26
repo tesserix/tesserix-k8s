@@ -1,0 +1,96 @@
+# OTel Collector cluster tier — defaults. Prod overrides go inline in
+# argocd/prod/infrastructure/otel-cluster.yaml (the redis-global pattern).
+#
+# NOTE: there is intentionally no replicaCount. This must stay a singleton —
+# see Chart.yaml.
+
+image:
+  # Pulled through the GAR docker.io mirror rather than docker.io directly.
+  # On a Spot pool every preemption re-pulls this image, so keeping the pull
+  # inside asia-south1 removes both the egress cost and a slow cold start.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/otel/opentelemetry-collector-contrib
+  tag: "0.156.0"
+  # IfNotPresent, deliberately. This is a third-party image on a pinned tag, so
+  # the content behind that tag never changes and re-pulling gains nothing.
+  # It matters here because the stack runs on a Spot pool: Always would re-pull
+  # from GAR on every pod restart, and preemptions make restarts routine.
+  # Our own images (obs-api, obs-ui) use Always instead, because they track a
+  # moving `main` tag that genuinely does change.
+  pullPolicy: IfNotPresent
+
+ports:
+  metrics: 8888
+  health: 13133
+
+gateway:
+  endpoint: otel-gateway.observability.svc.cluster.local:4317
+
+events:
+  enabled: true
+  # events.k8s.io is the modern API group. `watch` streams changes rather than
+  # re-listing, so a busy cluster does not hammer the API server.
+  group: events.k8s.io
+  # DELETED fires when an event ages out of etcd, which is not a real
+  # occurrence and would double-count every event.
+  excludeWatchType:
+    - DELETED
+
+metrics:
+  enabled: true
+  # 60s, against Prometheus's 15s. This store is for history, not alerting.
+  scrapeInterval: 60s
+  scrapeTimeout: 30s
+
+processors:
+  memoryLimiter:
+    checkInterval: 5s
+    limitPercentage: 80
+    spikeLimitPercentage: 25
+  batch:
+    sendBatchSize: 4096
+    sendBatchMaxSize: 8192
+    timeout: 10s
+
+# Memory-only per platform policy: no CPU requests or limits anywhere.
+# Scraping several hundred pods holds a lot of series in memory between flushes.
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+
+podAnnotations:
+  # Self-monitoring. This tier scrapes annotated pods and so will also scrape
+  # itself, which is intentional: scraping /metrics emits no telemetry, so
+  # there is no feedback loop, and its own queue depth and refused-sample
+  # counters are the first place to look when ingestion stalls.
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8888"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+rbac:
+  create: true
+
+nodeSelector:
+  workload: observability
+
+tolerations:
+  - key: workload
+    operator: Equal
+    value: observability
+    effect: NoSchedule

@@ -1,0 +1,25 @@
+apiVersion: v2
+name: otel-cluster
+description: |
+  OpenTelemetry Collector — cluster tier. A deliberate SINGLETON that collects
+  the two cluster-wide signals: Kubernetes events and Prometheus metrics.
+
+  Singleton because both sources are cluster-scoped rather than per-node. Two
+  replicas would watch the same event stream and scrape the same pods, so every
+  event and every sample would be stored twice. replicaCount is not exposed for
+  that reason.
+
+  Kubernetes events are the highest-value, lowest-volume signal in the cluster —
+  OOMKills, failed scheduling, image pull errors, probe failures — and today
+  they are only visible for an hour before etcd expires them. Here they get 90
+  days.
+
+  Metrics are scraped at 60s rather than Prometheus's 15s. Prometheus remains
+  the high-resolution recent store and the alerting source of truth; ClickHouse
+  is the long-term history behind it, where the extra resolution is not worth
+  four times the rows.
+
+  Config schema targets collector v0.156.0.
+type: application
+version: 1.0.0
+appVersion: "0.156.0"

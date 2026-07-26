@@ -1,0 +1,149 @@
+{{/*
+Static server config fragments. These are copied (not mounted directly) into
+/etc/clickhouse-server/config.d by the init container, because that directory
+also has to receive the per-pod macros.xml generated at runtime — a ConfigMap
+volume mounted there would make the whole directory read-only and hide the
+generated file. See statefulset.yaml.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clickhouse-ha.name" . }}-config
+  labels:
+    {{- include "clickhouse-ha.labels" . | nindent 4 }}
+data:
+  {{/*
+  Cluster topology. internal_replication=true means a distributed INSERT is
+  written to ONE replica and propagated through Keeper, rather than being
+  written to both independently — the latter double-counts rows if a retry
+  lands on the other replica.
+  */}}
+  cluster.xml: |
+    <clickhouse>
+      <remote_servers>
+        <{{ .Values.clusterName }}>
+          <shard>
+            <internal_replication>true</internal_replication>
+          {{- range $i := until (int .Values.replicaCount) }}
+            <replica>
+              <host>{{ include "clickhouse-ha.name" $ }}-{{ $i }}.{{ include "clickhouse-ha.headless" $ }}.{{ $.Release.Namespace }}.svc.cluster.local</host>
+              <port>{{ $.Values.ports.native }}</port>
+              <user>{{ $.Values.auth.user }}</user>
+              <password from_env="CLICKHOUSE_PASSWORD"></password>
+            </replica>
+          {{- end }}
+          </shard>
+        </{{ .Values.clusterName }}>
+      </remote_servers>
+
+      {{/*
+      Distributed DDL queue — this is what makes `ON CLUSTER` statements
+      replay on every replica, including one that was down when the DDL ran.
+      */}}
+      <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+      </distributed_ddl>
+    </clickhouse>
+
+  {{/*
+  Keeper connection. Pods are listed individually rather than via the
+  load-balanced Service so the client library can fail over between quorum
+  members itself instead of depending on kube-proxy to pick a healthy one.
+  */}}
+  keeper.xml: |
+    <clickhouse>
+      <zookeeper>
+      {{- range $i := until (int .Values.keeper.replicaCount) }}
+        <node>
+          <host>{{ $.Values.keeper.service }}-{{ $i }}.{{ $.Values.keeper.headless }}.{{ $.Release.Namespace }}.svc.cluster.local</host>
+          <port>{{ $.Values.keeper.port }}</port>
+        </node>
+      {{- end }}
+        <session_timeout_ms>{{ .Values.keeper.sessionTimeoutMs }}</session_timeout_ms>
+        <operation_timeout_ms>{{ .Values.keeper.operationTimeoutMs }}</operation_timeout_ms>
+      </zookeeper>
+    </clickhouse>
+
+  server.xml: |
+    <clickhouse>
+      <listen_host>0.0.0.0</listen_host>
+      <http_port>{{ .Values.ports.http }}</http_port>
+      <tcp_port>{{ .Values.ports.native }}</tcp_port>
+      <interserver_http_port>{{ .Values.ports.interserver }}</interserver_http_port>
+
+      {{/*
+      Ratio of the CONTAINER limit, not the node's RAM — ClickHouse reads the
+      cgroup limit. Staying under it converts an overload into a retryable
+      query error instead of a kernel OOM kill of the whole server.
+      */}}
+      <max_server_memory_usage_to_ram_ratio>{{ .Values.server.maxServerMemoryUsageToRamRatio }}</max_server_memory_usage_to_ram_ratio>
+      <max_concurrent_queries>{{ .Values.server.maxConcurrentQueries }}</max_concurrent_queries>
+      <background_pool_size>{{ .Values.server.backgroundPoolSize }}</background_pool_size>
+      <background_schedule_pool_size>{{ .Values.server.backgroundSchedulePoolSize }}</background_schedule_pool_size>
+
+      {{/*
+      0 disables the guard rails that refuse to drop a large table/partition.
+      Retention here is enforced by TTL, and TTL drops whole partitions — with
+      the default 50GB guard those drops would start failing once a daily
+      partition grew past it, and the disk would fill silently.
+      */}}
+      <max_partition_size_to_drop>{{ .Values.server.maxPartitionSizeToDrop }}</max_partition_size_to_drop>
+      <max_table_size_to_drop>{{ .Values.server.maxTableSizeToDrop }}</max_table_size_to_drop>
+
+      <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>{{ .Values.ports.prometheus }}</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+        <status_info>true</status_info>
+      </prometheus>
+    </clickhouse>
+---
+{{/*
+users.d is mounted read-only and directly — nothing here is per-pod.
+
+Only the `default` user is defined in XML; its password arrives through the
+CLICKHOUSE_PASSWORD env var that the official entrypoint applies on first boot.
+The read-only `observer` user is created by the bootstrap SQL instead
+(CREATE USER ... ON CLUSTER), because its password cannot be hashed at Helm
+template time from a Secret.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clickhouse-ha.name" . }}-users
+  labels:
+    {{- include "clickhouse-ha.labels" . | nindent 4 }}
+data:
+  users.xml: |
+    <clickhouse>
+      <profiles>
+        <default>
+          <load_balancing>random</load_balancing>
+        </default>
+        {{- if .Values.auth.readonly.enabled }}
+        {{/*
+        readonly=2 permits SELECT and SET (so the API can tune per-query
+        settings such as max_execution_time) but forbids INSERT and any DDL.
+        */}}
+        <readonly>
+          <readonly>2</readonly>
+          <max_execution_time>60</max_execution_time>
+          <max_result_rows>500000</max_result_rows>
+          <result_overflow_mode>break</result_overflow_mode>
+        </readonly>
+        {{- end }}
+      </profiles>
+
+      <users>
+        <{{ .Values.auth.user }}>
+          <networks>
+            <ip>::/0</ip>
+          </networks>
+          <profile>default</profile>
+          <quota>default</quota>
+          <access_management>1</access_management>
+        </{{ .Values.auth.user }}>
+      </users>
+    </clickhouse>
