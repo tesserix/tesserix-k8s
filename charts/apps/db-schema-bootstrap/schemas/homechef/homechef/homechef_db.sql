@@ -5413,3 +5413,32 @@ CREATE INDEX IF NOT EXISTS ix_user_blocks_blocked
 -- billing/preview paths working unchanged when day_variants is NULL.
 ALTER TABLE public.meal_subscriptions
   ADD COLUMN IF NOT EXISTS day_variants jsonb;
+-- ChefBook: long-form culinary blogging on top of the existing social posts.
+--
+-- `posts` was built for short updates — a single `content` field with images
+-- and hashtags. ChefBook lets a chef publish an actual article (a title, a
+-- cover image, a body long enough to be worth reading) without standing up a
+-- parallel table that would duplicate likes, comments, moderation and the
+-- feed query.
+--
+-- `kind` discriminates the two: 'post' keeps the existing short-form
+-- behaviour and is the default, so every existing row stays exactly what it
+-- was. 'blog' rows additionally carry title/cover_image and are the only ones
+-- that render as articles.
+ALTER TABLE public.posts
+  ADD COLUMN IF NOT EXISTS kind character varying(16) DEFAULT 'post' NOT NULL,
+  ADD COLUMN IF NOT EXISTS title text,
+  ADD COLUMN IF NOT EXISTS cover_image text,
+  -- Estimated at write time from the body's word count so the feed doesn't
+  -- have to re-derive it per render.
+  ADD COLUMN IF NOT EXISTS reading_minutes integer DEFAULT 0 NOT NULL,
+  -- ChefBook is restricted to food and cooking. The API refuses content with
+  -- no culinary signal outright; this flags the borderline cases that were let
+  -- through, so an admin can review rather than the check silently guessing.
+  ADD COLUMN IF NOT EXISTS topic_flagged boolean DEFAULT false NOT NULL;
+
+-- The feed lists published blogs newest-first; without this it degrades to a
+-- full scan of every post ever written once ChefBook has any volume.
+CREATE INDEX IF NOT EXISTS ix_posts_kind_created
+  ON public.posts (kind, created_at DESC)
+  WHERE deleted_at IS NULL;
