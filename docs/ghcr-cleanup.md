@@ -29,6 +29,13 @@ Create a private GitHub App owned by the `tesserix` organization:
 The workflow generates a short-lived installation token for every run. The
 installation has a separate API rate-limit bucket from user PATs.
 
+GitHub's Packages API currently returns HTTP 400 for organization container
+package discovery with installation access tokens in some organizations. The
+workflow probes the App token first and automatically uses the existing
+`GHCR_CLEANUP_TOKEN` classic PAT only when that specific API defect occurs.
+The fallback PAT requires `read:packages`, `delete:packages`, and `read:org`.
+The job summary records whether `github-app` or `classic-pat-fallback` was used.
+
 ## Retries and continuation
 
 The cleanup follows every GitHub API pagination link, including package-version

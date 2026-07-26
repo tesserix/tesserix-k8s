@@ -13,6 +13,11 @@ name: GHCR Cleanup (5-day retention)
 # all repositories and Packages: write permission:
 #   * variable GHCR_CLEANUP_APP_CLIENT_ID
 #   * secret   GHCR_CLEANUP_APP_PRIVATE_KEY
+# GitHub currently returns HTTP 400 when an installation token lists container
+# packages for some organizations. Until GitHub fixes that API defect, the
+# workflow automatically falls back to:
+#   * secret   GHCR_CLEANUP_TOKEN (classic PAT with read:packages,
+#              delete:packages, and read:org)
 #
 # GitHub App installation tokens use an installation-specific rate-limit bucket
 # and expire after one hour. Each run stops after 50 minutes and dispatches a
@@ -60,10 +65,62 @@ jobs:
           owner: tesserix
           permission-packages: write
 
+      - name: Select a working GitHub Packages token
+        id: package-token
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          PAT_TOKEN: ${{ secrets.GHCR_CLEANUP_TOKEN }}
+        shell: bash
+        run: |
+          probe_token() {
+            local token="$1"
+            local output_file="$2"
+            curl --silent --show-error \
+              --connect-timeout 15 \
+              --max-time 60 \
+              --header 'Accept: application/vnd.github+json' \
+              --header 'X-GitHub-Api-Version: 2026-03-10' \
+              --header "Authorization: Bearer $token" \
+              --output "$output_file" \
+              --write-out '%{http_code}' \
+              'https://api.github.com/orgs/tesserix/packages?package_type=container&per_page=1'
+          }
+
+          app_response="$RUNNER_TEMP/ghcr-app-probe.json"
+          app_status="$(probe_token "$APP_TOKEN" "$app_response" || echo 000)"
+          if [[ "$app_status" == "200" ]]; then
+            selected_token="$APP_TOKEN"
+            token_source="github-app"
+          elif [[ "$app_status" == "400" ]]; then
+            echo "::warning::GitHub rejected container package listing with the App installation token (HTTP 400); using the classic PAT fallback."
+            if [[ -z "$PAT_TOKEN" ]]; then
+              echo "::error::GHCR_CLEANUP_TOKEN is required while GitHub's Packages API rejects installation tokens."
+              exit 1
+            fi
+            pat_response="$RUNNER_TEMP/ghcr-pat-probe.json"
+            pat_status="$(probe_token "$PAT_TOKEN" "$pat_response" || echo 000)"
+            if [[ "$pat_status" != "200" ]]; then
+              message="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("message", "unknown error"))' "$pat_response" 2>/dev/null || echo 'unreadable response')"
+              echo "::error::The fallback GHCR_CLEANUP_TOKEN failed package discovery (HTTP $pat_status: $message)."
+              exit 1
+            fi
+            selected_token="$PAT_TOKEN"
+            token_source="classic-pat-fallback"
+          else
+            message="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("message", "unknown error"))' "$app_response" 2>/dev/null || echo 'unreadable response')"
+            echo "::error::The GitHub App token failed package discovery (HTTP $app_status: $message)."
+            exit 1
+          fi
+
+          echo "::add-mask::$selected_token"
+          echo "token=$selected_token" >> "$GITHUB_OUTPUT"
+          echo "source=$token_source" >> "$GITHUB_OUTPUT"
+          echo "Using package API credential source: $token_source"
+
       - name: Delete stale GHCR package versions
         id: cleanup
         env:
-          GHCR_TOKEN: ${{ steps.app-token.outputs.token }}
+          GHCR_TOKEN: ${{ steps.package-token.outputs.token }}
           DRY_RUN: ${{ github.event_name != 'schedule' && inputs.dry-run || false }}
           CUT_OFF: 5d
           RESUME_AFTER: ${{ inputs.resume-after || '' }}
@@ -111,12 +168,14 @@ jobs:
           VERSIONS_DELETED: ${{ steps.cleanup.outputs.versions-deleted || '0' }}
           VERSIONS_WOULD_DELETE: ${{ steps.cleanup.outputs.versions-would-delete || '0' }}
           RESUME_AFTER: ${{ steps.cleanup.outputs.resume-after || '' }}
+          TOKEN_SOURCE: ${{ steps.package-token.outputs.source || 'unavailable' }}
           CUT_OFF: 5d
         run: |
           {
             echo "## GHCR cleanup"
             echo
             echo "- Status: **$STATUS**"
+            echo "- Package API credential: **$TOKEN_SOURCE**"
             echo "- Packages processed: **$PACKAGES_PROCESSED / $PACKAGES_DISCOVERED**"
             echo "- Versions examined: **$VERSIONS_EXAMINED**"
             echo "- Versions deleted: **$VERSIONS_DELETED**"
