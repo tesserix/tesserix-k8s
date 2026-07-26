@@ -98,6 +98,24 @@ frontendApps:
     namespace: postiz
     hosts:
       - "postiz.tesserix.app"
+  # observability — the telemetry explorer (obs-ui) and its query API
+  # (obs-api), split by path on one host by the observability VirtualService.
+  #
+  # This entry is what puts observability.tesserix.app in the gateway's ALLOW
+  # host list. Without it the ingress gateway returns 403 "RBAC: access denied"
+  # before any route is consulted — the same failure recorded above for
+  # blog.tesserix.app. DNS and the tunnel already reach the cluster via the
+  # *.tesserix.app wildcard, so this policy is the only thing standing between
+  # the domain and a working page.
+  #
+  # Public at the gateway on purpose: obs-api enforces Google sign-in against a
+  # three-address allowlist itself, and the sign-in page has to be reachable
+  # unauthenticated for that to be possible.
+  - name: observability
+    label: obs-ui
+    namespace: observability
+    hosts:
+      - "observability.tesserix.app"
   - name: opencost
     label: opencost
     hosts:
