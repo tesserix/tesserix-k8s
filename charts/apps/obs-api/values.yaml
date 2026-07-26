@@ -10,12 +10,17 @@ image:
   # pull from inside the region, so image pulls cost no cross-region egress —
   # which matters on a Spot pool, where every preemption re-pulls.
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/observability/obs-api
-  # A moving branch tag. CI also publishes the immutable main-<sha7> that Kargo
-  # promotes for every other product; onboarding this one is the follow-up that
-  # replaces this tag with a pinned digest per release.
-  tag: main
-  # Required with a moving tag: IfNotPresent would keep serving whatever the
-  # node already cached and a redeploy would silently do nothing.
+  # MANAGED BY KARGO — observability-apps-prod rewrites this line on every
+  # promotion. Edit the warehouse, not this value.
+  #
+  # Immutable, never the moving `main`. GAR's pull-through cache only
+  # re-resolves a tag roughly every 30 minutes, so `:main` could serve the
+  # previous digest long after CI went green — with nothing to indicate the
+  # rollout had not actually happened.
+  tag: main-102cb0c
+  # Belt-and-braces. The tag is immutable now, so this costs one manifest
+  # HEAD per container start and protects nothing important — but it also
+  # cannot hurt, and it keeps behaviour identical if anyone repins to `main`.
   pullPolicy: Always
 
 imagePullSecrets:
