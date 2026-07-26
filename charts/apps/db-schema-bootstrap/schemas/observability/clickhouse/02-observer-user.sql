@@ -5,14 +5,31 @@
 -- __OBSERVER_PASSWORD__ from the clickhouse-secrets Secret (key
 -- observer-password, backed by GCP SM prod-clickhouse-observer-password).
 --
--- OR REPLACE rather than IF NOT EXISTS so a password rotation in Secret Manager
--- actually reaches the database on the next run. Re-running with an unchanged
--- password is a no-op in effect.
+-- CREATE IF NOT EXISTS + ALTER, deliberately NOT `CREATE USER OR REPLACE`.
+--
+-- OR REPLACE drops the user and creates a new one, which mints a NEW UUID. This
+-- job runs every 30 minutes, so the observer user was being re-issued twice an
+-- hour while obs-api held pooled connections bound to the previous UUID. Those
+-- connections then failed with:
+--
+--   code: 492, ID(<uuid>) not found in `user directories`
+--
+-- which surfaced in the UI as an intermittent "failed to query service health".
+-- ALTER updates the password in place and leaves the UUID alone, so rotation
+-- still reaches the database without invalidating live sessions.
 --
 -- ON CLUSTER so both replicas get the user; access storage is node-local, so
 -- without it obs-api would authenticate against one replica and fail on the other.
+-- Note the UUID still differs BETWEEN replicas — that is fine, authentication is
+-- by name; what matters is that it is stable over time on each.
 
-CREATE USER OR REPLACE observer ON CLUSTER otel
+CREATE USER IF NOT EXISTS observer ON CLUSTER otel
+  IDENTIFIED BY '__OBSERVER_PASSWORD__'
+  HOST ANY
+  SETTINGS PROFILE 'readonly';
+
+-- Idempotent and UUID-preserving: applies a rotated password, no-op otherwise.
+ALTER USER observer ON CLUSTER otel
   IDENTIFIED BY '__OBSERVER_PASSWORD__'
   HOST ANY
   SETTINGS PROFILE 'readonly';
