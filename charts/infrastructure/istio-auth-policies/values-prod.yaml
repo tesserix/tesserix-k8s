@@ -34,15 +34,13 @@ frontendApps:
     label: openpanel
     hosts:
       - "analytics.tesserix.app"
-  - name: fanzone-web
-    label: fanzone-web
-    namespace: fanzone
-    hosts:
-      - "fanzonebattleground.com"
-      - "www.fanzonebattleground.com"
-      - "api.fanzonebattleground.com"
-      - "ws.fanzonebattleground.com"
-      - "auth.fanzonebattleground.com"
+  # fanzone — DECOMMISSIONED. The namespace no longer exists, so the
+  # namespace-scoped policy this entry generated failed to apply with
+  # `namespaces "fanzone" not found`. ArgoCD applies a sync atomically, so that
+  # one dead object wedged the ENTIRE chart OutOfSync: every later edit to any
+  # host in this file silently never reached the cluster. Removed rather than
+  # left to rot. Restore from git history alongside the namespace if fanzone
+  # ever comes back.
   - name: homechef-web
     label: homechef-web
     hosts:
@@ -230,7 +228,9 @@ keycloak:
 # Production app namespaces
 appNamespaces:
   global: global
-  fanzone: fanzone
+  # fanzone removed — the namespace is decommissioned, and this key generated
+  # an allow-mesh-internal policy INTO it, which is the object that failed to
+  # apply and wedged the whole chart.
 
 # Production mesh principals (service accounts trusted for internal communication)
 meshPrincipals:
