@@ -15,6 +15,12 @@ image:
   # Pinned one patch behind the newest release: v26.1.14 was days old at pin
   # time and a buffer sits at the centre of the pipeline.
   tag: "v26.1.12"
+  # IfNotPresent, deliberately. This is a third-party image on a pinned tag, so
+  # the content behind that tag never changes and re-pulling gains nothing.
+  # It matters here because the stack runs on a Spot pool: Always would re-pull
+  # from GAR on every pod restart, and preemptions make restarts routine.
+  # Our own images (obs-api, obs-ui) use Always instead, because they track a
+  # moving `main` tag that genuinely does change.
   pullPolicy: IfNotPresent
 
 ports:

@@ -67,6 +67,13 @@ spec:
           containers:
             - name: bootstrap
               image: {{ .Values.image.clickhouse }}
+              # Explicit rather than relying on the Kubernetes default, which
+              # is IfNotPresent for a pinned tag but Always for :latest — so
+              # the behaviour would silently change if the tag were ever
+              # loosened. Third-party images are pinned by digest-equivalent
+              # tag, so re-pulling on every run buys nothing and this CronJob
+              # fires every 30 minutes.
+              imagePullPolicy: {{ .Values.clickhouse.imagePullPolicy }}
               env:
                 - name: CLICKHOUSE_PASSWORD
                   valueFrom:

@@ -14,6 +14,12 @@ image:
   # inside asia-south1 removes both the egress cost and a slow cold start.
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/otel/opentelemetry-collector-contrib
   tag: "0.156.0"
+  # IfNotPresent, deliberately. This is a third-party image on a pinned tag, so
+  # the content behind that tag never changes and re-pulling gains nothing.
+  # It matters here because the stack runs on a Spot pool: Always would re-pull
+  # from GAR on every pod restart, and preemptions make restarts routine.
+  # Our own images (obs-api, obs-ui) use Always instead, because they track a
+  # moving `main` tag that genuinely does change.
   pullPolicy: IfNotPresent
 
 ports:
