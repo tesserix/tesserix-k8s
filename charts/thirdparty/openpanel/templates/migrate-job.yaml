@@ -1,0 +1,85 @@
+{{/*
+Prisma schema migration.
+
+Without this, NOTHING in this chart ever creates the database schema. The API
+deployment's init container only waits for TCP on postgres/clickhouse/redis,
+and project-init-job.yaml is POST-schema setup -- it inserts projects, clients
+and users into tables it assumes already exist.
+
+The result observed in prod: the openpanel database had zero tables, the worker
+died on startup with
+
+  Prisma P2021: The table `public.salts` does not exist in the current database
+    at createInitialSalts (packages/db/src/services/salt.service.ts:86)
+
+which surfaced as an unhandledRejection -> graceful shutdown -> ioredis
+"Connection is closed" -> ECONNRESET. Every Redis error was a symptom of the
+shutdown, not a cause, which is what made it hard to read. project-init then
+exhausted its backoffLimit for the same reason.
+
+Runs as a PreSync hook so the schema exists before anything that needs it,
+including project-init (PostSync). `prisma migrate deploy` applies only
+committed migrations and is a no-op when they are already applied, so this is
+safe on every sync.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "openpanel.fullname" . }}-migrate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 5
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "openpanel.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          # Mirrors api-deployment.yaml exactly, so the migration connects with
+          # the same credentials the app will use.
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.postgresqlPasswordKey }}
+            - name: DATABASE_URL
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "openpanel.fullname" . }}-postgresql:{{ .Values.postgresql.port }}/{{ .Values.postgresql.database }}"
+            - name: DATABASE_URL_DIRECT
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "openpanel.fullname" . }}-postgresql:{{ .Values.postgresql.port }}/{{ .Values.postgresql.database }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "waiting for postgres..."
+              until nc -z {{ include "openpanel.fullname" . }}-postgresql {{ .Values.postgresql.port }}; do sleep 2; done
+              echo "applying prisma migrations..."
+              cd /app/packages/db
+              npx prisma migrate deploy
+              echo "schema is up to date"
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 512Mi
