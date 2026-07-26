@@ -1,0 +1,93 @@
+# obs-api — defaults. Prod overrides go inline in
+# argocd/prod/infrastructure/obs-api.yaml.
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/tesserix/observability/obs-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-pull-secret
+
+port: 8080
+
+# Externally reachable base URL. The OAuth redirect URI is derived from this,
+# so it MUST match both the browser's origin and the URI registered on the
+# Google OAuth client, or sign-in fails with redirect_uri_mismatch.
+publicURL: https://observability.tesserix.app
+
+clickhouse:
+  addr: clickhouse.observability.svc.cluster.local:9000
+  database: otel
+  # Read-only user created by the bootstrap SQL, NOT `default`. obs-api has no
+  # reason to be able to write.
+  username: observer
+  cluster: otel
+
+# The complete set of accounts permitted to sign in. There is no domain rule
+# to fall back on -- these are personal Gmail accounts -- so this list is the
+# entire authorisation model. Adding someone means editing this and syncing.
+allowedEmails:
+  - samyak.rout@gmail.com
+  - unidevidp@gmail.com
+  - mahesh.sangawar@gmail.com
+
+session:
+  ttl: 12h
+
+query:
+  timeout: 30s
+  maxLimit: 5000
+
+secrets:
+  # Provisioned by the ExternalSecret in external-secrets/prod/observability.
+  clickhouse:
+    name: clickhouse-secrets
+    key: observer-password
+  obsApi:
+    name: obs-api-secrets
+    sessionSecretKey: session-secret
+    googleClientIDKey: google-client-id
+    googleClientSecretKey: google-client-secret
+
+# Memory-only per platform policy: no CPU requests or limits anywhere.
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 384Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  # Nothing is written to disk; the distroless-static image has no shell or
+  # package manager to need one either.
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+podAnnotations:
+  prometheus.io/scrape: "false"
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+nodeSelector:
+  workload: observability
+
+tolerations:
+  - key: workload
+    operator: Equal
+    value: observability
+    effect: NoSchedule
