@@ -1,0 +1,19 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{/*
+Keeps a voluntary disruption (drain, upgrade) from taking both replicas at
+once. Spot preemption is NOT a voluntary disruption and ignores this — that
+case is covered by the gateway's on-disk queue and Redpanda retention, which
+hold data until a replica returns.
+*/}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "clickhouse-ha.name" . }}
+  labels:
+    {{- include "clickhouse-ha.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "clickhouse-ha.selectorLabels" . | nindent 6 }}
+{{- end }}

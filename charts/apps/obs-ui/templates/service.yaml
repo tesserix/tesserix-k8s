@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: obs-ui
+  labels:
+    app.kubernetes.io/name: obs-ui
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: tesserix
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: obs-ui
+{{- if .Values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: obs-ui
+  labels:
+    app.kubernetes.io/name: obs-ui
+    app.kubernetes.io/component: observability
+    app.kubernetes.io/part-of: tesserix
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: obs-ui
+{{- end }}

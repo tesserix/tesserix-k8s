@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: observability-db-schema-bootstrap
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: observability
+  annotations:
+    # Wave 1 — after ClickHouse is serving. The job waits for reachability
+    # itself, so a premature run just retries rather than failing the sync.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/apps/db-schema-bootstrap
+    targetRevision: HEAD
+    helm:
+      releaseName: observability
+      values: |
+        # Selects schemas/observability/clickhouse/*.sql
+        app: observability
+
+        # No PostgreSQL here — this release uses only the ClickHouse path, so
+        # the postgres CronJob is not rendered at all.
+        targets: []
+
+        clickhouse:
+          enabled: true
+          host: clickhouse.observability.svc.cluster.local
+          port: 9000
+          user: default
+          secretName: clickhouse-secrets
+          secretKey: clickhouse-password
+          observerSecretKey: observer-password
+          # Must reach ClickHouse on the tainted Spot pool.
+          nodeSelector:
+            workload: observability
+          tolerations:
+            - key: workload
+              operator: Equal
+              value: observability
+              effect: NoSchedule
+
+        serviceAccount:
+          create: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

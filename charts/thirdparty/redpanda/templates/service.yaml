@@ -1,0 +1,57 @@
+{{/*
+Headless service — stable per-broker DNS for seed discovery and for the
+advertised addresses clients are handed back in metadata responses.
+publishNotReadyAddresses is required: brokers must resolve each other while the
+cluster is still forming, before any of them reports ready.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "redpanda.headless" . }}
+  labels:
+    {{- include "redpanda.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: {{ .Values.ports.kafka }}
+      targetPort: kafka
+      protocol: TCP
+      name: kafka
+    - port: {{ .Values.ports.admin }}
+      targetPort: admin
+      protocol: TCP
+      name: admin
+    - port: {{ .Values.ports.rpc }}
+      targetPort: rpc
+      protocol: TCP
+      name: rpc
+  selector:
+    {{- include "redpanda.selectorLabels" . | nindent 4 }}
+---
+{{/*
+Bootstrap service for clients. A Kafka client only needs to reach ONE broker
+here; it then receives the full advertised broker list and connects to each
+directly via the headless names.
+In-cluster: redpanda.observability.svc.cluster.local:9092
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "redpanda.name" . }}
+  labels:
+    {{- include "redpanda.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.ports.kafka }}
+      targetPort: kafka
+      protocol: TCP
+      name: kafka
+    - port: {{ .Values.ports.admin }}
+      targetPort: admin
+      protocol: TCP
+      name: admin
+  selector:
+    {{- include "redpanda.selectorLabels" . | nindent 4 }}

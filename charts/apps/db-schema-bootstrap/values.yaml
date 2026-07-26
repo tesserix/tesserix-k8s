@@ -35,6 +35,9 @@ gcp:
 image:
   postgres: postgres:16-alpine
   gcloud: google/cloud-sdk:alpine
+  # The server image, not a separate client image — it ships clickhouse-client
+  # and is already pulled onto the observability nodes, so no extra image layer.
+  clickhouse: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/clickhouse/clickhouse-server:25.10.2.65
 
 # Service account for GCP Workload Identity
 serviceAccount:
@@ -44,3 +47,32 @@ serviceAccount:
 
 # Namespace override
 namespaceOverride: ""
+
+# ClickHouse bootstrap — a separate code path from the PostgreSQL `targets`
+# above, because ClickHouse needs a different client and connection flags.
+#
+# Disabled by default: every existing per-product release renders exactly as it
+# did before. Only the observability release turns this on.
+#
+# Schemas are read from schemas/<app>/clickhouse/*.sql, the same
+# schemas/<project>/<database>/ layout the PostgreSQL targets use.
+clickhouse:
+  enabled: false
+  # Third-party image on a pinned tag: cache it on the node. This CronJob runs
+  # every 30 minutes, so Always would re-pull a ~500MB image 48 times a day per
+  # node for no benefit.
+  imagePullPolicy: IfNotPresent
+  # Falls back to the shared `schedule` when unset.
+  schedule: ""
+  host: clickhouse.observability.svc.cluster.local
+  port: 9000
+  user: default
+  secretName: clickhouse-secrets
+  secretKey: clickhouse-password
+  # Substituted into __OBSERVER_PASSWORD__ in the SQL. Leave empty if the
+  # schemas do not create a read-only user.
+  observerSecretKey: observer-password
+  # The bootstrap job must be able to reach ClickHouse, which lives on the
+  # tainted Spot observability pool.
+  nodeSelector: {}
+  tolerations: []

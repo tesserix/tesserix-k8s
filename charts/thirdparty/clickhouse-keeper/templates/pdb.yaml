@@ -1,0 +1,18 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+{{/*
+With 3 members, minAvailable=2 is exactly the Raft majority. This blocks a node
+drain or cluster upgrade from evicting a second Keeper while one is already
+down, which would take every ReplicatedMergeTree table read-only.
+*/}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "clickhouse-keeper.name" . }}
+  labels:
+    {{- include "clickhouse-keeper.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "clickhouse-keeper.selectorLabels" . | nindent 6 }}
+{{- end }}

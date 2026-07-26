@@ -1,0 +1,22 @@
+apiVersion: v2
+name: otel-gateway
+description: |
+  OpenTelemetry Collector — gateway tier. The single OTLP endpoint every
+  Tesserix service exports to, and the producer side of the Redpanda buffer.
+
+  Its job is to accept telemetry fast, enrich it with Kubernetes context, and
+  hand it to Redpanda durably. It deliberately does NOT talk to ClickHouse —
+  that is the otel-ingest tier's job, on the other side of the buffer, so a
+  ClickHouse outage never applies backpressure to the applications.
+
+  The file_storage extension backs the sending queue with a PVC. If every
+  Redpanda broker is unavailable, the gateway spools to disk and replays on
+  recovery rather than dropping spans. That, plus RF=3 with acks=all on the
+  brokers, is what makes a Spot node pool safe to run this on.
+
+  Config schema targets collector v0.156.0, where the kafka exporter takes
+  per-signal `logs`/`traces`/`metrics` blocks rather than one topic per
+  exporter alias.
+type: application
+version: 1.0.0
+appVersion: "0.156.0"

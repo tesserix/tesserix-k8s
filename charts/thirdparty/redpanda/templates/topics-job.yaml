@@ -1,0 +1,97 @@
+{{/*
+Declares the pipeline's topics. Runs as a post-install/post-upgrade hook so the
+brokers are up first, and is idempotent — an existing topic is left alone and
+only its retention is reconciled, so re-running never destroys buffered data.
+
+Auto-creation is disabled on the brokers deliberately (see values.yaml), which
+makes this the single place partition counts and retention are decided.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "redpanda.name" . }}-topics
+  labels:
+    {{- include "redpanda.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "redpanda.labels" . | nindent 8 }}
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: rpk
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            - name: BROKERS
+              value: "{{ include "redpanda.name" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ports.kafka }}"
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+
+              echo "waiting for the cluster to report healthy..."
+              for i in $(seq 1 60); do
+                if rpk cluster health --brokers "${BROKERS}" 2>/dev/null | grep -q "Healthy:.*true"; then
+                  echo "cluster healthy"
+                  break
+                fi
+                if [ "$i" -eq 60 ]; then
+                  echo "cluster did not become healthy in time" >&2
+                  exit 1
+                fi
+                sleep 5
+              done
+
+              {{- range .Values.topics }}
+              echo "--- {{ .name }} ---"
+              if rpk topic describe {{ .name }} --brokers "${BROKERS}" >/dev/null 2>&1; then
+                # Already exists: reconcile retention only. Partition count is
+                # deliberately NOT changed here — shrinking is impossible and
+                # growing silently rehashes keys across partitions.
+                echo "exists, reconciling retention"
+                rpk topic alter-config {{ .name }} \
+                  --set retention.ms={{ .retentionMs }} \
+                  --brokers "${BROKERS}"
+              else
+                echo "creating"
+                rpk topic create {{ .name }} \
+                  --partitions {{ .partitions }} \
+                  --replicas {{ $.Values.cluster.defaultTopicReplications }} \
+                  --topic-config retention.ms={{ .retentionMs }} \
+                  --brokers "${BROKERS}"
+              fi
+              {{- end }}
+
+              echo "=== topics ==="
+              rpk topic list --brokers "${BROKERS}"
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 256Mi

@@ -1,0 +1,121 @@
+{{/*
+A StatefulSet, not a Deployment: each replica owns an on-disk spool. If a pod
+were rescheduled without its queue PVC, anything still spooled would be
+stranded. StatefulSet pins each ordinal to its own volume.
+*/}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "otel-gateway.name" . }}
+  labels:
+    {{- include "otel-gateway.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "otel-gateway.name" . }}
+  replicas: {{ .Values.replicaCount }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "otel-gateway.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "otel-gateway.selectorLabels" . | nindent 8 }}
+        {{- include "otel-gateway.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "otel-gateway.name" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          # Preferred, not required: with 2 replicas on a 3-node pool a hard
+          # rule would block rescheduling during a rolling node replacement.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "otel-gateway.selectorLabels" . | nindent 20 }}
+                topologyKey: {{ .Values.podAntiAffinity.topologyKey }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Long enough to drain the in-memory portion of the queue to Redpanda
+      # before the process exits.
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: otel-collector
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          args:
+            - --config=/conf/config.yaml
+          ports:
+            - name: otlp-grpc
+              containerPort: {{ .Values.ports.otlpGrpc }}
+              protocol: TCP
+            - name: otlp-http
+              containerPort: {{ .Values.ports.otlpHttp }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.ports.metrics }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.ports.health }}
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+              readOnly: true
+            {{- if .Values.queue.enabled }}
+            - name: queue
+              mountPath: {{ .Values.queue.directory }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "otel-gateway.name" . }}-config
+  {{- if .Values.queue.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: queue
+        labels:
+          {{- include "otel-gateway.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ .Values.persistence.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}

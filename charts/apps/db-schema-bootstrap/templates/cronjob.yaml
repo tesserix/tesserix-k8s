@@ -1,3 +1,10 @@
+{{/*
+PostgreSQL bootstrap. Guarded on `targets` so a release that uses only the
+ClickHouse path (see clickhouse-bootstrap.yaml) does not render an empty
+postgres CronJob that would wake every 30 minutes with nothing to do.
+Every existing product sets targets, so this renders unchanged for them.
+*/}}
+{{- if .Values.targets }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -101,3 +108,4 @@ spec:
                 name: {{ include "db-schema-bootstrap.fullname" $ }}-schemas-{{ .name }}
             {{- end }}
             {{- end }}
+{{- end }}

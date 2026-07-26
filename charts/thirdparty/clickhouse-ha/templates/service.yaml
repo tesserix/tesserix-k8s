@@ -1,0 +1,60 @@
+{{/*
+Headless service — stable per-pod DNS for replica-to-replica part transfer and
+for the remote_servers / macros wiring:
+  clickhouse-0.clickhouse-headless.observability.svc.cluster.local
+publishNotReadyAddresses matters here: a recovering replica must be reachable
+by its peer to fetch parts, and it is not "ready" until that recovery finishes.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clickhouse-ha.headless" . }}
+  labels:
+    {{- include "clickhouse-ha.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: {{ .Values.ports.http }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.ports.native }}
+      targetPort: native
+      protocol: TCP
+      name: native
+    - port: {{ .Values.ports.interserver }}
+      targetPort: interserver
+      protocol: TCP
+      name: interserver
+  selector:
+    {{- include "clickhouse-ha.selectorLabels" . | nindent 4 }}
+---
+{{/*
+Load-balanced service for clients (otel-ingest writes, obs-api reads). Ready
+replicas only. In-cluster DNS: clickhouse.observability.svc.cluster.local
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clickhouse-ha.name" . }}
+  labels:
+    {{- include "clickhouse-ha.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.ports.http }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: {{ .Values.ports.native }}
+      targetPort: native
+      protocol: TCP
+      name: native
+    - port: {{ .Values.ports.prometheus }}
+      targetPort: prometheus
+      protocol: TCP
+      name: prometheus
+  selector:
+    {{- include "clickhouse-ha.selectorLabels" . | nindent 4 }}

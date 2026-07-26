@@ -1,0 +1,67 @@
+{{/*
+Base redpanda.yaml. The per-pod fields — node_id and the advertised addresses —
+cannot be templated here because one ConfigMap is shared by all three brokers,
+so they are left as __PLACEHOLDER__ tokens and substituted by the init
+container in statefulset.yaml from the pod ordinal. Textual substitution rather
+than appending YAML: these are nested keys, so appending a second `redpanda:`
+block would not merge.
+
+seed_servers lists every broker: that is how the cluster forms. With
+empty_seed_starts_cluster=false a broker refuses to bootstrap a NEW single-node
+cluster when it cannot reach its seeds, which is what prevents a split brain
+after a simultaneous preemption.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "redpanda.name" . }}-config
+  labels:
+    {{- include "redpanda.labels" . | nindent 4 }}
+data:
+  redpanda-base.yaml: |
+    redpanda:
+      data_directory: /var/lib/redpanda/data
+      node_id: __NODE_ID__
+      empty_seed_starts_cluster: false
+      seed_servers:
+      {{- range $i := until (int .Values.replicaCount) }}
+        - host:
+            address: {{ include "redpanda.name" $ }}-{{ $i }}.{{ include "redpanda.headless" $ }}.{{ $.Release.Namespace }}.svc.cluster.local
+            port: {{ $.Values.ports.rpc }}
+      {{- end }}
+      rpc_server:
+        address: 0.0.0.0
+        port: {{ .Values.ports.rpc }}
+      kafka_api:
+        - address: 0.0.0.0
+          port: {{ .Values.ports.kafka }}
+          name: internal
+      admin:
+        - address: 0.0.0.0
+          port: {{ .Values.ports.admin }}
+          name: admin
+      # What this broker tells clients to reach it on. Must be the pod's own
+      # stable DNS name, not 0.0.0.0, or producers get an unroutable address
+      # back in the metadata response and hang.
+      advertised_rpc_api:
+        address: __POD_FQDN__
+        port: {{ .Values.ports.rpc }}
+      advertised_kafka_api:
+        - address: __POD_FQDN__
+          port: {{ .Values.ports.kafka }}
+          name: internal
+      default_topic_replications: {{ .Values.cluster.defaultTopicReplications }}
+      internal_topic_replication_factor: {{ .Values.cluster.internalTopicReplicationFactor }}
+      auto_create_topics_enabled: {{ .Values.cluster.autoCreateTopics }}
+      write_caching_default: {{ .Values.cluster.writeCachingDefault | quote }}
+
+    rpk:
+      overprovisioned: {{ .Values.runtime.overprovisioned }}
+      additional_start_flags:
+        - "--smp={{ .Values.runtime.smp }}"
+        - "--memory={{ .Values.runtime.memory }}"
+        - "--reserve-memory={{ .Values.runtime.reserveMemory }}"
+        - "--default-log-level=info"
+
+    pandaproxy: {}
+    schema_registry: {}

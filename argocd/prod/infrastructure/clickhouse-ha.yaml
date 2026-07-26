@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: clickhouse-ha
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: observability
+  annotations:
+    # Wave -1 — replicated storage. Depends on clickhouse-keeper being up; if it
+    # is not, ClickHouse still starts and retries the Keeper connection, so this
+    # ordering is an optimisation rather than a hard requirement.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/thirdparty/clickhouse-ha
+    targetRevision: HEAD
+    helm:
+      releaseName: clickhouse-ha
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

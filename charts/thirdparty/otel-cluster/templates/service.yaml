@@ -1,0 +1,24 @@
+{{/*
+No telemetry flows in through this service — the tier watches and scrapes
+outbound. It exists so the collector's self-telemetry has a stable target and
+so the health endpoint is reachable via port-forward when debugging.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "otel-cluster.name" . }}
+  labels:
+    {{- include "otel-cluster.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.ports.metrics }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    - port: {{ .Values.ports.health }}
+      targetPort: health
+      protocol: TCP
+      name: health
+  selector:
+    {{- include "otel-cluster.selectorLabels" . | nindent 4 }}

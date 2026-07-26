@@ -1,0 +1,52 @@
+{{/*
+Headless service — gives each Keeper a stable per-pod DNS name for Raft peering:
+  clickhouse-keeper-0.clickhouse-keeper-headless.observability.svc.cluster.local
+publishNotReadyAddresses is required: peers must resolve each other DURING
+quorum formation, before any of them is ready.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clickhouse-keeper.headless" . }}
+  labels:
+    {{- include "clickhouse-keeper.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: {{ .Values.ports.client }}
+      targetPort: client
+      protocol: TCP
+      name: client
+    - port: {{ .Values.ports.raft }}
+      targetPort: raft
+      protocol: TCP
+      name: raft
+  selector:
+    {{- include "clickhouse-keeper.selectorLabels" . | nindent 4 }}
+---
+{{/*
+Load-balanced client service used by the ClickHouse servers' <zookeeper>
+config. Ready members only — a server should never be handed a Keeper that has
+not joined the quorum.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clickhouse-keeper.name" . }}
+  labels:
+    {{- include "clickhouse-keeper.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.ports.client }}
+      targetPort: client
+      protocol: TCP
+      name: client
+    - port: {{ .Values.ports.prometheus }}
+      targetPort: prometheus
+      protocol: TCP
+      name: prometheus
+  selector:
+    {{- include "clickhouse-keeper.selectorLabels" . | nindent 4 }}

@@ -1,0 +1,126 @@
+# Redpanda — defaults. Prod overrides go inline in
+# argocd/prod/infrastructure/redpanda.yaml (the redis-global pattern).
+
+# Three brokers is the minimum that supports RF=3 with a tolerable failure of
+# one. MUST stay odd for Raft leadership.
+replicaCount: 3
+
+image:
+  # Pulled through the GAR docker.io mirror rather than docker.io directly.
+  # On a Spot pool every preemption re-pulls this image, so keeping the pull
+  # inside asia-south1 removes both the egress cost and a slow cold start.
+  # redpandadata/redpanda is published to docker.io as well as Redpanda's
+  # own registry, so the docker.io mirror covers it.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/redpandadata/redpanda
+  # Pinned one patch behind the newest release: v26.1.14 was days old at pin
+  # time and a buffer sits at the centre of the pipeline.
+  tag: "v26.1.12"
+  # IfNotPresent, deliberately. This is a third-party image on a pinned tag, so
+  # the content behind that tag never changes and re-pulling gains nothing.
+  # It matters here because the stack runs on a Spot pool: Always would re-pull
+  # from GAR on every pod restart, and preemptions make restarts routine.
+  # Our own images (obs-api, obs-ui) use Always instead, because they track a
+  # moving `main` tag that genuinely does change.
+  pullPolicy: IfNotPresent
+
+ports:
+  kafka: 9092
+  admin: 9644
+  rpc: 33145
+
+cluster:
+  # Every topic gets three copies unless overridden per topic.
+  defaultTopicReplications: 3
+  # Redpanda's own internal topics (consumer offsets, tx coordinator) must be
+  # replicated too, or a broker loss resets consumer group progress and the
+  # ingest tier re-reads or skips data.
+  internalTopicReplicationFactor: 3
+  # Off deliberately: topics are declared in `topics` below so partition count
+  # and retention are a reviewed decision, not a side effect of a typo in an
+  # exporter config.
+  autoCreateTopics: false
+  # Produce is acknowledged only when a majority of replicas have fsynced.
+  # This is the setting that makes "nothing is lost" true.
+  writeCachingDefault: "false"
+
+# Seastar runtime flags. Redpanda assumes dedicated hardware by default and
+# will busy-poll every core; `overprovisioned` is mandatory on shared Kubernetes
+# nodes or it burns a full core per broker doing nothing.
+runtime:
+  overprovisioned: true
+  smp: 1
+  # Seastar allocates this up front. Kept meaningfully below the container
+  # memory limit so the Go/C++ heap outside Seastar's arena has room.
+  memory: "1400M"
+  reserveMemory: "0M"
+
+# Topics created by the post-install hook. 6 partitions gives the ingest tier
+# room to scale to 6 consumers before partitions become the bottleneck.
+topics:
+  - name: otel.logs
+    partitions: 6
+    retentionMs: 86400000 # 24h — the window an ingest outage can be replayed from
+  - name: otel.traces
+    partitions: 6
+    retentionMs: 86400000
+  - name: otel.metrics
+    partitions: 6
+    retentionMs: 86400000
+  - name: otel.events
+    partitions: 3
+    retentionMs: 259200000 # 72h — low volume, and the most useful signal to look back on
+
+persistence:
+  # 24h of retention at the measured ~11.7GiB/day, times RF=3 spread over 3
+  # brokers, is ~12GiB per broker. 40Gi covers a retention bump or an ingest
+  # outage that lets the backlog build.
+  size: 40Gi
+  storageClassName: standard-rwo-retain
+
+# Memory-only per platform policy: no CPU requests or limits anywhere.
+resources:
+  requests:
+    memory: 2Gi
+  limits:
+    memory: 2560Mi
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9644"
+  prometheus.io/path: "/public_metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  # uid/gid 101 is the `redpanda` user in the official image.
+  runAsUser: 101
+  runAsGroup: 101
+  fsGroup: 101
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  # rpk writes runtime state outside the mounted paths, so the broker keeps a
+  # writable root. Trivy KSV-0014, accepted. The config-gen init container
+  # does run read-only.
+  capabilities:
+    drop:
+      - ALL
+
+podAntiAffinity:
+  enabled: true
+  topologyKey: kubernetes.io/hostname
+
+podDisruptionBudget:
+  enabled: true
+  # Raft majority of 3.
+  minAvailable: 2
+
+nodeSelector:
+  workload: observability
+
+tolerations:
+  - key: workload
+    operator: Equal
+    value: observability
+    effect: NoSchedule

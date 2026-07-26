@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "clickhouse-keeper.name" . }}
+  labels:
+    {{- include "clickhouse-keeper.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "clickhouse-keeper.headless" . }}
+  replicas: {{ .Values.replicaCount }}
+  # Raft members must come up one at a time and in order so the first pod can
+  # bootstrap the quorum before its peers race it.
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      {{- include "clickhouse-keeper.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Roll the pods whenever the Raft peer set or coordination settings change.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        # Keeper speaks its own binary protocols; keep them off the mesh so
+        # Raft peering is not subject to sidecar startup ordering.
+        sidecar.istio.io/inject: "false"
+      labels:
+        {{- include "clickhouse-keeper.selectorLabels" . | nindent 8 }}
+        {{- include "clickhouse-keeper.labels" . | nindent 8 }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  {{- include "clickhouse-keeper.selectorLabels" . | nindent 18 }}
+              topologyKey: {{ .Values.podAntiAffinity.topologyKey }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # Give Keeper time to flush and hand off leadership on a drain.
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: clickhouse-keeper
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          # Derive the 1-based Raft server id from the 0-based pod ordinal.
+          # `keeper-2` -> KEEPER_SERVER_ID=3. The config reads it via from_env.
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+              export KEEPER_SERVER_ID=$(( ${HOSTNAME##*-} + 1 ))
+              echo "starting clickhouse-keeper as raft server_id=${KEEPER_SERVER_ID} (${HOSTNAME})"
+              exec /usr/bin/clickhouse-keeper \
+                --config-file=/etc/clickhouse-keeper/keeper_config.xml
+          ports:
+            - name: client
+              containerPort: {{ .Values.ports.client }}
+              protocol: TCP
+            - name: raft
+              containerPort: {{ .Values.ports.raft }}
+              protocol: TCP
+            - name: prometheus
+              containerPort: {{ .Values.ports.prometheus }}
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/clickhouse-keeper
+            - name: config
+              mountPath: /etc/clickhouse-keeper/keeper_config.xml
+              subPath: keeper_config.xml
+            - name: logs
+              mountPath: /var/log/clickhouse-keeper
+          # tcpSocket rather than a four-letter-word probe: the client port only
+          # accepts connections once the node has joined the quorum, and this
+          # needs no shell tooling inside the container.
+          livenessProbe:
+            tcpSocket:
+              port: client
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+          readinessProbe:
+            tcpSocket:
+              port: client
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Raft recovery on a cold start can take a while on a large log.
+          startupProbe:
+            tcpSocket:
+              port: client
+            periodSeconds: 5
+            failureThreshold: 60
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "clickhouse-keeper.name" . }}-config
+        - name: logs
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "clickhouse-keeper.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ .Values.persistence.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
