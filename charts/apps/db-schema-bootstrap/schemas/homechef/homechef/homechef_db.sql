@@ -3631,7 +3631,8 @@ CREATE INDEX idx_daily_item_chef_date ON public.daily_menu_items USING btree (ch
 -- Name: idx_daily_menu_chef_date; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_daily_menu_chef_date ON public.daily_menus USING btree (chef_id, date);
+CREATE UNIQUE INDEX idx_daily_menu_chef_date_live ON public.daily_menus USING btree (chef_id, date) WHERE ((mode)::text = 'live'::text);
+CREATE UNIQUE INDEX idx_daily_menu_chef_date_test ON public.daily_menus USING btree (chef_id, date, test_session_id) WHERE ((mode)::text = 'test'::text);
 
 
 --
@@ -4898,14 +4899,16 @@ CREATE UNIQUE INDEX idx_wallets_user_id ON public.wallets USING btree (user_id);
 -- Name: idx_weekly_cell; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_weekly_cell ON public.weekly_menu_items USING btree (chef_id, day_of_week, slot, variant);
+CREATE UNIQUE INDEX idx_weekly_cell_live ON public.weekly_menu_items USING btree (chef_id, day_of_week, slot, variant) WHERE ((mode)::text = 'live'::text);
+CREATE UNIQUE INDEX idx_weekly_cell_test ON public.weekly_menu_items USING btree (chef_id, day_of_week, slot, variant, test_session_id) WHERE ((mode)::text = 'test'::text);
 
 
 --
 -- Name: idx_weekly_menus_chef_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_weekly_menus_chef_id ON public.weekly_menus USING btree (chef_id);
+CREATE UNIQUE INDEX idx_weekly_menus_chef_live ON public.weekly_menus USING btree (chef_id) WHERE ((mode)::text = 'live'::text);
+CREATE UNIQUE INDEX idx_weekly_menus_chef_test ON public.weekly_menus USING btree (chef_id, test_session_id) WHERE ((mode)::text = 'test'::text);
 
 
 --
