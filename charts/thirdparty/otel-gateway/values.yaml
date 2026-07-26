@@ -32,9 +32,14 @@ ports:
 kafka:
   brokers:
     - redpanda.observability.svc.cluster.local:9092
-  # Redpanda advertises Kafka 3.x; this is the client-side negotiated floor.
-  # Kept in lockstep with otel-ingest; see that chart for why 2.8.0 fails.
-  protocolVersion: "2.5.0"
+  # protocol_version is deliberately NOT set. It declares the MINIMUM
+  # API versions the client demands, and every value we tried was above
+  # what this Redpanda offers for JoinGroup (key 11): 2.8.0 and 2.5.0
+  # both map to v7, the broker caps at v6, and the consumer group could
+  # never form -- it sat Dead with 0 members while topics filled up.
+  # The collector default is empty, which makes franz-go negotiate the
+  # highest version the broker actually supports. Do not pin it again
+  # without checking the broker's advertised API versions first.
   topics:
     logs: otel.logs
     traces: otel.traces
