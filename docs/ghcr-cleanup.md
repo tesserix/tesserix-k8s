@@ -17,7 +17,7 @@ tags point to one version, those tags are deleted together.
 Create a private GitHub App owned by the `tesserix` organization:
 
 1. Disable webhooks; the cleanup does not use them.
-2. Grant **Organization permissions → Organization packages → Read and write**.
+2. Grant **Repository permissions → Packages → Read and write**.
 3. Install the App on `tesserix` with access to **All repositories**. This is
    required so repository-linked packages are not omitted.
 4. Generate a private key.
