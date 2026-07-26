@@ -1,43 +1,34 @@
-name: GHCR Cleanup (15-day retention)
+name: GHCR Cleanup (5-day retention)
 
-# Deletes container image versions older than 15 days from ghcr.io/tesserix/*
-# to stop GHCR (and, downstream, the Artifact Registry `ghcr-remote` pull-through
-# cache) accumulating stale build layers forever.
+# For every container package in ghcr.io/tesserix:
+#   * always retain the newest 3 package versions;
+#   * retain every version updated within the last 5 days; and
+#   * delete all other tagged and untagged versions.
 #
-# SAFETY — this must never delete an image the cluster still pulls:
-#   * keep-n-most-recent: 3   -> the 3 newest versions of every package survive
-#     regardless of age, so the currently-deployed tag (and the previous two)
-#     are never removed even when their builds are >15 days old.
-#   * protected tags (latest / prod-* / release-* / stable / vX.Y.Z semver) are
-#     skipped regardless of age — see `image-tags` exclusion below.
-#   * dry-run defaults to TRUE. The scheduled run passes dry-run=false; a manual
-#     run lets you preview first. ALWAYS run once manually with dry-run=true and
-#     review the summary before trusting the schedule.
+# A GHCR package version can carry multiple tags and GitHub deletes the complete
+# version, so the newest-3 rule applies to versions rather than individual tag
+# aliases.
 #
-# The Artifact Registry pull-through cache (asia-south1-docker.pkg.dev/.../
-# ghcr-remote) re-fetches from GHCR on a cache miss, so anything deleted here
-# that a node later needs would fail to pull — which is exactly why the
-# keep-n-most-recent + protected-tag guards above exist.
+# REQUIRES a GitHub App installed on the tesserix organization with access to
+# all repositories and Organization Packages: write permission:
+#   * variable GHCR_CLEANUP_APP_CLIENT_ID
+#   * secret   GHCR_CLEANUP_APP_PRIVATE_KEY
 #
-# REQUIRES secret GHCR_CLEANUP_TOKEN: a fine-grained/classic PAT for the tesserix
-# org with `read:packages` + `delete:packages`. GITHUB_TOKEN cannot delete
-# org-level packages, so a PAT is mandatory.
+# GitHub App installation tokens use an installation-specific rate-limit bucket
+# and expire after one hour. Each run stops after 50 minutes and dispatches a
+# continuation with a fresh token if more work remains.
 
 on:
   schedule:
-    - cron: '0 3 1 * *' # 1st of each month, 03:00 UTC (quiet window)
+    - cron: '0 3 * * *' # Daily at 03:00 UTC; small incremental cleanups avoid backlogs.
   workflow_dispatch:
     inputs:
       dry-run:
         description: 'Preview deletions without deleting (recommended first)'
         type: boolean
         default: true
-      cut-off:
-        description: 'Delete versions older than this (e.g. 90d, 6 months)'
-        type: string
-        default: 15d
-      extra-skip-tags:
-        description: 'Extra tags to protect this run, space-separated with ! (e.g. "!main-3a47f1d !sha-abc"). Use to shield currently-deployed images that are on stale tags.'
+      resume-after:
+        description: 'Internal continuation cursor; leave empty for a normal run'
         type: string
         default: ''
 
@@ -46,36 +37,92 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  actions: write
   contents: read
 
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    # The installation token expires after one hour. The script stops at 50m
+    # and leaves 10m for summary generation and continuation dispatch.
+    timeout-minutes: 60
     steps:
-      - name: Delete GHCR image versions older than the cut-off
-        uses: snok/container-retention-policy@v3.1.0
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v3
         with:
-          account: tesserix
-          token: ${{ secrets.GHCR_CLEANUP_TOKEN }}
-          # Every container package in the org. Add `!name` exclusions here to
-          # permanently protect a specific package.
-          image-names: '*'
-          # Consider both tagged and untagged versions...
-          tag-selection: both
-          # ...but never touch these tags regardless of age (currently-deployed
-          # / release-pinned). main-<sha> deploys are covered by keep-n-most-recent.
-          image-tags: '!latest !stable !prod-* !release-* !v*.*.* ${{ inputs.extra-skip-tags }}'
-          cut-off: ${{ inputs.cut-off || '15d' }}
-          # Newest 3 versions of every package ALWAYS survive (never deleted),
-          # covering the live rolling main-<sha> tag + the last couple of deploys
-          # even when their builds are >15 days old.
-          keep-n-most-recent: 3
-          # Scheduled runs actually delete; manual runs honour the dry-run input
-          # (defaults to true so you can preview safely).
-          dry-run: ${{ github.event_name == 'schedule' && 'false' || inputs.dry-run }}
+          client-id: ${{ vars.GHCR_CLEANUP_APP_CLIENT_ID }}
+          private-key: ${{ secrets.GHCR_CLEANUP_APP_PRIVATE_KEY }}
+          # With an owner and no repository list, the token covers every
+          # repository available to this organization installation.
+          owner: tesserix
+          permission-organization-packages: write
+
+      - name: Delete stale GHCR package versions
+        id: cleanup
+        env:
+          GHCR_TOKEN: ${{ steps.app-token.outputs.token }}
+          DRY_RUN: ${{ github.event_name != 'schedule' && inputs.dry-run || false }}
+          CUT_OFF: 5d
+          RESUME_AFTER: ${{ inputs.resume-after || '' }}
+        run: |
+          args=(
+            --org tesserix
+            --cut-off "$CUT_OFF"
+            --keep 3
+            --resume-after "$RESUME_AFTER"
+            --soft-timeout-seconds 3000
+          )
+          if [[ "$DRY_RUN" == "true" ]]; then
+            args+=(--dry-run)
+          fi
+          python3 scripts/ghcr_cleanup.py "${args[@]}"
+
+      - name: Dispatch continuation before the hard timeout
+        if: steps.cleanup.outputs.status == 'partial'
+        uses: actions/github-script@v7
+        env:
+          DRY_RUN: ${{ github.event_name != 'schedule' && inputs.dry-run || false }}
+          RESUME_AFTER: ${{ steps.cleanup.outputs.resume-after }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ghcr-cleanup.yml',
+              ref: context.payload.repository.default_branch,
+              inputs: {
+                'dry-run': process.env.DRY_RUN,
+                'resume-after': process.env.RESUME_AFTER
+              }
+            });
+            core.notice(`Continuation dispatched after package: ${process.env.RESUME_AFTER || '<start>'}`);
 
       - name: Summary
         if: always()
+        env:
+          STATUS: ${{ steps.cleanup.outputs.status || 'failed' }}
+          PACKAGES_DISCOVERED: ${{ steps.cleanup.outputs.packages-discovered || '0' }}
+          PACKAGES_PROCESSED: ${{ steps.cleanup.outputs.packages-processed || '0' }}
+          VERSIONS_EXAMINED: ${{ steps.cleanup.outputs.versions-examined || '0' }}
+          VERSIONS_DELETED: ${{ steps.cleanup.outputs.versions-deleted || '0' }}
+          VERSIONS_WOULD_DELETE: ${{ steps.cleanup.outputs.versions-would-delete || '0' }}
+          RESUME_AFTER: ${{ steps.cleanup.outputs.resume-after || '' }}
+          CUT_OFF: 5d
         run: |
-          echo "GHCR cleanup finished. Deleted list (if any) is in the step above." >> "$GITHUB_STEP_SUMMARY"
-          echo "Protected: newest 3 per package + tags latest/stable/prod-*/release-*/vX.Y.Z." >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "## GHCR cleanup"
+            echo
+            echo "- Status: **$STATUS**"
+            echo "- Packages processed: **$PACKAGES_PROCESSED / $PACKAGES_DISCOVERED**"
+            echo "- Versions examined: **$VERSIONS_EXAMINED**"
+            echo "- Versions deleted: **$VERSIONS_DELETED**"
+            echo "- Versions eligible in dry run: **$VERSIONS_WOULD_DELETE**"
+            echo "- Policy: retain every version newer than **$CUT_OFF** and always retain the newest 3 per package."
+            if [[ "$STATUS" == "partial" ]]; then
+              echo "- A continuation was dispatched after: **${RESUME_AFTER:-<start>}**"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
