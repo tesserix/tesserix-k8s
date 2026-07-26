@@ -93,6 +93,87 @@ data:
           hostname_sources: [os]
         override: false
 
+      # Give every log line a service and a product.
+      #
+      # k8sattributes above enriches pods with k8s metadata, but it never sets
+      # `service.name` — and `service.name` is the resource attribute the
+      # ClickHouse exporter maps to the ServiceName column. Without this the
+      # column was empty on every row (1.5M in a two-hour window), so the UI
+      # could not filter logs by service at all: clicking a service on the
+      # overview led to an empty log view, because traces carry a real
+      # service.name from the SDK and scraped container logs carried none.
+      #
+      # Resolution order runs most-specific to least, and each statement only
+      # fires while the attribute is still unset:
+      #   1. app.kubernetes.io/name — what our own charts label workloads with
+      #   2..5. the owning workload, whichever kind it is
+      #   6. the container name, for bare pods
+      #   7. a literal, so the column is never silently empty again
+      #
+      # `service.namespace` is the product/tenant. Namespaces in this estate
+      # ARE the products (homechef, mark8ly, devai, fanzone), and it is the
+      # OTel-standard attribute for exactly this grouping, so a product is
+      # identified without inventing a bespoke key. Together
+      # (service.namespace, service.name) identifies a workload uniquely —
+      # two products can each run an "api" and stay distinct.
+      #
+      # Nothing here overwrites a value an application already set: an app that
+      # ships a proper service.name via OTLP keeps it.
+      transform/service_identity:
+        error_mode: ignore
+        log_statements:
+          - context: resource
+            statements:
+              - set(attributes["service.name"], attributes["app"]) where attributes["service.name"] == nil and attributes["app"] != nil
+              - set(attributes["service.name"], attributes["k8s.deployment.name"]) where attributes["service.name"] == nil and attributes["k8s.deployment.name"] != nil
+              - set(attributes["service.name"], attributes["k8s.statefulset.name"]) where attributes["service.name"] == nil and attributes["k8s.statefulset.name"] != nil
+              - set(attributes["service.name"], attributes["k8s.daemonset.name"]) where attributes["service.name"] == nil and attributes["k8s.daemonset.name"] != nil
+              - set(attributes["service.name"], attributes["k8s.cronjob.name"]) where attributes["service.name"] == nil and attributes["k8s.cronjob.name"] != nil
+              - set(attributes["service.name"], attributes["k8s.container.name"]) where attributes["service.name"] == nil and attributes["k8s.container.name"] != nil
+              - set(attributes["service.name"], "unknown") where attributes["service.name"] == nil
+              - set(attributes["service.namespace"], attributes["k8s.namespace.name"]) where attributes["service.namespace"] == nil and attributes["k8s.namespace.name"] != nil
+
+      # Give every log line a severity.
+      #
+      # filelog reads container stdout, which arrives as an undifferentiated
+      # string: SeverityText was empty and SeverityNumber 0 on every row. The
+      # UI ramps colour off the OTel severity number and its Info+/Warn+/Error+
+      # filters compare against it, so with 0 everywhere the entire severity
+      # system was inert — every line rendered as the dimmest trace colour and
+      # no filter matched anything.
+      #
+      # Structured logs are read properly; unstructured ones fall back to the
+      # klog/glog prefix that most Kubernetes components use. Anything still
+      # unclassified becomes INFO rather than TRACE, because "we could not
+      # tell" is not the same claim as "this is verbose detail", and TRACE is
+      # styled to recede almost to invisibility.
+      transform/severity:
+        error_mode: ignore
+        log_statements:
+          - context: log
+            statements:
+              # Go slog, zap and pino all emit a JSON object with the level in it.
+              - set(cache["json"], ParseJSON(body)) where IsString(body) and IsMatch(body, "^\\s*\\{")
+              - set(severity_text, cache["json"]["level"]) where severity_text == "" and IsString(cache["json"]["level"])
+              - set(severity_text, cache["json"]["severity"]) where severity_text == "" and IsString(cache["json"]["severity"])
+
+              # Map whatever text we ended up with onto the number the UI ramps on.
+              - set(severity_number, SEVERITY_NUMBER_FATAL) where severity_number == 0 and IsMatch(severity_text, "(?i)^(fatal|panic|critical|crit|emerg)")
+              - set(severity_number, SEVERITY_NUMBER_ERROR) where severity_number == 0 and IsMatch(severity_text, "(?i)^(error|err)")
+              - set(severity_number, SEVERITY_NUMBER_WARN) where severity_number == 0 and IsMatch(severity_text, "(?i)^(warn)")
+              - set(severity_number, SEVERITY_NUMBER_INFO) where severity_number == 0 and IsMatch(severity_text, "(?i)^(info|notice)")
+              - set(severity_number, SEVERITY_NUMBER_DEBUG) where severity_number == 0 and IsMatch(severity_text, "(?i)^(debug)")
+              - set(severity_number, SEVERITY_NUMBER_TRACE) where severity_number == 0 and IsMatch(severity_text, "(?i)^(trace)")
+
+              # Unstructured: klog/glog prefixes every line with E/W/I + MMDD,
+              # which covers most of kube-system.
+              - set(severity_number, SEVERITY_NUMBER_ERROR) where severity_number == 0 and IsString(body) and IsMatch(body, "^E[0-9]{4} ")
+              - set(severity_number, SEVERITY_NUMBER_WARN) where severity_number == 0 and IsString(body) and IsMatch(body, "^W[0-9]{4} ")
+              - set(severity_number, SEVERITY_NUMBER_INFO) where severity_number == 0 and IsString(body) and IsMatch(body, "^I[0-9]{4} ")
+
+              - set(severity_number, SEVERITY_NUMBER_INFO) where severity_number == 0
+              - set(severity_text, "INFO") where severity_text == ""
+
       batch:
         send_batch_size: {{ .Values.processors.batch.sendBatchSize }}
         send_batch_max_size: {{ .Values.processors.batch.sendBatchMaxSize }}
@@ -124,7 +205,11 @@ data:
       pipelines:
         logs:
           receivers: [filelog]
-          processors: [memory_limiter, k8sattributes, resourcedetection, batch]
+          # transform runs after k8sattributes, which is what supplies the
+          # metadata it derives service.name and service.namespace from, and
+          # before batch so identity is set once per record rather than per
+          # batch flush.
+          processors: [memory_limiter, k8sattributes, resourcedetection, transform/service_identity, transform/severity, batch]
           exporters: [otlp]
       telemetry:
         metrics:
