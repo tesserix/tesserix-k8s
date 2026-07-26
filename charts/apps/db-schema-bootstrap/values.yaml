@@ -3,6 +3,17 @@ app: marketplace
 
 # CronJob configuration
 schedule: "*/30 * * * *"
+
+# Whether to replay the .sql snapshots over databases that ALREADY exist.
+#
+# Default false, deliberately. The snapshots are frozen pg_dumps; the running
+# applications also manage these schemas (GORM AutoMigrate + post-migration DDL).
+# Replaying a snapshot over a live database resurrects objects the application
+# has deliberately dropped — this job provisions, the application evolves.
+#
+# Set true ONLY for a one-off repair of a database known to have drifted, and
+# expect it to fight the application until you set it back.
+applySchemaToExistingDatabases: false
 concurrencyPolicy: Forbid
 ttlSecondsAfterFinished: 600
 backoffLimit: 3

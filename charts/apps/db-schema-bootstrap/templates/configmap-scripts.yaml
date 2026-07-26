@@ -107,6 +107,7 @@ data:
       exists=$(psql -h {{ .host }} -p {{ .port }} -U {{ .user }} -d postgres \
         -Atc "SELECT 1 FROM pg_database WHERE datname = '$db_name'" 2>/dev/null)
 
+      DB_WAS_CREATED=false
       if [ "$exists" = "1" ]; then
         log_info "  [$db_name] Database exists"
       else
@@ -116,6 +117,7 @@ data:
         create_rc=$?
         if [ $create_rc -eq 0 ]; then
           TOTAL_CREATED=$((TOTAL_CREATED + 1))
+          DB_WAS_CREATED=true
           log_info "  [$db_name] Database created successfully"
         else
           log_error "  [$db_name] Failed to create database (exit=$create_rc): $create_output"
@@ -123,7 +125,28 @@ data:
         fi
       fi
 
-      # --- Apply schema DDL ---
+      # --- Apply schema DDL: ONLY on a database this run just created ---
+      #
+      # These .sql files are frozen pg_dump snapshots. Replaying one over a live
+      # database every {{ $.Values.schedule }} does not converge it — it DIVERGES
+      # it, because the running application also manages this schema (GORM
+      # AutoMigrate plus an explicit post-migration DDL block). Anything the app
+      # has deliberately DROPPED is silently recreated by the next sweep, and
+      # ON_ERROR_STOP=0 hides the resulting conflicts as routine "already exists".
+      #
+      # That is not hypothetical: three mode-blind unique indexes the HomeChef API
+      # drops at boot were being resurrected here on a 30-minute loop, re-arming a
+      # bug that had already been fixed and deployed.
+      #
+      # So the rule is: this job PROVISIONS, the application EVOLVES. On a fresh
+      # database the snapshot is a useful head start. On an existing one the
+      # application is the single source of truth and this job must not touch it.
+      if [ "$DB_WAS_CREATED" != "true" ] && [ "{{ $.Values.applySchemaToExistingDatabases | default false }}" != "true" ]; then
+        log_info "  [$db_name] Database already provisioned — skipping DDL (application owns schema)"
+        TOTAL_SKIPPED=$((TOTAL_SKIPPED + 1))
+        continue
+      fi
+
       log_info "  [$db_name] Applying schema DDL..."
       output=$(psql -h {{ .host }} -p {{ .port }} -U {{ .user }} -d "$db_name" \
         -v ON_ERROR_STOP=0 \
