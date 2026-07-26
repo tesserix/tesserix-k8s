@@ -55,9 +55,13 @@ spec:
             - |
               set -euo pipefail
 
+              # -X brokers=, NOT --brokers. rpk v26 removed the --brokers
+              # flag in favour of the -X config-override syntax; the old form
+              # exits with "unknown flag", which made the health loop below
+              # never match and the topics were silently never created.
               echo "waiting for the cluster to report healthy..."
               for i in $(seq 1 60); do
-                if rpk cluster health --brokers "${BROKERS}" 2>/dev/null | grep -q "Healthy:.*true"; then
+                if rpk cluster health -X brokers="${BROKERS}" 2>/dev/null | grep -q "Healthy:.*true"; then
                   echo "cluster healthy"
                   break
                 fi
@@ -70,26 +74,26 @@ spec:
 
               {{- range .Values.topics }}
               echo "--- {{ .name }} ---"
-              if rpk topic describe {{ .name }} --brokers "${BROKERS}" >/dev/null 2>&1; then
+              if rpk topic describe {{ .name }} -X brokers="${BROKERS}" >/dev/null 2>&1; then
                 # Already exists: reconcile retention only. Partition count is
                 # deliberately NOT changed here — shrinking is impossible and
                 # growing silently rehashes keys across partitions.
                 echo "exists, reconciling retention"
                 rpk topic alter-config {{ .name }} \
                   --set retention.ms={{ .retentionMs }} \
-                  --brokers "${BROKERS}"
+                  -X brokers="${BROKERS}"
               else
                 echo "creating"
                 rpk topic create {{ .name }} \
                   --partitions {{ .partitions }} \
                   --replicas {{ $.Values.cluster.defaultTopicReplications }} \
                   --topic-config retention.ms={{ .retentionMs }} \
-                  --brokers "${BROKERS}"
+                  -X brokers="${BROKERS}"
               fi
               {{- end }}
 
               echo "=== topics ==="
-              rpk topic list --brokers "${BROKERS}"
+              rpk topic list -X brokers="${BROKERS}"
           resources:
             requests:
               memory: 128Mi
