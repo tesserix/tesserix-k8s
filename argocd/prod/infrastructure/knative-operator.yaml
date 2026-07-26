@@ -23,6 +23,18 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: default
+  # The operator-webhook-certs Secret is shipped EMPTY by the chart and filled
+  # in by Knative's WebhookCertificates controller (ca-cert.pem,
+  # server-cert.pem, server-key.pem), which also rotates it. Without this
+  # exception selfHeal would diff the populated secret against the empty one in
+  # git and blank the certificates on every sync, breaking the webhook it just
+  # fixed.
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      name: operator-webhook-certs
+      jsonPointers:
+        - /data
   syncPolicy:
     automated:
       selfHeal: true
