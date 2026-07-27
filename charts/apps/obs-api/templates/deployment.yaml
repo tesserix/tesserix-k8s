@@ -101,6 +101,34 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.obsApi.name }}
                   key: {{ .Values.secrets.obsApi.googleClientSecretKey }}
+            {{- if .Values.traceability.enabled }}
+            # Trace-to-code: walks a log record back to the commit that
+            # produced it. obs-api treats these as optional and starts normally
+            # without them, reporting the feature as unavailable rather than
+            # failing — showing logs must not depend on a secondary feature's
+            # credentials.
+            - name: GITHUB_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.obsApi.name }}
+                  key: github-app-id
+            - name: GITHUB_INSTALLATION_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.obsApi.name }}
+                  key: github-installation-id
+            # A file, not an env var: a multi-line PEM through the environment
+            # is a dependable source of mangled-newline bugs that surface as an
+            # unparseable key at startup.
+            - name: GITHUB_APP_KEY_PATH
+              value: {{ .Values.traceability.keyMountPath }}/github-app-key.pem
+            {{- end }}
+          {{- if .Values.traceability.enabled }}
+          volumeMounts:
+            - name: github-app-key
+              mountPath: {{ .Values.traceability.keyMountPath }}
+              readOnly: true
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.port }}
@@ -125,3 +153,18 @@ spec:
             failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.traceability.enabled }}
+      volumes:
+        - name: github-app-key
+          secret:
+            secretName: {{ .Values.secrets.obsApi.name }}
+            items:
+              - key: github-app-key.pem
+                path: github-app-key.pem
+            # 0440, not 0400. Kubernetes owns secret files as root:fsGroup,
+            # and this pod runs as uid 65532 — with owner-only permissions the
+            # process cannot read its own key and traceability silently
+            # disables itself at startup. Group read is the tightest mode that
+            # actually works here; world read is still withheld.
+            defaultMode: 0440
+      {{- end }}
