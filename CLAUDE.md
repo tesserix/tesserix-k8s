@@ -1,7 +1,12 @@
 # Claude Reference Guide — tesserix-k8s
 
-This file is the single source of truth for Claude when working on any Tesserix repository.
-Always read this before making any changes.
+Kubernetes/ArgoCD conventions for this repo.
+
+Rules that apply more broadly live one level up and are **not** repeated here:
+
+- **Git identity, commit messages, no-AI-references** → `~/.claude/CLAUDE.md`
+- **Build/deploy boundary, CI public→private cycle, SQL schema location,
+  `@tesserix/web` token, GCP constants, repo map** → workspace `CLAUDE.md`
 
 ## Cluster Access
 
@@ -9,223 +14,128 @@ Always read this before making any changes.
 export KUBECONFIG=~/.kube/gke-prod
 ```
 
-Always set this before running any kubectl or argocd commands.
-
----
-
-## Git Identity
-
-Use whatever git identity is already set on the active user's machine.
-**Do NOT override `git config user.name` / `user.email`** — commits should
-be attributed to the developer who is actually driving the work.
-
-- **NEVER** include `Co-Authored-By: Claude` or any Claude/Anthropic/AI reference in commit messages.
-- **NEVER** mention Claude, Copilot, or any AI tool in commit messages, PR descriptions, or code comments.
+Set this before any `kubectl` or `argocd` command.
 
 ---
 
 ## No Manual kubectl apply — ArgoCD Only
 
-**NEVER** use `kubectl apply`, `kubectl create`, `kubectl patch`, `kubectl edit`, or `kubectl set` to deploy or modify cluster resources directly. All changes must go through ArgoCD:
+**Never** use `kubectl apply`, `create`, `patch`, `edit`, or `set` to deploy or
+modify cluster resources. All changes go through ArgoCD:
 
-1. Make changes in this repo (Helm charts, values, external-secrets, ArgoCD app definitions)
+1. Change the Helm chart, values, external-secret, or ArgoCD app definition here
 2. Commit and push to `main`
-3. ArgoCD auto-syncs (or trigger manually: `kubectl patch app <name> -n argocd --type merge -p '{"operation":{"sync":{"syncStrategy":{"apply":{"force":false}}}}}'`)
+3. ArgoCD auto-syncs, or trigger it:
+   ```bash
+   kubectl patch app <name> -n argocd --type merge \
+     -p '{"operation":{"sync":{"syncStrategy":{"apply":{"force":false}}}}}'
+   ```
 
-**Why:** Manual applies drift from Git state, get overwritten by ArgoCD self-heal, and are not auditable. The only exception is emergency debugging (e.g., `kubectl logs`, `kubectl describe`, `kubectl exec` for read-only investigation).
+**Why:** manual applies drift from Git, get reverted by self-heal, and are not
+auditable. The only exception is read-only debugging (`kubectl logs`, `describe`,
+`get`, `exec`).
 
-**Key ArgoCD patterns:**
-- **Helm charts:** `charts/apps/<service>/` — templates + values
-- **ArgoCD apps:** `argocd/prod/apps/<project>/` — app-of-apps pattern
-- **External Secrets:** `external-secrets/prod/<namespace>/` — GHCR secrets, DB passwords via GCP Secret Manager
-- **Istio config:** `charts/thirdparty/istio-config/` — namespace labels, mTLS, gateway config
-- **Namespace labels** (e.g., `istio-injection=enabled`): managed by `istio-config` chart, not manual `kubectl label`
+**Where things live:**
+
+| What | Path |
+|---|---|
+| Helm charts | `charts/apps/<service>/` |
+| ArgoCD apps | `argocd/prod/apps/<project>/` (app-of-apps) |
+| External Secrets | `external-secrets/prod/<namespace>/` |
+| Istio config | `charts/thirdparty/istio-config/` |
+| Namespace labels (e.g. `istio-injection`) | `istio-config` chart — never `kubectl label` |
 
 ---
 
-## Repository Conventions
-
-### Commit Messages
-
-Use conventional commits:
-
-```
-feat: short description
-fix: short description
-chore: short description
-docs: short description
-refactor: short description
-```
-
-- Keep the first line under 72 characters.
-- Add a blank line then a body for multi-line messages.
-- No emojis in commit messages.
-
-### Branch Naming
+## Branch Naming
 
 ```
 feat/short-description
-feature/short-description
 bugfix/short-description
 hotfix/short-description
 ```
 
 ---
 
-## GitHub Actions & CI/CD
+## CI/CD
 
-### Public/Private Repo Toggle for Builds (MUST FOLLOW)
+### Workflow patterns
 
-The `tesserix` GitHub org has **limited Actions minutes** for private repos.
-Every CI build requires a **public→build→private** cycle. This is **mandatory** for every push.
+- **Next.js apps:** lint → Docker build → GHCR push → GKE/Knative deploy → Trivy.
+  Build uses `--secret id=NODE_AUTH_TOKEN` for `@tesserix/web`. Deploy via
+  `kubectl patch ksvc <service> -n <namespace>`. Images: `ghcr.io/tesserix/<service>:<tag>`.
+- **Go services:** `go vet` → tests → Docker build → GHCR + GAR push → Cloud Run
+  deploy → Trivy. Private modules via `GOPRIVATE=github.com/tesserix/*` and the
+  `go-private-token` secret.
 
-```bash
-# Step 1: Make repo public BEFORE pushing
-gh repo edit tesserix/<repo> --visibility public --accept-visibility-change-consequences
-
-# Step 2: Push code (triggers CI) or trigger manually
-git push origin main
-# OR for manual trigger:
-gh workflow run ci.yml --repo tesserix/<repo> --ref main
-
-# Step 3: Wait and monitor CI — do NOT make private until green
-gh run list --repo tesserix/<repo> --limit 3
-gh run view <run-id> --repo tesserix/<repo>
-# To see step details:
-gh run view --job=<job-id> --repo tesserix/<repo>
-
-# Step 4: Once CI is fully green, make repo private
-gh repo edit tesserix/<repo> --visibility private --accept-visibility-change-consequences
-```
-
-**Rules:**
-- Never leave repos public after CI completes
-- If CI fails, fix the issue, push again (repo stays public), wait for green, then make private
-- Always check all steps are green before switching to private
-- The visibility change takes a few seconds — if push fails with "repo disabled", wait 5s and retry
-
-### CI Workflow Pattern (Next.js apps)
-
-All Next.js apps use the same CI pattern:
-- Lint → Docker build → Push to GHCR → GKE/Knative deploy → Trivy scan
-- Docker build uses `--secret id=NODE_AUTH_TOKEN` for `@tesserix/web` package
-- Deployment via `kubectl patch ksvc <service> -n <namespace>` (Knative)
-- Image naming: `ghcr.io/tesserix/<service-name>:<tag>`
-
-### CI Workflow Pattern (Go services)
-
-- `go vet` → Unit tests → Docker build → Push to GHCR + GAR → Cloud Run deploy → Trivy scan
-- Private Go modules via `GOPRIVATE=github.com/tesserix/*` and `go-private-token` secret
-
-### Required GitHub Secrets
+### Required GitHub secrets
 
 | Secret | Purpose | Source |
 |--------|---------|--------|
-| `PKG_READ_TOKEN` | NPM `@tesserix/*` packages from GitHub Packages | GCP: `prod-ghcr-token` |
-| `GITHUB_TOKEN` | Automatic — GHCR push, PR operations | GitHub built-in |
+| `PKG_READ_TOKEN` | `@tesserix/*` npm packages | GCP `prod-ghcr-token` |
+| `GITHUB_TOKEN` | GHCR push, PR ops | built-in |
 
-### GCP Workload Identity (for CI → GKE)
+### GCP Workload Identity (CI → GKE)
 
 ```
 Provider: projects/849928263410/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-SA: github-actions@tesseracthub-480811.iam.gserviceaccount.com
-Cluster: tesseract-prod-in-gke
-Region: asia-south1
+SA:       github-actions@tesseracthub-480811.iam.gserviceaccount.com
+Cluster:  tesseract-prod-in-gke   Region: asia-south1
 ```
 
 ---
 
 ## GCP Secret Manager
 
-**Project:** `tesseracthub-480811`
-
-### Naming Convention
-
-```
-{env}-{service}-{secret-name}
-```
-
-Examples:
-- `dev-blog-mongodb-uri`
-- `prod-ghcr-token`
-- `dev-auth-bff-session-secret`
-
-### Accessing Secrets
+Project `tesseracthub-480811`. Naming: `{env}-{service}-{secret-name}` —
+e.g. `dev-blog-mongodb-uri`, `prod-ghcr-token`, `dev-auth-bff-session-secret`.
 
 ```bash
-# List secrets
 gcloud secrets list --project=tesseracthub-480811 --filter="name:<search>"
-
-# Read a secret
 gcloud secrets versions access latest --secret=<name> --project=tesseracthub-480811
-
-# Create a new secret
 gcloud secrets create <name> --project=tesseracthub-480811 --replication-policy=automatic
 echo -n "value" | gcloud secrets versions add <name> --project=tesseracthub-480811 --data-file=-
 ```
 
-### Key Tokens
-
-- `prod-ghcr-token` / `prod-ghcr-username` — GHCR auth for pulling/pushing images and `@tesserix/*` npm packages
-- `go-private-token` — GitHub PAT for Go private module access
+Key tokens: `prod-ghcr-token` / `prod-ghcr-username` (GHCR + npm),
+`go-private-token` (private Go modules).
 
 ---
 
-## Helm Charts (tesserix-k8s)
-
-### Structure
+## Helm Charts
 
 ```
 charts/apps/
-├── common/          # Library chart — shared templates (_helpers.tpl, _gcp-secrets.tpl)
-├── global-config.yaml       # Dev shared config (GCP project, workload identity, etc.)
-├── global-config-prod.yaml  # Prod overrides
-├── <service>/
-│   ├── Chart.yaml           # Must depend on common chart
-│   ├── values.yaml          # Dev defaults
-│   ├── values-prod.yaml     # Prod overrides
-│   └── templates/           # K8s manifests
+├── common/                  # library chart — _helpers.tpl, _gcp-secrets.tpl
+├── global-config.yaml       # dev shared config
+├── global-config-prod.yaml  # prod overrides
+└── <service>/
+    ├── Chart.yaml           # must depend on common
+    ├── values.yaml          # dev defaults
+    ├── values-prod.yaml     # prod overrides
+    └── templates/
 ```
 
-### Template Checklist (new service)
+New-service template checklist:
 
-Every service Helm chart should include:
-- [ ] `deployment.yaml` — with health probes, security context, emptyDir volumes for readOnlyRootFilesystem
+- [ ] `deployment.yaml` — health probes, security context, emptyDir volumes for `readOnlyRootFilesystem`
 - [ ] `service.yaml` — ClusterIP
-- [ ] `serviceaccount.yaml` — with Workload Identity annotation
+- [ ] `serviceaccount.yaml` — Workload Identity annotation
 - [ ] `ingress.yaml` — Kong (dev) / Istio (prod)
-- [ ] `externalsecret.yaml` — GCP Secret Manager integration
+- [ ] `externalsecret.yaml` — GCP Secret Manager
 - [ ] `network-policy.yaml` — default deny + explicit allows
 - [ ] `authorization-policy.yaml` — Istio RBAC
-- [ ] `scaledobject.yaml` — KEDA autoscaling (conditional)
+- [ ] `scaledobject.yaml` — KEDA (conditional)
 - [ ] `pdb.yaml` — PodDisruptionBudget (prod only, conditional)
 
-### Common Chart Helpers
-
-Use these in templates:
-- `{{ include "common.labels" . }}` — standard K8s labels
-- `{{ include "common.selectorLabels" . }}` — pod selector labels
-- `{{ include "common.podAnnotations" . }}` — Istio sidecar config
+Helpers: `{{ include "common.labels" . }}`, `common.selectorLabels`,
+`common.podAnnotations`.
 
 ---
 
 ## ArgoCD
 
-### App Manifests
-
-```
-argocd/
-├── dev/
-│   ├── apps/global/<service>.yaml
-│   ├── infrastructure/
-│   └── projects/tesserix.yaml
-└── prod/
-    ├── apps/global/<service>.yaml
-    ├── infrastructure/
-    └── projects/tesserix.yaml
-```
-
-### ArgoCD App Template
+### Application template
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -263,175 +173,91 @@ spec:
       # comment. 194 manifests had this and 24 apps could never converge.
 ```
 
-### Adding a new ArgoCD Application — three things, two of them silent
+### Adding an Application — three things, two of them silent
 
 1. **Create the manifest** in the right `argocd/<env>/...` directory.
 2. **Register it** in that directory's `kustomization.yaml` under `resources:`.
-   These directories are Kustomize apps, not directory apps — an unlisted file
-   is not an error, it is simply never built, and the app-of-apps keeps
-   reporting `Synced` while your Application does not exist.
+   These are Kustomize apps, not directory apps — an unlisted file is not an
+   error, it is simply never built, and the app-of-apps keeps reporting `Synced`
+   while your Application does not exist.
 3. **Use a real `project:`** (see above).
 
-Only step 1 is visible if you get it wrong. Steps 2 and 3 fail silently: no
-error in `kubectl`, the ArgoCD UI, or the controller logs. The only symptom is
-the app never appearing.
-
-`scripts/validate-argocd-apps.py` checks all three and runs in PR validation, so
-CI now catches what the cluster will not tell you.
+Only step 1 is visible if you get it wrong. Steps 2 and 3 fail silently — no error
+in `kubectl`, the UI, or the controller logs. The only symptom is the app never
+appearing. `scripts/validate-argocd-apps.py` checks all three and runs in PR
+validation.
 
 ---
 
-## CloudNativePG (CNPG) — Database HA Clusters
+## Reference Docs — read these first when the topic comes up
 
-**Whenever you are creating, modifying, debugging, or migrating PostgreSQL
-databases, READ
-[`docs/cnpg-migration-guide.md`](docs/cnpg-migration-guide.md) FIRST.**
+| Topic | Doc |
+|---|---|
+| **Creating/modifying/debugging/migrating PostgreSQL** | [`docs/cnpg-migration-guide.md`](docs/cnpg-migration-guide.md) |
+| **Admin login, BFF auth, OIDC clients, Google SSO, internal Keycloak** (`identity-internal` / `tesserix-internal` realm) | [`docs/internal-keycloak-admin-bff-fix.md`](docs/internal-keycloak-admin-bff-fix.md) |
+| **Customer login/signup, Google/Facebook sign-in, first-broker-login** (`identity-customer` / `homechef` realm) | [`docs/customer-keycloak-social-login.md`](docs/customer-keycloak-social-login.md) |
+| **HomeChef platform topology** — services, domains, infra, E2E | [`docs/homechef-platform.md`](docs/homechef-platform.md) |
 
-All products use CloudNativePG instead of standalone StatefulSets:
+### CloudNativePG (CNPG) quick facts
 
-- **Chart pattern:** `charts/apps/{product}-postgres/` — shared templates,
-  per-product `values.yaml`
-- **3-instance HA:** 1 primary + 1 sync replica + 1 async replica
-- **WAL archiving:** Barman Cloud to `gs://tesseract-prod-backups-in/`
-- **Storage:** `standard-rwo-retain` (Retain reclaim policy)
-- **TLS:** Auto-managed, TLS 1.3 only
-- **Service endpoints:** `{product}-postgres-rw` (primary), `-ro` (replicas),
-  `-r` (any) on port 5432
-- **NetworkPolicy:** `cnpg-system` namespace MUST be in the ingress policy for
-  any namespace hosting a CNPG cluster — without it, the operator can't reach
-  pods on port 8000 and replicas won't be created.
+All products use CNPG instead of standalone StatefulSets.
 
-**Key files:**
-- Charts: `charts/apps/*-postgres/`
-- ArgoCD apps: `argocd/prod/apps/{product-group}/{product}-postgres.yaml`
-- NetworkPolicy: `charts/thirdparty/istio-config/templates/network-policies.yaml`
-- CNPG operator: `cnpg-system` namespace (v1.24.1)
+- Chart pattern `charts/apps/{product}-postgres/`, per-product `values.yaml`
+- 3-instance HA: 1 primary + 1 sync replica + 1 async replica
+- WAL archiving via Barman Cloud to `gs://tesseract-prod-backups-in/`
+- Storage `standard-rwo-retain` (Retain reclaim policy); TLS 1.3 only, auto-managed
+- Endpoints: `{product}-postgres-rw` / `-ro` / `-r` on 5432
+- **NetworkPolicy:** `cnpg-system` MUST be in the ingress policy for any namespace
+  hosting a CNPG cluster, or the operator can't reach pods on port 8000 and
+  replicas are never created. See `charts/thirdparty/istio-config/templates/network-policies.yaml`.
+- Operator lives in `cnpg-system` (v1.24.1)
 
----
+### Keycloak quick facts
 
-## Internal Keycloak Admin BFF / SSO / IdP
+The reference chart for the shared `ghcr.io/tesseract-nexus/global-services/auth-bff`
+image is `charts/apps/devai-auth-bff/` — **not** `mark8ly-auth-bff`, which is a
+different image with its own database and OpenFGA.
 
-**Whenever you are debugging or changing admin login, BFF auth, OIDC clients,
-Google SSO, identity providers, or anything else touching the internal
-Keycloak (`identity-internal` namespace, `tesserix-internal` realm — used by
-HomeChef admin, DevAI SRE, marketplace admin, etc.), READ
-[`docs/internal-keycloak-admin-bff-fix.md`](docs/internal-keycloak-admin-bff-fix.md)
-FIRST.**
+Internal-realm admin login needs four things solved together (all detailed in the
+doc above): the `<product>-admin-bff` OIDC client existing with a matching secret;
+`attributes.frontendUrl` set on the realm; the BFF using the **in-cluster**
+Keycloak URL for back-channel calls (Cloudflare strips `Authorization` on
+`GET /protocol/openid-connect/userinfo`); and a `realm-roles` mapper plus
+pre-created admin users with `realmRoles: ["admin"]`.
 
-It documents four distinct gotchas that all must be solved together for admin
-login to work, plus an idempotent bootstrap-job pattern that applies them to
-existing realms (the realm import job is one-shot and won't re-import after
-the realm has been created):
-
-1. The `<product>-admin-bff` OIDC client must exist in the live realm with a
-   secret matching the BFF env var.
-2. The realm must have `attributes.frontendUrl` set to the public URL —
-   Keycloak runs with `--hostname-strict=false`, so without this, discovery
-   responses leak in-cluster URLs.
-3. The BFF must use the in-cluster Keycloak service URL for back-channel
-   calls. Cloudflare strips the `Authorization` header on
-   `GET /protocol/openid-connect/userinfo` (only that endpoint!), so any
-   public-path back-channel call dies with "Jwt issuer is not configured".
-4. The OIDC client must have a `realm-roles` protocol mapper, and each
-   allowed admin user must be **pre-created** in the realm with
-   `realmRoles: ["admin"]` so the Google IdP first-broker-login flow links to
-   the existing record. Without this, the BFF falls back to a tenant-service
-   lookup that is not configured for non-marketplace products and the login
-   bounces back to `/login`.
-
-The reference for the shared `ghcr.io/tesseract-nexus/global-services/auth-bff`
-image is `charts/apps/devai-auth-bff/` — **not** `mark8ly-auth-bff`, which is
-a different image with its own database and OpenFGA.
-
-To add a new admin user, edit `realm-configmap.yaml` AND the `ADMIN_EMAILS`
-list in `homechef-clients-bootstrap-job.yaml`. The bootstrap job is
-idempotent; pushing and letting ArgoCD sync is enough.
+To add an admin user, edit `realm-configmap.yaml` **and** the `ADMIN_EMAILS` list
+in `homechef-clients-bootstrap-job.yaml`. The bootstrap job is idempotent.
 
 ---
 
-## Customer Keycloak Social Login (Google / Facebook)
+## Gotchas
 
-**Whenever you are debugging or changing customer login, signup, Google/Facebook
-sign-in, identity providers, or the first-broker-login flow on the customer
-Keycloak (`identity-customer` namespace, `homechef` realm — used by fe3dr.com
-customers, vendors, delivery partners), READ
-[`docs/customer-keycloak-social-login.md`](docs/customer-keycloak-social-login.md)
-FIRST.**
-
-Key gotchas:
-
-1. **`VITE_BFF_URL` must be same-origin** (`${window.location.origin}/bff`),
-   NOT `https://identity.fe3dr.com`. There were FOUR files in the web app
-   that hardcoded the Keycloak host — all now fixed.
-2. The **realm-import-job does NOT substitute** `${GOOGLE_CLIENT_ID}`
-   placeholders. The `homechef-realm-bootstrap-job.yaml` writes real
-   credentials from the `keycloak-google-sso` K8s secret via admin API.
-3. `partialImport?ifResourceExists=SKIP` can create an authentication flow
-   **without its executions**. Always verify the `auto-link-by-email` flow
-   has BOTH `idp-create-user-if-unique` AND `idp-auto-link` set to
-   `ALTERNATIVE`. The bootstrap job now checks and fixes this.
-4. The **reference for the shared auth-bff image** is `devai-auth-bff` —
-   NOT `mark8ly-auth-bff`.
+1. **`@tesserix/web` auth** — needs `NODE_AUTH_TOKEN` from `prod-ghcr-token`.
+2. **Docker build secrets** — never tokens in build args; use
+   `RUN --mount=type=secret,id=NODE_AUTH_TOKEN` and `--secret id=NODE_AUTH_TOKEN,env=NODE_AUTH_TOKEN`.
+3. **Istio sidecar port exclusions** — services hitting NATS (4222), PostgreSQL
+   (5432), or Redis (6379) need exclusions; `common.podAnnotations` adds them.
+4. **ReadOnly root filesystem** — Next.js needs emptyDir for `/tmp` and
+   `/app/.next/cache`.
+5. **GKE metadata server** — Workload Identity pods must exclude
+   `169.254.169.254/32` via `traffic.sidecar.istio.io/excludeOutboundIPRanges`.
+6. **Knative deploys** — `kubectl patch ksvc` with a timestamp annotation, not
+   `kubectl rollout restart`.
+7. **External Secrets refresh** — hourly. For immediate rotation, delete the K8s
+   secret and let ESO recreate it.
+8. **MongoDB** — uses `_id` (ObjectId), not `id`. Frontend must use `post._id`.
+9. **Image registries** — GHCR `ghcr.io/tesserix/` is primary; GAR
+   `asia-south1-docker.pkg.dev/tesseracthub-480811/` is secondary for Cloud Run.
+10. **Ports** — Go services 8080–8099; Next.js local 3001–3200, in-container 3000.
 
 ---
 
-## Gotchas & Common Pitfalls
-
-### 1. @tesserix/web package auth
-The `@tesserix/web` package is hosted on GitHub Packages. Always need `NODE_AUTH_TOKEN` set:
-```bash
-NODE_AUTH_TOKEN=$(gcloud secrets versions access latest --secret=prod-ghcr-token --project=tesseracthub-480811) npm install
-```
-
-### 2. Docker build secrets
-Never put tokens in Dockerfile args. Use Docker build secrets:
-```dockerfile
-RUN --mount=type=secret,id=NODE_AUTH_TOKEN ...
-```
-In CI: `--secret id=NODE_AUTH_TOKEN,env=NODE_AUTH_TOKEN`
-
-### 3. Istio sidecar port exclusions
-Services that connect to NATS (4222), PostgreSQL (5432), or Redis (6379) need port exclusions in pod annotations. The `common.podAnnotations` helper adds these automatically.
-
-### 4. ReadOnly root filesystem
-Next.js apps need emptyDir volumes for `/tmp` and `/app/.next/cache` when `readOnlyRootFilesystem: true`.
-
-### 5. GKE Metadata server
-Pods using Workload Identity must exclude `169.254.169.254/32` from Istio proxy:
-```yaml
-traffic.sidecar.istio.io/excludeOutboundIPRanges: "169.254.169.254/32"
-```
-
-### 6. Knative deployment
-Services deployed via Knative use `kubectl patch ksvc` with a timestamp annotation to trigger rollout — not `kubectl rollout restart`.
-
-### 7. External Secrets refresh
-ExternalSecrets refresh every 1 hour. For immediate secret rotation, delete the K8s secret and let ESO recreate it.
-
-### 8. MongoDB ObjectId
-MongoDB uses `_id` (ObjectId), not `id`. All frontend code must reference `post._id`, not `post.id`.
-
-### 9. Image registries
-- **GHCR** (`ghcr.io/tesserix/`) — primary for all services
-- **GAR** (`asia-south1-docker.pkg.dev/tesseracthub-480811/`) — secondary for Cloud Run
-
-### 10. Port conventions
-| Service Type | Port |
-|-------------|------|
-| Go microservices | 8080-8099 |
-| Next.js apps (local dev) | 3001-3200 |
-| Next.js apps (Docker/GKE) | 3000 |
-
----
-
-## Platform Architecture Quick Reference
+## Architecture Quick Reference
 
 - **Backend:** Go 1.26, Gin, GORM, PostgreSQL (microservices) / MongoDB (blog)
-- **Frontend:** Next.js 16, React 19, TypeScript, Tailwind v4, @tesserix/web
+- **Frontend:** Next.js 16, React 19, TypeScript, Tailwind v4, `@tesserix/web`
 - **Auth:** Keycloak + OpenFGA (marketplace) / Keycloak OIDC (blog)
 - **Infra:** GKE, Istio, ArgoCD, Helm, KEDA, cert-manager
-- **Messaging:** Google Pub/Sub
-- **Caching:** Redis
+- **Messaging:** Google Pub/Sub · **Caching:** Redis
 - **Secrets:** GCP Secret Manager via External Secrets Operator
 - **CI/CD:** GitHub Actions → GHCR → GKE/Knative (ArgoCD for Helm sync)
-- **GCP Project:** tesseracthub-480811, Region: asia-south1
