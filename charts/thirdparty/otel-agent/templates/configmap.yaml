@@ -22,9 +22,12 @@ data:
 
     receivers:
       filelog:
+        # One glob per allowed namespace. Anything not listed is never opened —
+        # see the note on filelog.namespaces in values.yaml for why this is an
+        # include allowlist and not a filter processor.
         include:
-          {{- range .Values.filelog.include }}
-          - {{ . | quote }}
+          {{- range .Values.filelog.namespaces }}
+          - {{ printf "/var/log/pods/%s_*/*/*.log" . | quote }}
           {{- end }}
         exclude:
           {{- range .Values.filelog.exclude }}

@@ -34,6 +34,41 @@ events:
   # occurrence and would double-count every event.
   excludeWatchType:
     - DELETED
+  # Watch events only in the namespaces whose container logs we keep. Events
+  # are logs in this pipeline, so leaving this cluster-wide would put
+  # kube-system and argocd back into otel_logs through the side door after the
+  # agent stopped collecting their container output.
+  #
+  # This is not a loss of pod-failure signal: an event is namespaced to the
+  # object it is about, so an OOMKill or FailedScheduling on a homechef pod
+  # raises an event in `homechef`, not in kube-system. What is dropped is
+  # events about the excluded namespaces' own workloads.
+  #
+  # MUST match filelog.namespaces in charts/thirdparty/otel-agent/values.yaml.
+  # Two charts, two collectors, one policy — if they drift, a namespace ends up
+  # contributing events but no container logs, which reads as a service that
+  # only ever speaks up when it crashes.
+  namespaces:
+    - homechef
+    - mark8ly
+    - tesserix
+    - support-platform
+    - stockpilot
+    - openpanel
+    - nats
+    - marketplace
+    - agentregistry-system
+    - agentgateway-system
+    - devai
+    - devai-previews
+    - translation
+    - identity-customer
+    - identity-internal
+    - growthbook
+    - mongodb-blog
+    - istio-system
+    - istio-ingress
+    - istio-egress
 
 metrics:
   enabled: true
