@@ -2,6 +2,18 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: obs-api
+  {{- if .Values.traceability.enabled }}
+  annotations:
+    # Workload Identity. trace-to-code reads image manifests and config blobs
+    # from Artifact Registry to recover the OCI revision label, which is the
+    # only authoritative link from a running image back to its commit — a tag
+    # is a mutable pointer, and `:latest`/`:main` identify no build at all.
+    #
+    # The cluster has Workload Identity enabled, so without this binding the
+    # metadata server hands out no usable token and every registry read fails.
+    # The GSA holds roles/artifactregistry.reader and nothing else.
+    iam.gke.io/gcp-service-account: {{ .Values.traceability.gcpServiceAccount | quote }}
+  {{- end }}
   labels:
     app.kubernetes.io/name: obs-api
     app.kubernetes.io/component: observability

@@ -73,6 +73,22 @@ data:
             - k8s.cronjob.name
             - k8s.node.name
             - k8s.container.name
+            # Image identity, stamped onto every record at collection time.
+            #
+            # This has to happen HERE and not at query time. A pod is gone
+            # long before anyone investigates a three-day-old error, so
+            # resolving pod -> image later fails for exactly the incidents
+            # that matter. Written onto the row, the build stays knowable for
+            # as long as the log is retained.
+            #
+            # The digest is the load-bearing one: a tag is a mutable pointer
+            # (`:latest` and `:main` identify no particular build, and the GAR
+            # mirror can serve a stale digest behind a moving tag), whereas
+            # the digest addresses the exact bytes that ran. obs-api reads the
+            # OCI revision/source labels behind it to reach the commit.
+            - container.image.name
+            - container.image.tag
+            - container.image.repo_digests
           labels:
             - tag_name: app
               key: app.kubernetes.io/name

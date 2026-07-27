@@ -106,3 +106,22 @@ tolerations:
     operator: Equal
     value: observability
     effect: NoSchedule
+
+# Trace-to-code: resolves a log line back to the commit that produced it, by
+# walking image digest -> OCI revision label -> repo + commit -> file:line ->
+# git blame.
+#
+# obs-api treats this as strictly optional. With it disabled (or with the
+# credentials absent) the process starts normally and /api/trace-to-code
+# reports the feature as unavailable — an observability tool must not refuse
+# to show logs because a secondary feature lacks credentials.
+traceability:
+  enabled: true
+  # Needs roles/artifactregistry.reader and a workloadIdentityUser binding for
+  # the observability/obs-api KSA. Nothing else: it reads image metadata and
+  # never writes.
+  gcpServiceAccount: obs-api-prod@tesseracthub-480811.iam.gserviceaccount.com
+  # Where the GitHub App private key is mounted. A file rather than an env var
+  # because a multi-line PEM through the environment reliably arrives with
+  # mangled newlines and fails to parse at startup.
+  keyMountPath: /var/run/secrets/github
