@@ -26,11 +26,64 @@ gateway:
   endpoint: otel-gateway.observability.svc.cluster.local:4317
 
 filelog:
-  include:
-    - /var/log/pods/*/*/*.log
+  # Namespaces whose container logs are collected. Everything else is not
+  # merely dropped later — it is never read.
+  #
+  # This is enforced in the filelog `include` globs rather than a downstream
+  # filter processor on purpose. A file that no glob matches is one the agent
+  # never opens, never parses, never assigns a severity to and never
+  # checkpoints, so the saving is the whole cost of collection. A filter
+  # processor would pay all of that and then throw the record away at the end.
+  # Measured before this list existed: 1.17M lines/hour, of which 43% came from
+  # namespaces nobody looks at — kube-system alone was 289k lines (58 MiB) an
+  # hour, more than any actual product.
+  #
+  # On-disk layout is /var/log/pods/<namespace>_<pod>_<uid>/<container>/N.log,
+  # so "<ns>_*" is anchored on the underscore that separates namespace from pod
+  # name. A namespace cannot therefore capture a longer one that merely shares
+  # its prefix: "devai_*" does not match devai-previews, and "tesserix_*" does
+  # not match redis-tesserix.
+  #
+  # TRADE-OFF, read before adding a product: a namespace that is not on this
+  # list produces NO logs at all, silently. That is the deliberate direction of
+  # failure — collecting everything by default is the state this list exists to
+  # fix — but a new product is invisible until someone adds it here.
+  namespaces:
+    # Products.
+    - homechef
+    - mark8ly
+    - tesserix
+    - support-platform
+    - stockpilot
+    - openpanel
+    - nats
+    - marketplace
+    - agentregistry-system
+    - agentgateway-system
+    - devai
+    - devai-previews
+    - translation
+    # Product dependencies that run outside their product's namespace. A
+    # product incident frequently surfaces here first rather than in the
+    # product itself — a login outage is a Keycloak log, not a homechef one.
+    - identity-customer
+    - identity-internal
+    - growthbook
+    - mongodb-blog
+    # Service mesh. istiod, ztunnel and istio-cni live here; the per-pod
+    # istio-proxy sidecars do not — they are inside the product namespaces
+    # above and are already collected with them.
+    - istio-system
+    - istio-ingress
+    - istio-egress
   exclude:
     # Without this the agent's own logs become input, and any error it logs
     # while failing to ship produces another log line. Feedback loop.
+    #
+    # Redundant while `observability` is off the allowlist above, and kept
+    # precisely because that could change: the day someone adds observability
+    # back to collect obs-api logs, they will want obs-api — not the agent
+    # reporting on itself reporting on itself.
     - /var/log/pods/observability_otel-agent-*/*/*.log
   # `end` on first start so rolling this out does not replay every historical
   # log file at once. Checkpoints take over from the second start onwards.
