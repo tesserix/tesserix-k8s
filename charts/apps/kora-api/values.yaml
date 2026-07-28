@@ -1,0 +1,149 @@
+# Default values for kora-api (Go + Gin backend)
+replicaCount: 1
+
+image:
+  # Pull through GCP Artifact Registry's ghcr-remote cache — mirrors
+  # ghcr.io/tesserix/kora/kora-api on first pull and serves subsequent
+  # pulls from-region (asia-south1 → tesseract-prod-in-gke = same region
+  # = no egress, faster cold-starts). Same convention as horoscope-api /
+  # homechef-api.
+  #
+  # TODO(ci): Kora's CI (.github/workflows/ci.yml :: build-image) currently
+  # pushes to asia-south1-docker.pkg.dev/tesserix-app/services/kora-api —
+  # a different GCP project entirely, not this fleet's mirror source. CI
+  # must be changed to push to ghcr.io/tesserix/kora/kora-api instead (auth
+  # via a GHCR PAT, same as every other product in this repo); this
+  # `repository` value is that image's ghcr-remote mirror path and will
+  # 404 on pull until CI is repointed.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/kora/kora-api
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+  automount: true
+
+podAnnotations:
+  proxy.istio.io/holdApplicationUntilProxyStarts: "true"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+# Knative Serving — one warm replica, autoscale up to 3 under load.
+knative:
+  enabled: true
+  minScale: 1
+  maxScale: 3
+  scaleDownDelay: "120s"
+  containerConcurrency: 0
+  # Raised well beyond the Knative/horoscope-api default: Kora's meal-log
+  # and resolve-food paths call out to Gemini (embeddings) and an
+  # OpenAI-compatible chat model synchronously, and can chain a
+  # pgvector similarity query behind that. 300s is comfortable for
+  # horoscope's single-call vision reading; Kora's worst case is closer
+  # to two sequential LLM round-trips.
+  timeoutSeconds: 600
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 128Mi
+
+# Plain env (non-secret). Anything secret must go in `secretEnv` below
+# and be sourced from the ExternalSecret target.
+env:
+  GIN_MODE: "release"
+  # NOTE: do NOT set PORT here. Knative Serving reserves the PORT env
+  # var and INJECTS it itself based on the container port. Defining it
+  # in the manifest causes the validation webhook to reject:
+  #   "PORT" is a reserved environment variable
+  # Firebase JWTs are signed by Google; this is the project ID that the
+  # backend's auth.Verifier expects in the `aud` claim.
+  FIREBASE_PROJECT_ID: "tesseracthub-480811"
+  # OpenAI-compatible chat/parse model. Per docs/superpowers/HANDOFF-phase3.md
+  # the free-tier fallback used in dev is NVIDIA's OpenAI-compatible
+  # endpoint — carried forward here as the prod default until a paid
+  # OpenAI key + model is decided. Gemini (secretEnv: GEMINI_API_KEY)
+  # remains the primary provider for embeddings regardless of this value.
+  OPENAI_BASE_URL: "https://integrate.api.nvidia.com/v1"
+  OPENAI_MODEL: "meta/llama-3.3-70b-instruct"
+  OPENAI_JSON_OBJECT: "true"
+  # Inert-by-default (see docs/superpowers/plans/2026-07-27-kora-push-notifications.md):
+  # OS push go-live is a user-owned step (eas init, APNs creds, physical
+  # device test). Flip to "true" only after that's done.
+  PUSH_ENABLED: "false"
+
+# Each entry maps an env var name to a key in the k8s Secret created by
+# the ExternalSecret. Keep this in sync with externalsecret.yaml.
+secretEnv:
+  DATABASE_URL:       database_url
+  GEMINI_API_KEY:     gemini_api_key
+  OPENAI_API_KEY:     openai_api_key
+  EXPO_ACCESS_TOKEN:  expo_access_token
+
+# GCP / Workload Identity — annotates the SA with the matching GSA email.
+# GSA itself, its IAM bindings, and the WIF binding are provisioned by the
+# human out-of-band (terraform-new), same as every other product's
+# app-secrets-<product>-prod GSA.
+gcp:
+  projectId: "tesseracthub-480811"
+  workloadIdentity:
+    enabled: true
+    gcpServiceAccount: "app-secrets-kora-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+# ExternalSecret config — pulls all secrets from GCP Secret Manager via
+# the cluster-wide gcp-secret-store ClusterSecretStore.
+# TODO(secrets): the prod-kora-* GCP Secret Manager entries referenced
+# below must exist with real values before this ExternalSecret can sync —
+# that's a human, out-of-band step (see report).
+externalSecret:
+  create: true
+  refreshInterval: "1h"
+  store:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+  remoteRefs:
+    database_url:       prod-kora-database-url
+    gemini_api_key:      prod-kora-gemini-api-key
+    openai_api_key:      prod-kora-openai-api-key
+    expo_access_token:   prod-kora-expo-access-token
+
+# ArgoCD PreSync migrate Job — runs Kora's migrate binary (same image,
+# command override) before the Knative Service rolls, so the API never
+# starts against a schema older than the code expects.
+#
+# TODO(ci): requires the controller's planned Dockerfile change shipping
+# /usr/local/bin/migrate (Kora's cmd/migrate as a separate binary) in the
+# same image as the API. Until that lands, this Job will exec-fail with
+# "no such file or directory" — gate stays on so the failure is loud and
+# visible in ArgoCD rather than silently skipped.
+migrate:
+  enabled: true
+  command:
+    - /usr/local/bin/migrate

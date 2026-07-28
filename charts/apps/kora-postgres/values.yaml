@@ -1,0 +1,116 @@
+hibernate: false
+
+namespace: kora
+clusterName: kora-postgres
+
+# 2 instances: 1 primary + 1 sync replica. CNPG handles automatic failover.
+instances: 2
+
+# Same tag every other CNPG cluster in this fleet uses. Verified (by
+# pulling and inspecting the image) that it already bundles
+# postgresql-16-pgvector 0.8.0 — no custom image build needed. This is
+# also the exact image support-platform-postgres already runs pgvector on
+# in this cluster today (charts/apps/support-platform-postgres), so this
+# is a proven-in-prod combination, not a first attempt.
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+# Storage — separate WAL volume for I/O isolation.
+storageSize: 30Gi
+storageClass: standard-rwo-retain
+walStorageSize: 10Gi
+
+resources:
+  # CNPG validates that memory.requests >= shared_buffers (configured below).
+  # Keep both proportional. Project convention: memory only — never set
+  # CPU requests/limits.
+  requests:
+    memory: 384Mi
+  limits:
+    memory: 1Gi
+
+# Extensions loaded at server start via shared_preload_libraries. pgvector
+# requires this (unlike a plain CREATE EXTENSION-only extension).
+sharedPreloadLibraries:
+  - vector
+
+# Bootstrap — primary database for the Kora Go API
+bootstrap:
+  database: kora_db
+  owner: kora
+  # Secret must contain 'username' and 'password' keys (CNPG basic-auth format).
+  # Created by ExternalSecret from GCP Secret Manager.
+  secret: kora-postgres-app-credentials
+  gcpSecretName: prod-kora-postgresql-password
+  # Post-init SQL runs once after the cluster is created (idempotent),
+  # against the kora_db database with the kora owner role. pgvector is
+  # needed for the nutrition index's similarity-search tier (vector(768)
+  # columns — see api/internal/ai/providers/gemini.go).
+  postInitSQL:
+    - "CREATE EXTENSION IF NOT EXISTS vector"
+
+# PostgreSQL tuning
+postgresql:
+  max_connections: "100"
+  # Sized for a 384Mi memory request: shared_buffers ~25% of memory request,
+  # effective_cache_size ~50%.
+  shared_buffers: "128MB"
+  effective_cache_size: "256MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "64MB"
+  wal_level: "logical"
+  max_replication_slots: "10"
+  max_wal_senders: "10"
+  ssl_min_protocol_version: "TLSv1.3"
+  ssl_max_protocol_version: "TLSv1.3"
+  # Query safety nets
+  idle_in_transaction_session_timeout: "300000"
+  statement_timeout: "120000"
+  # SSD-optimized planner (GKE PD-SSD)
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"
+  # Slow query logging (queries > 1s)
+  log_min_duration_statement: "1000"
+  # Replica query safety
+  hot_standby_feedback: "on"
+  # WAL safety cap — prevent unbounded growth from inactive slots.
+  max_slot_wal_keep_size: "8GB"
+  # Performance monitoring (CNPG auto-loads extension)
+  pg_stat_statements.track: "all"
+  pg_stat_statements.max: "10000"
+
+# Continuous backup to GCS via Barman Cloud
+backup:
+  enabled: true
+  destinationPath: "gs://tesseract-prod-backups-in/kora-postgres"
+  retentionPolicy: "30d"
+  # GCP Service Account for Workload Identity. Must have
+  # roles/storage.objectAdmin on the backup bucket.
+  serviceAccount: "app-secrets-kora-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
+# PgBouncer connection pooling
+pooler:
+  enabled: true
+  instances: 2
+  maxClientConn: "1000"
+  defaultPoolSize: "25"
+
+# Monitoring — CNPG built-in Prometheus exporter on port 9187
+monitoring:
+  enablePodMonitor: true
+
+# Replication
+affinity:
+  podAntiAffinityType: preferred
+
+replication:
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
+
+# Self-healing — auto-rebuild a wedged replica (acts only on multi-instance
+# clusters; never touches the primary). See docs/cnpg-backup-restore.md and
+# docs/incident-homechef-postgres-disk-full.md.
+autoheal:
+  enabled: true
+  schedule: "*/10 * * * *"
+  stuckMinutes: 15
+  image: bitnamilegacy/kubectl:1.31.0
