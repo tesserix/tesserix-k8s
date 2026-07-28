@@ -31,11 +31,11 @@ single-instance clusters each survive it as an outage.
 
 ## Which cluster, and why there are two
 
-**`global-postgres`** is the shared platform cluster. It already hosts twelve
+**`global-postgres`** is the shared platform cluster. It already hosts thirteen
 databases: `global_db`, `keycloak_customer`, `keycloak_internal`, `tenants_db`,
 `notifications_db`, `subscriptions_db`, `documents_db`, `verifications_db`,
-`onboarding_content_db`, `custom_domains_db`, `location_db`, `tenant_router_db`.
-New platform and product databases belong here.
+`onboarding_content_db`, `custom_domains_db`, `location_db`, `tenant_router_db`,
+`kora_db`. New platform and product databases belong here.
 
 **`infra-postgres`** exists for exactly one reason: **blast radius**. Temporal
 runs ~36–77 connections and dominates the write rate, measured against 11
