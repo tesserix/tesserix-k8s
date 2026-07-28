@@ -178,24 +178,51 @@ jobs:
 
       - name: Open or update the audit issue
         if: steps.needs_issue.outputs.create == 'true'
+        # Reporting is a courtesy on top of the audit — the findings are already
+        # in the step summary and the uploaded artifact. Never let a reporting
+        # problem turn a successful audit red.
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Passed through env rather than inlined into the script: `${{ }}` in a
+          # run: block is a shell-injection vector and trips workflow linting.
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          EVENT_NAME: ${{ github.event_name }}
+          APPLY: ${{ steps.inputs.outputs.apply }}
+          AGE_DAYS: ${{ steps.inputs.outputs.age }}
         run: |
           set -euo pipefail
+
+          # Issues can be turned off on the repo. When they are, every `gh issue`
+          # call exits 1, so degrade to a warning rather than pretending the
+          # audit itself failed.
+          if [ "$(gh api "repos/$REPO" --jq '.has_issues')" != "true" ]; then
+            echo "::warning::Issues are disabled on $REPO — skipping the audit issue. Findings are in the job summary and the audit-report artifact."
+            exit 0
+          fi
+
+          # `gh issue create --label` hard-fails if the label does not exist yet,
+          # so make sure it is there before we rely on it.
+          gh label create storage-audit \
+            --repo "$REPO" \
+            --color "B60205" \
+            --description "Automated orphan-storage audit findings" \
+            2>/dev/null || true
+
           today=$(date -u '+%Y-%m-%d')
           title="Storage audit ${today}: orphan/unowned disks need review"
-          body=$(cat audit-report.md)
           # Append run link so a reader can jump back to the workflow output.
-          body="${body}
-
-          ---
-          Workflow run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          Triggered by: \`${{ github.event_name }}\` (apply=${{ steps.inputs.outputs.apply }}, age_days=${{ steps.inputs.outputs.age }})"
+          # Built with printf so the trailer is not indented — leading spaces
+          # would render it as a code block in the issue.
+          body=$(cat audit-report.md)
+          body=$(printf '%s\n\n---\nWorkflow run: https://github.com/%s/actions/runs/%s\nTriggered by: `%s` (apply=%s, age_days=%s)\n' \
+            "$body" "$REPO" "$RUN_ID" "$EVENT_NAME" "$APPLY" "$AGE_DAYS")
 
           # If there's already an open audit issue, update it instead of opening a new one
           # so the issue list does not bloat over time.
           existing=$(gh issue list \
-            --repo "${{ github.repository }}" \
+            --repo "$REPO" \
             --state open \
             --label storage-audit \
             --limit 1 \
@@ -204,16 +231,16 @@ jobs:
           if [ -n "$existing" ]; then
             echo "Updating existing issue #$existing"
             gh issue edit "$existing" \
-              --repo "${{ github.repository }}" \
+              --repo "$REPO" \
               --title "$title" \
               --body "$body"
             gh issue comment "$existing" \
-              --repo "${{ github.repository }}" \
+              --repo "$REPO" \
               --body "Re-audited ${today}. See updated body and the linked workflow run for details."
           else
             echo "Opening new audit issue"
             gh issue create \
-              --repo "${{ github.repository }}" \
+              --repo "$REPO" \
               --title "$title" \
               --body "$body" \
               --label "storage-audit"
