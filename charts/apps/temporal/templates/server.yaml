@@ -90,6 +90,23 @@ spec:
               {{- else }}
               value: "temporal-postgres.{{ .Values.namespace }}.svc.cluster.local"
               {{- end }}
+            {{- if .Values.postgres.external.enabled }}
+            # The auto-setup entrypoint issues CREATE DATABASE on boot. That
+            # worked when Temporal owned its own Postgres, but on the shared
+            # cluster `temporal` is an ordinary tenant role and the server
+            # crash-looped on:
+            #
+            #   Unable to create SQL database. {"error": "pq: permission
+            #   denied to create database"}
+            #
+            # Skipping the create is the correct fix rather than granting
+            # CREATEDB: the databases are provisioned by the infra-postgres
+            # chart, and a tenant role on a multi-tenant cluster has no
+            # business creating more of them. Schema setup and versioned
+            # upgrades still run — they operate inside the existing database.
+            - name: SKIP_DB_CREATE
+              value: "true"
+            {{- end }}
             - name: TEMPORAL_NAMESPACE
               value: default
             {{- if .Values.elasticsearch.enabled }}
