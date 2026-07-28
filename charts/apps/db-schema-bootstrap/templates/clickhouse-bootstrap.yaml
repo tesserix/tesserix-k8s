@@ -87,6 +87,17 @@ spec:
                       name: {{ .Values.clickhouse.secretName }}
                       key: {{ .Values.clickhouse.observerSecretKey }}
                 {{- end }}
+                {{- if .Values.clickhouse.sreWriterSecretKey }}
+                # A separate identity for incident writes. observer cannot be
+                # reused: its readonly profile forbids INSERT outright, and
+                # that profile is what guarantees a compromised obs-api cannot
+                # alter telemetry.
+                - name: SRE_WRITER_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.clickhouse.secretName }}
+                      key: {{ .Values.clickhouse.sreWriterSecretKey }}
+                {{- end }}
               command:
                 - /bin/bash
                 - -c
@@ -119,6 +130,7 @@ spec:
                     # Secrets are substituted into a tmpfs copy so the rendered
                     # SQL containing a password never touches a real volume.
                     sed -e "s|__OBSERVER_PASSWORD__|${OBSERVER_PASSWORD:-}|g" \
+                        -e "s|__SRE_WRITER_PASSWORD__|${SRE_WRITER_PASSWORD:-}|g" \
                         "$f" > /tmp/rendered.sql
                     clickhouse-client --host "${HOST}" --port "${PORT}" \
                       --user "${USER}" --password "${CLICKHOUSE_PASSWORD}" \
