@@ -193,6 +193,7 @@ validation.
 
 | Topic | Doc |
 |---|---|
+| **Which PostgreSQL cluster a new service should use** (answer: an existing one) | [`docs/postgres-cluster-policy.md`](docs/postgres-cluster-policy.md) |
 | **Creating/modifying/debugging/migrating PostgreSQL** | [`docs/cnpg-migration-guide.md`](docs/cnpg-migration-guide.md) |
 | **Admin login, BFF auth, OIDC clients, Google SSO, internal Keycloak** (`identity-internal` / `tesserix-internal` realm) | [`docs/internal-keycloak-admin-bff-fix.md`](docs/internal-keycloak-admin-bff-fix.md) |
 | **Customer login/signup, Google/Facebook sign-in, first-broker-login** (`identity-customer` / `homechef` realm) | [`docs/customer-keycloak-social-login.md`](docs/customer-keycloak-social-login.md) |
@@ -202,8 +203,22 @@ validation.
 
 All products use CNPG instead of standalone StatefulSets.
 
-- Chart pattern `charts/apps/{product}-postgres/`, per-product `values.yaml`
-- 3-instance HA: 1 primary + 1 sync replica + 1 async replica
+**Do NOT create a new cluster.** A service that needs PostgreSQL gets a
+database on an existing one — `global-postgres` for platform and product
+services, `infra-postgres` for Temporal and SRE tooling. The per-product
+`charts/apps/{product}-postgres/` clusters are grandfathered, not a template:
+the estate reached ten clusters holding ~1.1GB against 928Gi provisioned,
+most single-instance on Spot nodes and three with no backup. Full policy,
+including how to add a database and the two traps that waste an afternoon:
+[`docs/postgres-cluster-policy.md`](docs/postgres-cluster-policy.md).
+
+- `bootstrap.postInitSQL` runs **once, at cluster creation** — adding a line
+  does not create the database on a running cluster
+- Poolers are **transaction-mode** PgBouncer; a driver that reuses prepared
+  statements must use `-rw` directly, not the pooler
+- 3-instance HA where it is affordable: 1 primary + 1 sync replica + 1 async
+  replica (several existing clusters are single-instance; that is a gap, not
+  the target)
 - WAL archiving via Barman Cloud to `gs://tesseract-prod-backups-in/`
 - Storage `standard-rwo-retain` (Retain reclaim policy); TLS 1.3 only, auto-managed
 - Endpoints: `{product}-postgres-rw` / `-ro` / `-r` on 5432
