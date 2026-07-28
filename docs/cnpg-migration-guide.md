@@ -340,7 +340,7 @@ CNPG creates three Service resources per cluster:
 | Product | Namespace | Cluster Name | Databases | Instances | Storage | Backup |
 |---------|-----------|-------------|-----------|-----------|---------|--------|
 | HomeChef | `homechef` | `homechef-postgres` | `homechef_db` | 3 | 60Gi | Yes |
-| Global | `global` | `global-postgres` | `global_db`, `keycloak_customer`, `keycloak_internal`, `tenants_db`, `notifications_db`, `subscriptions_db`, `documents_db`, `verifications_db`, `onboarding_content_db`, `custom_domains_db`, `location_db`, `tenant_router_db` | 3 | 20Gi | Yes |
+| Global | `global` | `global-postgres` | `global_db`, `keycloak_customer`, `keycloak_internal`, `tenants_db`, `notifications_db`, `subscriptions_db`, `documents_db`, `verifications_db`, `onboarding_content_db`, `custom_domains_db`, `location_db`, `tenant_router_db`, `kora_db` | 3 | 20Gi | Yes |
 | Fanzone | `fanzone` | `fanzone-postgres` | `fanzone`, `fanzone_auth`, `fanzone_db` | 3 | 10Gi | Yes |
 | GameVerse | `gameverse` | `gameverse-postgres` | `gameverse` | 3 | 10Gi | No |
 | HMS | `hms` | `hms-postgres` | `hms_db` | 3 | 10Gi | Yes |

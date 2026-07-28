@@ -23,6 +23,12 @@ spec:
       localeCollate: C
       secret:
         name: {{ .Values.bootstrap.secret }}
+      {{- if .Values.bootstrap.postInitTemplateSQL }}
+      postInitTemplateSQL:
+        {{- range .Values.bootstrap.postInitTemplateSQL }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- end }}
       {{- if .Values.bootstrap.postInitSQL }}
       postInitSQL:
         {{- range .Values.bootstrap.postInitSQL }}
@@ -81,6 +87,23 @@ spec:
   #   - Replication TLS between primary and replicas
   # =========================================================================
   enableSuperuserAccess: false
+
+  # =========================================================================
+  # CNPG-managed roles — reconciled continuously (not bootstrap-only), so
+  # this is what actually provisions a role's password on this already-
+  # running cluster. See values.yaml `managedRoles` for detail.
+  # =========================================================================
+  {{- if .Values.managedRoles }}
+  managed:
+    roles:
+      {{- range .Values.managedRoles }}
+      - name: {{ .name }}
+        ensure: present
+        login: true
+        passwordSecret:
+          name: {{ .passwordSecret }}
+      {{- end }}
+  {{- end }}
 
   # =========================================================================
   # Continuous backup to GCS via Barman Cloud

@@ -32,7 +32,7 @@ bootstrap:
   secret: global-postgres-app-credentials
   gcpSecretName: prod-global-postgresql-password
   # Post-init SQL runs once after the cluster is created (idempotent).
-  # Global PG hosts 12 databases: global_db (bootstrap) + 11 additional below.
+  # Global PG hosts 13 databases: global_db (bootstrap) + 12 additional below.
   postInitSQL:
     - "CREATE DATABASE keycloak_customer OWNER global"
     - "CREATE DATABASE keycloak_internal OWNER global"
@@ -45,6 +45,43 @@ bootstrap:
     - "CREATE DATABASE custom_domains_db OWNER global"
     - "CREATE DATABASE location_db OWNER global"
     - "CREATE DATABASE tenant_router_db OWNER global"
+    # kora_db (Kora product — food memory / nutrition logging). Distinct
+    # owner role (not "global") so the app's own credentials are scoped to
+    # its one database, same isolation the dedicated cluster gave it.
+    # Role LOGIN only — no CREATEDB/CREATEROLE/SUPERUSER, matching the
+    # least-privilege posture in docs/cross-db-admin.md. Password is
+    # reconciled continuously by managed.roles below (works on this
+    # already-running cluster, unlike postInitSQL which only fires on a
+    # fresh bootstrap — see docs/postgres-cluster-policy.md).
+    - "CREATE ROLE kora LOGIN"
+    - "CREATE DATABASE kora_db OWNER kora"
+  # Runs once against template1 at cluster creation; every database
+  # subsequently CREATEd (including from postInitSQL above) inherits
+  # whatever is installed here via Postgres's normal template-copy
+  # semantics — no privilege needed by the inheriting database's owner.
+  # This is how kora_db gets pgvector without the "kora" role ever needing
+  # CREATE EXTENSION privilege (see managed.roles comment on cluster.yaml
+  # for why that matters — its own migration's `CREATE EXTENSION IF NOT
+  # EXISTS vector` becomes a privilege-safe no-op). Same trick mark8ly's
+  # cluster uses for pgcrypto/citext.
+  postInitTemplateSQL:
+    - "CREATE EXTENSION IF NOT EXISTS vector"
+
+# CNPG-managed roles — reconciled continuously by the operator (not just at
+# bootstrap), so this is what actually creates/updates a role's password on
+# this already-running cluster. The operator runs internally as the postgres
+# superuser regardless of enableSuperuserAccess, so password reconciliation
+# works even for a role that never has direct superuser access. Same pattern
+# as mark8ly-postgres's `openfga` / `marketplace_api` secondary roles.
+managedRoles:
+  - name: kora
+    passwordSecret: global-postgres-kora
+    # Secret created by ExternalSecret in external-secrets/prod/global/
+    # (external-secrets.io ExternalSecret "global-postgres-kora"),
+    # sourced from GCP Secret Manager key prod-kora-postgresql-password.
+    # This password MUST match whatever is embedded in the
+    # prod-kora-database-url secret kora-api reads its DATABASE_URL from —
+    # a human coordination point, not something GitOps can enforce.
 
 # PostgreSQL tuning
 postgresql:
