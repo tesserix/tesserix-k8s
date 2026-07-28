@@ -201,7 +201,20 @@ env:
   MAX_UPLOAD_SIZE: "10485760"
   # OpenTelemetry — OTLP gRPC endpoint for the in-cluster collector (traces +
   # metrics). The API no-ops telemetry export when this is empty.
-  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-gateway.observability.svc.cluster.local:4317"
+  # 4318 (OTLP/HTTP), NOT 4317 (gRPC).
+  #
+  # homechef runs under Istio ambient mesh, so ztunnel intercepts outbound
+  # traffic and attempts HBONE to the destination. The observability namespace
+  # is outside the mesh and cannot answer, and the gRPC HTTP/2 preface is reset
+  # before the connection completes:
+  #
+  #   traces export: rpc error: code = Unavailable ...
+  #   "error reading server preface: connection reset by peer"
+  #
+  # Every span was being dropped and homechef showed zero traces. devai is also
+  # ambient and exports fine over HTTP on 4318, which is the evidence for this;
+  # mark8ly uses gRPC successfully only because it is NOT in the mesh.
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-gateway.observability.svc.cluster.local:4318"
   # Feature flags (read at startup by apps/api/config/config.go). Group/office
   # ("corporate") orders — enabled so it can be tested. The API also reads a
   # runtime override from the platform_policy PlatformSettings (env OR policy
