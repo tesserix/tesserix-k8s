@@ -101,6 +101,19 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.obsApi.name }}
                   key: {{ .Values.secrets.obsApi.googleClientSecretKey }}
+            {{- if .Values.incidents.enabled }}
+            # Incident recording writes to the `sre` database under its own
+            # identity. observer cannot be reused: its readonly profile forbids
+            # INSERT outright, and that profile is what guarantees obs-api
+            # cannot alter telemetry.
+            - name: SRE_WRITER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.clickhouse.name }}
+                  key: {{ .Values.incidents.writerSecretKey }}
+            - name: SRE_DATABASE
+              value: {{ .Values.incidents.database | quote }}
+            {{- end }}
             {{- if .Values.traceability.enabled }}
             # Trace-to-code: walks a log record back to the commit that
             # produced it. obs-api treats these as optional and starts normally

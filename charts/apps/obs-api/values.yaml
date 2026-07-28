@@ -125,3 +125,17 @@ traceability:
   # because a multi-line PEM through the environment reliably arrives with
   # mangled newlines and fails to parse at startup.
   keyMountPath: /var/run/secrets/github
+
+# SRE incident recording: keeps a durable record of traced errors, with an
+# append-only audit trail. The log itself ages out after 30 days, so without
+# this the link between "this failed" and "this commit caused it" is lost
+# exactly when a pattern would start to become visible.
+#
+# Optional, like traceability: with it disabled obs-api starts normally and the
+# incident endpoints report the feature as unavailable.
+incidents:
+  enabled: true
+  database: sre
+  # Key in the clickhouse-secrets Secret. A separate identity from observer,
+  # which is readonly and therefore cannot INSERT.
+  writerSecretKey: sre-writer-password
