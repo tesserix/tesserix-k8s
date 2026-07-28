@@ -68,7 +68,21 @@ spec:
                   name: temporal-postgres-auth
                   key: password
             - name: POSTGRES_SEEDS
+              {{- if .Values.postgres.external.enabled }}
+              # Points at the shared cluster's -rw service, NOT its pooler.
+              #
+              # The CNPG poolers run PgBouncer in `transaction` mode, which
+              # does not carry prepared statements across a transaction
+              # boundary. Temporal's postgres12 driver prepares statements and
+              # reuses them, so pooling it in transaction mode surfaces as
+              # sporadic "prepared statement does not exist" errors under load
+              # rather than a clean failure at startup — the worst kind to
+              # debug. The -rw service follows the primary through failover,
+              # which is the property that actually matters here.
+              value: {{ .Values.postgres.external.host | quote }}
+              {{- else }}
               value: "temporal-postgres.{{ .Values.namespace }}.svc.cluster.local"
+              {{- end }}
             - name: TEMPORAL_NAMESPACE
               value: default
             {{- if .Values.elasticsearch.enabled }}

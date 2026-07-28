@@ -1,3 +1,14 @@
+{{- if not .Values.postgres.external.enabled }}
+# The embedded single-replica Postgres.
+#
+# Suppressed entirely when postgres.external.enabled — an instance pointed at
+# the shared cluster in `infra` must not also run this, or the StatefulSet
+# keeps a stale copy of the data alive next to the real one and a
+# misconfiguration silently reads from the wrong database.
+#
+# The PVC is deliberately NOT removed with it: `standard-rwo-retain` keeps the
+# volume after the StatefulSet goes, which is the rollback path for a
+# migration that has to be undone.
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -80,3 +91,4 @@ spec:
       name: postgres
   selector:
     app.kubernetes.io/name: temporal-postgres
+{{- end }}

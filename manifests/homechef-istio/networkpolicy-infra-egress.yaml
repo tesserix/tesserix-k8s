@@ -1,0 +1,45 @@
+##############################################################################
+# ADDITIVE egress: homechef → infra (shared platform PostgreSQL).
+#
+# homechef's Temporal moved off its own single-replica temporal-postgres
+# StatefulSet onto the shared HA cluster in the `infra` namespace. Nothing in
+# homechef's existing rule set names `infra`, and NetworkPolicy denies by
+# default once any egress policy selects a pod — so without this the server
+# cannot reach its own database and comes up reporting:
+#
+#   error starting scanner: context deadline exceeded
+#
+# This is the same failure that silently dropped every homechef trace before
+# allow-homechef-to-observability-egress was added: a destination namespace
+# that no rule mentions looks, from inside the application, like the remote
+# service being down.
+#
+# NetworkPolicy semantics are union-of-allows, so this additive policy grants
+# the path without touching the 23 existing rules.
+#
+# Narrower than the observability policy deliberately: that one fronts a
+# collector with no credentials, whereas this reaches a database holding every
+# platform tenant's state. Restricted to the PostgreSQL port so a compromised
+# homechef pod cannot use it to reach anything else that later lands in
+# `infra`.
+##############################################################################
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-homechef-to-infra-postgres-egress
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: infra
+      ports:
+        - protocol: TCP
+          port: 5432
