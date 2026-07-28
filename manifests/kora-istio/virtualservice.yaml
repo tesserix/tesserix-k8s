@@ -1,0 +1,69 @@
+##############################################################################
+# Kora — Istio VirtualService
+#
+# Single domain: api.kora.tesserix.app — API only, no separate web frontend
+# chart (mobile app talks to this directly).
+#
+# kora-api runs in-cluster as a Knative cluster-local Service. We forward
+# traffic to the shared knative-local-gateway with a Host header rewrite so
+# Knative routes the request to the right Revision.
+#
+# DNS: this VirtualService has NO `external-dns.alpha.kubernetes.io/target`
+# annotation. external-dns will fall back to its --default-targets value,
+# which on this cluster points at the shared (mark8ly) Cloudflare Tunnel —
+# correct for any *.tesserix.app subdomain. Do not add a target annotation
+# unless a dedicated tunnel has been provisioned.
+##############################################################################
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: kora-api
+  namespace: kora
+  labels:
+    app.kubernetes.io/part-of: kora
+    app.kubernetes.io/component: networking
+  annotations:
+    external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - api.kora.tesserix.app
+  http:
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            Host: kora-api.kora.svc.cluster.local
+            x-forwarded-host: api.kora.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            port:
+              number: 80
+      # Matches kora-api's own Knative timeoutSeconds (600s) — LLM
+      # round-trips (Gemini embeddings + OpenAI-compatible parse) can chain.
+      timeout: 600s
+      retries:
+        attempts: 3
+        perTryTimeout: 30s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://api.kora.tesserix.app"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+        allowCredentials: true
+        maxAge: "86400s"

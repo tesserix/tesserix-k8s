@@ -1,0 +1,51 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kora-api
+  namespace: argocd
+  annotations:
+    # Not yet backed by a Kargo Project/Stage — no kora-manifests warehouse
+    # is wired up. Harmless to leave authorized; Kargo simply never touches
+    # this Application until (if) that's set up. Remove if it's never
+    # going to happen.
+    kargo.akuity.io/authorized-stage: kargo-kora:prod
+  labels:
+    app.kubernetes.io/part-of: kora
+    app.kubernetes.io/component: backend
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: kora
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/kora-api
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-prod.yaml
+      parameters:
+        # PLACEHOLDER — no Kargo warehouse wired up yet for Kora, so this
+        # stays "latest" (chart values.yaml image.tag fallback) until CI
+        # is repointed at ghcr.io/tesserix/kora/kora-api (see chart
+        # comments + report).
+        - name: image.tag
+          value: "latest"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kora
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

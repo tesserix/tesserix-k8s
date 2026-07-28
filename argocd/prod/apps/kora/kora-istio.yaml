@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kora-istio
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: kora
+    app.kubernetes.io/component: networking
+    environment: prod
+spec:
+  project: kora
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: manifests/kora-istio
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kora
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s

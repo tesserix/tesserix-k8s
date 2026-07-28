@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: kora
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: kora
+    environment: prod
+spec:
+  description: Kora — LLM-assisted food memory / nutrition logging with pgvector recall
+  sourceRepos:
+    - https://github.com/tesserix/tesserix-k8s.git
+    - https://github.com/tesserix/kora.git
+  destinations:
+    - namespace: kora
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  orphanedResources:
+    warn: true
