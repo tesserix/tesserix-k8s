@@ -124,9 +124,19 @@ monitoring:
   enablePodMonitor: true
 
 affinity:
-  # Spread replicas across nodes. Every node pool here is Spot, so co-locating
-  # two replicas means one preemption can take both.
-  podAntiAffinityType: preferred
+  # REQUIRED, not preferred.
+  #
+  # With `preferred` the scheduler put instances 2 and 3 on the same node, so a
+  # single Spot preemption would have taken two of three replicas at once and
+  # cost quorum — defeating the entire reason this cluster has three. Every
+  # node pool in this cluster is preemptible, so co-location is not a
+  # theoretical risk.
+  #
+  # The trade-off is real and accepted: with `required` an instance stays
+  # Pending rather than sharing a node. For a cluster whose whole job is
+  # surviving node loss, a visibly Pending replica is the better failure than a
+  # silently redundant one.
+  podAntiAffinityType: required
 
 # Synchronous replication for a shared cluster: a tenant that has not thought
 # about durability should not silently get the weakest guarantee. Temporal
