@@ -1,33 +1,41 @@
 # =============================================================================
-# infra-postgres — the shared HA PostgreSQL for PLATFORM components.
+# infra-postgres — HA PostgreSQL for TEMPORAL and SRE tooling.
 #
-# Not a product database. This exists for infrastructure that needs durable
-# relational state but has no business owning a cluster of its own: Temporal
-# first, and whatever else follows.
+# READ THIS BEFORE ADDING A DATABASE HERE.
 #
-# WHY IT EXISTS
+# This is NOT the general shared platform cluster. That is `global-postgres`,
+# which already hosts twelve platform databases (keycloak_customer,
+# keycloak_internal, tenants_db, notifications_db, subscriptions_db,
+# documents_db, verifications_db, onboarding_content_db, custom_domains_db,
+# location_db, tenant_router_db, global_db). A new platform service belongs
+# THERE, not here.
 #
-# The estate had nine CNPG clusters holding roughly 700MB of data between them,
-# against 872Gi of provisioned volumes. Every new platform component was
-# arriving with its own single-instance cluster, which is both the expensive
-# option and — more importantly — the fragile one: a single instance on this
-# cluster's Spot-only node pools goes away with the node.
+# This cluster exists because Temporal is a genuinely different workload, not
+# because the estate needed a second shared cluster. Temporal alone runs ~36
+# connections and dominates the write rate — measured against 11 connections
+# across all twelve of global's databases combined. Putting that load on the
+# cluster that serves Keycloak means a Temporal write storm degrades auth for
+# every product. Keeping it separate is a blast-radius decision.
 #
-# Temporal is the worked example. It ran on a bespoke single-replica Postgres
-# StatefulSet, so every preemption produced:
+# WHY IT IS HA
+#
+# Temporal previously ran on a bespoke single-replica Postgres StatefulSet on
+# Spot-only nodes, so every preemption produced:
 #
 #   ListNamespaces operation failed ... database connection lost:
 #   read tcp ...:5432: read: connection reset by peer
 #
-# THREE INSTANCES IS THE ENTIRE POINT. One primary and two replicas with CNPG
-# unsupervised failover means losing a node costs a leader election rather than
-# an outage. Anything adopting this cluster inherits that without having to
-# think about it.
+# A primary plus a synchronous replica with required anti-affinity and CNPG
+# unsupervised failover turns a lost node into a leader election instead of an
+# outage.
 #
-# ADOPTING IT
+# WHAT BELONGS HERE
 #
-# Add a database to `bootstrap.postInitSQL` and point the component at the
-# pooler. Do NOT add another cluster.
+#   - Temporal (temporal, temporal_visibility)
+#   - SRE / observability tooling that needs relational state
+#
+# Anything else goes to global-postgres. If you are about to add a product or
+# platform database here, you are in the wrong file.
 # =============================================================================
 
 hibernate: false
@@ -72,21 +80,23 @@ resources:
     memory: 2Gi
 
 bootstrap:
-  # Temporal's main store. Everything else is created by postInitSQL so a new
-  # tenant is one line here rather than a new cluster.
+  # Temporal's main store.
   database: temporal
   owner: temporal
   secret: infra-postgres-app
-  # Reuses the existing Temporal credential so the migration does not also
-  # have to rotate a password. Future tenants get their own roles via
-  # postInitSQL.
+  # Reuses the existing Temporal credential so the migration did not also have
+  # to rotate a password.
   gcpSecretName: prod-temporal-postgresql-password
   postInitSQL:
     # Temporal needs a second database for its visibility store.
     - "CREATE DATABASE temporal_visibility OWNER temporal"
-    # --- future platform tenants go here, one line each ---
-    # - "CREATE ROLE <component> LOGIN PASSWORD '<from-secret>'"
-    # - "CREATE DATABASE <component>_db OWNER <component>"
+    # SRE tooling that needs relational state goes here. Anything that is not
+    # Temporal or SRE belongs on global-postgres — see the header.
+    #
+    # NOTE: postInitSQL runs ONCE, at cluster creation. Adding a line here does
+    # not create the database on the running cluster; it only makes a rebuild
+    # reproduce it. Provision it directly as well, or it will exist in git and
+    # nowhere else.
 
 postgresql:
   # Sized for several tenants each holding a pool, not for one. Temporal alone
@@ -110,11 +120,18 @@ postgresql:
   pg_stat_statements.track: "all"
   pg_stat_statements.max: "10000"
 
-# Connection pooling matters more here than on a single-tenant cluster: every
-# adopter brings its own pool, and without pgbouncer in front they compound
-# directly onto max_connections.
+# OFF. The only consumer cannot use it.
+#
+# CNPG's poolers run PgBouncer in `transaction` mode, which does not carry
+# prepared statements across a transaction boundary. Temporal's postgres12
+# driver prepares and reuses them, so it connects to the -rw service directly
+# — leaving four pooler pods with zero clients and zero connections routed
+# through them, verified before removing.
+#
+# Re-enable if an SRE component lands here that holds a large idle pool and
+# tolerates transaction pooling. Until then this is four pods of pure cost.
 pooler:
-  enabled: true
+  enabled: false
   instances: 2
   maxClientConn: 500
   defaultPoolSize: 25
