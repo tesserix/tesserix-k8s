@@ -4,8 +4,11 @@
 # rolls, so the API never starts against a schema older than the code
 # expects. Same shape as homechef-api's temporal-namespace-job.yaml.
 #
-# PreSync (not PostSync/sync-wave): migrations must land before the new
-# revision's pods start serving, not after.
+# sync-wave -1 (not a PreSync hook): the migrate binary needs the
+# kora-api ServiceAccount and kora-api-secrets Secret, both of which are
+# main-sync resources created at wave -2. PreSync hooks run before the
+# main sync entirely, so they can never see those resources — hence the
+# ordering via sync-wave instead of a hook.
 #
 # TODO(ci): requires the controller's planned Dockerfile change to ship
 # /usr/local/bin/migrate in the kora-api image. Until then this Job fails
@@ -19,11 +22,9 @@ metadata:
     {{- include "kora-api.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrate
   annotations:
-    argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   backoffLimit: 5
-  ttlSecondsAfterFinished: 600
   template:
     metadata:
       labels:
