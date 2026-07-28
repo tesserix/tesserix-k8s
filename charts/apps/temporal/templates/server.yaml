@@ -8,7 +8,14 @@ metadata:
     app.kubernetes.io/part-of: temporal
     app.kubernetes.io/component: server
 spec:
-  replicas: 1
+  # Configurable so the server can be quiesced through git rather than with a
+  # `kubectl scale` that selfHeal would undo mid-operation. Set to 0 to stop
+  # writes for a database migration, then back to 1 after the cutover.
+  #
+  # NOT `default 1` — Go templates treat 0 as empty, so `0 | default 1` is 1
+  # and the scale-down silently does nothing. The value is defined in
+  # values.yaml instead, which makes 0 mean zero.
+  replicas: {{ .Values.server.replicaCount }}
   selector:
     matchLabels:
       app.kubernetes.io/name: temporal
