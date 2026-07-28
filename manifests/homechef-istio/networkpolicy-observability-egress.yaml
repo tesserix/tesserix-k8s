@@ -1,0 +1,43 @@
+##############################################################################
+# ADDITIVE egress: homechef → observability (OpenTelemetry gateway).
+#
+# homechef-api exports OTLP traces and metrics to
+# otel-gateway.observability.svc. Neither allow-homechef-egress (23 rules,
+# none naming observability) nor any pod-scoped policy permitted that
+# destination, so every export was dropped at L4 and homechef showed ZERO
+# traces in ClickHouse while mark8ly and devai showed thousands.
+#
+# The failure is silent from the application's side and easy to misread. Over
+# gRPC it surfaced as:
+#
+#   traces export: rpc error: code = Unavailable ...
+#   "error reading server preface: connection reset by peer"
+#
+# which looks like an Istio ambient/HBONE problem; over HTTP the same block
+# appears instead as "context deadline exceeded while awaiting headers". Both
+# are the NetworkPolicy, not the protocol and not the mesh.
+#
+# NetworkPolicy semantics are union-of-allows, so this single additive policy
+# unblocks every homechef pod without touching the existing rule set — the
+# same approach already taken for devai in manifests/devai-istio and for
+# agentic in manifests/agentic-istio. Full-namespace egress matches that
+# precedent: the gateway listens only on OTLP and scrape ports and holds no
+# credentials.
+##############################################################################
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-homechef-to-observability-egress
+  namespace: homechef
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
