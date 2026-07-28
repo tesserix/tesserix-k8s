@@ -75,10 +75,73 @@ CREATE TABLE IF NOT EXISTS sre.incidents ON CLUSTER otel
     status             Enum8('open' = 0, 'investigating' = 1, 'resolved' = 2, 'wont_fix' = 3),
     assignee           LowCardinality(String),
     created_by         LowCardinality(String),
-    created_at         DateTime
+    created_at         DateTime,
+
+    -- Everything below was added after the table shipped. New columns MUST be
+    -- appended here in the same order as the ALTERs at the bottom of this file:
+    -- the writer inserts positionally, so a fresh database and an altered one
+    -- have to agree on physical column order.
+
+    -- Identity of the BUG rather than of this occurrence: a hash of repository,
+    -- source file and line. Two people tracing the same failing line produce
+    -- the same fingerprint, which is what lets a recurrence update one incident
+    -- instead of filing a second. Empty when the chain never reached a line.
+    fingerprint        String,
+
+    -- Triage as it stood when the incident was recorded. Stored rather than
+    -- recomputed on read: priority is a function of volume and recency at a
+    -- point in time, and an incident that was a P0 last Tuesday was a P0 last
+    -- Tuesday even though the traffic has since stopped.
+    --
+    -- 'unknown' is first in each enum so it is also the value existing rows get
+    -- when these columns are added -- an incident recorded before triage was
+    -- persisted genuinely has no priority, and claiming P3 would be a lie.
+    priority           Enum8('unknown' = 0, 'P0' = 1, 'P1' = 2, 'P2' = 3, 'P3' = 4),
+    category           Enum8('unknown' = 0, 'config' = 1, 'dependency' = 2, 'data' = 3, 'code' = 4, 'infra' = 5, 'auth' = 6),
+    domain             Enum8('unknown' = 0, 'general' = 1, 'payment' = 2, 'order' = 3, 'auth' = 4, 'delivery' = 5),
+    -- The facts that drove the priority, joined with "; ". Kept so an operator
+    -- can disagree with a P0 rather than either obeying or ignoring it.
+    priority_reasons   String,
+
+    -- How often the same source line was failing in the hour before this
+    -- incident was recorded, and how many times the incident itself has been
+    -- re-recorded since. The first is a property of the world, the second of
+    -- this record -- they are not the same number and are kept apart.
+    recurrence_count   UInt32,
+    occurrence_count   UInt32 DEFAULT 1,
+    last_seen_at       DateTime64(9) DEFAULT occurred_at,
+
+    -- The image the failing process was running. Held alongside tag and digest
+    -- so the chain can be resolved again from the incident alone, alive long
+    -- after the originating log row has aged out of its 30-day window.
+    image_name         String,
+
+    -- The GitHub issue filed for this incident, if one was. Persisted so status
+    -- changes here can be mirrored onto the issue -- without it the bug and the
+    -- incident are permanently disconnected after the filing response is gone.
+    issue_number       UInt32,
+    issue_url          String
 )
 ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', version)
 ORDER BY incident_id;
+
+-- Additive migrations for databases created before the columns above existed.
+--
+-- ADD COLUMN IF NOT EXISTS, not ALTER TABLE IF EXISTS: ClickHouse supports the
+-- former and rejects the latter outright. Order here MUST match the tail of the
+-- CREATE above, because a positional INSERT depends on it.
+ALTER TABLE sre.incidents ON CLUSTER otel
+    ADD COLUMN IF NOT EXISTS fingerprint      String,
+    ADD COLUMN IF NOT EXISTS priority         Enum8('unknown' = 0, 'P0' = 1, 'P1' = 2, 'P2' = 3, 'P3' = 4),
+    ADD COLUMN IF NOT EXISTS category         Enum8('unknown' = 0, 'config' = 1, 'dependency' = 2, 'data' = 3, 'code' = 4, 'infra' = 5, 'auth' = 6),
+    ADD COLUMN IF NOT EXISTS domain           Enum8('unknown' = 0, 'general' = 1, 'payment' = 2, 'order' = 3, 'auth' = 4, 'delivery' = 5),
+    ADD COLUMN IF NOT EXISTS priority_reasons String,
+    ADD COLUMN IF NOT EXISTS recurrence_count UInt32,
+    ADD COLUMN IF NOT EXISTS occurrence_count UInt32 DEFAULT 1,
+    ADD COLUMN IF NOT EXISTS last_seen_at     DateTime64(9) DEFAULT occurred_at,
+    ADD COLUMN IF NOT EXISTS image_name       String,
+    ADD COLUMN IF NOT EXISTS issue_number     UInt32,
+    ADD COLUMN IF NOT EXISTS issue_url        String;
 
 -- The audit trail. Genuinely append-only, which is both what an audit trail
 -- wants and what ClickHouse is best at -- so unlike the header above, this
@@ -88,11 +151,17 @@ CREATE TABLE IF NOT EXISTS sre.incident_events ON CLUSTER otel
     incident_id UUID,
     at          DateTime64(3),
     actor       LowCardinality(String),
-    kind        Enum8('created' = 0, 'status_changed' = 1, 'note_added' = 2, 'reassigned' = 3, 'reresolved' = 4),
+    kind        Enum8('created' = 0, 'status_changed' = 1, 'note_added' = 2, 'reassigned' = 3, 'reresolved' = 4, 'recurred' = 5, 'issue_updated' = 6),
     detail      String
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
 ORDER BY (incident_id, at);
+
+-- Widen the enum for databases created before 'recurred' and 'issue_updated'
+-- existed. Adding values to an Enum8 is metadata-only and re-applying the same
+-- definition is a no-op, so this is safe on the 30-minute reconcile loop.
+ALTER TABLE sre.incident_events ON CLUSTER otel
+    MODIFY COLUMN kind Enum8('created' = 0, 'status_changed' = 1, 'note_added' = 2, 'reassigned' = 3, 'reresolved' = 4, 'recurred' = 5, 'issue_updated' = 6);
 
 -- Writer account for obs-api's incident path.
 --
