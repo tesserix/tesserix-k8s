@@ -109,7 +109,17 @@ spec:
   serviceAccountTemplate:
     metadata:
       annotations:
-        iam.gke.io/gcp-service-account: {{ .Values.backup.serviceAccount }}
+        # `required` on purpose. When this value was merely absent the
+        # annotation still rendered — as an empty string — so the Cluster
+        # applied cleanly, the pods came up healthy, and every WAL archive
+        # failed against GCS with an opaque:
+        #
+        #   unexpected failure invoking barman-cloud-wal-archive: exit status 2
+        #
+        # A backup that is silently not happening is the worst possible
+        # outcome for this chart, so an unset value must break the render
+        # rather than the backups.
+        iam.gke.io/gcp-service-account: {{ required "backup.serviceAccount is required when backup.enabled — without it Workload Identity is unset and every WAL archive fails" .Values.backup.serviceAccount | quote }}
   {{- end }}
 
   # =========================================================================
