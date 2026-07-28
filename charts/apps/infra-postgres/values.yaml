@@ -1,0 +1,136 @@
+# =============================================================================
+# infra-postgres — the shared HA PostgreSQL for PLATFORM components.
+#
+# Not a product database. This exists for infrastructure that needs durable
+# relational state but has no business owning a cluster of its own: Temporal
+# first, and whatever else follows.
+#
+# WHY IT EXISTS
+#
+# The estate had nine CNPG clusters holding roughly 700MB of data between them,
+# against 872Gi of provisioned volumes. Every new platform component was
+# arriving with its own single-instance cluster, which is both the expensive
+# option and — more importantly — the fragile one: a single instance on this
+# cluster's Spot-only node pools goes away with the node.
+#
+# Temporal is the worked example. It ran on a bespoke single-replica Postgres
+# StatefulSet, so every preemption produced:
+#
+#   ListNamespaces operation failed ... database connection lost:
+#   read tcp ...:5432: read: connection reset by peer
+#
+# THREE INSTANCES IS THE ENTIRE POINT. One primary and two replicas with CNPG
+# unsupervised failover means losing a node costs a leader election rather than
+# an outage. Anything adopting this cluster inherits that without having to
+# think about it.
+#
+# ADOPTING IT
+#
+# Add a database to `bootstrap.postInitSQL` and point the component at the
+# pooler. Do NOT add another cluster.
+# =============================================================================
+
+hibernate: false
+
+namespace: infra
+clusterName: infra-postgres
+
+# 1 primary + 2 replicas. Non-negotiable for a shared cluster: its failure is
+# every tenant's failure, so it must survive a node loss.
+instances: 3
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+# Sized for many small tenants rather than one large one. The entire estate's
+# Postgres data is under a gigabyte; 20Gi leaves years of headroom while
+# staying honest about what is actually stored. PVCs grow in place, so
+# starting modest costs nothing later — whereas the 200Gi and 100Gi volumes
+# already provisioned elsewhere for 40MB and 24MB cannot be shrunk without a
+# dump and restore.
+storageSize: 20Gi
+storageClass: standard-rwo-retain
+walStorageSize: 8Gi
+
+# Memory-only per platform policy — never CPU requests or limits.
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+bootstrap:
+  # Temporal's main store. Everything else is created by postInitSQL so a new
+  # tenant is one line here rather than a new cluster.
+  database: temporal
+  owner: temporal
+  secret: infra-postgres-app
+  # Reuses the existing Temporal credential so the migration does not also
+  # have to rotate a password. Future tenants get their own roles via
+  # postInitSQL.
+  gcpSecretName: prod-temporal-postgresql-password
+  postInitSQL:
+    # Temporal needs a second database for its visibility store.
+    - "CREATE DATABASE temporal_visibility OWNER temporal"
+    # --- future platform tenants go here, one line each ---
+    # - "CREATE ROLE <component> LOGIN PASSWORD '<from-secret>'"
+    # - "CREATE DATABASE <component>_db OWNER <component>"
+
+postgresql:
+  # Sized for several tenants each holding a pool, not for one. Temporal alone
+  # (multi-service × replicas × pool) accounts for a few hundred; the pooler
+  # below is what keeps this from having to grow with every new adopter.
+  max_connections: "400"
+  shared_buffers: "256MB"
+  effective_cache_size: "1536MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "128MB"
+  wal_level: "logical"
+  max_replication_slots: "10"
+  max_wal_senders: "10"
+  ssl_min_protocol_version: "TLSv1.3"
+  ssl_max_protocol_version: "TLSv1.3"
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"
+  log_min_duration_statement: "1000"
+  hot_standby_feedback: "on"
+  max_slot_wal_keep_size: "10GB"
+  pg_stat_statements.track: "all"
+  pg_stat_statements.max: "10000"
+
+# Connection pooling matters more here than on a single-tenant cluster: every
+# adopter brings its own pool, and without pgbouncer in front they compound
+# directly onto max_connections.
+pooler:
+  enabled: true
+  instances: 2
+  maxClientConn: 500
+  defaultPoolSize: 25
+
+# Backups ON, unlike the Temporal-only chart this derives from.
+#
+# That chart could skip them because Temporal state is re-derivable at the app
+# layer — schedules re-register and workflows retry. A SHARED cluster cannot
+# assume that about its future tenants, and the moment one stores something
+# that is not re-derivable, "we chose not to back this up" becomes a very bad
+# sentence.
+backup:
+  enabled: true
+  schedule: "0 30 2 * * *"
+  # Same bucket and layout as every other cluster here; GKE workload identity
+  # supplies the credentials (googleCredentials.gkeEnvironment in the template).
+  destinationPath: "gs://tesseract-prod-backups-in/infra-postgres"
+  retentionPolicy: "30d"
+
+monitoring:
+  enablePodMonitor: true
+
+affinity:
+  # Spread replicas across nodes. Every node pool here is Spot, so co-locating
+  # two replicas means one preemption can take both.
+  podAntiAffinityType: preferred
+
+# Synchronous replication for a shared cluster: a tenant that has not thought
+# about durability should not silently get the weakest guarantee. Temporal
+# tolerates async, but it is no longer the only user.
+replication:
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
