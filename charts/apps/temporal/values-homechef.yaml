@@ -23,11 +23,7 @@ service:
   frontendPort: 7233
 
 server:
-  # TEMPORARY — 0 while the database is migrated onto the shared `infra`
-  # cluster. The dump must be taken with nothing writing to it, and selfHeal
-  # would revert a `kubectl scale`, so the quiesce goes through git. Restored
-  # to 1 in the cutover commit.
-  replicaCount: 0
+  replicaCount: 1
   image:
     # Mirrored into AR (image-mirror/images.yaml) — the cluster cannot pull bare
     # Docker Hub refs (Private Google Access only).
@@ -47,11 +43,35 @@ server:
   # nothing to load-balance, so recycling is pure churn. See templates/config-base.yaml.
   keepAliveMaxConnectionAge: "24h"
 
-# Embedded Postgres for this instance's Temporal state (separate from the
-# platform instance's postgres in `scrapper`). Reuses the platform
-# temporal-postgres password secret — this is a fresh DB initialised with that
-# value, so no coupling beyond the shared credential.
+# Temporal state now lives on the shared HA cluster in `infra`, not on a
+# StatefulSet in this namespace.
+#
+# WHY: the embedded Postgres was a single replica on Spot-only nodes. Every
+# preemption took the database with it and surfaced in the API as
+#
+#   ListNamespaces operation failed ... database connection lost:
+#   read tcp ...:5432: read: connection reset by peer
+#
+# infra-postgres is 1 primary + 1 synchronous replica with required
+# anti-affinity and CNPG unsupervised failover, so a lost node costs a leader
+# election instead of an outage — and it is backed up to GCS, which this
+# never was.
+#
+# MIGRATED, not reinitialised: 27,642 executions / 256,549 history_node rows
+# and all three namespaces (temporal-system, default, homechef) were dumped
+# and restored with the server scaled to zero, and row counts verified equal
+# on both sides before the cutover.
+#
+# The old StatefulSet's PVC is `standard-rwo-retain` and was deliberately left
+# in place as the rollback path. It holds the pre-migration state and can be
+# deleted once this has run clean for a while.
 postgres:
+  external:
+    enabled: true
+    # The -rw service, not the pooler — the poolers are transaction-mode
+    # PgBouncer and Temporal's driver reuses prepared statements.
+    host: infra-postgres-rw.infra.svc.cluster.local
+
   image:
     repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/postgres
     tag: "16-alpine"
