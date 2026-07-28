@@ -1,7 +1,10 @@
 import datetime as dt
 import importlib.util
 import pathlib
+import shutil
 import sys
+import tempfile
+import textwrap
 import unittest
 from unittest import mock
 
@@ -66,6 +69,72 @@ class RetentionTests(unittest.TestCase):
         )
 
         self.assertEqual([2, 1], [item["id"] for item in selected])
+
+    def test_never_deletes_a_tag_a_chart_still_pins(self):
+        # The outage: tesserix-auth-bff was pinned to main-3a47f1d in May and not
+        # rebuilt since, so it fell outside both newest-3 and the 5-day cutoff and
+        # was deleted. Nothing broke until GKE recycled the spot node it ran on,
+        # months later, and the re-pull 404'd.
+        versions = [
+            version(1, 90, now=self.now, tags=["main-3a47f1d"]),
+            version(2, 80, now=self.now, tags=["main-older"]),
+            version(3, 70, now=self.now, tags=["main-oldest"]),
+            version(4, 60, now=self.now, tags=["stale-a"]),
+            version(5, 50, now=self.now, tags=["stale-b"]),
+        ]
+
+        selected = ghcr_cleanup.select_deletable_versions(
+            versions,
+            cutoff=self.now - dt.timedelta(days=5),
+            keep=3,
+            protected_tags={"main-3a47f1d"},
+        )
+
+        # Newest-3 (5, 4, 3) are retained by the keep rule; of the remaining
+        # (2, 1) only the pinned one is spared.
+        self.assertNotIn(1, [item["id"] for item in selected])
+        self.assertEqual([2], [item["id"] for item in selected])
+
+    def test_protects_a_version_when_any_of_its_tags_is_pinned(self):
+        # GHCR deletes a whole version, and a version can carry several tags. If
+        # even one is pinned, deleting the version takes the pinned tag with it.
+        versions = [
+            version(1, 90, now=self.now, tags=["sha-22dfeda1af45", "latest"]),
+            version(2, 80, now=self.now, tags=["unused"]),
+            version(3, 70, now=self.now, tags=["unused-2"]),
+            version(4, 60, now=self.now, tags=["unused-3"]),
+        ]
+
+        selected = ghcr_cleanup.select_deletable_versions(
+            versions,
+            cutoff=self.now - dt.timedelta(days=5),
+            keep=3,
+            protected_tags={"sha-22dfeda1af45"},
+        )
+
+        self.assertEqual([], selected)
+
+    def test_untagged_versions_are_still_collectable(self):
+        # The keep-list must not turn cleanup into a no-op: untagged layers are
+        # the bulk of what this workflow exists to reclaim.
+        versions = [
+            version(1, 90, now=self.now, tags=["pinned"]),
+            version(2, 80, now=self.now, tags=[]),
+            version(3, 70, now=self.now, tags=[]),
+            version(4, 60, now=self.now, tags=[]),
+            version(5, 50, now=self.now, tags=[]),
+        ]
+
+        selected = ghcr_cleanup.select_deletable_versions(
+            versions,
+            cutoff=self.now - dt.timedelta(days=5),
+            keep=3,
+            protected_tags={"pinned"},
+        )
+
+        # 1 is pinned and spared; 2 is untagged, old, and outside newest-3, so
+        # cleanup still reclaims it.
+        self.assertEqual([2], [item["id"] for item in selected])
 
     def test_keeps_versions_newer_than_cutoff_beyond_newest_three(self):
         versions = [
@@ -320,6 +389,77 @@ class ParsingTests(unittest.TestCase):
             "https://api.example/items?page=3",
             ghcr_cleanup.next_link(header),
         )
+
+
+class DeployedImageTagTests(unittest.TestCase):
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root)
+
+    def write(self, relpath, body):
+        path = pathlib.Path(self.root, relpath)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(textwrap.dedent(body), encoding="utf-8")
+
+    def test_collects_tags_across_nested_charts(self):
+        self.write(
+            "apps/tesserix-auth-bff/values.yaml",
+            """
+            image:
+              repository: ghcr.io/tesserix/mark8ly-auth-bff
+              tag: "main-3a47f1d"
+            """,
+        )
+        self.write(
+            "apps/tesserix-storybook/values.yaml",
+            """
+            image:
+              tag: sha-22dfeda1af45 # CI rewrites this on every push
+            """,
+        )
+
+        self.assertEqual(
+            {"main-3a47f1d", "sha-22dfeda1af45"},
+            ghcr_cleanup.deployed_image_tags(self.root),
+        )
+
+    def test_reads_quoted_unquoted_and_commented_forms(self):
+        self.write(
+            "apps/a/values.yaml",
+            """
+            image:
+              tag: "double"
+            other:
+              tag: 'single'
+            third:
+              tag: bare
+            fourth:
+              tag: trailing # with a comment
+            """,
+        )
+
+        self.assertEqual(
+            {"double", "single", "bare", "trailing"},
+            ghcr_cleanup.deployed_image_tags(self.root),
+        )
+
+    def test_ignores_non_yaml_files(self):
+        self.write("README.md", "tag: not-a-chart\n")
+
+        self.assertEqual(set(), ghcr_cleanup.deployed_image_tags(self.root))
+
+    def test_empty_tag_values_are_skipped(self):
+        # `tag: ""` means "use the chart default" — it is not a real tag and must
+        # not end up in the keep-list as an empty string.
+        self.write(
+            "apps/a/values.yaml",
+            """
+            image:
+              tag: ""
+            """,
+        )
+
+        self.assertEqual(set(), ghcr_cleanup.deployed_image_tags(self.root))
 
 
 if __name__ == "__main__":
