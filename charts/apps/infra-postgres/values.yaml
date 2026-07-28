@@ -35,9 +35,23 @@ hibernate: false
 namespace: infra
 clusterName: infra-postgres
 
-# 1 primary + 2 replicas. Non-negotiable for a shared cluster: its failure is
-# every tenant's failure, so it must survive a node loss.
-instances: 3
+# 1 primary + 1 synchronous replica, on separate nodes.
+#
+# Three would be preferable and is what this should return to. It is 2 today
+# because the cluster is genuinely full: two nodes sit at the 110-pod ceiling,
+# the optimized-v2 node group is at max size, and the autoscaler reports
+# "3 max node group size reached". A third instance stays Pending forever and
+# leaves the Cluster in "Waiting for the instances to become active", which
+# hides real problems behind a permanent warning.
+#
+# Two with REQUIRED anti-affinity is stronger than three with preferred: a
+# primary and a synchronous replica on different nodes survive any single node
+# loss, whereas three instances that the scheduler is free to co-locate can
+# lose quorum to one preemption — which is exactly what it did on the first
+# deploy here.
+#
+# RAISE THIS TO 3 once the node group can grow.
+instances: 2
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
 # Sized for many small tenants rather than one large one. The entire estate's
