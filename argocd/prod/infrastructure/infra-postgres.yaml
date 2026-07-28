@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: infra-postgres
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: database
+    environment: prod
+  annotations:
+    # Wave -1: this is a dependency of the platform components that will adopt
+    # it (Temporal first), so it must exist before they are pointed at it.
+    argocd.argoproj.io/sync-wave: "-1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: data
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/infra-postgres
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: infra
+  syncPolicy:
+    automated:
+      # selfHeal on, prune OFF.
+      #
+      # Pruning a CNPG Cluster deletes the database. On a shared cluster that
+      # is every tenant's data at once, so a mistaken path change or a bad
+      # render must not be able to remove it — the PVCs are Retain, but the
+      # outage would be real and the recovery manual.
+      selfHeal: true
+      prune: false
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
