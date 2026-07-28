@@ -1,9 +1,17 @@
 name: GHCR Cleanup (5-day retention)
 
 # For every container package in ghcr.io/tesserix:
+#   * always retain any version whose tag is pinned by a chart under charts/;
 #   * always retain the newest 3 package versions;
 #   * retain every version updated within the last 5 days; and
 #   * delete all other tagged and untagged versions.
+#
+# The chart keep-list is not optional. Age does not imply "unused": an app that
+# simply has not been rebuilt in months is still running, and deleting its image
+# is silent until a node is replaced. On a 100% preemptible pool that is a matter
+# of days. Deleting the 13-14 May pins for tesserix-auth-bff, tesserix-docs and
+# tesserix-storybook took all three down the next time GKE recycled their nodes,
+# months after the deletions, with nothing linking cause to effect.
 #
 # A GHCR package version can carry multiple tags and GitHub deletes the complete
 # version, so the newest-3 rule applies to versions rather than individual tag
@@ -131,6 +139,7 @@ jobs:
             --keep 3
             --resume-after "$RESUME_AFTER"
             --soft-timeout-seconds 3000
+            --protect-tags-from charts
           )
           if [[ "$DRY_RUN" == "true" ]]; then
             args+=(--dry-run)

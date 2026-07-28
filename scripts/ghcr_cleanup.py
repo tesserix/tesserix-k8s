@@ -85,13 +85,50 @@ def parse_github_time(value: str) -> dt.datetime:
     return parsed.astimezone(dt.timezone.utc)
 
 
+_TAG_RE = re.compile(r'^\s*tag:\s*["\']?([A-Za-z0-9][A-Za-z0-9._-]*)["\']?\s*(?:#.*)?$')
+
+
+def deployed_image_tags(chart_root: str) -> set[str]:
+    """Collect every image tag pinned by a chart under `chart_root`.
+
+    These are the tags production is actually running. A cluster on preemptible
+    nodes re-pulls an image whenever a pod moves, so deleting one of these from
+    GHCR does not fail loudly at deletion time — it fails days or weeks later,
+    when a node is replaced and the pull 404s with the workload already down.
+    Reading them from the charts keeps the keep-list honest without needing
+    cluster access from CI.
+    """
+    tags: set[str] = set()
+    for dirpath, _dirnames, filenames in os.walk(chart_root):
+        for filename in filenames:
+            if not filename.endswith((".yaml", ".yml")):
+                continue
+            path = os.path.join(dirpath, filename)
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    for line in handle:
+                        match = _TAG_RE.match(line)
+                        if match:
+                            tags.add(match.group(1))
+            except OSError:
+                continue
+    return tags
+
+
 def select_deletable_versions(
     versions: Sequence[Mapping[str, Any]],
     *,
     cutoff: dt.datetime,
     keep: int,
+    protected_tags: Iterable[str] = (),
 ) -> list[Mapping[str, Any]]:
-    """Return versions outside the newest `keep` whose updated_at is old enough."""
+    """Return versions outside the newest `keep` whose updated_at is old enough.
+
+    A version carrying any protected tag is never deletable, however old it is:
+    something in production is pinned to it. Age is a poor proxy for "unused" —
+    an app that simply has not been rebuilt in months is still running.
+    """
+    protected = {tag for tag in protected_tags if tag}
     ordered = sorted(
         versions,
         key=lambda version: (
@@ -104,6 +141,7 @@ def select_deletable_versions(
         version
         for version in ordered[keep:]
         if parse_github_time(str(version["updated_at"])) < cutoff
+        and not (protected & set(version_tag_list(version)))
     ]
 
 
@@ -298,6 +336,20 @@ def package_versions_path(org: str, package_name: str) -> str:
     return f"/orgs/{urllib.parse.quote(org, safe='')}/packages/container/{encoded_name}/versions"
 
 
+def version_tag_list(version: Mapping[str, Any]) -> list[str]:
+    """The tags on a version, as a list. `version_tags` formats these for logs."""
+    metadata = version.get("metadata")
+    if not isinstance(metadata, Mapping):
+        return []
+    container = metadata.get("container")
+    if not isinstance(container, Mapping):
+        return []
+    tags = container.get("tags")
+    if not isinstance(tags, list):
+        return []
+    return [str(tag) for tag in tags]
+
+
 def version_tags(version: Mapping[str, Any]) -> str:
     metadata = version.get("metadata")
     if not isinstance(metadata, Mapping):
@@ -319,8 +371,10 @@ def cleanup(
     keep: int,
     dry_run: bool,
     resume_after: str = "",
+    protected_tags: Iterable[str] = (),
     now: dt.datetime | None = None,
 ) -> CleanupResult:
+    protected_tags = set(protected_tags)
     result = CleanupResult(resume_after=resume_after)
     try:
         packages = client.paginated(
@@ -339,7 +393,8 @@ def cleanup(
     cutoff = (now or utc_now()) - cutoff_delta
     print(
         f"Discovered {len(packages)} container packages in {org}; "
-        f"cutoff={cutoff.isoformat()}, keep={keep}, dry_run={dry_run}",
+        f"cutoff={cutoff.isoformat()}, keep={keep}, dry_run={dry_run}, "
+        f"protected_tags={len(protected_tags)}",
         flush=True,
     )
 
@@ -351,7 +406,9 @@ def cleanup(
             versions_path = package_versions_path(org, name)
             versions = client.paginated(versions_path)
             result.versions_examined += len(versions)
-            deletable = select_deletable_versions(versions, cutoff=cutoff, keep=keep)
+            deletable = select_deletable_versions(
+                versions, cutoff=cutoff, keep=keep, protected_tags=protected_tags
+            )
             print(
                 f"{name}: {len(versions)} versions, {len(deletable)} eligible for deletion",
                 flush=True,
@@ -428,6 +485,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--api-url", default=os.environ.get("GITHUB_API_URL", DEFAULT_API_URL)
     )
+    parser.add_argument(
+        "--protect-tags-from",
+        default="",
+        help=(
+            "Directory of Helm charts to scan for pinned image tags. Any GHCR "
+            "version carrying one of those tags is never deleted, regardless of "
+            "age — production is running it."
+        ),
+    )
     return parser
 
 
@@ -438,6 +504,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     token = os.environ.get("GHCR_TOKEN", "").strip()
     if not token:
         raise SystemExit("GHCR_TOKEN is required")
+
+    protected_tags: set[str] = set()
+    if args.protect_tags_from:
+        if not os.path.isdir(args.protect_tags_from):
+            raise SystemExit(
+                f"--protect-tags-from: no such directory: {args.protect_tags_from}"
+            )
+        protected_tags = deployed_image_tags(args.protect_tags_from)
+        # Deleting an in-use image is silent until a node is replaced, so a
+        # misconfigured path that silently protected nothing would be worse than
+        # the bug this guards against. Fail loudly instead.
+        if not protected_tags:
+            raise SystemExit(
+                f"--protect-tags-from: no image tags found under "
+                f"{args.protect_tags_from}; refusing to run with an empty keep-list"
+            )
+        print(f"Protecting {len(protected_tags)} tags pinned by charts", flush=True)
 
     deadline = time.monotonic() + args.soft_timeout_seconds
     client = GitHubClient(
@@ -453,6 +536,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             keep=args.keep,
             dry_run=args.dry_run,
             resume_after=args.resume_after,
+            protected_tags=protected_tags,
         )
     except (CleanupError, KeyError, TypeError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)

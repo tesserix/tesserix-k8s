@@ -30,8 +30,12 @@ spec:
       # is every tenant's data at once, so a mistaken path change or a bad
       # render must not be able to remove it — the PVCs are Retain, but the
       # outage would be real and the recovery manual.
+      #
+      # `prune` is omitted rather than set to false ON PURPOSE: false is the
+      # zero value, so the API server drops the key and the live object stops
+      # matching the manifest, leaving this app permanently OutOfSync. Omitting
+      # it gives exactly the same behaviour without the phantom drift.
       selfHeal: true
-      prune: false
     syncOptions:
       - CreateNamespace=true
     retry:
