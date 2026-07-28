@@ -53,6 +53,23 @@ data:
             - k8s.cronjob.name
             - k8s.node.name
             - k8s.container.name
+            # Image identity, so a SPAN can be traced back to the commit that
+            # produced it and not just a log line.
+            #
+            # The agent stamps these onto scraped container logs, but traces
+            # arrive over OTLP straight from the SDK and never pass through
+            # that pipeline — so logs resolved to a build while traces resolved
+            # to nothing, which reads as the feature being broken rather than
+            # absent.
+            #
+            # These are CONTAINER-level attributes: k8sattributes can only
+            # resolve them when k8s.container.name is already on the resource.
+            # A service whose SDK does not report its container name therefore
+            # stays unresolved, which surfaces as a build-level gap rather than
+            # a wrong answer.
+            - container.image.name
+            - container.image.tag
+            - container.image.repo_digests
           labels:
             - tag_name: app
               key: app.kubernetes.io/name
