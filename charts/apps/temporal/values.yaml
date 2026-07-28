@@ -29,6 +29,19 @@ server:
 
 # Embedded Postgres for Temporal state.
 postgres:
+  # Use an existing PostgreSQL instead of the embedded StatefulSet below.
+  #
+  # Off by default so existing instances keep their current topology until
+  # they are migrated deliberately. Flipping this does NOT move any data — it
+  # only changes where the server looks for it. The dump and restore has to
+  # happen first, with the server scaled to zero, or Temporal comes up against
+  # an empty schema, re-initialises it, and the old history is stranded on a
+  # PVC nothing references any more.
+  external:
+    enabled: false
+    # Fully-qualified host. Use a primary-following service (CNPG's `-rw`),
+    # never a pooler — see the POSTGRES_SEEDS comment in templates/server.yaml.
+    host: ""
   image:
     repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/postgres
     tag: "16-alpine"
