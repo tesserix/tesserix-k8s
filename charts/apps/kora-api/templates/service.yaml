@@ -1,0 +1,23 @@
+{{- if not .Values.knative.enabled }}
+# ClusterIP Service fronting the kora-api Deployment. Named `kora-api-direct`
+# (service.nameOverride) so it never collides with the Knative-created
+# `kora-api` route Service during cutover. The kora-istio VirtualService routes
+# here directly — mirrors homechef-api-direct.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.service.nameOverride | default (include "kora-api.fullname" .) }}
+  labels:
+    {{- include "kora-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  type: {{ .Values.service.type | default "ClusterIP" }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port | default 8080 }}
+      targetPort: {{ .Values.service.targetPort | default 8080 }}
+      protocol: TCP
+  selector:
+    {{- include "kora-api.selectorLabels" . | nindent 4 }}
+    kora.tesserix.app/stack: deployment
+{{- end }}

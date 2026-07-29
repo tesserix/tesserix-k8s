@@ -316,6 +316,77 @@ spec:
 {{- end }}
 
 # =============================================================================
+# Kora Namespace Policies
+# Allow from ingress, global, monitoring — deny cross-product.
+#
+# Kora was the last product without an allow-ingress policy: it ran on Knative
+# (routed via knative-local-gateway) and, until it joined the ambient mesh, the
+# blanket default-deny-ingress had never actually gated its traffic. After the
+# ambient onboarding (waypoint + dataplane label) the gateway reaches kora pods
+# over HBONE (15008), which default-deny-ingress drops unless the source
+# namespace is allowlisted — exactly the gap that kept kora-api.tesserix.app
+# unreachable (000) even with a healthy pod. This restores the same allowances
+# every other product has. NOTE: no knative-serving source — kora is a plain
+# Deployment now (charts/apps/kora-api), routed to directly by the kora-istio
+# VirtualService, so there is no activator hop to permit.
+# =============================================================================
+{{- if .Values.appNamespaces.kora }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kora-ingress
+  namespace: {{ .Values.appNamespaces.kora }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from Istio ingress gateway (public kora-api.tesserix.app traffic)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+    # Allow internal kora traffic
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.appNamespaces.kora }}
+    # Allow from global namespace (shared services / webhooks)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.appNamespaces.global }}
+    # Allow from monitoring
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    # Allow from istio-system (telemetry)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+    # Allow from cnpg-system (CloudNativePG operator status checks)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+    # Allow DNS (both UDP and TCP)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}
+
+# =============================================================================
 # GameVerse Namespace Policies
 # Allow from ingress, global, monitoring, knative-serving
 # =============================================================================
