@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dwellm8-app-of-apps
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesseract-platform
+    app.kubernetes.io/component: dwellm8-services
+    environment: prod
+spec:
+  project: dwellm8
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: argocd/prod/apps/dwellm8
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  # Kargo writes spec.source.helm.parameters on child Applications during a
+  # promotion; without this exception selfHeal would revert every image bump.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /spec/source/helm/parameters
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true

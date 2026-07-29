@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dwellm8-db-schema-bootstrap
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: dwellm8
+    app.kubernetes.io/component: database
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: dwellm8
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/apps/db-schema-bootstrap
+    targetRevision: HEAD
+    helm:
+      releaseName: dwellm8-db-schema-bootstrap
+      values: |
+        app: dwellm8
+
+        targets:
+          - name: dwellm8
+            host: dwellm8-postgres-rw.dwellm8.svc.cluster.local
+            port: 5432
+            user: dwellm8
+            secretName: dwellm8-postgres-app-credentials
+            secretKey: password
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dwellm8
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

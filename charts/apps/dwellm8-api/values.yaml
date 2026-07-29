@@ -1,0 +1,98 @@
+# The Dwellm8 API.
+#
+# One deployable per ADR-0001: eight modules, one database, one transaction
+# boundary. Everything below is sized for a service that has not yet taken a
+# paying customer — raise it deliberately, with a number to justify it.
+
+replicaCount: 2
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/dwellm8/dwellm8-api
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Memory only. The platform sets no CPU requests or limits anywhere.
+resources:
+  requests:
+    memory: 256Mi
+  limits:
+    memory: 768Mi
+
+# Scaling on memory, not CPU: a ScaledObject with a CPU trigger fails admission
+# on this platform, because there are no CPU requests to scale against.
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetMemoryUtilizationPercentage: 75
+
+env:
+  APP_ENV: prod
+  LOG_LEVEL: info
+  PORT: "8080"
+  SHUTDOWN_GRACE_SECONDS: "20"
+
+# The database, from the CNPG cluster's app secret. The API connects as the
+# owner today; when per-module roles are adopted it connects as dwellm8_app.
+database:
+  secretName: dwellm8-postgres-app-credentials
+  host: dwellm8-postgres-rw.dwellm8.svc.cluster.local
+  port: 5432
+  name: dwellm8
+  sslMode: require
+
+# Probes match the process: liveness ignores dependencies, readiness does not,
+# and the pod drains for one probe interval before it stops accepting.
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 3
+    periodSeconds: 3
+    failureThreshold: 2
+
+terminationGracePeriodSeconds: 40
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
