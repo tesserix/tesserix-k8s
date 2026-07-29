@@ -184,6 +184,27 @@ spec:
             methods:
               - "GET"
 
+    # Kora API endpoints (nutrition / food memory). The Go backend does its
+    # own GIP (Firebase) JWT verification on the /v1/* group — auth.Middleware
+    # returns 401 for a missing/invalid token — so the gateway lets all /v1/*
+    # traffic through to the app, same model as HomeChef's fe3dr.com /api/*.
+    # Host-scoped to kora-api.tesserix.app; affects no other host. Without this
+    # the gateway deny-all rejected unauthenticated /v1/* as 403 at the edge
+    # (only /health,/ready slipped through the generic health rule above).
+    - to:
+        - operation:
+            hosts:
+              - "kora-api.tesserix.app"
+            paths:
+              - "/v1/*"
+            methods:
+              - "GET"
+              - "POST"
+              - "PUT"
+              - "PATCH"
+              - "DELETE"
+              - "OPTIONS"
+
     # Staff invitation and activation endpoints (public - no JWT required)
     # Users need to access these before they have an account
     - to:
