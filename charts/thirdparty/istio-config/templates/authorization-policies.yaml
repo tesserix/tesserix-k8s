@@ -151,6 +151,75 @@ spec:
 # was fanzone (decommissioned); no other cross-product source was listed.
 
 # =============================================================================
+# Kora Namespace Policies
+# Nutrition/food-memory API. Ambient-enrolled (waypoint), so ztunnel enforces
+# authz. The generated public-endpoints-kora policy is L7 (paths/methods) which
+# ztunnel cannot enforce — it strips the HTTP rules, leaving an ALLOW policy
+# with no valid rule = deny-all, which is what kept kora-api unreachable (503
+# even from inside the mesh; kubectl described the ZtunnelAccepted "HTTP
+# attributes omitted" warning). These L4 namespace-level policies are what
+# ztunnel CAN enforce, mirroring the working homechef set. No knative-serving
+# source: kora is a plain Deployment now, not Knative. App-layer GIP auth still
+# gates real endpoints (e.g. /v1/dashboard → 401 without a token).
+# =============================================================================
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-kora
+  namespace: {{ .Values.appNamespaces.kora }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - istio-ingress
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-internal-kora
+  namespace: {{ .Values.appNamespaces.kora }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.kora }}
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.appNamespaces.global }}
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-system
+
+---
+# Allow mesh-internal traffic — the L4 allow-all that ztunnel enforces so the
+# mesh-wide deny-all-default does not reset intra-namespace and gateway traffic.
+# Same shape as allow-mesh-internal-homechef / -stockpilot / -scrapper.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-mesh-internal-kora
+  namespace: {{ .Values.appNamespaces.kora }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - {}
+
+# =============================================================================
 # StockPilot Namespace Policies
 # AI stock analysis platform
 # =============================================================================
