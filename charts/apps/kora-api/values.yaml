@@ -53,21 +53,30 @@ service:
   type: ClusterIP
   port: 8080
   targetPort: 8080
+  # Distinct name from the workload so the ClusterIP never collides with a
+  # Knative-created `kora-api` route Service during the cutover, and so the
+  # VirtualService routes to a stable, obviously-direct host. Mirrors
+  # homechef-api-direct — the working ambient-mesh reference in this repo.
+  nameOverride: kora-api-direct
 
-# Knative Serving — scale-to-zero (DB now on shared global-postgres; no
-# dedicated cluster to keep warm for), autoscale up to 3 under load.
+# Knative Serving — DISABLED. Kora is the only service that ran on Knative;
+# the rest of the fleet uses plain Deployments behind ClusterIP Services in
+# the Istio ambient mesh, and Knative's ingress (knative-local-gateway +
+# activator) does not compose with ambient (ztunnel + waypoint). Converted
+# to a plain Deployment (templates/deployment.yaml) + ClusterIP Service
+# (templates/service.yaml), routed to directly by the kora-istio
+# VirtualService — mirroring homechef-api. The knative-service.yaml template
+# is gated on this flag and renders nothing while it is false; kept in-tree
+# for reference / rollback only.
 knative:
-  enabled: true
+  enabled: false
   minScale: 0
   maxScale: 3
   scaleDownDelay: "120s"
   containerConcurrency: 0
-  # Raised well beyond the Knative/horoscope-api default: Kora's meal-log
-  # and resolve-food paths call out to Gemini (embeddings) and an
-  # OpenAI-compatible chat model synchronously, and can chain a
-  # pgvector similarity query behind that. 300s is comfortable for
-  # horoscope's single-call vision reading; Kora's worst case is closer
-  # to two sequential LLM round-trips.
+  # Retained for the (disabled) Knative template. The plain Deployment has
+  # no request-timeout knob of its own — long LLM round-trips are bounded by
+  # the VirtualService `timeout: 600s`, which matches this value.
   timeoutSeconds: 600
 
 resources:

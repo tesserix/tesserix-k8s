@@ -1,0 +1,102 @@
+{{- if not .Values.knative.enabled }}
+# Plain Deployment for kora-api — replaces the Knative Service (which does not
+# compose with the Istio ambient mesh this fleet runs). Mirrors homechef-api:
+# a long-lived Deployment behind a ClusterIP Service, joined to ambient via the
+# namespace's istio.io/dataplane-mode label (no sidecar, no queue-proxy). The
+# kora-istio VirtualService routes to the ClusterIP directly.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kora-api.fullname" . }}
+  labels:
+    {{- include "kora-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  annotations:
+    # Roll pods when a referenced Secret/ConfigMap actually changes. Env sourced
+    # via secretKeyRef is read once at start, so rotating a secret (e.g. the
+    # ExternalSecret re-syncing DATABASE_URL) otherwise has no effect on running
+    # pods. stakater/reloader triggers only on referenced resources that change.
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: {{ .Values.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "kora-api.selectorLabels" . | nindent 6 }}
+      # Extra stack label keeps this Deployment's Service (and any leftover
+      # Knative revision pods, which carry the same app.kubernetes.io labels)
+      # from cross-selecting during the cutover window.
+      kora.tesserix.app/stack: deployment
+  template:
+    metadata:
+      labels:
+        {{- include "kora-api.labels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+        kora.tesserix.app/stack: deployment
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "kora-api.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: kora-api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort | default 8080 }}
+              protocol: TCP
+          env:
+            # PORT is set explicitly now that Knative (which reserved and
+            # injected it) is gone. Kora's config defaults to 8080 when unset
+            # (internal/config/config.go), so this just makes the listen port
+            # match the container/Service port unambiguously.
+            - name: PORT
+              value: {{ .Values.service.targetPort | default 8080 | quote }}
+            # Plain (non-secret) env from values.yaml :: env
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            # Secret env from values.yaml :: secretEnv — each maps an env var
+            # name to a key in the <fullname>-secrets Secret created by the
+            # ExternalSecret. `optional: true` lets pods boot before a value is
+            # populated.
+            {{- $secretName := printf "%s-secrets" (include "kora-api.fullname" .) -}}
+            {{- range $envName, $secretKey := .Values.secretEnv }}
+            - name: {{ $envName }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ $secretKey }}
+                  optional: true
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              # Kora exposes /health (liveness) and /ready (readiness) —
+              # see api/internal/server/router.go.
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              # /ready gates traffic on DB connectivity (returns 503 with the
+              # error envelope until the DB is reachable — ready_test.go).
+              path: /ready
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+{{- end }}
