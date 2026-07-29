@@ -1,0 +1,65 @@
+# Dwellm8's database.
+#
+# One cluster, one database, one writer per table — the modular monolith in
+# ADR-0001 keeps its transaction boundary here. Row-level security on
+# tenant_id is enforced inside it, so this cluster is never shared with
+# another product.
+hibernate: false
+
+namespace: dwellm8
+clusterName: dwellm8-postgres
+
+# One instance to start. The ledger is the reason to raise this to three before
+# the first paying customer, not after.
+instances: 1
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+storageSize: 10Gi
+storageClass: standard-rwo-retain
+walStorageSize: 5Gi
+
+# Memory only — the platform sets no CPU requests or limits.
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+bootstrap:
+  database: dwellm8
+  owner: dwellm8
+  # Basic-auth secret (username, password), created by the ExternalSecret below.
+  secret: dwellm8-postgres-app-credentials
+  gcpSecretName: prod-dwellm8-postgresql-password
+  postInitSQL:
+    # Row-level security is the second line of defence per ADR-0001, and it is
+    # worthless if the owner bypasses it. The application connects as a role
+    # that cannot.
+    - "ALTER ROLE dwellm8 SET row_security = on"
+
+postgresql:
+  max_connections: "200"
+  shared_buffers: "256MB"
+  effective_cache_size: "1536MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "128MB"
+  wal_level: "logical"
+  max_replication_slots: "10"
+
+replication:
+  minSyncReplicas: 0
+  maxSyncReplicas: 0
+
+affinity:
+  podAntiAffinityType: preferred
+
+monitoring:
+  enablePodMonitor: true
+
+# Continuous backup to GCS. Off until the bucket and workload identity exist —
+# turning it on is a values change, not a chart change.
+backup:
+  enabled: false
+  destinationPath: "gs://tesserix-cnpg-backups/dwellm8"
+  retentionPolicy: "30d"
+  serviceAccount: cnpg-backup@tesseracthub-480811.iam.gserviceaccount.com

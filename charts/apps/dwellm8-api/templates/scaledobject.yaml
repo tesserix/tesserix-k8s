@@ -1,0 +1,22 @@
+{{- if .Values.autoscaling.enabled }}
+{{- /*
+  Memory, not CPU. A CPU trigger fails admission on this platform because the
+  charts set no CPU requests to scale against.
+*/}}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "dwellm8-api.fullname" . }}
+  labels:
+    {{- include "dwellm8-api.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "dwellm8-api.fullname" . }}
+  minReplicaCount: {{ .Values.autoscaling.minReplicas }}
+  maxReplicaCount: {{ .Values.autoscaling.maxReplicas }}
+  triggers:
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: {{ .Values.autoscaling.targetMemoryUtilizationPercentage | quote }}
+{{- end }}
