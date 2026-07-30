@@ -15,7 +15,8 @@
 --   2. Tenancy — organisations, audit trail, RLS
 --   3. Property, block and unit — the tree everything else hangs from
 --   4. Application and platform roles
---   5. Assertions that fail the bootstrap if the model is violated
+--   5. Data migrations — after the roles, or they silently touch nothing
+--   6. Assertions that fail the bootstrap if the model is violated
 -- ============================================================================
 
 
@@ -164,28 +165,10 @@ CREATE TABLE IF NOT EXISTS delegation_grant_scopes (
         CHECK ((scope_kind = 'portfolio') = (scope_id IS NULL))
 );
 
--- For databases created before ADR-0009.
+-- For databases created before ADR-0009. Adding the column is DDL and works
+-- here; backfilling it is DML and cannot — see the migrations section at the
+-- foot of this file for why it lives there instead.
 ALTER TABLE delegation_grant_scopes ADD COLUMN IF NOT EXISTS scope_property_id uuid;
-
--- Backfill before the constraint, or a property scope written yesterday fails
--- the check today. A unit scope cannot be backfilled from here — no units
--- existed to point at — and none can exist, because the vocabulary allowed the
--- row while nothing enforced it.
-UPDATE delegation_grant_scopes
-   SET scope_property_id = scope_id
- WHERE scope_kind = 'property' AND scope_property_id IS NULL;
-
--- ADD CONSTRAINT IF NOT EXISTS does not exist, and a bare ADD CONSTRAINT fails
--- the replay on the second run.
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                    WHERE conname = 'delegation_grant_scopes_property_shape') THEN
-        ALTER TABLE delegation_grant_scopes ADD CONSTRAINT delegation_grant_scopes_property_shape
-            CHECK ((scope_kind = 'portfolio') = (scope_property_id IS NULL));
-    END IF;
-END
-$$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS delegation_grant_scopes_unique
     ON delegation_grant_scopes (grant_id, scope_kind, scope_id);
@@ -836,6 +819,21 @@ GRANT CONNECT ON DATABASE dwellm8 TO dwellm8_api, dwellm8_platform;
 GRANT USAGE ON SCHEMA public TO dwellm8_api, dwellm8_platform;
 GRANT dwellm8_app TO dwellm8_api, dwellm8_platform;
 
+-- Deliberately NOT granted here: membership of dwellm8_platform for the table
+-- owner.
+--
+-- It is tempting, because a data migration in this file cannot otherwise touch a
+-- row (see the migrations section). But the bootstrap job and — today — the API
+-- both connect as dwellm8, so making the owner a member of dwellm8_platform
+-- would make every request platform-exempt and switch tenant isolation off for
+-- the whole application, silently, with every policy still reading correctly.
+--
+-- Verified against the cluster rather than assumed: the API deployment's
+-- DATABASE_URL uses the CNPG app credentials, whose username is dwellm8. Until
+-- the API connects as dwellm8_api, the owner must stay unexempted, and the
+-- migrations section pays for that with an explicit, transaction-scoped window
+-- instead.
+
 ALTER DEFAULT PRIVILEGES FOR ROLE dwellm8 IN SCHEMA public
     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO dwellm8_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE dwellm8 IN SCHEMA public
@@ -865,6 +863,70 @@ REVOKE DELETE ON properties, blocks, units FROM dwellm8_app;
 -- superuser, which this job does not have and should not want. The roles are
 -- created without it, and the guard that matters is the assertion in
 -- 003_tenancy_assertions.sql, which fails the bootstrap if it ever appears.
+
+-- ===========================================================================
+-- data migrations
+-- ===========================================================================
+
+-- Statements that touch rows rather than definitions.
+--
+-- A data migration in this file has a problem that cost a debugging session and
+-- is invisible in review: **it cannot see any row**. The bootstrap connects as
+-- the table owner, FORCE row level security applies to the owner (ADR-0003 §2 is
+-- entirely about that), and the job sets no app.tenant_id because it is not a
+-- request. So every policy evaluates to false and an UPDATE here matches nothing.
+-- It does not error. It reports UPDATE 0 and the file carries on.
+--
+-- Measured: replaying ADR-0009 onto a database that already held a grant scope,
+-- the backfill silently touched zero rows and the CHECK constraint two statements
+-- later failed on the row the backfill was supposed to have fixed — "check
+-- constraint delegation_grant_scopes_property_shape ... is violated by some row".
+--
+-- So each migration opens the smallest possible window: NO FORCE, the statement,
+-- FORCE again, inside one DO block and therefore one transaction. If anything
+-- raises, the transaction rolls back and FORCE is restored with it; the ALTER
+-- takes an ACCESS EXCLUSIVE lock, so no other session can read the table
+-- unforced. The alternative — granting the owner membership of dwellm8_platform —
+-- would exempt the API too, because it connects as the same role.
+--
+-- Assertion 1 at the foot of this file is what catches a window left open.
+
+-- ADR-0009. Resolve grant scopes written before scope_property_id existed.
+-- A property scope resolves to itself. A unit scope cannot be resolved — no
+-- units existed to point at, so any such row named a unit that was never real,
+-- which is what ADR-0005 recorded as the gap this ADR closes.
+DO $$
+DECLARE
+    unresolved int;
+BEGIN
+    ALTER TABLE delegation_grant_scopes NO FORCE ROW LEVEL SECURITY;
+
+    UPDATE delegation_grant_scopes
+       SET scope_property_id = scope_id
+     WHERE scope_kind = 'property' AND scope_property_id IS NULL;
+
+    SELECT count(*) INTO unresolved
+      FROM delegation_grant_scopes
+     WHERE scope_kind <> 'portfolio' AND scope_property_id IS NULL;
+
+    ALTER TABLE delegation_grant_scopes FORCE ROW LEVEL SECURITY;
+
+    IF unresolved > 0 THEN
+        -- Do not add the constraint over rows that violate it; that fails the
+        -- whole bootstrap and takes every unrelated change down with it. Say
+        -- what is wrong instead, and leave the rest of the file to run.
+        RAISE WARNING '% grant scope row(s) could not be resolved to a property — '
+                      'the shape constraint is not being added. These are unit scopes '
+                      'written before ADR-0009, and they grant nothing.', unresolved;
+    ELSIF NOT EXISTS (SELECT 1 FROM pg_constraint
+                       WHERE conname = 'delegation_grant_scopes_property_shape') THEN
+        -- ADD CONSTRAINT IF NOT EXISTS does not exist, and a bare ADD CONSTRAINT
+        -- fails the replay on the second run.
+        ALTER TABLE delegation_grant_scopes ADD CONSTRAINT delegation_grant_scopes_property_shape
+            CHECK ((scope_kind = 'portfolio') = (scope_property_id IS NULL));
+    END IF;
+END
+$$;
 
 -- ===========================================================================
 -- tenancy assertions

@@ -31,6 +31,16 @@ server:
   # Empty = Temporal's 5-min default (unchanged). See templates/config-base.yaml.
   keepAliveMaxConnectionAge: ""
 
+  # How many pooled Postgres connections may sit PARKED idle. The image defaults
+  # these to the same values as maxConns (20 main / 10 visibility), so the pool
+  # never drains and ~30 sockets stay idle indefinitely — each one a chance to be
+  # handed out after the flow beneath it is gone ("database connection lost:
+  # connection reset by peer"). Kept well below maxConns so the pool actually
+  # drains; Go reopens on demand, so only the parked count changes.
+  sql:
+    maxIdleConns: 5
+    visMaxIdleConns: 3
+
 # Embedded Postgres for Temporal state.
 postgres:
   # Use an existing PostgreSQL instead of the embedded StatefulSet below.
