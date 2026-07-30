@@ -372,6 +372,51 @@ COMMENT ON FUNCTION is_delegated(uuid, uuid, text) IS
 -- reachable by a grant scoped to flat 1204, because the slot comes with the
 -- flat. A table that carries a unit id but no parent passes NULL and loses the
 -- hop, which fails closed — the row is simply unreachable, never over-reachable.
+-- ADR-0021. Whether a row may be purged because it belongs to a demo sandbox.
+--
+-- Every no-delete policy in this file calls it, and the answer is almost always false.
+-- The two conditions are both necessary and they hold each other up:
+--
+--   is_purge_session()     the cleanup job, never a request and not even the platform
+--                          role. A tenant cannot delete their own history by claiming it
+--                          is a demo, and an audited support session cannot either.
+--   is_sandbox             the organisation is a sandbox, and ADR-0021 §3's side-effect
+--                          ban is what makes that safe: nothing real can be in one, so
+--                          nothing real is lost by dropping it.
+--
+-- Reverse the reasoning and it is the same decision: a sandbox is deletable *because*
+-- nothing real may live in it, and nothing real may live in it *because* it is deletable.
+-- Weakening either half breaks the other.
+--
+-- NULL tenant is false. ADR-0011's parked webhook and ADR-0012's unmatched settlement
+-- line belong to no organisation, so they belong to no sandbox either, and a purge must
+-- not reach them.
+CREATE OR REPLACE FUNCTION is_purge_session() RETURNS boolean
+    LANGUAGE sql STABLE PARALLEL SAFE AS
+$$ SELECT pg_has_role(current_user, 'dwellm8_purge', 'USAGE') $$;
+
+COMMENT ON FUNCTION is_purge_session() IS
+    'ADR-0021 §4. The demo cleanup job, and nothing else. A separate role from dwellm8_platform so every other session keeps both locks.';
+
+CREATE OR REPLACE FUNCTION sandbox_purge_permitted(row_tenant uuid) RETURNS boolean
+    LANGUAGE sql STABLE PARALLEL SAFE AS
+$$
+    SELECT row_tenant IS NOT NULL
+       AND is_purge_session()
+       AND EXISTS (SELECT 1 FROM organisations o WHERE o.id = row_tenant AND o.is_sandbox)
+$$;
+
+COMMENT ON FUNCTION sandbox_purge_permitted(uuid) IS
+    'ADR-0021 §4. The one exception to append-only: a demo sandbox, purged by the platform. Safe only because §3 bars any real effect from originating in one.';
+
+-- ADR-0021 §3. Whether an organisation is a sandbox, without the platform exemption —
+-- for the triggers that ban side effects, which must be true for a tenant session too.
+CREATE OR REPLACE FUNCTION is_sandbox_tenant(row_tenant uuid) RETURNS boolean
+    LANGUAGE sql STABLE PARALLEL SAFE AS
+$$
+    SELECT EXISTS (SELECT 1 FROM organisations o WHERE o.id = row_tenant AND o.is_sandbox)
+$$;
+
 CREATE OR REPLACE FUNCTION is_delegated_unit(
         row_tenant uuid, row_property uuid, row_unit uuid, row_parent_unit uuid,
         required_permission text)
@@ -450,7 +495,7 @@ CREATE POLICY delegation_grants_access ON delegation_grants
 -- Revocation is an UPDATE that sets revoked_at; nothing here is ever removed.
 DROP POLICY IF EXISTS delegation_grants_no_delete ON delegation_grants;
 CREATE POLICY delegation_grants_no_delete ON delegation_grants
-    AS RESTRICTIVE FOR DELETE USING (false);
+    AS RESTRICTIVE FOR DELETE USING (sandbox_purge_permitted(tenant_id));
 
 DROP POLICY IF EXISTS delegation_grant_scopes_access ON delegation_grant_scopes;
 CREATE POLICY delegation_grant_scopes_access ON delegation_grant_scopes
@@ -464,7 +509,7 @@ CREATE POLICY delegation_grant_scopes_access ON delegation_grant_scopes
 
 DROP POLICY IF EXISTS delegation_grant_scopes_no_delete ON delegation_grant_scopes;
 CREATE POLICY delegation_grant_scopes_no_delete ON delegation_grant_scopes
-    AS RESTRICTIVE FOR DELETE USING (false);
+    AS RESTRICTIVE FOR DELETE USING (sandbox_purge_permitted(tenant_id));
 
 GRANT SELECT, INSERT, UPDATE ON organisations TO dwellm8_identity;
 GRANT SELECT ON organisations TO dwellm8_property, dwellm8_lease, dwellm8_money,
@@ -734,11 +779,14 @@ CREATE POLICY units_tenant_isolation ON units
 -- refuses the statement even if some future migration hands it back. The table
 -- owner (a DBA at a psql prompt) remains the deliberate escape hatch.
 DROP POLICY IF EXISTS properties_no_delete ON properties;
-CREATE POLICY properties_no_delete ON properties AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY properties_no_delete ON properties AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 DROP POLICY IF EXISTS blocks_no_delete ON blocks;
-CREATE POLICY blocks_no_delete ON blocks AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY blocks_no_delete ON blocks AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 DROP POLICY IF EXISTS units_no_delete ON units;
-CREATE POLICY units_no_delete ON units AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY units_no_delete ON units AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 
 -- The reference ADR-0005 promised, as a trigger rather than a foreign key.
 --
@@ -1375,11 +1423,13 @@ CREATE POLICY ledger_postings_tenant_isolation ON ledger_postings
 DROP POLICY IF EXISTS journal_entries_no_update ON journal_entries;
 CREATE POLICY journal_entries_no_update ON journal_entries AS RESTRICTIVE FOR UPDATE USING (false);
 DROP POLICY IF EXISTS journal_entries_no_delete ON journal_entries;
-CREATE POLICY journal_entries_no_delete ON journal_entries AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY journal_entries_no_delete ON journal_entries AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 DROP POLICY IF EXISTS ledger_postings_no_update ON ledger_postings;
 CREATE POLICY ledger_postings_no_update ON ledger_postings AS RESTRICTIVE FOR UPDATE USING (false);
 DROP POLICY IF EXISTS ledger_postings_no_delete ON ledger_postings;
-CREATE POLICY ledger_postings_no_delete ON ledger_postings AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY ledger_postings_no_delete ON ledger_postings AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 
 -- The chart and the templates are reference data: every module reads them,
 -- nothing writes them at runtime, and they carry no tenant data — which is why
@@ -1650,7 +1700,8 @@ CREATE POLICY payments_tenant_isolation ON payments
 -- be deleted. A collection that was attempted and abandoned is the record an
 -- owner asks about when a tenant says they paid.
 DROP POLICY IF EXISTS payments_no_delete ON payments;
-CREATE POLICY payments_no_delete ON payments AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY payments_no_delete ON payments AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 
 -- The inbox is a platform-owned table, and the NULL tenant_id above is why: a
 -- parked event belongs to no organisation, so no organisation's session can
@@ -1664,7 +1715,8 @@ CREATE POLICY payment_events_tenant_isolation ON payment_events
     WITH CHECK (is_platform_session());
 
 DROP POLICY IF EXISTS payment_events_no_delete ON payment_events;
-CREATE POLICY payment_events_no_delete ON payment_events AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY payment_events_no_delete ON payment_events AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 
 GRANT SELECT, INSERT, UPDATE ON payments TO dwellm8_money;
 GRANT SELECT ON payments TO dwellm8_lease, dwellm8_identity, dwellm8_property;
@@ -2108,9 +2160,11 @@ CREATE POLICY reconciliation_runs_platform_only ON reconciliation_runs
 DROP POLICY IF EXISTS settlement_batches_no_delete ON settlement_batches;
 CREATE POLICY settlement_batches_no_delete ON settlement_batches AS RESTRICTIVE FOR DELETE USING (false);
 DROP POLICY IF EXISTS settlement_lines_no_delete ON settlement_lines;
-CREATE POLICY settlement_lines_no_delete ON settlement_lines AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY settlement_lines_no_delete ON settlement_lines AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 DROP POLICY IF EXISTS settlement_drift_no_delete ON settlement_drift;
-CREATE POLICY settlement_drift_no_delete ON settlement_drift AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY settlement_drift_no_delete ON settlement_drift AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 DROP POLICY IF EXISTS reconciliation_runs_no_delete ON reconciliation_runs;
 CREATE POLICY reconciliation_runs_no_delete ON reconciliation_runs AS RESTRICTIVE FOR DELETE USING (false);
 
@@ -2293,9 +2347,11 @@ CREATE POLICY kyc_access_log_tenant_isolation ON kyc_access_log
 -- can edit is not a log. A verification is mutable only in the sense that it can expire
 -- or be withdrawn, which is a result change.
 DROP POLICY IF EXISTS kyc_verifications_no_delete ON kyc_verifications;
-CREATE POLICY kyc_verifications_no_delete ON kyc_verifications AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY kyc_verifications_no_delete ON kyc_verifications AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 DROP POLICY IF EXISTS kyc_access_log_no_delete ON kyc_access_log;
-CREATE POLICY kyc_access_log_no_delete ON kyc_access_log AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY kyc_access_log_no_delete ON kyc_access_log AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 DROP POLICY IF EXISTS kyc_access_log_no_update ON kyc_access_log;
 CREATE POLICY kyc_access_log_no_update ON kyc_access_log AS RESTRICTIVE FOR UPDATE USING (false);
 
@@ -2521,7 +2577,8 @@ CREATE POLICY property_ownership_tenant_isolation ON property_ownership
            OR is_delegated_unit(tenant_id, property_id, unit_id, unit_parent_id, 'property.write'));
 
 DROP POLICY IF EXISTS property_ownership_no_delete ON property_ownership;
-CREATE POLICY property_ownership_no_delete ON property_ownership AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY property_ownership_no_delete ON property_ownership AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 
 GRANT SELECT, INSERT, UPDATE ON property_ownership TO dwellm8_property;
 GRANT SELECT ON property_ownership TO dwellm8_lease, dwellm8_money, dwellm8_identity;
@@ -2983,11 +3040,14 @@ CREATE POLICY rent_schedule_tenant_isolation ON rent_schedule
 -- Nothing here may be deleted. A lease that lapsed and a rent that was revised are
 -- what a dispute turns on, and a deleted lease orphans every posting made against it.
 DROP POLICY IF EXISTS leases_no_delete ON leases;
-CREATE POLICY leases_no_delete ON leases AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY leases_no_delete ON leases AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 DROP POLICY IF EXISTS lease_parties_no_delete ON lease_parties;
-CREATE POLICY lease_parties_no_delete ON lease_parties AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY lease_parties_no_delete ON lease_parties AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 DROP POLICY IF EXISTS rent_schedule_no_delete ON rent_schedule;
-CREATE POLICY rent_schedule_no_delete ON rent_schedule AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY rent_schedule_no_delete ON rent_schedule AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 
 GRANT SELECT, INSERT, UPDATE ON leases, lease_parties, rent_schedule TO dwellm8_lease;
 GRANT SELECT ON lease_expiring TO dwellm8_lease, dwellm8_notify, dwellm8_property;
@@ -3232,9 +3292,11 @@ CREATE POLICY workflow_steps_tenant_isolation ON workflow_steps
 -- evidence in the dispute that follows, and the reason this record exists rather
 -- than relying on Temporal's is precisely that it has to survive.
 DROP POLICY IF EXISTS workflow_runs_no_delete ON workflow_runs;
-CREATE POLICY workflow_runs_no_delete ON workflow_runs AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY workflow_runs_no_delete ON workflow_runs AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 DROP POLICY IF EXISTS workflow_steps_no_delete ON workflow_steps;
-CREATE POLICY workflow_steps_no_delete ON workflow_steps AS RESTRICTIVE FOR DELETE USING (false);
+CREATE POLICY workflow_steps_no_delete ON workflow_steps AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
 
 -- Money owns durable operations, because every operation on the list is a money or
 -- document operation. Every other module reads: a lease screen shows whether the
@@ -3242,6 +3304,186 @@ CREATE POLICY workflow_steps_no_delete ON workflow_steps AS RESTRICTIVE FOR DELE
 GRANT SELECT, INSERT, UPDATE ON workflow_runs, workflow_steps TO dwellm8_money;
 GRANT SELECT ON workflow_runs, workflow_steps TO dwellm8_lease, dwellm8_property,
     dwellm8_identity, dwellm8_notify;
+
+-- ===========================================================================
+-- demo sandbox (ADR-0021)
+-- ===========================================================================
+
+-- The sandbox is an unauthenticated, write-capable surface exposed to the whole internet.
+-- Anyone can start a demo with no account, so session identity, isolation, expiry and
+-- cost bounds are decided here rather than discovered.
+--
+-- organisations.is_sandbox has existed since ADR-0003 carrying a promise nothing kept:
+-- "Nothing in it may ever cause a side effect: no money moves, no message is sent." This
+-- section is what makes that true, and the enforcement is in two halves that hold each
+-- other up — see sandbox_purge_permitted() above.
+
+CREATE TABLE IF NOT EXISTS demo_sessions (
+    id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    -- The ephemeral organisation this session owns. One per session, never shared: two
+    -- visitors editing the same demo is the failure that makes a sandbox worthless.
+    tenant_id      uuid NOT NULL UNIQUE REFERENCES organisations(id),
+
+    -- The opaque token, hashed. The token itself is never stored, for the same reason
+    -- ADR-0013 stores no full identifier: a database copy would otherwise hand out live
+    -- sessions. sha256 rather than a slow hash on purpose — this is a 256-bit random
+    -- value, so there is no dictionary to defend against and a slow hash would only make
+    -- every request slower.
+    token_hash     bytea NOT NULL UNIQUE CHECK (length(token_hash) = 32),
+
+    -- Sliding, so a visitor returning after several days resumes rather than silently
+    -- receiving a fresh sandbox with their work gone.
+    expires_at     timestamptz NOT NULL,
+    -- Absolute. A sliding window with no ceiling is a session that never expires, and
+    -- the storage cost of one that never expires is unbounded.
+    hard_expires_at timestamptz NOT NULL,
+
+    -- Which template seeded it, so a template change does not silently mean two visitors
+    -- saw different products.
+    template       text NOT NULL,
+
+    -- Coarse, for the abuse case. Not an address: a /24 or a hashed prefix is enough to
+    -- rate-limit on and does not build a log of who visited.
+    origin_bucket  text,
+
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    last_seen_at   timestamptz NOT NULL DEFAULT now(),
+    converted_at   timestamptz,
+
+    CONSTRAINT demo_sessions_window CHECK (
+        expires_at > created_at AND hard_expires_at >= expires_at),
+    -- A sliding window may not slide past the ceiling, which is what makes the ceiling one.
+    CONSTRAINT demo_sessions_ceiling CHECK (hard_expires_at > created_at)
+);
+
+COMMENT ON TABLE demo_sessions IS
+    'ADR-0021. One ephemeral organisation per visitor. The token is stored hashed; the sliding window resumes, the hard ceiling ends.';
+
+CREATE INDEX IF NOT EXISTS demo_sessions_expiry_idx ON demo_sessions (expires_at);
+CREATE INDEX IF NOT EXISTS demo_sessions_origin_idx
+    ON demo_sessions (origin_bucket, created_at) WHERE origin_bucket IS NOT NULL;
+
+-- The organisation a demo session points at must actually be a sandbox, or the session
+-- is a way to reach a real organisation without an account.
+CREATE OR REPLACE FUNCTION demo_sessions_point_at_a_sandbox() RETURNS trigger
+    LANGUAGE plpgsql AS
+$$
+BEGIN
+    IF NOT is_sandbox_tenant(NEW.tenant_id) THEN
+        RAISE EXCEPTION 'demo session % points at organisation %, which is not a sandbox — an '
+                        'unauthenticated session must not reach a real organisation',
+            NEW.id, NEW.tenant_id USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+DROP TRIGGER IF EXISTS demo_sessions_sandbox_only ON demo_sessions;
+CREATE TRIGGER demo_sessions_sandbox_only
+    BEFORE INSERT OR UPDATE OF tenant_id ON demo_sessions
+    FOR EACH ROW EXECUTE FUNCTION demo_sessions_point_at_a_sandbox();
+
+-- ADR-0021 §3. The side-effect ban, made structural for the one table that can move real
+-- money.
+--
+-- A demo has payments in it — it is a demo of a rent platform — so the rule is not "no
+-- payments" but "no payment through a real provider". A sandbox payment names the sandbox
+-- adapter and nothing else, so a demo cannot create an order at Razorpay however the code
+-- is wired.
+--
+-- This is the half that makes the purge safe: nothing real originates in a sandbox, so
+-- nothing real is lost when one is dropped.
+CREATE OR REPLACE FUNCTION payments_sandbox_has_no_real_provider() RETURNS trigger
+    LANGUAGE plpgsql AS
+$$
+BEGIN
+    IF is_sandbox_tenant(NEW.tenant_id) AND NEW.provider <> 'sandbox' THEN
+        RAISE EXCEPTION 'payment % is in a sandbox organisation and names provider %: a demo may '
+                        'not reach a real payment provider, and the sandbox being purgeable '
+                        'depends on it', NEW.id, NEW.provider
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+DROP TRIGGER IF EXISTS payments_sandbox_provider ON payments;
+CREATE TRIGGER payments_sandbox_provider
+    BEFORE INSERT OR UPDATE OF provider, tenant_id ON payments
+    FOR EACH ROW EXECUTE FUNCTION payments_sandbox_has_no_real_provider();
+
+-- And the same for a durable operation: a sandbox may not run one that reaches outside.
+-- recon.day is platform-wide and never sandbox; everything else on ADR-0015's list either
+-- moves money or files a document, so none of them may originate in a demo.
+CREATE OR REPLACE FUNCTION workflow_runs_sandbox_has_no_external_effect() RETURNS trigger
+    LANGUAGE plpgsql AS
+$$
+BEGIN
+    IF is_sandbox_tenant(NEW.tenant_id) THEN
+        RAISE EXCEPTION 'workflow run % is in a sandbox organisation and runs %: every durable '
+                        'operation reaches a provider, a bank or a government gateway, and a demo '
+                        'may reach none of them', NEW.id, NEW.operation
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+DROP TRIGGER IF EXISTS workflow_runs_sandbox_ban ON workflow_runs;
+CREATE TRIGGER workflow_runs_sandbox_ban
+    BEFORE INSERT ON workflow_runs
+    FOR EACH ROW EXECUTE FUNCTION workflow_runs_sandbox_has_no_external_effect();
+
+-- ADR-0021 §5. The cost bound, as a hard cap on live sandboxes.
+--
+-- "The cost stays within the stated cap" is only true if something states it and
+-- something enforces it. Rate limiting lives at the edge, where it belongs, and it fails
+-- open under a distributed attack; this is the floor beneath it, and it fails closed.
+--
+-- The cap is deliberately in the schema rather than in configuration: a number an
+-- operator can raise under pressure at 3am is a number that gets raised.
+CREATE OR REPLACE FUNCTION demo_sessions_within_the_cap() RETURNS trigger
+    LANGUAGE plpgsql AS
+$$
+DECLARE
+    live int;
+    cap  CONSTANT int := 500;
+BEGIN
+    SELECT count(*) INTO live FROM demo_sessions WHERE expires_at > now();
+    IF live >= cap THEN
+        RAISE EXCEPTION 'the demo sandbox is at its cap of % live sessions: creation is bounded so '
+                        'a script cannot make the storage cost unbounded, and existing sessions are '
+                        'unaffected', cap
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+DROP TRIGGER IF EXISTS demo_sessions_cap ON demo_sessions;
+CREATE TRIGGER demo_sessions_cap
+    BEFORE INSERT ON demo_sessions
+    FOR EACH ROW EXECUTE FUNCTION demo_sessions_within_the_cap();
+
+ALTER TABLE demo_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE demo_sessions FORCE  ROW LEVEL SECURITY;
+
+-- The session row is the platform's: it is created before there is a tenant to scope to,
+-- and it holds the token hash. A demo session reads its own *organisation's* data through
+-- ordinary tenancy, exactly as a real one does — which is the point of §6. It never reads
+-- this table.
+DROP POLICY IF EXISTS demo_sessions_platform_only ON demo_sessions;
+CREATE POLICY demo_sessions_platform_only ON demo_sessions
+    USING (is_platform_session())
+    WITH CHECK (is_platform_session());
+
+-- Deletable, unlike everything else in this schema, and by the same rule: it is the
+-- sandbox's own record.
+DROP POLICY IF EXISTS demo_sessions_purgeable ON demo_sessions;
+CREATE POLICY demo_sessions_purgeable ON demo_sessions AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON demo_sessions TO dwellm8_identity;
 
 -- ===========================================================================
 -- app and platform roles
@@ -3273,6 +3515,25 @@ BEGIN
     END IF;
 END
 $$;
+
+-- ADR-0021 §4. The demo cleanup job's role.
+--
+-- Separate from dwellm8_platform on purpose. This schema protects its history with two
+-- locks — the privilege is revoked *and* a RESTRICTIVE policy refuses the delete — and
+-- granting DELETE back to the platform role would remove one of them for onboarding,
+-- support and reporting alike. A third role keeps both locks intact everywhere except
+-- the one job that needs them open, and that job's policy still only reaches a sandbox.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'dwellm8_purge') THEN
+        CREATE ROLE dwellm8_purge LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+    END IF;
+END
+$$;
+
+GRANT CONNECT ON DATABASE dwellm8 TO dwellm8_purge;
+GRANT USAGE ON SCHEMA public TO dwellm8_purge;
+GRANT dwellm8_app TO dwellm8_purge;
 
 GRANT CONNECT ON DATABASE dwellm8 TO dwellm8_api, dwellm8_platform;
 GRANT USAGE ON SCHEMA public TO dwellm8_api, dwellm8_platform;
@@ -3359,6 +3620,24 @@ REVOKE INSERT, UPDATE, DELETE ON ledger_accounts, posting_templates,
 -- three anyway — an aggregate view is not updatable — but a privilege list that
 -- claims a balance can be written is a privilege list nobody can review.
 REVOKE INSERT, UPDATE, DELETE ON ledger_balances FROM dwellm8_app;
+
+-- ADR-0021 §4. And DELETE back, to the purge role only.
+--
+-- After every REVOKE above, so this is the last word. Every one of these tables refuses
+-- the delete in its policy unless the row belongs to a sandbox, so the privilege alone
+-- reaches nothing — but without the privilege the policy is never consulted, which is
+-- what the two-lock design means and why this grant has to be explicit and narrow.
+GRANT DELETE ON properties, blocks, units,
+                delegation_grants, delegation_grant_scopes,
+                journal_entries, ledger_postings,
+                payments, payment_events,
+                settlement_lines, settlement_drift,
+                leases, lease_parties, rent_schedule,
+                property_ownership,
+                workflow_runs, workflow_steps,
+                kyc_verifications, kyc_access_log,
+                audit_events, organisations, demo_sessions
+    TO dwellm8_purge;
 
 -- No ALTER ROLE ... NOBYPASSRLS here: changing the attribute at all requires
 -- superuser, which this job does not have and should not want. The roles are
@@ -3702,7 +3981,7 @@ BEGIN
     --    lives in the policies, where it is visible.
     SELECT string_agg(rolname, ', ') INTO offending
     FROM pg_roles
-    WHERE rolname IN ('dwellm8_api', 'dwellm8_platform', 'dwellm8_app')
+    WHERE rolname IN ('dwellm8_api', 'dwellm8_platform', 'dwellm8_app', 'dwellm8_purge')
       AND rolbypassrls;
     IF offending IS NOT NULL THEN
         RAISE EXCEPTION 'role(s) hold BYPASSRLS: % — the exemption belongs in a policy', offending;
@@ -3722,13 +4001,21 @@ BEGIN
     -- 4. Neither delegation table may be deletable. Losing a revoked grant
     --    loses the record of what a firm was permitted to do, and when — which
     --    is the one thing an owner would later need. ADR-0005.
+    --
+    --    ADR-0021 scoped the predicate from `false` to sandbox_purge_permitted(), for the
+    --    reason given at assertion 7: a demo sandbox has to be cleanable, and it is safe
+    --    because no real effect may originate in one. The grantee still cannot erase
+    --    anything — the predicate requires a platform session *and* a sandbox
+    --    organisation, so a firm deleting the record of what it was permitted to do is
+    --    exactly as impossible as it was.
     SELECT string_agg(t, ', ') INTO offending
     FROM unnest(ARRAY['delegation_grants', 'delegation_grant_scopes']) AS t
     WHERE NOT EXISTS (
         SELECT 1 FROM pg_policies p
          WHERE p.schemaname = 'public' AND p.tablename = t
            -- pg_policies.permissive is text, not boolean: 'RESTRICTIVE'.
-           AND p.cmd = 'DELETE' AND p.permissive = 'RESTRICTIVE' AND p.qual = 'false');
+           AND p.cmd = 'DELETE' AND p.permissive = 'RESTRICTIVE'
+           AND (p.qual = 'false' OR p.qual LIKE '%sandbox_purge_permitted%'));
     IF offending IS NOT NULL THEN
         RAISE EXCEPTION 'no RESTRICTIVE deny-delete policy on: % — a grantee could erase the evidence', offending;
     END IF;
@@ -3796,16 +4083,31 @@ BEGIN
     --    `p.cmd = p.cmd`, and the assertion passes as long as *either* policy
     --    exists. Measured — dropping ledger_postings_no_update and running the
     --    assertion block alone came out green.
+    --
+    --    ADR-0021 relaxed the DELETE half, and it is the only relaxation of this rule in
+    --    the file. It reads `sandbox_purge_permitted(tenant_id)` rather than `false`,
+    --    which means: no ledger row of a *real* organisation may ever be deleted, and a
+    --    demo sandbox's may be purged by the platform.
+    --
+    --    That is a genuine weakening and its safety rests entirely on ADR-0021 §3 — no
+    --    real effect may originate in a sandbox, so a sandbox ledger contains no real
+    --    money. If that ban is ever weakened this must go back to `false`, and assertion
+    --    16 is what would otherwise let the two drift apart. UPDATE stays absolute: there
+    --    is no reason to edit a posting even in a demo, and the seed writes them once.
     SELECT string_agg(format('%s:%s', t, required_cmd), ', ') INTO offending
     FROM unnest(ARRAY['journal_entries', 'ledger_postings']) AS t
     CROSS JOIN unnest(ARRAY['UPDATE', 'DELETE']) AS required_cmd
     WHERE NOT EXISTS (
         SELECT 1 FROM pg_policies p
          WHERE p.schemaname = 'public' AND p.tablename = t
-           AND p.cmd = required_cmd AND p.permissive = 'RESTRICTIVE' AND p.qual = 'false');
+           AND p.cmd = required_cmd AND p.permissive = 'RESTRICTIVE'
+           AND (p.qual = 'false'
+             OR (required_cmd = 'DELETE' AND p.qual LIKE '%sandbox_purge_permitted%')));
     IF offending IS NOT NULL THEN
-        RAISE EXCEPTION 'the ledger is mutable: no RESTRICTIVE deny policy for % '
-                        '— a corrected amount that leaves no trace is indistinguishable from theft', offending;
+        RAISE EXCEPTION 'the ledger is mutable: no RESTRICTIVE deny policy for % — a corrected '
+                        'amount that leaves no trace is indistinguishable from theft. DELETE may '
+                        'be scoped to sandbox_purge_permitted() and to nothing else; UPDATE may '
+                        'not be scoped at all', offending;
     END IF;
 
     -- 8. Money is an integer of minor units. This is ADR-0007's standard
@@ -4065,6 +4367,30 @@ BEGIN
                         'argued for in an ADR and added to this list', offending;
     END IF;
 
+    -- 16. Every tenant-scoped table's no-delete policy must permit the sandbox purge.
+    --
+    --     Column-driven, so a table added by a future ADR is covered before anybody
+    --     writes a test for it — which is the whole point, because the failure is not
+    --     visible from the new table. It shows up as a demo sandbox that cannot be
+    --     cleaned up, months later, as storage that only grows.
+    --
+    --     The two platform-owned tables with no tenant_id are exempt by name: a
+    --     settlement batch and a reconciliation run belong to no organisation, so they
+    --     belong to no sandbox, and theirs stay at `false`.
+    SELECT string_agg(DISTINCT p.tablename, ', ') INTO offending
+    FROM pg_policies p
+    JOIN information_schema.columns col
+      ON col.table_schema = 'public' AND col.table_name = p.tablename
+     AND col.column_name = 'tenant_id'
+    WHERE p.schemaname = 'public'
+      AND p.cmd = 'DELETE' AND p.permissive = 'RESTRICTIVE'
+      AND p.qual NOT LIKE '%sandbox_purge_permitted%';
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'table(s) whose no-delete policy does not permit the sandbox purge: % '
+                        '— an expired demo sandbox would leave rows in them forever, and the '
+                        'failure shows up as storage that only grows', offending;
+    END IF;
+
     SELECT string_agg(want, ', ') INTO offending
     FROM unnest(ARRAY[
         -- ADR-0006 §3: the ledger balances, and an entry has lines.
@@ -4102,7 +4428,13 @@ BEGIN
         'journal_entries_lease_charge_shape',
         -- ADR-0013: a full identifier does not fit in the only column that could hold one.
         'kyc_verifications_reference_is_a_mask',
-        'kyc_access_log_support_needs_a_grant'
+        'kyc_access_log_support_needs_a_grant',
+        -- ADR-0021 §3: no real effect originates in a demo, which is what makes a demo
+        -- purgeable at all.
+        'payments_sandbox_provider',
+        'workflow_runs_sandbox_ban',
+        'demo_sessions_sandbox_only',
+        'demo_sessions_cap'
     ]) AS want
     WHERE NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = want)
       AND NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = want AND NOT tgisinternal);
