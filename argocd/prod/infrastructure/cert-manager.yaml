@@ -91,6 +91,15 @@ spec:
   syncPolicy:
     automated:
       selfHeal: true
+      # prune: true is required for this app to converge across chart
+      # upgrades. v1.21 dropped Role/RoleBinding cert-manager-tokenrequest;
+      # without prune those two stayed behind as tracked orphans, ArgoCD
+      # reported them as "PruneSkipped ignored (requires pruning)" and the app
+      # sat permanently OutOfSync — which in turn kept the Kargo
+      # platform-tools-prod Stage Unhealthy. cert-manager owns no dynamically
+      # created resources in this namespace, so pruning is safe here (unlike
+      # arc-controller, where it is deliberately off).
+      prune: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
