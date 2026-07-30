@@ -1016,9 +1016,11 @@ CREATE TABLE IF NOT EXISTS journal_entries (
     template_version int NOT NULL DEFAULT 1,
     occurred_on     date NOT NULL,
     posted_at       timestamptz NOT NULL DEFAULT now(),
-    -- ADR-0007 owns the money standard. Until it lands, one currency, asserted
-    -- rather than assumed: a second currency would need a rounding rule and an
-    -- FX policy that do not exist.
+    -- ADR-0007 §1: one currency, and it is recorded rather than assumed. A
+    -- second currency needs an FX rate with a date and a source, a rule for
+    -- which currency a balance is stated in, and a per-currency minor unit —
+    -- none of which has a caller. Storing the column anyway is what makes that
+    -- a schema change later rather than a rewrite of every stored number.
     currency        char(3) NOT NULL DEFAULT 'INR' CHECK (currency = 'INR'),
 
     -- What caused this entry: an invoice, a provider payment, a payout batch.
@@ -1131,6 +1133,26 @@ COMMENT ON TABLE ledger_postings IS
     'ADR-0006. Immutable, positive amounts, direction in `side`. Every balance in the product is a sum over this table.';
 COMMENT ON COLUMN ledger_postings.signed_minor IS
     'The sign convention, once: debits positive. Balances sum this rather than re-deriving it per query.';
+COMMENT ON COLUMN ledger_postings.amount_minor IS
+    'ADR-0007. Paise as a positive integer, never a decimal and never a float. Bounded at 2^53-1 so the value survives a JSON round trip exactly.';
+
+-- ADR-0007 §5. The ceiling is 2^53-1 paise, not the bigint range.
+--
+-- Money leaves this database as a JSON number, and JSON numbers are float64 to
+-- every browser; beyond 2^53 an amount stored correctly here arrives at the
+-- client as a different number with no error anywhere in between. Go refuses
+-- such an amount before writing it, and this refuses it again for anything that
+-- did not come through Go — psql, a fixture, a future import job.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ledger_postings_amount_representable') THEN
+        -- ADD CONSTRAINT IF NOT EXISTS does not exist, and a bare ADD
+        -- CONSTRAINT fails the replay on the second run.
+        ALTER TABLE ledger_postings ADD CONSTRAINT ledger_postings_amount_representable
+            CHECK (amount_minor <= 9007199254740991);
+    END IF;
+END
+$$;
 
 -- The three questions asked of this table, in the order they are asked.
 CREATE INDEX IF NOT EXISTS ledger_postings_entry_idx
