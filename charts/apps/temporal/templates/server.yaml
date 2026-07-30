@@ -107,6 +107,20 @@ spec:
             - name: SKIP_DB_CREATE
               value: "true"
             {{- end }}
+            # Cap how many pooled connections are PARKED idle. The image defaults
+            # maxIdleConns to the same value as maxConns (20 main / 10 visibility),
+            # so the pool never drains and ~30 sockets sit idle indefinitely. Every
+            # idle socket is a chance to be handed out after the flow underneath it
+            # has gone away, which surfaced as recurring
+            # "database connection lost: connection reset by peer" plus a retried
+            # persistence op. Server-side TCP keepalives on infra-postgres cut that
+            # by roughly 70%; holding fewer idle sockets closes most of the rest.
+            # Go reopens on demand, so throughput is unaffected — only the parked
+            # count changes.
+            - name: SQL_MAX_IDLE_CONNS
+              value: {{ .Values.server.sql.maxIdleConns | quote }}
+            - name: SQL_VIS_MAX_IDLE_CONNS
+              value: {{ .Values.server.sql.visMaxIdleConns | quote }}
             - name: TEMPORAL_NAMESPACE
               value: default
             {{- if .Values.elasticsearch.enabled }}
