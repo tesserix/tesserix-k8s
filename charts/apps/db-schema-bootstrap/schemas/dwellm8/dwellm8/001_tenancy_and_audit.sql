@@ -45,8 +45,14 @@ CREATE INDEX IF NOT EXISTS audit_events_tenant_time_idx
 CREATE INDEX IF NOT EXISTS audit_events_subject_idx
     ON audit_events (subject_kind, subject_id);
 
+-- ENABLE alone is not enough. A table's owner bypasses its own policies, and
+-- the bootstrap job creates these tables as dwellm8 — so without FORCE, every
+-- policy below is decorative for exactly the role the API connects as.
+-- Reproduced: owner sees 2 of 2 rows with ENABLE, 1 of 2 with FORCE.
 ALTER TABLE organisations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE organisations FORCE  ROW LEVEL SECURITY;
 ALTER TABLE audit_events  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_events  FORCE  ROW LEVEL SECURITY;
 
 -- The API sets app.tenant_id per request. No tenant, no rows.
 --
@@ -62,13 +68,34 @@ $$ SELECT nullif(current_setting('app.tenant_id', true), '')::uuid $$;
 COMMENT ON FUNCTION current_tenant_id() IS
     'The organisation this request belongs to. NULL when unset, so every RLS policy denies.';
 
+-- The platform exemption, written where a reviewer will see it.
+--
+-- A handful of operations cannot be tenant-scoped because they create or span
+-- tenants: onboarding an organisation, platform reporting, an audited support
+-- session. PostgreSQL's BYPASSRLS attribute would express this, but granting
+-- it needs superuser, which CNPG deliberately withholds — and a role attribute
+-- is invisible in a policy anyway. So the exemption lives in the policies, and
+-- every one of them says out loud who is exempt.
+CREATE OR REPLACE FUNCTION is_platform_session() RETURNS boolean
+    LANGUAGE sql STABLE PARALLEL SAFE AS
+$$ SELECT pg_has_role(current_user, 'dwellm8_platform', 'member') $$;
+
+COMMENT ON FUNCTION is_platform_session() IS
+    'True for the few cross-tenant operations. Every use is written to audit_events.';
+
+-- USING filters what a statement can see; WITH CHECK filters what it can
+-- write. Without the second half, a scoped session can still insert a row
+-- belonging to another organisation and then be unable to read it back —
+-- which is worse than either failing or succeeding cleanly.
 DROP POLICY IF EXISTS organisations_tenant_isolation ON organisations;
 CREATE POLICY organisations_tenant_isolation ON organisations
-    USING (id = current_tenant_id());
+    USING (id = current_tenant_id() OR is_platform_session())
+    WITH CHECK (id = current_tenant_id() OR is_platform_session());
 
 DROP POLICY IF EXISTS audit_events_tenant_isolation ON audit_events;
 CREATE POLICY audit_events_tenant_isolation ON audit_events
-    USING (tenant_id = current_tenant_id());
+    USING (tenant_id = current_tenant_id() OR is_platform_session())
+    WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
 
 GRANT SELECT, INSERT, UPDATE ON organisations TO dwellm8_identity;
 GRANT SELECT ON organisations TO dwellm8_property, dwellm8_lease, dwellm8_money,
