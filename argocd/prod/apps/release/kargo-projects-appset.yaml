@@ -63,7 +63,13 @@ spec:
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
-          - ApplyOutOfSyncOnly=true
+          # ApplyOutOfSyncOnly is deliberately ABSENT: since the ArgoCD 3
+          # upgrade (2026-06-12) the sync-time diff disagrees with the
+          # status diff for Kargo's open-schema CRDs, so with that option
+          # the operation filtered every resource out and reported
+          # "Succeeded" in 0s while applying nothing — spec changes to
+          # Warehouses/Stages never reached the cluster. These apps hold
+          # a handful of small CRs; applying all of them each sync is free.
           - PruneLast=true
           - RespectIgnoreDifferences=true
         retry:
