@@ -13,8 +13,9 @@
 -- Sections:
 --   1. Extensions and per-module roles
 --   2. Tenancy — organisations, audit trail, RLS
---   3. Application and platform roles
---   4. Assertions that fail the bootstrap if the model is violated
+--   3. Property, block and unit — the tree everything else hangs from
+--   4. Application and platform roles
+--   5. Assertions that fail the bootstrap if the model is violated
 -- ============================================================================
 
 
@@ -139,22 +140,58 @@ COMMENT ON TABLE delegation_grants IS
 -- What the grant covers. Enumerated rows rather than a predicate, so "two of
 -- the five units" is answerable by a join and visible in a UI.
 --
--- scope_id is not a foreign key yet: properties and units arrive with ADR-0009,
--- which adds the reference. Stating that here is better than a column that
--- quietly points at nothing forever.
+-- scope_id stays polymorphic — a property id or a unit id, depending on
+-- scope_kind — so it is not a foreign key even now that ADR-0009 has landed the
+-- tables it points at. What validates it is delegation_scope_target() below,
+-- which is strictly stronger than a reference: it also requires the target to
+-- belong to the grantor. An owner cannot scope a grant to somebody else's
+-- building, which is a thing a foreign key would happily allow.
+--
+-- scope_property_id is the property a scope row resolves to: itself for a
+-- property scope, the containing property for a unit scope, NULL for a
+-- portfolio. The trigger stamps it, so is_delegated() never has to read units
+-- from inside a policy — see ADR-0009 §4 for what that read cost when it was
+-- tried.
 CREATE TABLE IF NOT EXISTS delegation_grant_scopes (
-    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    grant_id    uuid NOT NULL REFERENCES delegation_grants(id),
-    tenant_id   uuid NOT NULL REFERENCES organisations(id),
-    scope_kind  text NOT NULL CHECK (scope_kind IN ('portfolio', 'property', 'unit')),
-    scope_id    uuid,
-    created_at  timestamptz NOT NULL DEFAULT now(),
+    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    grant_id          uuid NOT NULL REFERENCES delegation_grants(id),
+    tenant_id         uuid NOT NULL REFERENCES organisations(id),
+    scope_kind        text NOT NULL CHECK (scope_kind IN ('portfolio', 'property', 'unit')),
+    scope_id          uuid,
+    scope_property_id uuid,
+    created_at        timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT delegation_grant_scopes_shape
         CHECK ((scope_kind = 'portfolio') = (scope_id IS NULL))
 );
 
+-- For databases created before ADR-0009.
+ALTER TABLE delegation_grant_scopes ADD COLUMN IF NOT EXISTS scope_property_id uuid;
+
+-- Backfill before the constraint, or a property scope written yesterday fails
+-- the check today. A unit scope cannot be backfilled from here — no units
+-- existed to point at — and none can exist, because the vocabulary allowed the
+-- row while nothing enforced it.
+UPDATE delegation_grant_scopes
+   SET scope_property_id = scope_id
+ WHERE scope_kind = 'property' AND scope_property_id IS NULL;
+
+-- ADD CONSTRAINT IF NOT EXISTS does not exist, and a bare ADD CONSTRAINT fails
+-- the replay on the second run.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conname = 'delegation_grant_scopes_property_shape') THEN
+        ALTER TABLE delegation_grant_scopes ADD CONSTRAINT delegation_grant_scopes_property_shape
+            CHECK ((scope_kind = 'portfolio') = (scope_property_id IS NULL));
+    END IF;
+END
+$$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS delegation_grant_scopes_unique
     ON delegation_grant_scopes (grant_id, scope_kind, scope_id);
+-- The lookup every delegated read performs: this grant, this property.
+CREATE INDEX IF NOT EXISTS delegation_grant_scopes_property_idx
+    ON delegation_grant_scopes (grant_id, scope_property_id);
 -- 'portfolio' carries a NULL scope_id, and NULLs are distinct to a unique
 -- index, so the constraint above would happily allow it twice.
 CREATE UNIQUE INDEX IF NOT EXISTS delegation_grant_scopes_portfolio
@@ -250,48 +287,102 @@ $$ SELECT nullif(current_setting('app.grant_id', true), '')::uuid $$;
 COMMENT ON FUNCTION current_grant_id() IS
     'The delegation the request is acting under, or NULL. Declared, never trusted — is_delegated() validates it.';
 
--- The one place a row belonging to another organisation becomes reachable.
+-- The grant half of the check: is the grant this session declared a real, live
+-- grant from this row's owner to this tenant, carrying this permission?
 --
--- Nothing here is taken on trust. app.grant_id is a claim; every clause below
--- is the check. The grant must exist, name the current tenant as its grantee,
--- name the row's owner as its grantor, be live now, carry the permission the
--- policy asks for, and cover the property the row belongs to. Miss any one and
--- the answer is false, which is a row the session cannot see.
+-- Factored out because ADR-0009 added a second scope-level check, and six
+-- conditions duplicated between two functions is how one of them quietly stops
+-- checking who the grantee is. The CI step that plants exactly that defect is
+-- proof the risk is not theoretical.
+--
+-- Returns the grant id rather than a boolean so the scope lookups below can
+-- join on it. At most one row: g.id = current_grant_id() is the primary key.
 --
 -- It is not SECURITY DEFINER, deliberately. The lookup runs under the caller's
 -- own row-level security, so a session that quotes a grant id belonging to
 -- somebody else finds nothing — the policy on delegation_grants hides it. That
 -- is a second, independent refusal behind the first.
+CREATE OR REPLACE FUNCTION current_active_grant(row_tenant uuid, required_permission text)
+    RETURNS uuid LANGUAGE sql STABLE PARALLEL SAFE AS
+$$
+    SELECT g.id
+      FROM delegation_grants g
+     WHERE g.id             = current_grant_id()
+       AND g.grantee_org_id = current_tenant_id()
+       AND g.tenant_id      = row_tenant
+       AND g.revoked_at IS NULL
+       AND now() >= g.valid_from
+       AND (g.valid_to IS NULL OR now() < g.valid_to)
+       -- 'audit' is implied by every grant. Access that cannot be recorded
+       -- would be access without a trace, so it is not a permission an owner
+       -- can accidentally withhold.
+       AND (required_permission = 'audit' OR required_permission = ANY (g.permissions))
+$$;
+
+COMMENT ON FUNCTION current_active_grant(uuid, text) IS
+    'ADR-0005. The declared grant, if it is genuinely this tenant''s live grant from row_tenant for this permission. Scope is checked separately.';
+
+-- The one place a row belonging to another organisation becomes reachable, at
+-- property granularity.
 --
 -- row_property NULL means "this row is not property-scoped" — an audit entry,
 -- say. Passing NULL from a table that DOES have a property_id would widen the
 -- grant to the grantor's whole portfolio, so the assertions at the foot of this
 -- file fail any such table.
+--
+-- A unit scope satisfies a property-scoped row, because scope_property_id
+-- resolves a unit to its property. That is a deliberate widening and ADR-0009 §4
+-- argues it: a firm managing flat 1204 must be able to read the building the
+-- flat is in. It is also why unit-bearing tables must use is_delegated_unit()
+-- instead — at property granularity, one unit reaches all of them.
 CREATE OR REPLACE FUNCTION is_delegated(row_tenant uuid, row_property uuid, required_permission text)
     RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE AS
 $$
-    SELECT EXISTS (
-        SELECT 1
-          FROM delegation_grants g
-         WHERE g.id             = current_grant_id()
-           AND g.grantee_org_id = current_tenant_id()
-           AND g.tenant_id      = row_tenant
-           AND g.revoked_at IS NULL
-           AND now() >= g.valid_from
-           AND (g.valid_to IS NULL OR now() < g.valid_to)
-           -- 'audit' is implied by every grant. Access that cannot be recorded
-           -- would be access without a trace, so it is not a permission an
-           -- owner can accidentally withhold.
-           AND (required_permission = 'audit' OR required_permission = ANY (g.permissions))
-           AND (row_property IS NULL OR EXISTS (
-                   SELECT 1 FROM delegation_grant_scopes s
-                    WHERE s.grant_id = g.id
-                      AND (s.scope_kind = 'portfolio' OR s.scope_id = row_property)))
-    )
+    SELECT CASE
+        WHEN row_property IS NULL
+            THEN current_active_grant(row_tenant, required_permission) IS NOT NULL
+        ELSE EXISTS (
+            SELECT 1 FROM delegation_grant_scopes s
+             WHERE s.grant_id = current_active_grant(row_tenant, required_permission)
+               AND (s.scope_kind = 'portfolio' OR s.scope_property_id = row_property))
+        END
 $$;
 
 COMMENT ON FUNCTION is_delegated(uuid, uuid, text) IS
-    'ADR-0005. True when the declared grant genuinely covers this row for this permission, right now.';
+    'ADR-0005. True when the declared grant genuinely covers this property for this permission, right now.';
+
+-- The same question at unit granularity, which is what a two-of-five-units
+-- mandate actually means. ADR-0009 §4.
+--
+-- Every argument comes from the row being judged; nothing is read from units.
+-- That is not tidiness — the units policy calls this function, so a lookup of
+-- units from inside it is a policy that consults the table it governs. Measured,
+-- with a variant that resolved the property itself: "stack depth limit exceeded
+-- ... CONTEXT: SQL function is_delegated_unit_reading during inlining". Not the
+-- "infinite recursion detected in policy" PostgreSQL raises when a policy names
+-- its own table directly — inlining a STABLE function gets there first, and the
+-- message points at the function rather than at the policy that is the cause.
+--
+-- row_parent_unit is the ancillary hop: a parking slot allotted to flat 1204 is
+-- reachable by a grant scoped to flat 1204, because the slot comes with the
+-- flat. A table that carries a unit id but no parent passes NULL and loses the
+-- hop, which fails closed — the row is simply unreachable, never over-reachable.
+CREATE OR REPLACE FUNCTION is_delegated_unit(
+        row_tenant uuid, row_property uuid, row_unit uuid, row_parent_unit uuid,
+        required_permission text)
+    RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE AS
+$$
+    SELECT EXISTS (
+        SELECT 1 FROM delegation_grant_scopes s
+         WHERE s.grant_id = current_active_grant(row_tenant, required_permission)
+           AND (s.scope_kind = 'portfolio'
+             OR (s.scope_kind = 'property' AND s.scope_id = row_property)
+             OR (s.scope_kind = 'unit'     AND s.scope_id = row_unit)
+             OR (s.scope_kind = 'unit'     AND s.scope_id = row_parent_unit)))
+$$;
+
+COMMENT ON FUNCTION is_delegated_unit(uuid, uuid, uuid, uuid, text) IS
+    'ADR-0009. True when the declared grant covers this exact unit — or its parent, or its property, or the portfolio.';
 
 -- USING filters what a statement can see; WITH CHECK filters what it can
 -- write. PostgreSQL falls back to USING when WITH CHECK is absent, so writes
@@ -399,6 +490,318 @@ GRANT EXECUTE ON FUNCTION is_delegated(uuid, uuid, text) TO dwellm8_identity,
     dwellm8_community, dwellm8_discovery, dwellm8_notify;
 
 -- ===========================================================================
+-- property, block and unit
+-- ===========================================================================
+
+-- ADR-0009. One hierarchy for a standalone house, a four-flat building, a
+-- 240-flat society tower, a shop and a parking slot:
+--
+--   property  → block (optional) → unit → ancillary unit (parking, storage)
+--
+-- tenant_id is whoever holds the tree. For a landlord's own flats that is the
+-- owner's organisation; for a society it is the society, and an individual flat
+-- owner is a separate organisation that reaches their flat through a grant the
+-- society issues. Ownership is therefore not tenancy — see ADR-0009's
+-- consequences, which say plainly what that costs.
+
+CREATE TABLE IF NOT EXISTS properties (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       uuid NOT NULL REFERENCES organisations(id),
+    -- The owner-facing short code. citext so 'GK-2' and 'gk-2' collide rather
+    -- than becoming two buildings.
+    code            citext NOT NULL,
+    name            text NOT NULL,
+    kind            text NOT NULL CHECK (kind IN (
+                        'standalone', 'building', 'society', 'commercial', 'coliving', 'plot')),
+
+    -- Indian addressing. Two-line street address, then the administrative
+    -- hierarchy that every statutory form asks for in this order.
+    address_line1   text NOT NULL,
+    address_line2   text,
+    locality        text NOT NULL,
+    city            text NOT NULL,
+    district        text,
+    -- ISO 3166-2:IN subdivision code. Named state_code, not state, because
+    -- `state` is this file's word for a lifecycle — organisations.state, and the
+    -- column below. The collision is unfortunate; the naming is the mitigation.
+    state_code      char(2) NOT NULL CHECK (state_code IN (
+                        'AN','AP','AR','AS','BR','CH','CT','DH','DL','GA','GJ','HP',
+                        'HR','JH','JK','KA','KL','LA','LD','MH','ML','MN','MP','MZ',
+                        'NL','OR','PB','PY','RJ','SK','TG','TN','TR','UP','UT','WB')),
+    -- Indian PIN codes never start with zero, which makes a leading-zero PIN a
+    -- transcription error rather than a valid code.
+    pin             char(6) NOT NULL CHECK (pin ~ '^[1-9][0-9]{5}$'),
+    latitude        numeric(9,6) CHECK (latitude BETWEEN -90 AND 90),
+    longitude       numeric(9,6) CHECK (longitude BETWEEN -180 AND 180),
+    -- Geocoding is an assertion about the world and can be wrong or stale, so
+    -- it records where it came from rather than pretending to be a fact.
+    geocoded_at     timestamptz,
+    geocode_source  text CHECK (geocode_source IN ('manual', 'provider', 'import')),
+
+    -- External identifiers. Every one of these is issued by somebody else, so
+    -- none is unique here: two flats can share an electricity meter, and a
+    -- municipal id can be reassigned after a subdivision.
+    municipal_tax_id        text,
+    rera_id                 text,
+    society_registration_no text,
+
+    state           text NOT NULL DEFAULT 'active'
+                    CHECK (state IN ('active', 'inactive', 'disposed')),
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT properties_code_unique UNIQUE (tenant_id, code),
+    -- Redundant against the primary key, and load-bearing anyway: it is the
+    -- target of the composite foreign keys below, which is how a block or a
+    -- unit is prevented from attaching to another organisation's property.
+    CONSTRAINT properties_tenant_id_unique UNIQUE (id, tenant_id)
+);
+
+COMMENT ON COLUMN properties.state_code IS
+    'ISO 3166-2:IN subdivision code — MH, KA, DL. The GST numeric code is a lookup, not this column (ADR-0007).';
+
+CREATE INDEX IF NOT EXISTS properties_tenant_idx ON properties (tenant_id, state);
+CREATE INDEX IF NOT EXISTS properties_pin_idx    ON properties (pin);
+
+-- A wing, a tower, a phase. Optional: a standalone house has none, and forcing
+-- a synthetic "Block A" onto it is the special-casing this model exists to
+-- avoid.
+CREATE TABLE IF NOT EXISTS blocks (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       uuid NOT NULL REFERENCES organisations(id),
+    property_id     uuid NOT NULL,
+    code            citext NOT NULL,
+    name            text,
+    floors          int CHECK (floors > 0),
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT blocks_code_unique     UNIQUE (property_id, code),
+    CONSTRAINT blocks_tenant_id_unique UNIQUE (id, tenant_id),
+    -- Composite, not a plain reference to properties(id): this is what makes
+    -- tenant_id agree with the parent's. A plain foreign key would let a
+    -- delegated session hang a block off another organisation's property and
+    -- keep its own tenant_id on the row, which every policy in this file would
+    -- then read as its own.
+    CONSTRAINT blocks_property_fkey FOREIGN KEY (property_id, tenant_id)
+        REFERENCES properties (id, tenant_id)
+);
+
+CREATE INDEX IF NOT EXISTS blocks_property_idx ON blocks (property_id);
+
+-- The unit. Everything downstream — a lease, a due, a ticket, a meter — points
+-- here.
+--
+-- Parking and storage are units with a parent, not a second table. A slot
+-- allotted to flat 1204 carries parent_unit_id = that flat; an unallotted slot
+-- has none. Reassignment is an UPDATE, and the history of who parked where is
+-- not modelled — ADR-0009 says so out loud rather than implying otherwise.
+CREATE TABLE IF NOT EXISTS units (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       uuid NOT NULL REFERENCES organisations(id),
+    property_id     uuid NOT NULL,
+    block_id        uuid,
+    parent_unit_id  uuid,
+    unit_kind       text NOT NULL CHECK (unit_kind IN (
+                        'flat', 'floor', 'room', 'shop', 'office', 'desk', 'parking', 'storage')),
+    -- '1204', 'P-31', 'Desk 7'. Unique within the property, which is the
+    -- validation scenario in issue #10.
+    code            citext NOT NULL,
+    -- Signed: basements are floor -1, and a CHECK for > 0 here would be a bug
+    -- reported from every tower with parking underneath it.
+    floor           int,
+    carpet_area_sqft  numeric(10,2) CHECK (carpet_area_sqft > 0),
+    builtup_area_sqft numeric(10,2) CHECK (builtup_area_sqft > 0),
+    -- The society's share certificate for this flat. Free text: the format is
+    -- whatever the society's registrar used in 1987.
+    share_certificate_no text,
+    occupancy       text NOT NULL DEFAULT 'vacant' CHECK (occupancy IN (
+                        'vacant', 'occupied', 'owner_occupied', 'locked', 'under_renovation')),
+    electricity_consumer_no text,
+    water_connection_no     text,
+    state           text NOT NULL DEFAULT 'active'
+                    CHECK (state IN ('active', 'inactive')),
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now(),
+
+    -- Always false, and generated so that it cannot be set. It exists to be the
+    -- second column of the foreign key below: referencing units(id,
+    -- is_ancillary) with a column that is constantly false means the parent's
+    -- is_ancillary must be false, so a parking slot cannot be parked on another
+    -- parking slot. A trigger would do the same job and could be dropped
+    -- without the schema noticing.
+    parent_is_ancillary boolean NOT NULL GENERATED ALWAYS AS (false) STORED,
+    is_ancillary        boolean NOT NULL GENERATED ALWAYS AS
+                        (unit_kind IN ('parking', 'storage')) STORED,
+
+    CONSTRAINT units_code_unique        UNIQUE (property_id, code),
+    CONSTRAINT units_tenant_id_unique   UNIQUE (id, tenant_id),
+    CONSTRAINT units_property_id_unique UNIQUE (id, property_id),
+    CONSTRAINT units_ancillary_unique   UNIQUE (id, is_ancillary),
+
+    CONSTRAINT units_property_fkey FOREIGN KEY (property_id, tenant_id)
+        REFERENCES properties (id, tenant_id),
+    CONSTRAINT units_block_fkey FOREIGN KEY (block_id, tenant_id)
+        REFERENCES blocks (id, tenant_id),
+    -- The parent lives in the same property...
+    CONSTRAINT units_parent_fkey FOREIGN KEY (parent_unit_id, property_id)
+        REFERENCES units (id, property_id),
+    -- ...and is not itself an ancillary.
+    CONSTRAINT units_parent_primary_fkey FOREIGN KEY (parent_unit_id, parent_is_ancillary)
+        REFERENCES units (id, is_ancillary),
+
+    CONSTRAINT units_no_self_parent CHECK (parent_unit_id <> id),
+    -- Only an ancillary attaches to something. A flat with a parent would be a
+    -- second hierarchy nobody downstream knows to walk.
+    CONSTRAINT units_parent_only_ancillary CHECK (
+        parent_unit_id IS NULL OR unit_kind IN ('parking', 'storage')),
+    -- Built-up includes carpet by definition, so this ordering is arithmetic
+    -- rather than policy. Dues computed from the wrong one are off by the walls.
+    CONSTRAINT units_area_order CHECK (
+        carpet_area_sqft IS NULL OR builtup_area_sqft IS NULL
+        OR builtup_area_sqft >= carpet_area_sqft),
+    -- A flat needs an area for area-based dues; a parking slot does not have
+    -- one in any meaningful sense.
+    CONSTRAINT units_lettable_has_area CHECK (
+        unit_kind IN ('parking', 'storage') OR carpet_area_sqft IS NOT NULL)
+);
+
+COMMENT ON TABLE units IS
+    'ADR-0009. Ancillaries (parking, storage) are units with parent_unit_id set, not a separate table.';
+COMMENT ON COLUMN units.parent_is_ancillary IS
+    'Constantly false. The second column of units_parent_primary_fkey, which is how a parent is required not to be an ancillary.';
+
+CREATE INDEX IF NOT EXISTS units_property_idx ON units (property_id, unit_kind);
+CREATE INDEX IF NOT EXISTS units_parent_idx   ON units (parent_unit_id) WHERE parent_unit_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS units_block_idx    ON units (block_id) WHERE block_id IS NOT NULL;
+
+ALTER TABLE properties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE properties FORCE  ROW LEVEL SECURITY;
+ALTER TABLE blocks     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE blocks     FORCE  ROW LEVEL SECURITY;
+ALTER TABLE units      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE units      FORCE  ROW LEVEL SECURITY;
+
+-- The first genuinely property-scoped policy. ADR-0005 §4's template, with the
+-- property being this row itself.
+--
+-- The write branch has a consequence worth stating: for a portfolio-scoped
+-- grant with property.write, is_delegated() is true for a property id that does
+-- not exist yet, so a firm can create buildings inside the owner's tenant. That
+-- is what onboarding a portfolio on an owner's behalf requires. A
+-- property-scoped grant cannot, because a new id matches no scope row.
+DROP POLICY IF EXISTS properties_tenant_isolation ON properties;
+CREATE POLICY properties_tenant_isolation ON properties
+    USING (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR is_delegated(tenant_id, id, 'property.read'))
+    WITH CHECK (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR is_delegated(tenant_id, id, 'property.write'));
+
+DROP POLICY IF EXISTS blocks_tenant_isolation ON blocks;
+CREATE POLICY blocks_tenant_isolation ON blocks
+    USING (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR is_delegated(tenant_id, property_id, 'property.read'))
+    WITH CHECK (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR is_delegated(tenant_id, property_id, 'property.write'));
+
+-- Unit granularity, not property granularity. is_delegated(tenant_id,
+-- property_id, …) would satisfy assertion 5 and hand a firm holding one flat
+-- every flat in the tower, which is precisely what ADR-0005's contract says a
+-- grant must not do.
+DROP POLICY IF EXISTS units_tenant_isolation ON units;
+CREATE POLICY units_tenant_isolation ON units
+    USING (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR is_delegated_unit(tenant_id, property_id, id, parent_unit_id, 'property.read'))
+    WITH CHECK (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR is_delegated_unit(tenant_id, property_id, id, parent_unit_id, 'property.write'));
+
+-- The tree is the spine every ledger entry, lease and ticket hangs from. A
+-- deleted unit orphans money; a deleted property orphans a grant scope that has
+-- no foreign key to protect it. Correction is state = 'inactive'.
+--
+-- Two locks, as with the grants: the privilege is revoked further down, and this
+-- refuses the statement even if some future migration hands it back. The table
+-- owner (a DBA at a psql prompt) remains the deliberate escape hatch.
+DROP POLICY IF EXISTS properties_no_delete ON properties;
+CREATE POLICY properties_no_delete ON properties AS RESTRICTIVE FOR DELETE USING (false);
+DROP POLICY IF EXISTS blocks_no_delete ON blocks;
+CREATE POLICY blocks_no_delete ON blocks AS RESTRICTIVE FOR DELETE USING (false);
+DROP POLICY IF EXISTS units_no_delete ON units;
+CREATE POLICY units_no_delete ON units AS RESTRICTIVE FOR DELETE USING (false);
+
+-- The reference ADR-0005 promised, as a trigger rather than a foreign key.
+--
+-- scope_id is polymorphic, so no single foreign key can constrain it — and the
+-- check that matters is one a foreign key cannot express anyway: the target must
+-- belong to the grantor. Otherwise an owner scopes a grant to a building they do
+-- not own, and the firm reads it if it ever becomes theirs.
+--
+-- SECURITY INVOKER, so the lookup runs under the writer's own row-level
+-- security. The grantor sees their own property and the scope is accepted;
+-- anybody else sees nothing and gets the same refusal as a nonexistent id,
+-- which is the correct answer to both questions.
+CREATE OR REPLACE FUNCTION delegation_scope_target() RETURNS trigger
+    LANGUAGE plpgsql AS
+$$
+BEGIN
+    IF NEW.scope_kind = 'portfolio' THEN
+        NEW.scope_property_id := NULL;
+        RETURN NEW;
+    END IF;
+
+    IF NEW.scope_kind = 'property' THEN
+        IF NOT EXISTS (SELECT 1 FROM properties p
+                        WHERE p.id = NEW.scope_id AND p.tenant_id = NEW.tenant_id) THEN
+            RAISE EXCEPTION 'grant scope names property % which is not the grantor''s', NEW.scope_id
+                USING ERRCODE = 'foreign_key_violation';
+        END IF;
+        NEW.scope_property_id := NEW.scope_id;
+        RETURN NEW;
+    END IF;
+
+    -- 'unit'. The containing property is stamped here so that is_delegated()
+    -- never reads units from inside a policy.
+    SELECT u.property_id INTO NEW.scope_property_id
+      FROM units u
+     WHERE u.id = NEW.scope_id AND u.tenant_id = NEW.tenant_id;
+    IF NEW.scope_property_id IS NULL THEN
+        RAISE EXCEPTION 'grant scope names unit % which is not the grantor''s', NEW.scope_id
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+COMMENT ON FUNCTION delegation_scope_target() IS
+    'ADR-0009 §4. Validates a grant scope against the grantor''s own tree and stamps scope_property_id.';
+
+DROP TRIGGER IF EXISTS delegation_grant_scopes_target ON delegation_grant_scopes;
+CREATE TRIGGER delegation_grant_scopes_target
+    BEFORE INSERT OR UPDATE OF scope_kind, scope_id ON delegation_grant_scopes
+    FOR EACH ROW EXECUTE FUNCTION delegation_scope_target();
+
+-- The property module writes the tree; every other module reads it, because
+-- every other module's rows point into it. Same reasoning as the grants tables:
+-- is_delegated_unit() runs under the caller's privileges, and a role without
+-- SELECT would turn a policy into an error instead of an empty result.
+GRANT SELECT, INSERT, UPDATE ON properties, blocks, units TO dwellm8_property;
+GRANT SELECT ON properties, blocks, units TO dwellm8_identity, dwellm8_lease,
+    dwellm8_money, dwellm8_maintenance, dwellm8_community, dwellm8_discovery,
+    dwellm8_notify;
+GRANT EXECUTE ON FUNCTION current_active_grant(uuid, text) TO dwellm8_identity,
+    dwellm8_property, dwellm8_lease, dwellm8_money, dwellm8_maintenance,
+    dwellm8_community, dwellm8_discovery, dwellm8_notify;
+GRANT EXECUTE ON FUNCTION is_delegated_unit(uuid, uuid, uuid, uuid, text) TO dwellm8_identity,
+    dwellm8_property, dwellm8_lease, dwellm8_money, dwellm8_maintenance,
+    dwellm8_community, dwellm8_discovery, dwellm8_notify;
+
+-- ===========================================================================
 -- app and platform roles
 -- ===========================================================================
 
@@ -444,6 +847,8 @@ GRANT EXECUTE ON FUNCTION current_tenant_id() TO dwellm8_app;
 GRANT EXECUTE ON FUNCTION is_platform_session() TO dwellm8_app;
 GRANT EXECUTE ON FUNCTION current_grant_id() TO dwellm8_app;
 GRANT EXECUTE ON FUNCTION is_delegated(uuid, uuid, text) TO dwellm8_app;
+GRANT EXECUTE ON FUNCTION current_active_grant(uuid, text) TO dwellm8_app;
+GRANT EXECUTE ON FUNCTION is_delegated_unit(uuid, uuid, uuid, uuid, text) TO dwellm8_app;
 
 -- After the blanket grant above, not before it, or it would hand DELETE straight
 -- back. A grant is history the moment it exists: the RESTRICTIVE policy refuses
@@ -451,6 +856,10 @@ GRANT EXECUTE ON FUNCTION is_delegated(uuid, uuid, text) TO dwellm8_app;
 -- policy at all. Two locks, because the record of who was allowed to touch an
 -- owner's property is exactly what a bad actor would want gone.
 REVOKE DELETE ON delegation_grants, delegation_grant_scopes FROM dwellm8_app;
+
+-- And the tree, for the reason written above its RESTRICTIVE policies: a
+-- deleted unit orphans the money posted against it. ADR-0009.
+REVOKE DELETE ON properties, blocks, units FROM dwellm8_app;
 
 -- No ALTER ROLE ... NOBYPASSRLS here: changing the attribute at all requires
 -- superuser, which this job does not have and should not want. The roles are
@@ -523,7 +932,10 @@ BEGIN
     -- 5. A table that is property-scoped must say so in its policy. Passing
     --    NULL for row_property, or omitting the delegated branch entirely,
     --    silently widens a two-unit grant to the grantor's whole portfolio.
-    --    This bites the first time a module lands a property_id (ADR-0009).
+    --    This bit for the first time with ADR-0009's blocks table, as predicted.
+    --
+    --    is_delegated_unit() also satisfies it, and is strictly stronger: it
+    --    checks the exact unit. A table that has both columns should use it.
     SELECT string_agg(DISTINCT c.relname, ', ') INTO offending
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -534,10 +946,40 @@ BEGIN
       AND NOT EXISTS (
           SELECT 1 FROM pg_policies p
            WHERE p.schemaname = 'public' AND p.tablename = c.relname
-             AND p.qual LIKE '%is_delegated(%property_id%');
+             AND (p.qual LIKE '%is_delegated(%property_id%'
+               OR p.qual LIKE '%is_delegated_unit(%property_id%'));
     IF offending IS NOT NULL THEN
         RAISE EXCEPTION 'table(s) with property_id whose policy does not pass it to is_delegated(): % '
                         '— a scoped grant would widen to the whole portfolio', offending;
+    END IF;
+
+    -- 6. And the same one level down. A table that identifies a unit must be
+    --    judged at unit granularity, or a mandate over one flat reads every flat
+    --    in the tower — which assertion 5 would happily allow, because
+    --    property_id is passed and the check is honest about the wrong thing.
+    --
+    --    units itself is included by name: its unit column is `id`, so no column
+    --    scan finds it, and it is the table where getting this wrong matters
+    --    most. ADR-0009 §4.
+    SELECT string_agg(DISTINCT t, ', ') INTO offending
+    FROM (
+        SELECT c.relname AS t
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN information_schema.columns col
+          ON col.table_schema = 'public' AND col.table_name = c.relname
+         AND col.column_name = 'unit_id'
+        WHERE n.nspname = 'public' AND c.relkind = 'r'
+        UNION
+        SELECT 'units'
+    ) unit_tables
+    WHERE NOT EXISTS (
+        SELECT 1 FROM pg_policies p
+         WHERE p.schemaname = 'public' AND p.tablename = unit_tables.t
+           AND p.qual LIKE '%is_delegated_unit(%');
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'table(s) identifying a unit whose policy does not use is_delegated_unit(): % '
+                        '— a one-unit mandate would read every unit in the property', offending;
     END IF;
 END
 $$;
