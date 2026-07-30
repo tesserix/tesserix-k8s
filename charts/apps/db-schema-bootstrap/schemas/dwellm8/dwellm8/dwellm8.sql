@@ -1432,6 +1432,12 @@ REVOKE UPDATE, DELETE ON journal_entries, ledger_postings FROM dwellm8_app;
 REVOKE INSERT, UPDATE, DELETE ON ledger_accounts, posting_templates,
     posting_template_lines FROM dwellm8_app;
 
+-- GRANT ... ON ALL TABLES covers views too, so the blanket grant above handed
+-- out INSERT, UPDATE and DELETE on a balances view. PostgreSQL would refuse all
+-- three anyway — an aggregate view is not updatable — but a privilege list that
+-- claims a balance can be written is a privilege list nobody can review.
+REVOKE INSERT, UPDATE, DELETE ON ledger_balances FROM dwellm8_app;
+
 -- No ALTER ROLE ... NOBYPASSRLS here: changing the attribute at all requires
 -- superuser, which this job does not have and should not want. The roles are
 -- created without it, and the guard that matters is the assertion in
