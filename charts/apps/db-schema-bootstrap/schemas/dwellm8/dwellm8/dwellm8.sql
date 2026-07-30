@@ -1055,9 +1055,13 @@ CREATE TABLE IF NOT EXISTS journal_entries (
     -- the link lives on the correcting row, so an immutable table stays
     -- immutable. ADR-0006 §3.
     reverses_entry_id uuid REFERENCES journal_entries(id),
+    -- Kept in step with domain.ReversalReasons() by the store contract test. Like
+    -- journal_entries_kind, this clause only reaches a fresh database, so a new
+    -- reason also needs the migration at the foot of this file.
     reversal_reason   text CHECK (reversal_reason IS NULL OR reversal_reason IN (
                         'duplicate', 'wrong_amount', 'wrong_account', 'wrong_party',
-                        'wrong_period', 'provider_chargeback', 'operator_error', 'settlement_mismatch')),
+                        'wrong_period', 'provider_chargeback', 'operator_error',
+                        'settlement_mismatch', 'workflow_compensated')),
 
     memo            text,
     created_at      timestamptz NOT NULL DEFAULT now(),
@@ -1466,10 +1470,12 @@ CREATE TABLE IF NOT EXISTS payments (
     CONSTRAINT payments_entry_fkey FOREIGN KEY (entry_id, tenant_id)
         REFERENCES journal_entries (id, tenant_id),
     CONSTRAINT payments_amount_representable CHECK (amount_minor <= 9007199254740991),
-    -- A captured payment that posted nothing is money the ledger does not know
-    -- about; a settled one likewise. Before capture there is nothing to post.
-    CONSTRAINT payments_captured_has_entry CHECK (
-        status NOT IN ('captured', 'settled') OR entry_id IS NOT NULL)
+    -- payments_captured_has_entry — a captured payment that posted nothing is money
+    -- the ledger does not know about — is added in the "load-bearing rules" block
+    -- below rather than here. Not a style choice: a CHECK in this position never
+    -- reaches a database that already has the table, and this is one of the rules
+    -- assertion 13 refuses to boot without.
+    CONSTRAINT payments_amount_positive CHECK (amount_minor > 0)
 );
 
 COMMENT ON TABLE payments IS
@@ -1718,9 +1724,9 @@ CREATE TABLE IF NOT EXISTS settlement_batches (
     -- tomorrow. Stated in the database as well as in Go, because the failure it
     -- prevents is one where our own numbers are the ones that are wrong, and a
     -- guard that only exists in the code that got it wrong is not a guard.
-    CONSTRAINT settlement_batches_adds_up CHECK (
-        net_minor = gross_minor - refund_minor - fee_minor - tax_minor)
+    CONSTRAINT settlement_batches_currency_known CHECK (currency = 'INR')
 );
+-- settlement_batches_adds_up is in the "load-bearing rules" block below.
 
 COMMENT ON TABLE settlement_batches IS
     'ADR-0012. One payout from one aggregator account. Platform-owned: a batch spans every organisation that collected that day.';
@@ -1799,11 +1805,9 @@ CREATE TABLE IF NOT EXISTS settlement_lines (
     -- supports.
     CONSTRAINT settlement_lines_attribution_shape CHECK (
         (payment_id IS NULL) = (tenant_id IS NULL)),
-    -- ADR-0012 §5. Two classes may post and four may not, and this is the half of
-    -- that rule the database holds: a line that did not reconcile cannot have
-    -- caused an entry, whatever the code believed.
-    CONSTRAINT settlement_lines_only_matched_lines_post CHECK (
-        entry_id IS NULL OR match_class IN ('exact', 'fee_adjusted'))
+    -- settlement_lines_only_matched_lines_post is in the "load-bearing rules" block
+    -- below: ADR-0012 §5's half of "two classes may post and four may not".
+    CONSTRAINT settlement_lines_settled_on_known CHECK (settled_on IS NOT NULL)
 );
 
 COMMENT ON TABLE settlement_lines IS
@@ -1987,10 +1991,10 @@ CREATE TABLE IF NOT EXISTS reconciliation_runs (
 
     CONSTRAINT reconciliation_runs_completion_shape CHECK (
         (state IN ('running')) = (completed_at IS NULL)),
-    -- A day whose file never arrived is not reconciled, however clean the
-    -- comparison over nothing looked.
-    CONSTRAINT reconciliation_runs_reconciled_saw_the_file CHECK (
-        state NOT IN ('reconciled', 'drift') OR file_present)
+    -- reconciliation_runs_reconciled_saw_the_file is in the "load-bearing rules"
+    -- block below: a day whose file never arrived is not reconciled, however clean
+    -- the comparison over nothing looked.
+    CONSTRAINT reconciliation_runs_dates_known CHECK (as_of_date IS NOT NULL)
 );
 
 COMMENT ON TABLE reconciliation_runs IS
@@ -2126,6 +2130,254 @@ GRANT EXECUTE ON FUNCTION settlement_age_bucket(interval) TO dwellm8_app;
 GRANT SELECT ON settlement_drift TO dwellm8_lease, dwellm8_property;
 
 -- ===========================================================================
+-- durable operations (ADR-0015)
+-- ===========================================================================
+
+-- Temporal is the executor. These tables are the record, and the distinction is
+-- the whole of ADR-0015 §7.
+--
+-- A Temporal namespace keeps history for days — HomeChef's is 168 hours — and a
+-- support call about a payout from last month has to have something to look at.
+-- More than that: a workflow's history is a log of activity results, not an
+-- account of what happened to somebody's money. So every durable operation records
+-- its own progress here, in tables that outlive the namespace's retention and can
+-- be read by the organisation whose money it is.
+--
+--   workflow_runs   one durable operation, and where it got to
+--   workflow_steps  its steps and compensations, with the idempotency key each used
+--
+-- Both are ordinary tenant-scoped tables under ADR-0003, not platform-owned like
+-- ADR-0012's. A platform-wide operation — the nightly reconciliation — carries the
+-- platform organisation, exactly as ADR-0002 §1 requires of a platform-level event.
+-- That keeps tenant_id NOT NULL and keeps these two off assertion 12's list, where
+-- they would have needed the nullable-tenant argument for no benefit.
+
+-- The platform organisation that a platform-wide run belongs to is seeded in the
+-- data-migrations section, not here: it is a row, and a row written by this file
+-- needs the row-level security window that section exists for.
+
+CREATE TABLE IF NOT EXISTS workflow_runs (
+    id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id      uuid NOT NULL REFERENCES organisations(id),
+
+    -- The operation, from the list ADR-0015 §2 derives from its rule. Not a CHECK
+    -- against a fixed set: the list lives in Go, where each entry carries the
+    -- clause of the rule that put it there, and the store contract test compares
+    -- the two. A CHECK here would be a third copy.
+    operation      text NOT NULL,
+    task_queue     text NOT NULL,
+
+    -- The deterministic Temporal id, `dwellm8:<operation>:<subject>`. UNIQUE, and
+    -- that is the same guarantee ADR-0011 §2 gets from an index: starting the same
+    -- operation for the same subject twice collides rather than producing a second
+    -- workflow. A support agent constructs this from a payout id rather than
+    -- searching for it, which is why it is derived and not generated.
+    workflow_id    text NOT NULL,
+    -- Temporal's own run id, for the operator who does have namespace access. It
+    -- changes on a continue-as-new, so it is recorded and never relied on.
+    temporal_run_id text,
+
+    subject_kind   text NOT NULL,
+    subject_id     text NOT NULL,
+    -- ADR-0002's chain, so a support call can walk from a tenant's tap to the
+    -- owner's payout.
+    correlation_id text,
+
+    state          text NOT NULL DEFAULT 'running' CHECK (state IN (
+                       'running', 'completed', 'compensating', 'compensated', 'escalated')),
+
+    -- ADR-0015 §4, made structural. Once the irreversible step has begun this is
+    -- true forever, and the constraint below is what the flag is for.
+    past_no_return boolean NOT NULL DEFAULT false,
+
+    -- Where it got to, for the support call. The step name, not a percentage.
+    last_step      text,
+    failed_step    text,
+    failure_reason text,
+
+    -- Escalation is not failure: it is a run waiting for a person. It carries a
+    -- reason for the same purpose ADR-0012's drift resolution does — a row somebody
+    -- closed is not a row somebody explained.
+    escalated_at     timestamptz,
+    escalation_reason text,
+
+    started_at     timestamptz NOT NULL DEFAULT now(),
+    updated_at     timestamptz NOT NULL DEFAULT now(),
+    completed_at   timestamptz,
+
+    -- workflow_runs_compensated_means_reversible — a run that passed the point of no
+    -- return cannot have been compensated — is in the "load-bearing rules" block
+    -- below, where it reaches a database that already has this table.
+    CONSTRAINT workflow_runs_escalation_shape CHECK (
+        (state = 'escalated') = (escalated_at IS NOT NULL)
+        AND (state = 'escalated') = (escalation_reason IS NOT NULL)),
+    CONSTRAINT workflow_runs_completion_shape CHECK (
+        (state IN ('running', 'compensating')) = (completed_at IS NULL))
+);
+
+COMMENT ON TABLE workflow_runs IS
+    'ADR-0015 §7. One durable operation. Temporal is the executor; this is the record, because a namespace keeps history for days and a dispute lasts longer.';
+COMMENT ON COLUMN workflow_runs.past_no_return IS
+    'True once the irreversible step has begun. A run with this set may not be recorded as compensated — nothing after that point can be undone.';
+
+-- The idempotency of starting. A producer-side retry — a double-tapped button, a
+-- redelivered event, a replayed queue — finds this row rather than making a second.
+CREATE UNIQUE INDEX IF NOT EXISTS workflow_runs_workflow_idx
+    ON workflow_runs (workflow_id);
+-- "What is this payout doing" — the support call, from the subject rather than the
+-- workflow id.
+CREATE INDEX IF NOT EXISTS workflow_runs_subject_idx
+    ON workflow_runs (tenant_id, subject_kind, subject_id);
+-- "What needs a person" — the escalation queue, and the only screen in this
+-- subsystem somebody is meant to be looking at.
+CREATE INDEX IF NOT EXISTS workflow_runs_escalated_idx
+    ON workflow_runs (operation, escalated_at) WHERE state = 'escalated';
+-- "What is still in flight, and since when" — the stuck-workflow sweep. A run that
+-- has been running longer than its operation's budget is the edge case ADR-0015's
+-- story names, and this is the index that finds it.
+CREATE INDEX IF NOT EXISTS workflow_runs_inflight_idx
+    ON workflow_runs (operation, started_at) WHERE state IN ('running', 'compensating');
+CREATE INDEX IF NOT EXISTS workflow_runs_correlation_idx
+    ON workflow_runs (correlation_id) WHERE correlation_id IS NOT NULL;
+
+-- The state machine, in the schema as well as in Go, for the reason ADR-0011 §3
+-- gives: an out-of-order update must be refused even on a path that never went
+-- through Go, and the contract test evaluates this function over every ordered
+-- pair.
+--
+-- from = to is permitted and is the point: a step recorded twice asks for the state
+-- the run is already in.
+CREATE OR REPLACE FUNCTION workflow_transition_allowed(from_state text, to_state text)
+    RETURNS boolean LANGUAGE sql IMMUTABLE PARALLEL SAFE AS
+$$
+    SELECT from_state = to_state
+        OR (from_state, to_state) IN (
+            ('running',      'completed'),
+            ('running',      'compensating'),
+            -- Straight to escalated: a step that failed after the point of no
+            -- return never compensates, so it never passes through compensating.
+            ('running',      'escalated'),
+            ('compensating', 'compensated'),
+            -- A compensation that could not be applied. The worst state in the
+            -- system, and the only one that pages somebody.
+            ('compensating', 'escalated'))
+$$;
+
+COMMENT ON FUNCTION workflow_transition_allowed(text, text) IS
+    'ADR-0015 §5. Forward-only. Terminal states absorb, and from = to is a permitted no-op so a step recorded twice needs no special case.';
+
+CREATE OR REPLACE FUNCTION workflow_runs_forward_only() RETURNS trigger
+    LANGUAGE plpgsql AS
+$$
+BEGIN
+    IF NOT workflow_transition_allowed(OLD.state, NEW.state) THEN
+        RAISE EXCEPTION 'workflow run % cannot go from % to %',
+            OLD.workflow_id, OLD.state, NEW.state USING ERRCODE = 'check_violation';
+    END IF;
+    -- Monotonic. A run that has passed the point of no return has passed it
+    -- forever, and clearing the flag would let the constraint above be satisfied
+    -- by editing the evidence rather than by the world being reversible.
+    IF OLD.past_no_return AND NOT NEW.past_no_return THEN
+        RAISE EXCEPTION 'workflow run % cannot un-pass the point of no return: the irreversible step '
+                        'either began or it did not', OLD.workflow_id
+            USING ERRCODE = 'check_violation';
+    END IF;
+    NEW.updated_at := now();
+    RETURN NEW;
+END
+$$;
+
+DROP TRIGGER IF EXISTS workflow_runs_forward ON workflow_runs;
+CREATE TRIGGER workflow_runs_forward
+    BEFORE UPDATE ON workflow_runs
+    FOR EACH ROW EXECUTE FUNCTION workflow_runs_forward_only();
+
+-- One row per step per direction, carrying the idempotency key it presented.
+--
+-- This is the trail that answers "was the tenant charged twice" after the Temporal
+-- history has expired. The key is stored rather than recomputed because the answer
+-- has to be what was actually sent, not what today's code would send.
+CREATE TABLE IF NOT EXISTS workflow_steps (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id          uuid NOT NULL REFERENCES workflow_runs(id),
+    tenant_id       uuid NOT NULL REFERENCES organisations(id),
+
+    seq             int  NOT NULL CHECK (seq >= 0),
+    step            text NOT NULL,
+    -- 'do' or 'undo'. A step and its compensation are two rows, so the trail reads
+    -- as what happened rather than as a final state.
+    direction       text NOT NULL CHECK (direction IN ('do', 'undo')),
+
+    idempotency_key text NOT NULL,
+    outcome         text NOT NULL DEFAULT 'running'
+                    CHECK (outcome IN ('running', 'succeeded', 'failed')),
+    -- Attempts, because "it eventually worked" and "it worked first time" are
+    -- different facts about a provider, and only one of them is worth an alert.
+    attempts        int  NOT NULL DEFAULT 1 CHECK (attempts >= 1),
+    error           text,
+
+    started_at      timestamptz NOT NULL DEFAULT now(),
+    finished_at     timestamptz,
+
+    CONSTRAINT workflow_steps_outcome_shape CHECK (
+        (outcome = 'running') = (finished_at IS NULL)),
+    CONSTRAINT workflow_steps_error_shape CHECK (
+        outcome = 'failed' OR error IS NULL)
+);
+
+COMMENT ON TABLE workflow_steps IS
+    'ADR-0015 §7. Each step and compensation, with the idempotency key it presented. Outlives Temporal''s retention, which is what a dispute needs.';
+
+-- A retry updates its row rather than adding one. Without this, an activity retried
+-- forty times over a day reads as forty steps and the trail becomes unreadable
+-- exactly when somebody needs it.
+CREATE UNIQUE INDEX IF NOT EXISTS workflow_steps_unique
+    ON workflow_steps (run_id, step, direction);
+CREATE INDEX IF NOT EXISTS workflow_steps_run_idx
+    ON workflow_steps (run_id, seq);
+-- "Which step presented this key" — the question a provider's support desk asks.
+CREATE INDEX IF NOT EXISTS workflow_steps_key_idx
+    ON workflow_steps (idempotency_key);
+
+ALTER TABLE workflow_runs  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workflow_runs  FORCE  ROW LEVEL SECURITY;
+ALTER TABLE workflow_steps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workflow_steps FORCE  ROW LEVEL SECURITY;
+
+-- Ordinary ADR-0003 isolation, with no delegated branch.
+--
+-- The omission is deliberate and is worth stating: a run carries no property_id, so
+-- there is nothing for is_delegated_unit() to be judged against, and adding a
+-- grant-level branch would hand a management firm every durable operation of the
+-- owner that granted it — including payouts to that owner's bank account, which is
+-- not the firm's business. A firm sees the payments and the drift for the units it
+-- manages; how the money was moved is between the owner and the platform.
+DROP POLICY IF EXISTS workflow_runs_tenant_isolation ON workflow_runs;
+CREATE POLICY workflow_runs_tenant_isolation ON workflow_runs
+    USING (tenant_id = current_tenant_id() OR is_platform_session())
+    WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
+
+DROP POLICY IF EXISTS workflow_steps_tenant_isolation ON workflow_steps;
+CREATE POLICY workflow_steps_tenant_isolation ON workflow_steps
+    USING (tenant_id = current_tenant_id() OR is_platform_session())
+    WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
+
+-- Nothing here may be deleted. A run that escalated and a step that failed are the
+-- evidence in the dispute that follows, and the reason this record exists rather
+-- than relying on Temporal's is precisely that it has to survive.
+DROP POLICY IF EXISTS workflow_runs_no_delete ON workflow_runs;
+CREATE POLICY workflow_runs_no_delete ON workflow_runs AS RESTRICTIVE FOR DELETE USING (false);
+DROP POLICY IF EXISTS workflow_steps_no_delete ON workflow_steps;
+CREATE POLICY workflow_steps_no_delete ON workflow_steps AS RESTRICTIVE FOR DELETE USING (false);
+
+-- Money owns durable operations, because every operation on the list is a money or
+-- document operation. Every other module reads: a lease screen shows whether the
+-- deposit refund is in flight, and a support console shows why it is not.
+GRANT SELECT, INSERT, UPDATE ON workflow_runs, workflow_steps TO dwellm8_money;
+GRANT SELECT ON workflow_runs, workflow_steps TO dwellm8_lease, dwellm8_property,
+    dwellm8_identity, dwellm8_notify;
+
+-- ===========================================================================
 -- app and platform roles
 -- ===========================================================================
 
@@ -2219,6 +2471,11 @@ REVOKE DELETE ON payments, payment_events FROM dwellm8_app;
 REVOKE DELETE ON settlement_batches, settlement_lines, settlement_drift,
     reconciliation_runs FROM dwellm8_app;
 REVOKE UPDATE ON settlement_batches FROM dwellm8_app;
+
+-- ADR-0015. A run that escalated and a step that failed are the evidence in the
+-- dispute that follows, and the reason this record exists rather than relying on
+-- Temporal's is precisely that it has to survive longer than a retention window.
+REVOKE DELETE ON workflow_runs, workflow_steps FROM dwellm8_app;
 
 -- The ageing view, for the reason ledger_balances is revoked below: GRANT ... ON
 -- ALL TABLES covers views, and a privilege list that claims an aggregate can be
@@ -2326,6 +2583,165 @@ BEGIN
         'settlement_with_fee', 'clearing_write_off',
         'deposit_collection', 'deposit_refund', 'payout', 'platform_fee',
         'gst_remittance', 'refund', 'write_off', 'reversal'));
+END
+$$;
+
+-- ADR-0015. The platform organisation, which ADR-0002 §1 has assumed since it was
+-- written and nothing ever created.
+--
+-- Found while wiring the durable-operations tables: every platform-level fact in
+-- ADR-0002 carries "the platform organisation", workflow_runs.tenant_id has a
+-- foreign key to organisations, and there was no such row. The first platform-level
+-- event would have failed that key in production, having passed every test that
+-- never wrote one.
+--
+-- It is here, in the scoped window, because the section above this one explains
+-- exactly why: the bootstrap connects as the table owner, FORCE row level security
+-- applies to the owner, and no app.tenant_id is set, so every policy evaluates
+-- false. Measured — as an inline INSERT beside the table definitions it fails the
+-- whole bootstrap:
+--
+--   ERROR:  new row violates row-level security policy for table "organisations"
+--
+-- Which is the same cause as the silent UPDATE 0 described above and the opposite
+-- symptom. The loud one is the better failure, and it is only loud because an
+-- INSERT is judged by WITH CHECK rather than filtered by USING.
+--
+-- The uuid is the one internal/money/domain already uses as the platform *party*
+-- on ledger postings. One number for one actor: two magic uuids that both mean
+-- "us" is a thing every reader has to look up.
+DO $$
+BEGIN
+    ALTER TABLE organisations NO FORCE ROW LEVEL SECURITY;
+
+    INSERT INTO organisations (id, slug, name, kind, state)
+    VALUES ('00000000-0000-0000-0000-0000000000d8', 'dwellm8-platform', 'Dwellm8', 'platform', 'active')
+    ON CONFLICT (id) DO NOTHING;
+
+    ALTER TABLE organisations FORCE ROW LEVEL SECURITY;
+END
+$$;
+
+-- ADR-0015. Widen journal_entries_reversal_reason_check for `workflow_compensated`.
+--
+-- Same reason and same shape as the entry_kind migration above: the inline clause
+-- in CREATE TABLE IF NOT EXISTS never reaches a database that already exists, so
+-- without this the first compensating reversal would be refused in production by a
+-- constraint every test had seen the wider version of.
+--
+-- The reason is its own rather than operator_error because nobody made an error: the
+-- entry was correct when it was posted and a later step of the same operation
+-- failed. ADR-0015 §4.
+DO $$
+BEGIN
+    ALTER TABLE journal_entries DROP CONSTRAINT IF EXISTS journal_entries_reversal_reason_check;
+    ALTER TABLE journal_entries ADD CONSTRAINT journal_entries_reversal_reason_check
+        CHECK (reversal_reason IS NULL OR reversal_reason IN (
+            'duplicate', 'wrong_amount', 'wrong_account', 'wrong_party',
+            'wrong_period', 'provider_chargeback', 'operator_error',
+            'settlement_mismatch', 'workflow_compensated'));
+END
+$$;
+
+-- The load-bearing rules.
+--
+-- Every CHECK an ADR argues for at length lives here rather than inside its
+-- CREATE TABLE, and this block is the third and last entry in this file's longest-
+-- running trap: **a CHECK written inside CREATE TABLE IF NOT EXISTS is skipped
+-- entirely on a database that already has the table.** The file replays, exits 0,
+-- reports nothing, and the constraint is simply absent — present in CI, where every
+-- database is fresh, and missing in the one place it matters.
+--
+-- Measured, on a database where one had been dropped by hand:
+--
+--   $ psql -v ON_ERROR_STOP=1 -f dwellm8.sql      # exit 0, no output
+--   $ SELECT count(*) FROM pg_constraint
+--       WHERE conname = 'workflow_runs_compensated_means_reversible';
+--     0
+--
+-- The two vocabulary migrations above (journal_entries_kind, and the reversal
+-- reasons) were the first two times it bit, and both were fixed one at a time. This
+-- block is the structural version: one definition per rule, in a position that
+-- reaches every database, and assertion 13 fails the bootstrap if any of them is
+-- absent afterwards. Duplicating them — inline *and* here — was the obvious fix and
+-- is worse: two definitions of one rule drift, and the one that runs is the one
+-- nobody reads.
+--
+-- ADD CONSTRAINT has no IF NOT EXISTS, hence the guard on each.
+--
+-- And it validates the rows already there, which is the second thing this block has
+-- to handle. A constraint that went missing let data in that violates it, so adding
+-- it back fails — and failing here would take every unrelated statement below down
+-- with it, on every bootstrap, forever. ADR-0009's backfill hit the same wall and
+-- set the precedent: count the offending rows and RAISE WARNING rather than
+-- aborting. Measured:
+--
+--   ERROR:  check constraint "workflow_runs_compensated_means_reversible" of
+--           relation "workflow_runs" is violated by some row
+--
+-- Assertion 13 still fails and still names the constraint, which is the outcome
+-- wanted: loud and specific, without holding the rest of the schema hostage to rows
+-- somebody has to look at.
+--
+-- `WHERE NOT (expr)` is the right test rather than `WHERE expr IS NOT TRUE`: a CHECK
+-- is satisfied by NULL, and so is this.
+--
+-- And the count needs the row-level security window, which is this file's oldest
+-- trap biting the guard written for its second-oldest. The first version counted
+-- without one: the bootstrap connects as the owner, FORCE row level security applies
+-- to the owner, and no app.tenant_id is set — so the count came back 0 from a table
+-- with a violating row in it, the block decided the table was clean, and the ALTER
+-- failed anyway because DDL validates every row regardless of any policy. The
+-- symptom was the error this block exists to avoid, produced by the check meant to
+-- avoid it.
+DO $$
+DECLARE
+    r record;
+    bad bigint;
+BEGIN
+    FOR r IN
+        SELECT * FROM (VALUES
+            -- ADR-0011 §3. Money the provider has and the ledger does not know
+            -- about is the exact shape of the defect that subsystem prevents.
+            ('payments', 'payments_captured_has_entry',
+             $c$status NOT IN ('captured', 'settled') OR entry_id IS NOT NULL$c$),
+
+            -- ADR-0012 §2. A file we parsed wrong must not be able to look like a
+            -- file we disagree with.
+            ('settlement_batches', 'settlement_batches_adds_up',
+             $c$net_minor = gross_minor - refund_minor - fee_minor - tax_minor$c$),
+
+            -- ADR-0012 §5. A line that did not reconcile cannot have caused an
+            -- entry, whatever the code believed.
+            ('settlement_lines', 'settlement_lines_only_matched_lines_post',
+             $c$entry_id IS NULL OR match_class IN ('exact', 'fee_adjusted')$c$),
+
+            -- ADR-0012 §8. A comparison over no lines looks perfectly clean.
+            ('reconciliation_runs', 'reconciliation_runs_reconciled_saw_the_file',
+             $c$state NOT IN ('reconciled', 'drift') OR file_present$c$),
+
+            -- ADR-0015 §4. Recording a compensation after money has left says the
+            -- world was put back, and every report downstream believes it.
+            ('workflow_runs', 'workflow_runs_compensated_means_reversible',
+             $c$state <> 'compensated' OR NOT past_no_return$c$)
+        ) AS t(tbl, name, expr)
+    LOOP
+        CONTINUE WHEN EXISTS (SELECT 1 FROM pg_constraint WHERE conname = r.name);
+
+        -- The scoped window, as in every other data-touching statement in this
+        -- section. One transaction, so a failure restores FORCE with the rollback.
+        EXECUTE format('ALTER TABLE %I NO FORCE ROW LEVEL SECURITY', r.tbl);
+        EXECUTE format('SELECT count(*) FROM %I WHERE NOT (%s)', r.tbl, r.expr) INTO bad;
+        EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', r.tbl);
+        IF bad > 0 THEN
+            RAISE WARNING '% row(s) in % violate %, so it is not being added. Those rows were '
+                          'written while the rule was absent and need a decision, not a migration; '
+                          'assertion 13 will fail until they are dealt with.', bad, r.tbl, r.name;
+        ELSE
+            EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I CHECK (%s)', r.tbl, r.name, r.expr);
+            RAISE NOTICE 'added missing constraint %.%', r.tbl, r.name;
+        END IF;
+    END LOOP;
 END
 $$;
 
@@ -2604,6 +3020,58 @@ BEGIN
         RAISE EXCEPTION 'table(s) whose rows may belong to no organisation and whose writes are not '
                         'platform-only: % — on such a table tenant_id = current_tenant_id() constrains '
                         'nothing, so any organisation could write a row belonging to none', offending;
+    END IF;
+
+    -- 13. The constraints and triggers this file's ADRs actually depend on, asserted
+    --     by name.
+    --
+    --     This exists because of the trap the migrations section is now three
+    --     entries long for: a CHECK written inside CREATE TABLE IF NOT EXISTS never
+    --     reaches a database that already has the table. The file replays, reports
+    --     nothing, and the constraint is simply absent — present in CI, where every
+    --     database is fresh, and missing in the one place it matters.
+    --
+    --     Measured on a database where workflow_runs_compensated_means_reversible
+    --     had been dropped: replay exit 0, constraint count 0.
+    --
+    --     A named list is the honest shape. It cannot be derived — there is no way
+    --     to ask PostgreSQL which constraints a file meant to create — so this is a
+    --     list somebody maintains, and the thing that makes it worth having is that
+    --     it fails the bootstrap rather than a review. Each entry is a rule an ADR
+    --     argues for at length, not every constraint in the file: a list of
+    --     everything would be a second copy of the schema and would rot.
+    --
+    --     It does not catch a replay that aborted half way — that case is already
+    --     loud, because the job fails. It catches the quiet one.
+    SELECT string_agg(want, ', ') INTO offending
+    FROM unnest(ARRAY[
+        -- ADR-0006 §3: the ledger balances, and an entry has lines.
+        'ledger_postings_balance',
+        'journal_entries_have_postings',
+        -- ADR-0007: money is representable, and the currency is one.
+        'journal_entries_kind',
+        'journal_entries_reversal_reason_check',
+        -- ADR-0011 §3: a payment walks forward, and a captured one posted.
+        'payments_forward_only',
+        'payments_captured_has_entry',
+        -- ADR-0012 §2 and §5: a settlement file adds up, and an unreconciled line
+        -- posts nothing.
+        'settlement_batches_adds_up',
+        'settlement_lines_only_matched_lines_post',
+        'reconciliation_runs_counters',
+        'reconciliation_runs_reconciled_saw_the_file',
+        -- ADR-0015 §4: a run past the point of no return was not compensated, and
+        -- the point of no return is monotonic.
+        'workflow_runs_compensated_means_reversible',
+        'workflow_runs_forward'
+    ]) AS want
+    WHERE NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = want)
+      AND NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = want AND NOT tgisinternal);
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'the rule(s) this schema is built on are missing: % — a CHECK inside '
+                        'CREATE TABLE IF NOT EXISTS never reaches a database that already has the '
+                        'table, so this is what a green replay with an absent constraint looks like',
+                        offending;
     END IF;
 END
 $$;
