@@ -5446,3 +5446,21 @@ ALTER TABLE public.posts
 CREATE INDEX IF NOT EXISTS ix_posts_kind_created
   ON public.posts (kind, created_at DESC)
   WHERE deleted_at IS NULL;
+
+-- Meal-plan platform fee + frozen GST rate (Home-Chef-App): a tiffin plan now charges
+-- the customer-facing platform fee on the same basis as an à la carte order
+-- (subtotal × PlatformFeePercent), so plan.total = subtotal + platform_fee + tax +
+-- delivery. platform_fee MUST be stored, not derived: the per-day delivery share is
+-- computed as total − subtotal − platform_fee − tax, and delivery is refundable on a
+-- customer-initiated skip while the platform fee is not, so a missing column would
+-- refund the platform's own fee on every skip.
+--
+-- tax_rate freezes the GST percent applied at booking. Without it the spawned per-day
+-- orders stored a non-zero tax against rate 0 and the receipt rendered "IGST (0%)"
+-- next to a real amount.
+--
+-- Both default 0, so existing plans keep their current totals untouched: an
+-- already-booked plan has no platform fee and derives delivery exactly as before.
+ALTER TABLE public.meal_plans
+  ADD COLUMN IF NOT EXISTS platform_fee numeric DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS tax_rate numeric DEFAULT 0;
