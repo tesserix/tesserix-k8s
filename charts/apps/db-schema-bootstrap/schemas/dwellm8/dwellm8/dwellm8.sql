@@ -3652,8 +3652,8 @@ GRANT SELECT, INSERT, UPDATE ON prospects, prospect_shortlist, enquiries, contac
     TO dwellm8_discovery;
 GRANT SELECT ON listings TO dwellm8_lease, dwellm8_money, dwellm8_identity, dwellm8_notify;
 GRANT SELECT, UPDATE ON enquiries TO dwellm8_property;
-GRANT DELETE ON listings, enquiries, contact_bridges, prospects, prospect_shortlist
-    TO dwellm8_purge;
+-- The purge grant for these tables is with the others, after dwellm8_purge is created:
+-- this file is applied top to bottom and the role does not exist yet here.
 
 -- ===========================================================================
 -- demo sandbox (ADR-0021)
@@ -3986,6 +3986,7 @@ GRANT DELETE ON properties, blocks, units,
                 property_ownership,
                 workflow_runs, workflow_steps,
                 kyc_verifications, kyc_access_log,
+                listings, enquiries, contact_bridges, prospects, prospect_shortlist,
                 audit_events, organisations, demo_sessions
     TO dwellm8_purge;
 
