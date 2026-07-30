@@ -151,9 +151,9 @@ COMMENT ON FUNCTION is_platform_session() IS
     'True for the few cross-tenant operations. Every use is written to audit_events.';
 
 -- USING filters what a statement can see; WITH CHECK filters what it can
--- write. Without the second half, a scoped session can still insert a row
--- belonging to another organisation and then be unable to read it back —
--- which is worse than either failing or succeeding cleanly.
+-- write. PostgreSQL falls back to USING when WITH CHECK is absent, so writes
+-- are constrained either way — stating it is about being readable, and about
+-- the day the two need to differ, when the fallback would quietly be wrong.
 DROP POLICY IF EXISTS organisations_tenant_isolation ON organisations;
 CREATE POLICY organisations_tenant_isolation ON organisations
     USING (id = current_tenant_id() OR is_platform_session())
@@ -262,15 +262,15 @@ BEGIN
         RAISE EXCEPTION 'role(s) hold BYPASSRLS: % — the exemption belongs in a policy', offending;
     END IF;
 
-    -- 3. Every policy must constrain writes as well as reads. USING without
-    --    WITH CHECK lets a scoped session insert a row it cannot then read.
+    -- 3. Every policy states WITH CHECK explicitly, so a reader does not have
+    --    to know PostgreSQL's fallback rule to see that writes are constrained.
     SELECT string_agg(format('%s.%s', tablename, policyname), ', ') INTO offending
     FROM pg_policies
     WHERE schemaname = 'public'
       AND cmd = 'ALL'
       AND with_check IS NULL;
     IF offending IS NOT NULL THEN
-        RAISE EXCEPTION 'policy without WITH CHECK: % — writes are unconstrained', offending;
+        RAISE EXCEPTION 'policy without an explicit WITH CHECK: %', offending;
     END IF;
 END
 $$;
