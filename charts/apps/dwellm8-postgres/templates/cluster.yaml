@@ -113,6 +113,24 @@ spec:
   {{- end }}
 
   # =========================================================================
+  # Managed roles — the owner's password is reconciled from the secret.
+  #
+  # bootstrap.secret only applies at initdb. Without this block, rotating the
+  # secret (or creating it after the cluster already exists) leaves the role
+  # with a password nobody holds, and every client fails to authenticate with
+  # no obvious cause.
+  # =========================================================================
+  managed:
+    roles:
+      - name: {{ .Values.bootstrap.owner }}
+        ensure: present
+        login: true
+        superuser: false
+        createdb: true
+        passwordSecret:
+          name: {{ .Values.bootstrap.secret }}
+
+  # =========================================================================
   # Monitoring — built-in Prometheus exporter
   # =========================================================================
   monitoring:
