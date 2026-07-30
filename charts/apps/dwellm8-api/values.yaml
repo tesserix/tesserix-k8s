@@ -66,10 +66,12 @@ env:
   PORT: "8080"
   SHUTDOWN_GRACE_SECONDS: "20"
 
-# The database, from the CNPG cluster's app secret. The API connects as the
-# owner today; when per-module roles are adopted it connects as dwellm8_app.
+# The API connects as dwellm8_api — ADR-0003 §3's request role. Never as the
+# owner: the owner is the one role FORCE row level security exists to contain,
+# and it holds CREATEROLE for the schema bootstrap. The secret is reconciled by
+# CNPG from Secret Manager (see dwellm8-postgres applicationRoles).
 database:
-  secretName: dwellm8-postgres-app-credentials
+  secretName: dwellm8-postgres-api-credentials
   host: dwellm8-postgres-rw.dwellm8.svc.cluster.local
   port: 5432
   name: dwellm8
