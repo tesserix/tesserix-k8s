@@ -2130,6 +2130,182 @@ GRANT EXECUTE ON FUNCTION settlement_age_bucket(interval) TO dwellm8_app;
 GRANT SELECT ON settlement_drift TO dwellm8_lease, dwellm8_property;
 
 -- ===========================================================================
+-- identity verification (ADR-0013)
+-- ===========================================================================
+
+-- KYC identifiers are the highest-liability data in the platform, and the default
+-- implementation of every vendor integration stores far too much: the SDK returns the
+-- full identifier and the obvious thing to do is put it in a column.
+--
+-- So there is no column for one. What a completed verification holds is the result, a
+-- masked reference, the provider and its transaction id, a timestamp and the consent
+-- artefact — and kyc_verifications_reference_is_a_mask makes that true by construction
+-- rather than by review: the reference column will not accept anything that is not a
+-- mask, so a twelve-digit Aadhaar number cannot be put there by application code, by a
+-- migration, or at a psql prompt.
+--
+-- Three tiers, and the middle one carries a lesson the org has already paid for:
+--
+--   prohibited  never at rest in any form. The Aadhaar number.
+--   encrypted   at rest only as ciphertext, and — the half that matters — with no
+--               plaintext column beside it. HomeChef's envelope encryption is dormant
+--               precisely because its migration dual-wrote ciphertext while reads still
+--               came from the plaintext column. Encryption that leaves a plaintext
+--               column in place is a plaintext column with extra steps, and it will be
+--               read: by a report, a support query, or a backup.
+--   open        an institution's code or a public register. IFSC, GSTIN.
+--
+-- Which is why there is no `pan` column here at all. Encrypted values live in
+-- payout_credentials (a later story) as ciphertext only, and the *masked* reference is
+-- what this table holds so a screen can show which document was checked.
+
+CREATE TABLE IF NOT EXISTS kyc_verifications (
+    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id         uuid NOT NULL REFERENCES organisations(id),
+
+    -- Whose document was checked. A party rather than a user: a guarantor may have no
+    -- account here, and ADR-0006 already keeps balances per party.
+    subject_party_id  uuid NOT NULL,
+
+    kind              text NOT NULL CHECK (kind IN (
+                          'aadhaar', 'pan', 'bank_account', 'ifsc', 'upi_vpa',
+                          'passport', 'driving_licence', 'voter_id', 'gstin')),
+
+    -- The only representation of the identifier that is kept. Not a hash: the Aadhaar
+    -- space is small enough to enumerate, so a hash column is a lookup table for anybody
+    -- who takes a copy. ADR-0013 alternative D.
+    masked_reference  text NOT NULL,
+
+    result            text NOT NULL CHECK (result IN (
+                          'verified', 'failed', 'expired', 'withdrawn', 'unverified')),
+
+    -- The audit trail at the other end. If a result is disputed, this is what the
+    -- provider is asked about — and it is why a verification with no transaction id is
+    -- refused.
+    provider          text NOT NULL,
+    provider_txn_id   text NOT NULL,
+
+    -- DPDP requires a consent artefact, and a verification with no consent behind it is
+    -- one that should not have happened.
+    consent_artefact_id uuid NOT NULL,
+
+    verified_at       timestamptz NOT NULL DEFAULT now(),
+    -- Some checks go stale: a bank account changes, an address proof ages out. NULL
+    -- means it does not expire on its own.
+    expires_at        timestamptz,
+
+    created_at        timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT kyc_verifications_expiry CHECK (expires_at IS NULL OR expires_at > verified_at),
+    -- kyc_verifications_reference_is_a_mask — the constraint that makes a full identifier
+    -- unstorable — is in the "load-bearing rules" block below, not here. Written inline it
+    -- was unrecoverable: this ADR's own verification dropped it, the replay could not put
+    -- it back, and assertion 13 correctly reported a schema missing a rule it is built on.
+    -- That is the trap the block exists for, biting a constraint added in the same session
+    -- as the guard for it.
+    CONSTRAINT kyc_verifications_reference_present CHECK (length(masked_reference) > 0)
+);
+
+COMMENT ON TABLE kyc_verifications IS
+    'ADR-0013. What a completed identity check leaves behind. There is no column for a full identifier, and the reference column will not accept one.';
+COMMENT ON COLUMN kyc_verifications.masked_reference IS
+    'The only kept representation. Not a hash: the Aadhaar space is enumerable, so a hash column is a lookup table.';
+
+-- One live verification per subject per kind. A second would leave two answers to "is
+-- this person verified" with nothing to say which — and re-verification supersedes
+-- rather than accumulates.
+CREATE UNIQUE INDEX IF NOT EXISTS kyc_verifications_subject_kind_idx
+    ON kyc_verifications (tenant_id, subject_party_id, kind)
+    WHERE result = 'verified';
+CREATE INDEX IF NOT EXISTS kyc_verifications_subject_idx
+    ON kyc_verifications (tenant_id, subject_party_id);
+-- "What is about to go stale" — the re-verification sweep.
+CREATE INDEX IF NOT EXISTS kyc_verifications_expiring_idx
+    ON kyc_verifications (tenant_id, expires_at) WHERE expires_at IS NOT NULL;
+
+-- Every read of a KYC record, and why.
+--
+-- The story's edge case: support staff access is audited and time-bound. Auditing a read
+-- cannot be done by the reader — a SELECT leaves no trace — so this table is written by
+-- the service that performs the read, and the thing that makes it not merely a
+-- convention is the reason column: a read with no purpose recorded is refused, and a
+-- purpose is not something a query can invent for itself.
+--
+-- Time-bound is the `expires_at` on the access grant, not on the log: a support session
+-- is granted for a window and the window is checked at read time.
+CREATE TABLE IF NOT EXISTS kyc_access_log (
+    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id         uuid NOT NULL REFERENCES organisations(id),
+    verification_id   uuid NOT NULL REFERENCES kyc_verifications(id),
+
+    -- Who looked. actor_kind distinguishes the subject reading their own record from a
+    -- support engineer reading somebody else's, which is the distinction an audit is for.
+    actor_kind        text NOT NULL CHECK (actor_kind IN ('subject', 'owner', 'agency', 'support', 'system')),
+    actor_id          uuid,
+    -- Why. Free text is deliberate here and is the one place in this schema where it is:
+    -- a closed vocabulary of reasons becomes 'other' within a month, and an auditor
+    -- reading 'other' learns nothing. What is not optional is that it is present.
+    reason            text NOT NULL CHECK (length(btrim(reason)) >= 8),
+    -- The support grant this read was made under, when it was made under one.
+    support_grant_id  uuid,
+
+    read_at           timestamptz NOT NULL DEFAULT now(),
+
+    -- kyc_access_log_support_needs_a_grant is in the "load-bearing rules" block below: a
+    -- support read with no grant behind it is the thing an audit exists to catch.
+    -- Anything but the system names who acted.
+    CONSTRAINT kyc_access_log_names_its_actor CHECK (
+        actor_kind = 'system' OR actor_id IS NOT NULL)
+);
+
+COMMENT ON TABLE kyc_access_log IS
+    'ADR-0013. Every read of a KYC record, with a purpose. A support read requires a grant, which is what makes access time-bound.';
+
+CREATE INDEX IF NOT EXISTS kyc_access_log_verification_idx
+    ON kyc_access_log (verification_id, read_at);
+-- "What has this support engineer looked at" — the question after an incident.
+CREATE INDEX IF NOT EXISTS kyc_access_log_actor_idx
+    ON kyc_access_log (actor_kind, actor_id, read_at) WHERE actor_id IS NOT NULL;
+
+ALTER TABLE kyc_verifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE kyc_verifications FORCE  ROW LEVEL SECURITY;
+ALTER TABLE kyc_access_log    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE kyc_access_log    FORCE  ROW LEVEL SECURITY;
+
+-- Strict tenancy, and no delegated branch — which is a deliberate omission rather than
+-- an oversight.
+--
+-- A management firm holds a grant to collect rent and manage a property. Nothing about
+-- that requires reading a tenant's identity documents, and ADR-0005's permission
+-- vocabulary has no 'kyc.read' for exactly this reason. If a firm ever needs it, that is
+-- a new permission argued for in an ADR, not a widened policy.
+DROP POLICY IF EXISTS kyc_verifications_tenant_isolation ON kyc_verifications;
+CREATE POLICY kyc_verifications_tenant_isolation ON kyc_verifications
+    USING (tenant_id = current_tenant_id() OR is_platform_session())
+    WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
+
+DROP POLICY IF EXISTS kyc_access_log_tenant_isolation ON kyc_access_log;
+CREATE POLICY kyc_access_log_tenant_isolation ON kyc_access_log
+    USING (tenant_id = current_tenant_id() OR is_platform_session())
+    WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
+
+-- Neither may be deleted, and the access log may not be updated either: a log somebody
+-- can edit is not a log. A verification is mutable only in the sense that it can expire
+-- or be withdrawn, which is a result change.
+DROP POLICY IF EXISTS kyc_verifications_no_delete ON kyc_verifications;
+CREATE POLICY kyc_verifications_no_delete ON kyc_verifications AS RESTRICTIVE FOR DELETE USING (false);
+DROP POLICY IF EXISTS kyc_access_log_no_delete ON kyc_access_log;
+CREATE POLICY kyc_access_log_no_delete ON kyc_access_log AS RESTRICTIVE FOR DELETE USING (false);
+DROP POLICY IF EXISTS kyc_access_log_no_update ON kyc_access_log;
+CREATE POLICY kyc_access_log_no_update ON kyc_access_log AS RESTRICTIVE FOR UPDATE USING (false);
+
+GRANT SELECT, INSERT, UPDATE ON kyc_verifications TO dwellm8_identity;
+GRANT SELECT, INSERT ON kyc_access_log TO dwellm8_identity;
+-- Money reads whether a payee is verified before releasing a payout. It reads the
+-- result and the mask, which is all there is.
+GRANT SELECT ON kyc_verifications TO dwellm8_money, dwellm8_lease;
+
+-- ===========================================================================
 -- effective dating (ADR-0008)
 -- ===========================================================================
 
@@ -3449,7 +3625,30 @@ BEGIN
             -- ADR-0015 §4. Recording a compensation after money has left says the
             -- world was put back, and every report downstream believes it.
             ('workflow_runs', 'workflow_runs_compensated_means_reversible',
-             $c$state <> 'compensated' OR NOT past_no_return$c$)
+             $c$state <> 'compensated' OR NOT past_no_return$c$),
+
+            -- ADR-0013 §2. A full identifier does not fit in the only column that could
+            -- hold one. Per kind, because the mask of a PAN is a different shape from the
+            -- mask of an Aadhaar and a single loose pattern would accept both a mask and
+            -- the thing it was made from. The patterns come from internal/platform/pii and
+            -- the store contract test compares them.
+            ('kyc_verifications', 'kyc_verifications_reference_is_a_mask',
+             $c$CASE kind
+                WHEN 'aadhaar'         THEN masked_reference ~ '^X+[0-9A-Z]{4}$'
+                WHEN 'pan'             THEN masked_reference ~ '^X+[0-9A-Z]{4}$'
+                WHEN 'bank_account'    THEN masked_reference ~ '^X+[0-9A-Z]{4}$'
+                WHEN 'passport'        THEN masked_reference ~ '^X+[0-9A-Z]{3}$'
+                WHEN 'driving_licence' THEN masked_reference ~ '^X+[0-9A-Z]{4}$'
+                WHEN 'voter_id'        THEN masked_reference ~ '^X+[0-9A-Z]{4}$'
+                WHEN 'ifsc'            THEN masked_reference ~ '^[A-Z]{4}0[A-Z0-9]{6}$'
+                WHEN 'gstin'           THEN masked_reference ~ '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z][Z][0-9A-Z]$'
+                WHEN 'upi_vpa'         THEN masked_reference ~ '^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$'
+                END$c$),
+
+            -- ADR-0013 §5. A support read with no grant behind it is the thing an audit
+            -- exists to catch.
+            ('kyc_access_log', 'kyc_access_log_support_needs_a_grant',
+             $c$actor_kind <> 'support' OR support_grant_id IS NOT NULL$c$)
         ) AS t(tbl, name, expr)
     LOOP
         CONTINUE WHEN EXISTS (SELECT 1 FROM pg_constraint WHERE conname = r.name);
@@ -3825,6 +4024,47 @@ BEGIN
                         'than an effective date, say so here', offending;
     END IF;
 
+    -- 15. No column anywhere may be named after a prohibited identifier, and the KYC
+    --     table may hold nothing but the fields ADR-0013 lists.
+    --
+    --     Two clauses, because they catch different developers.
+    --
+    --     (a) A name scan. Weak on its own — somebody determined calls the column
+    --         `national_id` — and it catches the careless case, which is the common one:
+    --         the vendor SDK returns `aadhaarNumber` and the obvious column name follows
+    --         it. The list lives in internal/platform/pii so there is one copy, and the
+    --         arch test reads the same one.
+    --     (b) A positive allowlist on kyc_verifications. This is the strong half: *any*
+    --         column not on the list fails the bootstrap, so a field cannot be added to
+    --         the KYC table without arguing for it here. That is the mechanism the
+    --         story's failure scenario asks for — a developer adding a field that would
+    --         persist a full identifier is blocked, whatever they call it.
+    SELECT string_agg(format('%s.%s', col.table_name, col.column_name), ', ') INTO offending
+    FROM information_schema.columns col
+    JOIN pg_class c ON c.relname = col.table_name
+    JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+    WHERE col.table_schema = 'public' AND c.relkind = 'r'
+      AND lower(col.column_name) ~ '(aadhaar|aadhar|adhaar|adhar|uidai)';
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'column(s) named after a prohibited identifier: % — the Aadhaar number may '
+                        'not be stored in any form, and a column named for it is where one ends up',
+                        offending;
+    END IF;
+
+    SELECT string_agg(col.column_name, ', ') INTO offending
+    FROM information_schema.columns col
+    WHERE col.table_schema = 'public' AND col.table_name = 'kyc_verifications'
+      AND col.column_name <> ALL (ARRAY[
+          'id', 'tenant_id', 'subject_party_id', 'kind', 'masked_reference', 'result',
+          'provider', 'provider_txn_id', 'consent_artefact_id', 'verified_at',
+          'expires_at', 'created_at']);
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'kyc_verifications has column(s) ADR-0013 does not list: % — a completed '
+                        'verification holds the result, a masked reference, the provider and its '
+                        'transaction, a timestamp and the consent artefact. Anything else has to be '
+                        'argued for in an ADR and added to this list', offending;
+    END IF;
+
     SELECT string_agg(want, ', ') INTO offending
     FROM unnest(ARRAY[
         -- ADR-0006 §3: the ledger balances, and an entry has lines.
@@ -3859,7 +4099,10 @@ BEGIN
         'leases_retrospective_end',
         -- ADR-0010 §7: an entry that bills a tenancy names it, so the trigger above is
         -- enforcing rather than inert.
-        'journal_entries_lease_charge_shape'
+        'journal_entries_lease_charge_shape',
+        -- ADR-0013: a full identifier does not fit in the only column that could hold one.
+        'kyc_verifications_reference_is_a_mask',
+        'kyc_access_log_support_needs_a_grant'
     ]) AS want
     WHERE NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = want)
       AND NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = want AND NOT tgisinternal);
