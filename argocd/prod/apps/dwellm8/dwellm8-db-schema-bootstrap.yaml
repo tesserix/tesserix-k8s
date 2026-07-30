@@ -20,6 +20,13 @@ spec:
       values: |
         app: dwellm8
 
+        # Dwellm8's schema file is idempotent by construction, not a frozen
+        # pg_dump, and no ORM manages these tables at runtime — so replaying it
+        # converges rather than diverges. The chart's default is false because
+        # of HomeChef, where a snapshot fought GORM AutoMigrate on a 30-minute
+        # loop; that failure mode does not exist here.
+        applySchemaToExistingDatabases: true
+
         targets:
           - name: dwellm8
             host: dwellm8-postgres-rw.dwellm8.svc.cluster.local
