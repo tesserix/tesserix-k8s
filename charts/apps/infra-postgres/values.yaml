@@ -120,6 +120,22 @@ postgresql:
   pg_stat_statements.track: "all"
   pg_stat_statements.max: "10000"
 
+  # Probe idle client sockets. Temporal (the only consumer, connecting to -rw
+  # directly — see the pooler note below) holds ~30 connections with
+  # maxIdleConns == maxConns, so almost all of them sit idle indefinitely. With
+  # keepalives off, an idle socket carries NO traffic and neither end notices if
+  # the flow is dropped: Postgres logs "could not receive data from client:
+  # Connection reset by peer" and Temporal only finds out when it next writes,
+  # surfacing as "database connection lost: connection reset by peer" and a
+  # retried operation. Server-side probes keep the flow warm and detect a truly
+  # dead peer in ~2 min (60 + 6×10) instead of never.
+  #
+  # All three are context=user, so CNPG applies them by reload — no failover and
+  # no instance restart.
+  tcp_keepalives_idle: "60"
+  tcp_keepalives_interval: "10"
+  tcp_keepalives_count: "6"
+
 # OFF. The only consumer cannot use it.
 #
 # CNPG's poolers run PgBouncer in `transaction` mode, which does not carry
