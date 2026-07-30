@@ -37,6 +37,21 @@ bootstrap:
     # that cannot.
     - "ALTER ROLE dwellm8 SET row_security = on"
 
+# The two login roles from ADR-0003 §3. CNPG creates them and reconciles their
+# passwords; every privilege they hold is granted in the schema file, which is
+# where a reviewer looks for who can reach what.
+#
+#   dwellm8_api      — what a request runs as. Cannot bypass RLS.
+#   dwellm8_platform — the audited cross-tenant exemption, named in each policy
+#                      through is_platform_session().
+applicationRoles:
+  - name: dwellm8_api
+    secret: dwellm8-postgres-api-credentials
+    gcpSecretName: prod-dwellm8-api-postgresql-password
+  - name: dwellm8_platform
+    secret: dwellm8-postgres-platform-credentials
+    gcpSecretName: prod-dwellm8-platform-postgresql-password
+
 postgresql:
   max_connections: "200"
   shared_buffers: "256MB"
