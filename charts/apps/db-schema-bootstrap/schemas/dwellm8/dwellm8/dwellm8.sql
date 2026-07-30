@@ -2438,7 +2438,10 @@ CREATE TABLE IF NOT EXISTS leases (
             AND terminated_reason IS NOT NULL AND settlement_decision IS NOT NULL)),
     -- A renewed tenancy has an end date, because its successor starts there.
     CONSTRAINT leases_renewed_has_an_end CHECK (state <> 'renewed' OR valid_to IS NOT NULL),
-    CONSTRAINT leases_no_self_renewal CHECK (renews_lease_id <> id)
+    CONSTRAINT leases_no_self_renewal CHECK (renews_lease_id <> id),
+    -- So a journal entry can carry a composite foreign key to the lease it bills,
+    -- which is what makes ADR-0010 §7's rule enforceable rather than conventional.
+    CONSTRAINT leases_tenant_id_unique UNIQUE (id, tenant_id)
 );
 
 COMMENT ON TABLE leases IS
@@ -2552,12 +2555,15 @@ CREATE TRIGGER leases_legal_transitions
 -- revokes DELETE on the ledger and refuses it again in a policy — so what remains is
 -- that somebody must decide, and 'none' is not a decision when money is at stake.
 --
--- It asks the ledger rather than trusting a column, and the contract it depends on is
--- that a lease charge is a journal entry with source_kind = 'lease_charge' and
--- source_id = the lease id. That convention belongs to the invoicing story and is not
--- yet written, so until it is this trigger finds nothing and permits everything — which
--- is stated here rather than discovered, and is asserted by a test that writes such an
--- entry itself.
+-- It asks the ledger, through journal_entries.lease_id.
+--
+-- The first version of this trigger matched on source_kind = 'lease_charge' AND
+-- source_id = the lease id — a string convention the invoicing story had not yet been
+-- written to follow, so the trigger was correct and inert: it found nothing and
+-- permitted everything. A guard that depends on a convention nobody has agreed to is
+-- not a guard, so the convention is now a foreign key (see journal_entries.lease_id
+-- below) and journal_entries_lease_charge_shape makes the pairing structural. An
+-- invoice cannot claim to be a lease charge without naming the lease.
 --
 -- SECURITY INVOKER: the lookup runs under the writer's own row-level security, so a
 -- session that cannot see the ledger gets no rows and the check fails open rather than
@@ -2575,8 +2581,7 @@ BEGIN
     SELECT max(occurred_on) INTO billed_through
       FROM journal_entries e
      WHERE e.tenant_id = NEW.tenant_id
-       AND e.source_kind = 'lease_charge'
-       AND e.source_id = NEW.id::text;
+       AND e.lease_id = NEW.id;
 
     IF billed_through IS NOT NULL AND NEW.ended_on < billed_through THEN
         RAISE EXCEPTION 'lease % is ending % and charges are raised through %: an over-billed '
@@ -3328,6 +3333,42 @@ BEGIN
 END
 $$;
 
+-- ADR-0010 §7. journal_entries.lease_id — the tenancy an entry bills.
+--
+-- Added here rather than in the CREATE TABLE for the reason the block below exists:
+-- CREATE TABLE IF NOT EXISTS never revisits a table that already exists, and
+-- journal_entries has existed since ADR-0006. ADD COLUMN IF NOT EXISTS does exist, so
+-- unlike a CHECK this one can be written once.
+--
+-- Nullable, because most entries have no tenancy: a GST remittance, a payout, a
+-- settlement. What is not optional is the pairing — an entry that calls itself a lease
+-- charge must name the lease, and one that names a lease must say so — which is what
+-- turns ADR-0010 §7's trigger from a string convention into an enforced one.
+DO $$
+BEGIN
+    ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS lease_id uuid;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'journal_entries_lease_fkey') THEN
+        ALTER TABLE journal_entries ADD CONSTRAINT journal_entries_lease_fkey
+            FOREIGN KEY (lease_id, tenant_id) REFERENCES leases (id, tenant_id);
+    END IF;
+
+    -- The source_kind vocabulary stays open — ADR-0006 deliberately left it free text so
+    -- any module can name its own cause — but 'lease_charge' now means something the
+    -- database checks.
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                    WHERE conname = 'journal_entries_lease_charge_shape') THEN
+        ALTER TABLE journal_entries ADD CONSTRAINT journal_entries_lease_charge_shape
+            CHECK ((source_kind = 'lease_charge') = (lease_id IS NOT NULL));
+    END IF;
+END
+$$;
+
+-- "What has this tenancy been billed" — the retrospective-termination trigger's own
+-- query, and the owner's statement for a lease.
+CREATE INDEX IF NOT EXISTS journal_entries_lease_idx
+    ON journal_entries (tenant_id, lease_id, occurred_on) WHERE lease_id IS NOT NULL;
+
 -- The load-bearing rules.
 --
 -- Every CHECK an ADR argues for at length lives here rather than inside its
@@ -3815,7 +3856,10 @@ BEGIN
         'rent_schedule_no_overlap',
         'leases_termination_shape',
         'leases_legal_transitions',
-        'leases_retrospective_end'
+        'leases_retrospective_end',
+        -- ADR-0010 §7: an entry that bills a tenancy names it, so the trigger above is
+        -- enforcing rather than inert.
+        'journal_entries_lease_charge_shape'
     ]) AS want
     WHERE NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = want)
       AND NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = want AND NOT tgisinternal);
