@@ -1,7 +1,9 @@
 # Kargo v1.11 Upgrade — What's New and What We Changed
 
-**Status:** rolled out via the self-managing `kargo-infra` project (July 2026).
-**From → to:** chart `1.10.7` → `1.11.x` (`ghcr.io/akuity/kargo-charts/kargo`).
+**Status:** DONE — completed 2026-07-30. All Kargo deployments run
+`ghcr.io/akuity/kargo:v1.11.0`; the `kargo` Application is Synced/Healthy on
+chart `1.11.0`, and all ten Warehouses are Healthy with zero `allowTags`.
+**From → to:** chart `1.10.7` → `1.11.0` (`ghcr.io/akuity/kargo-charts/kargo`).
 **Upstream notes:** <https://github.com/akuity/kargo/releases/tag/v1.11.0>
 
 ---
@@ -19,6 +21,11 @@ returning 404 (the chart moved to `bitnami.github.io/sealed-secrets`), and one
 failing subscription fails the *entire* Warehouse — no freight, no promotions,
 for every tool on that Warehouse (same failure mode as the mark8ly dangling-tag
 incident). The fix is part of this upgrade.
+
+But fixing it in `kargo-manifests` was not enough, because **no Kargo CR spec
+change had reached the cluster since the Argo CD 3 upgrade on 2026-06-12** —
+see §4a. That had to be fixed first, and it is the reason this upgrade needed
+hands on it at all.
 
 ## 2. What's new in v1.11 (the parts that matter to us)
 
@@ -76,8 +83,59 @@ incident). The fix is part of this upgrade.
   `>=1.11.0 <1.12.0` (the deliberate-upgrade safety knob, per its own comment).
 - This document.
 
-**Not changed:** `argocd/prod/infrastructure/kargo.yaml` `targetRevision`.
-That bump is Kargo's own job — see below.
+**Not hand-edited:** `argocd/prod/infrastructure/kargo.yaml` `targetRevision`.
+Kargo bumped it itself to `1.11.0` in commit `87049131`
+("chore(platform-tools): kargo auto-upgrade to current freight"), once the
+blockers in §4a were cleared.
+
+## 4a. Why nothing was applying — the real blocker
+
+`argocd-cm` carries `ignoreDifferences` for the Kargo CRDs whose
+`jqPathExpressions` are scoped **inside arrays**:
+
+```
+kargo.akuity.io_Warehouse: .spec.subscriptions[]?.chart.discoveryLimit  (+ siblings)
+kargo.akuity.io_Stage:     .spec.promotionTemplate.spec.steps[]?.retry.timeout
+```
+
+The `kargo-projects` ApplicationSet also set `RespectIgnoreDifferences=true`,
+which makes those exclusions apply **at sync time** as well as at diff time. An
+exclusion inside an array cannot be expressed as a merge patch, so Argo CD
+dropped the entire `subscriptions` / `steps` array from the object it applied.
+Every sync logged `serverside-applied` and reported "successfully synced", while
+`Warehouse/platform-tools` sat at `generation: 1`, last actually mutated
+2026-06-12. Self-heal re-ran this 13 times without converging.
+
+The tell: across all six `kargo-project-*` apps the **only** OutOfSync resources
+were the ones whose pending change lived inside those two arrays. Every Stage
+without an array-scoped change was Synced.
+
+Fix: drop `RespectIgnoreDifferences=true` from
+`argocd/prod/apps/release/kargo-projects-appset.yaml` (commit `a79cf3bb`). The
+rules stay in `argocd-cm`, so diff-time normalisation of Kargo's webhook-defaulted
+fields still works and the apps do not go permanently OutOfSync; only sync-time
+respect is off, so a sync applies the full spec from git. Note the sibling
+comment in the same file: `ApplyOutOfSyncOnly` was removed earlier for a related
+sync-time filtering bug. Treat both as load-bearing.
+
+Two further blockers surfaced once promotions could run again — both were stage
+drift, where `kargo-manifests` still wrote back to files deleted from this repo:
+
+| Stage | Wrote to | Deleted by | Fix |
+|---|---|---|---|
+| `platform-tools-prod` | `argocd/prod/infrastructure/arc-runner-scale-set.yaml` | #100 | step + `argocd-update` entry + `gha-runner-scale-set` subscription removed |
+| `observability-prod` | `argocd/prod/infrastructure/fluent-bit.yaml` | #89 (otel-agent replaced it) | same |
+
+And one landmine the first successful promotion tripped: the stage still ran a
+`yaml-update` of `argocd.yaml` with the **argo-helm chart version**, but since
+the 2026-07-21 operator migration that Application deploys
+`charts/argocd-operator` **by path**, so its `targetRevision` is a git ref.
+The promotion wrote `9.7.1` into it and left the app in
+`ComparisonError: unable to resolve '9.7.1' to a commit SHA`. Nothing was
+applied, so Argo CD itself kept running. Restored to `HEAD` in `803f2d54`, and
+the step, the `argocd-update` entry and the `argo-cd` subscription were removed
+so it cannot recur. **Argo CD versions now move by editing the operator CR, not
+by a chart bump — do not re-add that subscription.**
 
 ## 5. How the upgrade actually rolls out
 
@@ -101,6 +159,17 @@ applies the other tool upgrades that were frozen behind the 404. That is this
 platform's designed behavior (same-major auto-upgrades, no human in the loop);
 if a specific tool needs to be held back, tighten its `semverConstraint` in
 `platform-tools.yaml` *before* pushing the fix.
+
+What actually shipped in that bundle on 2026-07-30 (commit `87049131`):
+
+| Chart | Before | After |
+|---|---|---|
+| kargo | 1.10.7 | **1.11.0** |
+| cert-manager | v1.20.2 | v1.21.1 |
+| sealed-secrets | 2.18.6 | 2.19.1 |
+| reloader | 2.2.12 | 2.2.14 |
+| external-dns | 1.14.5 | 1.21.1 |
+| kagent / kagent-crds | 0.9.7 | 0.9.12 |
 
 ## 6. Verification checklist (after the promotion completes)
 
@@ -129,6 +198,27 @@ kubectl get application sealed-secrets -n argocd \
 UI spot-checks at <https://kargo.tesserix.app>: freight timeline renders, a
 manual promotion of an old Freight shows the new **hold** indicator, pipeline
 graphs draw.
+
+Result on 2026-07-30: all six kargo-project apps Synced, all ten Warehouses
+Healthy, `allowTags` count 0, Kargo deployments on `v1.11.0`,
+`platform-tools-prod` and `observability-prod` promotions Succeeded.
+
+Left open (pre-existing, **not** caused by this upgrade — each is its own fix):
+
+- `cert-manager` app is OutOfSync on `Role`/`RoleBinding cert-manager-tokenrequest`:
+  v1.21 dropped them upstream and the app has no `prune: true`, so they linger
+  as orphans. Harmless; needs a decision on pruning cert-manager.
+- `kargo-support-platform/prod` has errored since ~2026-07-25 on
+  `unable to find Argo CD Application "fanzone-mcp"` — the stage still promotes
+  to `fanzone-mcp`, `horoscope-mcp` and `gameverse-mcp`, none of which exist as
+  Applications (fanzone was parked to zero). Same drift class as §4a's table.
+- `kargo-mark8ly/smoke` errors on a step-1 timeout; `uat` has never promoted and
+  its stage references nine `mark8ly-uat-*` Applications that do not exist.
+- The `argocd` self-management app reports 26 of 27 resources OutOfSync while
+  syncs report "all tasks run", and the live objects were last written
+  2026-07-21. That is the `ApplyOutOfSyncOnly` + `RespectIgnoreDifferences`
+  signature from §4a on Argo CD's own app — worth investigating, but changing
+  sync options on the app that manages Argo CD deserves its own change window.
 
 ## 7. Worth adopting next (not part of this change)
 
