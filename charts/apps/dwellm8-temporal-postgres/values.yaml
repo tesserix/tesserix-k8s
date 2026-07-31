@@ -1,0 +1,86 @@
+# Temporal's own store for Dwellm8.
+#
+# A separate cluster from dwellm8-postgres, not a second database inside it.
+# The ledger and the workflow engine should not share a failure domain: a
+# Temporal schema upgrade, a runaway history shard or a full disk in one must
+# not be able to stop rent being invoiced in the other. They also have different
+# owners — dwellm8-postgres's schema is a reviewed file applied by ArgoCD
+# (ADR-0024's bootstrap), and Temporal's is managed by Temporal.
+#
+# One instance, deliberately. HomeChef runs three because it has traffic;
+# Dwellm8 has none yet, and Temporal's state is durable here but re-derivable at
+# the app layer — schedules re-register and workflows retry. Raise this to three
+# before the first payout runs through it, which is the point at which a lost
+# workflow is somebody's money rather than a retried job.
+hibernate: false
+
+namespace: dwellm8
+clusterName: dwellm8-temporal-postgres
+
+instances: 1
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+storageSize: 10Gi
+storageClass: standard-rwo-retain
+walStorageSize: 5Gi
+
+# Memory only — the platform sets no CPU requests or limits.
+resources:
+  requests:
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+bootstrap:
+
+  # Temporal's main store. Its visibility store (temporal_visibility) is created
+  # by postInitSQL below — Temporal needs both DBs.
+  database: temporal
+  owner: temporal
+  secret: dwellm8-temporal-postgres-app
+  # Dwellm8's own credential, not the shared platform one: two products whose
+  # Temporal stores share a password are two products where rotating one breaks
+  # the other.
+  gcpSecretName: prod-dwellm8-temporal-postgresql-password
+  postInitSQL:
+    - "CREATE DATABASE temporal_visibility OWNER temporal"
+
+postgresql:
+  # A single-pod Temporal with one worker; sized for that rather than for
+  # HomeChef's four services at two replicas each.
+  max_connections: "100"
+  shared_buffers: "128MB"
+  effective_cache_size: "768MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "128MB"
+  wal_level: "logical"
+  max_replication_slots: "10"
+  max_wal_senders: "10"
+  ssl_min_protocol_version: "TLSv1.3"
+  ssl_max_protocol_version: "TLSv1.3"
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"
+  log_min_duration_statement: "1000"
+  hot_standby_feedback: "on"
+  max_slot_wal_keep_size: "10GB"
+  pg_stat_statements.track: "all"
+  pg_stat_statements.max: "10000"
+
+# Temporal state is durable in the DB but fully re-derivable at the app layer
+# (schedules re-register, workflows retry); the 3-instance replication is the
+# resilience. Skip GCS backup to keep this simple.
+backup:
+  enabled: false
+
+monitoring:
+  enablePodMonitor: true
+
+affinity:
+  podAntiAffinityType: preferred
+
+# Async replication (like scrapper) — favours Temporal's write throughput over
+# synchronous-commit latency; a failover may lose a few in-flight events, which
+# Temporal retries.
+replication:
+  minSyncReplicas: 0
+  maxSyncReplicas: 0
