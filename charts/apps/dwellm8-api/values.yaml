@@ -66,6 +66,44 @@ env:
   PORT: "8080"
   SHUTDOWN_GRACE_SECONDS: "20"
 
+# Payments. ADR-0011 chain and ADR-0022's adapter configuration.
+#
+# The chain is data: Cashfree first, offline last. Offline is appended by the
+# process whether or not it is named here, because a deployment that loses its
+# aggregator and cannot record a cash payment cannot take rent at all.
+payments:
+  providers: "cashfree,offline"
+  cashfree:
+    # Sandbox while Dwellm8's own merchant account is opened. Switching to live
+    # is this URL, the two secret names below, and dropping allowSandboxInProd.
+    baseUrl: "https://sandbox.cashfree.com/pg"
+    # Pinned. Cashfree versions its API by date in a header, so an unpinned
+    # client changes behaviour on their release day rather than on ours.
+    apiVersion: "2023-08-01"
+
+    # Secret Manager names, not values. These are HomeChef's Cashfree *test*
+    # credentials, borrowed while Dwellm8's merchant account is opened — safe
+    # only because they are test credentials. Note that prod-homechef-cashfree-
+    # app-id (no -test-) also holds a TEST credential today, so the unprefixed
+    # name is not a live one and must not be treated as the switch to live.
+    clientIdSecret: "prod-homechef-cashfree-test-app-id"
+    clientSecretSecret: "prod-homechef-cashfree-test-secret-key"
+    # Defaults to clientSecretSecret — Cashfree signs with the merchant secret.
+    webhookSecretSecret: ""
+
+    # The API refuses to start as APP_ENV=prod against sandbox credentials
+    # unless this says the arrangement is deliberate. It reads the credential
+    # rather than this flag to decide what "sandbox" means, so the flag can only
+    # acknowledge the situation, never disguise it. Remove it with the switch to
+    # a live merchant account.
+    allowSandboxInProd: true
+
+gcp:
+  secretManager:
+    enabled: true
+    secretStore: gcp-secret-store
+    refreshInterval: 1h
+
 # The API connects as dwellm8_api — ADR-0003 §3's request role. Never as the
 # owner: the owner is the one role FORCE row level security exists to contain,
 # and it holds CREATEROLE for the schema bootstrap. The secret is reconciled by
