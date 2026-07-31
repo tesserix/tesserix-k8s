@@ -30,7 +30,11 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-      - RespectIgnoreDifferences=true
+      # RespectIgnoreDifferences is deliberately absent. Combined with SSA and
+      # the argocd-cm jq ignores into spec.managed.roles[], it normalised the
+      # roles list out of every apply: sync reported Succeeded while the
+      # Cluster's generation never moved, and the openfga role could not land.
+      # The ignore rules still quiet the diff; the apply sends the full render.
     retry:
       limit: 5
       backoff:
