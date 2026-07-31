@@ -1,0 +1,104 @@
+# =============================================================================
+# LOCAL / kind overlay for dwellm8-api. Does not touch prod (values.yaml).
+#
+#   sandboxctl deploy --chart charts/apps/dwellm8-api \
+#     -n dwellm8 -f charts/apps/dwellm8-api/values-local.yaml
+#
+# Prereqs — dwellm8/SETUP_LOCAL.md has the detail:
+#   1. A PostgreSQL in the cluster or on the host, with the schema replayed into
+#      it from charts/apps/db-schema-bootstrap/schemas/dwellm8/dwellm8/dwellm8.sql
+#   2. kubectl apply -n dwellm8 -f dwellm8/k8s/secrets.yaml  (from secrets.example.yaml)
+#
+# The image is built and loaded into kind rather than pulled:
+#   docker build -t dwellm8-api:local services/api
+#   kind load docker-image dwellm8-api:local
+#
+# Most engineers will never need this file. `go run ./cmd/api` against a local
+# PostgreSQL is faster and proves the same things; this is for when the question
+# is specifically about the chart — probes, the ExternalSecret shape, the
+# readiness gate — rather than about the code.
+# =============================================================================
+
+image:
+  # The bare name kind holds it under. Leaving the GAR repository here would ask
+  # a laptop to pull a tag called "local" from Artifact Registry, which does not
+  # exist and fails as ImagePullBackOff several minutes later.
+  repository: dwellm8-api
+  tag: "local"
+  # Never IfNotPresent's opposite here: kind holds the image and there is no
+  # registry to fall back to, so a pull policy of Always fails on a laptop with
+  # no network as well as on one with it.
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 1
+
+autoscaling:
+  enabled: false
+pdb:
+  enabled: false
+
+# A single-node kind cluster has nothing to spread across.
+affinity: {}
+nodeSelector: {}
+tolerations: []
+
+env:
+  APP_ENV: dev
+  LOG_LEVEL: debug
+  PORT: "8080"
+  SHUTDOWN_GRACE_SECONDS: "5"
+
+# Offline only. A laptop must not be able to reach a payment provider, sandbox
+# or otherwise — the offline adapter records a payment without calling anybody,
+# which is the whole of what local development needs.
+payments:
+  providers: "offline"
+  cashfree:
+    baseUrl: ""
+    apiVersion: ""
+    clientIdSecret: ""
+    clientSecretSecret: ""
+    webhookSecretSecret: ""
+    allowSandboxInProd: false
+
+# No Workload Identity and no Secret Manager on a laptop. The database
+# credentials come from a plain Secret applied by hand from secrets.example.yaml.
+gcp:
+  secretManager:
+    enabled: false
+serviceAccount:
+  annotations: {}
+
+database:
+  secretName: dwellm8-local-db
+  platformSecretName: dwellm8-local-db-platform
+  host: dwellm8-postgres-rw.dwellm8.svc.cluster.local
+  port: 5432
+  name: dwellm8
+  # No TLS between two pods on one laptop, and requiring it only produces a
+  # confusing connection error on the first run.
+  sslMode: disable
+
+# Smaller, and quicker to fail: a local cluster that hangs for thirty seconds on
+# a bad database URL wastes more time than a restart loop that says so.
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 3
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 2
+    periodSeconds: 3
+    failureThreshold: 2
+
+terminationGracePeriodSeconds: 10
