@@ -78,6 +78,23 @@ spec:
                   key: password
             - name: PLATFORM_DATABASE_URL
               value: "postgres://$(PLATFORM_DB_USER):$(PLATFORM_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
+            {{- if .Values.events.natsURL }}
+            # ADR-0002. The relay drains the outbox from inside this process; a
+            # broker that is unreachable accumulates rows rather than failing a
+            # request, so this is not a startup dependency.
+            - name: NATS_URL
+              value: {{ .Values.events.natsURL | quote }}
+            - name: EVENTS_RELAY_ENABLED
+              value: {{ .Values.events.relayEnabled | quote }}
+            {{- end }}
+            {{- if .Values.workflow.hostPort }}
+            # ADR-0015. Present so the API can start a durable operation; the
+            # worker that runs them is its own deployment.
+            - name: TEMPORAL_HOSTPORT
+              value: {{ .Values.workflow.hostPort | quote }}
+            - name: TEMPORAL_NAMESPACE
+              value: {{ .Values.workflow.namespace | quote }}
+            {{- end }}
             {{- if .Values.gcp.secretManager.enabled }}
             # ADR-0027. Not a secret: verifying a GIP token needs Google's public
             # certificates and the project id. The API refuses to start without
