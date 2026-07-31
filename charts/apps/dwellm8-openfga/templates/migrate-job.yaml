@@ -1,0 +1,51 @@
+# OpenFGA ships schema migrations as a subcommand on the same image; migrate
+# is idempotent (current version is a no-op), so the Deployment only ever runs
+# against a schema matching the image version.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name }}-migrate
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+    # Job spec.template is immutable — an image bump needs delete + create,
+    # which is what Replace=true,Force=true makes ArgoCD do.
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/component: migrate
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.name }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ .Values.name }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          args:
+            - migrate
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: password
+            - name: OPENFGA_DATASTORE_URI
+              value: "postgres://$(DB_USER):$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode=require"
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
