@@ -108,6 +108,20 @@ gcp:
 # owner: the owner is the one role FORCE row level security exists to contain,
 # and it holds CREATEROLE for the schema bootstrap. The secret is reconciled by
 # CNPG from Secret Manager (see dwellm8-postgres applicationRoles).
+# ADR-0002. The outbox is drained by a goroutine in the API rather than its own
+# deployment: the backlog is in PostgreSQL, so a replica that dies mid-drain
+# loses nothing and the survivors claim its rows with FOR UPDATE SKIP LOCKED.
+events:
+  natsURL: nats://dwellm8-nats.dwellm8.svc.cluster.local:4222
+  relayEnabled: true
+
+# ADR-0015. The engine for the operations with an irreversible step. Empty
+# hostPort leaves the variables unset, and a process that would run one of those
+# operations refuses to start rather than doing it inline.
+workflow:
+  hostPort: temporal.dwellm8.svc.cluster.local:7233
+  namespace: dwellm8
+
 database:
   secretName: dwellm8-postgres-api-credentials
   # ADR-0011 §5. The inbox is a platform-role path, because the webhook handler
