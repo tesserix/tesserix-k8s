@@ -17,7 +17,10 @@ data:
     server_name: $POD_NAME
     {{- if .Values.jetstream.enabled }}
     jetstream {
-      store_dir: "/data/jetstream"
+      # The volume root: nats-server appends its own `jetstream` directory, so
+      # naming one here gives /data/jetstream/jetstream. Changing this once a
+      # stream exists orphans it on the old path, and right now none do.
+      store_dir: "/data"
       max_memory_store: {{ int64 .Values.jetstream.maxMemory }}
       max_file_store: {{ int64 .Values.jetstream.maxFile }}
     }
