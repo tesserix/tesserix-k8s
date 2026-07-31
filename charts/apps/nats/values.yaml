@@ -1,0 +1,58 @@
+# NATS with JetStream, one per product.
+#
+# ADR-0002 chose an outbox plus a broker: the outbox row and the state change
+# commit in one transaction, and a relay moves the row to the broker afterwards.
+# That design makes the broker replaceable and the delivery guarantee ours —
+# which is why a shared cluster is the wrong shape here. Two products on one
+# NATS share a failure domain and a set of stream limits for no benefit, since
+# nothing crosses between them.
+#
+# JetStream is on because at-least-once is the entire point. Core NATS is
+# fire-and-forget, and an event that disappears when a consumer restarts is an
+# event the outbox has already promised was delivered.
+namespace: ""
+fullnameOverride: ""
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/nats
+  tag: "2.10-alpine"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+# File-backed, not memory-backed. A memory store loses every un-acked message on
+# a restart, which turns a pod roll into lost events — and the outbox would have
+# already marked them published.
+jetstream:
+  enabled: true
+  storage:
+    size: 5Gi
+    storageClass: standard-rwo-retain
+  # Bounded, deliberately. An unbounded stream fills the disk and takes NATS
+  # down for everything, which is a worse outcome than a stream that refuses a
+  # publish and lets the outbox retry.
+  maxMemory: 256Mi
+  maxFile: 4Gi
+
+# Memory only — the platform sets no CPU requests or limits.
+resources:
+  requests:
+    memory: 256Mi
+  limits:
+    memory: 768Mi
+
+ports:
+  client: 4222
+  monitor: 8222
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false

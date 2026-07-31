@@ -1,0 +1,63 @@
+# Temporal for Dwellm8.
+#
+# Its own instance in the product's namespace rather than a shared one, for the
+# reason ADR-0028 gives about failure domains: a workflow engine that stops
+# because another product's history shard filled a disk is a workflow engine
+# that stops rent from moving. The namespace is the product, and everything it
+# needs lives under it.
+#
+# What it is *for* is narrower than "workflows". ADR-0028 put the idempotent
+# periodic work — invoicing, payment polling — in CronJobs, deliberately: they
+# have no irreversible step and their durability is an idempotency key. Temporal
+# is here for the path that does have one, which is the payout
+# (https://github.com/tesserix/dwellm8/issues/80): money leaves the platform,
+# cannot be un-sent, and the ordering of compensations is the whole problem.
+# ADR-0015 is that standard, and this is where it runs.
+namespace: dwellm8
+
+service:
+  frontendPort: 7233
+
+server:
+  replicaCount: 1
+  image:
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/temporal-auto-setup
+    tag: "1.28.1"
+    pullPolicy: IfNotPresent
+  # Sized for a product with no traffic yet. The number to raise is this one, and
+  # the moment to raise it is the first real payout — not the first slow query.
+  # Memory-only per platform policy.
+  resources:
+    requests:
+      memory: 512Mi
+    limits:
+      memory: 1536Mi
+
+postgres:
+  # The embedded StatefulSet is off: Temporal's store is the CNPG cluster in
+  # charts/apps/dwellm8-temporal-postgres, which has backups, failover and the
+  # same operational shape as every other database here. An embedded pod with a
+  # PVC is a database nobody is watching.
+  external:
+    enabled: true
+    # The -rw service, never a pooler: CNPG repoints -rw at the new primary on
+    # failover, and Temporal holds long-lived connections that a pooler would
+    # multiplex in ways its schema tooling does not expect.
+    host: dwellm8-temporal-postgres-rw.dwellm8.svc.cluster.local
+  auth:
+    user: temporal
+    database: temporal
+    gcpSecretName: prod-dwellm8-temporal-postgresql-password
+
+# No Elasticsearch. Temporal's SQL visibility covers three text search
+# attributes, and nothing Dwellm8 runs needs a custom one — a payout workflow is
+# found by its workflow id, which is the payout's id.
+elasticsearch:
+  enabled: false
+
+# The web UI stays off. It is an unauthenticated read of every workflow's
+# arguments, and a payout workflow's arguments are an owner's bank details.
+# `temporal workflow list` through the admin tools pod is the supported way to
+# look, and it leaves an audit trail because somebody had to exec in.
+ui:
+  enabled: false

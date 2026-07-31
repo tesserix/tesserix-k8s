@@ -1,0 +1,29 @@
+# NATS for Dwellm8.
+#
+# ADR-0002's event backbone, in the product's own namespace. Nothing publishes
+# to it yet — the outbox is unbuilt and lease.created is currently returned by a
+# service and consumed by nobody — so this is the broker being ready before the
+# relay rather than the other way round.
+#
+# One replica. JetStream clustering needs three for quorum, and a single node
+# with a file store loses nothing on a restart; it is unavailable during one,
+# which the outbox already tolerates because a publish that fails is a row that
+# stays unpublished and is retried.
+namespace: dwellm8
+fullnameOverride: dwellm8-nats
+
+replicaCount: 1
+
+jetstream:
+  enabled: true
+  storage:
+    size: 5Gi
+    storageClass: standard-rwo-retain
+  maxMemory: 256Mi
+  maxFile: 4Gi
+
+resources:
+  requests:
+    memory: 192Mi
+  limits:
+    memory: 512Mi

@@ -1,0 +1,127 @@
+{{- /*
+A StatefulSet rather than a Deployment, because JetStream's store is stateful
+and its identity matters: a stream's file store belongs to a named node, and a
+Deployment would hand a new pod a new volume and an empty stream.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nats.fullname" . }}-config
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "nats.labels" . | nindent 4 }}
+data:
+  nats.conf: |
+    port: {{ .Values.ports.client }}
+    http: {{ .Values.ports.monitor }}
+    server_name: $POD_NAME
+    {{- if .Values.jetstream.enabled }}
+    jetstream {
+      store_dir: "/data/jetstream"
+      max_memory_store: {{ .Values.jetstream.maxMemory | quote }}
+      max_file_store: {{ .Values.jetstream.maxFile | quote }}
+    }
+    {{- end }}
+    # No accounts or users: this cluster is reachable only from its own
+    # namespace, enforced by a NetworkPolicy rather than by a password nobody
+    # rotates. When a second consumer outside the namespace needs it, that is
+    # the moment to add authentication rather than widen the policy.
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "nats.fullname" . }}
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "nats.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "nats.fullname" . }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "nats.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nats.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ .Values | toYaml | sha256sum }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: nats
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["-c", "/etc/nats/nats.conf"]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - name: client
+              containerPort: {{ .Values.ports.client }}
+            - name: monitor
+              containerPort: {{ .Values.ports.monitor }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          # /healthz is JetStream-aware: it reports unhealthy while a stream is
+          # still recovering after a restart, which is exactly when a publisher
+          # must not be told the broker is ready.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: monitor
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: monitor
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 5
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nats
+            {{- if .Values.jetstream.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "nats.fullname" . }}-config
+  {{- if .Values.jetstream.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.jetstream.storage.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.jetstream.storage.size }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nats.fullname" . }}
+  namespace: {{ .Values.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "nats.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "nats.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: client
+      port: {{ .Values.ports.client }}
+      targetPort: client
+    - name: monitor
+      port: {{ .Values.ports.monitor }}
+      targetPort: monitor
