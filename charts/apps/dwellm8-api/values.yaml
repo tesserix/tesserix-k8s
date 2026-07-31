@@ -141,3 +141,46 @@ pdb:
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+# ADR-0027's identity configuration. No secret here: verifying a GIP token needs
+# Google's public certificates and the project id, both public knowledge.
+identity:
+  projectId: "tesseracthub-480811"
+
+# The periodic work. Same image as the API, different entrypoint.
+#
+# Both jobs are idempotent, which is what lets them be a CronJob rather than a
+# durable workflow: their durability is the idempotency key, and a pod killed
+# half way through leaves what it did and the next run does the rest.
+cronjobs:
+  bill:
+    enabled: true
+    # 02:30 IST, before anybody is awake to be confused by a half-finished run,
+    # and after midnight so "today" means the same thing throughout it.
+    schedule: "30 2 * * *"
+    timeZone: "Asia/Kolkata"
+    # Five days ahead, so the reminder ladder has an invoice to point at before
+    # the money is late rather than after.
+    args: ["bill", "--through-days", "5"]
+    resources:
+      requests:
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
+  poll:
+    enabled: true
+    # Every ten minutes. A webhook is faster and this is what runs when one
+    # never arrives — the cluster the provider cannot reach, or the delivery
+    # that was lost.
+    schedule: "*/10 * * * *"
+    timeZone: "Asia/Kolkata"
+    # Ten minutes' grace before a payment is asked about: a payer who opened
+    # their UPI app two minutes ago has not finished, and asking is a request
+    # per sweep for an answer that has not changed.
+    args: ["poll", "--settle-within", "10m"]
+    resources:
+      requests:
+        memory: 96Mi
+      limits:
+        memory: 256Mi

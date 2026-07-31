@@ -1,0 +1,134 @@
+{{- /*
+The periodic work: raising invoices, and asking providers what happened to
+payments nobody told us about.
+
+CronJobs rather than a ticker inside the API, because the API runs two replicas
+and a ticker fires once per replica. Both jobs are idempotent so that is safe,
+and safe is not the same as correct: two replicas racing produce one invoice and
+a pair of log lines that read like a duplicate every month. One runner, visible
+in `kubectl get jobs`, with a history somebody can read after an incident.
+
+CronJobs rather than a durable workflow, because neither job has an irreversible
+step — ADR-0015's standard is for operations where the order of compensations is
+the problem, and these compensate nothing. Their durability is the idempotency
+key: a pod killed half way through leaves the invoices it raised, and the next
+run raises the rest.
+
+Same image as the API, different entrypoint. A separate image would be a second
+thing to build, scan and promote for a binary that shares every package.
+*/ -}}
+{{- range $name, $job := .Values.cronjobs }}
+{{- if $job.enabled }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "dwellm8-api.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "dwellm8-api.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: job
+spec:
+  schedule: {{ $job.schedule | quote }}
+  timeZone: {{ $job.timeZone | default "Asia/Kolkata" | quote }}
+  # Forbid, not Allow: a run that overruns its interval must not be joined by
+  # the next one. Both jobs are idempotent, so a double run is survivable rather
+  # than harmless — it doubles the load on the provider at the moment the first
+  # run is already struggling.
+  concurrencyPolicy: Forbid
+  # A missed window is skipped rather than caught up. Billing is idempotent and
+  # keyed on the period, so the next run raises whatever the missed one would
+  # have; replaying a backlog of skipped windows would ask the provider the same
+  # questions many times over.
+  startingDeadlineSeconds: {{ $job.startingDeadlineSeconds | default 300 }}
+  successfulJobsHistoryLimit: {{ $job.successfulJobsHistoryLimit | default 3 }}
+  # Kept deliberately: a failed billing run is the thing somebody needs to read,
+  # and three of them is the difference between "it failed once" and "it has
+  # been failing since Tuesday".
+  failedJobsHistoryLimit: {{ $job.failedJobsHistoryLimit | default 5 }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ $job.backoffLimit | default 2 }}
+      activeDeadlineSeconds: {{ $job.activeDeadlineSeconds | default 900 }}
+      template:
+        metadata:
+          labels:
+            {{- include "dwellm8-api.selectorLabels" $ | nindent 12 }}
+            app.kubernetes.io/component: job
+        spec:
+          restartPolicy: Never
+          {{- with $.Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          serviceAccountName: {{ include "dwellm8-api.serviceAccountName" $ }}
+          securityContext:
+            {{- toYaml $.Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: {{ $name }}
+              image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
+              imagePullPolicy: {{ $.Values.image.pullPolicy }}
+              command: ["/jobs"]
+              args: {{ toJson $job.args }}
+              securityContext:
+                {{- toYaml $.Values.securityContext | nindent 16 }}
+              env:
+                - name: APP_ENV
+                  value: {{ $.Values.env.APP_ENV | quote }}
+                - name: LOG_LEVEL
+                  value: {{ $.Values.env.LOG_LEVEL | quote }}
+                # The request role, subject to row-level security. A billing run
+                # spans the platform and every read inside it does not: the run
+                # lists organisations with the platform role and then does all of
+                # its work in one organisation's session at a time.
+                - name: DATABASE_URL
+                  value: "postgres://$(DB_USER):$(DB_PASSWORD)@{{ $.Values.database.host }}:{{ $.Values.database.port }}/{{ $.Values.database.name }}?sslmode={{ $.Values.database.sslMode }}"
+                - name: PLATFORM_DATABASE_URL
+                  value: "postgres://$(PLATFORM_DB_USER):$(PLATFORM_DB_PASSWORD)@{{ $.Values.database.host }}:{{ $.Values.database.port }}/{{ $.Values.database.name }}?sslmode={{ $.Values.database.sslMode }}"
+                - name: DB_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.database.secretName }}
+                      key: username
+                - name: DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.database.secretName }}
+                      key: password
+                - name: PLATFORM_DB_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.database.platformSecretName }}
+                      key: username
+                - name: PLATFORM_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.database.platformSecretName }}
+                      key: password
+                - name: PAYMENT_PROVIDERS
+                  value: {{ $.Values.payments.providers | quote }}
+                {{- if $.Values.payments.cashfree.baseUrl }}
+                - name: CASHFREE_BASE_URL
+                  value: {{ $.Values.payments.cashfree.baseUrl | quote }}
+                - name: CASHFREE_API_VERSION
+                  value: {{ $.Values.payments.cashfree.apiVersion | quote }}
+                - name: CASHFREE_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dwellm8-api.fullname" $ }}-payments
+                      key: CASHFREE_CLIENT_ID
+                - name: CASHFREE_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "dwellm8-api.fullname" $ }}-payments
+                      key: CASHFREE_CLIENT_SECRET
+                {{- end }}
+                {{- if $.Values.payments.cashfree.allowSandboxInProd }}
+                - name: CASHFREE_ALLOW_SANDBOX_IN_PROD
+                  value: "true"
+                {{- end }}
+                - name: GIP_PROJECT_ID
+                  value: {{ $.Values.identity.projectId | quote }}
+              resources:
+                {{- toYaml $job.resources | nindent 16 }}
+{{- end }}
+{{- end }}
