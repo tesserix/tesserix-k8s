@@ -3174,6 +3174,17 @@ COMMENT ON TABLE leases IS
 COMMENT ON COLUMN leases.validity IS
     'The agreed term cut short by ended_on. What charge generation and the no-double-let constraint are computed over.';
 
+-- The composite unique again, for the clusters where leases predates it: CREATE
+-- TABLE IF NOT EXISTS adds no constraint to a table that already exists, so on
+-- prod the declaration above was a no-op and every later composite foreign key
+-- referencing (id, tenant_id) failed to create.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'leases_tenant_id_unique') THEN
+        ALTER TABLE leases ADD CONSTRAINT leases_tenant_id_unique UNIQUE (id, tenant_id);
+    END IF;
+END $$;
+
 -- One flat, one tenancy at a time — the constraint that matters most in a rental
 -- product, and it is scoped to the states that are actually tenancies.
 --
