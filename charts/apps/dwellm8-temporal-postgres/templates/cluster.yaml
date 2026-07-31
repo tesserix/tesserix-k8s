@@ -30,6 +30,21 @@ spec:
         {{- end }}
       {{- end }}
 
+  # The bootstrap secret sets the owner's password once, at initdb; after that
+  # only a managed role keeps the two in step. This cluster initialised before
+  # its ExternalSecret existed, and without this Temporal could never
+  # authenticate as an owner whose password nothing declares.
+  managed:
+    roles:
+      - name: {{ .Values.bootstrap.owner }}
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        passwordSecret:
+          name: {{ .Values.bootstrap.secret }}
+
   # =========================================================================
   # Storage — separate data and WAL volumes for I/O isolation
   # =========================================================================
