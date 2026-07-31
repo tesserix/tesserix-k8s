@@ -5464,3 +5464,27 @@ CREATE INDEX IF NOT EXISTS ix_posts_kind_created
 ALTER TABLE public.meal_plans
   ADD COLUMN IF NOT EXISTS platform_fee numeric DEFAULT 0,
   ADD COLUMN IF NOT EXISTS tax_rate numeric DEFAULT 0;
+
+-- Gateway on every charge, not just orders (Home-Chef-App): Cashfree is the
+-- platform default, but only `orders` recorded which gateway took the money.
+-- Meal plans, tips, catering deposits, group shares and promo purchases each
+-- minted Razorpay directly, so nothing downstream could tell the rails apart.
+--
+-- Refunds are why this must be stored rather than inferred: a plan captured on
+-- Cashfree refunded through the Razorpay rail fails, and the reverse strands the
+-- money. The existing razorpay_order_id column already doubles as the generic
+-- gateway order id (orders stamp the Cashfree order id into it), so only the
+-- provider is missing.
+--
+-- Defaults to 'razorpay' so every already-captured row keeps refunding on the
+-- rail that actually funded it; new rows are stamped by SelectCheckoutGateway.
+ALTER TABLE public.meal_plans
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+ALTER TABLE public.tips
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+ALTER TABLE public.catering_requests
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+ALTER TABLE public.chef_promotions
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+ALTER TABLE public.group_order_participants
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;

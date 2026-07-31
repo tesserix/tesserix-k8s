@@ -1476,6 +1476,10 @@ CREATE TABLE IF NOT EXISTS statutory_rules (
     rule_type     text NOT NULL CHECK (rule_type IN (
                       'gst_rate', 'gst_exemption_amount', 'gst_registration_threshold',
                       'tds_rate', 'tds_threshold',
+                      -- Surcharge and cess sit above the section rate and only on a
+                      -- payment to a non-resident, so the effective rate is not the
+                      -- rate any table of sections shows. ADR-0025 §3.
+                      'tds_surcharge_rate', 'tds_cess_rate',
                       'deposit_cap_months', 'advance_cap_months',
                       'stamp_duty_rate', 'stamp_duty_cap_amount',
                       'registration_fee_rate', 'registration_term_trigger_months')),
@@ -1788,6 +1792,32 @@ INSERT INTO statutory_rules (
    'Section 194-IB(1), Income-tax Act 1961',
    'needs_bare_act_check', 'compliance', DATE '2026-10-31', 'warn',
    'Fifty thousand a month. Individual and HUF deductors not liable to tax audit'),
+  -- The two statutory floors that raise a rate for something true of the payee
+  -- rather than of the payment. ADR-0025 §2.
+  --
+  -- §206AB is the effective-dating case that could not be invented: it was
+  -- inserted in 2021 and *omitted* by the Finance (No. 2) Act 2024 with effect
+  -- from 1 October 2024. The row is bounded rather than deleted, so a deduction
+  -- recomputed for August 2024 still sees the floor that applied to it.
+  ('tds_rate', 'IN', 'tds.206aa_no_pan_floor', 'rate', 2000, NULL, NULL,
+   DATE '2020-04-01', NULL,
+   'Section 206AA(1)(iii), Income-tax Act 1961',
+   'needs_bare_act_check', 'compliance', DATE '2026-10-31', 'warn',
+   'Twenty per cent, or the rate in force if higher. Rule 37BC exempts a non-resident who furnishes TRC, TIN and contact details'),
+  ('tds_rate', 'IN', 'tds.206ab_non_filer_floor', 'rate', 500, NULL, NULL,
+   DATE '2021-07-01', DATE '2024-10-01',
+   'Section 206AB(1)(iii), Income-tax Act 1961, omitted by the Finance (No. 2) Act 2024 w.e.f. 1 October 2024',
+   'needs_bare_act_check', 'compliance', DATE '2026-10-31', 'warn',
+   'Five per cent, or twice the rate in force if higher. The section no longer exists; the row is bounded so August 2024 still resolves it'),
+
+  -- Surcharge and cess. Only on a payment to a non-resident: for a resident,
+  -- TDS other than on salary is deducted at the section rate flat.
+  ('tds_cess_rate', 'IN', 'tds.cess.health_and_education', 'rate', 400, NULL, NULL,
+   DATE '2018-04-01', NULL,
+   'Finance Act 2018, health and education cess at 4%',
+   'needs_bare_act_check', 'compliance', DATE '2026-10-31', 'warn',
+   'On tax plus surcharge, and only for a non-resident payee'),
+
   ('tds_rate', 'IN', 'tds.194ia_immovable_transfer', 'rate', 100, NULL, NULL,
    DATE '2020-04-01', NULL,
    'Section 194-IA, Income-tax Act 1961',
@@ -1843,6 +1873,64 @@ DO UPDATE SET statute_ref = EXCLUDED.statute_ref,
               review_due = EXCLUDED.review_due,
               enforcement = EXCLUDED.enforcement,
               note = EXCLUDED.note;
+
+-- The surcharge scales, which are the first slabs rules in the registry.
+--
+-- Written separately because the bands are children: the header goes in with
+-- value_kind = 'slabs' and the deferred shape trigger checks at commit that the
+-- bands cover [0, ) with a top band. The bottom band is nil — a surcharge scale
+-- begins with a threshold below which there is no surcharge, and that band is a
+-- zero rate rather than a missing row, so a payment under fifty lakh resolves to
+-- "nil" instead of to nothing.
+--
+-- Two scales because the payee's own form decides them: a non-resident individual
+-- and a foreign company are on different ladders. ADR-0025 §3.
+DO $$
+DECLARE
+    individual uuid;
+    company    uuid;
+BEGIN
+    INSERT INTO statutory_rules (
+        rule_type, jurisdiction, rule_key, value_kind,
+        valid_from, valid_to, statute_ref, verification_status, owner, review_due,
+        enforcement, note) VALUES
+      ('tds_surcharge_rate', 'IN', 'tds.surcharge.non_resident_individual', 'slabs',
+       DATE '2023-04-01', NULL,
+       'Finance Act, First Schedule, Part II — rates for deduction at source from a non-resident',
+       'needs_bare_act_check', 'compliance', DATE '2026-10-31', 'warn',
+       'Whether the 37% band survives section 115BAC for a non-resident is exactly the kind of question this row may not answer for itself')
+    ON CONFLICT (rule_type, jurisdiction, rule_key, valid_from) WHERE retired_at IS NULL
+    DO UPDATE SET note = EXCLUDED.note
+    RETURNING id INTO individual;
+
+    INSERT INTO statutory_rules (
+        rule_type, jurisdiction, rule_key, value_kind,
+        valid_from, valid_to, statute_ref, verification_status, owner, review_due,
+        enforcement, note) VALUES
+      ('tds_surcharge_rate', 'IN', 'tds.surcharge.foreign_company', 'slabs',
+       DATE '2023-04-01', NULL,
+       'Finance Act, First Schedule, Part II — rates for deduction at source from a foreign company',
+       'needs_bare_act_check', 'compliance', DATE '2026-10-31', 'warn', NULL)
+    ON CONFLICT (rule_type, jurisdiction, rule_key, valid_from) WHERE retired_at IS NULL
+    DO UPDATE SET note = EXCLUDED.note
+    RETURNING id INTO company;
+
+    -- Fifty lakh, one crore, two crore, five crore, in paise.
+    INSERT INTO statutory_rule_slabs (rule_id, seq, lower_minor, upper_minor, rate_bps) VALUES
+      (individual, 0,          0,   500000000,    0),
+      (individual, 1,  500000000,  1000000000, 1000),
+      (individual, 2, 1000000000,  2000000000, 1500),
+      (individual, 3, 2000000000,  5000000000, 2500),
+      (individual, 4, 5000000000,        NULL, 3700),
+      (company,    0,          0,  1000000000,    0),
+      (company,    1, 1000000000, 10000000000,  200),
+      (company,    2, 10000000000,       NULL,  500)
+    ON CONFLICT (rule_id, seq) DO UPDATE
+        SET lower_minor = EXCLUDED.lower_minor,
+            upper_minor = EXCLUDED.upper_minor,
+            rate_bps    = EXCLUDED.rate_bps;
+END
+$$;
 
 -- Reference data, so every module reads it: the lease builder needs the deposit
 -- cap, money needs the GST rate and the TDS threshold, and notify needs neither
@@ -3622,6 +3710,102 @@ GRANT SELECT, INSERT, UPDATE ON lease_tax_facts TO dwellm8_lease;
 -- Money reads the path to deduct against it, and writes none of it: the section is
 -- the lease's fact, not the payout's.
 GRANT SELECT ON lease_tax_facts TO dwellm8_money, dwellm8_notify;
+
+-- ===========================================================================
+-- section 197 certificates — a rate the Assessing Officer set for one landlord
+-- ===========================================================================
+
+-- A lower or nil deduction certificate under section 197: the Assessing Officer
+-- has determined that this landlord's tax on this income is less than the section
+-- rate would deduct, and issued a certificate saying so.
+--
+-- **Beside the registry, not in it.** statutory_rules holds what the law says for
+-- everyone and has no runtime writer on purpose (ADR-0023 §2); this is a fact
+-- about one landlord, produced by an officer, entered by a user, and scoped to an
+-- organisation. Putting it in the registry would mean handing back the INSERT that
+-- ADR-0023 revoked, which is the exact defect assertion 18 exists to catch.
+--
+-- It is also the only thing that makes a section 195 deduction computable, since
+-- the registry deliberately holds no section 195 rate (ADR-0024 §5). ADR-0025 §1.
+CREATE TABLE IF NOT EXISTS tds_certificates (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id     uuid NOT NULL REFERENCES organisations(id),
+
+    -- The landlord the certificate is for. A bare uuid like every other party
+    -- reference here: a payee is a person or a company who may hold no account.
+    party_id      uuid NOT NULL,
+
+    -- A certificate is issued for a section. One that names 194-I does not lower
+    -- a 195 deduction, and applying it to both is how a nil certificate for rent
+    -- ends up applied to a capital payment.
+    section       text NOT NULL CHECK (section IN ('194i', '194ib', '195')),
+
+    certificate_number text NOT NULL CHECK (btrim(certificate_number) <> ''),
+    -- Zero is a nil-deduction certificate, which is a real and common outcome —
+    -- and the reason this is a rate rather than a nullable "lower rate".
+    rate_bps      int NOT NULL CHECK (rate_bps >= 0 AND rate_bps <= 1000000),
+
+    -- A certificate always expires: it is issued for a period, usually to the end
+    -- of the financial year. valid_to is NOT NULL for that reason, unlike every
+    -- other effective-dated table here — an open-ended certificate would keep
+    -- lowering a deduction for years after the officer's determination lapsed.
+    valid_from    date NOT NULL,
+    valid_to      date NOT NULL,
+    validity      daterange GENERATED ALWAYS AS (daterange(valid_from, valid_to, '[)')) STORED,
+
+    issued_on     date NOT NULL,
+    -- Which officer or circle issued it. Free text because the format is not ours.
+    issued_by     text,
+
+    retired_at    timestamptz,
+    corrects      uuid REFERENCES tds_certificates(id),
+
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    created_by    uuid,
+
+    CONSTRAINT tds_certificates_window CHECK (valid_to > valid_from),
+    -- A certificate cannot apply before it was issued. The other direction is
+    -- legitimate: an officer issues in June for a period beginning in April.
+    CONSTRAINT tds_certificates_issued_before_expiry CHECK (issued_on < valid_to),
+    CONSTRAINT tds_certificates_correction_shape CHECK (corrects IS NULL OR corrects <> id)
+);
+
+COMMENT ON TABLE tds_certificates IS
+    'ADR-0025. Section 197 lower/nil deduction certificates: a rate an Assessing Officer set for one landlord, for one section, for a bounded period. Tenant data, deliberately not in statutory_rules.';
+
+-- One live certificate per landlord per section per day. Two would mean two rates
+-- for the same deduction and whichever sorted first would win.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'tds_certificates_no_overlap') THEN
+        ALTER TABLE tds_certificates ADD CONSTRAINT tds_certificates_no_overlap
+            EXCLUDE USING gist (tenant_id WITH =, party_id WITH =, section WITH =, validity WITH &&)
+            WHERE (retired_at IS NULL);
+    END IF;
+END
+$$;
+
+CREATE INDEX IF NOT EXISTS tds_certificates_asof_idx
+    ON tds_certificates (tenant_id, party_id, section, valid_from DESC)
+    WHERE retired_at IS NULL;
+
+ALTER TABLE tds_certificates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tds_certificates FORCE  ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS tds_certificates_tenant_isolation ON tds_certificates;
+CREATE POLICY tds_certificates_tenant_isolation ON tds_certificates
+    USING (tenant_id = current_tenant_id() OR is_platform_session())
+    WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
+
+-- Nothing here may be deleted. A certificate is the authority for having deducted
+-- less than the section says, and it is the first document produced when that is
+-- questioned.
+DROP POLICY IF EXISTS tds_certificates_no_delete ON tds_certificates;
+CREATE POLICY tds_certificates_no_delete ON tds_certificates AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
+
+GRANT SELECT, INSERT, UPDATE ON tds_certificates TO dwellm8_lease;
+GRANT SELECT ON tds_certificates TO dwellm8_money, dwellm8_notify;
 
 -- ===========================================================================
 -- mandates — the standing authority behind a recurring debit (ADR-0022)
