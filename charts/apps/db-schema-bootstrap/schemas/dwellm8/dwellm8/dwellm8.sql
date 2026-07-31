@@ -292,6 +292,28 @@ $$ SELECT nullif(current_setting('app.grant_id', true), '')::uuid $$;
 COMMENT ON FUNCTION current_grant_id() IS
     'The delegation the request is acting under, or NULL. Declared, never trusted — is_delegated() validates it.';
 
+-- The renter a request is acting as, ADR-0029. Same nullif() treatment and for
+-- the same reason as the two above.
+--
+-- Declared here beside the other session helpers rather than in ADR-0029's own
+-- section, because the delegated-read guard on lease_parties calls it and that
+-- policy is written long before the resident scope. A helper that is defined
+-- after its first caller works — plpgsql resolves names at run time — and it
+-- works by luck.
+CREATE OR REPLACE FUNCTION current_resident_party_id() RETURNS uuid
+    LANGUAGE sql STABLE PARALLEL SAFE AS
+$$ SELECT nullif(current_setting('app.resident_party_id', true), '')::uuid $$;
+
+COMMENT ON FUNCTION current_resident_party_id() IS
+    'ADR-0029. The renter a request is acting as, or NULL for every other kind of session.';
+
+CREATE OR REPLACE FUNCTION is_resident_session() RETURNS boolean
+    LANGUAGE sql STABLE PARALLEL SAFE AS
+$$ SELECT current_resident_party_id() IS NOT NULL $$;
+
+COMMENT ON FUNCTION is_resident_session() IS
+    'True only when the request is a renter reading their own tenancy. Every resident policy is a no-op when this is false.';
+
 -- The grant half of the check: is the grant this session declared a real, live
 -- grant from this row's owner to this tenant, carrying this permission?
 --
@@ -3528,21 +3550,50 @@ CREATE POLICY leases_tenant_isolation ON leases
            OR is_delegated_unit(tenant_id, property_id, unit_id, unit_parent_id, 'lease.write'));
 
 -- The two child tables carry no unit of their own, so their delegated branch is the
--- parent lease's. Written as an EXISTS against leases rather than by denormalising the
+-- parent lease's. Written as a lookup against leases rather than by denormalising the
 -- unit, because the lease's own policy then governs both — one definition of who may
 -- see a tenancy, rather than three that can drift.
+--
+-- It is a plpgsql function rather than an inline EXISTS, and the reason is ADR-0029.
+-- The resident policy on `leases` asks whether this renter is a party to it, which
+-- reads lease_parties — and if lease_parties' own policy then reads leases, the two
+-- recurse until PostgreSQL gives up. Measured, before this function existed: "stack
+-- depth limit exceeded (SQLSTATE 54001)" on the first tenant-view query.
+--
+-- plpgsql is what makes the guard load-bearing: statements run in order, so the
+-- EXISTS below is never executed in a resident session. Written as `NOT
+-- is_resident_session() AND EXISTS (…)` inside a SQL policy the planner is free to
+-- evaluate the correlated subquery first, and the cycle comes back — intermittently,
+-- which is worse than always.
+CREATE OR REPLACE FUNCTION lease_delegated_read(row_lease uuid) RETURNS boolean
+    LANGUAGE plpgsql STABLE PARALLEL SAFE AS
+$$
+BEGIN
+    -- A renter reaches a tenancy through ADR-0029's own policy, never through a
+    -- delegation: a delegation is a mandate between organisations, and a renter
+    -- is not one.
+    IF is_resident_session() THEN
+        RETURN false;
+    END IF;
+    RETURN EXISTS (SELECT 1 FROM leases l WHERE l.id = row_lease);
+END
+$$;
+
+COMMENT ON FUNCTION lease_delegated_read(uuid) IS
+    'ADR-0005 and ADR-0029. The delegated read branch for a lease''s child tables, guarded so it cannot recurse into the resident scope.';
+
 DROP POLICY IF EXISTS lease_parties_tenant_isolation ON lease_parties;
 CREATE POLICY lease_parties_tenant_isolation ON lease_parties
     USING (tenant_id = current_tenant_id()
            OR is_platform_session()
-           OR EXISTS (SELECT 1 FROM leases l WHERE l.id = lease_id))
+           OR lease_delegated_read(lease_id))
     WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
 
 DROP POLICY IF EXISTS rent_schedule_tenant_isolation ON rent_schedule;
 CREATE POLICY rent_schedule_tenant_isolation ON rent_schedule
     USING (tenant_id = current_tenant_id()
            OR is_platform_session()
-           OR EXISTS (SELECT 1 FROM leases l WHERE l.id = lease_id))
+           OR lease_delegated_read(lease_id))
     WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
 
 -- Nothing here may be deleted. A lease that lapsed and a rent that was revised are
@@ -3556,6 +3607,8 @@ CREATE POLICY lease_parties_no_delete ON lease_parties AS RESTRICTIVE FOR DELETE
 DROP POLICY IF EXISTS rent_schedule_no_delete ON rent_schedule;
 CREATE POLICY rent_schedule_no_delete ON rent_schedule AS RESTRICTIVE FOR DELETE
     USING (sandbox_purge_permitted(tenant_id));
+
+GRANT EXECUTE ON FUNCTION lease_delegated_read(uuid) TO dwellm8_app, dwellm8_platform;
 
 GRANT SELECT, INSERT, UPDATE ON leases, lease_parties, rent_schedule TO dwellm8_lease;
 GRANT SELECT ON lease_expiring TO dwellm8_lease, dwellm8_notify, dwellm8_property;
@@ -3769,6 +3822,20 @@ CREATE TABLE IF NOT EXISTS identity_principals (
 
 COMMENT ON TABLE identity_principals IS
     'ADR-0027. A GIP user in one surface pool, and the person they are. Unique on (surface, gip_uid): a uid is unique within a pool, not across pools.';
+
+-- One renter, one party id, however many landlords. ADR-0029 §2.
+--
+-- A tenancy is created by the landlord, who types their tenant's mobile number
+-- before that person has ever opened the app — so the Live principal exists
+-- before the sign-in does, keyed by the number, and the first sign-in claims it.
+-- Without this index the second landlord to enter the same number would mint a
+-- second party id, and the renter would sign in to find one of their two flats.
+--
+-- Disabled rows are included deliberately: a suspended principal keeps its
+-- number reserved, so a support decision cannot be walked around by adding the
+-- person to a new lease.
+CREATE UNIQUE INDEX IF NOT EXISTS identity_principals_live_phone_idx
+    ON identity_principals (phone) WHERE surface = 'live' AND phone IS NOT NULL;
 
 -- No tenant_id, and that is the point: a principal exists before they belong to
 -- any organisation — somebody signing into Find is nobody's tenant yet. So it is
@@ -5785,6 +5852,187 @@ GRANT SELECT, INSERT ON outbox TO dwellm8_money, dwellm8_lease, dwellm8_identity
 GRANT SELECT, INSERT, UPDATE ON outbox TO dwellm8_platform;
 
 -- ===========================================================================
+-- the resident scope (ADR-0029)
+-- ===========================================================================
+
+-- A tenant reading their own tenancy is not a small organisation.
+--
+-- Every policy above answers one question: which *organisation* may see this
+-- row. That is the right boundary for a landlord and the wrong one for a
+-- renter — a renter scoped to their landlord's organisation would read every
+-- other tenant of that landlord, which is a worse leak than the cross-tenant
+-- one ADR-0003 exists to prevent, because it looks like the system working.
+--
+-- So a resident request carries a second setting, app.resident_party_id, and
+-- every table narrows a second time. Three properties make it safe:
+--
+--   1. **Deny by default.** The loop at the foot of this section puts a
+--      RESTRICTIVE deny on every row-level-secured table that is not on the
+--      allowlist below. A table added by a future ADR is closed to residents
+--      before anybody thinks about it, which is the opposite of how the
+--      hazard usually arrives.
+--   2. **The narrowing is the database's**, not a WHERE clause in Go. ADR-0003's
+--      argument applies unchanged: a forgotten filter must be impossible rather
+--      than discouraged, and the filter that would be forgotten here is the one
+--      separating two tenants of the same landlord.
+--   3. **It only ever narrows.** Every predicate is `NOT is_resident_session()
+--      OR …`, so an owner, a manager, a delegated firm and the platform session
+--      are unaffected — this section cannot widen anything.
+--
+-- The organisation scope still applies on top: a resident session is scoped to
+-- exactly one organisation at a time, and a resident with leases under two
+-- landlords is two scoped reads, never one query across both. That is what
+-- keeps the two landlords from learning of each other.
+
+-- current_resident_party_id() and is_resident_session() are declared with the
+-- other session helpers, at the top of this file, because the delegated-read
+-- guard on lease_parties calls them long before this section runs.
+
+-- The one question the resident scope turns on: is this lease one this person
+-- is a tenant of?
+--
+-- It reads lease_parties under the caller's own row-level security, which is
+-- not a weakness but the second lock — and it does not recurse, because the
+-- policy on lease_parties below is a direct comparison rather than another call
+-- to this function.
+--
+-- `retired_at IS NULL` and no validity check, deliberately. A tenancy that
+-- ended is still the tenant's own history: the story this exists for is a
+-- renter proving what they paid, and a receipt that disappears the day the
+-- lease ends is a receipt that is missing exactly when it is needed. A retired
+-- row is a correction — somebody recorded the wrong person — and that one must
+-- stop granting access immediately.
+CREATE OR REPLACE FUNCTION resident_holds_lease(row_tenant uuid, row_lease uuid)
+    RETURNS boolean LANGUAGE sql STABLE PARALLEL SAFE AS
+$$
+    SELECT NOT is_resident_session()
+        OR (row_lease IS NOT NULL AND EXISTS (
+                SELECT 1 FROM lease_parties lp
+                 WHERE lp.lease_id  = row_lease
+                   AND lp.tenant_id = row_tenant
+                   AND lp.party_id  = current_resident_party_id()
+                   AND lp.role      = 'tenant'
+                   AND lp.retired_at IS NULL))
+$$;
+
+COMMENT ON FUNCTION resident_holds_lease(uuid, uuid) IS
+    'ADR-0029. Whether the resident this session acts as is a tenant of this lease. True for every non-resident session, so it only ever narrows.';
+
+GRANT EXECUTE ON FUNCTION current_resident_party_id() TO dwellm8_app, dwellm8_platform;
+GRANT EXECUTE ON FUNCTION is_resident_session()       TO dwellm8_app, dwellm8_platform;
+GRANT EXECUTE ON FUNCTION resident_holds_lease(uuid, uuid) TO dwellm8_app, dwellm8_platform;
+
+-- The tenancy itself, and the terms of it. Read-only: a renter does not write a
+-- lease, and the WITH CHECK says so rather than relying on a privilege.
+DROP POLICY IF EXISTS leases_resident_scope ON leases;
+CREATE POLICY leases_resident_scope ON leases AS RESTRICTIVE
+    USING (resident_holds_lease(tenant_id, id))
+    WITH CHECK (NOT is_resident_session());
+
+-- Their own row only, not the whole party list. A co-tenant's party id is not
+-- something the payment screen needs, and this is the table resident_holds_lease
+-- reads — so a direct comparison here is also what keeps that function from
+-- recursing into its own policy.
+DROP POLICY IF EXISTS lease_parties_resident_scope ON lease_parties;
+CREATE POLICY lease_parties_resident_scope ON lease_parties AS RESTRICTIVE
+    USING (NOT is_resident_session() OR party_id = current_resident_party_id())
+    WITH CHECK (NOT is_resident_session());
+
+DROP POLICY IF EXISTS rent_schedule_resident_scope ON rent_schedule;
+CREATE POLICY rent_schedule_resident_scope ON rent_schedule AS RESTRICTIVE
+    USING (resident_holds_lease(tenant_id, lease_id))
+    WITH CHECK (NOT is_resident_session());
+
+-- An entry that names no lease is invisible to a resident. That is most of the
+-- ledger — payouts, platform fees, settlements — and none of it is theirs.
+DROP POLICY IF EXISTS journal_entries_resident_scope ON journal_entries;
+CREATE POLICY journal_entries_resident_scope ON journal_entries AS RESTRICTIVE
+    USING (resident_holds_lease(tenant_id, lease_id))
+    WITH CHECK (NOT is_resident_session());
+
+-- A posting has no lease of its own, so it is judged by whose balance it moves.
+-- The counterpart lines of a resident's own invoice — rent_income, credited to
+-- the owner — are correctly hidden by this: what the tenant owes is theirs to
+-- see, what the landlord earns is not.
+DROP POLICY IF EXISTS ledger_postings_resident_scope ON ledger_postings;
+CREATE POLICY ledger_postings_resident_scope ON ledger_postings AS RESTRICTIVE
+    USING (NOT is_resident_session()
+           OR (party_kind = 'tenant' AND party_id = current_resident_party_id()))
+    WITH CHECK (NOT is_resident_session());
+
+-- The one table a resident writes. Both halves are constrained: the payer must
+-- be them, and the lease must be one of theirs — which also refuses a payment
+-- naming no lease at all, because resident_holds_lease() is false for NULL.
+DROP POLICY IF EXISTS payments_resident_scope ON payments;
+CREATE POLICY payments_resident_scope ON payments AS RESTRICTIVE
+    USING (NOT is_resident_session()
+           OR (payer_kind = 'tenant'
+               AND payer_id = current_resident_party_id()
+               AND resident_holds_lease(tenant_id, lease_id)))
+    WITH CHECK (NOT is_resident_session()
+           OR (payer_kind = 'tenant'
+               AND payer_id = current_resident_party_id()
+               AND resident_holds_lease(tenant_id, lease_id)));
+
+-- The flat they live in and the building it is in — the lease summary needs a
+-- name for both. Reached through `leases`, which this section has already
+-- narrowed, so no second copy of the tenancy rule appears here.
+DROP POLICY IF EXISTS units_resident_scope ON units;
+CREATE POLICY units_resident_scope ON units AS RESTRICTIVE
+    USING (NOT is_resident_session()
+           OR EXISTS (SELECT 1 FROM leases l WHERE l.unit_id = units.id))
+    WITH CHECK (NOT is_resident_session());
+
+DROP POLICY IF EXISTS properties_resident_scope ON properties;
+CREATE POLICY properties_resident_scope ON properties AS RESTRICTIVE
+    USING (NOT is_resident_session()
+           OR EXISTS (SELECT 1 FROM leases l WHERE l.property_id = properties.id))
+    WITH CHECK (NOT is_resident_session());
+
+-- Who to pay, by name. A renter with two landlords sees two names and nothing
+-- that connects them, which is the edge case the story names.
+DROP POLICY IF EXISTS organisations_resident_scope ON organisations;
+CREATE POLICY organisations_resident_scope ON organisations AS RESTRICTIVE
+    USING (NOT is_resident_session()
+           OR EXISTS (SELECT 1 FROM leases l WHERE l.tenant_id = organisations.id))
+    WITH CHECK (NOT is_resident_session());
+
+-- Everything else is closed.
+--
+-- Column-driven rather than a list, for the reason assertions 6 and 16 give: a
+-- guard that covers the tables its author had in mind decays with the next
+-- migration, and the decay here is a renter reading a table nobody remembered
+-- to think about. The allowlist is the argument; anything absent from it is
+-- denied, including tables this file has not seen yet.
+DO $$
+DECLARE
+    opened text[] := ARRAY[
+        'leases', 'lease_parties', 'rent_schedule', 'journal_entries',
+        'ledger_postings', 'payments', 'units', 'properties', 'organisations'];
+    tbl text;
+BEGIN
+    -- The bootstrap replays every 30 minutes; a NOTICE per absent policy per
+    -- table is thirty lines of log saying nothing happened.
+    PERFORM set_config('client_min_messages', 'warning', true);
+
+    FOR tbl IN
+        SELECT c.relname
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity
+           AND c.relname <> ALL (opened)
+         ORDER BY c.relname
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %I', tbl || '_resident_denied', tbl);
+        EXECUTE format(
+            'CREATE POLICY %I ON %I AS RESTRICTIVE '
+            'USING (NOT is_resident_session()) WITH CHECK (NOT is_resident_session())',
+            tbl || '_resident_denied', tbl);
+    END LOOP;
+END
+$$;
+
+-- ===========================================================================
 -- tenancy assertions
 -- ===========================================================================
 
@@ -6264,9 +6512,14 @@ BEGIN
     END IF;
 
     -- A public read path with a public *write* path is a different thing entirely.
+    --
+    -- PERMISSIVE only: a restrictive policy is an AND that narrows — ADR-0029's
+    -- resident deny is one — and judging it by this rule would report the
+    -- narrowing as a hole.
     IF EXISTS (
         SELECT 1 FROM pg_policies p
          WHERE p.schemaname = 'public' AND p.tablename = 'listings' AND p.cmd = 'ALL'
+           AND p.permissive = 'PERMISSIVE'
            AND coalesce(p.with_check, '') NOT LIKE '%current_tenant_id()%') THEN
         RAISE EXCEPTION 'the listings policy admits a write without a tenant — the hole is meant to '
                         'be read-only by construction';
@@ -6307,6 +6560,49 @@ BEGIN
     IF offending IS NOT NULL THEN
         RAISE EXCEPTION 'unverified statutory rule(s) set to block: % — a cap enforced from a blog '
                         'post is worse than no cap, because it is wrong with authority', offending;
+    END IF;
+
+    -- 19. Every row-level-secured table must have an opinion about a resident
+    --     session, and the default opinion must be no.
+    --
+    --     ADR-0029 narrows a request a second time, from "this organisation" to
+    --     "this renter", and the failure it prevents is not a cross-tenant leak —
+    --     it is a renter reading the other forty tenants of the same landlord,
+    --     which looks exactly like the product working.
+    --
+    --     A table is compliant when some policy on it mentions the resident
+    --     scope: either one of the allowlisted narrowing policies above, or the
+    --     generated deny. This is the guard on the generator — if the loop is
+    --     ever removed, reordered above a table's creation, or quietly narrowed
+    --     to a list, the bootstrap fails here rather than opening a table.
+    SELECT string_agg(DISTINCT c.relname, ', ') INTO offending
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity
+      AND NOT EXISTS (
+          SELECT 1 FROM pg_policies p
+           WHERE p.schemaname = 'public' AND p.tablename = c.relname
+             AND p.permissive = 'RESTRICTIVE'
+             AND (coalesce(p.qual, '') LIKE '%is_resident_session()%'
+               OR coalesce(p.qual, '') LIKE '%resident_holds_lease(%'));
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'table(s) with no resident-scope policy: % — a renter session would read '
+                        'every row their landlord can, which is every other tenant of that landlord. '
+                        'Either narrow it in the ADR-0029 section or let the deny loop close it', offending;
+    END IF;
+
+    -- And the other direction: a resident policy must be RESTRICTIVE. A
+    -- PERMISSIVE one would be an OR against the organisation policy, so instead
+    -- of narrowing a renter it would widen everybody else to the renter's rows.
+    SELECT string_agg(format('%s.%s', p.tablename, p.policyname), ', ') INTO offending
+    FROM pg_policies p
+    WHERE p.schemaname = 'public'
+      AND p.policyname LIKE '%\_resident\_%'
+      AND p.permissive <> 'RESTRICTIVE';
+    IF offending IS NOT NULL THEN
+        RAISE EXCEPTION 'resident policy/policies that are PERMISSIVE: % — a permissive policy is an '
+                        'OR, so this would widen every other session to the renter''s rows rather '
+                        'than narrowing the renter', offending;
     END IF;
 
     SELECT string_agg(want, ', ') INTO offending
