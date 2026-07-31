@@ -19,8 +19,12 @@ jetstream:
   storage:
     size: 5Gi
     storageClass: standard-rwo-retain
-  maxMemory: 256Mi
-  maxFile: 4Gi
+  # Raw bytes, not Kubernetes quantities. This block is rendered into
+  # nats.conf, where `256Mi` is a parse error and NATS exits on boot — the PVC
+  # size above IS a Kubernetes quantity, and having both units in one file is
+  # exactly how that gets mixed up.
+  maxMemory: 268435456   # 256 MiB
+  maxFile: 4294967296    # 4 GiB, under the 5Gi volume so the disk never fills
 
 resources:
   requests:
