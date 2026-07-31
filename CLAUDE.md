@@ -264,6 +264,12 @@ in `homechef-clients-bootstrap-job.yaml`. The bootstrap job is idempotent.
 9. **Image registries** — GHCR `ghcr.io/tesserix/` is primary; GAR
    `asia-south1-docker.pkg.dev/tesseracthub-480811/` is secondary for Cloud Run.
 10. **Ports** — Go services 8080–8099; Next.js local 3001–3200, in-container 3000.
+11. **`RespectIgnoreDifferences=true` + SSA + jq ignores into a list** — the
+    normalisation can strip the whole list from the apply: sync reports
+    Succeeded, the resource's `generation` never moves, and the change silently
+    never lands. Bit dwellm8-postgres via the argocd-cm jq ignores into
+    `spec.managed.roles[]`. If a synced change is not taking effect, check
+    `generation` and the `managedFields` timestamps before anything else.
 
 ---
 
