@@ -16,13 +16,9 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
-  # Kargo writes spec.source.helm.parameters on child Applications during a
-  # promotion; without this exception selfHeal would revert every image bump.
-  ignoreDifferences:
-    - group: argoproj.io
-      kind: Application
-      jsonPointers:
-        - /spec/source/helm/parameters
+  # No ignoreDifferences on /spec/source/helm/parameters yet: dwellm8 has no
+  # Kargo Warehouse, so nothing writes that field and the exception only made a
+  # stale `image.tag: latest` unremovable by git. Restore it when Kargo lands.
   syncPolicy:
     automated:
       selfHeal: true
