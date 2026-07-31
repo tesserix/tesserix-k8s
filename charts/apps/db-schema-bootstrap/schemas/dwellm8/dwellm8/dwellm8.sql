@@ -1753,6 +1753,12 @@ INSERT INTO statutory_rules (
 
   -- TDS. Two of these are pairs, and the pairs are the point: the old row stays
   -- exactly as it was, so a recomputation of an old deduction still reproduces.
+  --
+  -- There is no section 195 rate here and that absence is deliberate (ADR-0024 §5):
+  -- the rate on a payment to a non-resident is the Act's or a treaty's, read with
+  -- that landlord's tax residency certificate, and there is no single number to
+  -- hold. The matrix still selects section 195 and still says the tenant carries it;
+  -- what it will not do is compute a deduction against a number nobody chose.
   ('tds_rate', 'IN', 'tds.194i_land_and_building', 'rate', 1000, NULL, NULL,
    DATE '2020-04-01', NULL,
    'Section 194-I(b), Income-tax Act 1961',
@@ -3457,6 +3463,165 @@ GRANT SELECT ON lease_expiring TO dwellm8_lease, dwellm8_notify, dwellm8_propert
 -- Money bills against the lease and reads the schedule; it writes neither.
 GRANT SELECT ON leases, lease_parties, rent_schedule
     TO dwellm8_money, dwellm8_property, dwellm8_identity, dwellm8_notify, dwellm8_maintenance;
+
+-- ===========================================================================
+-- lease tax facts — the two facts that decide the TDS section (ADR-0024)
+-- ===========================================================================
+
+-- What kind of payer the tenant is, and whether the landlord is a resident. Those
+-- two answers select section 194-I, 194-IB or 195, and with them the rate, the
+-- threshold, the periodicity, the forms and who is liable when it is missed.
+--
+-- A table rather than two columns on leases, because residency changes. A landlord
+-- who moves abroad in October was a resident in April, and both are true of the same
+-- tenancy in the same financial year: April's rent was deducted at ten per cent
+-- under 194-I and deposited and certified that way, and overwriting a column would
+-- restate a deduction that was correct. ADR-0008's shape, for ADR-0008's reason.
+--
+-- No acknowledgement is required to *record* a fact: a draft lease may know the
+-- landlord is an NRI before the tenant has been shown what that costs them. It is
+-- required to *start the tenancy*, which is the trigger below.
+CREATE TABLE IF NOT EXISTS lease_tax_facts (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id     uuid NOT NULL REFERENCES organisations(id),
+    lease_id      uuid NOT NULL,
+
+    -- Narrower than "individual or company": the line the Act draws is whether the
+    -- payer is an individual or HUF *not* liable to audit under section 44AB, because
+    -- that class alone deducts under 194-IB. The same four values exist in Go and the
+    -- store contract test fails the build if they diverge.
+    deductor_class     text NOT NULL CHECK (deductor_class IN (
+                           'individual_no_audit', 'individual_audited', 'business', 'government')),
+    landlord_residency text NOT NULL CHECK (landlord_residency IN ('resident', 'non_resident')),
+
+    -- Residency is asserted rather than proved, so the assertion has an author. When
+    -- the assessing officer asks, "the tenant declared it on this date" is an answer
+    -- and "the system had it" is not.
+    source        text NOT NULL CHECK (btrim(source) <> ''),
+
+    -- The section 195 acknowledgement: the deductor was shown that tax runs from the
+    -- first rupee and that the liability for missing it is theirs, and accepted it.
+    acknowledged_on date,
+    acknowledged_by text,
+
+    valid_from    date NOT NULL,
+    valid_to      date,
+    validity      daterange GENERATED ALWAYS AS (daterange(valid_from, valid_to, '[)')) STORED,
+
+    retired_at    timestamptz,
+    corrects      uuid REFERENCES lease_tax_facts(id),
+
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    created_by    uuid,
+
+    CONSTRAINT lease_tax_facts_lease_fkey FOREIGN KEY (lease_id, tenant_id)
+        REFERENCES leases (id, tenant_id),
+    CONSTRAINT lease_tax_facts_window CHECK (valid_to IS NULL OR valid_to > valid_from),
+    -- An acknowledgement dated by nobody is not an acknowledgement, and a name with no
+    -- date cannot be shown to have preceded the tenancy.
+    CONSTRAINT lease_tax_facts_acknowledgement_shape CHECK (
+        (acknowledged_on IS NULL) = (acknowledged_by IS NULL)),
+    CONSTRAINT lease_tax_facts_correction_shape CHECK (corrects IS NULL OR corrects <> id)
+);
+
+COMMENT ON TABLE lease_tax_facts IS
+    'ADR-0024. Deductor class and landlord residency over the life of a tenancy — the two facts that select the TDS section. Effective dated: a residency that changes leaves the earlier months as they were deducted.';
+
+-- One set of facts true at a time, per lease. An EXCLUDE rather than a trigger for
+-- the reason property_ownership gives: a trigger reads the table it is protecting
+-- and is racy exactly when two writers revise the same tenancy.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'lease_tax_facts_no_overlap') THEN
+        ALTER TABLE lease_tax_facts ADD CONSTRAINT lease_tax_facts_no_overlap
+            EXCLUDE USING gist (tenant_id WITH =, lease_id WITH =, validity WITH &&)
+            WHERE (retired_at IS NULL);
+    END IF;
+END
+$$;
+
+CREATE INDEX IF NOT EXISTS lease_tax_facts_asof_idx
+    ON lease_tax_facts (tenant_id, lease_id, valid_from DESC)
+    WHERE retired_at IS NULL;
+
+-- The story's failure scenario, in the database: a tenancy does not start until its
+-- tax path is known, and a section 195 tenancy does not start until the deductor has
+-- accepted the obligation.
+--
+-- On the transition into a tenancy rather than on every write, because a draft is a
+-- document being written and may legitimately be incomplete. The moment rent can be
+-- paid under it, a payment made under facts nobody recorded is a deduction nobody
+-- made — and by the time the payout run finds it, nine months of interest and
+-- penalty have accrued to a tenant who was never asked.
+--
+-- Deferred to commit, because the facts and the lease are written together and the
+-- facts carry a foreign key to the lease: an immediate check would force the two
+-- into an order the caller should not have to know about. What it asserts is that no
+-- transaction *ends* with a tenancy whose tax path is unknown.
+CREATE OR REPLACE FUNCTION leases_tax_path_is_known() RETURNS trigger
+    LANGUAGE plpgsql AS
+$$
+DECLARE
+    f record;
+BEGIN
+    IF NEW.state <> 'active' OR (TG_OP = 'UPDATE' AND OLD.state = 'active') THEN
+        RETURN NULL;
+    END IF;
+
+    SELECT * INTO f
+      FROM lease_tax_facts
+     WHERE lease_id = NEW.id
+       AND retired_at IS NULL
+       AND validity @> NEW.valid_from;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'lease % cannot start on %: nothing says what the deductor and the '
+                        'landlord are, so no TDS section governs its first payment',
+                        NEW.id, NEW.valid_from
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    IF f.landlord_residency = 'non_resident' AND f.acknowledged_on IS NULL THEN
+        RAISE EXCEPTION 'lease % is a section 195 tenancy: tax is deducted from the first rupee '
+                        'and the deductor carries the liability, and the tenancy cannot start '
+                        'until that is acknowledged', NEW.id
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NULL;
+END
+$$;
+
+COMMENT ON FUNCTION leases_tax_path_is_known() IS
+    'ADR-0024. A tenancy does not start with an unknown TDS path, and a section 195 tenancy does not start unacknowledged. Deferred to commit: the facts and the lease are written together.';
+
+DROP TRIGGER IF EXISTS leases_tax_path_known ON leases;
+CREATE CONSTRAINT TRIGGER leases_tax_path_known
+    AFTER INSERT OR UPDATE ON leases
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION leases_tax_path_is_known();
+
+ALTER TABLE lease_tax_facts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lease_tax_facts FORCE  ROW LEVEL SECURITY;
+
+-- The parent lease's policy governs, as with lease_parties: one definition of who may
+-- see a tenancy rather than three that drift apart.
+DROP POLICY IF EXISTS lease_tax_facts_tenant_isolation ON lease_tax_facts;
+CREATE POLICY lease_tax_facts_tenant_isolation ON lease_tax_facts
+    USING (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR EXISTS (SELECT 1 FROM leases l WHERE l.id = lease_id))
+    WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
+
+-- Nothing here may be deleted. What the tenant declared, and when, is the whole
+-- defence when a deduction is questioned years later.
+DROP POLICY IF EXISTS lease_tax_facts_no_delete ON lease_tax_facts;
+CREATE POLICY lease_tax_facts_no_delete ON lease_tax_facts AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
+
+GRANT SELECT, INSERT, UPDATE ON lease_tax_facts TO dwellm8_lease;
+-- Money reads the path to deduct against it, and writes none of it: the section is
+-- the lease's fact, not the payout's.
+GRANT SELECT ON lease_tax_facts TO dwellm8_money, dwellm8_notify;
 
 -- ===========================================================================
 -- mandates — the standing authority behind a recurring debit (ADR-0022)
