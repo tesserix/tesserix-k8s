@@ -2798,6 +2798,10 @@ CREATE TRIGGER leases_legal_transitions
 -- below) and journal_entries_lease_charge_shape makes the pairing structural. An
 -- invoice cannot claim to be a lease charge without naming the lease.
 --
+-- source_kind is filtered because lease_id now names the tenancy an entry concerns,
+-- payments included; unfiltered, the last receipt would move "billed through".
+-- ADR-0006 §5 amendment.
+--
 -- SECURITY INVOKER: the lookup runs under the writer's own row-level security, so a
 -- session that cannot see the ledger gets no rows and the check fails open rather than
 -- reading another organisation's charges.
@@ -2814,7 +2818,8 @@ BEGIN
     SELECT max(occurred_on) INTO billed_through
       FROM journal_entries e
      WHERE e.tenant_id = NEW.tenant_id
-       AND e.lease_id = NEW.id;
+       AND e.lease_id = NEW.id
+       AND e.source_kind = 'lease_charge';
 
     IF billed_through IS NOT NULL AND NEW.ended_on < billed_through THEN
         RAISE EXCEPTION 'lease % is ending % and charges are raised through %: an over-billed '
@@ -4384,10 +4389,12 @@ $$;
 -- journal_entries has existed since ADR-0006. ADD COLUMN IF NOT EXISTS does exist, so
 -- unlike a CHECK this one can be written once.
 --
--- Nullable, because most entries have no tenancy: a GST remittance, a payout, a
--- settlement. What is not optional is the pairing — an entry that calls itself a lease
--- charge must name the lease, and one that names a lease must say so — which is what
--- turns ADR-0010 §7's trigger from a string convention into an enforced one.
+-- Nullable: most entries have no tenancy. The rule that remains is one-directional —
+-- a lease charge names its lease — which is what keeps ADR-0010 §7's trigger enforcing.
+--
+-- The converse was withdrawn by the ADR-0006 §5 amendment: it forbade a payment
+-- (source_kind 'payment') from naming the lease it paid, so a per-lease position summed
+-- the invoices and none of the receipts.
 DO $$
 BEGIN
     ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS lease_id uuid;
@@ -4400,10 +4407,22 @@ BEGIN
     -- The source_kind vocabulary stays open — ADR-0006 deliberately left it free text so
     -- any module can name its own cause — but 'lease_charge' now means something the
     -- database checks.
+    --
+    -- Compared by definition, not by name: an older database has the stricter rule
+    -- under this same name, so IF NOT EXISTS alone would skip it forever. `<>` appears
+    -- in the implication and in no earlier version.
+    IF EXISTS (SELECT 1 FROM pg_constraint
+                WHERE conname = 'journal_entries_lease_charge_shape'
+                  AND pg_get_constraintdef(oid) NOT LIKE '%<>%') THEN
+        ALTER TABLE journal_entries DROP CONSTRAINT journal_entries_lease_charge_shape;
+        RAISE NOTICE 'relaxed journal_entries_lease_charge_shape: lease_id now names the '
+                     'tenancy an entry concerns, not only the tenancy it bills';
+    END IF;
+
     IF NOT EXISTS (SELECT 1 FROM pg_constraint
                     WHERE conname = 'journal_entries_lease_charge_shape') THEN
         ALTER TABLE journal_entries ADD CONSTRAINT journal_entries_lease_charge_shape
-            CHECK ((source_kind = 'lease_charge') = (lease_id IS NOT NULL));
+            CHECK (source_kind <> 'lease_charge' OR lease_id IS NOT NULL);
     END IF;
 END
 $$;
