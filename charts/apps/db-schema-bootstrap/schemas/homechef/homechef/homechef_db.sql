@@ -5488,3 +5488,13 @@ ALTER TABLE public.chef_promotions
   ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
 ALTER TABLE public.group_order_participants
   ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+
+--
+-- Refund policy v3: the chef's decision window. A customer cancellation parks each unserved
+-- day on the chef to price; past this the sweep agrees 100% so an unresponsive kitchen cannot
+-- hold the customer's money indefinitely. Set only while refund_stage = 'pending_chef'.
+ALTER TABLE public.meal_plan_days
+  ADD COLUMN IF NOT EXISTS refund_decision_by timestamp with time zone;
+CREATE INDEX IF NOT EXISTS idx_meal_plan_days_refund_decision_by
+  ON public.meal_plan_days (refund_decision_by)
+  WHERE refund_decision_by IS NOT NULL;
