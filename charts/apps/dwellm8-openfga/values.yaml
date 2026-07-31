@@ -1,0 +1,58 @@
+# OpenFGA for Dwellm8 — the verb half of ADR-0020, on the critical path of
+# every guarded request. RLS remains the row half; a check that cannot be made
+# is a deny in the API, never an allow, so this deployment being down stops
+# writes rather than widening them.
+#
+# The datastore is a database on the existing dwellm8-postgres cluster per
+# docs/postgres-cluster-policy.md — not a new cluster. Tuples are projections
+# of rows that PostgreSQL keeps (grants, memberships), so restore-from-backup
+# is CNPG's plus a replay of the tuple pipeline (dwellm8#151); losing this
+# database loses no truth, only its cache.
+#
+# The authorisation model is NOT written from this repository. It ships from
+# the app repo (services/api/internal/platform/authz/model.fga, tested in CI),
+# and the API writes it at startup — a model write is versioned and immutable
+# in OpenFGA, so a rollout is: deploy API with new model file, it writes a new
+# model id, checks pin it; rollback is deploying the previous file. In-flight
+# decisions are unaffected — old model ids remain readable.
+namespace: dwellm8
+name: dwellm8-openfga
+
+image:
+  # In-region Artifact Registry mirror of Docker Hub.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/openfga/openfga
+  tag: v1.18.1
+  pullPolicy: IfNotPresent
+
+# One replica while no traffic exists; the latency budget below is measured on
+# the check API, and the number to raise first under load is this one.
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  httpPort: 8080
+  grpcPort: 8081
+  metricsPort: 2112
+
+database:
+  # The -rw service, never the pooler: OpenFGA holds a connection pool and
+  # runs its own migrations, the combination poolers multiplex badly.
+  host: dwellm8-postgres-rw.dwellm8.svc.cluster.local
+  port: 5432
+  name: openfga
+  # Basic-auth secret reconciled by the dwellm8-postgres chart's
+  # applicationRoles ExternalSecret from prod-dwellm8-openfga-postgresql-password.
+  secretName: dwellm8-postgres-openfga-credentials
+
+# The check latency budget (ADR-0020, dwellm8#149): p50 ≤ 20ms, p99 ≤ 100ms
+# in-cluster. Alerts fire on the p99 and on the deployment being unreachable,
+# because unreachable means every guarded write on the platform is refused.
+latency:
+  p99Seconds: 0.1
+
+# Memory only — the platform sets no CPU requests or limits.
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 512Mi
