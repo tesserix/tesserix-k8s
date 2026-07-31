@@ -42,6 +42,23 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # Server-side apply, because the schema outgrew client-side apply.
+      #
+      # A client-side apply stores the whole object in the
+      # kubectl.kubernetes.io/last-applied-configuration annotation, and an
+      # annotation may not exceed 262144 bytes. dwellm8.sql passed that on
+      # 2026-07-31 (271,708 bytes, with ADR-0022's mandates section) and every
+      # sync failed on it:
+      #
+      #   ConfigMap "dwellm8-db-schema-bootstrap-schemas-dwellm8" is invalid:
+      #   metadata.annotations: Too long: may not be more than 262144 bytes
+      #
+      # The failure is loud in ArgoCD and silent everywhere else: the CronJob
+      # keeps running happily against the *old* ConfigMap, reports "OK — no
+      # unexpected errors", and the new tables simply never appear. Server-side
+      # apply writes no such annotation, which removes the ceiling rather than
+      # postponing it. dwellm8-api already uses it.
+      - ServerSideApply=true
     retry:
       limit: 5
       backoff:
