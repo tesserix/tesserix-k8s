@@ -65,6 +65,10 @@ env:
   LOG_LEVEL: info
   PORT: "8080"
   SHUTDOWN_GRACE_SECONDS: "20"
+  # ADR-0020. Configured-but-dark: the store and model bootstrap, checks run
+  # and are not enforced. AUTHZ_ENFORCE=true is a deliberate later flip, after
+  # dwellm8#151's projector has tuples to answer with.
+  AUTHZ_URL: http://dwellm8-openfga.dwellm8.svc.cluster.local:8080
 
 # Payments. ADR-0011 chain and ADR-0022's adapter configuration.
 #
@@ -167,6 +171,19 @@ identity:
 # durable workflow: their durability is the idempotency key, and a pod killed
 # half way through leaves what it did and the next run does the rest.
 cronjobs:
+  # Daily graph reconciliation (dwellm8#151). Reports divergence and exits
+  # non-zero - the failed Job is the alert; repair is a human running
+  # `jobs authz --mode rebuild` after understanding why.
+  authz:
+    enabled: true
+    schedule: "30 3 * * *"
+    timeZone: "Asia/Kolkata"
+    args: ["authz", "--mode", "reconcile"]
+    resources:
+      requests:
+        memory: 64Mi
+      limits:
+        memory: 256Mi
   bill:
     enabled: true
     # 02:30 IST, before anybody is awake to be confused by a half-finished run,
