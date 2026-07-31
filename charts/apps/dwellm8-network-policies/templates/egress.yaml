@@ -1,0 +1,31 @@
+{{- /*
+Egress stays broad, and the lock is on the way in.
+
+What Dwellm8 must reach is external and moves: GCP Secret Manager, the Cashfree
+API, Google's public certificates for verifying GIP tokens, and the IP ranges
+behind all three change without telling anybody. An allow-list of those is a
+list that goes stale and then presents as payments failing at 3am.
+
+The trust boundary here is the ingress policy — who may reach the ledger — not
+which hosts the API may call. That is the same trade the support-platform
+namespace makes, for the same reason.
+
+Excluded: the GKE metadata IP. Dwellm8 pods have no Workload Identity binding;
+their credentials arrive as Secrets that ESO wrote. A pod that can curl the
+metadata server is a pod that can go looking for a token it was never given.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-broad
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32

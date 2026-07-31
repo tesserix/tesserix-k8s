@@ -79,6 +79,12 @@ spec:
             - name: PLATFORM_DATABASE_URL
               value: "postgres://$(PLATFORM_DB_USER):$(PLATFORM_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
             {{- if .Values.gcp.secretManager.enabled }}
+            # ADR-0027. Not a secret: verifying a GIP token needs Google's public
+            # certificates and the project id. The API refuses to start without
+            # it outside dev, because a server that cannot verify a token and
+            # starts anyway is a server that will eventually trust one.
+            - name: GIP_PROJECT_ID
+              value: {{ .Values.identity.projectId | quote }}
             - name: PAYMENT_PROVIDERS
               value: {{ .Values.payments.providers | quote }}
             - name: CASHFREE_BASE_URL
