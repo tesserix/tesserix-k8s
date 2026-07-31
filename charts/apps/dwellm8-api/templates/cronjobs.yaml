@@ -79,11 +79,9 @@ spec:
                 # The request role, subject to row-level security. A billing run
                 # spans the platform and every read inside it does not: the run
                 # lists organisations with the platform role and then does all of
-                # its work in one organisation's session at a time.
-                - name: DATABASE_URL
-                  value: "postgres://$(DB_USER):$(DB_PASSWORD)@{{ $.Values.database.host }}:{{ $.Values.database.port }}/{{ $.Values.database.name }}?sslmode={{ $.Values.database.sslMode }}"
-                - name: PLATFORM_DATABASE_URL
-                  value: "postgres://$(PLATFORM_DB_USER):$(PLATFORM_DB_PASSWORD)@{{ $.Values.database.host }}:{{ $.Values.database.port }}/{{ $.Values.database.name }}?sslmode={{ $.Values.database.sslMode }}"
+                # its work in one organisation's session at a time. $(VAR)
+                # expands only against names declared earlier in this list, so
+                # each credential comes before the URL that interpolates it.
                 - name: DB_USER
                   valueFrom:
                     secretKeyRef:
@@ -94,6 +92,8 @@ spec:
                     secretKeyRef:
                       name: {{ $.Values.database.secretName }}
                       key: password
+                - name: DATABASE_URL
+                  value: "postgres://$(DB_USER):$(DB_PASSWORD)@{{ $.Values.database.host }}:{{ $.Values.database.port }}/{{ $.Values.database.name }}?sslmode={{ $.Values.database.sslMode }}"
                 - name: PLATFORM_DB_USER
                   valueFrom:
                     secretKeyRef:
@@ -104,6 +104,8 @@ spec:
                     secretKeyRef:
                       name: {{ $.Values.database.platformSecretName }}
                       key: password
+                - name: PLATFORM_DATABASE_URL
+                  value: "postgres://$(PLATFORM_DB_USER):$(PLATFORM_DB_PASSWORD)@{{ $.Values.database.host }}:{{ $.Values.database.port }}/{{ $.Values.database.name }}?sslmode={{ $.Values.database.sslMode }}"
                 - name: PAYMENT_PROVIDERS
                   value: {{ $.Values.payments.providers | quote }}
                 {{- if $.Values.payments.cashfree.baseUrl }}
