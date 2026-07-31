@@ -17,10 +17,13 @@ data:
     server_name: $POD_NAME
     {{- if .Values.jetstream.enabled }}
     jetstream {
-      # The volume root: nats-server appends its own `jetstream` directory, so
-      # naming one here gives /data/jetstream/jetstream. Changing this once a
-      # stream exists orphans it on the old path, and right now none do.
-      store_dir: "/data"
+      # Yes, this resolves to /data/jetstream/jetstream — nats-server appends
+      # its own `jetstream` directory to whatever it is given. Setting "/data"
+      # to avoid the doubling is worse: the store then becomes /data/jetstream,
+      # the previous run's directory sits inside it, and NATS reads that as an
+      # account it cannot resolve. Readiness fails and the pod restart-loops.
+      # The ugly path is the working one; changing it needs an empty volume.
+      store_dir: "/data/jetstream"
       max_memory_store: {{ int64 .Values.jetstream.maxMemory }}
       max_file_store: {{ int64 .Values.jetstream.maxFile }}
     }
