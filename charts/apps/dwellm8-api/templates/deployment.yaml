@@ -61,6 +61,23 @@ spec:
                   key: username
             - name: DATABASE_URL
               value: "postgres://$(DB_USER):$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
+            # The platform role, for the one path that needs it: the webhook
+            # inbox, written before anybody knows whose money a delivery is
+            # about. A wider connection than a request handler should ever hold,
+            # so it is confined to that path and named separately here rather
+            # than being what DATABASE_URL happens to be.
+            - name: PLATFORM_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.platformSecretName }}
+                  key: username
+            - name: PLATFORM_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.platformSecretName }}
+                  key: password
+            - name: PLATFORM_DATABASE_URL
+              value: "postgres://$(PLATFORM_DB_USER):$(PLATFORM_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
             {{- if .Values.gcp.secretManager.enabled }}
             - name: PAYMENT_PROVIDERS
               value: {{ .Values.payments.providers | quote }}
