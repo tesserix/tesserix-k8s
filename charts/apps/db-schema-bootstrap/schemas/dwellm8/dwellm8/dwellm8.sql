@@ -3608,7 +3608,10 @@ DROP POLICY IF EXISTS rent_schedule_no_delete ON rent_schedule;
 CREATE POLICY rent_schedule_no_delete ON rent_schedule AS RESTRICTIVE FOR DELETE
     USING (sandbox_purge_permitted(tenant_id));
 
-GRANT EXECUTE ON FUNCTION lease_delegated_read(uuid) TO dwellm8_app, dwellm8_platform;
+-- dwellm8_app only: dwellm8_platform inherits it, and the role does not exist
+-- yet at this point in the file. CI caught it — "role dwellm8_platform does not
+-- exist" on a fresh database, where a laptop that already had the role did not.
+GRANT EXECUTE ON FUNCTION lease_delegated_read(uuid) TO dwellm8_app;
 
 GRANT SELECT, INSERT, UPDATE ON leases, lease_parties, rent_schedule TO dwellm8_lease;
 GRANT SELECT ON lease_expiring TO dwellm8_lease, dwellm8_notify, dwellm8_property;
