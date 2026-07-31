@@ -5498,3 +5498,12 @@ ALTER TABLE public.meal_plan_days
 CREATE INDEX IF NOT EXISTS idx_meal_plan_days_refund_decision_by
   ON public.meal_plan_days (refund_decision_by)
   WHERE refund_decision_by IS NOT NULL;
+
+--
+-- Stranded fulfilment: an order the chef ACCEPTED and never finished. Tracks the nudges sent
+-- to both sides before the sweep refunds the customer in full. Distinct from the accept_*
+-- columns, which chase an order nobody has taken yet.
+ALTER TABLE public.orders
+  ADD COLUMN IF NOT EXISTS stale_reminder_count integer NOT NULL DEFAULT 0;
+ALTER TABLE public.orders
+  ADD COLUMN IF NOT EXISTS last_stale_reminder_at timestamp with time zone;
