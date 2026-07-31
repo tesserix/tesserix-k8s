@@ -4432,6 +4432,27 @@ $$;
 CREATE INDEX IF NOT EXISTS journal_entries_lease_idx
     ON journal_entries (tenant_id, lease_id, occurred_on) WHERE lease_id IS NOT NULL;
 
+-- payments.lease_id — the tenancy a collection pays. Issue #42.
+--
+-- Nullable: a deposit or an ad-hoc collection has no tenancy. Where it is set, the
+-- entry the capture posts inherits it, which is what puts receipts into a lease
+-- position alongside the charges. Added by migration for the usual reason, and after
+-- leases because a foreign key cannot precede its target.
+DO $$
+BEGIN
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS lease_id uuid;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'payments_lease_fkey') THEN
+        ALTER TABLE payments ADD CONSTRAINT payments_lease_fkey
+            FOREIGN KEY (lease_id, tenant_id) REFERENCES leases (id, tenant_id);
+    END IF;
+END
+$$;
+
+-- "What has this tenancy paid" — the other half of the lease statement.
+CREATE INDEX IF NOT EXISTS payments_lease_idx
+    ON payments (tenant_id, lease_id) WHERE lease_id IS NOT NULL;
+
 -- The load-bearing rules.
 --
 -- Every CHECK an ADR argues for at length lives here rather than inside its
