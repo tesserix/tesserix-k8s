@@ -1,0 +1,41 @@
+namespace: dwellm8
+
+# Namespaces allowed to call INTO dwellm8. Deliberately short.
+#
+# Dwellm8 holds tenant PAN numbers, owner bank details and a rent ledger. No
+# other product has a reason to reach it, and the shared registry's model —
+# where every product is allowed to talk to every infrastructure namespace —
+# is a wider door than this one needs.
+#
+# Temporal and NATS are NOT here because they do not need to be: both run
+# inside dwellm8, so the same-namespace rule already covers them. That is why
+# they live in this namespace rather than the shared `nats` one.
+allowedSources:
+  # The namespace itself: dwellm8-api → Temporal 7233, → NATS 4222, → CNPG 5432.
+  - dwellm8
+  # Prometheus scrape, log shipping, and the collector. Read-only metrics
+  # paths, and the reason to allow them is that a locked namespace nobody can
+  # see into is a namespace nobody notices has stopped.
+  - monitoring
+  - logging
+  - observability
+
+# Cluster pod CIDR for the HBONE rule. tesseract-prod-in-gke uses the default
+# GKE pod CIDR for asia-south1. If this is wrong the namespace silently loses
+# east-west connectivity — the 2026-04-12 failure mode.
+podCIDR: 10.20.0.0/16
+
+# dwellm8 is not ambient-meshed today (the namespace carries no
+# istio.io/dataplane-mode label). The 15008 rule ships anyway: it costs nothing
+# while unmeshed, and it is the rule whose absence is invisible until every
+# call in the namespace times out at once.
+hbone:
+  enabled: true
+
+# No ingress-gateway entry, because there is no VirtualService or Gateway for
+# dwellm8 yet — nothing outside the cluster can reach it. Publishing an API
+# host means adding `istio-ingress` here, and that is the change where the
+# blast radius of this policy should be re-read rather than assumed.
+publicIngress:
+  enabled: false
+  namespace: istio-ingress
