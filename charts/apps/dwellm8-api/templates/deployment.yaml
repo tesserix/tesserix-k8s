@@ -61,6 +61,33 @@ spec:
                   key: username
             - name: DATABASE_URL
               value: "postgres://$(DB_USER):$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
+            {{- if .Values.gcp.secretManager.enabled }}
+            - name: PAYMENT_PROVIDERS
+              value: {{ .Values.payments.providers | quote }}
+            - name: CASHFREE_BASE_URL
+              value: {{ .Values.payments.cashfree.baseUrl | quote }}
+            - name: CASHFREE_API_VERSION
+              value: {{ .Values.payments.cashfree.apiVersion | quote }}
+            {{- if .Values.payments.cashfree.allowSandboxInProd }}
+            - name: CASHFREE_ALLOW_SANDBOX_IN_PROD
+              value: "true"
+            {{- end }}
+            - name: CASHFREE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dwellm8-api.fullname" . }}-payments
+                  key: CASHFREE_CLIENT_ID
+            - name: CASHFREE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dwellm8-api.fullname" . }}-payments
+                  key: CASHFREE_CLIENT_SECRET
+            - name: CASHFREE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dwellm8-api.fullname" . }}-payments
+                  key: CASHFREE_WEBHOOK_SECRET
+            {{- end }}
           livenessProbe:
             httpGet:
               path: {{ .Values.probes.liveness.path }}
