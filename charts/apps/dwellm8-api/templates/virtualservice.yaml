@@ -6,14 +6,15 @@ metadata:
   labels: {{- include "dwellm8-api.labels" . | nindent 4 }}
 spec:
   hosts:
-    - {{ .Values.istio.host | quote }}
+    {{- range .Values.istio.hosts }}
+    - {{ . | quote }}
+    {{- end }}
   gateways:
     - {{ .Values.istio.gateway | quote }}
   http:
     - headers:
         request:
           set:
-            x-forwarded-host: {{ .Values.istio.host | quote }}
             x-forwarded-proto: https
       route:
         - destination:
