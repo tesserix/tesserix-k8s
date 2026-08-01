@@ -540,3 +540,54 @@ spec:
             methods:
               - "GET"
 {{- end }}
+
+{{- range $extra := .Values.extraGip | default list }}
+{{- if $extra.restrictToHosts }}
+{{- range $gw := $.Values.ingressGateways }}
+---
+# =============================================================================
+# PER-ISSUER HOST ISOLATION for {{ $extra.issuer }}
+#
+# RequestAuthentication selects WORKLOADS, not hosts, so listing a product's
+# own GIP project on the shared gateway (see extraGip in jwt-auth.yaml) makes
+# its tokens valid for the WHOLE gateway. allow-authenticated-api above ALLOWs
+# `requestPrincipals: ["*"]`, so without this rule a token from this project
+# would clear gateway authorization on every other product's host.
+#
+# Defence in depth, not the only defence: the backends re-verify (these tokens
+# set no x-jwt-claim-* headers, so HeaderTrustAuth services see no identity,
+# and GIPBearerAuth services check their own project id). This closes the hole
+# at the edge instead of relying on every service to keep closing it.
+#
+# DENY is evaluated before ALLOW and needs no coordination with the rules above.
+# It matches only requests that carry a VALIDATED principal from this issuer;
+# tokenless traffic and every other issuer are untouched.
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-foreign-hosts-gip{{ $extra.name }}{{ $gw.name }}
+  namespace: {{ $gw.namespace }}
+  labels:
+    app.kubernetes.io/name: authz-policy
+    app.kubernetes.io/component: issuer-host-isolation
+    app.kubernetes.io/part-of: istio-auth-policies
+spec:
+  selector:
+    matchLabels:
+      {{ $gw.labelKey }}: {{ $gw.labelValue }}
+  action: DENY
+  rules:
+    - from:
+        - source:
+            requestPrincipals:
+              - {{ printf "%s/*" $extra.issuer | quote }}
+      to:
+        - operation:
+            notHosts:
+              {{- range $extra.restrictToHosts }}
+              - {{ . | quote }}
+              {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

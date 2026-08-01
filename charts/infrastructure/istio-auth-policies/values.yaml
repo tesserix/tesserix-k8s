@@ -48,6 +48,31 @@ gip:
   audiences: []
 
 # =============================================================================
+# Additional GIP projects
+#
+# `gip:` above is the SHARED tesseracthub project. A product with its own
+# Firebase/GIP project gets an entry here instead: each renders its own
+# RequestAuthentication, so the shared one stays byte-identical and products
+# cannot perturb each other.
+#
+# A missing entry is not a partial failure — the gateway rejects an unlisted
+# issuer with 401 before the service is reached, so that product's users can
+# never authenticate at all.
+#
+# restrictToHosts (optional, RECOMMENDED): renders a paired DENY policy so a
+# token from this issuer cannot clear gateway authorization on any OTHER
+# product's host. Omit only if the issuer is deliberately gateway-wide.
+#
+#   - name: "-example"                 # suffix for the policy names
+#     issuer: "https://securetoken.google.com/example-project"
+#     jwksUri: "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+#     audiences:
+#       - "example-project"
+#     restrictToHosts:
+#       - "example-api.tesserix.app"
+extraGip: []
+
+# =============================================================================
 # Keycloak IDP Configuration
 # Dual IDP setup: customer (B2C) and internal (staff/admin)
 #
