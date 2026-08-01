@@ -1,0 +1,36 @@
+# TIG — Tesserix Identity Governance. Claim-driven RBAC + break-glass +
+# Kyverno guardrails from the tesserix-governance repo. Wave 1: after kyverno
+# (wave -1) so ClusterPolicy CRDs exist.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tesserix-governance
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: governance
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: governance
+  source:
+    repoURL: https://github.com/tesserix/tesserix-governance.git
+    targetRevision: main
+    path: charts/tig
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

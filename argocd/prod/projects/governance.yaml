@@ -1,0 +1,19 @@
+# Governance project — sources only the tesserix-governance repo. TIG renders
+# cluster-scoped RBAC and Kyverno policies, hence the unrestricted whitelist;
+# the repo itself is CODEOWNERS-gated, which is the real control.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: governance
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  sourceRepos:
+    - https://github.com/tesserix/tesserix-governance.git
+  destinations:
+    - namespace: '*'
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'

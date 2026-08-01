@@ -1,0 +1,87 @@
+# Kyverno policy engine — admission backstop for the TIG identity guardrails
+# (tesserix-governance repo). Installed before the governance app (wave -1 vs 1)
+# so ClusterPolicy CRDs exist when TIG syncs.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: policy
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://kyverno.github.io/kyverno
+    chart: kyverno
+    targetRevision: 3.8.2
+    helm:
+      releaseName: kyverno
+      values: |
+        # 2 replicas: webhook availability without HA (3) cost. Policies fail
+        # open (webhookFailurePolicy: Ignore in TIG), so a full outage never
+        # blocks the cluster.
+        admissionController:
+          replicas: 2
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+          container:
+            resources:
+              limits:
+                cpu: null
+                memory: 512Mi
+              requests:
+                cpu: null
+                memory: 128Mi
+          initContainer:
+            resources:
+              limits:
+                cpu: null
+                memory: 128Mi
+              requests:
+                cpu: null
+                memory: 64Mi
+        backgroundController:
+          resources:
+            limits:
+              cpu: null
+              memory: 256Mi
+            requests:
+              cpu: null
+              memory: 64Mi
+        cleanupController:
+          resources:
+            limits:
+              cpu: null
+              memory: 256Mi
+            requests:
+              cpu: null
+              memory: 64Mi
+        reportsController:
+          resources:
+            limits:
+              cpu: null
+              memory: 384Mi
+            requests:
+              cpu: null
+              memory: 64Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
