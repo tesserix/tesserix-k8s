@@ -49,13 +49,17 @@ service:
   type: ClusterIP
   port: 8080
 
-# The public front door the mobile apps call. Cloudflare's *.tesserix.app
-# wildcard terminates TLS; the platform gateway routes the host here. The API
+# The public front door the mobile apps call. api.dwellm8.com is the product
+# host — a proxied Cloudflare record on the dwellm8.com zone, so TLS and DDoS
+# protection terminate there; the platform gateway routes the host here. The
+# tesserix.app name stays as the platform-internal alias. The API
 # authenticates every request itself (GIP bearer per surface, ADR-0027), so
 # exposure adds reachability, not trust.
 istio:
   enabled: true
-  host: dwellm8-api.tesserix.app
+  hosts:
+    - api.dwellm8.com
+    - dwellm8-api.tesserix.app
   gateway: istio-ingress/tesseract-gateway
 
 # Memory only. The platform sets no CPU requests or limits anywhere.
