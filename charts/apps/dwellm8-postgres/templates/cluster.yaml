@@ -129,25 +129,38 @@ spec:
   # so their passwords are reconciled from Secret Manager like the owner's;
   # their privileges stay in the schema file, where a reviewer can see them.
   # =========================================================================
+  # A false boolean cannot be written here. CNPG's role type marks superuser,
+  # createdb, createrole and bypassrls `omitempty`, so the API server stores a
+  # `false` by dropping the field — and ArgoCD then compares a manifest that has
+  # it against a live object that never will. The app is permanently OutOfSync,
+  # the sync reports Succeeded every time, and nothing is wrong except the
+  # signal. Measured: dwellm8-postgres and dwellm8-temporal-postgres were the
+  # only two OutOfSync CNPG clusters on the fleet and the only two charts
+  # emitting `superuser: false`.
+  #
+  # Omitting them changes nothing about the role: an absent boolean unmarshals
+  # to false, which is what these must be. The CRD sets no default for any of
+  # the four, so this is not relying on one either.
   managed:
     roles:
       - name: {{ .Values.bootstrap.owner }}
         ensure: present
         login: true
-        superuser: false
+        # NOSUPERUSER, by omission. Only createdb and createrole are true here,
+        # and they are true because the schema bootstrap connects as this role.
         createdb: true
         createrole: true
         passwordSecret:
           name: {{ .Values.bootstrap.secret }}
       {{- range .Values.applicationRoles }}
+      # A login role and nothing more: no superuser, no createdb, no createrole,
+      # no bypassrls. Every one of those is false by omission, and the last is
+      # the one that matters — ADR-0003's isolation is policies, and a role that
+      # bypassed row-level security would read every organisation at once.
       - name: {{ .name }}
         ensure: present
         login: true
         inherit: true
-        superuser: false
-        createdb: false
-        createrole: false
-        bypassrls: false
         passwordSecret:
           name: {{ .secret }}
       {{- end }}
