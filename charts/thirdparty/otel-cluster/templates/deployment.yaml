@@ -5,9 +5,9 @@ metadata:
   labels:
     {{- include "otel-cluster.labels" . | nindent 4 }}
 spec:
-  # Hardcoded to 1 and not exposed as a value. Two replicas would watch the
-  # same event stream and scrape the same targets, storing everything twice.
-  replicas: 1
+  # 1 or 0 only. Two replicas would watch the same event stream and scrape the
+  # same targets, storing everything twice — the value exists solely to park.
+  replicas: {{ .Values.replicaCount | int }}
   strategy:
     # Recreate, not RollingUpdate: a rolling update briefly runs two pods,
     # which is exactly the duplication this singleton exists to avoid. The

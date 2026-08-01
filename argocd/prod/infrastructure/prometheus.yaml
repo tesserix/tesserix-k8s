@@ -23,6 +23,11 @@ spec:
       values: |
         # Prometheus server configuration
         server:
+          # PARKED 2026-08-01 at 0 for cost. Everything below is kept verbatim
+          # so revival is a single 0 → 1; the 20Gi TSDB PVC is retained.
+          # See docs/observability-park.md.
+          replicaCount: 0
+
           # Persistent storage (standard HDD — existing PVC, migrate to premium-rwo SSD later)
           persistentVolume:
             enabled: true
@@ -100,7 +105,11 @@ spec:
 
         # Alertmanager configuration
         alertmanager:
+          # enabled stays true so the StatefulSet, config and PVC survive in
+          # the cluster; PARKED 2026-08-01 by replicaCount instead. Alert rules
+          # still render, but nothing evaluates or delivers them while parked.
           enabled: true
+          replicaCount: 0
 
           persistentVolume:
             enabled: true
@@ -173,6 +182,23 @@ spec:
         # Kube state metrics
         kubeStateMetrics:
           enabled: true
+
+        # PARKED 2026-08-01. The three blocks above use pre-19.x key names that
+        # chart 25.x ignores entirely — the subcharts run on their own defaults,
+        # so parking them has to happen under the real subchart keys below.
+        # Left `enabled: true` deliberately: enabled:false would let ArgoCD's
+        # prune delete the workloads outright, and nothing here is being removed.
+        prometheus-pushgateway:
+          replicaCount: 0
+
+        kube-state-metrics:
+          replicas: 0
+
+        # A DaemonSet has no replica count, so the park is an unsatisfiable
+        # selector — no node carries this label. Empty it out to revive.
+        prometheus-node-exporter:
+          nodeSelector:
+            tesserix.io/node-exporter: "enabled"
 
         # Additional scrape configs for Istio
         extraScrapeConfigs: |
