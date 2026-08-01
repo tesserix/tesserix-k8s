@@ -172,14 +172,23 @@ migrate:
 # Prod ran with this table EMPTY, so every capture failed and nothing could be
 # logged. See templates/seed-job.yaml for the full story.
 #
-# Both binaries are idempotent (a re-run inserts 0 rows), so running this on
-# every sync is safe. ingest takes absolute paths because its relative defaults
-# assume the repo layout, not the image's.
+# All three binaries are idempotent (a re-run inserts 0 rows; embed only fills
+# rows whose embedding is still NULL), so running this on every sync is safe.
+# ingest takes absolute paths because its relative defaults assume the repo
+# layout, not the image's.
 #
-# Requires the image to ship /usr/local/bin/{seed,ingest} and the AFCD/USDA
-# JSON at /usr/local/share/kora/food (kora PR #67). Until that image is
-# promoted the Job exec-fails loudly, matching the migrate Job's convention of
-# a visible failure over a silent skip.
+# embed runs LAST, after the index is fully populated, and backfills
+# food_items.embedding — the ONLY source of sub-0.70 resolver match scores.
+# Without it the embedding tier is dead: everything scores 0.70-0.99 via
+# full-text, so `follow_up` is unreachable. It needs GEMINI_API_KEY (wired in
+# templates/seed-job.yaml); without the key it logs and exits 0, so a missing
+# secret degrades to "no embeddings" rather than a crashlooping Job.
+#
+# Requires the image to ship /usr/local/bin/{seed,ingest,embed} and the AFCD /
+# USDA / SR Legacy / curated JSON at /usr/local/share/kora/food (kora PR #67
+# for seed+ingest, and the embed + SR Legacy + curated PR after it). Until that
+# image is promoted the Job exec-fails loudly, matching the migrate Job's
+# convention of a visible failure over a silent skip.
 seed:
   enabled: true
   command:
@@ -190,3 +199,6 @@ seed:
       /usr/local/bin/ingest
       -afcd /usr/local/share/kora/food/afcd_staples.json
       -usda /usr/local/share/kora/food/usda_common.json
+      -sr /usr/local/share/kora/food/usda_sr_legacy.json
+      -curated /usr/local/share/kora/food/au_in_dishes.json &&
+      /usr/local/bin/embed

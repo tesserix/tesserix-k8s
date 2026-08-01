@@ -15,9 +15,9 @@
 # unchanged (verified against a fresh database) — so it is safe for this Job
 # to run again on every sync.
 #
-# Runs seed then ingest in one container via `sh -c`; the runtime base is
-# alpine, so /bin/sh is present. ingest is given ABSOLUTE paths because its
-# relative flag defaults (data/food/*.json) assume the repo layout, not the
+# Runs seed, then ingest, then embed in one container via `sh -c`; the runtime
+# base is alpine, so /bin/sh is present. ingest is given ABSOLUTE paths because
+# its relative flag defaults (data/food/*.json) assume the repo layout, not the
 # image's /usr/local/share/kora/food.
 apiVersion: batch/v1
 kind: Job
@@ -47,7 +47,7 @@ spec:
           command:
             {{- toYaml .Values.seed.command | nindent 12 }}
           env:
-            # DATABASE_URL is the only env seed/ingest need — sourced from the
+            # DATABASE_URL is what seed/ingest/embed all need — sourced from the
             # same ExternalSecret-backed Secret as the API and the migrate Job,
             # so prod credentials are never handled outside the cluster.
             {{- $secretName := printf "%s-secrets" (include "kora-api.fullname" .) }}
@@ -56,6 +56,14 @@ spec:
                 secretKeyRef:
                   name: {{ $secretName }}
                   key: {{ index .Values.secretEnv "DATABASE_URL" }}
+            # embed needs GEMINI_API_KEY to generate vectors. Without it
+            # cmd/embed logs and exits 0, so a missing secret degrades to "no
+            # embeddings" rather than a crashlooping Job.
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ index .Values.secretEnv "GEMINI_API_KEY" }}
           resources:
             requests:
               memory: 64Mi
