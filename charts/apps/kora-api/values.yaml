@@ -167,3 +167,26 @@ migrate:
   enabled: true
   command:
     - /usr/local/bin/migrate
+
+# Populates food_items — the table the resolver reads to build candidates.
+# Prod ran with this table EMPTY, so every capture failed and nothing could be
+# logged. See templates/seed-job.yaml for the full story.
+#
+# Both binaries are idempotent (a re-run inserts 0 rows), so running this on
+# every sync is safe. ingest takes absolute paths because its relative defaults
+# assume the repo layout, not the image's.
+#
+# Requires the image to ship /usr/local/bin/{seed,ingest} and the AFCD/USDA
+# JSON at /usr/local/share/kora/food (kora PR #67). Until that image is
+# promoted the Job exec-fails loudly, matching the migrate Job's convention of
+# a visible failure over a silent skip.
+seed:
+  enabled: true
+  command:
+    - /bin/sh
+    - -c
+    - >-
+      /usr/local/bin/seed &&
+      /usr/local/bin/ingest
+      -afcd /usr/local/share/kora/food/afcd_staples.json
+      -usda /usr/local/share/kora/food/usda_common.json
