@@ -2,7 +2,10 @@
 # Runs quantized financial LLM for sentiment analysis and stock prediction.
 # CPU mode: ~10-30s/call. GPU mode (uncomment nodeSelector/tolerations): <2s latency.
 
-replicaCount: 1
+# PARKED 2026-08-01 with the rest of stockpilot. It was left at 1 by the
+# 2026-06-12 product park, and its 2.25Gi request held a node open for a
+# product serving no traffic.
+replicaCount: 0
 
 image:
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/ollama/ollama
@@ -55,7 +58,9 @@ resources:
 
 # KEDA autoscaling
 keda:
-  enabled: true
+  # Disabled 2026-08-01: the prometheus trigger cannot evaluate while Prometheus
+  # is parked, so KEDA held the deployment at 1 instead of scaling it to zero.
+  enabled: false
   pollingInterval: 30
   cooldownPeriod: 600       # 10 min idle before scale-down
   minReplicaCount: 0        # parked — prometheus trigger supports scale-to-zero

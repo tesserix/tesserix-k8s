@@ -5515,3 +5515,101 @@ ALTER TABLE public.orders
   ADD COLUMN IF NOT EXISTS stale_reminder_count integer NOT NULL DEFAULT 0;
 ALTER TABLE public.orders
   ADD COLUMN IF NOT EXISTS last_stale_reminder_at timestamp with time zone;
+
+--
+-- Chef-refers-chef program (Home-Chef-App): a verified kitchen shares its
+-- referral code (minted from the shared referral_codes table); the new kitchen
+-- enters it during onboarding. Both rewards are CASH and vest only when the
+-- referee completes milestone_orders delivered orders — frozen at accept time
+-- so retuning the program never moves an in-flight referral's goalposts.
+CREATE TABLE IF NOT EXISTS public.chef_referrals (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  referrer_chef_id uuid NOT NULL,
+  referrer_user_id uuid NOT NULL,
+  referee_chef_id  uuid NOT NULL,
+  referee_user_id  uuid NOT NULL,
+  code             text NOT NULL,
+  status           varchar(12) NOT NULL DEFAULT 'pending',
+  milestone_orders integer NOT NULL DEFAULT 10,
+  referrer_amount  numeric DEFAULT 0,
+  referee_amount   numeric DEFAULT 0,
+  rewarded_at      timestamp with time zone,
+  created_at       timestamp with time zone,
+  updated_at       timestamp with time zone
+);
+-- A kitchen can be referred exactly once, ever.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_chef_referrals_referee_chef
+  ON public.chef_referrals (referee_chef_id);
+CREATE INDEX IF NOT EXISTS ix_chef_referrals_referrer_chef
+  ON public.chef_referrals (referrer_chef_id);
+CREATE INDEX IF NOT EXISTS ix_chef_referrals_status
+  ON public.chef_referrals (status);
+
+-- chef_bonuses: rupee credits owed to a chef, added onto their next weekly
+-- settlement — the credit mirror of chef_penalties' deduction. Raised by the
+-- referral milestone (both sides) and by loyalty points → cashback conversion.
+-- source_key is the natural key of the raising event, unique so retries and
+-- replayed webhooks credit exactly once.
+CREATE TABLE IF NOT EXISTS public.chef_bonuses (
+  id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  chef_id               uuid NOT NULL,
+  user_id               uuid NOT NULL,
+  kind                  varchar(24) NOT NULL,
+  status                varchar(16) NOT NULL DEFAULT 'pending',
+  source_key            text NOT NULL,
+  referral_id           uuid,
+  currency              varchar(3) DEFAULT 'INR',
+  amount                numeric DEFAULT 0,
+  reason                text,
+  credited_statement_id uuid,
+  credited_at           timestamp with time zone,
+  voided_by             uuid,
+  voided_at             timestamp with time zone,
+  void_reason           text,
+  created_at            timestamp with time zone,
+  updated_at            timestamp with time zone
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_chef_bonuses_source_key
+  ON public.chef_bonuses (source_key);
+-- The settlement claim scans (chef, pending); the admin views filter by status.
+CREATE INDEX IF NOT EXISTS ix_chef_bonuses_chef_status
+  ON public.chef_bonuses (chef_id, status);
+
+-- Chef loyalty points: earned per delivered order (earn_rate × subtotal),
+-- converted to cashback once the balance crosses the threshold. The account
+-- row (not a SUM over txns) lets conversion decrement with a guarded UPDATE,
+-- making a concurrent double-convert lose cleanly.
+CREATE TABLE IF NOT EXISTS public.chef_loyalty_accounts (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  chef_id         uuid NOT NULL,
+  user_id         uuid NOT NULL,
+  points          numeric DEFAULT 0,
+  lifetime_points numeric DEFAULT 0,
+  created_at      timestamp with time zone,
+  updated_at      timestamp with time zone
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_chef_loyalty_accounts_chef
+  ON public.chef_loyalty_accounts (chef_id);
+
+CREATE TABLE IF NOT EXISTS public.chef_loyalty_txns (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  chef_id     uuid NOT NULL,
+  user_id     uuid NOT NULL,
+  kind        varchar(24) NOT NULL,
+  points      numeric NOT NULL,
+  source_key  text NOT NULL,
+  order_id    uuid,
+  bonus_id    uuid,
+  description text,
+  created_at  timestamp with time zone
+);
+-- One earn per order, one conversion per bonus — replays are no-ops.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_chef_loyalty_txns_source_key
+  ON public.chef_loyalty_txns (source_key);
+CREATE INDEX IF NOT EXISTS ix_chef_loyalty_txns_chef
+  ON public.chef_loyalty_txns (chef_id, created_at DESC);
+
+-- Statement line for the credits: net_payout is AFTER this addition, mirroring
+-- penalty_deductions on the debit side.
+ALTER TABLE public.weekly_statements
+  ADD COLUMN IF NOT EXISTS bonus_additions numeric DEFAULT 0;
