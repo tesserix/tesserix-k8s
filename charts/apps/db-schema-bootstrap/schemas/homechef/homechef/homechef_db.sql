@@ -485,6 +485,7 @@ CREATE TABLE public.chef_profiles (
     razorpay_settlement_requirements text DEFAULT ''::text,
     razorpay_stakeholder_created boolean DEFAULT false,
     payout_auto_release character varying(8) DEFAULT ''::character varying,
+    payout_auto_disburse character varying(8) DEFAULT ''::character varying,
     payout_method text DEFAULT ''::text,
     bank_account_number text DEFAULT ''::text,
     bank_ifsc text DEFAULT ''::text,
@@ -4992,6 +4993,7 @@ ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_settlement_st
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_settlement_requirements text DEFAULT ''::text;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_stakeholder_created boolean DEFAULT false;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_release character varying(8) DEFAULT ''::character varying;
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_disburse character varying(8) DEFAULT ''::character varying;
 
 -- Weekly menu thali/combo (parity with daily_menu_items): a cell can be a
 -- bundled set (combo_components) at one price instead of a single dish.
