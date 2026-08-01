@@ -29,6 +29,14 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+    # Ambient enrolment. ztunnel takes over the namespace's L4 — mTLS between
+    # every pod and from the ingress gateway in. Declared on this app alone:
+    # two apps managing one namespace's metadata is a fight ArgoCD lets them
+    # have. The 15008 HBONE NetworkPolicy this chart ships was written for
+    # this day.
+    managedNamespaceMetadata:
+      labels:
+        istio.io/dataplane-mode: ambient
     retry:
       limit: 5
       backoff:
