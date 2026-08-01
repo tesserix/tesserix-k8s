@@ -213,3 +213,14 @@ $$;
 CREATE INDEX IF NOT EXISTS payments_lease_idx
     ON payments (tenant_id, lease_id) WHERE lease_id IS NOT NULL;
 
+
+-- ADR-0031: who the platform fee comes out of, recorded on the payment.
+--
+-- On the payment rather than derived at capture, because the fee is posted when
+-- the money arrives and the arrangement that decided the bearer may have changed
+-- since the order was created. The rate is resolved the same way — as of the
+-- payment's own date — so a fee and the split that collected it cannot disagree.
+--
+-- Nullable: a collection with no bearer charges no fee, and says so in the log
+-- rather than silently earning nothing.
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS fee_bearer_party_id uuid;

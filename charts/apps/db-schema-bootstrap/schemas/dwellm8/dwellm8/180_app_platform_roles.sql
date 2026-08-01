@@ -135,6 +135,16 @@ REVOKE INSERT, UPDATE, DELETE ON ledger_accounts, posting_templates,
 REVOKE INSERT, UPDATE, DELETE ON statutory_rules, statutory_rule_slabs
     FROM dwellm8_app;
 REVOKE INSERT, UPDATE, DELETE ON statutory_rules_review_due FROM dwellm8_app;
+-- ADR-0031, and the same argument: a request that can write the fee rate is a
+-- request that can price itself at zero.
+REVOKE INSERT, UPDATE, DELETE ON platform_fee_rules FROM dwellm8_app;
+-- The price is Dwellm8's own, and the product owner changes it. Handed back to
+-- the platform role only — after the revoke, or the blanket grant above would
+-- have undone it — so a rate change is an audited platform act rather than
+-- something a tenant's request can reach. dwellm8_app is not a member of
+-- dwellm8_platform, so this does not give the request path the privilege back,
+-- and assertion 18 still fails the bootstrap if anything ever does.
+GRANT INSERT, UPDATE ON platform_fee_rules TO dwellm8_platform;
 
 -- GRANT ... ON ALL TABLES covers views too, so the blanket grant above handed
 -- out INSERT, UPDATE and DELETE on a balances view. PostgreSQL would refuse all

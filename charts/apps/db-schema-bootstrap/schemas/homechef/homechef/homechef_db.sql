@@ -486,6 +486,8 @@ CREATE TABLE public.chef_profiles (
     razorpay_stakeholder_created boolean DEFAULT false,
     payout_auto_release character varying(8) DEFAULT ''::character varying,
     payout_auto_disburse character varying(8) DEFAULT ''::character varying,
+    cashfree_vendor_id text DEFAULT ''::text,
+    cashfree_vendor_status text DEFAULT ''::text,
     payout_method text DEFAULT ''::text,
     bank_account_number text DEFAULT ''::text,
     bank_ifsc text DEFAULT ''::text,
@@ -1668,6 +1670,7 @@ CREATE TABLE public.orders (
     currency character varying(3) DEFAULT 'INR'::character varying,
     delivery_address_country character varying(2) DEFAULT 'IN'::character varying,
     wallet_applied numeric DEFAULT 0,
+    gateway_split_paise integer DEFAULT 0,
     delivery_slot character varying(8),
     chef_funded_discount numeric DEFAULT 0,
     fulfillment_type character varying(16) DEFAULT 'delivery'::character varying,
@@ -4994,6 +4997,9 @@ ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_settlement_re
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_stakeholder_created boolean DEFAULT false;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_release character varying(8) DEFAULT ''::character varying;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_disburse character varying(8) DEFAULT ''::character varying;
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_vendor_id text DEFAULT ''::text;
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_vendor_status text DEFAULT ''::text;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS gateway_split_paise integer DEFAULT 0;
 
 -- Weekly menu thali/combo (parity with daily_menu_items): a cell can be a
 -- bundled set (combo_components) at one price instead of a single dish.
