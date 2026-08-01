@@ -412,7 +412,44 @@ INSERT INTO statutory_rules (
    DATE '2020-04-01', NULL,
    'Tamil Nadu Regulation of Rights and Responsibilities of Landlords and Tenants Act 2017',
    'conflicting', 'compliance', DATE '2026-10-31', 'record_only',
-   'Sources disagree between one month and three. Resolve against the bare act before this gates anything')
+   'Sources disagree between one month and three. Resolve against the bare act before this gates anything'),
+
+  -- Stamp duty on a lease, per e-stamping-by-state.md §state matrix (#210). The
+  -- statuses are the honest ones from that document: two states carry the
+  -- flat-vs-ad-valorem conflict, the rest are secondary-source figures. None may
+  -- block — the unverified-cannot-block CHECK holds that, not this comment. The
+  -- computation over these rates (MH's consideration formula and friends) is
+  -- #60's expression engine, out of scope here.
+  ('stamp_duty_rate', 'MH', 'lease.leave_licence', 'rate', 25, NULL, NULL,
+   DATE '2020-04-01', NULL,
+   'Maharashtra Stamp Act 1958, Sch. I Art. 36A',
+   'unverified', 'compliance', DATE '2026-09-30', 'record_only',
+   '0.25% of a defined consideration; the formula (rent + non-refundable deposit + 10%/yr of refundable) is the unverified part'),
+  ('stamp_duty_rate', 'KA', 'lease.rent_agreement', 'rate', 100, NULL, NULL,
+   DATE '2020-04-01', NULL,
+   'Karnataka Stamp Act 1957, Sch. Art. 30',
+   'conflicting', 'compliance', DATE '2026-09-30', 'record_only',
+   'Statutory ~1% of average annual rent vs the flat-Rs.200 market practice for 11-month agreements — resolve against the Schedule before launch'),
+  ('stamp_duty_rate', 'DL', 'lease.rent_agreement', 'rate', 200, NULL, NULL,
+   DATE '2020-04-01', NULL,
+   'Indian Stamp Act 1899, Sch. I-A Art. 35 (NCT of Delhi)',
+   'conflicting', 'compliance', DATE '2026-09-30', 'record_only',
+   '2% of average annual rent for terms to five years vs the flat-Rs.100 market practice — the same flat-vs-ad-valorem split as Karnataka'),
+  ('stamp_duty_rate', 'TG', 'lease.rent_agreement', 'rate', 40, NULL, NULL,
+   DATE '2020-04-01', NULL,
+   'Indian Stamp Act 1899 as applied in Telangana, Sch. I-A',
+   'unverified', 'compliance', DATE '2026-09-30', 'record_only',
+   '~0.4% of rent plus advance'),
+  ('stamp_duty_rate', 'GJ', 'lease.rent_agreement', 'rate', 100, NULL, NULL,
+   DATE '2020-04-01', NULL,
+   'Gujarat Stamp Act 1958, Sch. I',
+   'unverified', 'compliance', DATE '2026-09-30', 'record_only',
+   '~1% of rent times months plus deposit'),
+  ('stamp_duty_rate', 'TN', 'lease.rent_agreement', 'rate', 100, NULL, NULL,
+   DATE '2020-04-01', NULL,
+   'Indian Stamp Act 1899 as applied in Tamil Nadu, Sch. I Art. 35',
+   'unverified', 'compliance', DATE '2026-09-30', 'record_only',
+   '~1% of average annual rent per year of term; the registration fee is a separate row when #60 needs it')
 
 ON CONFLICT (rule_type, jurisdiction, rule_key, valid_from) WHERE retired_at IS NULL
 DO UPDATE SET statute_ref = EXCLUDED.statute_ref,
