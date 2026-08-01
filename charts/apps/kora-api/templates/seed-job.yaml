@@ -1,0 +1,69 @@
+{{- if .Values.seed.enabled }}
+# Populates food_items, the table the resolver reads to build candidates for
+# every capture (text, photo, voice, barcode).
+#
+# WHY THIS EXISTS: prod ran with an EMPTY food index. `GET /v1/foods?q=egg`
+# returned null and `POST /v1/resolve/text` returned 200 with
+# `candidates: null`, so every capture failed with "Something went wrong while
+# I looked at that." Nothing could be logged at all. cmd/seed and cmd/ingest
+# had existed all along but were not shipped in the image, so there was no way
+# to run them in-cluster.
+#
+# sync-wave "0": strictly after the migrate Job (wave -1), because seeding
+# writes to a table migrate creates, and alongside the main workload. Both
+# binaries are idempotent — a re-run inserts 0 rows and leaves the count
+# unchanged (verified against a fresh database) — so it is safe for this Job
+# to run again on every sync.
+#
+# Runs seed then ingest in one container via `sh -c`; the runtime base is
+# alpine, so /bin/sh is present. ingest is given ABSOLUTE paths because its
+# relative flag defaults (data/food/*.json) assume the repo layout, not the
+# image's /usr/local/share/kora/food.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kora-api.fullname" . }}-seed
+  labels:
+    {{- include "kora-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seed
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        {{- include "kora-api.labels" . | nindent 8 }}
+        app.kubernetes.io/component: seed
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "kora-api.serviceAccountName" . }}
+      containers:
+        - name: seed
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            {{- toYaml .Values.seed.command | nindent 12 }}
+          env:
+            # DATABASE_URL is the only env seed/ingest need — sourced from the
+            # same ExternalSecret-backed Secret as the API and the migrate Job,
+            # so prod credentials are never handled outside the cluster.
+            {{- $secretName := printf "%s-secrets" (include "kora-api.fullname" .) }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ index .Values.secretEnv "DATABASE_URL" }}
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+{{- end }}
