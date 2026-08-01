@@ -99,3 +99,13 @@ not reach.
   incident produced is unaffected and still runs.
 - `gpu-l4-spot` and `sandbox-gvisor` both sit at zero nodes already and cost
   nothing but their pool definitions.
+- **Eight ScaledObjects carry a `prometheus` trigger** and now log
+  `FailedGetExternalMetric` every 30s: `devai-api`, `homechef-api`,
+  `homechef-auth-bff`, `homechef-vendor-portal`, `homechef-web`,
+  `homechef-web-app`, `mark8ly-marketplace-api-admin`, `fingpt-inference`.
+  HPA holds current scale when a metric is unavailable, and the first six also
+  carry a `memory` trigger that still drives scaling, so nothing stops working —
+  but the Prometheus half of their scaling logic is inert until revival.
+  `mark8ly-marketplace-api-admin` is `min=max=1`, so it has no scaling to lose.
+  A `fallback.replicas` stanza on each would silence the errors if the park
+  becomes long-lived.
