@@ -1,0 +1,24 @@
+{{- if .Values.istio.enabled -}}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: {{ include "dwellm8-api.fullname" . }}
+  labels: {{- include "dwellm8-api.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.istio.host | quote }}
+  gateways:
+    - {{ .Values.istio.gateway | quote }}
+  http:
+    - headers:
+        request:
+          set:
+            x-forwarded-host: {{ .Values.istio.host | quote }}
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: {{ include "dwellm8-api.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+      timeout: 60s
+{{- end }}
