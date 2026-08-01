@@ -281,6 +281,82 @@ CREATE TRIGGER contact_bridges_mutual
     BEFORE INSERT ON contact_bridges
     FOR EACH ROW EXECUTE FUNCTION contact_bridges_need_mutual_engagement();
 
+-- Inspection slots (#139, #140). A slot is the manager's offer of a time; a
+-- booking is an inspection enquiry pointing at one. Capacity is enforced by the
+-- booked counter's CHECK under a row lock — two prospects racing for the last
+-- place cannot both win, and the loser is offered adjacent slots by the
+-- application rather than silently dropped.
+--
+-- No public read branch: assertion 17 allows one only on listings, so a
+-- prospect reads open slots through the platform session like the rest of the
+-- anonymous funnel. meeting_point is shown to a prospect only on confirmation.
+CREATE TABLE IF NOT EXISTS inspection_slots (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id     uuid NOT NULL REFERENCES organisations(id),
+    listing_id    uuid NOT NULL REFERENCES listings(id),
+
+    starts_at     timestamptz NOT NULL,
+    duration_mins int NOT NULL DEFAULT 30 CHECK (duration_mins BETWEEN 10 AND 240),
+    capacity      int NOT NULL DEFAULT 1 CHECK (capacity BETWEEN 1 AND 20),
+    booked        int NOT NULL DEFAULT 0,
+    -- Who attends for the owner's side, and where to meet. The name is display
+    -- data for the day view; assignment as an authz edge is the inspection
+    -- type's `assigned` relation.
+    assigned_to   text,
+    meeting_point text,
+
+    state         text NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'closed', 'cancelled')),
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at    timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT inspection_slots_capacity CHECK (booked >= 0 AND booked <= capacity),
+    CONSTRAINT inspection_slots_one_per_time UNIQUE (listing_id, starts_at)
+);
+
+COMMENT ON TABLE inspection_slots IS
+    '#139. A published viewing time with capacity. Bookings are inspection enquiries referencing it; the booked counter''s CHECK is the race arbiter.';
+
+CREATE INDEX IF NOT EXISTS inspection_slots_listing_idx
+    ON inspection_slots (listing_id, starts_at) WHERE state = 'open';
+CREATE INDEX IF NOT EXISTS inspection_slots_day_idx ON inspection_slots (tenant_id, starts_at);
+
+-- The booking linkage and the outcome (#140, #141). ALTERs because enquiries
+-- already exists in production.
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS slot_id uuid REFERENCES inspection_slots(id);
+-- What actually happened at the viewing. Closed vocabulary so the owner sees a
+-- pattern, not prose; the two no-shows are distinct on purpose — a staff
+-- no-show must be as visible as a prospect's.
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS outcome text;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS objections text[];
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS outcome_note text;
+ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS outcome_at timestamptz;
+ALTER TABLE enquiries DROP CONSTRAINT IF EXISTS enquiries_outcome_vocabulary;
+ALTER TABLE enquiries ADD CONSTRAINT enquiries_outcome_vocabulary CHECK (
+    outcome IS NULL OR outcome IN ('interested', 'not_interested', 'applied',
+        'prospect_no_show', 'staff_no_show', 'cancelled_by_prospect', 'cancelled_by_owner'))
+    NOT VALID;
+ALTER TABLE enquiries DROP CONSTRAINT IF EXISTS enquiries_objection_vocabulary;
+ALTER TABLE enquiries ADD CONSTRAINT enquiries_objection_vocabulary CHECK (
+    objections IS NULL OR objections <@ ARRAY['price', 'condition', 'locality', 'size', 'terms'])
+    NOT VALID;
+-- An outcome is an inspection's, and arrives with its timestamp.
+ALTER TABLE enquiries DROP CONSTRAINT IF EXISTS enquiries_outcome_is_inspections;
+ALTER TABLE enquiries ADD CONSTRAINT enquiries_outcome_is_inspections CHECK (
+    outcome IS NULL OR (kind = 'inspection' AND outcome_at IS NOT NULL))
+    NOT VALID;
+
+CREATE INDEX IF NOT EXISTS enquiries_slot_idx ON enquiries (slot_id) WHERE slot_id IS NOT NULL;
+
+ALTER TABLE inspection_slots   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE inspection_slots   FORCE  ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS inspection_slots_tenant_isolation ON inspection_slots;
+CREATE POLICY inspection_slots_tenant_isolation ON inspection_slots
+    USING (tenant_id = current_tenant_id() OR is_platform_session())
+    WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
+
+GRANT SELECT, INSERT, UPDATE ON inspection_slots TO dwellm8_discovery, dwellm8_property;
+
 ALTER TABLE listings           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE listings           FORCE  ROW LEVEL SECURITY;
 ALTER TABLE prospects          ENABLE ROW LEVEL SECURITY;
