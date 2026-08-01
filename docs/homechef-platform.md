@@ -85,6 +85,8 @@ debugging only, and must be removed before a production-ready release:
 
 - Keycloak test user `e2e-test@fe3dr.com` in the `homechef` realm (customer)
 - Keycloak test user `e2e-admin@fe3dr.com` in the `tesserix-internal` realm (admin)
+- Firebase test phone `+91 650 555 3434` with OTP `654321` (mobile-app phone
+  sign-in; configured as a fictional test number in Firebase Auth, no SMS sent)
 - The `homechef-e2e-tests/` directory
 
 ### Login flow per portal
