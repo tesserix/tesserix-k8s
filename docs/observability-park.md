@@ -37,10 +37,15 @@ workload, its Service and its PVC outright.
 
 ## Retained state
 
-All PVCs are intact — 390 GiB in `observability` (ClickHouse 2×100, Redpanda
-3×40, keeper 3×10, otel-gateway queue 2×20) and 32 GiB in `monitoring`
-(Prometheus TSDB 20, Grafana 10, Alertmanager 2). These keep billing at roughly
-$45/month; deleting them is a separate, irreversible decision.
+The 32 GiB in `monitoring` (Prometheus TSDB 20, Grafana 10, Alertmanager 2) is
+intact — ~$5/month, not worth the revival friction.
+
+The 390 GiB in `observability` (ClickHouse 2×100, Redpanda 3×40, keeper 3×10,
+otel-gateway queue 2×20) is **being deleted** — telemetry history is not worth
+$68/month while nothing reads it. Eight of the ten are `Retain`, so the PVC
+delete alone leaves the disks behind; PV and disk must go too. Revival therefore
+starts from an empty store and needs the schema bootstrap to run before
+otel-ingest can write.
 
 ## Node pool
 
@@ -109,3 +114,25 @@ not reach.
   `mark8ly-marketplace-api-admin` is `min=max=1`, so it has no scaling to lose.
   A `fallback.replicas` stanza on each would silence the errors if the park
   becomes long-lived.
+
+## Adjacent parks from the same cost pass
+
+- `fingpt-inference` (stockpilot) — 2.25Gi, missed by the 2026-06-12 product
+  park. KEDA disabled: its prometheus trigger cannot scale to zero while
+  Prometheus is parked.
+- `volume-autoscaler` — suspended; it reads volume usage from Prometheus.
+- `support-platform-slm-inference` / `-reranker` / `-embedder` — 9Gi parked
+  because `support-platform-slm-router` has had **zero Service endpoints since
+  2026-07-29**: its binary exits on `otel init: conflicting Schema URL 1.41.0
+  vs 1.26.0`, a semconv mismatch that needs fixing in the product repo. Unpark
+  this tier together with that fix.
+- `openpanel` — its Application was applied by hand and is **not** registered in
+  `argocd/prod/infrastructure/kustomization.yaml`, so commenting the file out
+  never stopped it. ClickHouse held zero rows in every table. Editing the file
+  does nothing; the Application itself has to be deleted.
+- Node count went 4 → 3 once those requests were freed. The blocker was
+  `dwellm8-temporal-postgres`, a single-instance CNPG cluster whose primary PDB
+  allows zero disruptions — the autoscaler can never evict it. Deleting the pod
+  let CNPG rebuild it on the other zone-a node (its disk is zonal, so it can
+  only move within `asia-south1-a`); ~90s of downtime. Expect to repeat this for
+  any single-instance CNPG cluster that lands on a node the autoscaler wants.
