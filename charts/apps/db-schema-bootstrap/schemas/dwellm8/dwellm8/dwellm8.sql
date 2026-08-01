@@ -5625,6 +5625,83 @@ $$;
 CREATE INDEX IF NOT EXISTS payments_lease_idx
     ON payments (tenant_id, lease_id) WHERE lease_id IS NOT NULL;
 
+-- ===========================================================================
+-- payout accounts — the impersonated-owner control (threat-model §4, #227)
+-- ===========================================================================
+-- The account a payout goes to, as effective-dated rows: a change closes the
+-- current row and opens a new one, so the previous account survives to be
+-- notified and to answer "where was March's rent sent". The full number is
+-- never stored (ADR-0013's posture) — a mask for humans, a keyed fingerprint
+-- for identity, and the provider's beneficiary reference for the transfer.
+CREATE TABLE IF NOT EXISTS payout_accounts (
+    id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id            uuid NOT NULL REFERENCES organisations(id),
+    owner_party_id       uuid NOT NULL,
+    masked_account       text NOT NULL,
+    ifsc                 text NOT NULL,
+    -- HMAC under a key the database never sees, not a bare hash: account
+    -- numbers are enumerable enough that a hash column is a lookup table.
+    account_fp           text NOT NULL,
+    provider_beneficiary_id text,
+    valid_from           timestamptz NOT NULL DEFAULT now(),
+    valid_to             timestamptz,
+    changed_by_party_id  uuid,
+    changed_via_grant_id uuid REFERENCES delegation_grants(id),
+    created_at           timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT payout_accounts_interval CHECK (valid_to IS NULL OR valid_to > valid_from)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS payout_accounts_one_current
+    ON payout_accounts (tenant_id, owner_party_id) WHERE valid_to IS NULL;
+CREATE INDEX IF NOT EXISTS payout_accounts_fp_idx
+    ON payout_accounts (tenant_id, owner_party_id, account_fp);
+
+ALTER TABLE payout_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payout_accounts FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS payout_accounts_tenant_isolation ON payout_accounts;
+-- NULL property: an owner's payout account is organisation-scoped, so a
+-- mandate carrying money.payout reaches it portfolio-wide by design.
+CREATE POLICY payout_accounts_tenant_isolation ON payout_accounts
+    USING      (tenant_id = current_tenant_id() OR is_platform_session()
+                OR is_delegated(tenant_id, NULL, 'money.payout'))
+    WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session()
+                OR is_delegated(tenant_id, NULL, 'money.payout'));
+DROP POLICY IF EXISTS payout_accounts_no_delete ON payout_accounts;
+CREATE POLICY payout_accounts_no_delete ON payout_accounts AS RESTRICTIVE FOR DELETE
+    USING (sandbox_purge_permitted(tenant_id));
+
+GRANT SELECT, INSERT, UPDATE ON payout_accounts TO dwellm8_money;
+
+-- The control itself. An account may receive a payout only when every row of
+-- its fingerprint has been on file longer than the cool-off — 72 hours, long
+-- enough for the old-channel notifications to be seen and acted on, short
+-- enough that a real owner's change costs one payout cycle at worst. First
+-- appearance decides: switching back to the long-standing account pays at
+-- once, and an attacker's account gains nothing by being re-entered (#227's
+-- changed-back edge). Not SECURITY DEFINER — it reads under the caller's own
+-- row-level security like is_delegated(), and for the same reason.
+CREATE OR REPLACE FUNCTION payout_account_payable(p_owner uuid, p_at timestamptz DEFAULT now())
+RETURNS uuid LANGUAGE sql STABLE AS $fn$
+    SELECT cur.id
+      FROM payout_accounts cur
+     WHERE cur.owner_party_id = p_owner
+       AND cur.valid_to IS NULL
+       AND (SELECT min(first.valid_from)
+              FROM payout_accounts first
+             WHERE first.tenant_id = cur.tenant_id
+               AND first.owner_party_id = cur.owner_party_id
+               AND first.account_fp = cur.account_fp)
+           <= p_at - interval '72 hours'
+$fn$;
+COMMENT ON FUNCTION payout_account_payable(uuid, timestamptz) IS
+    'The id of the owner''s current payout account if it is outside its cool-off, else NULL — a NULL is a held payout, and the payout run must surface it, not skip it (#227)';
+GRANT EXECUTE ON FUNCTION payout_account_payable(uuid, timestamptz) TO dwellm8_money;
+
+-- A full account number does not fit in the only column that could hold one.
+ALTER TABLE payout_accounts DROP CONSTRAINT IF EXISTS payout_accounts_account_is_a_mask;
+ALTER TABLE payout_accounts ADD CONSTRAINT payout_accounts_account_is_a_mask
+    CHECK (masked_account !~ '^[0-9]+$' AND length(masked_account) BETWEEN 6 AND 24);
+
 -- The load-bearing rules.
 --
 -- Every CHECK an ADR argues for at length lives here rather than inside its
@@ -6669,7 +6746,10 @@ BEGIN
         'statutory_rules_no_overlap',
         'statutory_rules_value_shape',
         'statutory_rules_unverified_cannot_block',
-        'statutory_rules_slabs_shape'
+        'statutory_rules_slabs_shape',
+        -- #227: a full account number is unstorable, so the impersonated-owner
+        -- attack cannot exfiltrate what was never kept.
+        'payout_accounts_account_is_a_mask'
     ]) AS want
     WHERE NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = want)
       AND NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = want AND NOT tgisinternal);
