@@ -5613,3 +5613,22 @@ CREATE INDEX IF NOT EXISTS ix_chef_loyalty_txns_chef
 -- penalty_deductions on the debit side.
 ALTER TABLE public.weekly_statements
   ADD COLUMN IF NOT EXISTS bonus_additions numeric DEFAULT 0;
+
+-- chef_expenses: a chef's self-declared business expenses (gas, ingredients,
+-- utensils …). Feeds vendor analytics and the annual FY statement only —
+-- settlement math never reads this table.
+CREATE TABLE IF NOT EXISTS public.chef_expenses (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  chef_id      uuid NOT NULL,
+  user_id      uuid NOT NULL,
+  category     varchar(20) NOT NULL,
+  amount       numeric NOT NULL,
+  currency     varchar(3) DEFAULT 'INR',
+  note         varchar(500),
+  expense_date timestamp with time zone NOT NULL,
+  receipt_url  varchar(500),
+  created_at   timestamp with time zone,
+  updated_at   timestamp with time zone
+);
+CREATE INDEX IF NOT EXISTS idx_chef_expense_chef_date
+  ON public.chef_expenses (chef_id, expense_date);
