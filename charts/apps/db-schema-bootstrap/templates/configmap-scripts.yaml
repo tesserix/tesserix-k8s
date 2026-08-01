@@ -83,6 +83,17 @@ data:
     log_debug "[{{ .name }}] Existing databases: $(echo "$EXISTING_DBS" | tr '\n' ', ')"
 
     SCHEMA_DIR="/schemas/{{ .name }}"
+    {{- if .combineInto }}
+    # This target opts into one-database-many-files: the directory is the
+    # {{ .combineInto }} database and its .sql files are ordered chapters,
+    # concatenated lexically so the loop below still sees file = database.
+    # Every other target keeps the original file-per-database rule untouched.
+    COMBINED_DIR="/tmp/combined-{{ .name }}"
+    mkdir -p "$COMBINED_DIR"
+    cat $(ls "$SCHEMA_DIR"/*.sql | sort) > "$COMBINED_DIR/{{ .combineInto }}.sql"
+    log_info "[{{ .name }}] Combined $(ls "$SCHEMA_DIR"/*.sql | wc -l | tr -d ' ') chapter(s) into {{ .combineInto }}.sql"
+    SCHEMA_DIR="$COMBINED_DIR"
+    {{- end }}
     if [ ! -d "$SCHEMA_DIR" ]; then
       log_warn "[{{ .name }}] Schema directory not found: $SCHEMA_DIR — skipping"
     else
