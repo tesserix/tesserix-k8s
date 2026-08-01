@@ -15,7 +15,10 @@ service:
   type: ClusterIP
   port: 8001
 
-replicaCount: 1
+# PARKED 2026-08-01 for cost. support-platform-slm-router has had ZERO Service
+# endpoints since 2026-07-29 (its binary dies on an otel semconv conflict), so
+# nothing could reach this tier. Restore to 1 together with the router fix.
+replicaCount: 0
 
 resources:
   requests:
@@ -29,7 +32,9 @@ persistence:
   size: 5Gi
 
 keda:
-  enabled: true
+  # Disabled while parked: a memory trigger cannot scale to zero, and it
+  # scaled the reranker to 2 on idle baseline memory alone.
+  enabled: false
   # KEDA's admission webhook rejects minReplicaCount=0 on a cpu/memory-
   # only ScaledObject (scale-to-zero needs an event-driven trigger).
   # Keep one pod warm — embedder is on the hot path for every AI reply.
