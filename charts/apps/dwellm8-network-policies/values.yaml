@@ -32,10 +32,12 @@ podCIDR: 10.20.0.0/16
 hbone:
   enabled: true
 
-# No ingress-gateway entry, because there is no VirtualService or Gateway for
-# dwellm8 yet — nothing outside the cluster can reach it. Publishing an API
-# host means adding `istio-ingress` here, and that is the change where the
-# blast radius of this policy should be re-read rather than assumed.
+# dwellm8-api.tesserix.app is published (dwellm8-api's VirtualService on the
+# platform gateway), so the gateway namespace may now reach this one. The
+# blast radius, re-read as the comment that used to sit here demanded: every
+# pod in the namespace becomes reachable from the gateway, but the gateway
+# routes only what VirtualServices declare — one host, one service — and the
+# API authenticates every request itself (ADR-0027).
 publicIngress:
-  enabled: false
+  enabled: true
   namespace: istio-ingress
