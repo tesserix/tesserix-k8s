@@ -80,6 +80,27 @@ CREATE TABLE IF NOT EXISTS listings (
 COMMENT ON TABLE listings IS
     'ADR-0019. The only publicly readable table in this schema. A row is visible to a stranger only when its owner published it and it is live.';
 
+-- The true-cost breakdown (#134). ALTER rather than in the CREATE above because the
+-- table already exists in production and a CHECK inside IF NOT EXISTS never re-applies.
+-- Zero is a real answer meaning "nothing"; costs_confirmed is what separates it from
+-- "nobody filled this in", and the application refuses publication without it.
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS maintenance_minor   bigint NOT NULL DEFAULT 0;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS parking_minor       bigint NOT NULL DEFAULT 0;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS other_monthly_minor bigint NOT NULL DEFAULT 0;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS one_time_minor      bigint NOT NULL DEFAULT 0;
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS costs_confirmed     boolean NOT NULL DEFAULT false;
+-- NOT VALID: enforced for every new write, never revalidated against rows that
+-- predate the rule — which also keeps the 30-minute re-run from scanning the table.
+ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_costs_nonnegative;
+ALTER TABLE listings ADD CONSTRAINT listings_costs_nonnegative CHECK (
+    maintenance_minor >= 0 AND parking_minor >= 0 AND other_monthly_minor >= 0 AND one_time_minor >= 0)
+    NOT VALID;
+-- A live listing disclosed its costs. Same shape as listings_live_is_published.
+ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_live_discloses_costs;
+ALTER TABLE listings ADD CONSTRAINT listings_live_discloses_costs CHECK (
+    state <> 'live' OR costs_confirmed)
+    NOT VALID;
+
 -- One live listing per unit. Two adverts for the same flat at different rents is the
 -- thing a prospect screenshots.
 CREATE UNIQUE INDEX IF NOT EXISTS listings_one_live_per_unit
