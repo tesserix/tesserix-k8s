@@ -171,6 +171,19 @@ identity:
 # durable workflow: their durability is the idempotency key, and a pod killed
 # half way through leaves what it did and the next run does the rest.
 cronjobs:
+  # Daily registry review (dwellm8#210). Exits non-zero while any statutory
+  # rule is past its review_due, naming each rule and its owner - the failed
+  # Job is the alert, and it stays red until the row is reviewed.
+  review:
+    enabled: true
+    schedule: "0 4 * * *"
+    timeZone: "Asia/Kolkata"
+    args: ["review"]
+    resources:
+      requests:
+        memory: 64Mi
+      limits:
+        memory: 256Mi
   # Daily graph reconciliation (dwellm8#151). Reports divergence and exits
   # non-zero - the failed Job is the alert; repair is a human running
   # `jobs authz --mode rebuild` after understanding why.
