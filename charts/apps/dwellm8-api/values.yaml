@@ -23,6 +23,10 @@ serviceAccount:
   create: true
   automount: true
   name: ""
+  # Workload Identity. The GSA may impersonate dwellm8-gcs-signer
+  # (roles/iam.serviceAccountTokenCreator) and nothing else; the signer holds
+  # objectAdmin on the six dwellm8-<surface>-assets buckets.
+  gcpServiceAccount: dwellm8-api@tesseracthub-480811.iam.gserviceaccount.com
 
 podAnnotations:
   prometheus.io/scrape: "true"
@@ -69,6 +73,11 @@ env:
   # and are not enforced. AUTHZ_ENFORCE=true is a deliberate later flip, after
   # dwellm8#151's projector has tuples to answer with.
   AUTHZ_URL: http://dwellm8-openfga.dwellm8.svc.cluster.local:8080
+  # Per-app GCS storage (internal/platform/blob): one bucket per surface,
+  # dwellm8-<surface>-assets, objects prefixed by organisation. V4 URLs are
+  # signed by impersonating this SA over IAM SignBlob — no key material.
+  GCS_BUCKET_PREFIX: dwellm8
+  GCS_SIGNER_SA_EMAIL: dwellm8-gcs-signer@tesseracthub-480811.iam.gserviceaccount.com
 
 # Payments. ADR-0011 chain and ADR-0022's adapter configuration.
 #
