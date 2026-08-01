@@ -187,6 +187,30 @@ gip:
     - "tesseracthub-480811"
 
 # =============================================================================
+# Additional GIP projects (see extraGip in values.yaml for the contract)
+#
+# Kora has its own Firebase project, kora-app-e6d38 — the shared tesseracthub
+# project has zero apps registered, so no Kora client could ever obtain a token
+# it would accept. kora-api validates kora-app-e6d38 (charts/apps/kora-api
+# values.yaml FIREBASE_PROJECT_ID), but the gateway rejected those tokens with
+# 401 first, which is why kora_db held 0 users and 0 food_logs: nobody had ever
+# successfully authenticated.
+#
+# The Kora rule in allow-public-api-endpoints already lets /v1/* through
+# unauthenticated because the Go backend verifies Firebase tokens itself. That
+# covers AUTHORIZATION; this covers AUTHENTICATION, which is enforced
+# separately and is what was rejecting the token.
+# =============================================================================
+extraGip:
+  - name: "-kora"
+    issuer: "https://securetoken.google.com/kora-app-e6d38"
+    jwksUri: "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"
+    audiences:
+      - "kora-app-e6d38"
+    restrictToHosts:
+      - "kora-api.tesserix.app"
+
+# =============================================================================
 # Google OIDC — Cloud Pub/Sub push authentication
 #
 # Pub/Sub push subscriptions (e.g. mp-merchant-push-delivery → marketplace-api

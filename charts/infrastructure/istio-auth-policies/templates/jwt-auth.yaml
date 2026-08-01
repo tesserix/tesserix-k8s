@@ -56,6 +56,59 @@ spec:
 {{- end }}
 {{- end }}
 
+{{- range $extra := .Values.extraGip | default list }}
+{{- range $gw := $.Values.ingressGateways }}
+---
+# =============================================================================
+# JWT AUTHENTICATION - additional GIP project "{{ $extra.issuer }}" for {{ $gw.labelValue }}
+#
+# Products with their OWN Firebase/GIP project (rather than the shared
+# tesseracthub project in `gip:` above) each get a RequestAuthentication here.
+# Istio MERGES jwtRules across every RequestAuthentication selecting the same
+# workload, so this is exactly equivalent to appending a rule to jwt-auth-gip —
+# but it leaves that shared resource byte-identical, so adding or removing one
+# product cannot perturb the others.
+#
+# This exists because the gateway rejects a JWT whose issuer matches NO rule
+# with 401 "Jwt issuer is not configured", BEFORE the service sees it. A product
+# whose backend does its own verification still needs its issuer listed here,
+# or its users can never authenticate at all.
+#
+# forwardOriginalToken is REQUIRED: the backend re-verifies the token itself.
+# No outputClaimToHeaders — these tokens must NOT populate the x-jwt-claim-*
+# headers that HeaderTrustAuth services trust.
+#
+# See the paired deny-foreign-hosts policy in api-authz.yaml: validating here
+# makes the token a request principal, which allow-authenticated-api would
+# otherwise honour on EVERY host on this gateway.
+# =============================================================================
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: jwt-auth-gip{{ $extra.name }}{{ $gw.name }}
+  namespace: {{ $gw.namespace }}
+  labels:
+    app.kubernetes.io/name: jwt-auth
+    app.kubernetes.io/component: request-authentication
+    app.kubernetes.io/part-of: istio-auth-policies
+spec:
+  selector:
+    matchLabels:
+      {{ $gw.labelKey }}: {{ $gw.labelValue }}
+  jwtRules:
+    - issuer: {{ $extra.issuer | quote }}
+      jwksUri: {{ $extra.jwksUri | quote }}
+      audiences:
+        {{- range $extra.audiences }}
+        - {{ . | quote }}
+        {{- end }}
+      forwardOriginalToken: true
+      fromHeaders:
+        - name: Authorization
+          prefix: "Bearer "
+{{- end }}
+{{- end }}
+
 {{- if and .Values.googleOidc .Values.googleOidc.enabled }}
 {{- range .Values.ingressGateways }}
 ---
