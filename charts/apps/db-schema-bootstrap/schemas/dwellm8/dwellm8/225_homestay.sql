@@ -187,6 +187,17 @@ CREATE POLICY stay_bookings_tenant_isolation ON stay_bookings
            OR is_platform_session()
            OR is_delegated_unit(tenant_id, property_id, unit_id, NULL, 'property.write'));
 
+-- Closed to renter sessions (ADR-0029), by the same policy the 220 deny loop
+-- would have written had these tables existed when it ran: a tenant's sign-in
+-- has no business in their landlord's hosting book. Same policy names, so the
+-- loop's next pass recreates rather than duplicates them.
+DROP POLICY IF EXISTS stay_listings_resident_denied ON stay_listings;
+CREATE POLICY stay_listings_resident_denied ON stay_listings AS RESTRICTIVE
+    USING (NOT is_resident_session()) WITH CHECK (NOT is_resident_session());
+DROP POLICY IF EXISTS stay_bookings_resident_denied ON stay_bookings;
+CREATE POLICY stay_bookings_resident_denied ON stay_bookings AS RESTRICTIVE
+    USING (NOT is_resident_session()) WITH CHECK (NOT is_resident_session());
+
 -- A cancelled booking is the record a chargeback turns on. No deletes outside
 -- a sandbox purge, the same rule as every funnel table.
 DROP POLICY IF EXISTS stay_listings_no_delete ON stay_listings;
