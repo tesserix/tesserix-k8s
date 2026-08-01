@@ -508,7 +508,10 @@ BEGIN
     --     against a rule nobody authorised.
     SELECT string_agg(format('%s:%s', t, priv), ', ') INTO offending
     FROM unnest(ARRAY['ledger_accounts', 'posting_templates', 'posting_template_lines',
-                      'statutory_rules', 'statutory_rule_slabs']) AS t
+                      'statutory_rules', 'statutory_rule_slabs',
+                      -- ADR-0031: an organisation that could write its own fee
+                      -- rate would price itself at zero, effective last April.
+                      'platform_fee_rules']) AS t
     CROSS JOIN unnest(ARRAY['INSERT', 'UPDATE', 'DELETE']) AS priv
     WHERE has_table_privilege('dwellm8_app', t, priv);
     IF offending IS NOT NULL THEN
