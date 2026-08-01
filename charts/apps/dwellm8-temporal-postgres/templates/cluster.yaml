@@ -36,12 +36,14 @@ spec:
   # authenticate as an owner whose password nothing declares.
   managed:
     roles:
+      # No superuser, createdb, createrole or bypassrls — all false by omission.
+      # Writing `false` here is what kept this cluster permanently OutOfSync:
+      # CNPG marks those fields `omitempty`, so the stored object drops them and
+      # ArgoCD compares against a field that can never appear. An absent boolean
+      # unmarshals to false, so the role is unchanged.
       - name: {{ .Values.bootstrap.owner }}
         ensure: present
         login: true
-        superuser: false
-        createdb: false
-        createrole: false
         passwordSecret:
           name: {{ .Values.bootstrap.secret }}
 
