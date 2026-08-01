@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS stay_bookings (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id     uuid NOT NULL REFERENCES organisations(id),
     listing_id    uuid NOT NULL REFERENCES stay_listings(id),
+    -- The delegation quad (ADR-0009): a firm's mandate reaches a booking the
+    -- way it reaches the unit itself, so both ids ride on the row.
+    property_id   uuid NOT NULL,
     unit_id       uuid NOT NULL,
     -- The guest is a prospect (ADR-0019): verified phone before money or
     -- occupancy, enforced by the trigger below.
@@ -99,11 +102,31 @@ CREATE TABLE IF NOT EXISTS stay_bookings (
     CONSTRAINT stay_bookings_held_expires CHECK (state <> 'held' OR hold_expires_at IS NOT NULL),
     CONSTRAINT stay_bookings_cancel_shape CHECK ((state = 'cancelled') = (cancelled_by IS NOT NULL)),
     CONSTRAINT stay_bookings_unit_fkey FOREIGN KEY (unit_id, tenant_id)
-        REFERENCES units (id, tenant_id)
+        REFERENCES units (id, tenant_id),
+    CONSTRAINT stay_bookings_property_fkey FOREIGN KEY (property_id, tenant_id)
+        REFERENCES properties (id, tenant_id)
 );
 
 COMMENT ON TABLE stay_bookings IS
     '#233. One row per stay. The exclusion constraint is the whole double-booking story; the price is the one agreed, not the one advertised later.';
+
+-- A database that took this chapter's first cut (same day, zero rows) lacks
+-- property_id: the CREATE above is skipped there, so the column arrives by
+-- ALTER and is then tightened to the shape a fresh database gets outright.
+ALTER TABLE stay_bookings ADD COLUMN IF NOT EXISTS property_id uuid;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'stay_bookings'
+                  AND column_name = 'property_id' AND is_nullable = 'YES') THEN
+        ALTER TABLE stay_bookings ALTER COLUMN property_id SET NOT NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'stay_bookings_property_fkey') THEN
+        ALTER TABLE stay_bookings ADD CONSTRAINT stay_bookings_property_fkey
+            FOREIGN KEY (property_id, tenant_id) REFERENCES properties (id, tenant_id);
+    END IF;
+END
+$$;
 
 DO $$
 BEGIN
@@ -144,15 +167,25 @@ ALTER TABLE stay_listings FORCE  ROW LEVEL SECURITY;
 ALTER TABLE stay_bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stay_bookings FORCE  ROW LEVEL SECURITY;
 
+-- Delegated at unit granularity (assertions 5 and 6): advertising and running
+-- a short stay is squarely what a management mandate over the unit is for.
 DROP POLICY IF EXISTS stay_listings_tenant_isolation ON stay_listings;
 CREATE POLICY stay_listings_tenant_isolation ON stay_listings
-    USING (tenant_id = current_tenant_id() OR is_platform_session())
-    WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
+    USING (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR is_delegated_unit(tenant_id, property_id, unit_id, NULL, 'property.read'))
+    WITH CHECK (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR is_delegated_unit(tenant_id, property_id, unit_id, NULL, 'property.write'));
 
 DROP POLICY IF EXISTS stay_bookings_tenant_isolation ON stay_bookings;
 CREATE POLICY stay_bookings_tenant_isolation ON stay_bookings
-    USING (tenant_id = current_tenant_id() OR is_platform_session())
-    WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
+    USING (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR is_delegated_unit(tenant_id, property_id, unit_id, NULL, 'property.read'))
+    WITH CHECK (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR is_delegated_unit(tenant_id, property_id, unit_id, NULL, 'property.write'));
 
 -- A cancelled booking is the record a chargeback turns on. No deletes outside
 -- a sandbox purge, the same rule as every funnel table.
