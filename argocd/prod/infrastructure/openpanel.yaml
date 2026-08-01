@@ -21,8 +21,12 @@ spec:
       values: |
         # OpenPanel configuration for production environment
 
+        # PARKED 2026-08-01 for cost. ClickHouse held 0 rows in every table --
+        # this stack never ingested a single event. Services, config and all
+        # three PVCs are retained; restore the replicaCounts to revive.
+
         api:
-          replicaCount: 2
+          replicaCount: 0
           image:
             repository: lindesvard/openpanel-api
             tag: "2.0.1-rc"
@@ -35,7 +39,7 @@ spec:
               memory: 2Gi
 
         dashboard:
-          replicaCount: 2
+          replicaCount: 0
           image:
             repository: lindesvard/openpanel-dashboard
             tag: "2.0.1-rc"
@@ -48,7 +52,7 @@ spec:
               memory: 1Gi
 
         worker:
-          replicaCount: 2
+          replicaCount: 0
           image:
             repository: lindesvard/openpanel-worker
             tag: "2.0.1-rc"
@@ -62,6 +66,7 @@ spec:
 
         postgresql:
           enabled: true
+          replicaCount: 0
           image:
             repository: postgres
             tag: "14-alpine"
@@ -77,6 +82,7 @@ spec:
 
         clickhouse:
           enabled: true
+          replicaCount: 0
           image:
             repository: clickhouse/clickhouse-server
             tag: "25.10.2.65"
@@ -92,6 +98,7 @@ spec:
 
         redis:
           enabled: true
+          replicaCount: 0
           image:
             repository: redis
             tag: "7.2.5-alpine"
@@ -122,7 +129,8 @@ spec:
 
         # Project Init Job — bootstraps projects and writes client IDs to K8s Secret
         projectInit:
-          enabled: true
+          # Cannot run while the API is parked.
+          enabled: false
           targetNamespace: "marketplace"
           secretName: "openpanel-client-ids"
           adminUser:

@@ -35,7 +35,10 @@ service:
 
 # Single replica with KEDA-driven scale-up. The model load takes 5-15s
 # so we keep minReplicas=1 (no scale-to-zero).
-replicaCount: 1
+# PARKED 2026-08-01 for cost. support-platform-slm-router has had ZERO Service
+# endpoints since 2026-07-29 (its binary dies on an otel semconv conflict), so
+# nothing could reach this tier. Restore to 1 together with the router fix.
+replicaCount: 0
 
 # Big — int4 1.5B is ~1GB on disk, fp32 logits + KV cache need more RAM.
 resources:
@@ -51,7 +54,9 @@ persistence:
   size: 10Gi
 
 keda:
-  enabled: true
+  # Disabled while parked: a memory trigger cannot scale to zero, and it
+  # scaled the reranker to 2 on idle baseline memory alone.
+  enabled: false
   minReplicaCount: 1
   maxReplicaCount: 3
   # Scale on a Prometheus metric — set up once the metric exists.
