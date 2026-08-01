@@ -5632,3 +5632,10 @@ CREATE TABLE IF NOT EXISTS public.chef_expenses (
 );
 CREATE INDEX IF NOT EXISTS idx_chef_expense_chef_date
   ON public.chef_expenses (chef_id, expense_date);
+
+-- Optional order link on the expense book: expenses recorded from the order
+-- screen while cooking carry the order they were incurred for.
+ALTER TABLE public.chef_expenses
+  ADD COLUMN IF NOT EXISTS order_id uuid;
+CREATE INDEX IF NOT EXISTS idx_chef_expenses_order_id
+  ON public.chef_expenses (order_id);
