@@ -3173,7 +3173,7 @@ service_accounts = [
   #   - tesseract-prod-otto-exports-in (write, via export CronJob)
   #   - tesseract-prod-otto-models-in  (read,  via slm-inference for LoRA adapters)
   {
-    name         = "app-secrets-support-platform-prod"
+    name         = "app-secrets-support-prod"
     self_token_creator = true
     display_name = "App Secrets Accessor - support-platform"
     description  = "Service account for support-platform namespace: Otto, slm-router, export CronJob"
