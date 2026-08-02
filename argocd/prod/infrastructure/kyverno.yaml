@@ -91,10 +91,13 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    # No RespectIgnoreDifferences: it switches the ignoreDifferences-matched
+    # CRDs to a client-side patch that dies on the 256KB annotation limit
+    # (the two kyverno policy CRDs are ~1MB). SSA never sends /spec/conversion,
+    # so the ignored field is safe without it.
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
