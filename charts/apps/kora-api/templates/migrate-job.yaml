@@ -23,6 +23,12 @@ metadata:
     app.kubernetes.io/component: migrate
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
+    # A Job's spec.template is IMMUTABLE. Any change to it — including a
+    # chart version bump, which lands in the template's helm.sh/chart label —
+    # makes a patch fail with "field is immutable" and aborts the whole sync
+    # at this wave. Replace+Force makes ArgoCD delete and recreate the Job
+    # instead of patching it. Safe here: both Jobs are idempotent by design.
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
 spec:
   backoffLimit: 5
   template:
