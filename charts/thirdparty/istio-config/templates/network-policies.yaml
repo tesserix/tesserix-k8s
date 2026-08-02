@@ -1000,6 +1000,17 @@ spec:
         - protocol: TCP
           port: 8222   # HTTP monitoring
     {{- end }}
+    # otto (support-platform) publishes staff-queue events to the shared
+    # NATS. support-platform is deliberately NOT in appNamespaces (its
+    # mesh/NetworkPolicies are self-managed — see the values.yaml note),
+    # so grant its client access explicitly, client port only.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: support-platform
+      ports:
+        - protocol: TCP
+          port: 4222   # Client connections
     # Allow internal NATS communication (for cluster and init jobs)
     - from:
         - namespaceSelector:
