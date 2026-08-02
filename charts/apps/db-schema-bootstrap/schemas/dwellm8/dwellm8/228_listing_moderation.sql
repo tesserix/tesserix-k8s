@@ -12,6 +12,17 @@ ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_state_check;
 ALTER TABLE listings ADD CONSTRAINT listings_state_check CHECK (state IN (
     'draft', 'live', 'paused', 'let', 'withdrawn', 'suspended'));
 
+-- Agent registration capture (#143): who is listing, and — when it is an
+-- agent — the RERA registration that lets them advertise at all.
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS lister_kind text NOT NULL DEFAULT 'owner';
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS agent_registration text;
+ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_lister_kind_check;
+ALTER TABLE listings ADD CONSTRAINT listings_lister_kind_check CHECK (
+    lister_kind IN ('owner', 'agent'));
+ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_agent_is_registered;
+ALTER TABLE listings ADD CONSTRAINT listings_agent_is_registered CHECK (
+    state <> 'live' OR lister_kind <> 'agent' OR agent_registration IS NOT NULL);
+
 -- A suspension records why; owner-driven states carry no moderation reason.
 ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_suspended_has_reason;
 ALTER TABLE listings ADD CONSTRAINT listings_suspended_has_reason CHECK (
