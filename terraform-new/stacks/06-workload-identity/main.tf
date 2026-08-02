@@ -48,6 +48,43 @@ resource "google_service_account_iam_member" "workload_identity_binding" {
 }
 
 # =============================================================================
+# Secret Provisioner
+# =============================================================================
+# These live in state but had no configuration, so any apply planned to DELETE
+# a live production service account. Re-declared from the recorded state; the
+# former project-level tokenCreator is now a self-binding.
+
+resource "google_service_account" "secret_provisioner" {
+  account_id   = "secret-provisioner-sa"
+  display_name = "Secret Provisioner Service"
+  description  = "Service account for the secret-provisioner global service to manage payment credentials in GCP Secret Manager"
+}
+
+resource "google_project_iam_member" "secret_provisioner_secretmanager_admin" {
+  project = var.project_id
+  role    = "roles/secretmanager.admin"
+  member  = google_service_account.secret_provisioner.member
+}
+
+resource "google_service_account_iam_member" "secret_provisioner_token_creator" {
+  service_account_id = google_service_account.secret_provisioner.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = google_service_account.secret_provisioner.member
+}
+
+resource "google_service_account_iam_member" "secret_provisioner_workload_identity_global" {
+  service_account_id = google_service_account.secret_provisioner.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[global/secret-provisioner]"
+}
+
+resource "google_service_account_iam_member" "secret_provisioner_workload_identity_global_services" {
+  service_account_id = google_service_account.secret_provisioner.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[global-services/secret-provisioner]"
+}
+
+# =============================================================================
 # Self-impersonation (signing) — scoped to the SA itself
 # =============================================================================
 
