@@ -22,6 +22,12 @@ spec:
     helm:
       releaseName: kyverno
       values: |
+        # Admission reports off: the TIG wildcard policies generated 60k+
+        # per-resource PolicyReports in 10h (pure etcd churn — all skips).
+        # Break-glass auditing uses GKE audit logs instead.
+        features:
+          admissionReports:
+            enabled: false
         # 2 replicas: webhook availability without HA (3) cost. Policies fail
         # open (webhookFailurePolicy: Ignore in TIG), so a full outage never
         # blocks the cluster.
@@ -73,12 +79,20 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: kyverno
+  # API server defaults spec.conversion on CRDs the chart omits it from;
+  # jsonPointer (not a list path), so the SSA strip gotcha does not apply.
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /spec/conversion
   syncPolicy:
     automated:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
