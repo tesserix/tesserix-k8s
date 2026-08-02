@@ -47,6 +47,20 @@ resources:
   limits:
     memory: 6Gi
 
+# Land on the cheap single-node `small-support` pool (e2-standard-4 spot)
+# instead of forcing the autoscaler to add an e2-standard-8 to optimized-v2.
+# Preferred, not required: small-support is one spot node, so on preemption
+# this falls back to the main pool rather than sitting Pending.
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: workload
+              operator: In
+              values: ["small-pods"]
+
 # Model cache PVC — re-pulling the GGUF on every restart is expensive.
 persistence:
   enabled: true
