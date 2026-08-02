@@ -841,30 +841,294 @@ content:
         prediction is settled against the DLS winner.
       metadata: {source: "starter-seed", section: "predictions"}
 
+  # HomeChef / fe3dr.com — the full support KB. The homechef-vendor
+  # tenant aliases to this namespace, so chef-side (audience: chef) and
+  # driver-side entries live here too. Facts mirror the Home-Chef-App
+  # code (cancellation_policy.go, document.go, account_lifecycle.go,
+  # docs_deadline_cron.go, payout gate) — update this file when those
+  # policies change.
   homechef:
+    # ── Customer: basics ────────────────────────────────────────────
     - id: homechef-overview
       text: |
-        HomeChef (fe3dr.com) connects customers with home chefs in
-        their neighbourhood for fresh home-cooked food, delivered.
-        Browse local chefs, place an order, and track delivery in real
-        time. Available in selected cities in India and Australia.
-      metadata: {source: "starter-seed", section: "overview"}
+        HomeChef (fe3dr.com) connects customers with verified home
+        chefs in their neighbourhood for fresh home-cooked food,
+        delivered. Browse local chefs, order single meals, subscribe
+        to tiffin meal plans, place group/office orders, or request
+        catering. Track delivery live in the app or on the website.
+        Available in selected cities in India and Australia.
+      metadata: {source: "support-kb", section: "overview", audience: "customer"}
+    - id: homechef-ordering
+      text: |
+        HOW TO ORDER: Browse Chefs -> pick a chef (check the Open
+        badge and delivery radius) -> add dishes to the cart -> choose
+        delivery address and time -> pay. The chef must ACCEPT the
+        order before cooking starts; you'll see the status move
+        pending -> accepted -> preparing -> ready -> picked up ->
+        delivering -> delivered. If a chef shows "Closed" they are not
+        taking orders right now — try another chef or check their
+        opening hours on the profile.
+      metadata: {source: "support-kb", section: "ordering", audience: "customer"}
     - id: homechef-delivery
       text: |
         Delivery windows are 30-45 minutes typical; the order page
-        shows a live ETA. Drivers send status updates and a final
-        delivery photo. If a delivery is more than 20 minutes past
-        the ETA, contact support and we'll either expedite or refund
-        the delivery fee.
-      metadata: {source: "starter-seed", section: "delivery"}
+        shows a live ETA and driver position. Drivers send status
+        updates and a final delivery photo as proof. ISSUE: "My order
+        is late." ANSWER: check the live ETA first — traffic updates
+        move it. If the order is more than 20 minutes past the ETA,
+        contact support and we'll expedite it or refund the delivery
+        fee. ESCALATE: no driver movement for 15+ minutes or the app
+        shows delivered but nothing arrived.
+      metadata: {source: "support-kb", section: "delivery", audience: "customer"}
+    - id: homechef-order-cancellation
+      text: |
+        ISSUE: "I want to cancel my order." ANSWER: it depends on how
+        far the order has progressed. (1) Chef has NOT accepted yet
+        (status pending), or the chef rejected/cancelled: cancelling
+        gives an automatic full refund of the food amount (the small
+        platform fee is not refunded). (2) Chef accepted or is already
+        preparing: the cancellation goes to the chef to confirm, and
+        the refund amount follows the chef's cancellation tiers shown
+        at request time. (3) Order is ready, picked up, or on its way:
+        it can no longer be cancelled in-app — contact support.
+      metadata: {source: "support-kb", section: "cancellation", audience: "customer"}
     - id: homechef-refunds
       text: |
         Refunds are processed for missing items, incorrect orders,
-        and food-safety concerns. If you feel unwell after a meal,
-        STOP eating it, photograph the dish, and contact support
-        immediately. We refund the full order and escalate to the
-        chef and our food-safety partner within 1 hour.
-      metadata: {source: "starter-seed", section: "refunds", urgent: true}
+        cancelled orders, and food-safety concerns, back to the
+        original payment method. Wallet-credit portions return to the
+        wallet instantly; gateway refunds (UPI/card/net banking)
+        usually settle in 3-7 business days depending on the bank. If
+        a refund is approved but delayed, it is retried automatically
+        — you do not need to re-request it. ESCALATE: refund shows
+        processed for more than 7 business days with nothing received.
+      metadata: {source: "support-kb", section: "refunds", audience: "customer"}
+    - id: homechef-food-safety
+      text: |
+        URGENT — FOOD SAFETY: if you feel unwell after a meal or find
+        a foreign object, STOP eating immediately, photograph the dish
+        and packaging, and contact support right away (chat is
+        fastest — ask for a human). We refund the full order and
+        escalate to the chef and our food-safety process within 1
+        hour. Keep the food if possible; it may be needed for the
+        investigation.
+      metadata: {source: "support-kb", section: "food-safety", audience: "customer", urgent: true}
+    - id: homechef-payments
+      text: |
+        Payments are processed by Cashfree: UPI, credit/debit cards,
+        and net banking, plus HomeChef wallet credits. ISSUE: "Money
+        was debited but the order shows unpaid/failed." ANSWER: the
+        app re-checks the payment status automatically for a few
+        minutes; a genuinely failed charge is auto-reversed by the
+        bank, typically within 3-5 business days. Do NOT pay twice —
+        if a second attempt is needed the first hold will be reversed.
+        ESCALATE: debit visible in your bank after 24h with the order
+        still unpaid, or a double charge on one order.
+      metadata: {source: "support-kb", section: "payments", audience: "customer"}
+    - id: homechef-promos-wallet
+      text: |
+        Promo codes are applied at checkout — one code per order, and
+        expired or already-used codes are rejected with the reason
+        shown. Wallet credits (from refunds or rewards) auto-apply
+        toward the payable amount; any remainder is charged to your
+        payment method. Loyalty points accrue on delivered orders and
+        convert to wallet credit from the Rewards screen. ISSUE:
+        "Promo code not working." ANSWER: check expiry, minimum order
+        value, first-order-only conditions, and that the code matches
+        this app (customer codes don't work in the chef app).
+      metadata: {source: "support-kb", section: "promotions", audience: "customer"}
+    - id: homechef-meal-plans
+      text: |
+        Meal plans (tiffin subscriptions) deliver on a recurring
+        schedule from one chef. You can SKIP a day from the plan
+        screen before the chef's cut-off: skips inside the allowed
+        window apply instantly and the chef is notified; requests
+        outside the window go to review. Plan changes and pauses take
+        effect from the next billing cycle. ISSUE: "I was charged for
+        a skipped day." ANSWER: approved skips are credited to your
+        wallet automatically; check the wallet ledger first.
+      metadata: {source: "support-kb", section: "meal-plans", audience: "customer"}
+    - id: homechef-group-catering
+      text: |
+        GROUP ORDERS: one person starts a group order and shares the
+        link; everyone adds their own items and pays their share. If
+        the group order is cancelled, every participant is refunded
+        individually. CATERING: submit a catering request from the
+        chef's profile with the event date, headcount and menu
+        preferences; the chef sends a quote you can accept or decline
+        — payment is only taken after you accept the quote.
+      metadata: {source: "support-kb", section: "group-catering", audience: "customer"}
+    - id: homechef-confirm-receipt
+      text: |
+        After delivery the app asks you to confirm you received the
+        order. If you don't respond, the order auto-confirms after the
+        reminder window so the chef can be paid. If something was
+        wrong with the order, tap "Report a problem" (or open a
+        support chat) BEFORE it auto-confirms where possible — but a
+        confirmed order can still be disputed through support.
+      metadata: {source: "support-kb", section: "confirm-receipt", audience: "customer"}
+    - id: homechef-login-issues
+      text: |
+        ISSUE: "Can't log in." ANSWER: (1) Password reset links/codes
+        expire after 15 minutes — request a fresh one if it says
+        expired or invalid. (2) With two-factor enabled, use the OTP
+        sent to your email; on a trusted device the prompt is skipped.
+        Lost access to email? Use one of your backup codes from when
+        2FA was set up. (3) Social sign-in (Google/Facebook/Apple)
+        accounts must use the same provider each time — the email
+        alone won't work with a password it never had. ESCALATE: no
+        backup codes and no email access (identity re-verification
+        needed).
+      metadata: {source: "support-kb", section: "account", audience: "customer"}
+    - id: homechef-account-deletion
+      text: |
+        Delete your account from Settings -> Account. The account
+        deactivates immediately and personal data is purged after the
+        retention window. You can RESTORE the account within 360 days
+        by signing in again and following the restore prompt (the
+        restore link is valid for 15 minutes once requested). After
+        360 days the account and its data are permanently removed and
+        cannot be recovered.
+      metadata: {source: "support-kb", section: "account", audience: "customer"}
+
+    # ── Chef / vendor ──────────────────────────────────────────────
+    - id: homechef-chef-onboarding
+      text: |
+        BECOME A CHEF: download the Fe3dr Chef app and sign up (two
+        quick steps — about you, then a password). Onboarding then
+        walks through kitchen profile, menu, service area, documents
+        and payout details. Documents and payout setup CAN be skipped
+        at first so you can finish the rest — but verification (and
+        going live) needs the documents, and payouts stay on hold
+        until payout details are added. Questions during onboarding:
+        chef-onboarding@fe3dr.com or the in-app chat.
+      metadata: {source: "support-kb", section: "chef-onboarding", audience: "chef"}
+    - id: homechef-chef-documents
+      text: |
+        CHEF DOCUMENTS required for verification: ID proof (PAN /
+        Aadhaar / passport), FSSAI license, address proof (a gas or
+        electricity bill for the kitchen address, dated within the
+        last 3 months), food safety certificate, cancelled cheque,
+        three kitchen photos and a profile photo. A recent bank
+        statement is OPTIONAL and only speeds up payout verification.
+        The app pre-checks uploads (readability, dates) before
+        submission — a bill older than 3 months or an expired FSSAI
+        license is rejected at upload with the reason shown.
+      metadata: {source: "support-kb", section: "chef-documents", audience: "chef"}
+    - id: homechef-chef-docs-deadline
+      text: |
+        If you skipped documents during onboarding you have 30 DAYS
+        from submitting your application to upload them. A reminder
+        goes out around day 25, and an application still missing
+        documents after 30 days is withdrawn automatically — you can
+        re-apply, but you start over. Upload early: verification
+        review time is separate from the 30-day window.
+      metadata: {source: "support-kb", section: "chef-documents", audience: "chef"}
+    - id: homechef-chef-verification
+      text: |
+        After documents are submitted the Tesserix team reviews the
+        application (typically 2-3 business days). Status shows in the
+        chef app under Review. The kitchen cannot take live orders
+        until verification passes — menus and profile can be prepared
+        meanwhile. If the review team needs more information you get
+        an in-app request + email; respond there rather than starting
+        a new application. ESCALATE: verification pending more than 5
+        business days with no request for information.
+      metadata: {source: "support-kb", section: "chef-verification", audience: "chef"}
+    - id: homechef-chef-fssai
+      text: |
+        Every HomeChef kitchen in India needs a valid FSSAI license
+        (basic registration is sufficient for home kitchens under the
+        turnover threshold). The platform tracks your license expiry
+        and reminds you 30, 15 and 7 days before it lapses — an
+        expired license pauses the kitchen until a renewed license is
+        uploaded and re-verified.
+      metadata: {source: "support-kb", section: "chef-fssai", audience: "chef"}
+    - id: homechef-chef-payouts
+      text: |
+        PAYOUTS: add bank details (account + IFSC) in the chef app
+        under Payouts. Setup can be deferred during onboarding —
+        earnings still accrue on every delivered order but are HELD
+        until payout details are added and verified (reminder around
+        day 25). Payouts run on the platform settlement schedule with
+        weekly statements in the app; an optional recent bank
+        statement upload speeds verification. ISSUE: "My payout didn't
+        arrive." ANSWER: check Payouts -> status first (bank
+        validation can take a business day); failed transfers are
+        retried automatically. ESCALATE: payout marked paid but not
+        received after 2 business days.
+      metadata: {source: "support-kb", section: "chef-payouts", audience: "chef"}
+    - id: homechef-chef-orders
+      text: |
+        Managing orders: new orders need your ACCEPT before the
+        customer is committed — you get reminder nudges, and
+        repeatedly ignoring orders hurts visibility. Set daily
+        capacity and slots so the app stops taking orders when you're
+        full; pausing the kitchen auto-resumes on your schedule.
+        Cancelling an accepted order refunds the customer per the
+        cancellation tiers and can carry a penalty — if you truly
+        can't fulfil, cancel as early as possible.
+      metadata: {source: "support-kb", section: "chef-orders", audience: "chef"}
+    - id: homechef-chef-earnings
+      text: |
+        The Earnings screen shows per-order earnings, settlements and
+        downloadable statements (including a financial-year statement
+        for tax filing). Track kitchen costs in Expenses — entries can
+        be linked to orders. Rewards: the referral program pays a
+        bonus when a chef you refer goes live, and loyalty incentives
+        accrue on completed orders; both are visible under Rewards.
+      metadata: {source: "support-kb", section: "chef-earnings", audience: "chef"}
+    - id: homechef-chef-support
+      text: |
+        Chef support channels: the in-app "Chat with support" (this
+        assistant answers instantly and hands off to the Tesserix team
+        when needed — say "talk to a human" any time), or raise a
+        ticket under Support for slower, tracked issues (app problems,
+        payouts, account, orders). A chat can be converted into a
+        ticket with "Create a support ticket" so nothing is lost.
+        Email: chef-onboarding@fe3dr.com for onboarding,
+        support@fe3dr.com for everything else.
+      metadata: {source: "support-kb", section: "chef-support", audience: "chef"}
+
+    # ── Delivery driver ────────────────────────────────────────────
+    - id: homechef-driver-onboarding
+      text: |
+        BECOME A DRIVER: sign up in the Fe3dr Driver app — personal
+        details, vehicle details, documents, payout details, then
+        review. Documents required: driving license, vehicle RC,
+        insurance, Aadhaar, PAN, a profile photo, police verification,
+        and vehicle photos (front, back, left, right, top). Your
+        application is reviewed after submission; you can start
+        accepting deliveries once approved.
+      metadata: {source: "support-kb", section: "driver-onboarding", audience: "driver"}
+    - id: homechef-driver-deliveries
+      text: |
+        Driver flow: go online -> accept an available delivery -> pick
+        up from the chef -> navigate with in-app maps -> photograph
+        the handover as delivery proof. Earnings (including customer
+        tips) appear per-delivery under Earnings with the same weekly
+        settlement rhythm as chefs. ISSUE: "Customer unreachable at
+        drop-off." ANSWER: use the in-app call button and wait the
+        grace period shown; then follow the app's return prompt —
+        support is notified automatically.
+      metadata: {source: "support-kb", section: "driver-deliveries", audience: "driver"}
+
+    # ── Support channels (all audiences) ───────────────────────────
+    - id: homechef-support-channels
+      text: |
+        Getting help on HomeChef/fe3dr: (1) LIVE CHAT — the "Chat with
+        support" button (web) or Profile -> Chat with support
+        (customer app) / Support -> Chat (chef app). The assistant
+        answers instantly from this knowledge base; asking for a
+        human, or words like "refund", queue you to the Tesserix
+        support team — every conversation gets a case ID (CS-...) you
+        can quote later. (2) TICKETS — created in-app (or from a chat
+        via "Create a support ticket"); tracked with a ticket number
+        and email updates. (3) EMAIL — support@fe3dr.com for
+        assistance, grievance@fe3dr.com for formal complaints and
+        grievance escalation, hello@fe3dr.com for general/partnership
+        queries.
+      metadata: {source: "support-kb", section: "support-channels", audience: "all"}
 
   stockpilot:
     - id: stockpilot-overview
