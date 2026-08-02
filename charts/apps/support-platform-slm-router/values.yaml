@@ -112,10 +112,6 @@ routes:
     homechef:
       systemPromptFile: /etc/slm-router/prompts/homechef.md
       ragNamespace: homechef
-      # Chef/vendor chats (mobile-vendor app) arrive as tenant
-      # "homechef-vendor" — same brain + hooks until a dedicated vendor
-      # KB namespace ships.
-      aliases: ["homechef-vendor"]
       mcpServers:
         - name: homechef-mcp
           url: http://homechef-mcp.homechef.svc.cluster.local:8765/mcp
@@ -131,6 +127,21 @@ routes:
       # would file a ticket for every handoff, including ones answered in
       # seconds. The endpoint stays available for manual/backfill use at
       # homechef-api-direct:8080/internal/support/tickets/from-conversation.
+    # Chefs run a different app with different screens, so they get their own
+    # KB namespace and prompt — sharing homechef's sent chefs customer-app
+    # navigation that does not exist in the vendor app.
+    homechef-vendor:
+      systemPromptFile: /etc/slm-router/prompts/homechef-vendor.md
+      ragNamespace: homechef-vendor
+      mcpServers:
+        - name: homechef-mcp
+          url: http://homechef-mcp.homechef.svc.cluster.local:8765/mcp
+          authHeader: X-MCP-Key
+          authEnvVar: HOMECHEF_MCP_KEY
+      escalation:
+        confidenceThreshold: 0.6
+        keywords: ["food poisoning", "allergic reaction", "lawyer"]
+        maxToolFailures: 2
     stockpilot:
       systemPromptFile: /etc/slm-router/prompts/stockpilot.md
       ragNamespace: stockpilot
