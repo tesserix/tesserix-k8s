@@ -155,7 +155,11 @@ DO $$
 DECLARE
     opened text[] := ARRAY[
         'leases', 'lease_parties', 'rent_schedule', 'journal_entries',
-        'ledger_postings', 'payments', 'units', 'properties', 'organisations'];
+        'ledger_postings', 'payments', 'units', 'properties', 'organisations',
+        -- 232: a renter's own repair requests. The scoped policies live in
+        -- that chapter; naming the tables here keeps this loop from
+        -- overwriting them with a deny on the next replay.
+        'tickets', 'ticket_events'];
     tbl text;
 BEGIN
     -- The bootstrap replays every 30 minutes; a NOTICE per absent policy per
