@@ -111,3 +111,24 @@ npm run test:admin          # admin only
 npm run test:delivery       # delivery only
 npm run setup               # auth setup only
 ```
+
+## Support (Otto live chat + tickets + staff queue)
+
+- **Otto** (`support-platform-otto`) hosts live chat for tenants `homechef`
+  (customers: fe3dr.com widget + mobile customer app) and `homechef-vendor`
+  (chef app; homechef-api re-scopes chef-role callers). slm-router answers
+  first from the RAG KB and flips `needs_human` to queue a person.
+- **Knowledge base** — `charts/apps/support-platform-kb-seed/values.yaml`
+  → `content.homechef` (audience metadata separates customer/chef/driver
+  entries). The seed Job re-runs on any content change (configmap-hash job
+  name); keep entries in sync with Home-Chef-App policy code.
+- **Escalation → ticket**: slm-router `escalationHook` POSTs to homechef-api
+  `/internal/support/tickets/from-conversation` (secret: SUPPORT_HOOK_SECRET
+  from `prod-homechef-support-hook-secret`), idempotent on
+  `support_tickets.conversation_id`.
+- **Staff queue events**: otto publishes `otto.support.<tenant>.<event>`
+  (created/escalated/accepted/closed) to shared NATS; homechef-api's SUPPORT
+  stream consumer drives `SupportQueueWorkflow` (Temporal, notifications
+  queue): immediate email to support@fe3dr.com, 3m reminder, 15m SLA breach.
+  Real-time admin layer: tesserix-home `SupportQueueProvider` (toasts +
+  Live chat sidebar badge from the platform inbox WS).
