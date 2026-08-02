@@ -5648,3 +5648,8 @@ ALTER TABLE public.chef_profiles
   ADD COLUMN IF NOT EXISTS onboarded_at timestamp with time zone;
 ALTER TABLE public.chef_profiles
   ADD COLUMN IF NOT EXISTS docs_warning_sent_at timestamp with time zone;
+
+-- Payout-details nudge: exactly-once stamp for the day-25 "add your payout
+-- details" reminder (earnings hold, no removal — payout gate #739 enforces).
+ALTER TABLE public.chef_profiles
+  ADD COLUMN IF NOT EXISTS payout_reminder_sent_at timestamp with time zone;
