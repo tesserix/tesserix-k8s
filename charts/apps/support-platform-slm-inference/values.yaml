@@ -28,6 +28,14 @@ model:
   contextWindow: 16384
   threads: 4
   parallel: 4
+  # REQUIRED for tool calling. Without --jinja llama.cpp serves in
+  # "Content-only" chat format: it ignores the `tools` array on the request
+  # entirely and can never emit tool_calls. Otto's tools were wired end to end
+  # — 11 registered, discovered, passed on every request — and the model called
+  # them 0% of the time, answering from memory instead, which reads as a healthy
+  # conversation in the logs. /props confirms the split: chat_format
+  # "Content-only" while chat_template_caps.supports_tools is true.
+  jinja: true
 
 service:
   type: ClusterIP
