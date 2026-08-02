@@ -5639,3 +5639,12 @@ ALTER TABLE public.chef_expenses
   ADD COLUMN IF NOT EXISTS order_id uuid;
 CREATE INDEX IF NOT EXISTS idx_chef_expenses_order_id
   ON public.chef_expenses (order_id);
+
+-- Chef docs-deadline guardrail: onboarding may be submitted without the
+-- required documents; onboarded_at starts the 30-day upload window and
+-- docs_warning_sent_at makes the day-25 warning exactly-once. Cleared when
+-- the sweep withdraws an expired application.
+ALTER TABLE public.chef_profiles
+  ADD COLUMN IF NOT EXISTS onboarded_at timestamp with time zone;
+ALTER TABLE public.chef_profiles
+  ADD COLUMN IF NOT EXISTS docs_warning_sent_at timestamp with time zone;
