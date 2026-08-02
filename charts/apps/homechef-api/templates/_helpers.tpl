@@ -134,6 +134,12 @@ refactored here; the worker is a prod-only concern.)
       name: homechef-otto
       key: INTERNAL_AUTH_SECRET
       optional: true
+- name: SUPPORT_HOOK_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: homechef-otto
+      key: SUPPORT_HOOK_SECRET
+      optional: true
 - name: OPENEXCHANGERATES_APP_ID
   valueFrom:
     secretKeyRef:

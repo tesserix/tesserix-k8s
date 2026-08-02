@@ -5653,3 +5653,12 @@ ALTER TABLE public.chef_profiles
 -- details" reminder (earnings hold, no removal — payout gate #739 enforces).
 ALTER TABLE public.chef_profiles
   ADD COLUMN IF NOT EXISTS payout_reminder_sent_at timestamp with time zone;
+
+-- Otto chat → ticket linkage: one durable ticket per support conversation.
+-- Unique (partial — NULLs free) so slm-router's escalation hook and a
+-- user-initiated "create ticket from chat" converge on a single row.
+ALTER TABLE public.support_tickets
+  ADD COLUMN IF NOT EXISTS conversation_id text;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_support_tickets_conversation_id
+  ON public.support_tickets (conversation_id)
+  WHERE conversation_id IS NOT NULL;

@@ -42,6 +42,15 @@ mongo:
   url: "mongodb://support-platform-mongo-0.support-platform-mongo.support-platform.svc.cluster.local:27017/?replicaSet=rs0&directConnection=true"
   database: "otto"
 
+# Queue-event bridge: the change-stream watcher publishes conversation
+# lifecycle transitions (created / escalated / accepted / closed) to
+# <subjectPrefix>.<tenant>.<event> on the shared NATS. homechef-api's
+# SUPPORT JetStream stream captures otto.support.> and drives staff
+# notifications + the Temporal SLA workflow. Empty url ⇒ feature dark.
+nats:
+  url: "nats://nats.nats.svc.cluster.local:4222"
+  subjectPrefix: "otto.support"
+
 # Multi-tenant cookies. Otto resolves the cookie's Domain attribute
 # per request:
 #  1. trust the `X-Cookie-Domain` header (product proxy sets e.g.
