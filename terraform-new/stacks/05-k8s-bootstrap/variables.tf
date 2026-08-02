@@ -84,11 +84,9 @@ variable "kong_resources" {
   type        = map(map(string))
   default = {
     limits = {
-      cpu    = "500m"
       memory = "512Mi"
     }
     requests = {
-      cpu    = "100m"
       memory = "128Mi"
     }
   }
@@ -127,11 +125,9 @@ variable "cert_manager_resources" {
   type        = map(map(string))
   default = {
     limits = {
-      cpu    = "200m"
       memory = "256Mi"
     }
     requests = {
-      cpu    = "50m"
       memory = "64Mi"
     }
   }
@@ -195,11 +191,9 @@ variable "sealed_secrets_resources" {
   type        = map(map(string))
   default = {
     limits = {
-      cpu    = "100m"
       memory = "128Mi"
     }
     requests = {
-      cpu    = "50m"
       memory = "64Mi"
     }
   }
@@ -319,11 +313,9 @@ variable "argocd_server_resources" {
   type        = map(map(string))
   default = {
     limits = {
-      cpu    = "200m"
       memory = "256Mi"
     }
     requests = {
-      cpu    = "50m"
       memory = "64Mi"
     }
   }
@@ -334,11 +326,9 @@ variable "argocd_controller_resources" {
   type        = map(map(string))
   default = {
     limits = {
-      cpu    = "500m"
       memory = "512Mi"
     }
     requests = {
-      cpu    = "100m"
       memory = "128Mi"
     }
   }
@@ -349,11 +339,9 @@ variable "argocd_repo_server_resources" {
   type        = map(map(string))
   default = {
     limits = {
-      cpu    = "200m"
       memory = "256Mi"
     }
     requests = {
-      cpu    = "50m"
       memory = "64Mi"
     }
   }
@@ -487,11 +475,9 @@ variable "external_secrets_resources" {
   type        = map(map(string))
   default = {
     limits = {
-      cpu    = "200m"
       memory = "256Mi"
     }
     requests = {
-      cpu    = "50m"
       memory = "128Mi"
     }
   }

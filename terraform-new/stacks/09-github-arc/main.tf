@@ -127,9 +127,7 @@ resource "helm_release" "runner_scale_sets" {
       max_runners          = each.value.max_runners
       runner_group         = each.value.runner_group
       runner_image         = each.value.runner_image
-      cpu_limit            = each.value.resources.limits.cpu
       memory_limit         = each.value.resources.limits.memory
-      cpu_request          = each.value.resources.requests.cpu
       memory_request       = each.value.resources.requests.memory
       node_selector        = each.value.node_selector
       tolerations          = each.value.tolerations

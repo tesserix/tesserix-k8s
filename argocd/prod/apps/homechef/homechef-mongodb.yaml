@@ -26,9 +26,45 @@ spec:
         # Replica set only — no sharding for a single chat DB.
         sharding:
           enabled: false
+          # Disabled, but the chart still writes these into the CR spec, and
+          # its defaults carry cpu. Null them so the CR stays memory-only.
+          configrs:
+            resources:
+              requests:
+                cpu: null
+              limits:
+                cpu: null
+          mongos:
+            resources:
+              requests:
+                cpu: null
+              limits:
+                cpu: null
+        logcollector:
+          resources:
+            requests:
+              cpu: null
         replsets:
           rs0:
             name: rs0
+            hidden:
+              resources:
+                requests:
+                  cpu: null
+                limits:
+                  cpu: null
+            nonvoting:
+              resources:
+                requests:
+                  cpu: null
+                limits:
+                  cpu: null
+            arbiter:
+              resources:
+                requests:
+                  cpu: null
+                limits:
+                  cpu: null
             size: 3
             # Opt the mongod pods out of the namespace L7 waypoint
             # (istio.io/use-waypoint=waypoint). The waypoint mangles raw,
@@ -41,8 +77,10 @@ spec:
             # Memory-only resources per the tesserix k8s convention (no CPU).
             resources:
               requests:
+                cpu: null
                 memory: "512Mi"
               limits:
+                cpu: null
                 memory: "1Gi"
             volumeSpec:
               pvc:

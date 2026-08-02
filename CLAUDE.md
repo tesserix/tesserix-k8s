@@ -270,6 +270,13 @@ in `homechef-clients-bootstrap-job.yaml`. The bootstrap job is idempotent.
     never lands. Bit dwellm8-postgres via the argocd-cm jq ignores into
     `spec.managed.roles[]`. If a synced change is not taking effect, check
     `generation` and the `managedFields` timestamps before anything else.
+12. **Memory-only resources — never set `cpu` requests or limits.** For an
+    upstream chart, *omitting* cpu is not enough: Helm deep-merges, so a
+    memory-only `resources:` block still inherits the chart's cpu default.
+    Write `cpu: null` explicitly. Two knock-on rules: a cpu-target HPA or a
+    KEDA `cpu` trigger cannot work without a request (metric reads
+    `<unknown>`; KEDA's webhook rejects it outright), so scale on memory; and
+    a VPA must use `controlledResources: ["memory"]` or it re-injects cpu.
 
 ---
 
