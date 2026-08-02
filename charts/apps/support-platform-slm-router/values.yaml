@@ -125,16 +125,12 @@ routes:
         confidenceThreshold: 0.6
         keywords: ["food poisoning", "allergic reaction", "lawyer"]
         maxToolFailures: 2
-      # On needs_human, materialise a durable ticket in homechef's own DB
-      # so the escalation shows in the admin Support desk. Idempotent on
-      # conversation_id; safe to retry.
-      escalationHook:
-        # homechef-api's ClusterIP is `homechef-api-direct` (the plain
-        # `homechef-api` name belongs to the retired Knative route and does
-        # not resolve).
-        url: http://homechef-api-direct.homechef.svc.cluster.local:8080/internal/support/tickets/from-conversation
-        authHeader: X-Internal-Auth
-        authEnvVar: HOMECHEF_SUPPORT_HOOK_SECRET
+      # No escalationHook: an escalation queues the chat for a human, and a
+      # ticket is only raised if nobody answers inside the 10-minute window
+      # (homechef-api's SupportQueueWorkflow owns that). Hooking here as well
+      # would file a ticket for every handoff, including ones answered in
+      # seconds. The endpoint stays available for manual/backfill use at
+      # homechef-api-direct:8080/internal/support/tickets/from-conversation.
     stockpilot:
       systemPromptFile: /etc/slm-router/prompts/stockpilot.md
       ragNamespace: stockpilot
