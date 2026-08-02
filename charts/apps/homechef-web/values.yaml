@@ -107,7 +107,17 @@ keda:
   cooldownPeriod: 300
   minReplicaCount: 1
   maxReplicaCount: 10
-  triggers: []
+  # Memory only. The prometheus request-rate trigger was removed (#906): the
+  # monitoring namespace is scaled to zero, so prometheus-server has no
+  # endpoints, the HPA could not compute the external metric, and the resulting
+  # Degraded ScaledObject failed Kargo's health gate — silently blocking every
+  # production promotion while CI stayed green. Restore the prometheus trigger
+  # here if monitoring comes back.
+  triggers:
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "80"
 
 podDisruptionBudget:
   enabled: true
