@@ -2,6 +2,13 @@
 # database, cache, messaging, and application namespaces.
 # To delete a protected namespace, first remove the
 # "tesserix.io/protected: true" label from the namespace.
+#
+# OWNERSHIP: a namespace may be declared by exactly ONE ArgoCD app. Mesh
+# namespaces (anything the istio-config chart renders in sidecar-injection.yaml)
+# get their tesserix.io/protected + tier labels from that chart's
+# `sidecarInjection.protectedTiers` — never re-declare them here. Both apps
+# apply as the same SSA field manager, so a duplicate strips the other app's
+# labels on every sync and flaps ambient enrollment (prod outage 2026-08-02).
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -30,111 +37,10 @@ spec:
   validationActions:
     - Deny
 ---
-# Protected namespaces — cache, messaging, and app namespaces
+# Protected namespaces NOT managed by the istio-config chart.
 # NOTE: postgresql-* namespaces removed — all products use CloudNativePG
 # clusters in their app namespaces (e.g., homechef-postgres in homechef ns).
----
 # FanZone decommissioned 2026-07-23 — namespaces pruned to reclaim capacity.
-# Uncomment to restore.
-# apiVersion: v1
-# kind: Namespace
-# metadata:
-#   name: mongodb-fanzone
-#   labels:
-#     tesserix.io/protected: "true"
-#     tesserix.io/tier: database
-# ---
-# apiVersion: v1
-# kind: Namespace
-# metadata:
-#   name: redis-fanzone
-#   labels:
-#     tesserix.io/protected: "true"
-#     tesserix.io/tier: cache
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: redis-homechef
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: cache
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: redis-marketplace
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: cache
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: redis-global
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: cache
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: nats
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: messaging
----
-# FanZone decommissioned 2026-07-23 — namespace pruned to reclaim capacity.
-# Uncomment to restore.
-# apiVersion: v1
-# kind: Namespace
-# metadata:
-#   name: fanzone
-#   labels:
-#     tesserix.io/protected: "true"
-#     tesserix.io/tier: application
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: db-backup-and-restore
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: backup
----
-# Application namespaces
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: marketplace
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: application
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: homechef
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: application
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: global
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: application
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: tesserix
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: application
----
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -158,23 +64,6 @@ metadata:
   labels:
     tesserix.io/protected: "true"
     tesserix.io/tier: cache
----
-# Identity namespaces
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: identity-customer
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: identity
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: identity-internal
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: identity
 ---
 # Infrastructure namespaces
 apiVersion: v1
@@ -276,39 +165,7 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: growthbook
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: infrastructure
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: typesense
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: infrastructure
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: translation
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: infrastructure
----
-apiVersion: v1
-kind: Namespace
-metadata:
   name: email
-  labels:
-    tesserix.io/protected: "true"
-    tesserix.io/tier: infrastructure
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: openpanel
   labels:
     tesserix.io/protected: "true"
     tesserix.io/tier: infrastructure

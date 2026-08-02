@@ -12,6 +12,7 @@ silently degraded to L4-only by ztunnel.
 {{- $dbAccessNamespaces := .Values.sidecarInjection.databaseAccessNamespaces | default list }}
 {{- $ambientExcluded := .Values.sidecarInjection.ambientExcluded | default list }}
 {{- $waypointNamespaces := .Values.ambient.waypointNamespaces | default list }}
+{{- $protectedTiers := .Values.sidecarInjection.protectedTiers | default dict }}
 {{- range .Values.sidecarInjection.namespaces }}
 ---
 apiVersion: v1
@@ -38,6 +39,11 @@ metadata:
     # Allow database access through NetworkPolicy
     database-access: "allowed"
     {{- end }}
+    {{- if hasKey $protectedTiers . }}
+    # TIG deletion guard — VAP lives in k8s/cluster/namespace-protection.yaml
+    tesserix.io/protected: "true"
+    tesserix.io/tier: {{ index $protectedTiers . }}
+    {{- end }}
 {{- end }}
 
 {{/*
@@ -59,5 +65,10 @@ metadata:
     {{- if has . $dbAccessNamespaces }}
     # Allow database access through NetworkPolicy
     database-access: "allowed"
+    {{- end }}
+    {{- if hasKey $protectedTiers . }}
+    # TIG deletion guard — VAP lives in k8s/cluster/namespace-protection.yaml
+    tesserix.io/protected: "true"
+    tesserix.io/tier: {{ index $protectedTiers . }}
     {{- end }}
 {{- end }}
