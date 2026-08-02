@@ -1,5 +1,5 @@
 -- ===========================================================================
--- community — the tenancy conversation and the gate (#246)
+-- community — the tenancy conversation and the gate (#238)
 -- ===========================================================================
 
 -- Two things a renter does that are neither money nor maintenance: talk to
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS lease_messages (
 );
 
 COMMENT ON TABLE lease_messages IS
-    '#246. The tenancy conversation, on the record. Append-only.';
+    '#238. The tenancy conversation, on the record. Append-only.';
 
 CREATE INDEX IF NOT EXISTS lease_messages_lease_idx
     ON lease_messages (tenant_id, lease_id, created_at);
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS gate_passes (
 );
 
 COMMENT ON TABLE gate_passes IS
-    '#246. Who the renter expects at the gate. The gate sees a name and a flat, never a phone number.';
+    '#238. Who the renter expects at the gate. The gate sees a name and a flat, never a phone number.';
 
 CREATE INDEX IF NOT EXISTS gate_passes_lease_idx
     ON gate_passes (tenant_id, lease_id, created_at DESC);

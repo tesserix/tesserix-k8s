@@ -1,5 +1,5 @@
 -- ===========================================================================
--- maintenance tickets — the repair request as a record (#245)
+-- maintenance tickets — the repair request as a record (#237)
 -- ===========================================================================
 
 -- A resident raises it, the manager runs it, and both read the same row. The
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS tickets (
 );
 
 COMMENT ON TABLE tickets IS
-    '#245. A maintenance request on one tenancy. Raised by the resident or the manager; liability NULL until somebody assesses it.';
+    '#237. A maintenance request on one tenancy. Raised by the resident or the manager; liability NULL until somebody assesses it.';
 
 CREATE INDEX IF NOT EXISTS tickets_lease_idx
     ON tickets (tenant_id, lease_id, created_at DESC);
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS ticket_events (
 );
 
 COMMENT ON TABLE ticket_events IS
-    '#245. What happened on a ticket, in order. Append-only — the timeline is the dispute record.';
+    '#237. What happened on a ticket, in order. Append-only — the timeline is the dispute record.';
 
 CREATE INDEX IF NOT EXISTS ticket_events_ticket_idx
     ON ticket_events (ticket_id, at);
