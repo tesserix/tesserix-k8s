@@ -367,7 +367,7 @@ BEGIN
       -- delegation_grants (ADR-0005) is an authorisation window: access begins at a
       -- moment and no legal document is dated by it. payout_accounts (#227) is one
       -- too: a 72-hour cool-off is measured in hours, and a calendar date would
-      -- round the attacker's wait down. gate_passes (#246) is a third: "expected
+      -- round the attacker's wait down. gate_passes (#238) is a third: "expected
       -- today from 18:00, for four hours" is a window at the gate, not a legal
       -- date. Anything else with a timestamptz validity is an effective date
       -- that lost its timezone argument.
