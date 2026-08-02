@@ -12,9 +12,9 @@ metadata:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: policy
   annotations:
-    # Client-side diff reports phantom drift on kyverno-mutated resources;
-    # a server dry-run (verified manually) shows live == desired.
-    argocd.argoproj.io/compare-options: ServerSideDiff=true
+    # No ServerSideDiff here: it makes ArgoCD patch the ~1MB kyverno CRDs
+    # client-side, which dies on the 256KB annotation limit. The cost is a
+    # cosmetic OutOfSync on CRDs the API server defaults fields into.
     argocd.argoproj.io/sync-wave: "-1"
 spec:
   project: infrastructure
@@ -89,6 +89,7 @@ spec:
         - /spec/conversion
   syncPolicy:
     automated:
+      prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
