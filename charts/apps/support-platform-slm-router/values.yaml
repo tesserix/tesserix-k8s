@@ -112,6 +112,10 @@ routes:
     homechef:
       systemPromptFile: /etc/slm-router/prompts/homechef.md
       ragNamespace: homechef
+      # Chef/vendor chats (mobile-vendor app) arrive as tenant
+      # "homechef-vendor" — same brain + hooks until a dedicated vendor
+      # KB namespace ships.
+      aliases: ["homechef-vendor"]
       mcpServers:
         - name: homechef-mcp
           url: http://homechef-mcp.homechef.svc.cluster.local:8765/mcp
@@ -121,6 +125,13 @@ routes:
         confidenceThreshold: 0.6
         keywords: ["food poisoning", "allergic reaction", "lawyer"]
         maxToolFailures: 2
+      # On needs_human, materialise a durable ticket in homechef's own DB
+      # so the escalation shows in the admin Support desk. Idempotent on
+      # conversation_id; safe to retry.
+      escalationHook:
+        url: http://homechef-api.homechef.svc.cluster.local:8080/internal/support/tickets/from-conversation
+        authHeader: X-Internal-Auth
+        authEnvVar: HOMECHEF_SUPPORT_HOOK_SECRET
     stockpilot:
       systemPromptFile: /etc/slm-router/prompts/stockpilot.md
       ragNamespace: stockpilot
