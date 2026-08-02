@@ -187,6 +187,13 @@ CREATE POLICY stay_bookings_tenant_isolation ON stay_bookings
            OR is_platform_session()
            OR is_delegated_unit(tenant_id, property_id, unit_id, NULL, 'property.write'));
 
+-- The money leg. A booking that has been paid for names its payment, which is
+-- what lets money.payment.received confirm it without a treasure hunt — and
+-- what a refund traces back through.
+ALTER TABLE stay_bookings ADD COLUMN IF NOT EXISTS payment_id uuid;
+CREATE INDEX IF NOT EXISTS stay_bookings_payment_idx
+    ON stay_bookings (payment_id) WHERE payment_id IS NOT NULL;
+
 -- Closed to renter sessions (ADR-0029), by the same policy the 220 deny loop
 -- would have written had these tables existed when it ran: a tenant's sign-in
 -- has no business in their landlord's hosting book. Same policy names, so the
