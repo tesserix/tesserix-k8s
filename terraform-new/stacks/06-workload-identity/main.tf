@@ -48,6 +48,21 @@ resource "google_service_account_iam_member" "workload_identity_binding" {
 }
 
 # =============================================================================
+# Self-impersonation (signing) — scoped to the SA itself
+# =============================================================================
+
+resource "google_service_account_iam_member" "self_token_creator" {
+  for_each = {
+    for sa in var.service_accounts : sa.name => sa
+    if sa.self_token_creator
+  }
+
+  service_account_id = google_service_account.workload_identity[each.key].name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.workload_identity[each.key].email}"
+}
+
+# =============================================================================
 # Project-level IAM Roles
 # =============================================================================
 

@@ -2710,11 +2710,11 @@ service_accounts = [
   # Backend Service Account - Core platform APIs
   {
     name         = "tesseract-prod-backend-sa"
+    self_token_creator = true
     display_name = "Tesseract Production Backend"
     description  = "Service account for core backend services"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -2753,11 +2753,11 @@ service_accounts = [
   # Note: Using document-service-sa (without -prod) to match Helm chart annotation
   {
     name         = "document-service-sa"
+    self_token_creator = true
     display_name = "Document Service Account"
     description  = "Service account for document management across all products"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -2820,11 +2820,11 @@ service_accounts = [
   # Note: Using tenant-onboarding-sa (without -prod) to match Helm chart annotation
   {
     name         = "tenant-onboarding-sa"
+    self_token_creator = true
     display_name = "Tenant Onboarding Service Account"
     description  = "Service account for tenant onboarding document uploads"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -2858,11 +2858,11 @@ service_accounts = [
   # ===========================================================================
   {
     name         = "hms-prod-backend-sa"
+    self_token_creator = true
     display_name = "HMS Production Backend"
     description  = "Service account for HMS backend with access to all HMS regional buckets"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -2938,11 +2938,11 @@ service_accounts = [
   # ===========================================================================
   {
     name         = "fanzone-prod-backend-sa"
+    self_token_creator = true
     display_name = "Fanzone Production Backend"
     description  = "Service account for fanzone backend services"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -2982,11 +2982,11 @@ service_accounts = [
   # ===========================================================================
   {
     name         = "homechef-prod-backend-sa"
+    self_token_creator = true
     display_name = "Homechef Production Backend"
     description  = "Service account for homechef backend services (fe3dr.com)"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -3026,11 +3026,11 @@ service_accounts = [
   # ===========================================================================
   {
     name         = "bookkeeping-prod-backend-sa"
+    self_token_creator = true
     display_name = "Bookkeeping Production Backend"
     description  = "Service account for bookkeeping backend services"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -3071,11 +3071,11 @@ service_accounts = [
   # App Secrets Global
   {
     name         = "app-secrets-global-prod"
+    self_token_creator = true
     display_name = "App Secrets Accessor - global"
     description  = "Service account for global namespace to access secrets"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -3089,11 +3089,11 @@ service_accounts = [
   # App Secrets HMS
   {
     name         = "app-secrets-hms-prod"
+    self_token_creator = true
     display_name = "App Secrets Accessor - hms"
     description  = "Service account for hms namespace to access secrets"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -3108,11 +3108,11 @@ service_accounts = [
   # All fanzone Knative services use this GCP SA via Workload Identity
   {
     name         = "app-secrets-fanzone-prod"
+    self_token_creator = true
     display_name = "App Secrets Accessor - fanzone"
     description  = "Service account for fanzone namespace to access secrets and storage"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       { namespace = "fanzone", kubernetes_service_account = "default" },
@@ -3153,11 +3153,11 @@ service_accounts = [
   # App Secrets Homechef
   {
     name         = "app-secrets-homechef-prod"
+    self_token_creator = true
     display_name = "App Secrets Accessor - homechef"
     description  = "Service account for homechef namespace to access secrets"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -3174,11 +3174,11 @@ service_accounts = [
   #   - tesseract-prod-otto-models-in  (read,  via slm-inference for LoRA adapters)
   {
     name         = "app-secrets-support-platform-prod"
+    self_token_creator = true
     display_name = "App Secrets Accessor - support-platform"
     description  = "Service account for support-platform namespace: Otto, slm-router, export CronJob"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -3209,11 +3209,11 @@ service_accounts = [
   # App Secrets Bookkeeping
   {
     name         = "app-secrets-bookkeeping-prod"
+    self_token_creator = true
     display_name = "App Secrets Accessor - bookkeeping"
     description  = "Service account for bookkeeping namespace to access secrets"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -3227,11 +3227,11 @@ service_accounts = [
   # App Secrets External Secrets Operator
   {
     name         = "app-secrets-ext-secrets-prod"
+    self_token_creator = true
     display_name = "App Secrets Accessor - external-secrets"
     description  = "Service account for external-secrets operator namespace"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       {
@@ -3249,11 +3249,11 @@ service_accounts = [
   # Communication Services (Firebase, Push Notifications)
   {
     name         = "prod-comm-services-sa"
+    self_token_creator = true
     display_name = "Communication Services Account"
     description  = "Service account for communication services (Firebase, push notifications)"
     project_roles = [
-      "roles/firebase.admin",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/firebase.admin"
     ]
     workload_identity_bindings = [
       {
@@ -3267,11 +3267,11 @@ service_accounts = [
   # Infrastructure Backend Secrets
   {
     name         = "infra-backend-secrets-prod-sa"
+    self_token_creator = true
     display_name = "Infrastructure Backend Secrets Accessor"
     description  = "Service account for infrastructure backend secrets access"
     project_roles = [
       "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator",
       "roles/iam.serviceAccountUser"
     ]
     workload_identity_bindings = [
@@ -3286,11 +3286,11 @@ service_accounts = [
   # Customer Tenant Secrets
   {
     name         = "customer-tenant-secrets-prod"
+    self_token_creator = true
     display_name = "Customer Tenant Secrets Accessor"
     description  = "Service account for customer tenant secrets access"
     project_roles = [
       "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator",
       "roles/iam.serviceAccountUser"
     ]
     workload_identity_bindings = [
@@ -3309,11 +3309,11 @@ service_accounts = [
   # Third-Party Integration Secrets
   {
     name         = "thirdparty-integ-secrets-prod"
+    self_token_creator = true
     display_name = "Third-Party Integration Secrets Accessor"
     description  = "Service account for third-party integration secrets (payment, email, etc.)"
     project_roles = [
       "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator",
       "roles/iam.serviceAccountUser"
     ]
     workload_identity_bindings = [
@@ -3332,10 +3332,10 @@ service_accounts = [
   # QR Service
   {
     name         = "qr-service-prod-sa"
+    self_token_creator = true
     display_name = "QR Service Account"
     description  = "Service account for QR code generation service"
     project_roles = [
-      "roles/iam.serviceAccountTokenCreator"
     ]
     workload_identity_bindings = [
       {
@@ -3371,11 +3371,11 @@ service_accounts = [
   # Marketplace Backend — unified SA for all marketplace GKE services
   {
     name         = "marketplace-prod-backend-sa"
+    self_token_creator = true
     display_name = "Marketplace Production Backend"
     description  = "Service account for marketplace backend services"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       { namespace = "marketplace", kubernetes_service_account = "marketplace-backend" },
@@ -3395,11 +3395,11 @@ service_accounts = [
   # App Secrets Marketplace — ESO accessor for marketplace namespace
   {
     name         = "app-secrets-marketplace-prod"
+    self_token_creator = true
     display_name = "App Secrets Accessor - marketplace"
     description  = "Service account for marketplace namespace to access secrets and storage"
     project_roles = [
-      "roles/secretmanager.secretAccessor",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/secretmanager.secretAccessor"
     ]
     workload_identity_bindings = [
       { namespace = "marketplace", kubernetes_service_account = "default" },
@@ -3453,13 +3453,13 @@ service_accounts = [
   # Marketplace Identity Platform Admin — tenant-service needs Identity Platform Admin role
   {
     name         = "mp-tenant-service-sa"
+    self_token_creator = true
     display_name = "Marketplace Tenant Service"
     description  = "Service account for marketplace tenant-service — manages GIP tenants and users"
     project_roles = [
       "roles/secretmanager.secretAccessor",
       "roles/identityplatform.admin",
-      "roles/serviceusage.serviceUsageConsumer",
-      "roles/iam.serviceAccountTokenCreator"
+      "roles/serviceusage.serviceUsageConsumer"
     ]
     workload_identity_bindings = [
       { namespace = "marketplace", kubernetes_service_account = "tenant-service" }
