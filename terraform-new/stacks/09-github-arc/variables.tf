@@ -64,11 +64,9 @@ variable "arc_controller_resources" {
   type        = map(map(string))
   default = {
     limits = {
-      cpu    = "200m"
       memory = "256Mi"
     }
     requests = {
-      cpu    = "50m"
       memory = "64Mi"
     }
   }
@@ -104,11 +102,9 @@ variable "runner_scale_sets" {
     runner_image      = optional(string, "ghcr.io/actions/actions-runner:latest")
     resources = optional(map(map(string)), {
       limits = {
-        cpu    = "2"
         memory = "4Gi"
       }
       requests = {
-        cpu    = "500m"
         memory = "1Gi"
       }
     })

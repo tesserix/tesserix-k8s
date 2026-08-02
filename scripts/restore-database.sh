@@ -218,10 +218,8 @@ spec:
               echo "========================================"
           resources:
             requests:
-              cpu: 100m
               memory: 256Mi
             limits:
-              cpu: 1000m
               memory: 1Gi
           volumeMounts:
             - name: tmp

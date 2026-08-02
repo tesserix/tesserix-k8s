@@ -23,11 +23,11 @@ spec:
         threshold: {{ .Values.keda.prometheus.threshold | quote }}
         query: {{ .Values.keda.prometheus.query | quote }}
     {{- else }}
-    # CPU-utilization fallback for prod / non-UAT environments. Requires
-    # resources.requests.cpu to be set — without it, metric is "<unknown>".
-    - type: cpu
+    # Memory fallback: the platform sets no cpu requests, so a cpu trigger
+    # fails KEDA admission and its metric would read "<unknown>" regardless.
+    - type: memory
       metricType: Utilization
       metadata:
-        value: "70"
+        value: "80"
     {{- end }}
 {{- end }}

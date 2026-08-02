@@ -39,14 +39,18 @@ spec:
           # Resource configuration
           resources:
             requests:
+              cpu: null
               memory: 256Mi
             limits:
+              cpu: null
               memory: 1Gi
 
           # Auto-scaling
-          autoscaleEnabled: true
-          autoscaleMin: 1
-          autoscaleMax: 5
+          # HPA disabled: the istiod chart emits its cpu metric unconditionally
+          # (no `if` guard), so with no cpu request the metric reads <unknown>
+          # and the HPA cannot scale. Pinned replicas instead.
+          autoscaleEnabled: false
+          replicaCount: 2
 
           # Pod disruption budget
           # Use maxUnavailable instead of minAvailable to allow node drains with single replica
@@ -62,8 +66,10 @@ spec:
           proxy:
             resources:
               requests:
+                cpu: null
                 memory: 64Mi
               limits:
+                cpu: null
                 memory: 256Mi
             accessLogFile: /dev/stdout
             accessLogEncoding: JSON
