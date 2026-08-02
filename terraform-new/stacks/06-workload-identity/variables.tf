@@ -29,7 +29,11 @@ variable "service_accounts" {
     name         = string
     display_name = string
     description  = optional(string, "")
-    project_roles = optional(list(string), [])
+    # Lets the SA sign as ITSELF (V4 signed GCS URLs via IAM SignBlob under
+    # Workload Identity). Use this instead of project-level tokenCreator,
+    # which would let the SA mint tokens for every SA in the project.
+    self_token_creator = optional(bool, false)
+    project_roles      = optional(list(string), [])
     workload_identity_bindings = optional(list(object({
       namespace                  = string
       kubernetes_service_account = string
