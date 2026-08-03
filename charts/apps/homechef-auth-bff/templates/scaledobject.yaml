@@ -4,6 +4,18 @@ kind: ScaledObject
 metadata:
   name: {{ .Values.name }}
   namespace: {{ .Values.namespace }}
+  # Declared so ArgoCD OWNS this label map. Without it the chart shipped no
+  # labels at all, while the live object still carried an
+  # `argocd.argoproj.io/instance` label left over from label-based resource
+  # tracking (the cluster moved to annotation tracking). That label sat in
+  # last-applied-configuration and in nothing git declared, so every reconcile
+  # computed a removal that never stuck: the app reported OutOfSync forever
+  # while each sync logged "configured" and succeeded. The four sibling
+  # ScaledObjects carry labels and are Synced.
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/part-of: homechef
+    app.kubernetes.io/component: auth
 spec:
   scaleTargetRef:
     name: {{ .Values.name }}
