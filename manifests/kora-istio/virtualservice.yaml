@@ -32,6 +32,67 @@ spec:
   hosts:
     - kora-api.tesserix.app
   http:
+    ##########################################################################
+    # AI routes — must come FIRST (Istio evaluates http rules in order).
+    #
+    # These call an LLM and are the only routes here that are both SLOW and
+    # EXPENSIVE, so they get a policy the general one cannot express.
+    #
+    # perTryTimeout: the catch-all's 30s silently capped api/internal/ai/
+    # router.go's fallbackBudget (90s), making it UNREACHABLE — Envoy killed
+    # the attempt at 30s while the app still believed it had 90s. That is why
+    # POST /v1/resolve/photo returned 500 at latency_ms 29999/30164 and why
+    # identify_photo/transcribe have never recorded a successful call (#79).
+    # 100s clears photoBudget (3s) + fallbackBudget (90s) plus handler
+    # overhead, and also lifts transcribeBudget (30s) off the old boundary.
+    #
+    # retryOn drops `gateway-error` DELIBERATELY. A 502/503/504 here means the
+    # upstream already ran — i.e. a paid Gemini call was made — so retrying it
+    # buys nothing and bills again. Under the old policy one photo capture
+    # could trigger several such attempts, each killed before it could finish:
+    # cost with a guaranteed zero success rate, invisible because failed calls
+    # are never metered (#81). connect-failure/refused-stream are kept: those
+    # mean the connection never established, so no AI call was made and a
+    # retry is both free and useful during a rollout.
+    ##########################################################################
+    - match:
+        - uri:
+            prefix: /v1/resolve/
+        - uri:
+            exact: /v1/coach/ask
+      headers:
+        request:
+          set:
+            x-forwarded-host: kora-api.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: kora-api-direct.kora.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 600s
+      retries:
+        attempts: 1
+        perTryTimeout: 100s
+        retryOn: connect-failure,refused-stream
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://kora-api.tesserix.app"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        allowHeaders:
+          - content-type
+          - authorization
+          - accept
+          - x-request-id
+        allowCredentials: true
+        maxAge: "86400s"
+
+    # Everything else: unchanged. Fast CRUD, safe to retry, 30s is plenty.
     - match:
         - uri:
             prefix: /
