@@ -20,9 +20,15 @@ spec:
       encoding: UTF8
       localeCType: C
       localeCollate: C
-      {{- if .Values.bootstrap.postInitSQL }}
-      postInitSQL:
-        {{- range .Values.bootstrap.postInitSQL }}
+      {{- if .Values.bootstrap.postInitApplicationSQL }}
+      # postInitApplicationSQL, NOT postInitSQL. CNPG runs postInitSQL against
+      # the `postgres` database; only postInitApplicationSQL runs against the
+      # application database. Getting this wrong created the extensions in the
+      # wrong database and left kora_db with nothing but plpgsql — which would
+      # have failed the migration restore at `food_items.embedding vector(768)`
+      # mid-cutover, with the app already scaled to zero.
+      postInitApplicationSQL:
+        {{- range .Values.bootstrap.postInitApplicationSQL }}
         - {{ . | quote }}
         {{- end }}
       {{- end }}
