@@ -42,7 +42,13 @@ spec:
       - CreateNamespace=true
       - PruneLast=true
       - ApplyOutOfSyncOnly=true
-      - RespectIgnoreDifferences=true
+      # RespectIgnoreDifferences deliberately NOT set. argocd-cm ignores
+      # .spec.data[]?.remoteRef.* on ExternalSecrets, and with that option on,
+      # ArgoCD takes the WHOLE spec.data array from the LIVE object when it
+      # applies — so a NEW secret key can never sync. DELIVERY_SURGE_PIN_KEY sat
+      # unapplied through 7 self-heals, each logging "configured" successfully.
+      # The ignore rules still suppress diff noise; they just no longer strip
+      # fields during apply.
     retry:
       limit: 5
       backoff:
