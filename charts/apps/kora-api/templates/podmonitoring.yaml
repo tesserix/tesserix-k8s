@@ -1,0 +1,24 @@
+{{- if .Values.metrics.enabled }}
+# GKE Autopilot runs Google Cloud Managed Service for Prometheus by default;
+# a PodMonitoring is how you tell it what to scrape. Mirrors the convention in
+# k8s/cluster/monitoring/gcp-managed-prometheus.yaml.
+#
+# NOTE: this repo's .github/workflows/pr-validation.yaml filters on charts/**,
+# so this file IS covered by CI — unlike manifests/**, which is not.
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: {{ include "kora-api.fullname" . }}
+  labels:
+    {{- include "kora-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  selector:
+    matchLabels:
+      {{- include "kora-api.selectorLabels" . | nindent 6 }}
+      kora.tesserix.app/stack: deployment
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.interval | default "30s" }}
+{{- end }}
