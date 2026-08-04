@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kora-postgres
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: kora
+    app.kubernetes.io/component: database
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: kora
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/kora-postgres
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kora
+  # Deliberately NOT automated (unlike the stockpilot-postgres sibling this
+  # was mirrored from, which has syncPolicy.automated.selfHeal: true). This
+  # cluster's cutover is a deliberate, human-run step (Task 4 of the
+  # kora-postgres-migration plan) — it must not provision itself the moment
+  # this Application is synced into the kora-app-of-apps directory. Add
+  # `automated: { selfHeal: true }` back only when the human doing the
+  # cutover is ready for ArgoCD to own this resource going forward.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
