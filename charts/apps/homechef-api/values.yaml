@@ -262,6 +262,29 @@ env:
   # on plans with mid-skip days. The customer-side choose-medium UI ships in the mobile-customer build
   # (main-8af48d51+) — cut that build alongside enabling this so >12h skips can be routed in-app.
   MEALPLAN_REFUND_FLOW_V2_ENABLED: "true"
+  # Live delivery-fee intelligence (#704-706): road distance x traffic on the real
+  # kitchen->drop route x weather at the drop x pump price, folded into the DISTANCE
+  # component of a chef's self-delivery fee and capped at that chef's own max fee.
+  # Every signal degrades to a neutral 1.0, so an outage never blocks a checkout.
+  # REQUIRES DELIVERY_SURGE_PIN_KEY: without it the API refuses to charge surge at
+  # all, because a multiplier it cannot sign is one it cannot hold the charge to.
+  DELIVERY_SURGE_CHARGE_ENABLED: "true"
+  # Pump price the chefs' per-km rates assume (INR/litre). The fuel factor is
+  # currentPrice / this, so it defines what "no fuel surge" means. Runtime-tunable
+  # via the delivery.fuel_baseline_per_litre platform setting.
+  DELIVERY_FUEL_BASELINE_PER_LITRE: "100"
+  # Page the 12-hourly fuel cron reads the pump price from. Empty => the fuel factor
+  # stays neutral; distance, traffic and weather are unaffected.
+  # bankbazaar, NOT ndtv: NDTV sits behind Akamai bot protection and returns 403 to
+  # any server-side fetch regardless of User-Agent, so it would fail silently every
+  # run. This page is a petrol-only city table (every figure in the plausible pump
+  # band, no LPG/gold/crude noise to mis-parse) and /fuel/ is not disallowed in
+  # robots.txt for User-agent: *.
+  DELIVERY_FUEL_SOURCE_URL: "https://www.bankbazaar.com/fuel/petrol-price-india.html"
+  # Support-platform SLM, used ONLY by that cron to read the price off the page when
+  # the regex finds nothing (markup changes silently break regexes). Never on the
+  # checkout path, and its answer must still clear the pump-price band + move checks.
+  SLM_INFERENCE_URL: "http://support-platform-slm-inference.support-platform.svc.cluster.local:8000"
 
 # Persistence configuration for uploads.
 # DISABLED: prod uploads go to GCS, and the deployment only mounts a local

@@ -219,6 +219,14 @@ would lock every super admin out of the console.
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: GOOGLE_WEATHER_API_KEY
       optional: true
+# Surge-pin HMAC key (#704-706) — optional: absent ⇒ surge stays display-only and
+# is never charged, so a missing secret degrades safely instead of blocking startup.
+- name: DELIVERY_SURGE_PIN_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: DELIVERY_SURGE_PIN_KEY
+      optional: true
 # Mappls (MapmyIndia) OAuth2 creds (#address-search) — primary geocoder.
 # Optional: either absent ⇒ Photon (OSM) fallback, no startup block.
 - name: MAPPLS_CLIENT_ID
