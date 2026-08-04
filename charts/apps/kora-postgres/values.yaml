@@ -1,0 +1,40 @@
+namespace: kora
+clusterName: kora-postgres
+
+instances: 1
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+storageSize: 20Gi
+storageClass: standard-rwo-retain
+walStorageSize: 5Gi
+
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+bootstrap:
+  database: kora_db
+  owner: kora
+  # First-init only. CNPG runs these once, when the cluster is created.
+  # vector    — migration 000004: food_items.embedding vector(768) + HNSW index
+  # pgcrypto  — migration 000001
+  # pg_trgm   — migration 000021: trigram scoring on food names
+  postInitSQL:
+    - "CREATE EXTENSION IF NOT EXISTS vector"
+    - "CREATE EXTENSION IF NOT EXISTS pgcrypto"
+    - "CREATE EXTENSION IF NOT EXISTS pg_trgm"
+
+postgresql:
+  max_connections: "100"
+  shared_buffers: "512MB"
+  effective_cache_size: "1536MB"
+  work_mem: "16MB"
+  maintenance_work_mem: "256MB"
+  ssl_min_protocol_version: "TLSv1.3"
+  ssl_max_protocol_version: "TLSv1.3"
+  idle_in_transaction_session_timeout: "300000"
+  statement_timeout: "120000"
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"

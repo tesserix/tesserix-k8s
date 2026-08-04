@@ -1,0 +1,110 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: kora
+    app.kubernetes.io/component: database
+spec:
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.imageName }}
+
+  # =========================================================================
+  # Bootstrap — first-time cluster initialization
+  # =========================================================================
+  bootstrap:
+    initdb:
+      database: {{ .Values.bootstrap.database }}
+      owner: {{ .Values.bootstrap.owner }}
+      encoding: UTF8
+      localeCType: C
+      localeCollate: C
+      {{- if .Values.bootstrap.postInitSQL }}
+      postInitSQL:
+        {{- range .Values.bootstrap.postInitSQL }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- end }}
+  # No secret.name set — CNPG auto-generates the app credentials secret
+  # (kora-postgres-app), consumed directly by Task 4.
+
+  # =========================================================================
+  # Storage — separate data and WAL volumes for I/O isolation
+  # =========================================================================
+  storage:
+    size: {{ .Values.storageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  walStorage:
+    size: {{ .Values.walStorageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  # =========================================================================
+  # Resources
+  # =========================================================================
+  resources:
+{{ toYaml .Values.resources | indent 4 }}
+
+  # =========================================================================
+  # PostgreSQL configuration
+  # =========================================================================
+  postgresql:
+    parameters:
+      {{- range $key, $value := .Values.postgresql }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+
+  # =========================================================================
+  # HA Replication Slots — survive failover without WAL accumulation
+  # =========================================================================
+  replicationSlots:
+    highAvailability:
+      enabled: true
+      slotPrefix: "_cnpg_"
+    updateInterval: 30
+
+  # =========================================================================
+  # TLS — auto-managed by CNPG (self-signed CA, auto-rotation)
+  # No manual cert management needed. CNPG generates:
+  #   - Server TLS cert (auto-rotated before expiry)
+  #   - Client CA for mTLS (optional, for future app cert auth)
+  #   - Replication TLS between primary and replicas
+  # =========================================================================
+  enableSuperuserAccess: false
+
+  # =========================================================================
+  # Monitoring — built-in Prometheus exporter
+  # =========================================================================
+  monitoring:
+    enablePodMonitor: true
+    disableDefaultQueries: false
+
+  # =========================================================================
+  # Inherited metadata — propagated to all pods and PVCs
+  # =========================================================================
+  inheritedMetadata:
+    annotations:
+      cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+      traffic.sidecar.istio.io/excludeInboundPorts: "5432,8000"
+      traffic.istio.io/excludeInboundPorts: "5432,8000"
+
+  # =========================================================================
+  # Affinity — spread replicas across different nodes
+  # =========================================================================
+  affinity:
+    podAntiAffinityType: preferred
+
+  # =========================================================================
+  # Failover
+  # =========================================================================
+  primaryUpdateStrategy: unsupervised
+  failoverDelay: 0
+  switchoverDelay: 3600
+
+  # =========================================================================
+  # PDB — maintain quorum during node drains
+  # =========================================================================
+  enablePDB: true
