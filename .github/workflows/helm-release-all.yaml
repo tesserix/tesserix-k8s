@@ -22,6 +22,9 @@ env:
   HELM_VERSION: '3.14.0'
   REGISTRY: ghcr.io
   REGISTRY_USER: ${{ github.repository_owner }}
+  # Charts publish under the repo path so GHCR auto-links each package to this
+  # repo; GITHUB_TOKEN cannot write the unlinked ghcr.io/tesserix/charts/* ones.
+  CHART_REPO: ghcr.io/${{ github.repository }}/charts
 
 jobs:
   list-charts:
@@ -101,15 +104,15 @@ jobs:
         if: ${{ !inputs.dry_run }}
         run: |
           chart_package=$(ls .helm-packages/${{ matrix.chart }}-*.tgz)
-          echo "Pushing $chart_package to ${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts"
+          echo "Pushing $chart_package to ${{ env.CHART_REPO }}"
 
-          helm push "$chart_package" "oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts"
+          helm push "$chart_package" "oci://${{ env.CHART_REPO }}"
 
       - name: Dry run - Show what would be pushed
         if: ${{ inputs.dry_run }}
         run: |
           chart_package=$(ls .helm-packages/${{ matrix.chart }}-*.tgz)
-          echo "DRY RUN: Would push $chart_package to oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts"
+          echo "DRY RUN: Would push $chart_package to oci://${{ env.CHART_REPO }}"
 
       - name: Upload chart artifact
         uses: actions/upload-artifact@v4
@@ -143,7 +146,7 @@ jobs:
 
           charts='${{ needs.list-charts.outputs.charts }}'
           echo "$charts" | jq -r '.[]' | while read chart; do
-            echo "| $chart | oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts/$chart |" >> $GITHUB_STEP_SUMMARY
+            echo "| $chart | oci://${{ env.CHART_REPO }}/$chart |" >> $GITHUB_STEP_SUMMARY
           done
 
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -154,8 +157,8 @@ jobs:
           echo "helm registry login ${{ env.REGISTRY }} -u <username> -p <token>" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "# Pull a specific chart" >> $GITHUB_STEP_SUMMARY
-          echo "helm pull oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts/<chart-name> --version <version>" >> $GITHUB_STEP_SUMMARY
+          echo "helm pull oci://${{ env.CHART_REPO }}/<chart-name> --version <version>" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "# Install a chart" >> $GITHUB_STEP_SUMMARY
-          echo "helm install <release-name> oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts/<chart-name> --version <version>" >> $GITHUB_STEP_SUMMARY
+          echo "helm install <release-name> oci://${{ env.CHART_REPO }}/<chart-name> --version <version>" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
