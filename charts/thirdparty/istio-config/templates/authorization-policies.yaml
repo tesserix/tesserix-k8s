@@ -204,9 +204,10 @@ spec:
               - istio-system
     # tesserix-home admin portal -> kora-api. This grant is namespace-level
     # at L4 (source namespace only, no `to:` path/method restriction) because
-    # that's all ztunnel can enforce here — kora is ambient-enrolled with no
-    # waypoint, so ztunnel strips HTTP attributes before an L7 rule ever
-    # sees them, and an ALLOW policy with no valid rule evaluates as
+    # this policy carries no targetRefs — it binds to ztunnel, which is L4-only.
+    # Enforcing L7 path/method rules in ambient mode requires attaching the
+    # policy to the waypoint Gateway via targetRefs. Adding `to:`/`paths:` here
+    # would leave an ALLOW policy with no valid rule, which evaluates as
     # deny-all (see the Kora Namespace Policies note above; that's what kept
     # kora-api 503ing even from inside the mesh). Confining the caller to
     # /v1/admin/* is done at the app layer (KORA_BFF_HMAC_KEY / bffauth), not
