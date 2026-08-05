@@ -5,7 +5,41 @@ image:
   tag: "latest"
 # Use with: helm upgrade --values values.yaml --values values-prod.yaml
 
-replicaCount: 1
+# Two, not one. tesserix.app is the admin portal, and a single replica meant
+# every deploy served "no healthy upstream" for as long as the new image took to
+# pull — measured at 3m11s on a cold tag.
+replicaCount: 2
+
+# Zero-downtime rollout. maxUnavailable 0 keeps the old pod serving until the new
+# one is READY, and maxSurge 1 allows the extra pod needed to do that.
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+# Readiness is what makes the above mean anything: without it a pod counts as
+# available the moment the container starts, so the rollout would swap traffic
+# onto a Next.js server that is not listening yet and 503 exactly as before.
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /api/health
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Liveness restarts a wedged pod. Deliberately slower and more forgiving than
+# readiness — a slow response should take a pod out of rotation, not kill it.
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /api/health
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 5
 
 # Production resource allocation — memory only per project convention.
 resources:
