@@ -19,9 +19,11 @@ metadata:
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+# Deliberately NO ttlSecondsAfterFinished: a TTL deleting this Job while ArgoCD is still
+# watching it leaves the PreSync hook unresolvable, wedging the whole app sync (it did,
+# 2026-08-02). BeforeHookCreation already bounds it to one Job and keeps its logs.
 spec:
   backoffLimit: 5
-  ttlSecondsAfterFinished: 600
   template:
     metadata:
       labels:
