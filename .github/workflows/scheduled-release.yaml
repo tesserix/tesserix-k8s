@@ -21,6 +21,9 @@ env:
   HELM_VERSION: '3.14.0'
   REGISTRY: ghcr.io
   REGISTRY_USER: ${{ github.repository_owner }}
+  # Charts publish under the repo path so GHCR auto-links each package to this
+  # repo; GITHUB_TOKEN cannot write the unlinked ghcr.io/tesserix/charts/* ones.
+  CHART_REPO: ghcr.io/${{ github.repository }}/charts
 
 jobs:
   check-updates:
@@ -103,7 +106,7 @@ jobs:
             --destination .helm-packages
 
           chart_package=$(ls .helm-packages/${{ matrix.chart }}-*.tgz)
-          helm push "$chart_package" "oci://${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/charts"
+          helm push "$chart_package" "oci://${{ env.CHART_REPO }}"
 
   notify:
     name: Notify
