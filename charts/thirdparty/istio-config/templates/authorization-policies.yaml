@@ -202,9 +202,17 @@ spec:
             namespaces:
               - monitoring
               - istio-system
-    # tesserix-home admin portal -> kora-api /v1/admin/*. Recorded explicitly
-    # rather than relying on allow-mesh-internal-kora's catch-all `- {}` rule,
-    # so tightening that policy later does not silently break the admin surface.
+    # tesserix-home admin portal -> kora-api. This grant is namespace-level
+    # at L4 (source namespace only, no `to:` path/method restriction) because
+    # that's all ztunnel can enforce here — kora is ambient-enrolled with no
+    # waypoint, so ztunnel strips HTTP attributes before an L7 rule ever
+    # sees them, and an ALLOW policy with no valid rule evaluates as
+    # deny-all (see the Kora Namespace Policies note above; that's what kept
+    # kora-api 503ing even from inside the mesh). Confining the caller to
+    # /v1/admin/* is done at the app layer (KORA_BFF_HMAC_KEY / bffauth), not
+    # here. Recorded explicitly rather than relying on
+    # allow-mesh-internal-kora's catch-all `- {}` rule, so tightening that
+    # policy later does not silently break the admin surface.
     - from:
         - source:
             namespaces:
