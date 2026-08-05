@@ -1,11 +1,11 @@
-name: Reclaim Orphan Storage (Weekly)
+name: Reclaim Orphan Storage (Daily)
 
 # Walks every GCE PD + k8s PV/PVC in the prod cluster, classifies each one
 # (CNPG member? StatefulSet member? Released? Zombie?), and reports anything
 # that needs human attention, then RECLAIMS the categories that are provably
 # safe to delete.
 #
-# The weekly scheduled run deletes automatically (age >= 7 days). Manual
+# The daily scheduled run deletes automatically (age >= 7 days). Manual
 # dispatch stays report-only unless apply_safe_deletes is ticked, so you can
 # preview a sweep before trusting it.
 #
@@ -19,8 +19,9 @@ name: Reclaim Orphan Storage (Weekly)
 
 on:
   schedule:
-    # Every Monday at 09:00 UTC (= 14:30 IST / 19:00 AEST)
-    - cron: '0 9 * * 1'
+    # Daily at 13:45 UTC (= 23:45 AEST / 19:15 IST). GitHub cron is UTC-only,
+    # so this shifts to 00:45 AEDT during Australian daylight saving.
+    - cron: '45 13 * * *'
 
   workflow_dispatch:
     inputs:
