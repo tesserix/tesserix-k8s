@@ -211,6 +211,13 @@ crossProductNamespaceAccess:
     # The admin console proxies /api/otto and /api/admin/otto (staff
     # live-chat inbox + queue WebSocket) to the shared Otto.
     - support-platform
+    # tesserix-home (company chart) signs requests to kora-api's
+    # /v1/admin/* as a trusted BFF (KORA_BFF_HMAC_KEY). kora-api's pod IP
+    # is in-cluster (10.0.0.0/8, which the catch-all 0.0.0.0/0 egress rule
+    # excepts) and it listens on 8080, not the catch-all's 443, so without
+    # this entry the per-product allow-tesserix-egress NetworkPolicy drops
+    # the outbound dial and the portal request times out.
+    - kora
   # Every product storefront proxies /api/otto/* to the shared Otto chat in
   # support-platform. Without these entries, the per-product
   # allow-<ns>-egress NetworkPolicy blocks the outbound dial.

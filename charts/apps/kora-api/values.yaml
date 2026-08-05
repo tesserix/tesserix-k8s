@@ -126,6 +126,13 @@ secretEnv:
   GEMINI_API_KEY: gemini_api_key
   OPENAI_API_KEY: openai_api_key
   EXPO_ACCESS_TOKEN: expo_access_token
+  # Task 3 (kora repo, api/internal/config) reads this directly via
+  # os.Getenv("KORA_BFF_HMAC_KEY") — gates whether /v1/admin/* mounts at all.
+  # Without this line the ExternalSecret still creates the k8s Secret key
+  # below, but the Deployment only injects env vars listed in this map, so
+  # the container would never see it and the admin surface would stay
+  # permanently unmounted (404, not 401).
+  KORA_BFF_HMAC_KEY: KORA_BFF_HMAC_KEY
 
 # GCP / Workload Identity — annotates the SA with the matching GSA email.
 # GSA itself, its IAM bindings, and the WIF binding are provisioned by the
@@ -153,6 +160,7 @@ externalSecret:
     gemini_api_key: prod-kora-gemini-api-key
     openai_api_key: prod-kora-openai-api-key
     expo_access_token: prod-kora-expo-access-token
+    KORA_BFF_HMAC_KEY: prod-kora-bff-internal-hmac-key
 
 # ArgoCD PreSync migrate Job — runs Kora's migrate binary (same image,
 # command override) before the Knative Service rolls, so the API never
