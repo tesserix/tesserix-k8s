@@ -205,6 +205,13 @@ would lock every super admin out of the console.
     secretKeyRef:
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: BFF_INTERNAL_HMAC_KEY
+# Optional: absent ⇒ POST /api/v1/feedback returns 503 rather than blocking startup.
+- name: GITHUB_FEEDBACK_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: GITHUB_FEEDBACK_TOKEN
+      optional: true
 # Google Routes API key (#701) — optional: absent ⇒ haversine fallback, no startup block.
 - name: GOOGLE_MAPS_API_KEY
   valueFrom:
