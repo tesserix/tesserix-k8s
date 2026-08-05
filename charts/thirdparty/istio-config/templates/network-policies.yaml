@@ -374,6 +374,15 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: cnpg-system
+    # Allow from the tesserix namespace — the tesserix-home admin portal signs
+    # requests to kora-api's /v1/admin/* as a trusted BFF (kora
+    # internal/bffauth). Without this the portal's fetch TIMES OUT rather than
+    # failing fast, because default-deny-ingress drops the packet before Istio
+    # sees it. Mirrors the homechef arrangement.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.appNamespaces.tesserix }}
     # Allow DNS (both UDP and TCP)
     - from:
         - namespaceSelector:
