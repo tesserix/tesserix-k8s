@@ -18,6 +18,20 @@ strategy:
     maxUnavailable: 0
     maxSurge: 1
 
+# Both replicas landed on one node without this, so a node drain still took the
+# whole site down. Preferred rather than required: with 5 nodes it spreads in
+# practice, but a hard rule would leave the surge pod unschedulable during a
+# rollout if only one node had room.
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: company
+
 # Readiness is what makes the above mean anything: without it a pod counts as
 # available the moment the container starts, so the rollout would swap traffic
 # onto a Next.js server that is not listening yet and 503 exactly as before.
