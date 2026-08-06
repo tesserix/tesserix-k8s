@@ -79,6 +79,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS applicant_profiles_one_live
     ON applicant_profiles (application_id)
     WHERE retired_at IS NULL AND valid_to IS NULL;
 
+-- ADR-0008: two revisions of one pack may not be live over the same dates. The
+-- index above is the one-live rule; this is the as-of rule, and only an
+-- exclusion constraint holds it without racing (230, assertion 14).
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'applicant_profiles_one_as_of') THEN
+        ALTER TABLE applicant_profiles ADD CONSTRAINT applicant_profiles_one_as_of
+            EXCLUDE USING gist (application_id WITH =, validity WITH &&)
+            WHERE (retired_at IS NULL);
+    END IF;
+END
+$$;
+
 CREATE INDEX IF NOT EXISTS applicant_profiles_owner_idx
     ON applicant_profiles (tenant_id, created_at DESC);
 
