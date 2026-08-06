@@ -41,3 +41,12 @@ DROP POLICY IF EXISTS activity_notes_no_update ON activity_notes;
 CREATE POLICY activity_notes_no_update ON activity_notes AS RESTRICTIVE FOR UPDATE USING (false);
 
 GRANT SELECT, INSERT ON activity_notes TO dwellm8_community;
+
+-- ADR-0029, and one of the few places the resident scope opens: a note its
+-- author marked shared was written to be read by the renter on that lease.
+-- Everything else on the record stays on the landlord's side, and a renter
+-- writes no notes at all.
+DROP POLICY IF EXISTS activity_notes_resident_scope ON activity_notes;
+CREATE POLICY activity_notes_resident_scope ON activity_notes AS RESTRICTIVE
+    USING (NOT is_resident_session() OR visibility = 'shared')
+    WITH CHECK (NOT is_resident_session());

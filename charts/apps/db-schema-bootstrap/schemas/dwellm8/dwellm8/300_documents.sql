@@ -56,3 +56,10 @@ DROP POLICY IF EXISTS documents_no_update ON documents;
 CREATE POLICY documents_no_update ON documents AS RESTRICTIVE FOR UPDATE USING (false);
 
 GRANT SELECT, INSERT ON documents TO dwellm8_property;
+
+-- ADR-0029. A renter reaches their own agreement through the signing link, not
+-- through this table: opening it would show them every document on the
+-- property, including the ones about other tenancies.
+DROP POLICY IF EXISTS documents_resident_denied ON documents;
+CREATE POLICY documents_resident_denied ON documents AS RESTRICTIVE
+    USING (NOT is_resident_session()) WITH CHECK (NOT is_resident_session());
