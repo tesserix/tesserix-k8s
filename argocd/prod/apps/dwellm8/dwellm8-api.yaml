@@ -3,6 +3,9 @@ kind: Application
 metadata:
   name: dwellm8-api
   namespace: argocd
+  annotations:
+    # Without this Kargo refuses to write the promoted tag onto this app.
+    kargo.akuity.io/authorized-stage: kargo-dwellm8:prod
   labels:
     app.kubernetes.io/part-of: dwellm8
     app.kubernetes.io/component: api
@@ -18,9 +21,9 @@ spec:
     helm:
       valueFiles:
         - values.yaml
-      # No image.tag override here: values.yaml is the one place the tag lives,
-      # and a second copy of it silently pinned prod to `latest`. Kargo writes
-      # values.yaml when the Warehouse is wired.
+      # No image.tag written by hand here: values.yaml holds the floor, and the
+      # kargo-dwellm8:prod Stage writes the promoted tag into this source's
+      # helm parameters.
   destination:
     server: https://kubernetes.default.svc
     namespace: dwellm8
