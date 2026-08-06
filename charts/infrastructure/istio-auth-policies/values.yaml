@@ -194,3 +194,33 @@ opsEndpointDeny:
     - name: internal
       istioLabel: ingressgateway-internal
       namespace: istio-ingress
+
+# =============================================================================
+# Admin surface deny (templates/admin-surface-deny.yaml)
+# =============================================================================
+# Withdraws operator-only admin APIs from the public internet at the gateway.
+# Each entry is HOST-SCOPED, so listing a gateway here cannot affect any host
+# other than the ones named. Same separate-list reasoning as opsEndpointDeny
+# above; see the comment at the top of admin-surface-deny.yaml.
+adminSurfaceDeny:
+  # Attached to the two gateways that terminate *.tesserix.app traffic. The
+  # homechef and internal gateways are omitted: they never terminate
+  # kora-api.tesserix.app, and a host-scoped rule there would be inert noise.
+  gateways:
+    - name: main
+      istioLabel: ingressgateway
+      namespace: istio-ingress
+    - name: custom
+      istioLabel: custom-ingressgateway
+      namespace: istio-ingress
+  surfaces:
+    # kora-api's admin API. HMAC-signed (KORA_BFF_HMAC_KEY), NOT Firebase-gated,
+    # and as of food-data admin slice 2 it can create, edit and retire foods.
+    # Reached in-cluster by tesserix-home over the ClusterIP, so denying it at
+    # the edge costs nothing operationally.
+    - hosts:
+        - "kora-api.tesserix.app"
+      paths:
+        # Both forms: "/v1/admin/*" does NOT match the bare "/v1/admin".
+        - "/v1/admin"
+        - "/v1/admin/*"

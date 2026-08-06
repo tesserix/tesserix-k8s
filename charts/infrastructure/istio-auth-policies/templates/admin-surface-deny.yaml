@@ -1,0 +1,90 @@
+# =============================================================================
+# ADMIN SURFACE DENY
+# =============================================================================
+# Withdraws an application's operator-only admin API from the public internet
+# at the ingress gateway, while leaving it reachable in-cluster.
+#
+# Why this is needed for kora: api-authz.yaml grants
+#
+#   hosts: ["kora-api.tesserix.app"], paths: ["/v1/*"], methods: [GET POST PUT
+#   PATCH DELETE OPTIONS]
+#
+# so that the Go backend can do its own GIP (Firebase) verification on /v1/*.
+# That grant is by prefix, so it also lets `/v1/admin/*` in — a surface that is
+# NOT gated by Firebase at all. It is gated by an HMAC signature
+# (KORA_BFF_HMAC_KEY / internal/bffauth), which is sound, but it means the only
+# thing standing between the public internet and the food-mutation API is one
+# shared secret. As of slice 2 that surface can CREATE, EDIT and RETIRE foods,
+# not merely read them, so the blast radius of a leaked key went from an
+# information disclosure to database mutation. Defence in depth: the edge
+# should not be forwarding these requests at all.
+#
+# Istio evaluates DENY before ALLOW, so this overrides the broad `/v1/*` grant
+# in api-authz.yaml without having to restructure that policy — the same
+# mechanism ops-endpoints-deny.yaml relies on.
+#
+# WHY THE GATEWAY AND NOT THE NAMESPACE. Namespace-scoped policies in ns `kora`
+# are enforced by ztunnel, which is L4-only: it cannot evaluate paths, strips
+# the L7 attributes, and leaves an ALLOW with no valid rule — i.e. deny-all.
+# That is exactly what previously made kora-api unreachable with 503s (see the
+# Kora Namespace Policies note in
+# charts/thirdparty/istio-config/templates/authorization-policies.yaml). A
+# policy selecting an ingress GATEWAY is sidecar/gateway-enforced and CAN match
+# L7 paths and hosts.
+#
+# WHAT THIS DOES NOT BREAK. tesserix-home reaches kora-api over the in-cluster
+# ClusterIP — charts/apps/company values-prod.yaml sets
+# KORA_API_URL: http://kora-api-direct.kora.svc.cluster.local:8080 — so the
+# signed admin traffic never traverses an ingress gateway and never meets this
+# policy. If that URL is ever changed to the public hostname, the portal's
+# admin pages will start 403ing at the edge; that is the intended trade and
+# the reason it is written down here.
+# =============================================================================
+
+{{- /*
+Driven by its own `adminSurfaceDeny` list rather than the chart's
+`ingressGateways`, for the same reason ops-endpoints-deny.yaml keeps its own:
+adding a gateway to `ingressGateways` also attaches that list's broad ALLOW
+policies to it, and in Istio, once ANY ALLOW policy selects a workload every
+path not explicitly allowed becomes denied. A DENY policy only ever subtracts
+the paths it names, so it is safe to attach widely.
+*/ -}}
+{{- range .Values.adminSurfaceDeny.gateways }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-admin-surface-{{ .name }}
+  namespace: {{ .namespace }}
+  labels:
+    app.kubernetes.io/name: authz-policy
+    app.kubernetes.io/component: admin-surface-deny
+    app.kubernetes.io/part-of: istio-auth-policies
+spec:
+  selector:
+    matchLabels:
+      istio: {{ .istioLabel }}
+  action: DENY
+  rules:
+{{- range $.Values.adminSurfaceDeny.surfaces }}
+    - to:
+        - operation:
+            # HOST-SCOPED deliberately. An unscoped DENY of /v1/admin/* would
+            # apply to every host this gateway terminates, silently withdrawing
+            # any other application's admin path — including ones that are
+            # meant to be reachable. Scope it to the host that owns the surface.
+            hosts:
+{{- range .hosts }}
+              - {{ . | quote }}
+              # Port-qualified twin: Istio matches `hosts` against the
+              # Host/Authority header, which CAN arrive with an explicit port.
+              # A DENY that fails to match fails OPEN, so both forms are listed
+              # rather than assuming the port is always elided.
+              - {{ printf "%s:*" . | quote }}
+{{- end }}
+            paths:
+{{- range .paths }}
+              - {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
