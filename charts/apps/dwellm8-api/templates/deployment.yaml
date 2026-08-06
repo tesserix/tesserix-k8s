@@ -154,6 +154,17 @@ spec:
                 secretKeyRef:
                   name: {{ include "dwellm8-api.fullname" . }}-payments
                   key: TWILIO_VERIFY_SID
+            {{- if .Values.mail.apiKeySecret }}
+            - name: RESEND_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "dwellm8-api.fullname" . }}-payments
+                  key: RESEND_API_KEY
+            {{- end }}
+            {{- end }}
+            {{- with .Values.mail.from }}
+            - name: RESEND_FROM
+              value: {{ . | quote }}
             {{- end }}
           livenessProbe:
             httpGet:
