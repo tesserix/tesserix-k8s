@@ -64,3 +64,14 @@ DROP POLICY IF EXISTS esign_docurl_access_log_no_update ON esign_docurl_access_l
 CREATE POLICY esign_docurl_access_log_no_update ON esign_docurl_access_log AS RESTRICTIVE FOR UPDATE USING (false);
 
 GRANT SELECT, INSERT ON esign_docurl_access_log TO dwellm8_lease;
+
+-- ADR-0029. Both tables are created after 220's deny loop, so they close
+-- themselves: a signing link is served on a platform session, never a
+-- renter's, and the access log is the evidence that link was used.
+DROP POLICY IF EXISTS esign_docurl_revocations_resident_denied ON esign_docurl_revocations;
+CREATE POLICY esign_docurl_revocations_resident_denied ON esign_docurl_revocations AS RESTRICTIVE
+    USING (NOT is_resident_session()) WITH CHECK (NOT is_resident_session());
+
+DROP POLICY IF EXISTS esign_docurl_access_log_resident_denied ON esign_docurl_access_log;
+CREATE POLICY esign_docurl_access_log_resident_denied ON esign_docurl_access_log AS RESTRICTIVE
+    USING (NOT is_resident_session()) WITH CHECK (NOT is_resident_session());

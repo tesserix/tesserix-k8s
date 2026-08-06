@@ -78,3 +78,9 @@ DROP TRIGGER IF EXISTS journal_entries_period_guard ON journal_entries;
 CREATE TRIGGER journal_entries_period_guard
     BEFORE INSERT ON journal_entries
     FOR EACH ROW EXECUTE FUNCTION ledger_period_guard();
+
+-- ADR-0029. The close is the landlord's book-keeping; a renter has no business
+-- knowing which months their landlord has locked.
+DROP POLICY IF EXISTS ledger_period_closes_resident_denied ON ledger_period_closes;
+CREATE POLICY ledger_period_closes_resident_denied ON ledger_period_closes AS RESTRICTIVE
+    USING (NOT is_resident_session()) WITH CHECK (NOT is_resident_session());
