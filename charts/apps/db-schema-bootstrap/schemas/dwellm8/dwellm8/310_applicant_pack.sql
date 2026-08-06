@@ -115,6 +115,18 @@ ALTER TABLE applicant_profiles FORCE  ROW LEVEL SECURITY;
 ALTER TABLE applicant_people   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE applicant_people   FORCE  ROW LEVEL SECURITY;
 
+-- Rows hanging off a pack carry no property or unit of their own, so they ask
+-- the pack whose mandate they are under (ADR-0009).
+CREATE OR REPLACE FUNCTION applicant_pack_delegated(pack uuid, required_permission text)
+    RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path = public AS
+$$
+    SELECT EXISTS (
+        SELECT 1 FROM applicant_profiles p
+         WHERE p.id = pack
+           AND is_delegated_unit(p.tenant_id, p.property_id, p.unit_id, NULL, required_permission))
+$$;
+
 DROP POLICY IF EXISTS applicant_profiles_tenant_isolation ON applicant_profiles;
 CREATE POLICY applicant_profiles_tenant_isolation ON applicant_profiles
     USING (tenant_id = current_tenant_id()
@@ -124,10 +136,17 @@ CREATE POLICY applicant_profiles_tenant_isolation ON applicant_profiles
            OR is_platform_session()
            OR is_delegated_unit(tenant_id, property_id, unit_id, NULL, 'property.write'));
 
+-- The household reaches the mandate through the pack it hangs off: it carries
+-- no property of its own, and the firm collecting the pack must be able to
+-- write it, not only read it.
 DROP POLICY IF EXISTS applicant_people_tenant_isolation ON applicant_people;
 CREATE POLICY applicant_people_tenant_isolation ON applicant_people
-    USING (tenant_id = current_tenant_id() OR is_platform_session())
-    WITH CHECK (tenant_id = current_tenant_id() OR is_platform_session());
+    USING (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR applicant_pack_delegated(profile_id, 'property.read'))
+    WITH CHECK (tenant_id = current_tenant_id()
+           OR is_platform_session()
+           OR applicant_pack_delegated(profile_id, 'property.write'));
 
 -- The applicant reaches their own pack through the resident surface's platform
 -- session, exactly as they reach the application itself (#227).
@@ -151,9 +170,13 @@ CREATE POLICY applicant_profiles_no_delete ON applicant_profiles AS RESTRICTIVE 
                     AND a.retain_until IS NOT NULL
                     AND a.retain_until <= CURRENT_DATE)));
 
+-- The household is edited as one list, so whoever may write the pack may
+-- replace it; the platform sweep keeps its own path for a declined pack.
 DROP POLICY IF EXISTS applicant_people_no_delete ON applicant_people;
 CREATE POLICY applicant_people_no_delete ON applicant_people AS RESTRICTIVE FOR DELETE
-    USING (sandbox_purge_permitted(tenant_id)
+    USING (tenant_id = current_tenant_id()
+           OR applicant_pack_delegated(profile_id, 'property.write')
+           OR sandbox_purge_permitted(tenant_id)
            OR (is_platform_session() AND EXISTS (
                  SELECT 1 FROM applicant_profiles p
                    JOIN listing_applications a ON a.id = p.application_id
@@ -182,4 +205,5 @@ CREATE TRIGGER applicant_profiles_no_revival
 
 GRANT SELECT, INSERT, UPDATE ON applicant_profiles, applicant_people
     TO dwellm8_discovery, dwellm8_property;
+GRANT DELETE ON applicant_people TO dwellm8_discovery, dwellm8_property;
 GRANT DELETE ON applicant_profiles, applicant_people TO dwellm8_platform;
