@@ -5662,3 +5662,76 @@ ALTER TABLE public.support_tickets
 CREATE UNIQUE INDEX IF NOT EXISTS idx_support_tickets_conversation_id
   ON public.support_tickets (conversation_id)
   WHERE conversation_id IS NOT NULL;
+
+-- Bakery vertical (#1065). A bakery is a home kitchen that sells configured
+-- products: the customer picks a weight, shape, flavour and egg/sugar option
+-- before the line can be priced. Orders, payments, invoices and payouts are
+-- unchanged — only the line's price and its snapshot differ.
+ALTER TABLE public.chef_profiles
+  ADD COLUMN IF NOT EXISTS vertical character varying(16) DEFAULT 'kitchen';
+CREATE INDEX IF NOT EXISTS idx_chef_profiles_vertical
+  ON public.chef_profiles (vertical);
+
+-- One store, both shelves: a meals kitchen can also sell cakes and breads.
+-- vertical stays the primary identity; this is the capability that puts the
+-- kitchen's bakes in the Bakery section and opens the configurator.
+ALTER TABLE public.chef_profiles
+  ADD COLUMN IF NOT EXISTS sells_bakery boolean DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS public.bakery_specs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    mode character varying(8) DEFAULT 'live',
+    cloned_from_id uuid,
+    menu_item_id uuid NOT NULL,
+    chef_id uuid NOT NULL,
+    product_type character varying(20) NOT NULL,
+    price_per_kg numeric DEFAULT 0,
+    min_weight_kg numeric DEFAULT 0,
+    max_weight_kg numeric DEFAULT 0,
+    weight_step_kg numeric DEFAULT 0.5,
+    serves_per_kg bigint DEFAULT 8,
+    allow_message boolean DEFAULT false,
+    max_message_chars bigint DEFAULT 40,
+    allow_reference_photo boolean DEFAULT false,
+    lead_time_hours bigint DEFAULT 0,
+    occasions text[],
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    deleted_at timestamp with time zone,
+    CONSTRAINT bakery_specs_pkey PRIMARY KEY (id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bakery_specs_menu_item_id
+  ON public.bakery_specs (menu_item_id);
+CREATE INDEX IF NOT EXISTS idx_bakery_specs_chef_id
+  ON public.bakery_specs (chef_id);
+CREATE INDEX IF NOT EXISTS idx_bakery_specs_product_type
+  ON public.bakery_specs (product_type);
+CREATE INDEX IF NOT EXISTS idx_bakery_specs_deleted_at
+  ON public.bakery_specs (deleted_at);
+
+CREATE TABLE IF NOT EXISTS public.bakery_options (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    spec_id uuid NOT NULL,
+    kind character varying(16) NOT NULL,
+    name text NOT NULL,
+    price_delta numeric DEFAULT 0,
+    price_mode character varying(8) DEFAULT 'flat',
+    dietary_tags text[],
+    allergens text[],
+    image_url text,
+    is_available boolean DEFAULT true,
+    is_default boolean DEFAULT false,
+    sort_order bigint DEFAULT 0,
+    created_at timestamp with time zone,
+    CONSTRAINT bakery_options_pkey PRIMARY KEY (id)
+);
+CREATE INDEX IF NOT EXISTS idx_bakery_options_spec_id
+  ON public.bakery_options (spec_id);
+CREATE INDEX IF NOT EXISTS idx_bakery_options_kind
+  ON public.bakery_options (kind);
+
+-- The immutable per-line snapshot of what was configured: weight, shape,
+-- flavour, egg/sugar choice, message, reference photo. The invoice prints
+-- from this, so it must survive any later edit to the menu item.
+ALTER TABLE public.order_items
+  ADD COLUMN IF NOT EXISTS bakery_details jsonb;
