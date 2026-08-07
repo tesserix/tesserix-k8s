@@ -5001,6 +5001,11 @@ ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_vendor_id tex
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_vendor_status text DEFAULT ''::text;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS gateway_split_paise integer DEFAULT 0;
 
+-- Per-chef Easy Split rollout switch (Home-Chef-App #1084). Same tri-state shape
+-- as payout_auto_release: '' inherits the platform flag, 'on'/'off' override it,
+-- so live rollout can start with one chef instead of every chef at once.
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS easy_split_mode character varying(8) DEFAULT ''::character varying;
+
 -- Weekly menu thali/combo (parity with daily_menu_items): a cell can be a
 -- bundled set (combo_components) at one price instead of a single dish.
 ALTER TABLE public.weekly_menu_items ADD COLUMN IF NOT EXISTS is_combo boolean DEFAULT false;
