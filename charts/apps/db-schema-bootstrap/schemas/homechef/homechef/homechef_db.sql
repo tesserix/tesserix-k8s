@@ -5740,3 +5740,8 @@ CREATE INDEX IF NOT EXISTS idx_bakery_options_kind
 -- from this, so it must survive any later edit to the menu item.
 ALTER TABLE public.order_items
   ADD COLUMN IF NOT EXISTS bakery_details jsonb;
+
+-- Statement line for a collected chef recovery: net_payout is AFTER this
+-- deduction, mirroring penalty_deductions. HomeChef-1092.
+ALTER TABLE public.weekly_statements
+  ADD COLUMN IF NOT EXISTS recovery_deductions numeric DEFAULT 0;
