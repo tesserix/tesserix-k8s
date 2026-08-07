@@ -479,11 +479,6 @@ CREATE TABLE public.chef_profiles (
     is_featured boolean DEFAULT false,
     featured_until timestamp with time zone,
     stripe_account_id text,
-    razorpay_account_id text,
-    razorpay_product_id text DEFAULT ''::text,
-    razorpay_settlement_status text DEFAULT ''::text,
-    razorpay_settlement_requirements text DEFAULT ''::text,
-    razorpay_stakeholder_created boolean DEFAULT false,
     payout_auto_release character varying(8) DEFAULT ''::character varying,
     payout_auto_disburse character varying(8) DEFAULT ''::character varying,
     cashfree_vendor_id text DEFAULT ''::text,
@@ -880,7 +875,6 @@ CREATE TABLE public.delivery_partners (
     referral_code text,
     referred_by_id uuid,
     stripe_account_id text,
-    razorpay_account_id text,
     created_at timestamp with time zone,
     updated_at timestamp with time zone,
     payment_provider character varying(20) DEFAULT 'razorpay'::character varying,
@@ -4988,13 +4982,6 @@ CREATE UNIQUE INDEX idx_winback_one_open ON public.winback_offers USING btree (u
 -- are no-ops once the column exists (IF NOT EXISTS) and are folded back into
 -- the CREATE body on the next pg_dump regeneration.
 --
--- Route settlement onboarding (Home-Chef-App #740/#741): a linked account can
--- receive Route transfers but only pays them out once a settlement bank account
--- is registered and Razorpay activates it. These columns record that state.
-ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_product_id text DEFAULT ''::text;
-ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_settlement_status text DEFAULT ''::text;
-ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_settlement_requirements text DEFAULT ''::text;
-ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_stakeholder_created boolean DEFAULT false;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_release character varying(8) DEFAULT ''::character varying;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_disburse character varying(8) DEFAULT ''::character varying;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_vendor_id text DEFAULT ''::text;
@@ -5740,3 +5727,15 @@ CREATE INDEX IF NOT EXISTS idx_bakery_options_kind
 -- from this, so it must survive any later edit to the menu item.
 ALTER TABLE public.order_items
   ADD COLUMN IF NOT EXISTS bakery_details jsonb;
+
+-- Razorpay Route linked accounts, retired (Home-Chef-App #1120, epic #1086).
+-- #1105 deleted the Route transfer layer and route_registration.go with it; no
+-- Go code has referenced these since. All six were empty in production when
+-- dropped — no linked-account history is lost. Payout destination now lives in
+-- cashfree_vendor_id / cashfree_vendor_status.
+ALTER TABLE public.chef_profiles DROP COLUMN IF EXISTS razorpay_account_id;
+ALTER TABLE public.chef_profiles DROP COLUMN IF EXISTS razorpay_product_id;
+ALTER TABLE public.chef_profiles DROP COLUMN IF EXISTS razorpay_settlement_status;
+ALTER TABLE public.chef_profiles DROP COLUMN IF EXISTS razorpay_settlement_requirements;
+ALTER TABLE public.chef_profiles DROP COLUMN IF EXISTS razorpay_stakeholder_created;
+ALTER TABLE public.delivery_partners DROP COLUMN IF EXISTS razorpay_account_id;
