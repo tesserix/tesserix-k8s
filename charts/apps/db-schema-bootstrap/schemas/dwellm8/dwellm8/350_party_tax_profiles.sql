@@ -71,6 +71,20 @@ CREATE TABLE IF NOT EXISTS party_tax_profiles (
         AND (trc_valid_to IS NULL OR trc_valid_to > trc_valid_from))
 );
 
+-- The payee's own legal form, which picks the surcharge ladder a non-resident is
+-- deducted on (dwellm8#318). Defaulted rather than asked of history: an
+-- individual ladder is the steeper one, so an unanswered row deducts more.
+ALTER TABLE party_tax_profiles
+    ADD COLUMN IF NOT EXISTS payee_form text NOT NULL DEFAULT 'individual';
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'party_tax_profiles_payee_form_check') THEN
+        ALTER TABLE party_tax_profiles ADD CONSTRAINT party_tax_profiles_payee_form_check
+            CHECK (payee_form IN ('individual', 'company'));
+    END IF;
+END
+$$;
+
 COMMENT ON TABLE party_tax_profiles IS
     'What a landlord has furnished for TDS purposes — PAN, and for a non-resident rule 37BC''s particulars. Effective dated: residency changes and the earlier months stay as they were deducted.';
 COMMENT ON COLUMN party_tax_profiles.rule_37bc_furnished IS
