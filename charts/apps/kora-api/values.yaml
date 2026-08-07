@@ -133,6 +133,18 @@ secretEnv:
   # the container would never see it and the admin surface would stay
   # permanently unmounted (404, not 401).
   KORA_BFF_HMAC_KEY: KORA_BFF_HMAC_KEY
+  # kora-api REFUSES TO START if APPLE_PRIVATE_KEY is set while either of the
+  # other two is empty (api/internal/config/config.go). That is deliberate: a
+  # partial config would otherwise mount /v1/me/apple-authorization and have
+  # every exchange fail, silently making every Apple user permanently
+  # unrevokable while looking like success from the app. So these three land
+  # together or not at all.
+  #
+  # With all three unset the endpoint is simply not mounted and the mobile
+  # client's capture call 404s, which it swallows on a path proven non-fatal.
+  APPLE_TEAM_ID: apple_team_id
+  APPLE_KEY_ID: apple_key_id
+  APPLE_PRIVATE_KEY: apple_private_key
 
 # GCP / Workload Identity — annotates the SA with the matching GSA email.
 # GSA itself, its IAM bindings, and the WIF binding are provisioned by the
@@ -161,6 +173,18 @@ externalSecret:
     openai_api_key: prod-kora-openai-api-key
     expo_access_token: prod-kora-expo-access-token
     KORA_BFF_HMAC_KEY: prod-kora-bff-internal-hmac-key
+    # Sign in with Apple. Required for account deletion (#106): Apple has
+    # mandated since June 2022 that an app offering Sign in with Apple revoke
+    # the user's refresh token when their account is deleted, and Firebase
+    # never exposes that token -- it is obtained by exchanging the one-time
+    # authorization code the native sign-in returns.
+    #
+    # ESO fails the WHOLE ExternalSecret if any remoteRef key is missing in
+    # Secret Manager, so all three secrets must exist in tesseracthub-480811
+    # BEFORE this is synced, or database_url stops re-syncing with them.
+    apple_team_id: prod-kora-apple-team-id
+    apple_key_id: prod-kora-apple-key-id
+    apple_private_key: prod-kora-apple-private-key
 
 # ArgoCD PreSync migrate Job — runs Kora's migrate binary (same image,
 # command override) before the Knative Service rolls, so the API never
