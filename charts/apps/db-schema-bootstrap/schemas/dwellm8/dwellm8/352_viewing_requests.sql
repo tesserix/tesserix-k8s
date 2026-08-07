@@ -60,11 +60,21 @@ CREATE TABLE IF NOT EXISTS inspection_proposals (
     state         text NOT NULL DEFAULT 'open' CHECK (state IN (
                       'open', 'accepted', 'declined', 'superseded')),
 
+    -- Where the viewing would happen, carried by the owner's counter and copied
+    -- into the slot on acceptance. Never returned to the prospect while the
+    -- proposal is open: the exact place, like the link, is disclosed on
+    -- confirmation only.
+    meeting_point text,
+    meeting_link  text,
+
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now(),
 
     CONSTRAINT inspection_proposals_one_accepted UNIQUE (enquiry_id, starts_at)
 );
+
+ALTER TABLE inspection_proposals ADD COLUMN IF NOT EXISTS meeting_point text;
+ALTER TABLE inspection_proposals ADD COLUMN IF NOT EXISTS meeting_link text;
 
 COMMENT ON TABLE inspection_proposals IS
     '#331. A time proposed for a private or online viewing, by the prospect or countered by the owner. Accepting one materialises an inspection_slot.';
