@@ -490,7 +490,7 @@ CREATE TABLE public.chef_profiles (
     upi_id text DEFAULT ''::text,
     created_at timestamp with time zone,
     updated_at timestamp with time zone,
-    payment_provider character varying(20) DEFAULT 'razorpay'::character varying,
+    payment_provider character varying(20) DEFAULT 'cashfree'::character varying,
     payout_country character varying(2) DEFAULT 'IN'::character varying,
     stripe_charges_enabled boolean DEFAULT false,
     stripe_payouts_enabled boolean DEFAULT false,
@@ -877,7 +877,7 @@ CREATE TABLE public.delivery_partners (
     stripe_account_id text,
     created_at timestamp with time zone,
     updated_at timestamp with time zone,
-    payment_provider character varying(20) DEFAULT 'razorpay'::character varying,
+    payment_provider character varying(20) DEFAULT 'cashfree'::character varying,
     payout_country character varying(2) DEFAULT 'IN'::character varying,
     stripe_charges_enabled boolean DEFAULT false,
     stripe_payouts_enabled boolean DEFAULT false,
@@ -1332,7 +1332,7 @@ CREATE TABLE public.meal_subscriptions (
     credit_balance numeric DEFAULT 0,
     trial_id uuid,
     default_address_id uuid,
-    payment_gateway character varying(20) DEFAULT 'razorpay'::character varying,
+    payment_gateway character varying(20) DEFAULT 'cashfree'::character varying,
     gateway_sub_id text,
     paused_at timestamp with time zone,
     cancelled_at timestamp with time zone,
@@ -1658,7 +1658,7 @@ CREATE TABLE public.orders (
     created_at timestamp with time zone,
     updated_at timestamp with time zone,
     deleted_at timestamp with time zone,
-    payment_provider character varying(20) DEFAULT 'razorpay'::character varying,
+    payment_provider character varying(20) DEFAULT 'cashfree'::character varying,
     tax_rate numeric DEFAULT 0,
     tax_name character varying(40) DEFAULT ''::character varying,
     currency character varying(3) DEFAULT 'INR'::character varying,
@@ -5475,18 +5475,18 @@ ALTER TABLE public.meal_plans
 -- money. The gateway_order_id column already carries whichever gateway's id
 -- funded the row, so only the provider is missing.
 --
--- Defaults to 'razorpay' so every already-captured row keeps refunding on the
--- rail that actually funded it; new rows are stamped by SelectCheckoutGateway.
+-- Defaults to 'cashfree', the only INR gateway left (#1125); already-captured rows
+-- all carry an explicit provider, so none is reinterpreted by this.
 ALTER TABLE public.meal_plans
-  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'cashfree'::character varying;
 ALTER TABLE public.tips
-  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'cashfree'::character varying;
 ALTER TABLE public.catering_requests
-  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'cashfree'::character varying;
 ALTER TABLE public.chef_promotions
-  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'cashfree'::character varying;
 ALTER TABLE public.group_order_participants
-  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'cashfree'::character varying;
 
 --
 -- Refund policy v3: the chef's decision window. A customer cancellation parks each unserved
