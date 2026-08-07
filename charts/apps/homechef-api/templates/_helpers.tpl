@@ -152,24 +152,6 @@ refactored here; the worker is a prod-only concern.)
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: EXCHANGERATES_API_KEY
       optional: true
-- name: RAZORPAY_KEY_ID
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "homechef-api.fullname" . }}-secrets
-      key: RAZORPAY_KEY_ID
-      optional: true
-- name: RAZORPAY_KEY_SECRET
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "homechef-api.fullname" . }}-secrets
-      key: RAZORPAY_KEY_SECRET
-      optional: true
-- name: RAZORPAY_WEBHOOK_SECRET
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "homechef-api.fullname" . }}-secrets
-      key: RAZORPAY_WEBHOOK_SECRET
-      optional: true
 {{- /*
 Super-admin allowlist. Without this the API falls back to the list hardcoded in
 apps/api/models/staff.go (three personal Gmail addresses), and
