@@ -5275,6 +5275,10 @@ CREATE INDEX IF NOT EXISTS ix_chef_test_sessions_chef ON public.chef_test_sessio
 CREATE UNIQUE INDEX IF NOT EXISTS ux_chef_test_sessions_chef_no
   ON public.chef_test_sessions (chef_id, session_no);
 
+-- What live work was in flight when an admin forced this flip through. Empty on
+-- a clean flip, so a non-empty value is the audit trail for a forced one.
+ALTER TABLE public.chef_test_sessions ADD COLUMN IF NOT EXISTS forced_blockers text DEFAULT '';
+
 -- Aggregate counters per (kitchen, mode). chef_profiles keeps the LIVE numbers
 -- so every customer-facing query reads them unchanged and a fake order can never
 -- move a real rating; this table is what the vendor and admin dashboards read
