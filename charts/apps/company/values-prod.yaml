@@ -95,42 +95,15 @@ env:
   # depend on them are reimplemented.
 
 # Production GCP configuration
+#
+# NOTE: gcp.workloadIdentity.gcpServiceAccount is deliberately NOT set here.
+# ArgoCD loads valueFiles as values.yaml -> values-prod.yaml -> the shared
+# ../global-config-prod.yaml, so that global file lands LAST and overrides
+# anything this file sets for it. The per-app override lives as a helm
+# parameter in argocd/prod/apps/global/company.yaml, which outranks all
+# value files. Setting it here instead renders a green sync that changes
+# nothing.
 gcp:
-  # Overrides the shared default from global-config-prod.yaml
-  # (app-secrets-marketplace-prod), which that file's own comment invites:
-  # "override per namespace in ArgoCD apps".
-  #
-  # Two reasons this override exists.
-  #
-  # 1. It was BROKEN. The KSA tesserix/company carried the shared GSA's
-  #    annotation, but that GSA's roles/iam.workloadIdentityUser binding listed
-  #    42 members and none from the tesserix namespace — so the KSA was
-  #    annotated to impersonate an account that did not trust it back. Every
-  #    call 403'd with "Permission 'iam.serviceAccounts.getAccessToken'
-  #    denied", and the Kora overview reported "AI keys configured: 0" under a
-  #    hint reading "should be 2" while both keys were present and kora-api
-  #    (which refuses to boot without them) was serving traffic.
-  #
-  # 2. The shared GSA is wildly over-scoped for this. It holds PROJECT-LEVEL
-  #    roles/secretmanager.admin — admin over every secret in
-  #    tesseracthub-480811, including mark8ly's and homechef's — to support a
-  #    portal feature that reads two secrets' version metadata.
-  #
-  # kora-key-health-prod holds roles/secretmanager.viewer on exactly
-  # prod-kora-gemini-api-key and prod-kora-openai-api-key. Note viewer, NOT
-  # secretAccessor: lib/secrets/key-health.ts calls listSecretVersions and
-  # never accessSecretVersion, so the portal cannot read a key's VALUE even if
-  # someone later adds a "reveal" affordance — the IAM denies it, not just the
-  # code. If Kora key ROTATION is ever built (see the 2026-08-05 spec), it
-  # needs secretmanager.secretVersionAdder added here deliberately.
-  #
-  # The portal uses @google-cloud/secret-manager in exactly one file, so this
-  # narrower account costs it no other capability.
-  #
-  # NOT yet codified in Terraform — the app-secrets-* accounts live in
-  # tesserix-infra. Created out-of-band; fold into IaC to stop it drifting.
-  workloadIdentity:
-    gcpServiceAccount: "kora-key-health-prod@tesseracthub-480811.iam.gserviceaccount.com"
   secretManager:
     secretPrefix: "prod"
 

@@ -63,6 +63,42 @@ spec:
         value: http://mark8ly-platform-api.mark8ly.svc.cluster.local:8086
       - name: env.MARK8LY_MARKETPLACE_API_URL
         value: http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080
+      # Workload identity for this pod. MUST live here as a helm PARAMETER,
+      # not in charts/apps/company/values-prod.yaml: valueFiles below are
+      # ordered values.yaml -> values-prod.yaml -> ../global-config-prod.yaml,
+      # so the shared global file is applied LAST and silently beats anything
+      # values-prod.yaml sets. Parameters outrank every value file, so this is
+      # the only place a per-app override actually takes effect. (An override
+      # was first written into values-prod.yaml; the sync went green and the
+      # ServiceAccount annotation did not change.)
+      #
+      # Overrides global-config-prod.yaml's shared default,
+      # app-secrets-marketplace-prod, for two reasons:
+      #
+      # 1. It was broken for this namespace. That GSA's workloadIdentityUser
+      #    binding lists 42 members, none from `tesserix`, so the KSA was
+      #    annotated to impersonate an account that did not trust it back.
+      #    Every Secret Manager call 403'd with "Permission
+      #    'iam.serviceAccounts.getAccessToken' denied", and the Kora overview
+      #    read "AI keys configured: 0" under a hint saying "should be 2"
+      #    while both keys existed.
+      #
+      # 2. That shared GSA holds PROJECT-LEVEL secretmanager.admin — admin over
+      #    every secret in tesseracthub-480811, mark8ly's and homechef's
+      #    included — for a feature that reads two secrets' version metadata.
+      #
+      # kora-key-health-prod holds secretmanager.viewer on exactly
+      # prod-kora-gemini-api-key and prod-kora-openai-api-key. viewer, NOT
+      # secretAccessor: lib/secrets/key-health.ts calls listSecretVersions and
+      # never accessSecretVersion, so the portal cannot read a key VALUE even
+      # if code later tried to. Key rotation (2026-08-05 spec) would need
+      # secretmanager.secretVersionAdder added deliberately, not a revert to
+      # the admin account.
+      #
+      # Not yet in Terraform — the app-secrets-* accounts live in
+      # tesserix-infra. Created out-of-band; fold in to stop it drifting.
+      - name: gcp.workloadIdentity.gcpServiceAccount
+        value: kora-key-health-prod@tesseracthub-480811.iam.gserviceaccount.com
   destination:
     server: https://kubernetes.default.svc
     namespace: tesserix
