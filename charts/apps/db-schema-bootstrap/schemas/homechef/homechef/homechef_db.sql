@@ -4986,6 +4986,14 @@ ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_release ch
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_disburse character varying(8) DEFAULT ''::character varying;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_vendor_id text DEFAULT ''::text;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_vendor_status text DEFAULT ''::text;
+
+-- The sandbox counterpart of the pair above. Cashfree sandbox and production
+-- vendor IDs are separate namespaces, so a kitchen borrowed for debugging keeps
+-- its sandbox registration apart from the identity real money settles to
+-- (Home-Chef-App #1145).
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_test_vendor_id text DEFAULT ''::text;
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_test_vendor_status text DEFAULT ''::text;
+
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS gateway_split_paise integer DEFAULT 0;
 
 -- Per-chef Easy Split rollout switch (Home-Chef-App #1084). Same tri-state shape
