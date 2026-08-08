@@ -147,14 +147,38 @@ secretEnv:
   APPLE_PRIVATE_KEY: apple_private_key
 
 # GCP / Workload Identity — annotates the SA with the matching GSA email.
-# GSA itself, its IAM bindings, and the WIF binding are provisioned by the
-# human out-of-band (terraform-new), same as every other product's
-# app-secrets-<product>-prod GSA.
+#
+# This previously named app-secrets-kora-prod, following the
+# app-secrets-<product>-prod convention and the note above that the GSA is
+# "provisioned by the human out-of-band". It never was: verified on
+# 2026-08-08 against `gcloud iam service-accounts list`, no such account
+# exists in tesseracthub-480811. So this pod has been annotated to
+# impersonate an account that does not exist.
+#
+# That cost nothing until now, because kora-api made no GCP API calls:
+# Firebase ID token VERIFICATION reads Google's public JWKS and needs no
+# IAM, and DB credentials arrive as a Kubernetes Secret via ESO. Account
+# deletion (#106) is the first code path that calls a GCP API — it deletes
+# the user's Firebase identity — so from here a missing GSA means every
+# deletion leaves a live identity behind. The account's Kora data is still
+# destroyed correctly; the person can simply sign in again and be
+# re-provisioned by EnsureUser as a fresh empty account.
+#
+# kora-api-prod holds ONE permission, via the custom role
+# projects/tesseracthub-480811/roles/koraFirebaseUserDelete:
+# firebaseauth.users.delete. Deliberately NOT roles/firebaseauth.admin,
+# which would also grant create/update/list over every identity in the
+# project. If a future code path needs more, add the permission to that
+# custom role deliberately rather than widening to the predefined one.
+#
+# Not in Terraform — created out-of-band like the other app-secrets-*
+# accounts, which is exactly how the original went missing. Fold both this
+# account and its custom role into IaC to stop it drifting.
 gcp:
   projectId: "tesseracthub-480811"
   workloadIdentity:
     enabled: true
-    gcpServiceAccount: "app-secrets-kora-prod@tesseracthub-480811.iam.gserviceaccount.com"
+    gcpServiceAccount: "kora-api-prod@tesseracthub-480811.iam.gserviceaccount.com"
 
 # ExternalSecret config — pulls all secrets from GCP Secret Manager via
 # the cluster-wide gcp-secret-store ClusterSecretStore.
