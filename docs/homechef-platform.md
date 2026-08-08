@@ -10,7 +10,8 @@ on `charts/apps/homechef-*`, `argocd/prod/apps/homechef/`, or the
 - **Frontend:** React 19, Vite 6, Tailwind CSS 4, Radix UI, React Router 7,
   TanStack Query, Zustand
 - **Backend:** Go 1.25, Gin, GORM, PostgreSQL 16, Redis, NATS JetStream
-- **Payments:** Razorpay Route (split payments)
+- **Payments:** Cashfree PG, the only gateway (Home-Chef-App #1086). Chef payouts
+  split on release via Cashfree Easy Split.
 - **CI/CD:** 7 GitHub Actions workflows → GHCR → GKE/ArgoCD
 - **Namespace:** `homechef`
 
