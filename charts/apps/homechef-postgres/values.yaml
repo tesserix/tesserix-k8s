@@ -81,12 +81,15 @@ backup:
   # roles/storage.objectAdmin on the backup bucket.
   serviceAccount: "app-secrets-homechef-prod@tesseracthub-480811.iam.gserviceaccount.com"
 
-# PgBouncer connection pooling
+# PgBouncer connection pooling — the API's only route to Postgres.
+# Server-connection ceiling is instances × defaultPoolSize per pool, so rw and
+# ro together can reach 200 of max_connections (300), leaving headroom for
+# replication, CNPG itself and the admin app's direct connections.
 pooler:
   enabled: true
   instances: 2
   maxClientConn: "1000"
-  defaultPoolSize: "25"
+  defaultPoolSize: "50"
 
 # Monitoring — CNPG built-in Prometheus exporter on port 9187
 monitoring:

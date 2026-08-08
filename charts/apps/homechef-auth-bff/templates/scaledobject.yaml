@@ -24,11 +24,13 @@ spec:
   minReplicaCount: {{ .Values.keda.minReplicaCount }}
   maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
   triggers:
-    # Memory only, NOT cpu. The platform runs memory-only resources (no CPU
-    # requests), so a KEDA `cpu` trigger is invalid here — the KEDA admission
-    # webhook rejects a ScaledObject with a cpu trigger when the target
-    # container has no cpu request, which made every auth-bff ArgoCD sync fail
-    # and froze the deployment on a stale image.
+    {{- if .Values.keda.triggers }}
+    {{- toYaml .Values.keda.triggers | nindent 4 }}
+    {{- else }}
+    # A `cpu` trigger is only valid while the container declares a CPU request —
+    # the KEDA admission webhook rejects it otherwise, which once froze every
+    # auth-bff sync on a stale image. Keep values.yaml's resources and triggers
+    # in step.
     #
     # The istio request-rate (prometheus) trigger was removed (#906): the
     # monitoring namespace is scaled to zero, so prometheus-server has no
@@ -40,4 +42,5 @@ spec:
       metricType: Utilization
       metadata:
         value: "80"
+    {{- end }}
 {{- end }}

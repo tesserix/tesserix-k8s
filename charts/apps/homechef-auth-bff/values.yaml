@@ -16,9 +16,23 @@ keda:
   pollingInterval: 15
   cooldownPeriod: 300
   minReplicaCount: 2
-  maxReplicaCount: 10
+  maxReplicaCount: 20
+  # Every sign-in on every app crosses this service, and the work is token
+  # verification — CPU-bound, with a flat heap that memory alone never notices.
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "80"
+# No CPU limit: throttling a token-verification pod under a login burst just
+# moves the queue. The request is what makes the cpu trigger above admissible.
 resources:
   requests:
+    cpu: 100m
     memory: 128Mi
   limits:
     memory: 256Mi
