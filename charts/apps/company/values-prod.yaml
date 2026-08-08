@@ -96,14 +96,42 @@ env:
 
 # Production GCP configuration
 #
-# NOTE: gcp.workloadIdentity.gcpServiceAccount is deliberately NOT set here.
-# ArgoCD loads valueFiles as values.yaml -> values-prod.yaml -> the shared
-# ../global-config-prod.yaml, so that global file lands LAST and overrides
-# anything this file sets for it. The per-app override lives as a helm
-# parameter in argocd/prod/apps/global/company.yaml, which outranks all
-# value files. Setting it here instead renders a green sync that changes
-# nothing.
+# This override only works because argocd/prod/apps/global/company.yaml lists
+# ../global-config-prod.yaml BEFORE this file. If anyone reorders those back so
+# the global file is last, this setting silently stops applying — the sync goes
+# green and the ServiceAccount keeps the shared account. That already happened
+# once (tesserix-k8s#196).
+#
+# Do NOT move this to the Application's helm `parameters` either: the parent
+# app-of-apps sets ignoreDifferences on /spec/source/helm/parameters (so Kargo
+# can own image.tag without Argo fighting it), which means ANY parameter change
+# in git is ignored and reported Synced. That was #197, also inert.
+#
+# Overrides global-config-prod.yaml's shared app-secrets-marketplace-prod for
+# two reasons:
+#
+# 1. It was broken here. That GSA's workloadIdentityUser binding lists 42
+#    members, none from the `tesserix` namespace, so this KSA was annotated to
+#    impersonate an account that did not trust it back. Every call 403'd with
+#    "Permission 'iam.serviceAccounts.getAccessToken' denied", and the Kora
+#    overview read "AI keys configured: 0" under a hint saying "should be 2"
+#    while both keys existed and kora-api was serving.
+#
+# 2. That shared GSA holds PROJECT-LEVEL secretmanager.admin — admin over every
+#    secret in tesseracthub-480811, mark8ly's and homechef's included — for a
+#    feature that reads two secrets' version metadata.
+#
+# kora-key-health-prod holds secretmanager.viewer on exactly
+# prod-kora-gemini-api-key and prod-kora-openai-api-key. viewer, NOT
+# secretAccessor: lib/secrets/key-health.ts calls listSecretVersions and never
+# accessSecretVersion, so the portal cannot read a key VALUE at all. Key
+# rotation (the 2026-08-05 spec) would need secretmanager.secretVersionAdder
+# added deliberately here — not a revert to the admin account.
+#
+# Not yet in Terraform; the app-secrets-* accounts live in tesserix-infra.
 gcp:
+  workloadIdentity:
+    gcpServiceAccount: "kora-key-health-prod@tesseracthub-480811.iam.gserviceaccount.com"
   secretManager:
     secretPrefix: "prod"
 
