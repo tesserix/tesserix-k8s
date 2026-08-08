@@ -5807,3 +5807,54 @@ END $$;
 -- deduction, mirroring penalty_deductions. HomeChef-1092.
 ALTER TABLE public.weekly_statements
   ADD COLUMN IF NOT EXISTS recovery_deductions numeric DEFAULT 0;
+
+-- ---------------------------------------------------------------------------
+-- Devices an account is signed in on (#1164).
+--
+-- Replaces the single users.fcm_token column, which allowed exactly one
+-- deliverable device per account: signing in on a second phone overwrote the
+-- token and silently stopped every push to the first. Push now fans out across
+-- every non-revoked row here.
+--
+-- An unseen (user_id, device_id) pair is also what triggers the new-device
+-- security email, so the unique index below is load-bearing for both.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.user_devices (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  device_id text NOT NULL,
+  app text NOT NULL,
+  platform text,
+  label text,
+  fcm_token text,
+  app_version text,
+  last_ip text,
+  last_country text,
+  last_city text,
+  first_seen_at timestamptz DEFAULT now(),
+  last_seen_at timestamptz DEFAULT now(),
+  revoked_at timestamptz
+);
+
+-- Arbitrates the concurrent-login race: two devices signing in at once both
+-- upsert, and this index decides which one inserted, so exactly one email goes out.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_devices_user_device
+  ON public.user_devices (user_id, device_id);
+
+-- Push fan-out reads this on every notification.
+CREATE INDEX IF NOT EXISTS ix_user_devices_user_active
+  ON public.user_devices (user_id, last_seen_at DESC)
+  WHERE revoked_at IS NULL AND fcm_token IS NOT NULL AND fcm_token <> '';
+
+-- Reassigning a token to its newest owner looks it up by value alone.
+CREATE INDEX IF NOT EXISTS idx_user_devices_fcm_token
+  ON public.user_devices (fcm_token) WHERE fcm_token IS NOT NULL AND fcm_token <> '';
+
+-- Carry the existing single-column tokens over so nobody loses push on deploy.
+-- Idempotent: the unique index makes a re-run a no-op.
+INSERT INTO public.user_devices (user_id, device_id, app, fcm_token, first_seen_at, last_seen_at)
+SELECT u.id, 'legacy-' || u.id::text, 'customer', u.fcm_token, now(), now()
+FROM public.users u
+WHERE u.fcm_token IS NOT NULL AND u.fcm_token <> ''
+ON CONFLICT (user_id, device_id) DO NOTHING;

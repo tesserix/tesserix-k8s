@@ -10,12 +10,16 @@ podAnnotations:
 
 replicaCount: 2
 
-# Production resource allocation
+# Production resource allocation. A CPU *request* is what makes the KEDA cpu
+# trigger below admissible; there is deliberately no CPU limit, because a
+# throttled pod under a login burst fails readiness and takes itself out of
+# rotation exactly when capacity is scarcest.
 resources:
   limits:
-    memory: 256Mi
+    memory: 512Mi
   requests:
-    memory: 64Mi
+    cpu: 150m
+    memory: 192Mi
 
 # Production environment
 env:
@@ -73,12 +77,16 @@ env:
   # every call through the BFF's HMAC-signing proxy) can authenticate.
   # Points at the auth-bff Service's in-cluster DNS.
   BFF_SESSION_URL: "http://homechef-auth-bff.homechef.svc.cluster.local:8080/auth/session"
+  # Client connections to PgBouncer, which multiplexes them onto ~25 Postgres
+  # backends. 20 pods × 20 stays well under the pooler's 1000 max_client_conn.
+  DB_MAX_OPEN_CONNS: "20"
+  DB_MAX_IDLE_CONNS: "5"
   # Public WebSocket origin the mobile app dials directly for real-time chat.
   # Matches the storefront-otto WS route on the fe3dr.com VirtualService.
   OTTO_WS_PUBLIC_BASE: "wss://fe3dr.com"
 
-# KEDA drives autoscaling (request-rate + memory). HPA stays off: the platform
-# runs memory-only resources with no CPU requests, so a CPU-target HPA cannot work.
+# KEDA drives autoscaling. HPA stays off — two controllers scaling one
+# Deployment fight each other.
 autoscaling:
   enabled: false
 # Production GCP configuration
@@ -94,7 +102,20 @@ gcp:
 keda:
   enabled: true
   minReplicaCount: 2
-  maxReplicaCount: 10
+  maxReplicaCount: 20
+  # Memory alone scaled far too late: Go holds a flat heap while CPU saturates,
+  # so a login/order burst queued on a pinned pod instead of adding one. The
+  # prometheus request-rate trigger stays out (#906) — monitoring is scaled to
+  # zero and a Degraded ScaledObject fails Kargo's health gate.
+  triggers:
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "70"
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "80"
 
 # Email configuration (SendGrid primary, Resend fallback).
 # From-address lives on tesserix.app — the one domain verified with both
@@ -114,9 +135,12 @@ gcs:
   publicBucket: "homechef-prod-assets-in"
   privateBucket: "homechef-prod-docs-in"
 
-# Production database
+# Production database — through the PgBouncer pooler, not the primary directly.
+# Connecting direct meant maxReplicaCount pods × DB_MAX_OPEN_CONNS could exceed
+# the cluster's max_connections (300) and start refusing connections outright.
+# The API forces pgx's exec query mode so transaction pooling is safe.
 database:
-  host: "homechef-postgres-rw.homechef.svc.cluster.local"
+  host: "homechef-postgres-pooler-rw.homechef.svc.cluster.local"
   port: "5432"
   user: "homechef"
   name: "homechef_db"
