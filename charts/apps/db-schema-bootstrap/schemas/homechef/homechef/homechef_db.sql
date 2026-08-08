@@ -5605,6 +5605,11 @@ CREATE INDEX IF NOT EXISTS ix_chef_loyalty_txns_chef
 ALTER TABLE public.weekly_statements
   ADD COLUMN IF NOT EXISTS bonus_additions numeric DEFAULT 0;
 
+-- Debt collected off this settlement — the statement's explanation for a
+-- transfer smaller than the week's earnings (Home-Chef-App#1092).
+ALTER TABLE public.weekly_statements
+  ADD COLUMN IF NOT EXISTS recovery_deductions numeric DEFAULT 0;
+
 -- chef_expenses: a chef's self-declared business expenses (gas, ingredients,
 -- utensils …). Feeds vendor analytics and the annual FY statement only —
 -- settlement math never reads this table.
