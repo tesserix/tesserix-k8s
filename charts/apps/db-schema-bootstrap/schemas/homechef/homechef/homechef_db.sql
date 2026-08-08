@@ -5802,3 +5802,8 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
+
+-- Statement line for a collected chef recovery: net_payout is AFTER this
+-- deduction, mirroring penalty_deductions. HomeChef-1092.
+ALTER TABLE public.weekly_statements
+  ADD COLUMN IF NOT EXISTS recovery_deductions numeric DEFAULT 0;
