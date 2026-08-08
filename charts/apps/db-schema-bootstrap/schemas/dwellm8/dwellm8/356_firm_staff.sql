@@ -317,12 +317,18 @@ CREATE TABLE IF NOT EXISTS staff_shifts (
     ends_at     time NOT NULL,
 
     created_at  timestamptz NOT NULL DEFAULT now(),
+    -- A rota is edited as a week: dropping a shift retires it rather than
+    -- deleting it, because nothing in this schema is deleted.
+    retired_at  timestamptz,
 
     -- A shift ending before it starts is a typo. Overnight cover is two rows,
     -- one on each day, which is also how it is paid.
-    CONSTRAINT staff_shifts_window CHECK (ends_at > starts_at),
-    CONSTRAINT staff_shifts_no_duplicate UNIQUE (staff_id, weekday, starts_at)
+    CONSTRAINT staff_shifts_window CHECK (ends_at > starts_at)
 );
+
+-- Partial, so a shift dropped in March can be worked again in April.
+CREATE UNIQUE INDEX IF NOT EXISTS staff_shifts_no_duplicate
+    ON staff_shifts (staff_id, weekday, starts_at) WHERE retired_at IS NULL;
 
 COMMENT ON TABLE staff_shifts IS
     '#353. A weekly working window, so a viewing is not offered for somebody who is off. Overnight cover is two rows.';
@@ -342,11 +348,10 @@ DROP POLICY IF EXISTS staff_shifts_resident_denied ON staff_shifts;
 CREATE POLICY staff_shifts_resident_denied ON staff_shifts AS RESTRICTIVE
     USING (NOT is_resident_session()) WITH CHECK (NOT is_resident_session());
 
--- A rota is edited, so a dropped shift is genuinely gone rather than history.
 DROP POLICY IF EXISTS staff_shifts_no_delete ON staff_shifts;
 CREATE POLICY staff_shifts_no_delete ON staff_shifts AS RESTRICTIVE FOR DELETE
-    USING (tenant_id = current_tenant_id() OR sandbox_purge_permitted(tenant_id));
+    USING (sandbox_purge_permitted(tenant_id));
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON staff_shifts TO dwellm8_identity;
+GRANT SELECT, INSERT, UPDATE ON staff_shifts TO dwellm8_identity;
 GRANT SELECT ON staff_shifts TO dwellm8_property, dwellm8_maintenance;
 GRANT DELETE ON staff_shifts TO dwellm8_purge;
