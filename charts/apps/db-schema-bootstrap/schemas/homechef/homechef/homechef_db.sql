@@ -5222,7 +5222,7 @@ CREATE INDEX IF NOT EXISTS ix_trusted_devices_user_active
   ON public.trusted_devices (user_id, last_seen_at DESC) WHERE revoked_at IS NULL;
 
 -- ---------------------------------------------------------------------------
--- Test chef mode: per-kitchen live/test partitioning with dual Razorpay slots.
+-- Test chef mode: per-kitchen live/test partitioning with dual gateway slots.
 --
 -- Lets us exercise the full order → cook → deliver → pay → refund → payout flow
 -- against PRODUCTION infrastructure without moving real money and without any
