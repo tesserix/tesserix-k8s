@@ -5839,7 +5839,7 @@ CREATE TABLE IF NOT EXISTS public.user_devices (
 
 -- Arbitrates the concurrent-login race: two devices signing in at once both
 -- upsert, and this index decides which one inserted, so exactly one email goes out.
-CREATE UNIQUE INDEX IF NOT EXISTS ux_user_devices_user_device
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_devices_user_device
   ON public.user_devices (user_id, device_id);
 
 -- Push fan-out reads this on every notification.
@@ -5848,7 +5848,7 @@ CREATE INDEX IF NOT EXISTS ix_user_devices_user_active
   WHERE revoked_at IS NULL AND fcm_token IS NOT NULL AND fcm_token <> '';
 
 -- Reassigning a token to its newest owner looks it up by value alone.
-CREATE INDEX IF NOT EXISTS ix_user_devices_fcm_token
+CREATE INDEX IF NOT EXISTS idx_user_devices_fcm_token
   ON public.user_devices (fcm_token) WHERE fcm_token IS NOT NULL AND fcm_token <> '';
 
 -- Carry the existing single-column tokens over so nobody loses push on deploy.
