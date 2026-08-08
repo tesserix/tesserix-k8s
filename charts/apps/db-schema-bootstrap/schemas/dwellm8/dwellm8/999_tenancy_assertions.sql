@@ -642,7 +642,14 @@ BEGIN
         'statutory_rules_slabs_shape',
         -- #227: a full account number is unstorable, so the impersonated-owner
         -- attack cannot exfiltrate what was never kept.
-        'payout_accounts_account_is_a_mask'
+        'payout_accounts_account_is_a_mask',
+        -- #356: nothing somebody lives in may be retired, and a firm with a live
+        -- tenancy or a standing mandate may not be closed.
+        'properties_retire_needs_vacancy',
+        'units_retire_needs_vacancy',
+        'beds_retire_needs_vacancy',
+        'organisations_close_needs_an_empty_book',
+        'beds_state_known'
     ]) AS want
     WHERE NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = want)
       AND NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = want AND NOT tgisinternal);
