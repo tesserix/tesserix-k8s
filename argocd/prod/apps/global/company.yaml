@@ -17,9 +17,23 @@ spec:
     path: charts/apps/company
     helm:
       valueFiles:
+      # ORDER IS LOAD-BEARING. Helm applies these left to right, so the LAST
+      # file wins on any key two of them both set. The shared
+      # ../global-config-prod.yaml therefore sits in the MIDDLE, not at the
+      # end: with it last (as it was), values-prod.yaml could never override
+      # anything global-config sets, which defeats the whole point of a
+      # per-app values file and of global-config's own comment inviting you to
+      # "override per namespace".
+      #
+      # Verified safe when this order was introduced: `gcp` is the only key
+      # both files set, Helm deep-merges maps, and a full `helm template`
+      # diff between the two orderings was exactly one line — the
+      # ServiceAccount's gcp-service-account annotation. projectId,
+      # secretManager.enabled and workloadIdentity.enabled all still come
+      # from global-config.
       - values.yaml
-      - values-prod.yaml
       - ../global-config-prod.yaml
+      - values-prod.yaml
       parameters:
       # Per-commit SHA tag rather than `latest`. The GAR remote-repository
       # mirror caches the digest behind `latest` aggressively; pinning the

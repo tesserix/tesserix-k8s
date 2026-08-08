@@ -328,8 +328,8 @@ CREATE TABLE public.catering_requests (
     deleted_at timestamp with time zone,
     deposit_amount numeric DEFAULT 0,
     deposit_status character varying(12) DEFAULT 'none'::character varying,
-    razorpay_order_id text,
-    razorpay_payment_id text,
+    gateway_order_id text,
+    gateway_payment_id text,
     deposit_paid_at timestamp with time zone,
     completed_at timestamp with time zone,
     cancelled_at timestamp with time zone,
@@ -479,11 +479,6 @@ CREATE TABLE public.chef_profiles (
     is_featured boolean DEFAULT false,
     featured_until timestamp with time zone,
     stripe_account_id text,
-    razorpay_account_id text,
-    razorpay_product_id text DEFAULT ''::text,
-    razorpay_settlement_status text DEFAULT ''::text,
-    razorpay_settlement_requirements text DEFAULT ''::text,
-    razorpay_stakeholder_created boolean DEFAULT false,
     payout_auto_release character varying(8) DEFAULT ''::character varying,
     payout_auto_disburse character varying(8) DEFAULT ''::character varying,
     cashfree_vendor_id text DEFAULT ''::text,
@@ -495,7 +490,7 @@ CREATE TABLE public.chef_profiles (
     upi_id text DEFAULT ''::text,
     created_at timestamp with time zone,
     updated_at timestamp with time zone,
-    payment_provider character varying(20) DEFAULT 'razorpay'::character varying,
+    payment_provider character varying(20) DEFAULT 'cashfree'::character varying,
     payout_country character varying(2) DEFAULT 'IN'::character varying,
     stripe_charges_enabled boolean DEFAULT false,
     stripe_payouts_enabled boolean DEFAULT false,
@@ -535,8 +530,8 @@ CREATE TABLE public.chef_promotions (
     duration bigint NOT NULL,
     starts_at timestamp with time zone NOT NULL,
     expires_at timestamp with time zone NOT NULL,
-    razorpay_order_id text,
-    razorpay_payment_id text,
+    gateway_order_id text,
+    gateway_payment_id text,
     payment_method text,
     created_at timestamp with time zone,
     updated_at timestamp with time zone
@@ -880,10 +875,9 @@ CREATE TABLE public.delivery_partners (
     referral_code text,
     referred_by_id uuid,
     stripe_account_id text,
-    razorpay_account_id text,
     created_at timestamp with time zone,
     updated_at timestamp with time zone,
-    payment_provider character varying(20) DEFAULT 'razorpay'::character varying,
+    payment_provider character varying(20) DEFAULT 'cashfree'::character varying,
     payout_country character varying(2) DEFAULT 'IN'::character varying,
     stripe_charges_enabled boolean DEFAULT false,
     stripe_payouts_enabled boolean DEFAULT false,
@@ -1102,8 +1096,8 @@ CREATE TABLE public.group_order_participants (
     display_name text,
     share_amount numeric DEFAULT 0,
     payment_status character varying(12) DEFAULT 'pending'::character varying,
-    razorpay_order_id text,
-    razorpay_payment_id text,
+    gateway_order_id text,
+    gateway_payment_id text,
     refund_txn_id uuid,
     joined_at timestamp with time zone,
     updated_at timestamp with time zone,
@@ -1247,7 +1241,7 @@ CREATE TABLE public.meal_plans (
     total numeric NOT NULL,
     currency character varying(3) DEFAULT 'INR'::character varying,
     escrow_payment_id text,
-    razorpay_order_id text,
+    gateway_order_id text,
     chef_respond_by timestamp with time zone,
     customer_approve_by timestamp with time zone,
     confirmed_at timestamp with time zone,
@@ -1338,7 +1332,7 @@ CREATE TABLE public.meal_subscriptions (
     credit_balance numeric DEFAULT 0,
     trial_id uuid,
     default_address_id uuid,
-    payment_gateway character varying(20) DEFAULT 'razorpay'::character varying,
+    payment_gateway character varying(20) DEFAULT 'cashfree'::character varying,
     gateway_sub_id text,
     paused_at timestamp with time zone,
     cancelled_at timestamp with time zone,
@@ -1360,7 +1354,7 @@ CREATE TABLE public.meal_trials (
     price numeric DEFAULT 0,
     duration_days bigint DEFAULT 0,
     status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
-    razorpay_order_id text,
+    gateway_order_id text,
     starts_at timestamp with time zone,
     ends_at timestamp with time zone,
     created_at timestamp with time zone,
@@ -1654,8 +1648,8 @@ CREATE TABLE public.orders (
     cancel_reason text,
     special_instructions text,
     stripe_payment_intent_id text,
-    razorpay_order_id text,
-    razorpay_payment_id text,
+    gateway_order_id text,
+    gateway_payment_id text,
     refund_id text,
     refunded_at timestamp with time zone,
     refund_amount numeric DEFAULT 0,
@@ -1664,7 +1658,7 @@ CREATE TABLE public.orders (
     created_at timestamp with time zone,
     updated_at timestamp with time zone,
     deleted_at timestamp with time zone,
-    payment_provider character varying(20) DEFAULT 'razorpay'::character varying,
+    payment_provider character varying(20) DEFAULT 'cashfree'::character varying,
     tax_rate numeric DEFAULT 0,
     tax_name character varying(40) DEFAULT ''::character varying,
     currency character varying(3) DEFAULT 'INR'::character varying,
@@ -2217,8 +2211,8 @@ CREATE TABLE public.tips (
     chef_user_id uuid,
     rider_user_id uuid,
     status character varying(12) DEFAULT 'pending'::character varying,
-    razorpay_order_id text,
-    razorpay_payment_id text,
+    gateway_order_id text,
+    gateway_payment_id text,
     created_at timestamp with time zone,
     updated_at timestamp with time zone
 );
@@ -3997,10 +3991,10 @@ CREATE UNIQUE INDEX idx_meal_plans_meal_plan_number ON public.meal_plans USING b
 
 
 --
--- Name: idx_meal_plans_razorpay_order_id; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_meal_plans_gateway_order_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_meal_plans_razorpay_order_id ON public.meal_plans USING btree (razorpay_order_id) WHERE (razorpay_order_id <> ''::text);
+CREATE UNIQUE INDEX idx_meal_plans_gateway_order_id ON public.meal_plans USING btree (gateway_order_id) WHERE (gateway_order_id <> ''::text);
 
 
 --
@@ -4319,17 +4313,17 @@ CREATE UNIQUE INDEX idx_orders_order_number ON public.orders USING btree (order_
 
 
 --
--- Name: idx_orders_razorpay_order_id; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_orders_gateway_order_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_orders_razorpay_order_id ON public.orders USING btree (razorpay_order_id) WHERE (razorpay_order_id <> ''::text);
+CREATE UNIQUE INDEX idx_orders_gateway_order_id ON public.orders USING btree (gateway_order_id) WHERE (gateway_order_id <> ''::text);
 
 
 --
--- Name: idx_orders_razorpay_payment_id; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_orders_gateway_payment_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_orders_razorpay_payment_id ON public.orders USING btree (razorpay_payment_id) WHERE (razorpay_payment_id <> ''::text);
+CREATE UNIQUE INDEX idx_orders_gateway_payment_id ON public.orders USING btree (gateway_payment_id) WHERE (gateway_payment_id <> ''::text);
 
 
 --
@@ -4781,10 +4775,10 @@ CREATE INDEX idx_tips_order_id ON public.tips USING btree (order_id);
 
 
 --
--- Name: idx_tips_razorpay_order_id; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_tips_gateway_order_id; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_tips_razorpay_order_id ON public.tips USING btree (razorpay_order_id);
+CREATE UNIQUE INDEX idx_tips_gateway_order_id ON public.tips USING btree (gateway_order_id);
 
 
 --
@@ -4988,17 +4982,18 @@ CREATE UNIQUE INDEX idx_winback_one_open ON public.winback_offers USING btree (u
 -- are no-ops once the column exists (IF NOT EXISTS) and are folded back into
 -- the CREATE body on the next pg_dump regeneration.
 --
--- Route settlement onboarding (Home-Chef-App #740/#741): a linked account can
--- receive Route transfers but only pays them out once a settlement bank account
--- is registered and Razorpay activates it. These columns record that state.
-ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_product_id text DEFAULT ''::text;
-ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_settlement_status text DEFAULT ''::text;
-ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_settlement_requirements text DEFAULT ''::text;
-ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS razorpay_stakeholder_created boolean DEFAULT false;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_release character varying(8) DEFAULT ''::character varying;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS payout_auto_disburse character varying(8) DEFAULT ''::character varying;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_vendor_id text DEFAULT ''::text;
 ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_vendor_status text DEFAULT ''::text;
+
+-- The sandbox counterpart of the pair above. Cashfree sandbox and production
+-- vendor IDs are separate namespaces, so a kitchen borrowed for debugging keeps
+-- its sandbox registration apart from the identity real money settles to
+-- (Home-Chef-App #1145).
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_test_vendor_id text DEFAULT ''::text;
+ALTER TABLE public.chef_profiles ADD COLUMN IF NOT EXISTS cashfree_test_vendor_status text DEFAULT ''::text;
+
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS gateway_split_paise integer DEFAULT 0;
 
 -- Per-chef Easy Split rollout switch (Home-Chef-App #1084). Same tri-state shape
@@ -5235,7 +5230,7 @@ CREATE INDEX IF NOT EXISTS ix_trusted_devices_user_active
   ON public.trusted_devices (user_id, last_seen_at DESC) WHERE revoked_at IS NULL;
 
 -- ---------------------------------------------------------------------------
--- Test chef mode: per-kitchen live/test partitioning with dual Razorpay slots.
+-- Test chef mode: per-kitchen live/test partitioning with dual gateway slots.
 --
 -- Lets us exercise the full order → cook → deliver → pay → refund → payout flow
 -- against PRODUCTION infrastructure without moving real money and without any
@@ -5287,6 +5282,10 @@ CREATE TABLE IF NOT EXISTS public.chef_test_sessions (
 CREATE INDEX IF NOT EXISTS ix_chef_test_sessions_chef ON public.chef_test_sessions (chef_id);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_chef_test_sessions_chef_no
   ON public.chef_test_sessions (chef_id, session_no);
+
+-- What live work was in flight when an admin forced this flip through. Empty on
+-- a clean flip, so a non-empty value is the audit trail for a forced one.
+ALTER TABLE public.chef_test_sessions ADD COLUMN IF NOT EXISTS forced_blockers text DEFAULT '';
 
 -- Aggregate counters per (kitchen, mode). chef_profiles keeps the LIVE numbers
 -- so every customer-facing query reads them unchanged and a fake order can never
@@ -5485,22 +5484,21 @@ ALTER TABLE public.meal_plans
 --
 -- Refunds are why this must be stored rather than inferred: a plan captured on
 -- Cashfree refunded through the Razorpay rail fails, and the reverse strands the
--- money. The existing razorpay_order_id column already doubles as the generic
--- gateway order id (orders stamp the Cashfree order id into it), so only the
--- provider is missing.
+-- money. The gateway_order_id column already carries whichever gateway's id
+-- funded the row, so only the provider is missing.
 --
--- Defaults to 'razorpay' so every already-captured row keeps refunding on the
--- rail that actually funded it; new rows are stamped by SelectCheckoutGateway.
+-- Defaults to 'cashfree', the only INR gateway left (#1125); already-captured rows
+-- all carry an explicit provider, so none is reinterpreted by this.
 ALTER TABLE public.meal_plans
-  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'cashfree'::character varying;
 ALTER TABLE public.tips
-  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'cashfree'::character varying;
 ALTER TABLE public.catering_requests
-  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'cashfree'::character varying;
 ALTER TABLE public.chef_promotions
-  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'cashfree'::character varying;
 ALTER TABLE public.group_order_participants
-  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'razorpay'::character varying;
+  ADD COLUMN IF NOT EXISTS payment_provider character varying(20) DEFAULT 'cashfree'::character varying;
 
 --
 -- Refund policy v3: the chef's decision window. A customer cancellation parks each unserved
@@ -5618,6 +5616,11 @@ CREATE INDEX IF NOT EXISTS ix_chef_loyalty_txns_chef
 -- penalty_deductions on the debit side.
 ALTER TABLE public.weekly_statements
   ADD COLUMN IF NOT EXISTS bonus_additions numeric DEFAULT 0;
+
+-- Debt collected off this settlement — the statement's explanation for a
+-- transfer smaller than the week's earnings (Home-Chef-App#1092).
+ALTER TABLE public.weekly_statements
+  ADD COLUMN IF NOT EXISTS recovery_deductions numeric DEFAULT 0;
 
 -- chef_expenses: a chef's self-declared business expenses (gas, ingredients,
 -- utensils …). Feeds vendor analytics and the annual FY statement only —
@@ -5740,6 +5743,65 @@ CREATE INDEX IF NOT EXISTS idx_bakery_options_kind
 -- from this, so it must survive any later edit to the menu item.
 ALTER TABLE public.order_items
   ADD COLUMN IF NOT EXISTS bakery_details jsonb;
+
+-- Razorpay Route linked accounts, retired (Home-Chef-App #1120, epic #1086).
+-- #1105 deleted the Route transfer layer and route_registration.go with it; no
+-- Go code has referenced these since. All six were empty in production when
+-- dropped — no linked-account history is lost. Payout destination now lives in
+-- cashfree_vendor_id / cashfree_vendor_status.
+ALTER TABLE public.chef_profiles DROP COLUMN IF EXISTS razorpay_account_id;
+ALTER TABLE public.chef_profiles DROP COLUMN IF EXISTS razorpay_product_id;
+ALTER TABLE public.chef_profiles DROP COLUMN IF EXISTS razorpay_settlement_status;
+ALTER TABLE public.chef_profiles DROP COLUMN IF EXISTS razorpay_settlement_requirements;
+ALTER TABLE public.chef_profiles DROP COLUMN IF EXISTS razorpay_stakeholder_created;
+ALTER TABLE public.delivery_partners DROP COLUMN IF EXISTS razorpay_account_id;
+
+-- razorpay_order_id/razorpay_payment_id renamed to gateway_* (Home-Chef-App #1118,
+-- epic #1086). The name stopped being true at #933: orders stamp the CASHFREE order
+-- id into it. The column means "the gateway's id for this charge"; payment_provider
+-- says which gateway. meal_subscription_invoices and subscription_invoices already
+-- used gateway_*, so this converges the naming rather than inventing it.
+--
+-- Guarded on information_schema because the bootstrap replays this file every 30
+-- minutes: a bare RENAME COLUMN would error on the second pass. meal_plans and
+-- meal_trials have no payment_id column, and the guard skips them for free.
+DO $$
+DECLARE
+  tbl text;
+  suffix text;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY['catering_requests', 'chef_promotions', 'group_order_participants',
+                             'meal_plans', 'meal_trials', 'orders', 'tips'] LOOP
+    FOREACH suffix IN ARRAY ARRAY['order_id', 'payment_id'] LOOP
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = tbl
+                    AND column_name = 'razorpay_' || suffix)
+         AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                          WHERE table_schema = 'public' AND table_name = tbl
+                            AND column_name = 'gateway_' || suffix) THEN
+        EXECUTE format('ALTER TABLE public.%I RENAME COLUMN %I TO %I',
+                       tbl, 'razorpay_' || suffix, 'gateway_' || suffix);
+      END IF;
+    END LOOP;
+  END LOOP;
+END $$;
+
+-- An index does not follow its column's name, so these would keep claiming a rail
+-- that no longer funds anything. Renaming preserves the unique partial predicates;
+-- dropping and recreating would drop the uniqueness guarantee mid-replay.
+DO $$
+DECLARE
+  idx text;
+BEGIN
+  FOREACH idx IN ARRAY ARRAY['idx_orders_razorpay_order_id', 'idx_orders_razorpay_payment_id',
+                             'idx_meal_plans_razorpay_order_id', 'idx_tips_razorpay_order_id'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = idx AND relkind = 'i')
+       AND NOT EXISTS (SELECT 1 FROM pg_class
+                        WHERE relname = replace(idx, 'razorpay', 'gateway') AND relkind = 'i') THEN
+      EXECUTE format('ALTER INDEX public.%I RENAME TO %I', idx, replace(idx, 'razorpay', 'gateway'));
+    END IF;
+  END LOOP;
+END $$;
 
 -- Statement line for a collected chef recovery: net_payout is AFTER this
 -- deduction, mirroring penalty_deductions. HomeChef-1092.
