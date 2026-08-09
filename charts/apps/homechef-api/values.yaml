@@ -324,6 +324,18 @@ database:
 
 # GCP Secret Manager configuration
 # When enabled, secrets are fetched from GCP Secret Manager via Workload Identity
+# Sign in with Apple token revocation on account deletion (App Review 5.1.1(v)).
+# Off by default: turning it on makes the ExternalSecret demand two GCP secrets
+# (<prefix>-homechef-apple-key-id and
+# <prefix>-homechef-apple-signin-private-key-b64), and a missing remoteRef fails
+# the entire ExternalSecret — taking every other API secret with it. Create the
+# secrets first, then flip this in values-prod.yaml.
+# The non-secret half (APPLE_TEAM_ID, APPLE_SERVICES_CLIENT_ID[_VENDOR]) is set
+# unconditionally under env: in values-prod.yaml; until this flag is on, the API
+# logs what is missing and revocation no-ops.
+appleSignIn:
+  revocationEnabled: false
+
 gcp:
   projectId: ""  # Inherited from global-config.yaml if empty
   namespace: "homechef"  # Override if different from release namespace

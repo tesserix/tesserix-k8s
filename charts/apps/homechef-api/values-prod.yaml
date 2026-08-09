@@ -25,6 +25,29 @@ resources:
 env:
   GIN_MODE: "release"
   LOG_LEVEL: "warn"
+  # ---------------------------------------------------------------------------
+  # Sign in with Apple — token revocation on account deletion (App Review 5.1.1(v))
+  # ---------------------------------------------------------------------------
+  # Deleting the Identity Platform user is not enough: Apple keeps its own grant,
+  # so the app stays listed under Settings > Apple ID > Sign in with Apple. A
+  # reviewer who deletes the test account and looks there will see it, and that
+  # is a rejection.
+  #
+  # These three are NOT secret — a team id and two bundle ids, all of which ship
+  # inside the shipped binaries anyway. The actual secret (the .p8) plus its key
+  # id arrive via the ExternalSecret, gated on appleSignIn.revocationEnabled.
+  #
+  # Two apps, two client ids: a native authorization code is bound to the App ID
+  # that issued it, so Apple's /auth/revoke rejects a Customer-app code presented
+  # with the Vendor client_id and vice versa. The API picks per request from the
+  # user's role (services/apple_signin.go), never from a client-supplied header.
+  #
+  # Safe to set before the key exists: config.warnIfAppleSignInIncomplete logs
+  # exactly what is missing and revocation silently no-ops. It never fails
+  # account deletion.
+  APPLE_TEAM_ID: "2CRHRRYBPL"
+  APPLE_SERVICES_CLIENT_ID: "com.tesserix.homechef.customer"
+  APPLE_SERVICES_CLIENT_ID_VENDOR: "com.tesserix.homechef.vendor"
   # The Go API reads ENVIRONMENT (config/config.go) for its log/trace "env"
   # label and as the Sentry environment fallback. Base values.yaml never sets
   # it, so prod was defaulting to "development" — tagging all prod logs, Cloud

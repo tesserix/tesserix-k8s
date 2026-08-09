@@ -170,6 +170,29 @@ would lock every super admin out of the console.
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: SUPER_ADMIN_EMAILS
       optional: true
+{{- /*
+Sign in with Apple revocation (App Review 5.1.1(v)). The team id and the two
+per-app client ids are plain env in values-prod.yaml; only these two come from
+Secret Manager, and only once appleSignIn.revocationEnabled adds them to the
+ExternalSecret.
+
+`optional: true` for the same reason as above and because the API is built to
+tolerate a partial config: config.warnIfAppleSignInIncomplete logs precisely
+what is absent and revocation degrades to a no-op. Account deletion must never
+fail because Apple credentials are misconfigured.
+*/}}
+- name: APPLE_KEY_ID
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: APPLE_KEY_ID
+      optional: true
+- name: APPLE_SIGNIN_PRIVATE_KEY_B64
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "homechef-api.fullname" . }}-secrets
+      key: APPLE_SIGNIN_PRIVATE_KEY_B64
+      optional: true
 - name: SENDGRID_API_KEY
   valueFrom:
     secretKeyRef:
