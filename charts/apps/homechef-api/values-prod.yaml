@@ -112,6 +112,20 @@ env:
 # Deployment fight each other.
 autoscaling:
   enabled: false
+# Sign in with Apple token revocation (App Review 5.1.1(v)). Enabled 2026-08-09:
+# both GCP secrets now exist and were verified before flipping —
+#   prod-homechef-apple-key-id                 = 3FHUQD8FPV
+#   prod-homechef-apple-signin-private-key-b64 = 257-byte PKCS#8 prime256v1 key
+# (decoded and parsed with openssl; a line-wrapped or truncated payload would
+# otherwise fail silently at request time rather than at boot).
+#
+# NOTE: key 3FHUQD8FPV is configured in the Apple portal with primary App ID
+# com.tesserix.homechef.customer ONLY. Until com.tesserix.homechef.vendor is
+# grouped under that primary, Apple rejects vendor client secrets and vendor
+# revocation stays a no-op — customer revocation works from now on.
+appleSignIn:
+  revocationEnabled: true
+
 # Production GCP configuration
 gcp:
   projectId: "tesseracthub-480811"
