@@ -130,6 +130,19 @@ podDisruptionBudget:
   enabled: true
   maxUnavailable: 1
 
+# The API runs GORM AutoMigrate against the whole schema before it binds :8080,
+# which now costs ~35s on its own. Without this, liveness (15s + 3x10s) killed
+# the container mid-migration and every restart re-ran the same slow boot, so
+# main-d38f577 crashlooped and no new image could roll out at all.
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /health/live
+    port: http
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30
+
 livenessProbe:
   enabled: true
   httpGet:

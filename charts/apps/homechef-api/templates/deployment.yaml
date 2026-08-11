@@ -68,6 +68,17 @@ spec:
               have broken auth, payments, chat and DB access on cutover.
             */}}
             {{- include "homechef-api.containerEnv" . | nindent 12 }}
+          {{- if .Values.startupProbe }}
+          {{- if .Values.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: {{ .Values.startupProbe.httpGet.path | default "/health" }}
+              port: http
+            periodSeconds: {{ .Values.startupProbe.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.startupProbe.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold | default 30 }}
+          {{- end }}
+          {{- end }}
           {{- if .Values.livenessProbe }}
           {{- if .Values.livenessProbe.enabled }}
           livenessProbe:
