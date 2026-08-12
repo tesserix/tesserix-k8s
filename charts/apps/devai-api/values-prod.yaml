@@ -66,7 +66,10 @@ keda:
   # rolls. (Re-enable scaling only once SSE/events are Redis pub/sub backed.)
   maxReplicaCount: 1
   prometheus:
-    enabled: true
+    # OFF while the monitoring stack is parked at replicaCount 0 (2026-08-01).
+    # With no Prometheus to query the trigger only holds the ScaledObject
+    # Degraded; re-enable together with prometheus-server.
+    enabled: false
     serverAddress: "http://prometheus-server.monitoring.svc.cluster.local:80"
     requestRateQuery: 'sum(rate(istio_requests_total{destination_canonical_service="devai-api",reporter="destination"}[2m]))'
     requestRateThreshold: "10"
