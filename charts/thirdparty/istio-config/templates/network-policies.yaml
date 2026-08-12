@@ -1743,6 +1743,21 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ $.Values.infrastructureNamespaces.typesense }}
+    # Allow egress to the shared vector store (Qdrant REST + gRPC). Ingress is
+    # still gated by ai-database's own allow-list, so this only removes the
+    # silent egress-side failure. Guarded like photon above — an unset value
+    # renders a null selector that pins every allow-<ns>-egress OutOfSync.
+    {{- if $.Values.vectorStoreNamespace }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.vectorStoreNamespace }}
+      ports:
+        - protocol: TCP
+          port: 6333
+        - protocol: TCP
+          port: 6334
+    {{- end }}
     # Allow internal namespace traffic
     - to:
         - namespaceSelector:

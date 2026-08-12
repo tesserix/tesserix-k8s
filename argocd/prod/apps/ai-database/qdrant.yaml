@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: qdrant
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: ai-database
+    app.kubernetes.io/component: vector-database
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: ai-database
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/thirdparty/qdrant
+    helm:
+      releaseName: qdrant
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-database
+  syncPolicy:
+    automated:
+      # prune is deliberately omitted, not set false: `false` is the zero
+      # value and gets dropped on write, pinning the app OutOfSync forever.
+      # A StatefulSet's PVCs survive a prune anyway (Retain reclaim policy).
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

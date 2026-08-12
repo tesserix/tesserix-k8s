@@ -1,0 +1,118 @@
+{{- if .Values.backup.enabled }}
+# Qdrant snapshots are per-node, and there is no cluster-wide snapshot API, so
+# this walks every pod over headless DNS. A restore therefore needs the set of
+# node snapshots from one run, not a single file — see docs/qdrant-vector-db.md.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: qdrant-snapshot-backup
+  labels:
+    app.kubernetes.io/name: qdrant-backup
+    app.kubernetes.io/part-of: ai-database
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: {{ .Values.backup.cronJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.backup.cronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.backup.cronJob.failedJobsHistoryLimit }}
+  startingDeadlineSeconds: {{ .Values.backup.cronJob.startingDeadlineSeconds }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.backup.cronJob.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.backup.cronJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: qdrant-backup
+        spec:
+          serviceAccountName: {{ .Values.backup.serviceAccount.name }}
+          restartPolicy: {{ .Values.backup.cronJob.restartPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: backup
+              image: "{{ .Values.backup.image.repository }}:{{ .Values.backup.image.tag }}"
+              imagePullPolicy: {{ .Values.backup.image.pullPolicy }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: QDRANT_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.apiKeySecret.name }}
+                      key: {{ .Values.apiKeySecret.key }}
+                # gcloud writes credentials and logs under both.
+                - name: HOME
+                  value: /tmp
+                - name: CLOUDSDK_CONFIG
+                  value: /tmp/gcloud
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  # Date comparisons below are byte-wise on ISO strings.
+                  export LC_ALL=C
+
+                  NS="{{ .Release.Namespace }}"
+                  REPLICAS={{ .Values.backup.replicaCount }}
+                  DEST="gs://{{ .Values.backup.gcs.bucket }}/{{ .Values.backup.gcs.prefix }}"
+                  RUN_DATE=$(date -u +%Y-%m-%d)
+                  RUN_TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+
+                  echo "Qdrant snapshot backup — ${RUN_TS}, ${REPLICAS} node(s) -> ${DEST}"
+
+                  for i in $(seq 0 $((REPLICAS - 1))); do
+                    HOST="qdrant-${i}.qdrant-headless.${NS}.svc.cluster.local:6333"
+                    echo "--- node ${i} (${HOST})"
+
+                    # wait=true is the default but stated explicitly: an async
+                    # create would return a name that is not on disk yet and
+                    # the download below would 404.
+                    NAME=$(curl -sSf -X POST "http://${HOST}/snapshots?wait=true" \
+                      -H "api-key: ${QDRANT_API_KEY}" \
+                      | python3 -c 'import sys, json; print(json.load(sys.stdin)["result"]["name"])')
+                    echo "created ${NAME}"
+
+                    # Stream to GCS rather than staging on the job's disk —
+                    # a full-storage snapshot is the size of the data volume.
+                    curl -sSf "http://${HOST}/snapshots/${NAME}" -H "api-key: ${QDRANT_API_KEY}" \
+                      | gcloud storage cp - "${DEST}/${RUN_DATE}/${RUN_TS}/node-${i}/${NAME}"
+                    echo "uploaded node-${i}/${NAME}"
+
+                    # The snapshot volume is finite; the copy in GCS is the
+                    # retained one.
+                    curl -sSf -X DELETE "http://${HOST}/snapshots/${NAME}" \
+                      -H "api-key: ${QDRANT_API_KEY}" >/dev/null
+                    echo "removed local ${NAME}"
+                  done
+
+                  CUTOFF=$(date -u -d "-{{ .Values.backup.retentionDays }} days" +%Y-%m-%d)
+                  echo "--- pruning runs before ${CUTOFF}"
+                  for DAY_PATH in $(gcloud storage ls "${DEST}/" || true); do
+                    DAY=$(basename "${DAY_PATH}")
+                    # Only ever delete something shaped like a run date — a
+                    # stray object here must not turn pruning into rm -r.
+                    if [[ ! "${DAY}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                      continue
+                    fi
+                    if [[ "${DAY}" < "${CUTOFF}" ]]; then
+                      echo "pruning ${DAY_PATH}"
+                      gcloud storage rm -r "${DAY_PATH}"
+                    fi
+                  done
+
+                  echo "backup complete"
+              resources:
+                {{- toYaml .Values.backup.resources | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
+{{- end }}

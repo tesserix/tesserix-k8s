@@ -1,0 +1,25 @@
+# L7 allow-list for the namespace. Only the source namespaces below may reach
+# Qdrant; NetworkPolicy enforces the same set at L3.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-known-sources
+  namespace: {{ .Values.namespace }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+{{- range .Values.allowedSources }}
+              - {{ . | quote }}
+{{- end }}
+---
+# Zero-trust default: anything not matched by an ALLOW rule is denied.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: {{ .Values.namespace }}
+spec:
+  {}
