@@ -16,14 +16,44 @@ keda:
   enabled: true
   pollingInterval: 15
   cooldownPeriod: 300
-  minReplicaCount: 1
-  maxReplicaCount: 10
+  # Floor of 2, not 1: a single pod means any restart, node drain or
+  # rollout is a total auth outage, and a cold start in front of an OTP
+  # submission is a failed login rather than a slow one. Everything above
+  # 2 is decided by the triggers below, not pinned here.
+  minReplicaCount: 2
+  maxReplicaCount: 40
+  # Scale-down is deliberately slower than scale-up (cooldownPeriod
+  # above) so a burst of logins does not thrash replicas.
+  #
+  # Prometheus is intentionally OFF. There is no Prometheus running in
+  # this cluster — the prometheus-server Service in the monitoring
+  # namespace has no endpoints — so a prometheus trigger resolves to
+  # TriggerError and the HPA stops computing replicas altogether. That
+  # is the live failure on mark8ly-marketplace-api-admin. Turn this on
+  # only once monitoring is actually deployed.
+  prometheus:
+    enabled: false
+  # CPU is the real load signal for this service: token verification,
+  # HMAC and TLS all burn CPU in proportion to logins, while memory sits
+  # flat near 11% and never crosses an 80% memory target. 60% leaves
+  # burst headroom on a latency-sensitive path.
+  cpu:
+    enabled: true
+    threshold: "60"
+  # Kept as a secondary trigger so a memory leak still forces scale-out.
+  memory:
+    enabled: true
+    threshold: "80"
 resources:
   requests:
-    # Required by the KEDA cpu-utilization trigger.
-    memory: 128Mi
-  limits:
+    # Required by the KEDA cpu trigger — the vscaledobject admission
+    # webhook rejects a cpu trigger when this is absent.
+    cpu: 200m
     memory: 256Mi
+  limits:
+    # Memory only. No CPU limit, deliberately: CFS throttling on an auth
+    # hot path adds tail latency, and the HPA already caps total draw.
+    memory: 512Mi
 pdb:
   enabled: true
   maxUnavailable: 1
@@ -61,6 +91,22 @@ marketplaceApiUrl: "http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.loc
 marketplaceInternalAuthSecret:
   secretName: mark8ly-marketplace-api-internal-auth
   secretKey: INTERNAL_AUTH_SECRET
+
+# platform-api's /internal/notifications/send — carries the sign-in code
+# and the new-device alert. Empty URL disables both.
+platformApiUrl: "http://mark8ly-platform-api.mark8ly.svc.cluster.local:8086"
+platformApiInternalAuthSecret:
+  secretName: mark8ly-platform-api-internal-auth
+  secretKey: INTERNAL_AUTH_SECRET
+notification:
+  supportEmail: "help@mark8ly.com"
+  securityUrl: "https://admin.mark8ly.com/settings/security"
+# Pepper for the email-OTP challenge on unrecognised devices. Mounted
+# optional so a missing Secret degrades to "alert but don't challenge"
+# rather than taking the whole auth path down.
+emailOtp:
+  secretName: mark8ly-email-otp
+  secretKey: EMAIL_OTP_PEPPER
 
 # Secret resource names — overridden in values-uat.yaml so the UAT
 # overlay can swap to `mark8ly-uat-*` Secrets without retemplating.

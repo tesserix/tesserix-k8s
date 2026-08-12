@@ -39,17 +39,16 @@ keda:
   cooldownPeriod: 300
   minReplicaCount: 1
   maxReplicaCount: 1
-  # Istio request-rate trigger replaces the CPU fallback. The chart's
-  # default else-branch would emit a `type: cpu` trigger which the
-  # KEDA vscaledobject admission webhook rejects whenever the
-  # container omits `resources.requests.cpu` — and platform policy is
-  # memory-only (no CPU requests). Min=max=1 means this trigger never
-  # actually scales anything; it's here to give the SO a valid spec.
+  # Min=max=1, so the trigger never scales anything — it exists only to
+  # give the ScaledObject a valid spec.
+  #
+  # It must still be a trigger that RESOLVES. The previous prometheus
+  # trigger pointed at a Prometheus that is not running (the
+  # prometheus-server Service has no endpoints), leaving this object in
+  # TriggerError and the KEDA metrics apiserver logging a failure every
+  # 15s. Memory always resolves and costs nothing here.
   prometheus:
-    enabled: true
-    serverAddress: "http://prometheus-server.monitoring.svc.cluster.local:80"
-    threshold: "0.01"
-    query: 'sum(rate(istio_requests_total{destination_service_name="mark8ly-marketplace-api-admin",reporter="source"}[2m]))'
+    enabled: false
 resources:
   requests:
     memory: 128Mi
