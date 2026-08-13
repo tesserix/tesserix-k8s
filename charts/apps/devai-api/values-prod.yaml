@@ -139,14 +139,18 @@ k8sRuntime:
 
 # Memory adapter — pgvector is the production default (reuses the
 # same Postgres + pgvector cluster the rest of DevAI already uses).
-# Swap with one env var: noop | redis | pgvector | mem0 | zep | hondo.
+# Swap with one env var: noop | redis | pgvector | qdrant | mem0 | zep | hondo.
 # Embeddings ride the existing DEVAI_OPENAI_API_KEY; set
 # embeddingProvider: "none" to force keyword-only recall.
+# qdrant is wired and ready (in-cluster store, key from GCP SM) but not
+# selected: switching backends does not migrate what pgvector already holds.
 memory:
   provider: "pgvector"
   embeddingProvider: "auto"
   embeddingModel: "text-embedding-3-small"
   embeddingDimensions: 1536
+  qdrantUrl: "http://qdrant.ai-database.svc.cluster.local:6333"
+  qdrantCollection: "devai_memories"
 
 # Settings capability — per-user/per-tenant connectors + secrets.
 # secretsProvider stays "noop" until the devai SA
