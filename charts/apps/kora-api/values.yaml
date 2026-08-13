@@ -210,15 +210,21 @@ externalSecret:
     apple_key_id: prod-kora-apple-key-id
     apple_private_key: prod-kora-apple-private-key
 
-# ArgoCD PreSync migrate Job — runs Kora's migrate binary (same image,
-# command override) before the Knative Service rolls, so the API never
-# starts against a schema older than the code expects.
+# Schema migration. Runs as the Deployment's `migrate` initContainer (same
+# image, command override), so the API container cannot start — and the pod
+# cannot become Ready — against a schema older than the code expects.
 #
-# TODO(ci): requires the controller's planned Dockerfile change shipping
-# /usr/local/bin/migrate (Kora's cmd/migrate as a separate binary) in the
-# same image as the API. Until that lands, this Job will exec-fail with
-# "no such file or directory" — gate stays on so the failure is loud and
-# visible in ArgoCD rather than silently skipped.
+# This was a separate ArgoCD wave -1 Job until kora#118; the wave barrier was
+# timing-dependent and was observed letting the new pod win. See the long
+# comment on the initContainer in templates/deployment.yaml.
+#
+# Requires the image to ship /usr/local/bin/migrate (Kora's cmd/migrate as a
+# separate binary) alongside the API binary. If it is missing the initContainer
+# exec-fails with "no such file or directory" and the pod never starts — loud
+# and visible, and the OLD pod keeps serving, rather than a silent skip.
+#
+# Setting enabled:false removes the initContainer, which means the API can
+# start against an unmigrated schema. Only do that deliberately.
 migrate:
   enabled: true
   command:

@@ -44,6 +44,60 @@ spec:
       serviceAccountName: {{ include "kora-api.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.migrate.enabled }}
+      initContainers:
+        # Schema migration runs HERE, not as a separate ArgoCD wave -1 Job.
+        #
+        # WHY: as a Job the ordering was timing-dependent and was observed
+        # landing both ways (kora#118). ArgoCD advances past a wave once its
+        # resources report Healthy, and a Job is Healthy when Complete — but
+        # `Replace=true,Force=true` (needed because a Job's spec.template is
+        # immutable, so a chart-version bump would abort the sync) means the
+        # PREVIOUS sync's already-Complete Job can be what health is read
+        # against. Wave -1 then looks satisfied instantly and the Deployment
+        # rolls while the real migration is still starting. On 2026-08-06 the
+        # new pod won by one second.
+        #
+        # That is dangerous asymmetrically: a migration that adds a column the
+        # new code's GORM struct maps (e.g. 000024's users.apple_refresh_token)
+        # makes a new-code pod against an old schema fail EnsureUser, which
+        # ResolveMiddleware runs on every authenticated route — so every
+        # authenticated request 500s until the migration lands. The reverse
+        # (old pod, new schema) is safe for additive migrations.
+        #
+        # As an initContainer the ordering stops being a scheduling policy and
+        # becomes structural: kubelet will not start the api container until
+        # this exits 0, so a pod cannot be Ready before its own migration
+        # completed. A failing migration crash-loops the NEW pod while the old
+        # one keeps serving — the correct failure mode. This also removes the
+        # Job entirely, and with it the immutability workaround.
+        #
+        # No sidecar-blocks-initContainer hazard: this namespace is ambient
+        # (istio.io/dataplane-mode), so there is no sidecar to wait for.
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            {{- toYaml .Values.migrate.command | nindent 12 }}
+          env:
+            # DATABASE_URL is the only env cmd/migrate needs. Deliberately NOT
+            # `optional: true` (unlike the api container below): an unpopulated
+            # Secret must fail the pod loudly rather than let migrate run
+            # against an empty URL and report success.
+            {{- $secretName := printf "%s-secrets" (include "kora-api.fullname" .) }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ index .Values.secretEnv "DATABASE_URL" }}
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- end }}
       containers:
         - name: kora-api
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
