@@ -1,31 +1,35 @@
-# L7 allow-list, layered on top of the NetworkPolicy: identity here, addresses
-# there. A caller needs to pass both.
+# Mesh allow-list, layered on the NetworkPolicy: identity here, addresses
+# there. A caller needs to pass both. Rules are L4 only — this namespace is
+# ambient with no waypoint, so ztunnel enforces them and cannot evaluate an
+# `operation.paths` condition; an ALLOW policy whose only rule is L7 has no
+# valid rule and evaluates as deny-all.
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
 metadata:
-  name: allow-known-principals
+  name: allow-known-sources
   namespace: {{ .Values.namespace }}
 spec:
   action: ALLOW
   rules:
     - from:
         - source:
+            namespaces:
+{{- range .Values.allowedSources }}
+              - {{ . | quote }}
+{{- end }}
+              # Metrics scraping. OpenBao's own token auth guards the rest of
+              # the API on the same port.
+              - monitoring
+              # Raft peers, and the bootstrap and snapshot Jobs.
+              - {{ .Values.namespace | quote }}
+{{- if .Values.allowedPrincipals }}
+    - from:
+        - source:
             principals:
 {{- range .Values.allowedPrincipals }}
               - "cluster.local/ns/{{ . | replace "/" "/sa/" }}"
 {{- end }}
-              # Raft peers, and the bootstrap and snapshot Jobs.
-              - "cluster.local/ns/{{ .Values.namespace }}/sa/openbao"
-              - "cluster.local/ns/{{ .Values.namespace }}/sa/openbao-bootstrap"
-              - "cluster.local/ns/{{ .Values.namespace }}/sa/openbao-snapshot"
-    # Metrics scraping. /v1/sys/metrics is the only unauthenticated path.
-    - from:
-        - source:
-            namespaces:
-              - monitoring
-      to:
-        - operation:
-            paths: ["/v1/sys/metrics"]
+{{- end }}
 ---
 # Zero-trust default: anything not matched by an ALLOW rule above is denied.
 apiVersion: security.istio.io/v1beta1
