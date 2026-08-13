@@ -279,11 +279,23 @@ done
 
 Then commit and let ArgoCD sync. The `security` app-of-apps brings up the
 namespace (wave -5), the bootstrap script ConfigMap (wave -1), and the
-StatefulSet and the bootstrap Job together in wave 0. The Job is a `Sync` hook,
-not `PostSync`: a fresh cluster is uninitialised, so no pod ever passes its
-readiness probe and a PostSync hook would never fire. Its ConfigMap is a plain
-resource — as a hook it would hang in `hookPhase: Running` forever, since
-ArgoCD has no completion signal for a ConfigMap.
+StatefulSet and the bootstrap Job together in wave 0.
+
+Neither the Job nor its ConfigMap is an ArgoCD hook, and both were, which cost
+an afternoon:
+
+- A hook in wave N runs only once wave N's *resources* are healthy. This
+  StatefulSet is healthy only with all three replicas ready, so one preempted
+  replica blocks the bootstrap — and on a fresh cluster nothing is ever ready,
+  because nothing has initialised it. A plain Job in the same wave is applied
+  alongside the StatefulSet with no such gate; the script polls openbao-0 for
+  five minutes, which covers the pods starting.
+- A hook ConfigMap never completes: ArgoCD has no health check for one, so its
+  `hookPhase` stays `Running` and the sync never leaves wave -1.
+
+The Job's name carries a hash of the script. A Job's spec is immutable, so
+re-applying under a fixed name silently does nothing; the hash makes an edited
+script a new Job that actually runs.
 
 ## Day-2
 
