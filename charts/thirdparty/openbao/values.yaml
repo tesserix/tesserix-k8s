@@ -319,6 +319,18 @@ bootstrap:
         path "kv/data/ai-database/*"     { capabilities = ["read"] }
         path "kv/metadata/ai-database/*" { capabilities = ["read", "list"] }
 
+    # The admin console. It is the one identity that writes secrets and mints
+    # per-namespace grants, so it holds the whole KV mount — but its grant-making
+    # is confined to the `app-` prefix, which this Job never reconciles, so the
+    # two never fight over the same policy or role.
+    - name: secret-service
+      hcl: |
+        path "kv/data/*"     { capabilities = ["create", "read", "update", "delete", "list"] }
+        path "kv/metadata/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+        path "sys/policies/acl/app-*"   { capabilities = ["create", "read", "update", "delete"] }
+        path "auth/kubernetes/role/app-*" { capabilities = ["create", "read", "update", "delete"] }
+        path "auth/kubernetes/role"       { capabilities = ["list"] }
+
     # Backing the ClusterSecretStore. Confined to `kv/data/platform/*` — shared
     # infrastructure credentials that genuinely belong to no single namespace.
     - name: read-platform
@@ -355,6 +367,12 @@ bootstrap:
       namespaces: ["ai-database"]
       policies: ["read-ai-database"]
       ttl: 1h
+
+    - name: secret-service
+      serviceAccounts: ["secret-service-api"]
+      namespaces: ["secret-service"]
+      policies: ["secret-service"]
+      ttl: 15m
 
     # The one role ESO holds under its own identity, for the ClusterSecretStore.
     - name: read-platform

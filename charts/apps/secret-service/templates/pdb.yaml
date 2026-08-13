@@ -1,0 +1,27 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: secret-service-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "secret-service.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "secret-service.selectorLabels" (dict "component" "secret-service-api" "release" .Release.Name) | nindent 6 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: secret-service-web
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "secret-service.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "secret-service.selectorLabels" (dict "component" "secret-service-web" "release" .Release.Name) | nindent 6 }}
+{{- end }}
