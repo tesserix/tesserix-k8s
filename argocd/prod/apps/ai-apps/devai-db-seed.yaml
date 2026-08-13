@@ -18,6 +18,14 @@ spec:
       values: |
         app: devai
 
+        # devai_db.sql IS the schema's source of truth — devai-api is Python/
+        # asyncpg with no AutoMigrate, so it never evolves the schema and the
+        # file is purely additive (CREATE ... IF NOT EXISTS, ADD COLUMN IF NOT
+        # EXISTS). Without this, a table added to the file after the database
+        # was provisioned never lands: `sandboxes` was missing in prod and
+        # every /sandboxes load returned HTTP 500.
+        applySchemaToExistingDatabases: true
+
         targets:
           # `name` is a k8s-resource label (ConfigMap/volume names, schema dir,
           # secret mount) and MUST be RFC-1123 (no underscores). The actual
