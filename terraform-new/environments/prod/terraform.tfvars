@@ -284,6 +284,12 @@ kms_keys = [
       {
         role   = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
         member = "serviceAccount:openbao@tesseracthub-480811.iam.gserviceaccount.com"
+      },
+      # The seal calls cryptoKeys.get before it encrypts, and that is not in
+      # the EncrypterDecrypter role — without this it fails closed at startup.
+      {
+        role   = "roles/cloudkms.viewer"
+        member = "serviceAccount:openbao@tesseracthub-480811.iam.gserviceaccount.com"
       }
     ]
   },

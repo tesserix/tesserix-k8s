@@ -9,8 +9,13 @@ metadata:
   annotations:
 {{ toYaml .Values.bootstrap.serviceAccount.annotations | indent 4 }}
 ---
-# Runs after every sync so a policy or role added to values.yaml lands without
+# Runs on every sync so a policy or role added to values.yaml lands without
 # anyone touching the cluster. The script is idempotent; re-running is a no-op.
+#
+# Sync, not PostSync, and the same wave as the StatefulSet: a fresh cluster is
+# uninitialised, so no pod ever passes its readiness probe, so a PostSync hook
+# that waits for health never fires and nothing initialises it. The script
+# polls /v1/sys/seal-status for five minutes, which covers the pods starting.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -19,9 +24,9 @@ metadata:
     app.kubernetes.io/name: openbao
     app.kubernetes.io/component: bootstrap
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   backoffLimit: 4
   activeDeadlineSeconds: 1800
