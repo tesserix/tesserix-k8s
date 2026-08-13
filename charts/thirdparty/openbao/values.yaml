@@ -155,9 +155,20 @@ openbao:
             }
           }
 
-          # No TLS on the listener: the namespace is ambient with STRICT
-          # PeerAuthentication, so ztunnel already provides mTLS on both hops,
-          # and OpenBao's own certs would be a second lifecycle to rotate.
+          # No TLS on the listener: the NetworkPolicy is the boundary and
+          # OpenBao's own certs would be a second lifecycle to rotate. See
+          # docs/openbao-secrets.md §Guarding for why PeerAuthentication is
+          # PERMISSIVE rather than STRICT here.
+
+          # Declarative, not `POST /v1/sys/audit/file`: 2.6 rejects enabling an
+          # audit device over the API. Managed on the active node at start and
+          # on SIGHUP, so it must be identical on all three.
+          audit "file" "file" {
+            description = "File audit device on the audit PVC."
+            options {
+              file_path = "/openbao/audit/audit.log"
+            }
+          }
 
           # node_id is deliberately absent: `setNodeId: true` supplies it as
           # BAO_RAFT_NODE_ID, and a literal here would win and give all three
