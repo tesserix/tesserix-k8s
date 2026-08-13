@@ -142,6 +142,19 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.memory.embeddingModel | default "text-embedding-3-small" | quote }}
 - name: DEVAI_EMBEDDING_DIMENSIONS
   value: {{ .Values.memory.embeddingDimensions | default 1536 | quote }}
+# Qdrant — only read when provider is "qdrant". The collection is created
+# on first write at DEVAI_EMBEDDING_DIMENSIONS, so changing the embedding
+# model means a new collection name, not a resized one.
+- name: DEVAI_QDRANT_URL
+  value: {{ .Values.memory.qdrantUrl | default "" | quote }}
+- name: DEVAI_QDRANT_COLLECTION
+  value: {{ .Values.memory.qdrantCollection | default "devai_memories" | quote }}
+- name: DEVAI_QDRANT_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_QDRANT_API_KEY
+      optional: true
 {{- end }}
 # ─── Settings capability (per-user/per-tenant connectors + secrets) ──
 # Connectors are persisted in the user_settings table; secret VALUES are
