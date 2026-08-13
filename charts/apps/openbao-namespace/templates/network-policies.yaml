@@ -115,16 +115,23 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Workload Identity token minting for the KMS seal.
+    # Workload Identity token minting for the KMS seal. The whole link-local
+    # range, not just .254: with only the /32 the token fetch hangs until the
+    # client's deadline and the seal never opens. Same pair of rules as the
+    # global and homechef policies.
     - to:
         - ipBlock:
             cidr: 169.254.169.254/32
+        - ipBlock:
+            cidr: 169.254.0.0/16
     # service_registration and the TokenReview behind Kubernetes auth. Listed
     # separately because the private master IP is inside the RFC1918 range the
     # rule below excludes.
     - to:
         - ipBlock:
             cidr: {{ .Values.apiServerCIDR }}
+        - ipBlock:
+            cidr: {{ .Values.apiServerServiceIP }}/32
       ports:
         - protocol: TCP
           port: 443
