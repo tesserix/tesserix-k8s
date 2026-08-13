@@ -151,18 +151,29 @@ it can read every namespace can request — which is why its policy stops at
 - The Agent injector and CSI provider are both disabled: each is a cluster-wide
   mutating path we have no use for while ESO is the reader.
 
-## Prerequisites — run these once, before the first sync
+## Prerequisites — already applied
 
-Three GCP service accounts and the KMS key. Nothing in the chart creates them;
-without them the pods crash-loop on seal init.
+Three GCP service accounts, the KMS key, the recovery-key secret and two IAM
+grants. Nothing in the chart creates them; without them the pods crash-loop on
+seal init.
+
+**These were created by CLI on 2026-08-13 and imported into Terraform state**
+(`03-storage` and `06-workload-identity`), so both stacks plan clean for
+OpenBao. The commands are kept here for a rebuild from scratch.
 
 ```bash
 PROJECT=tesseracthub-480811
 
 # 1. Service accounts
-for sa in openbao openbao-bootstrap openbao-snapshot; do
-  gcloud iam service-accounts create "$sa" --project="$PROJECT"
-done
+gcloud iam service-accounts create openbao --project="$PROJECT" \
+  --display-name="OpenBao Server" \
+  --description="Auto-unseal via Cloud KMS for the openbao StatefulSet"
+gcloud iam service-accounts create openbao-bootstrap --project="$PROJECT" \
+  --display-name="OpenBao Bootstrap" \
+  --description="Stores OpenBao recovery keys at cluster initialisation"
+gcloud iam service-accounts create openbao-snapshot --project="$PROJECT" \
+  --display-name="OpenBao Snapshot" \
+  --description="Writes and prunes raft snapshots in the backups bucket"
 
 # 2. Workload Identity bindings
 for sa in openbao openbao-bootstrap openbao-snapshot; do
@@ -172,25 +183,81 @@ for sa in openbao openbao-bootstrap openbao-snapshot; do
     --member="serviceAccount:${PROJECT}.svc.id.goog[openbao/${sa}]"
 done
 
-# 3. Unseal key — via terraform-new/stacks/03-storage (openbao-unseal-key is
-#    already in environments/prod/terraform.tfvars, with the IAM binding).
-#    terraform -chdir=terraform-new/stacks/03-storage apply
+# 3. Unseal key. NOT via `terraform apply` — the 03-storage stack has unrelated
+#    drift (it plans ~29 creates for resources that already exist), so applying
+#    it to get one key is not safe. Create by CLI, then import.
+#    destroy_scheduled_duration is immutable and KMS never frees a key name, so
+#    it must be right at creation: 30 days, matching tfvars.
+gcloud kms keys create openbao-unseal-key --project="$PROJECT" \
+  --location=asia-south1 --keyring=tesseract-prod-in-keyring \
+  --purpose=encryption --protection-level=software \
+  --rotation-period=7776000s --next-rotation-time="$(date -u -v+90d +%Y-%m-%dT%H:%M:%SZ)" \
+  --destroy-scheduled-duration=2592000s \
+  --labels=environment=prod,managed-by=terraform,project=tesseracthub,region=in,tier=infrastructure,purpose=openbao-unseal
+gcloud kms keys add-iam-policy-binding openbao-unseal-key --project="$PROJECT" \
+  --location=asia-south1 --keyring=tesseract-prod-in-keyring \
+  --role=roles/cloudkms.cryptoKeyEncrypterDecrypter \
+  --member="serviceAccount:openbao@${PROJECT}.iam.gserviceaccount.com"
 
 # 4. Recovery-key secret. Pre-created so the bootstrap Job needs no
-#    project-level Secret Manager role.
+#    project-level Secret Manager role. user-managed replication pinned to
+#    asia-south1 like every other secret here; the field is immutable.
 gcloud secrets create prod-openbao-recovery-keys \
-  --project="$PROJECT" --replication-policy=automatic
+  --project="$PROJECT" --replication-policy=user-managed --locations=asia-south1 \
+  --labels=environment=prod,managed-by=terraform,project=tesseracthub,region=in,tier=infrastructure,type=encryption
 for role in roles/secretmanager.viewer roles/secretmanager.secretVersionAdder; do
   gcloud secrets add-iam-policy-binding prod-openbao-recovery-keys \
     --project="$PROJECT" --role="$role" \
     --member="serviceAccount:openbao-bootstrap@${PROJECT}.iam.gserviceaccount.com"
 done
 
-# 5. Snapshot bucket
+# 5. Snapshot bucket. --condition=None is required: the bucket policy already
+#    carries conditional bindings, and gcloud refuses to guess non-interactively.
 gcloud storage buckets add-iam-policy-binding gs://tesseract-prod-backups-in \
-  --project="$PROJECT" --role=roles/storage.objectAdmin \
+  --project="$PROJECT" --role=roles/storage.objectAdmin --condition=None \
   --member="serviceAccount:openbao-snapshot@${PROJECT}.iam.gserviceaccount.com"
 ```
+
+### Importing them into Terraform state
+
+The tfvars entries exist (`kms_keys`, `secrets`, `service_accounts`), so the
+CLI-created objects must be imported or the next apply tries to create them
+again and fails on "already exists".
+
+```bash
+cd terraform-new/stacks/03-storage && terraform init
+VF=../../environments/prod/terraform.tfvars
+P=tesseracthub-480811
+KEY=projects/$P/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/openbao-unseal-key
+ROLE=roles/cloudkms.cryptoKeyEncrypterDecrypter
+MEM=serviceAccount:openbao@$P.iam.gserviceaccount.com
+
+terraform import -var-file=$VF 'google_kms_crypto_key.keys["openbao-unseal-key"]' "$KEY"
+terraform import -var-file=$VF "google_kms_crypto_key_iam_member.key_members[\"openbao-unseal-key-$ROLE-$MEM\"]" "$KEY $ROLE $MEM"
+terraform import -var-file=$VF 'google_secret_manager_secret.secrets["prod-openbao-recovery-keys"]' "projects/$P/secrets/prod-openbao-recovery-keys"
+
+cd ../06-workload-identity && terraform init
+for sa in openbao openbao-bootstrap openbao-snapshot; do
+  terraform import -var-file=$VF "google_service_account.workload_identity[\"$sa\"]" \
+    "projects/$P/serviceAccounts/$sa@$P.iam.gserviceaccount.com"
+  terraform import -var-file=$VF "google_service_account_iam_member.workload_identity_binding[\"$sa-openbao-$sa\"]" \
+    "projects/$P/serviceAccounts/$sa@$P.iam.gserviceaccount.com roles/iam.workloadIdentityUser serviceAccount:$P.svc.id.goog[openbao/$sa]"
+done
+terraform import -var-file=$VF \
+  'google_storage_bucket_iam_member.bucket_access["openbao-snapshot-tesseract-prod-backups-in-roles/storage.objectAdmin"]' \
+  "b/tesseract-prod-backups-in roles/storage.objectAdmin serviceAccount:openbao-snapshot@$P.iam.gserviceaccount.com"
+for role in roles/secretmanager.viewer roles/secretmanager.secretVersionAdder; do
+  terraform import -var-file=$VF \
+    "google_secret_manager_secret_iam_member.secret_access[\"openbao-bootstrap-prod-openbao-recovery-keys-$role\"]" \
+    "projects/$P/secrets/prod-openbao-recovery-keys $role serviceAccount:openbao-bootstrap@$P.iam.gserviceaccount.com"
+done
+```
+
+One OpenBao line remains in the `03-storage` plan after this:
+`google_kms_crypto_key_iam_member.secret_manager_service_agent["openbao-unseal-key"]`.
+The module grants the Secret Manager service agent encrypt/decrypt on *every*
+`ENCRYPT_DECRYPT` key, and there is no per-key opt-out. It was left uncreated
+rather than hand-granted on the unseal key; an apply would add it.
 
 Then commit and let ArgoCD sync. The `security` app-of-apps brings up the
 namespace (wave -5), the StatefulSet (wave 0), and the bootstrap Job as a

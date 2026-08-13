@@ -272,6 +272,10 @@ kms_keys = [
     rotation_period  = "7776000s"
     purpose          = "ENCRYPT_DECRYPT"
     protection_level = "SOFTWARE"
+    # 30 days, not the module's 24h default. Destroying this key destroys every
+    # sealed OpenBao node with it, and the field is immutable — a shorter window
+    # could only be widened by replacing the key, which KMS forbids.
+    destroy_scheduled_duration = "2592000s"
     labels = {
       tier    = "infrastructure"
       purpose = "openbao-unseal"
@@ -1877,6 +1881,21 @@ secrets = [
     annotations = {
       "managed-by"  = "terraform"
       "description" = "AES-256 encryption keys"
+    }
+    replication_locations = [{ location = "asia-south1" }]
+  },
+  # OpenBao recovery keys. Created empty here; the bootstrap Job adds the only
+  # version, which is why openbao-bootstrap holds secretVersionAdder below.
+  {
+    secret_id = "prod-openbao-recovery-keys"
+    labels = {
+      tier        = "infrastructure"
+      type        = "encryption"
+      environment = "prod"
+    }
+    annotations = {
+      "managed-by"  = "terraform"
+      "description" = "OpenBao recovery keys and initial root token"
     }
     replication_locations = [{ location = "asia-south1" }]
   },
@@ -3532,6 +3551,58 @@ service_accounts = [
       {
         bucket = "tesserix-blog-assets"
         role   = "roles/storage.objectCreator"
+      }
+    ]
+    secret_bindings = []
+  },
+
+  # ===========================================================================
+  # OPENBAO - Secret store. Three accounts, one job each, so a compromised
+  # snapshot pod cannot write recovery keys and vice versa.
+  # ===========================================================================
+  # The server itself. Its only privilege is the unseal key, granted in
+  # kms_keys above rather than here.
+  {
+    name          = "openbao"
+    display_name  = "OpenBao Server"
+    description   = "Auto-unseal via Cloud KMS for the openbao StatefulSet"
+    project_roles = []
+    workload_identity_bindings = [
+      { namespace = "openbao", kubernetes_service_account = "openbao" }
+    ]
+    bucket_bindings = []
+    secret_bindings = []
+  },
+  # Bootstrap Job. Adds the recovery-key version once, at cluster init; viewer
+  # lets it check whether a version already exists before re-initialising.
+  {
+    name          = "openbao-bootstrap"
+    display_name  = "OpenBao Bootstrap"
+    description   = "Stores OpenBao recovery keys at cluster initialisation"
+    project_roles = []
+    workload_identity_bindings = [
+      { namespace = "openbao", kubernetes_service_account = "openbao-bootstrap" }
+    ]
+    bucket_bindings = []
+    secret_bindings = [
+      { secret_id = "prod-openbao-recovery-keys", role = "roles/secretmanager.viewer" },
+      { secret_id = "prod-openbao-recovery-keys", role = "roles/secretmanager.secretVersionAdder" }
+    ]
+  },
+  # Snapshot CronJob. objectAdmin rather than objectCreator: it prunes
+  # snapshots past the retention window as well as writing them.
+  {
+    name          = "openbao-snapshot"
+    display_name  = "OpenBao Snapshot"
+    description   = "Writes and prunes raft snapshots in the backups bucket"
+    project_roles = []
+    workload_identity_bindings = [
+      { namespace = "openbao", kubernetes_service_account = "openbao-snapshot" }
+    ]
+    bucket_bindings = [
+      {
+        bucket = "tesseract-prod-backups-in"
+        role   = "roles/storage.objectAdmin"
       }
     ]
     secret_bindings = []
