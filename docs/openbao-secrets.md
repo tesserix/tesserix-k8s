@@ -253,11 +253,19 @@ for role in roles/secretmanager.viewer roles/secretmanager.secretVersionAdder; d
 done
 ```
 
-One OpenBao line remains in the `03-storage` plan after this:
-`google_kms_crypto_key_iam_member.secret_manager_service_agent["openbao-unseal-key"]`.
-The module grants the Secret Manager service agent encrypt/decrypt on *every*
-`ENCRYPT_DECRYPT` key, and there is no per-key opt-out. It was left uncreated
-rather than hand-granted on the unseal key; an apply would add it.
+`06-workload-identity` then plans clean for OpenBao. Three lines remain in the
+`03-storage` plan, none of them real drift:
+
+- the key and the secret show `labels` being added. The google provider v5
+  splits `labels` (Terraform-owned) from `effective_labels` (all of them), and
+  import populates only the latter — so the first apply merely claims labels
+  that are already on the object. Verify with `gcloud kms keys describe` before
+  assuming otherwise.
+- `google_kms_crypto_key_iam_member.secret_manager_service_agent["openbao-unseal-key"]`
+  will be created. The module grants the Secret Manager service agent
+  encrypt/decrypt on *every* `ENCRYPT_DECRYPT` key with no per-key opt-out. It
+  was left uncreated rather than hand-granted on the unseal key; an apply adds
+  it.
 
 Then commit and let ArgoCD sync. The `security` app-of-apps brings up the
 namespace (wave -5), the StatefulSet (wave 0), and the bootstrap Job as a
