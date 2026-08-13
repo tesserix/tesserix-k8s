@@ -27,8 +27,14 @@ modify cluster resources. All changes go through ArgoCD:
 2. Commit and push to `main`
 3. ArgoCD auto-syncs, or trigger it:
    ```bash
+   # No syncStrategy. `apply` means "kubectl apply, skip hooks", so a patch
+   # carrying it reports "successfully synced (all tasks run)" while every
+   # PreSync/Sync/PostSync hook is silently skipped — the controller logs
+   # `skipHooks=true` and that is the only trace. Omitting syncStrategy
+   # leaves it nil and hooks run. Clear any leftover `.operation` first:
+   # a merge patch merges into it and `apply` survives from the last one.
    kubectl patch app <name> -n argocd --type merge \
-     -p '{"operation":{"sync":{"syncStrategy":{"apply":{"force":false}}}}}'
+     -p '{"operation":{"sync":{"revision":"HEAD"}}}'
    ```
 
 **Why:** manual applies drift from Git, get reverted by self-heal, and are not
@@ -279,6 +285,14 @@ in `homechef-clients-bootstrap-job.yaml`. The bootstrap job is idempotent.
     KEDA `cpu` trigger cannot work without a request (metric reads
     `<unknown>`; KEDA's webhook rejects it outright), so scale on memory; and
     a VPA must use `controlledResources: ["memory"]` or it re-injects cpu.
+13. **Never ignore all of `/status` in `ignoreResourceUpdates`.** A pod going
+    ready is a status-only event, so the controller drops it, its cached copy
+    of the workload never changes, and cached health freezes until an
+    unrelated non-status write or the 12h cache resync. Anything gated on that
+    health — a sync waiting on a wave, a hook Job — waits with it, while
+    `kubectl` shows the workload perfectly healthy. Ignore heartbeat fields
+    (`lastTransitionTime`, `observedGeneration`) instead. Per-kind rules are
+    additive with `.all`, so a kind cannot opt back out.
 
 ---
 
