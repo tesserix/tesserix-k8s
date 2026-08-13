@@ -1,0 +1,406 @@
+# Everything under `openbao:` is passed to the upstream openbao/openbao subchart.
+openbao:
+  global:
+    enabled: true
+    # No TLS on the listener — see server.ha.raft.config below.
+    tlsDisable: true
+
+  # The Agent injector mutates pods to sidecar-inject secrets. We read secrets
+  # through ESO instead, so this is a webhook with cluster-wide reach and no job.
+  injector:
+    enabled: false
+
+  # Secrets Store CSI driver — same reasoning as the injector.
+  csi:
+    enabled: false
+
+  ui:
+    # ClusterIP only, reached by `kubectl port-forward`. There is no Ingress
+    # and no Cloudflare record: the UI accepts root-capable logins.
+    enabled: true
+    serviceType: ClusterIP
+    externalPort: 8200
+
+  server:
+    image:
+      registry: quay.io
+      repository: openbao/openbao
+      tag: "2.6.1"
+      pullPolicy: IfNotPresent
+
+    logLevel: info
+    logFormat: json
+
+    # Memory-only: no cpu request or limit anywhere (repo-wide rule). OpenBao
+    # is barely cpu-bound; raft holds the whole keyspace in memory.
+    resources:
+      requests:
+        memory: 512Mi
+      limits:
+        memory: 2Gi
+
+    # RollingUpdate, not the chart's OnDelete default: auto-unseal means a
+    # restarted pod comes back ready on its own, and under ArgoCD selfHeal
+    # OnDelete would leave config changes unapplied with the app reporting Synced.
+    updateStrategyType: RollingUpdate
+    podManagementPolicy: Parallel
+
+    # No Ingress and no Gateway route. OpenBao is in-cluster only; every client
+    # reaches it over service DNS inside the mesh.
+    ingress:
+      enabled: false
+    route:
+      enabled: false
+
+    # readiness only. The chart's liveness probe hits /v1/sys/health, which
+    # returns 503 on a standby node — enabling it restarts every follower.
+    readinessProbe:
+      enabled: true
+      port: 8200
+      initialDelaySeconds: 10
+      periodSeconds: 5
+      failureThreshold: 6
+    livenessProbe:
+      enabled: false
+
+    # Long enough for a raft leadership transfer before SIGKILL.
+    terminationGracePeriodSeconds: 60
+    preStopSleepSeconds: 10
+
+    serviceAccount:
+      create: true
+      name: openbao
+      annotations:
+        # Workload Identity for the gcpckms seal. The GSA needs
+        # roles/cloudkms.cryptoKeyEncrypterDecrypter on the unseal key.
+        iam.gke.io/gcp-service-account: openbao@tesseracthub-480811.iam.gserviceaccount.com
+      # Grants the pods the RBAC that `service_registration "kubernetes"` needs
+      # to label themselves active/standby.
+      serviceDiscovery:
+        enabled: true
+
+    statefulSet:
+      securityContext:
+        pod:
+          runAsNonRoot: true
+          runAsUser: 100
+          runAsGroup: 1000
+          fsGroup: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        container:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+
+    # The entrypoint copies the config to /tmp and seds it in place, which a
+    # read-only root filesystem forbids. The chart mounts /home/openbao itself.
+    volumes:
+      - name: tmp
+        emptyDir: {}
+    volumeMounts:
+      - name: tmp
+        mountPath: /tmp
+
+    dataStorage:
+      enabled: true
+      size: 10Gi
+      # Retain: the raft log *is* the secret store. A deleted PVC on all three
+      # nodes is unrecoverable except from a snapshot.
+      storageClass: premium-rwo-retain
+      accessMode: ReadWriteOnce
+
+    auditStorage:
+      enabled: true
+      size: 10Gi
+      storageClass: standard-rwo-retain
+      accessMode: ReadWriteOnce
+
+    # Belt and braces with the namespace chart's Retain storage classes.
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain
+      whenScaled: Retain
+
+    # The chart ships its own NetworkPolicy that allows every namespace to
+    # reach 8200. Ours is default-deny with an explicit allow-list.
+    networkPolicy:
+      enabled: false
+
+    standalone:
+      enabled: false
+
+    ha:
+      enabled: true
+      replicas: 3
+
+      disruptionBudget:
+        enabled: true
+        maxUnavailable: 1
+
+      raft:
+        enabled: true
+        setNodeId: true
+        config: |
+          ui = true
+
+          listener "tcp" {
+            tls_disable     = 1
+            address         = "[::]:8200"
+            cluster_address = "[::]:8201"
+            # Prometheus scrapes /v1/sys/metrics; the alternative is handing the
+            # scrape job an OpenBao token to renew.
+            telemetry {
+              unauthenticated_metrics_access = "true"
+            }
+          }
+
+          # No TLS on the listener: the namespace is ambient with STRICT
+          # PeerAuthentication, so ztunnel already provides mTLS on both hops,
+          # and OpenBao's own certs would be a second lifecycle to rotate.
+
+          # node_id is deliberately absent: `setNodeId: true` supplies it as
+          # BAO_RAFT_NODE_ID, and a literal here would win and give all three
+          # pods the same id. retry_join is what makes a restarted pod rejoin
+          # instead of sitting uninitialised.
+          storage "raft" {
+            path = "/openbao/data"
+
+            retry_join { leader_api_addr = "http://openbao-0.openbao-internal.openbao.svc:8200" }
+            retry_join { leader_api_addr = "http://openbao-1.openbao-internal.openbao.svc:8200" }
+            retry_join { leader_api_addr = "http://openbao-2.openbao-internal.openbao.svc:8200" }
+          }
+
+          # Auto-unseal. Every node in this cluster is Spot: a preemption on a
+          # manually-unsealed cluster means a human unseals three pods at 3am.
+          seal "gcpckms" {
+            project    = "tesseracthub-480811"
+            region     = "asia-south1"
+            key_ring   = "tesseract-prod-in-keyring"
+            crypto_key = "openbao-unseal-key"
+          }
+
+          service_registration "kubernetes" {}
+
+          # Required without CAP_IPC_LOCK, which the container drops.
+          disable_mlock = true
+
+          telemetry {
+            prometheus_retention_time = "30s"
+            disable_hostname          = true
+          }
+
+    # Never two replicas on one node. Required, not preferred: every node is
+    # Spot, so a co-located pair means one preemption costs raft quorum.
+    affinity: |
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: {{ template "openbao.name" . }}
+                app.kubernetes.io/instance: "{{ .Release.Name }}"
+                component: server
+            topologyKey: kubernetes.io/hostname
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        # ScheduleAnyway: the pools do not autoscale and a hard constraint
+        # leaves the third replica Pending when a zone has no free node.
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: openbao
+            component: server
+
+    annotations:
+      # Ambient namespace — make it explicit that no sidecar is wanted.
+      sidecar.istio.io/inject: "false"
+
+  serverTelemetry:
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+      selectors:
+        release: prometheus
+    grafanaDashboard:
+      enabled: true
+
+  # The upstream snapshot agent only writes to S3. Ours writes to GCS below.
+  snapshotAgent:
+    enabled: false
+
+# =============================================================================
+# Bootstrap — this chart's own addition
+# =============================================================================
+# `bao operator init` is a one-time, stateful act that produces the recovery
+# keys. This Job does it idempotently, stores the recovery keys in GCP Secret
+# Manager, then applies every policy and auth role below on each sync.
+bootstrap:
+  enabled: true
+
+  image:
+    repository: google/cloud-sdk
+    tag: "slim"
+    pullPolicy: IfNotPresent
+
+  serviceAccount:
+    name: openbao-bootstrap
+    annotations:
+      # Writes the recovery keys to Secret Manager. Needs
+      # roles/secretmanager.admin on prod-openbao-recovery-keys only.
+      iam.gke.io/gcp-service-account: openbao-bootstrap@tesseracthub-480811.iam.gserviceaccount.com
+
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  # Recovery keys, not unseal keys: with an auto-unseal seal, `init` returns
+  # recovery keys that regenerate a root token and nothing else.
+  recoveryShares: 5
+  recoveryThreshold: 3
+
+  # GCP Secret Manager secret holding the recovery keys. It is created by the
+  # Job on first run and never read back by anything in-cluster.
+  recoverySecretName: prod-openbao-recovery-keys
+  gcpProject: tesseracthub-480811
+
+  # KV v2 mount every application secret lives under.
+  kvMount: kv
+
+  # The Job's own way back in on later runs. Created during init, bound to the
+  # bootstrap ServiceAccount, so the root token is revoked and never stored.
+  bootstrapRole: bootstrap
+
+  # Policies applied on every run. Scope each one to a single path prefix —
+  # a policy that can read `kv/data/*` makes the whole model decorative.
+  policies:
+    - name: bootstrap
+      hcl: |
+        path "sys/policies/acl/*"   { capabilities = ["create", "read", "update", "delete", "list"] }
+        path "sys/auth"             { capabilities = ["read", "list"] }
+        path "sys/auth/*"           { capabilities = ["create", "read", "update", "sudo"] }
+        path "sys/mounts"           { capabilities = ["read", "list"] }
+        path "sys/mounts/*"         { capabilities = ["create", "read", "update", "sudo"] }
+        path "sys/audit"            { capabilities = ["read", "sudo"] }
+        path "sys/audit/*"          { capabilities = ["create", "read", "update", "sudo"] }
+        path "auth/kubernetes/role/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+
+    - name: snapshot
+      hcl: |
+        path "sys/storage/raft/snapshot" { capabilities = ["read"] }
+
+    # One read-only policy per consuming namespace. The path prefix is the
+    # namespace name, so `kv/data/homechef/api/db` belongs to homechef and to
+    # nothing else.
+    - name: read-homechef
+      hcl: |
+        path "kv/data/homechef/*"     { capabilities = ["read"] }
+        path "kv/metadata/homechef/*" { capabilities = ["read", "list"] }
+
+    - name: read-ai-database
+      hcl: |
+        path "kv/data/ai-database/*"     { capabilities = ["read"] }
+        path "kv/metadata/ai-database/*" { capabilities = ["read", "list"] }
+
+    # Backing the ClusterSecretStore. Confined to `kv/data/platform/*` — shared
+    # infrastructure credentials that genuinely belong to no single namespace.
+    - name: read-platform
+      hcl: |
+        path "kv/data/platform/*"     { capabilities = ["read"] }
+        path "kv/metadata/platform/*" { capabilities = ["read", "list"] }
+
+  # Kubernetes auth roles. Each binds a named ServiceAccount in a named
+  # namespace to a policy — `bound_service_account_names: ["*"]` is never
+  # correct here, it grants the role to every pod in the namespace.
+  kubernetesRoles:
+    - name: bootstrap
+      serviceAccounts: ["openbao-bootstrap"]
+      namespaces: ["openbao"]
+      policies: ["bootstrap"]
+      ttl: 10m
+
+    - name: snapshot
+      serviceAccounts: ["openbao-snapshot"]
+      namespaces: ["openbao"]
+      policies: ["snapshot"]
+      ttl: 30m
+
+    # ESO authenticates as the *application's* ServiceAccount, not its own, so
+    # the role a secret is read under is decided by which pod will consume it.
+    - name: read-homechef
+      serviceAccounts: ["homechef-api", "homechef-worker"]
+      namespaces: ["homechef"]
+      policies: ["read-homechef"]
+      ttl: 1h
+
+    - name: read-ai-database
+      serviceAccounts: ["qdrant"]
+      namespaces: ["ai-database"]
+      policies: ["read-ai-database"]
+      ttl: 1h
+
+    # The one role ESO holds under its own identity, for the ClusterSecretStore.
+    - name: read-platform
+      serviceAccounts: ["external-secrets"]
+      namespaces: ["external-secrets"]
+      policies: ["read-platform"]
+      ttl: 1h
+
+# =============================================================================
+# Raft snapshots to GCS
+# =============================================================================
+backup:
+  enabled: true
+  schedule: "0 3 * * *"
+  retentionDays: 30
+
+  gcs:
+    bucket: tesseract-prod-backups-in
+    prefix: openbao
+
+  # Kubernetes auth role the job logs in under — must match a bootstrap role
+  # below whose only capability is read on sys/storage/raft/snapshot.
+  baoRole: snapshot
+
+  image:
+    repository: google/cloud-sdk
+    tag: "slim"
+    pullPolicy: IfNotPresent
+
+  serviceAccount:
+    name: openbao-snapshot
+    annotations:
+      iam.gke.io/gcp-service-account: openbao-snapshot@tesseracthub-480811.iam.gserviceaccount.com
+
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+  cronJob:
+    concurrencyPolicy: Forbid
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 5
+    startingDeadlineSeconds: 3600
+    activeDeadlineSeconds: 3600
+    backoffLimit: 2
+
+# =============================================================================
+# ESO integration
+# =============================================================================
+# The ClusterSecretStore below is deliberately limited: it authenticates as
+# ESO's own ServiceAccount and can only read `kv/data/platform/*`. Per-app
+# secrets use a namespaced SecretStore that authenticates as the app's
+# ServiceAccount — see docs/openbao-secrets.md.
+clusterSecretStore:
+  enabled: true
+  name: openbao-secret-store
+  role: read-platform
+  path: kv
+  serviceAccount:
+    name: external-secrets
+    namespace: external-secrets

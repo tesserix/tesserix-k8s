@@ -1,0 +1,37 @@
+# L7 allow-list, layered on top of the NetworkPolicy: identity here, addresses
+# there. A caller needs to pass both.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-known-principals
+  namespace: {{ .Values.namespace }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+{{- range .Values.allowedPrincipals }}
+              - "cluster.local/ns/{{ . | replace "/" "/sa/" }}"
+{{- end }}
+              # Raft peers, and the bootstrap and snapshot Jobs.
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/openbao"
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/openbao-bootstrap"
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/openbao-snapshot"
+    # Metrics scraping. /v1/sys/metrics is the only unauthenticated path.
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+      to:
+        - operation:
+            paths: ["/v1/sys/metrics"]
+---
+# Zero-trust default: anything not matched by an ALLOW rule above is denied.
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: {{ .Values.namespace }}
+spec:
+  {}

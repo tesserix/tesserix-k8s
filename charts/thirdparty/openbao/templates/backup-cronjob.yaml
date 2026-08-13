@@ -1,0 +1,111 @@
+{{- if .Values.backup.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.backup.serviceAccount.name }}
+  labels:
+    app.kubernetes.io/name: openbao-snapshot
+  annotations:
+{{ toYaml .Values.backup.serviceAccount.annotations | indent 4 }}
+---
+# A raft snapshot is the whole store, sealed with the same KMS key — restoring
+# it needs the key, not the recovery shares. See docs/openbao-secrets.md.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: openbao-snapshot-backup
+  labels:
+    app.kubernetes.io/name: openbao-snapshot
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: {{ .Values.backup.cronJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.backup.cronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.backup.cronJob.failedJobsHistoryLimit }}
+  startingDeadlineSeconds: {{ .Values.backup.cronJob.startingDeadlineSeconds }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.backup.cronJob.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.backup.cronJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: openbao-snapshot
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          serviceAccountName: {{ .Values.backup.serviceAccount.name }}
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: snapshot
+              image: "{{ .Values.backup.image.repository }}:{{ .Values.backup.image.tag }}"
+              imagePullPolicy: {{ .Values.backup.image.pullPolicy }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: CLOUDSDK_CONFIG
+                  value: /tmp/gcloud
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  export LC_ALL=C
+
+                  # -active, not the round-robin service: only the leader can
+                  # serve a raft snapshot.
+                  ADDR="http://openbao-active.{{ .Release.Namespace }}.svc:8200"
+                  DEST="gs://{{ .Values.backup.gcs.bucket }}/{{ .Values.backup.gcs.prefix }}"
+                  RUN_DATE=$(date -u +%Y-%m-%d)
+                  RUN_TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+
+                  JWT=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                  TOKEN=$(curl -sSf -X POST "${ADDR}/v1/auth/kubernetes/login" \
+                    --data-binary "$(python3 -c 'import json,sys;print(json.dumps({"role":"{{ .Values.backup.baoRole }}","jwt":sys.stdin.read().strip()}))' <<<"${JWT}")" \
+                    | python3 -c 'import sys,json;print(json.load(sys.stdin)["auth"]["client_token"])')
+
+                  # Stream: the snapshot is the size of the raft store and the
+                  # job has no disk to stage it on.
+                  curl -sSf -H "X-Vault-Token: ${TOKEN}" \
+                    "${ADDR}/v1/sys/storage/raft/snapshot" \
+                    | gcloud storage cp - "${DEST}/${RUN_DATE}/openbao-${RUN_TS}.snap"
+                  echo "uploaded openbao-${RUN_TS}.snap"
+
+                  curl -sS -X POST -H "X-Vault-Token: ${TOKEN}" \
+                    "${ADDR}/v1/auth/token/revoke-self" >/dev/null
+
+                  CUTOFF=$(date -u -d "-{{ .Values.backup.retentionDays }} days" +%Y-%m-%d)
+                  echo "--- pruning runs before ${CUTOFF}"
+                  for DAY_PATH in $(gcloud storage ls "${DEST}/" || true); do
+                    DAY=$(basename "${DAY_PATH}")
+                    # Only ever delete something shaped like a run date.
+                    if [[ ! "${DAY}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+                      continue
+                    fi
+                    if [[ "${DAY}" < "${CUTOFF}" ]]; then
+                      echo "pruning ${DAY_PATH}"
+                      gcloud storage rm -r "${DAY_PATH}"
+                    fi
+                  done
+
+                  echo "backup complete"
+              resources:
+                {{- toYaml .Values.backup.resources | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
+{{- end }}

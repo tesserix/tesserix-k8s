@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: security
+    # Ambient, not sidecar: raft cluster traffic on 8201 and the seal's calls
+    # to the GKE metadata server both avoid the per-pod Envoy hop.
+    istio.io/dataplane-mode: ambient
+    # OpenBao runs unprivileged with a read-only root filesystem; enforce it.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
