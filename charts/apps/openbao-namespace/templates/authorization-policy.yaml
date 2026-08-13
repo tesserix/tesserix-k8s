@@ -22,6 +22,22 @@ spec:
               - monitoring
               # Raft peers, and the bootstrap and snapshot Jobs.
               - {{ .Values.namespace | quote }}
+{{- if .Values.allowNonMeshSources }}
+    # ztunnel derives `source.namespaces` from the caller's mTLS identity, so a
+    # plaintext caller matches no namespace rule however it is labelled: ESO is
+    # not ambient-enrolled and every login was reset with "allow policies exist,
+    # but none allowed". Address-based allow on the API port only; the
+    # NetworkPolicy still pins ingress to external-secrets and monitoring, and
+    # OpenBao's own Kubernetes auth decides what the caller may read. Drop this
+    # once ESO joins the mesh and `allowedPrincipals` can carry the rule.
+    - from:
+        - source:
+            ipBlocks:
+              - {{ .Values.podCIDR | quote }}
+      to:
+        - operation:
+            ports: ["8200"]
+{{- end }}
 {{- if .Values.allowedPrincipals }}
     - from:
         - source:
