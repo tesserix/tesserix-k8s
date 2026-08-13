@@ -198,10 +198,14 @@ gcloud kms keys create openbao-unseal-key --project="$PROJECT" \
   --rotation-period=7776000s --next-rotation-time="$(date -u -v+90d +%Y-%m-%dT%H:%M:%SZ)" \
   --destroy-scheduled-duration=2592000s \
   --labels=environment=prod,managed-by=terraform,project=tesseracthub,region=in,tier=infrastructure,purpose=openbao-unseal
-gcloud kms keys add-iam-policy-binding openbao-unseal-key --project="$PROJECT" \
-  --location=asia-south1 --keyring=tesseract-prod-in-keyring \
-  --role=roles/cloudkms.cryptoKeyEncrypterDecrypter \
-  --member="serviceAccount:openbao@${PROJECT}.iam.gserviceaccount.com"
+# Both roles: the seal calls cryptoKeys.get before it encrypts, and that is
+# not in EncrypterDecrypter — without viewer it fails closed at startup.
+for role in roles/cloudkms.cryptoKeyEncrypterDecrypter roles/cloudkms.viewer; do
+  gcloud kms keys add-iam-policy-binding openbao-unseal-key --project="$PROJECT" \
+    --location=asia-south1 --keyring=tesseract-prod-in-keyring \
+    --role="$role" --condition=None \
+    --member="serviceAccount:openbao@${PROJECT}.iam.gserviceaccount.com"
+done
 
 # 4. Recovery-key secret. Pre-created so the bootstrap Job needs no
 #    project-level Secret Manager role. user-managed replication pinned to
