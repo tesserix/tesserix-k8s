@@ -59,7 +59,7 @@ for data, 20Gi `standard-rwo-retain` for snapshots. Both Retain: a deleted PVC
 on a vector store means re-embedding every document. Growth is manual —
 `volume-autoscaler` is driven by Prometheus, which is currently parked.
 
-## Two traps worth knowing before editing values
+## Three traps worth knowing before editing
 
 1. **Do not use the chart's `apiKey:` value.** It resolves the key with a Helm
    `lookup`, which returns empty under ArgoCD's server-side `helm template`.
@@ -69,6 +69,11 @@ on a vector store means re-embedding every document. Growth is manual —
    `/` for both, and `/` returns 401 once an API key is set — every pod
    restarts forever. Only readiness is enabled, because `/readyz` is one of the
    three endpoints Qdrant serves unauthenticated.
+3. **DNS egress needs the kube-dns service IP, not just a `kube-system`
+   namespaceSelector.** The cluster runs NodeLocal DNSCache, which answers from
+   the node, so the selector never matches. Without `dnsServiceIP` in the
+   policy, `qdrant-0` comes up alone and every other replica panics with
+   `Failed to initialize Consensus ... Temporary failure in name resolution`.
 
 ## Connecting from a service
 

@@ -112,10 +112,14 @@ spec:
   policyTypes:
     - Egress
   egress:
+    # The namespaceSelector alone is not enough: NodeLocal DNSCache answers from
+    # the node, so the kube-dns service IP has to be allowed explicitly.
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kube-system
+        - ipBlock:
+            cidr: {{ .Values.dnsServiceIP }}/32
       ports:
         - protocol: UDP
           port: 53
