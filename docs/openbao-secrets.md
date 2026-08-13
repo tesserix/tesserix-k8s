@@ -136,13 +136,17 @@ it can read every namespace can request — which is why its policy stops at
 
 ## Guarding
 
-- Namespace is ambient mesh with `PeerAuthentication: STRICT` and PSA
-  `restricted`.
+- Namespace is ambient mesh with PSA `restricted`. `PeerAuthentication` is
+  `PERMISSIVE`, not STRICT: `external-secrets` is not mesh-enrolled, so ESO
+  dials in plaintext with no SPIFFE identity and STRICT would reject every
+  read. Enrol ESO in ambient and this goes to STRICT.
 - `default-deny` NetworkPolicy. Only `external-secrets` may reach 8200;
   `monitoring` may reach it for `/v1/sys/metrics`. Port 8201 (raft) is
   intra-namespace only — a client that reaches it talks to the storage layer.
-- `AuthorizationPolicy` allow-list by Istio principal on top, so a caller must
-  pass both L3 and L7.
+- `AuthorizationPolicy` allow-list by source namespace on top, so a caller must
+  pass both. It is deliberately L4 — the namespace is ambient with no waypoint,
+  so ztunnel enforces the policy and cannot evaluate an `operation.paths`
+  condition; an ALLOW policy whose only rule is L7 evaluates as deny-all.
 - No Ingress, no Gateway route, no Cloudflare record. The UI is ClusterIP and
   reached by `kubectl port-forward`.
 - Read-only root filesystem, all capabilities dropped, non-root, seccomp
