@@ -43,14 +43,24 @@ openbao:
   kubernetesRole: secret-service
   kubernetesMount: kubernetes
 
-oidc:
-  # Back-channel calls go in-cluster: Cloudflare strips Authorization from
-  # `GET /protocol/openid-connect/userinfo` on the public host.
-  issuer: http://keycloak.identity-internal.svc.cluster.local:8080/realms/tesserix-internal
-  publicIssuer: https://internal-identity.fe3dr.com/realms/tesserix-internal
-  clientId: secret-service
+# Sign-in is Google directly rather than the internal Keycloak: both
+# administrators are Google identities, and it removes the console's dependency
+# on the identity realm being reachable to log in and revoke access.
+google:
+  # Add https://secret-service.tesserix.app/api/auth/callback as an authorised
+  # redirect URI on this client in the Cloud Console; it cannot be set by API.
+  redirectPath: /api/auth/callback
 
 sessionTTL: 8h
+
+# Whitelisting an app is a pull request against this repository, never a write
+# to the cluster: main is protected, so the second administrator still reviews
+# it. The token needs contents:write and pull_requests:write, nothing more.
+gitops:
+  owner: tesserix
+  repo: tesserix-k8s
+  branch: main
+  valuesPath: charts/thirdparty/openbao/values.yaml
 
 externalSecret:
   enabled: true
@@ -60,7 +70,9 @@ externalSecret:
     kind: ClusterSecretStore
   # 32 random bytes, base64 — seals the session cookie.
   sessionKeySecret: prod-secret-service-session-key
-  clientSecretSecret: prod-secret-service-oidc-client-secret
+  googleClientIDSecret: prod-secret-service-google-client-id
+  googleClientSecret: prod-secret-service-google-client-secret
+  githubTokenSecret: prod-secret-service-github-token
 
 istio:
   enabled: true

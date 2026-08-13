@@ -85,28 +85,45 @@ Rules that are not negotiable:
 
 `secret-service.tesserix.app` (repo `tesserix/secret-service`, chart
 `charts/apps/secret-service/`) is the one identity that writes secrets and the
-one that mints grants without a commit. Two named administrators sign in through
-the internal Keycloak realm; the email allowlist lives in `adminEmails` in the
-chart's `values.yaml` and is re-checked on every request.
+one that mints grants without a commit. Two named administrators sign in with
+Google; the email allowlist lives in `adminEmails` in the chart's `values.yaml`
+and is re-checked on every request. The client id and secret come from GCP
+`prod-secret-service-google-client-id` / `-google-client-secret`, and the
+callback `https://secret-service.tesserix.app/api/auth/callback` has to be added
+to the OAuth client by hand — the Cloud Console will not take it by API.
 
-Its grants are deliberately kept out of the bootstrap Job's way: the console
-only creates policies and roles named `app-<namespace>`, a prefix the Job never
-reconciles, so the two cannot fight over the same object. A grant it writes is
-the same shape as the hand-declared ones above — one path prefix, named service
-accounts, read only.
+**The console cannot read a secret value, and no administrator can make it.**
+That is enforced by its own OpenBao policy, which holds `create`/`update`/
+`delete` on `kv/data/*` and no `read`: a fully compromised console still gets
+nothing back. It sees `kv/metadata` only — versions, timestamps, and the sorted
+key names it records itself in `custom_metadata` — so the UI can show a secret's
+shape without its contents. Deleting and destroying are allowed.
+
+Its grants are kept out of the bootstrap Job's way: the console only creates
+policies and roles named `app-<namespace>_<app>`, a prefix the Job never
+reconciles, so the two cannot fight over the same object. The separator is an
+underscore because a DNS label cannot contain one, which makes the name split
+back unambiguously. Each grant is scoped to `kv/data/<namespace>/<app>/*` — one
+app, one path prefix, one named service account, read only. That path is also
+where the console writes, so a secret is only ever reachable by the app it was
+written for.
 
 Roles declared in `charts/thirdparty/openbao/values.yaml` remain the right place
 for anything that must exist before the console does, including the console's
 own `secret-service` role.
 
-Sign-in uses the shared `tesserix-internal` realm — the same identity as every
-other internal admin surface, reached at `https://internal-identity.fe3dr.com`.
-The `secret-service` OIDC client is created and kept current by
-`secret-service-client-bootstrap-job.yaml` in the `identity-internal` chart,
-which PUTs on every upgrade so a change to `secretService.consoleUrl` lands in
-Keycloak instead of being frozen at first creation. Its client secret comes from
-GCP `prod-secret-service-oidc-client-secret`, read by both charts so Keycloak and
-the console never disagree about it.
+### The whitelist lives in Git
+
+`namespaceWhitelist` in `charts/thirdparty/openbao/values.yaml` is the single
+declaration of which apps may read from OpenBao. It renders each app's
+`SecretStore` and gates `ClusterSecretStore.spec.conditions[].namespaces`, so a
+namespace that is not listed cannot reference the shared store at all.
+
+The console does not edit the cluster to change it. It opens a pull request
+against this repository (`GITHUB_TOKEN` from GCP `prod-secret-service-github-token`,
+scoped to contents and pull requests), which `main-protection` requires a second
+administrator to merge; ArgoCD applies it after that. An entry with no grant
+reads nothing, and a grant with no entry has no store to be read through.
 
 ### Wiring an application to it
 
