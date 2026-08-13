@@ -9,11 +9,16 @@
 # had existed all along but were not shipped in the image, so there was no way
 # to run them in-cluster.
 #
-# sync-wave "0": strictly after the migrate Job (wave -1), because seeding
-# writes to a table migrate creates, and alongside the main workload. Both
-# binaries are idempotent — a re-run inserts 0 rows and leaves the count
-# unchanged (verified against a fresh database) — so it is safe for this Job
-# to run again on every sync.
+# sync-wave "1": strictly AFTER the Deployment (wave 0), because seeding writes
+# to a table the migration creates and the migration now runs as the
+# Deployment's `migrate` initContainer (kora#118 — it used to be a wave -1 Job,
+# and this Job sat at wave 0 to follow it). ArgoCD does not advance to wave 1
+# until the Deployment reports Healthy, and a Deployment is only Healthy once
+# its pods are Ready — which kubelet will not allow until the initContainer has
+# exited 0. So this ordering is now a stronger guarantee than the old one, not
+# a weaker one. Both binaries are idempotent — a re-run inserts 0 rows and
+# leaves the count unchanged (verified against a fresh database) — so it is
+# safe for this Job to run again on every sync.
 #
 # Runs seed, then ingest, then embed in one container via `sh -c`; the runtime
 # base is alpine, so /bin/sh is present. ingest is given ABSOLUTE paths because
@@ -27,12 +32,12 @@ metadata:
     {{- include "kora-api.labels" . | nindent 4 }}
     app.kubernetes.io/component: seed
   annotations:
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "1"
     # A Job's spec.template is IMMUTABLE. Any change to it — including a
     # chart version bump, which lands in the template's helm.sh/chart label —
     # makes a patch fail with "field is immutable" and aborts the whole sync
     # at this wave. Replace+Force makes ArgoCD delete and recreate the Job
-    # instead of patching it. Safe here: both Jobs are idempotent by design.
+    # instead of patching it. Safe here: this Job is idempotent by design.
     argocd.argoproj.io/sync-options: Replace=true,Force=true
 spec:
   backoffLimit: 5
