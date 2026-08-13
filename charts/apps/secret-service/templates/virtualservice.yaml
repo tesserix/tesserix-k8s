@@ -1,0 +1,34 @@
+{{- if .Values.istio.enabled }}
+{{/* /api goes to the Go API, everything else to the UI — same origin, so the
+     session cookie is first-party and CORS never enters the picture. */}}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: secret-service
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "secret-service.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.host | quote }}
+  gateways:
+    {{- toYaml .Values.istio.gateways | nindent 4 }}
+  http:
+    - match:
+        - uri:
+            prefix: /api/
+      route:
+        - destination:
+            host: secret-service-api.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.api.port }}
+      timeout: 30s
+    - route:
+        - destination:
+            host: secret-service-web.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.web.port }}
+      timeout: 15s
+  exportTo:
+    - "*"
+{{- end }}

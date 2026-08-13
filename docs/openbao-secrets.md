@@ -78,7 +78,35 @@ Rules that are not negotiable:
   read `kv/data/*` makes the whole model decorative.
 - **Never `serviceAccounts: ["*"]`.** That grants the role to every pod in the
   namespace, including anything that gets scheduled there later.
-- **Read only.** Nothing in the cluster writes to `kv/`; humans and CI do.
+- **Read only.** Nothing in the cluster writes to `kv/` except the admin console
+  below; humans and CI do the rest.
+
+### The admin console
+
+`secret-service.tesserix.app` (repo `tesserix/secret-service`, chart
+`charts/apps/secret-service/`) is the one identity that writes secrets and the
+one that mints grants without a commit. Two named administrators sign in through
+the internal Keycloak realm; the email allowlist lives in `adminEmails` in the
+chart's `values.yaml` and is re-checked on every request.
+
+Its grants are deliberately kept out of the bootstrap Job's way: the console
+only creates policies and roles named `app-<namespace>`, a prefix the Job never
+reconciles, so the two cannot fight over the same object. A grant it writes is
+the same shape as the hand-declared ones above — one path prefix, named service
+accounts, read only.
+
+Roles declared in `charts/thirdparty/openbao/values.yaml` remain the right place
+for anything that must exist before the console does, including the console's
+own `secret-service` role.
+
+Sign-in uses the shared `tesserix-internal` realm — the same identity as every
+other internal admin surface, reached at `https://internal-identity.fe3dr.com`.
+The `secret-service` OIDC client is created and kept current by
+`secret-service-client-bootstrap-job.yaml` in the `identity-internal` chart,
+which PUTs on every upgrade so a change to `secretService.consoleUrl` lands in
+Keycloak instead of being frozen at first creation. Its client secret comes from
+GCP `prod-secret-service-oidc-client-secret`, read by both charts so Keycloak and
+the console never disagree about it.
 
 ### Wiring an application to it
 
