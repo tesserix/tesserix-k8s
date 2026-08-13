@@ -12,7 +12,10 @@ collection, not their own cluster.
 | Endpoints | `qdrant.ai-database.svc.cluster.local` — REST `6333`, gRPC `6334` |
 | Per-pod (admin/backup only) | `qdrant-{0,1,2}.qdrant-headless.ai-database.svc.cluster.local:6333` |
 | Auth | API key via `QDRANT__SERVICE__API_KEY`; ExternalSecret ships with the chart, sourced from GCP SM `prod-qdrant-api-key` |
-| Backups | nightly 02:00 UTC → `gs://tesseract-prod-backups-in/qdrant/`, 14 days |
+| Backups | nightly 02:00 UTC → `gs://tesseract-prod-backups-in/qdrant/`, 14 days — deployed, not yet verified |
+
+Live since 2026-08-13: three replicas Ready, raft leader elected, no collections
+yet.
 
 ## There is no operator — that is deliberate
 
@@ -59,7 +62,7 @@ for data, 20Gi `standard-rwo-retain` for snapshots. Both Retain: a deleted PVC
 on a vector store means re-embedding every document. Growth is manual —
 `volume-autoscaler` is driven by Prometheus, which is currently parked.
 
-## Three traps worth knowing before editing
+## Four traps worth knowing before editing
 
 1. **Do not use the chart's `apiKey:` value.** It resolves the key with a Helm
    `lookup`, which returns empty under ArgoCD's server-side `helm template`.
@@ -74,6 +77,11 @@ on a vector store means re-embedding every document. Growth is manual —
    the node, so the selector never matches. Without `dnsServiceIP` in the
    policy, `qdrant-0` comes up alone and every other replica panics with
    `Failed to initialize Consensus ... Temporary failure in name resolution`.
+4. **`volumeClaimTemplates` needs `ignoreDifferences`.** The API server defaults
+   `apiVersion`, `kind`, `volumeMode` and `status` into them and the chart sets
+   none of it, so the app sits OutOfSync while Healthy and self-heal re-syncs
+   every reconcile. The ignore lives on the Application and is diff-only —
+   do not add `RespectIgnoreDifferences` (CLAUDE.md gotcha 11).
 
 ## Connecting from a service
 
@@ -113,6 +121,13 @@ A run is therefore a *set* of files:
 ```
 gs://tesseract-prod-backups-in/qdrant/<date>/<timestamp>/node-{0,1,2}/<snapshot>
 ```
+
+**Not yet verified end to end.** The GSA, its `roles/storage.objectAdmin` on
+the bucket and the Workload Identity binding are all in place, but no run has
+written to GCS — the first scheduled run fired during the DNS outage in trap 3,
+with one node up, and failed. Smoke-test it with
+`kubectl create job --from=cronjob/qdrant-snapshot-backup <name> -n ai-database`
+before relying on it.
 
 To restore, copy the node snapshots onto the snapshot PVCs and use the chart's
 `snapshotRestoration` values, or `PUT /collections/<name>/snapshots/recover`
