@@ -149,7 +149,7 @@ spec:
   # that name used to be documented here and cost a silent failure (PR #86).
   # Real ones: infrastructure, platform, homechef, fanzone, gameverse, guardix,
   # horoscope, identity, postiz, release, scrapper, social, stockpilot,
-  # tesserix-blog, data, default.
+  # tesserix-blog, data, ai-database, default.
   project: infrastructure
   source:
     repoURL: https://github.com/tesserix/tesserix-k8s.git
@@ -198,6 +198,7 @@ validation.
 | **Admin login, BFF auth, OIDC clients, Google SSO, internal Keycloak** (`identity-internal` / `tesserix-internal` realm) | [`docs/internal-keycloak-admin-bff-fix.md`](docs/internal-keycloak-admin-bff-fix.md) |
 | **Customer login/signup, Google/Facebook sign-in, first-broker-login** (`identity-customer` / `homechef` realm) | [`docs/customer-keycloak-social-login.md`](docs/customer-keycloak-social-login.md) |
 | **HomeChef platform topology** — services, domains, infra, E2E | [`docs/homechef-platform.md`](docs/homechef-platform.md) |
+| **Vector store / embeddings for AI agents** (Qdrant, `ai-database` namespace — and why there is no operator) | [`docs/qdrant-vector-db.md`](docs/qdrant-vector-db.md) |
 
 ### CloudNativePG (CNPG) quick facts
 

@@ -1,0 +1,251 @@
+# Everything under `qdrant:` is passed to the upstream qdrant/qdrant subchart.
+qdrant:
+  # Fixed names regardless of release name — the backup job and every client
+  # config below hardcode `qdrant` / `qdrant-headless`.
+  fullnameOverride: qdrant
+
+  # 3 nodes: raft needs an odd number for a quorum, and every node in this
+  # cluster is Spot, so a 2-node cluster loses quorum on one preemption.
+  replicaCount: 3
+
+  image:
+    repository: docker.io/qdrant/qdrant
+    # Pinned ahead of the chart's appVersion (1.18.2) — the chart only
+    # templates the tag, so a newer patch line is safe.
+    tag: "v1.19.0"
+    pullPolicy: IfNotPresent
+
+  # Memory-only: no cpu request or limit anywhere (repo-wide rule).
+  # Qdrant is memory-bound — HNSW graphs and hot segments live in RAM.
+  resources:
+    requests:
+      memory: 2Gi
+    limits:
+      memory: 6Gi
+
+  service:
+    type: ClusterIP
+    ports:
+      - name: http
+        port: 6333
+        targetPort: 6333
+        protocol: TCP
+        checksEnabled: true
+      - name: grpc
+        port: 6334
+        targetPort: 6334
+        protocol: TCP
+        checksEnabled: false
+      - name: p2p
+        port: 6335
+        targetPort: 6335
+        protocol: TCP
+        checksEnabled: false
+
+  # No Ingress. Qdrant is in-cluster only — agents reach it over service DNS
+  # and there is no authenticated edge story worth exposing a raw vector DB for.
+  ingress:
+    enabled: false
+
+  # Only readiness is enabled, and only because `/readyz` is one of the three
+  # endpoints Qdrant serves without an API key. The chart hardcodes `/` for
+  # liveness and startup, which returns 401 once QDRANT__SERVICE__API_KEY is
+  # set — enabling them restarts every pod in a loop.
+  readinessProbe:
+    enabled: true
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 12
+  livenessProbe:
+    enabled: false
+  startupProbe:
+    enabled: false
+
+  # API keys come from GCP Secret Manager via ExternalSecret. Deliberately NOT
+  # the chart's own `apiKey:` value: that renders the key into a Secret using a
+  # Helm `lookup`, which returns empty under ArgoCD's server-side `helm
+  # template` and silently ships an unauthenticated cluster.
+  env:
+    - name: QDRANT__SERVICE__API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: qdrant-api-keys
+          key: api-key
+    - name: QDRANT__SERVICE__READ_ONLY_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: qdrant-api-keys
+          key: read-only-api-key
+
+  config:
+    log_level: INFO
+    telemetry_disabled: true
+    cluster:
+      enabled: true
+      p2p:
+        port: 6335
+        # Peer traffic is encrypted by the ambient mesh; Qdrant's own TLS
+        # would mean a second cert lifecycle to manage.
+        enable_tls: false
+      consensus:
+        tick_period_ms: 100
+    service:
+      enable_tls: false
+    storage:
+      # Replication is per-collection, but these defaults apply to any
+      # collection created without explicit values — 2 copies of every shard
+      # so a Spot preemption costs no availability.
+      collection:
+        replication_factor: 2
+        write_consistency_factor: 1
+      performance:
+        # 0 = derive from available cores. We set no cpu request, so leaving
+        # this unset would let the optimizer grab the whole node.
+        optimizer_cpu_budget: 2
+      optimizers:
+        default_segment_number: 2
+      wal:
+        wal_capacity_mb: 32
+
+  persistence:
+    accessModes: ["ReadWriteOnce"]
+    size: 20Gi
+    # pd-ssd with Retain: HNSW search is random-read heavy, and a deleted PVC
+    # on a vector store means re-embedding every document.
+    storageClassName: premium-rwo-retain
+
+  # A separate volume so a large snapshot can never fill the storage volume
+  # and wedge the node — the upstream chart's own recommendation.
+  snapshotPersistence:
+    enabled: true
+    accessModes: ["ReadWriteOnce"]
+    size: 20Gi
+    storageClassName: standard-rwo-retain
+
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+
+  # Never two replicas on one node — this is required, not preferred: on an
+  # all-Spot cluster a co-located pair means one preemption costs raft quorum.
+  # Node choice is only a preference, because the pools do NOT autoscale
+  # (optimized-v2 has 2 nodes today) and a hard `workload: infrastructure`
+  # nodeSelector would leave the third replica Pending forever.
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - qdrant
+          topologyKey: kubernetes.io/hostname
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: workload
+                operator: In
+                values:
+                  - infrastructure
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      # ScheduleAnyway, not DoNotSchedule: the cluster runs two node pools
+      # across three zones and a hard constraint leaves pods Pending when a
+      # zone has no schedulable node.
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: qdrant
+
+  containerSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 2000
+    allowPrivilegeEscalation: false
+    privileged: false
+    readOnlyRootFilesystem: true
+  podSecurityContext:
+    fsGroup: 3000
+    fsGroupChangePolicy: Always
+
+  # Give in-flight requests time to drain before the endpoint is removed.
+  lifecycle:
+    preStop:
+      exec:
+        command: ["sleep", "10"]
+  terminationGracePeriodSeconds: 60
+
+  podAnnotations:
+    # Ambient namespace — make it explicit that no sidecar is wanted here.
+    sidecar.istio.io/inject: "false"
+
+  metrics:
+    serviceMonitor:
+      enabled: true
+      scrapeInterval: 30s
+      scrapeTimeout: 10s
+      # /metrics is behind the API key; scrape with the read-only one.
+      authorization:
+        type: Bearer
+        credentials:
+          name: qdrant-api-keys
+          key: read-only-api-key
+
+# =============================================================================
+# Snapshot backup — this chart's own addition
+# =============================================================================
+# Qdrant snapshots are per-node, so the job walks every pod over headless DNS,
+# creates a full-storage snapshot, streams it to GCS, then deletes it locally.
+backup:
+  enabled: true
+  schedule: "0 2 * * *"
+  # Days of snapshots to keep in GCS.
+  retentionDays: 14
+
+  gcs:
+    bucket: tesseract-prod-backups-in
+    # Top-level prefix per store, matching the existing {devai,global,infra}-postgres layout.
+    prefix: qdrant
+
+  # Must match the replicaCount above — the job iterates pod ordinals.
+  replicaCount: 3
+
+  image:
+    repository: google/cloud-sdk
+    tag: "slim"
+    pullPolicy: IfNotPresent
+
+  serviceAccount:
+    create: true
+    name: qdrant-backup
+    # Workload Identity binding to the GSA that can write to the bucket.
+    # See docs/qdrant-vector-db.md for the two gcloud commands that create it.
+    annotations:
+      iam.gke.io/gcp-service-account: qdrant-backup@tesseracthub-480811.iam.gserviceaccount.com
+
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+  cronJob:
+    concurrencyPolicy: Forbid
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 5
+    startingDeadlineSeconds: 3600
+    activeDeadlineSeconds: 7200
+    backoffLimit: 2
+    restartPolicy: OnFailure
+
+# Secret holding the API keys, produced by this chart's ExternalSecret from
+# GCP Secret Manager (prod-qdrant-api-key / prod-qdrant-read-only-api-key).
+apiKeySecret:
+  name: qdrant-api-keys
+  key: api-key
+  readOnlyKey: read-only-api-key

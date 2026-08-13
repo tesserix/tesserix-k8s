@@ -14,13 +14,20 @@ clusterName: mark8ly-postgres
 # tier's storage (200Gi) is 10× the v0.1 value — stage this via ArgoCD
 # staging sync before merging to prod.
 #
-# Currently held at instances=1: replica-1 was stuck mid-resize for 8d
-# (PVC.spec=200Gi but PVC.status=20Gi, pod could not start to complete
-# fs expansion) while contributing nothing — minSyncReplicas was 0 so
-# writes never waited on it. Continuous archiving + scheduled backups
-# preserve RPO via WAL shipping. Restore to 2 once the merchant tier
-# warrants HA standby and resize race is understood.
-instances: 1
+# Restored to 2 for the 1000-user tier. At instances=1 any node drain or
+# zone event is a total outage with no failover target, which that tier
+# cannot absorb.
+#
+# The 8d incident that forced this back to 1 was a PVC resize race:
+# replica-1 had PVC.spec=200Gi but PVC.status=20Gi, so the pod could not
+# start to finish fs expansion. storageSize is now already 200Gi, so a
+# freshly provisioned replica is created at final size and does not
+# re-enter that path. Watch the replica reach streaming state before
+# considering this settled.
+#
+# Note: a standby adds availability, not read throughput — applications
+# connect to -rw. Routing reads to -ro is a separate change.
+instances: 2
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 storageSize: 200Gi
 storageClass: standard-rwo-retain
@@ -29,11 +36,25 @@ walStorageSize: 20Gi
 # §24 staircase — 1 CPU / 4 GiB at the 100-merchant tier. Current ask
 # sizes primary + standby identically so either can serve writes after
 # an auto-failover (liveness-probe-driven, see primaryUpdateStrategy).
+#
+# Raised to 8Gi: max_connections goes 100→400 below, and per-backend
+# memory plus a 2GB shared_buffers does not fit in 4Gi.
 resources:
   requests:
-    memory: 4Gi
+    memory: 8Gi
   limits:
-    memory: 4Gi
+    memory: 8Gi
+
+# Server-side tuning. maxConnections must stay above the pooler's worst
+# case (see pooler below) with headroom for superuser, replication and
+# migration sessions.
+postgresql:
+  maxConnections: "400"
+  sharedBuffers: "2GB"
+  effectiveCacheSize: "6GB"
+  # Deliberately modest — work_mem is per sort/hash node, not per
+  # connection, so a large value times 400 sessions is an OOM risk.
+  workMem: "16MB"
 
 # Databases to create at bootstrap. CNPG's initdb stanza only seeds one
 # db/role directly, so we rely on a post-init SQL script for the second
@@ -61,17 +82,31 @@ backup:
 monitoring:
   enablePodMonitor: true
 
-# PgBouncer connection pooling
+# PgBouncer connection pooling (transaction mode).
+#
+# Connection budget — default_pool_size is per (user, database) pair PER
+# pooler pod, so the server-side worst case is:
+#
+#   instances x (default_pool_size + reserve_pool_size) x pairs
+#   3 x (25 + 5) x 3 = 270  server connections
+#
+# against max_connections=400, leaving ~130 for superuser, replication
+# and migration sessions. Raising instances or defaultPoolSize without
+# raising maxConnections will exhaust the server and refuse logins.
+#
+# Client side: 3 x 2500 = 7500 slots, far above the 1000-user target.
+# One pooler pod was also a single point of failure in front of an HA
+# database, which defeated the point of the standby.
 pooler:
   enabled: true
-  instances: 1
-  maxClientConn: "500"
-  defaultPoolSize: "10"
+  instances: 3
+  maxClientConn: "2500"
+  defaultPoolSize: "25"
   resources:
     requests:
-      memory: 128Mi
-    limits:
       memory: 256Mi
+    limits:
+      memory: 512Mi
 
 # NetworkPolicy `<clusterName>-ingress` — list of in-namespace app
 # pods (matched by `app.kubernetes.io/name`) allowed to talk to the
