@@ -91,13 +91,26 @@ data:
       code=$(api POST /v1/auth/kubernetes/login \
         "$(python3 -c 'import json,sys;print(json.dumps({"role":sys.argv[1],"jwt":sys.argv[2]}))' \
            '{{ .Values.bootstrap.bootstrapRole }}' "$jwt")")
-      [[ $code == 200 ]] || { echo "login failed ($code): $(cat /tmp/resp)"; echo "recover with: bao operator generate-root, using the recovery keys"; exit 1; }
-      TOKEN=$(python3 -c 'import json;print(json.load(open("/tmp/resp"))["auth"]["client_token"])')
+      if [[ $code == 200 ]]; then
+        TOKEN=$(python3 -c 'import json;print(json.load(open("/tmp/resp"))["auth"]["client_token"])')
+      else
+        # A run that initialised the cluster but died before configuring
+        # Kubernetes auth leaves no way back in — every retry 403s here. The
+        # stored root token is still live in that window, so fall back to it
+        # and let the revoke at the end close the window.
+        echo "==> kubernetes auth unavailable ($code); falling back to the stored root token"
+        gcloud secrets versions access latest \
+          --secret={{ .Values.bootstrap.recoverySecretName }} \
+          --project={{ .Values.bootstrap.gcpProject }} > /tmp/init.json
+        TOKEN=$(python3 -c 'import json;print(json.load(open("/tmp/init.json"))["root_token"])')
+        rm -f /tmp/init.json
+        [[ -n "$TOKEN" ]] || { echo "no usable token; recover with: bao operator generate-root, using the recovery keys"; exit 1; }
+        ROOT_TOKEN_IN_USE=1
+      fi
     fi
 
-    echo "==> audit device"
-    expect_ok "$(api POST /v1/sys/audit/file \
-      '{"type":"file","options":{"file_path":"/openbao/audit/audit.log"}}')" "audit/file"
+    # The audit device is declared in the server config, not enabled here: 2.6
+    # rejects `POST /v1/sys/audit/file` outright.
 
     echo "==> kv v2 mount at {{ .Values.bootstrap.kvMount }}/"
     expect_ok "$(api POST /v1/sys/mounts/{{ .Values.bootstrap.kvMount }} \

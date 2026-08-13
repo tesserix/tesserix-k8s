@@ -3592,7 +3592,10 @@ service_accounts = [
     bucket_bindings = []
     secret_bindings = [
       { secret_id = "prod-openbao-recovery-keys", role = "roles/secretmanager.viewer" },
-      { secret_id = "prod-openbao-recovery-keys", role = "roles/secretmanager.secretVersionAdder" }
+      { secret_id = "prod-openbao-recovery-keys", role = "roles/secretmanager.secretVersionAdder" },
+      # Reads the root token back when a partial first run left the cluster
+      # initialised but Kubernetes auth unconfigured.
+      { secret_id = "prod-openbao-recovery-keys", role = "roles/secretmanager.secretAccessor" }
     ]
   },
   # Snapshot CronJob. objectAdmin rather than objectCreator: it prunes
