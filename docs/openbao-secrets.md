@@ -278,8 +278,12 @@ done
   it.
 
 Then commit and let ArgoCD sync. The `security` app-of-apps brings up the
-namespace (wave -5), the StatefulSet (wave 0), and the bootstrap Job as a
-PostSync hook.
+namespace (wave -5), the bootstrap script ConfigMap (wave -1), and the
+StatefulSet and the bootstrap Job together in wave 0. The Job is a `Sync` hook,
+not `PostSync`: a fresh cluster is uninitialised, so no pod ever passes its
+readiness probe and a PostSync hook would never fire. Its ConfigMap is a plain
+resource — as a hook it would hang in `hookPhase: Running` forever, since
+ArgoCD has no completion signal for a ConfigMap.
 
 ## Day-2
 
