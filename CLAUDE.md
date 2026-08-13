@@ -27,8 +27,14 @@ modify cluster resources. All changes go through ArgoCD:
 2. Commit and push to `main`
 3. ArgoCD auto-syncs, or trigger it:
    ```bash
+   # No syncStrategy. `apply` means "kubectl apply, skip hooks", so a patch
+   # carrying it reports "successfully synced (all tasks run)" while every
+   # PreSync/Sync/PostSync hook is silently skipped — the controller logs
+   # `skipHooks=true` and that is the only trace. Omitting syncStrategy
+   # leaves it nil and hooks run. Clear any leftover `.operation` first:
+   # a merge patch merges into it and `apply` survives from the last one.
    kubectl patch app <name> -n argocd --type merge \
-     -p '{"operation":{"sync":{"syncStrategy":{"apply":{"force":false}}}}}'
+     -p '{"operation":{"sync":{"revision":"HEAD"}}}'
    ```
 
 **Why:** manual applies drift from Git, get reverted by self-heal, and are not
