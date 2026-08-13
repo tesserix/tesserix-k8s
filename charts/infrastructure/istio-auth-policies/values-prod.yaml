@@ -7,6 +7,11 @@ authorizationPolicies:
   strictMtls: true
 
 # Production frontend apps with mark8ly.com domain
+#
+# INERT IN PROD. argocd/prod/infrastructure/istio-auth-policies.yaml re-declares
+# frontendApps inline, and an inline `values:` block beats every valueFile — so
+# a host added here alone is never served and the gateway keeps returning 403.
+# Add it there.
 frontendApps:
   - name: storefront
     label: storefront
@@ -122,15 +127,6 @@ frontendApps:
     namespace: observability
     hosts:
       - "observability.tesserix.app"
-  # secret-service — the OpenBao admin console. Host-level ALLOW only; the
-  # per-pod policies live in charts/apps/secret-service because the console is
-  # two workloads (UI + API) and this template selects a single label.
-  # Unauthenticated at the gateway so the OIDC sign-in redirect is reachable;
-  # the API enforces the two-address allowlist on every request.
-  - name: secret-service
-    label: secret-service-web
-    hosts:
-      - "secret-service.tesserix.app"
   - name: opencost
     label: opencost
     hosts:
