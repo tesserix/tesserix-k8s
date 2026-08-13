@@ -9,23 +9,25 @@ metadata:
   annotations:
 {{ toYaml .Values.bootstrap.serviceAccount.annotations | indent 4 }}
 ---
-# Runs on every sync so a policy or role added to values.yaml lands without
-# anyone touching the cluster. The script is idempotent; re-running is a no-op.
+# A plain resource in the same wave as the StatefulSet, not a hook. A hook in
+# wave N only runs once wave N's resources are healthy, and this StatefulSet is
+# healthy only when all three replicas are — so a preempted or unschedulable
+# replica blocks the bootstrap, and on a fresh cluster nothing is ever ready
+# because nothing has initialised it. Plain resources in a wave are applied
+# together with no such gate; the script polls openbao-0 for five minutes,
+# which covers the pods starting.
 #
-# Sync, not PostSync, and the same wave as the StatefulSet: a fresh cluster is
-# uninitialised, so no pod ever passes its readiness probe, so a PostSync hook
-# that waits for health never fires and nothing initialises it. The script
-# polls /v1/sys/seal-status for five minutes, which covers the pods starting.
+# The name carries a hash of the script, so editing it produces a new Job and
+# the change actually runs — a Job's spec is immutable and re-applying one
+# under the same name is a no-op. The script is idempotent either way.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: openbao-bootstrap
+  name: openbao-bootstrap-{{ include (print $.Template.BasePath "/bootstrap-configmap.yaml") . | sha256sum | trunc 8 }}
   labels:
     app.kubernetes.io/name: openbao
     app.kubernetes.io/component: bootstrap
   annotations:
-    argocd.argoproj.io/hook: Sync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
     argocd.argoproj.io/sync-wave: "0"
 spec:
   backoffLimit: 4
