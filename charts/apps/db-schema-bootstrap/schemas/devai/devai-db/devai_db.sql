@@ -692,6 +692,26 @@ CREATE INDEX IF NOT EXISTS idx_evals_run ON agent_evals(run_id);
 CREATE INDEX IF NOT EXISTS idx_evals_user ON agent_evals(triggered_by, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_evals_evaluator ON agent_evals(evaluator, created_at DESC);
 
+-- ============================================================================
+-- SANDBOXES — pinned, TTL-bounded agent configurations
+-- The spec is stored whole as JSONB because it is frozen at creation: this row
+-- is the record of what an eval ran against. Destroyed rows are kept.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS sandboxes (
+    id             TEXT PRIMARY KEY,
+    owner          TEXT NOT NULL,
+    spec           JSONB NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'pending',  -- pending | provisioning | ready | destroying | destroyed | failed
+    detail         JSONB NOT NULL DEFAULT '{}'::jsonb,
+    expires_at     TIMESTAMPTZ NOT NULL,
+    last_access_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sandboxes_owner ON sandboxes(owner, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sandboxes_reap ON sandboxes(expires_at) WHERE status <> 'destroyed';
+CREATE INDEX IF NOT EXISTS idx_sandboxes_agent ON sandboxes((spec->'agent'->>'name'), created_at DESC);
+
 -- ============================================================
 -- Ownership / grants — the bootstrap connects as the postgres
 -- superuser (CREATE EXTENSION vector requires it; pgvector is not a

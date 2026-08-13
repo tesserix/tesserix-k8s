@@ -535,3 +535,23 @@ CREATE INDEX IF NOT EXISTS idx_repo_onboarding_updated ON repo_onboarding(update
 -- (active pipeline keeps runs in Redis; pipeline_runs is legacy-only).
 ALTER TABLE agent_executions DROP CONSTRAINT IF EXISTS agent_executions_run_id_fkey;
 ALTER TABLE a2a_messages DROP CONSTRAINT IF EXISTS a2a_messages_run_id_fkey;
+
+-- ============================================================================
+-- SANDBOXES — pinned, TTL-bounded agent configurations
+-- The spec is stored whole as JSONB because it is frozen at creation: this row
+-- is the record of what an eval ran against. Destroyed rows are kept.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS sandboxes (
+    id             TEXT PRIMARY KEY,
+    owner          TEXT NOT NULL,
+    spec           JSONB NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'pending',  -- pending | provisioning | ready | destroying | destroyed | failed
+    detail         JSONB NOT NULL DEFAULT '{}'::jsonb,
+    expires_at     TIMESTAMPTZ NOT NULL,
+    last_access_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sandboxes_owner ON sandboxes(owner, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sandboxes_reap ON sandboxes(expires_at) WHERE status <> 'destroyed';
+CREATE INDEX IF NOT EXISTS idx_sandboxes_agent ON sandboxes((spec->'agent'->>'name'), created_at DESC);
