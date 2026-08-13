@@ -124,9 +124,11 @@ first time it is needed for real.
 ```bash
 export KUBECONFIG=~/.kube/gke-prod
 
-# Cluster health (raft peers, one entry per node)
-kubectl exec -n ai-database qdrant-0 -- \
-  curl -s -H "api-key: $KEY" localhost:6333/cluster | python3 -m json.tool
+# Cluster health (raft peers, one entry per node). The image ships no curl,
+# so drive the API from outside rather than kubectl exec.
+KEY=$(kubectl get secret qdrant-api-keys -n ai-database -o jsonpath='{.data.api-key}' | base64 -d)
+kubectl port-forward -n ai-database svc/qdrant 16333:6333 &
+curl -s -H "api-key: $KEY" localhost:16333/cluster | python3 -m json.tool
 
 kubectl get pods,pvc -n ai-database
 kubectl logs -n ai-database job/<qdrant-snapshot-backup-...>
