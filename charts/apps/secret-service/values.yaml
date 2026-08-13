@@ -1,0 +1,87 @@
+# Platform policy: memory requests/limits only — NEVER set CPU requests/limits.
+
+namespace: secret-service
+
+host: secret-service.tesserix.app
+
+# The only humans who may sign in. Everything else about this chart is
+# infrastructure; this line is the actual access-control decision.
+adminEmails:
+  - samyak.rout@gmail.com
+  - mahesh.sangawar@gmail.com
+
+api:
+  image:
+    repository: ghcr.io/tesserix/secret-service-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  port: 8080
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+web:
+  image:
+    repository: ghcr.io/tesserix/secret-service-web
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  port: 3400
+  resources:
+    requests:
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+
+openbao:
+  address: http://openbao.openbao.svc.cluster.local:8200
+  mount: kv
+  # Matches `bootstrap.kubernetesRoles[name=secret-service]` in the openbao chart.
+  kubernetesRole: secret-service
+  kubernetesMount: kubernetes
+
+oidc:
+  # Back-channel calls go in-cluster: Cloudflare strips Authorization from
+  # `GET /protocol/openid-connect/userinfo` on the public host.
+  issuer: http://keycloak.identity-internal.svc.cluster.local:8080/realms/tesserix-internal
+  publicIssuer: https://internal-identity.fe3dr.com/realms/tesserix-internal
+  clientId: secret-service
+
+sessionTTL: 8h
+
+externalSecret:
+  enabled: true
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+  # 32 random bytes, base64 — seals the session cookie.
+  sessionKeySecret: prod-secret-service-session-key
+  clientSecretSecret: prod-secret-service-oidc-client-secret
+
+istio:
+  enabled: true
+  gateways:
+    - istio-ingress/tesseract-gateway
+    - istio-ingress/custom-domain-gateway
+
+networkPolicy:
+  enabled: true
+  # kube-dns ClusterIP — NodeLocal DNSCache answers locally, so a kube-system
+  # namespaceSelector never matches on its own.
+  dnsServiceIP: 10.30.0.10
+  # Cluster pod CIDR for the ambient HBONE rule. A wrong value silently kills
+  # all east-west traffic for the namespace.
+  podCIDR: 10.20.0.0/16
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
