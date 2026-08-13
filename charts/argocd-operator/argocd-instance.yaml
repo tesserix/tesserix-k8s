@@ -70,7 +70,15 @@ spec:
       jqPathExpressions:\n  - '.spec.postgresql.parameters | keys[] | select(. == \"archive_mode\" or\
       \ . == \"archive_timeout\")'\n  - '.spec.bootstrap.initdb.encoding'\n  - '.spec.backup.barmanObjectStore.data'\n\
       \  - '.spec.managed.roles[]?.connectionLimit'\n  - '.spec.managed.roles[]?.inherit'\n\n"
-    resource.customizations.ignoreResourceUpdates.all: "jsonPointers:\n  - /status\n"
+    # Heartbeat noise only, never the whole of /status. Ignoring /status
+    # cluster-wide means a status-only event — a pod going ready is exactly
+    # that — never refreshes the controller's cached copy, so cached health
+    # freezes until an unrelated non-status write or the 12h cache resync.
+    # A sync waiting on that health waits with it: it pinned openbao on
+    # `waiting for healthy state of apps/StatefulSet/openbao` with the
+    # StatefulSet live at 3/3.
+    resource.customizations.ignoreResourceUpdates.all: "jqPathExpressions:\n  - '.status.conditions[]?.lastTransitionTime'\n\
+      \  - '.status.conditions[]?.lastUpdateTime'\n  - '.status.observedGeneration'\n"
     resource.customizations.ignoreResourceUpdates.argoproj.io_Application: "jqPathExpressions:\n  - '.metadata.annotations.\"\
       notified.notifications.argoproj.io\"'\n  - '.metadata.annotations.\"argocd.argoproj.io/refresh\"\
       '\n  - '.operation'\n"

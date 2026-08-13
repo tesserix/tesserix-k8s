@@ -279,6 +279,14 @@ in `homechef-clients-bootstrap-job.yaml`. The bootstrap job is idempotent.
     KEDA `cpu` trigger cannot work without a request (metric reads
     `<unknown>`; KEDA's webhook rejects it outright), so scale on memory; and
     a VPA must use `controlledResources: ["memory"]` or it re-injects cpu.
+13. **Never ignore all of `/status` in `ignoreResourceUpdates`.** A pod going
+    ready is a status-only event, so the controller drops it, its cached copy
+    of the workload never changes, and cached health freezes until an
+    unrelated non-status write or the 12h cache resync. Anything gated on that
+    health — a sync waiting on a wave, a hook Job — waits with it, while
+    `kubectl` shows the workload perfectly healthy. Ignore heartbeat fields
+    (`lastTransitionTime`, `observedGeneration`) instead. Per-kind rules are
+    additive with `.all`, so a kind cannot opt back out.
 
 ---
 
