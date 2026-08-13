@@ -1,0 +1,29 @@
+namespace: openbao
+
+# Namespaces whose workloads may reach the OpenBao API (8200). Nothing else
+# gets past L3, whatever token it holds. Adding a namespace here is only half
+# the grant — it still needs a Kubernetes auth role in the openbao chart's
+# `bootstrap.kubernetesRoles`.
+allowedSources:
+  # ESO is the only intended reader: apps get Kubernetes Secrets, not tokens.
+  - external-secrets
+
+# Istio principals allowed to call the API, enforced at L7 on top of the
+# NetworkPolicy. Format: <namespace>/<serviceaccount>.
+allowedPrincipals:
+  - external-secrets/external-secrets
+
+peerAuthenticationMode: STRICT
+
+# Cluster pod CIDR for the ambient HBONE NetworkPolicy. A wrong value silently
+# kills all east-west traffic for the namespace.
+podCIDR: 10.20.0.0/16
+
+# kube-dns service IP. NodeLocal DNSCache answers locally, so a kube-system
+# namespaceSelector never matches on its own.
+dnsServiceIP: 10.30.0.10
+
+# GKE control plane. Needed for `service_registration "kubernetes"` and for
+# the TokenReview behind Kubernetes auth — and it sits inside the RFC1918
+# range the general HTTPS egress rule excludes, so it needs its own allow.
+apiServerCIDR: 172.16.0.0/28

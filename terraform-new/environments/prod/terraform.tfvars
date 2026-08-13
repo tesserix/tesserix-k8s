@@ -265,6 +265,24 @@ kms_keys = [
     }
     iam_bindings = []
   },
+  # OpenBao auto-unseal. Rotation is safe: gcpckms encrypts with the primary
+  # version and decrypts with whichever version sealed the key ring.
+  {
+    name             = "openbao-unseal-key"
+    rotation_period  = "7776000s"
+    purpose          = "ENCRYPT_DECRYPT"
+    protection_level = "SOFTWARE"
+    labels = {
+      tier    = "infrastructure"
+      purpose = "openbao-unseal"
+    }
+    iam_bindings = [
+      {
+        role   = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+        member = "serviceAccount:openbao@tesseracthub-480811.iam.gserviceaccount.com"
+      }
+    ]
+  },
   # Third-Party Integration Keys
   {
     name             = "thirdparty-secrets-encryption-key"
