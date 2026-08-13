@@ -24,6 +24,19 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: ai-database
+  # The API server defaults these into volumeClaimTemplates and the chart never
+  # sets them, so the app is OutOfSync forever and self-heal re-syncs on every
+  # reconcile. Diff-only: RespectIgnoreDifferences is deliberately NOT set, as
+  # that plus SSA can strip the whole list from the apply (CLAUDE.md gotcha 11).
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      name: qdrant
+      jqPathExpressions:
+        - '.spec.volumeClaimTemplates[]?.apiVersion'
+        - '.spec.volumeClaimTemplates[]?.kind'
+        - '.spec.volumeClaimTemplates[]?.status'
+        - '.spec.volumeClaimTemplates[]?.spec.volumeMode'
   syncPolicy:
     automated:
       # prune is deliberately omitted, not set false: `false` is the zero
