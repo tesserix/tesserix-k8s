@@ -7,9 +7,12 @@ metadata:
     app.kubernetes.io/name: openbao
     app.kubernetes.io/component: bootstrap
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    # Sync and an earlier wave than the Job that mounts it — a PostSync
+    # ConfigMap is never created in the Sync phase and the Job pod sits in
+    # ContainerCreating on FailedMount until the sync gives up.
+    argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
-    argocd.argoproj.io/sync-wave: "0"
+    argocd.argoproj.io/sync-wave: "-1"
 data:
   bootstrap.sh: |
     #!/usr/bin/env bash
