@@ -1,0 +1,58 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: security
+    app.kubernetes.io/component: secret-store
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    # Lets the Kargo stage run argocd-update against this app. Without it the
+    # promotion's last step fails as unauthorized after the commit has already
+    # landed, leaving git ahead of the cluster until the next poll.
+    kargo.akuity.io/authorized-stage: "kargo-infra:openbao-prod"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: security
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/thirdparty/openbao
+    helm:
+      releaseName: openbao
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openbao
+  # The API server defaults these into volumeClaimTemplates and the chart never
+  # sets them, so the app would be OutOfSync forever and self-heal would re-sync
+  # on every reconcile. Diff-only: RespectIgnoreDifferences is deliberately NOT
+  # set, as that plus SSA can strip the whole list from the apply (CLAUDE.md 11).
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      name: openbao
+      jqPathExpressions:
+        - '.spec.volumeClaimTemplates[]?.apiVersion'
+        - '.spec.volumeClaimTemplates[]?.kind'
+        - '.spec.volumeClaimTemplates[]?.status'
+        - '.spec.volumeClaimTemplates[]?.spec.volumeMode'
+  syncPolicy:
+    automated:
+      # prune is deliberately omitted, not set false: `false` is the zero value
+      # and gets dropped on write, pinning the app OutOfSync forever. Pruning
+      # the raft PVCs is harmless anyway — the storage class is Retain.
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

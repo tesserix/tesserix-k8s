@@ -1,0 +1,145 @@
+# Default deny for the namespace — every allow below is additive.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Client access to the OpenBao API. Port 8201 is deliberately absent: raft
+# cluster traffic is intra-namespace only, and a client that can reach it can
+# talk to the storage layer directly.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-clients-to-openbao
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openbao
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+{{- range .Values.allowedSources }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . | quote }}
+{{- end }}
+      ports:
+        - protocol: TCP
+          port: 8200
+    # istio-system reaches pods for istiod CSR signing and telemetry.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8200
+---
+# Raft consensus, request forwarding, and the in-namespace Jobs.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+---
+# Ambient HBONE. Without 15008 open both ways every east-west connection
+# through ztunnel fails with no log on either side.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-hbone-15008
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: {{ .Values.podCIDR }}
+      ports:
+        - protocol: TCP
+          port: 15008
+  egress:
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.podCIDR }}
+      ports:
+        - protocol: TCP
+          port: 15008
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-control-plane-and-gcp
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # The namespaceSelector alone is not enough: NodeLocal DNSCache answers
+    # from the node, so the kube-dns service IP needs its own allow.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - ipBlock:
+            cidr: {{ .Values.dnsServiceIP }}/32
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Workload Identity token minting for the KMS seal.
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+    # service_registration and the TokenReview behind Kubernetes auth. Listed
+    # separately because the private master IP is inside the RFC1918 range the
+    # rule below excludes.
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.apiServerCIDR }}
+      ports:
+        - protocol: TCP
+          port: 443
+    # Cloud KMS (unseal) and Secret Manager / GCS (bootstrap and snapshots).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system

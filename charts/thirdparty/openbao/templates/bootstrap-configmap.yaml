@@ -1,0 +1,148 @@
+{{- if .Values.bootstrap.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openbao-bootstrap
+  labels:
+    app.kubernetes.io/name: openbao
+    app.kubernetes.io/component: bootstrap
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "0"
+data:
+  bootstrap.sh: |
+    #!/usr/bin/env bash
+    # Initialises OpenBao once, then applies policies and Kubernetes auth roles
+    # on every run. Everything below must be idempotent.
+    set -euo pipefail
+
+    ADDR="http://openbao-0.openbao-internal.{{ .Release.Namespace }}.svc:8200"
+    SA_TOKEN_PATH=/var/run/secrets/kubernetes.io/serviceaccount/token
+    TOKEN=""
+    ROOT_TOKEN_IN_USE=0
+
+    api() {
+      local method=$1 path=$2 data=${3:-}
+      local args=(-sS -o /tmp/resp -w '%{http_code}' -X "$method")
+      [[ -n $TOKEN ]] && args+=(-H "X-Vault-Token: $TOKEN")
+      [[ -n $data ]] && args+=(-H 'Content-Type: application/json' --data-binary "$data")
+      curl "${args[@]}" "$ADDR$path"
+    }
+
+    # 200/204 are success; 400 with "already" is a mount or auth method that
+    # exists from a previous run, which is the steady state, not an error.
+    expect_ok() {
+      local code=$1 what=$2
+      case "$code" in
+        200|204) echo "ok: $what" ;;
+        400) grep -qiE 'existing|already' /tmp/resp \
+               && echo "ok: $what (already configured)" \
+               || { echo "FAIL $what ($code): $(cat /tmp/resp)"; exit 1; } ;;
+        *) echo "FAIL $what ($code): $(cat /tmp/resp)"; exit 1 ;;
+      esac
+    }
+
+    jget() { python3 -c 'import json,sys;print(json.load(open("/tmp/resp")).get(sys.argv[1],""))' "$1"; }
+
+    echo "==> waiting for openbao-0 to answer"
+    for i in $(seq 1 60); do
+      curl -sf -o /tmp/resp "$ADDR/v1/sys/seal-status" && break
+      [[ $i -eq 60 ]] && { echo "openbao-0 never answered"; exit 1; }
+      sleep 5
+    done
+
+    if [[ "$(jget initialized)" != "True" ]]; then
+      echo "==> uninitialised: running operator init"
+      code=$(api POST /v1/sys/init \
+        '{"recovery_shares":{{ .Values.bootstrap.recoveryShares }},"recovery_threshold":{{ .Values.bootstrap.recoveryThreshold }}}')
+      [[ $code == 200 ]] || { echo "init failed ($code): $(cat /tmp/resp)"; exit 1; }
+      cp /tmp/resp /tmp/init.json
+
+      # The recovery keys exist in exactly one place after this: Secret Manager.
+      # Losing them means losing the ability to mint a new root token.
+      gcloud secrets describe {{ .Values.bootstrap.recoverySecretName }} \
+        --project={{ .Values.bootstrap.gcpProject }} >/dev/null 2>&1 \
+        || gcloud secrets create {{ .Values.bootstrap.recoverySecretName }} \
+             --project={{ .Values.bootstrap.gcpProject }} --replication-policy=automatic
+      gcloud secrets versions add {{ .Values.bootstrap.recoverySecretName }} \
+        --project={{ .Values.bootstrap.gcpProject }} --data-file=/tmp/init.json
+      echo "==> recovery keys stored in {{ .Values.bootstrap.recoverySecretName }}"
+
+      TOKEN=$(python3 -c 'import json;print(json.load(open("/tmp/init.json"))["root_token"])')
+      ROOT_TOKEN_IN_USE=1
+      rm -f /tmp/init.json
+    fi
+
+    echo "==> waiting for auto-unseal and a raft leader"
+    for i in $(seq 1 60); do
+      code=$(curl -sS -o /dev/null -w '%{http_code}' "$ADDR/v1/sys/health?standbyok=true")
+      [[ $code == 200 || $code == 429 ]] && break
+      [[ $i -eq 60 ]] && { echo "still sealed or leaderless (last health $code)"; exit 1; }
+      sleep 5
+    done
+
+    if [[ $ROOT_TOKEN_IN_USE -eq 0 ]]; then
+      echo "==> logging in via kubernetes auth as {{ .Values.bootstrap.bootstrapRole }}"
+      jwt=$(cat "$SA_TOKEN_PATH")
+      code=$(api POST /v1/auth/kubernetes/login \
+        "$(python3 -c 'import json,sys;print(json.dumps({"role":sys.argv[1],"jwt":sys.argv[2]}))' \
+           '{{ .Values.bootstrap.bootstrapRole }}' "$jwt")")
+      [[ $code == 200 ]] || { echo "login failed ($code): $(cat /tmp/resp)"; echo "recover with: bao operator generate-root, using the recovery keys"; exit 1; }
+      TOKEN=$(python3 -c 'import json;print(json.load(open("/tmp/resp"))["auth"]["client_token"])')
+    fi
+
+    echo "==> audit device"
+    expect_ok "$(api POST /v1/sys/audit/file \
+      '{"type":"file","options":{"file_path":"/openbao/audit/audit.log"}}')" "audit/file"
+
+    echo "==> kv v2 mount at {{ .Values.bootstrap.kvMount }}/"
+    expect_ok "$(api POST /v1/sys/mounts/{{ .Values.bootstrap.kvMount }} \
+      '{"type":"kv","options":{"version":"2"}}')" "mounts/{{ .Values.bootstrap.kvMount }}"
+
+    echo "==> kubernetes auth method"
+    expect_ok "$(api POST /v1/sys/auth/kubernetes '{"type":"kubernetes"}')" "auth/kubernetes"
+    # No token_reviewer_jwt: OpenBao reviews with its own projected token, so
+    # there is no long-lived reviewer credential to rotate.
+    expect_ok "$(api POST /v1/auth/kubernetes/config \
+      "$(python3 -c 'import json,os;print(json.dumps({"kubernetes_host":"https://%s:443" % os.environ["KUBERNETES_SERVICE_HOST"]}))')")" \
+      "auth/kubernetes/config"
+
+    echo "==> policies"
+    for f in /config/policy-*.hcl; do
+      name=$(basename "$f" .hcl); name=${name#policy-}
+      body=$(python3 -c 'import json,sys;print(json.dumps({"policy":open(sys.argv[1]).read()}))' "$f")
+      expect_ok "$(api PUT "/v1/sys/policies/acl/$name" "$body")" "policy/$name"
+    done
+
+    echo "==> kubernetes auth roles"
+    for f in /config/role-*.json; do
+      name=$(basename "$f" .json); name=${name#role-}
+      expect_ok "$(api POST "/v1/auth/kubernetes/role/$name" "$(cat "$f")")" "role/$name"
+    done
+
+    if [[ $ROOT_TOKEN_IN_USE -eq 1 ]]; then
+      # The root token is never stored. Day-2 admin access is minted from the
+      # recovery keys with `bao operator generate-root`.
+      echo "==> revoking the initial root token"
+      api POST /v1/auth/token/revoke-self >/dev/null
+    fi
+
+    echo "==> bootstrap complete"
+
+{{- range .Values.bootstrap.policies }}
+  policy-{{ .name }}.hcl: |
+{{ .hcl | indent 4 }}
+{{- end }}
+
+{{- range .Values.bootstrap.kubernetesRoles }}
+  role-{{ .name }}.json: |
+{{/* No `audience`: OpenBao then skips audience validation, which is what we
+     want — ESO mints tokens with the API server's default audience and a
+     mismatch fails the login with an opaque "invalid role name". */}}
+{{ dict "bound_service_account_names" .serviceAccounts
+        "bound_service_account_namespaces" .namespaces
+        "token_policies" .policies
+        "token_ttl" .ttl | toPrettyJson | indent 4 }}
+{{- end }}
+{{- end }}
