@@ -147,6 +147,12 @@ it can read every namespace can request — which is why its policy stops at
   pass both. It is deliberately L4 — the namespace is ambient with no waypoint,
   so ztunnel enforces the policy and cannot evaluate an `operation.paths`
   condition; an ALLOW policy whose only rule is L7 evaluates as deny-all.
+- A namespace rule matches on the caller's mTLS identity, so it can never admit
+  a plaintext one: with `allowedSources: [external-secrets]` in place, ztunnel
+  still reset every ESO login with `allow policies exist, but none allowed` and
+  the ClusterSecretStore sat on `unable to create client`. `allowNonMeshSources`
+  adds an address rule for the pod CIDR on 8200 alongside it. Retire it together
+  with `peerAuthenticationMode` once ESO is ambient-enrolled.
 - No Ingress, no Gateway route, no Cloudflare record. The UI is ClusterIP and
   reached by `kubectl port-forward`.
 - Read-only root filesystem, all capabilities dropped, non-root, seccomp
