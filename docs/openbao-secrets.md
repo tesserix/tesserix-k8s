@@ -151,7 +151,9 @@ it can read every namespace can request — which is why its policy stops at
   reached by `kubectl port-forward`.
 - Read-only root filesystem, all capabilities dropped, non-root, seccomp
   `RuntimeDefault`.
-- Audit device on its own PVC at `/openbao/audit/audit.log`.
+- Audit device on its own PVC at `/openbao/audit/audit.log`, declared as an
+  `audit "file" "file"` stanza in the server config. 2.6 rejects
+  `POST /v1/sys/audit/file`, so it cannot be enabled from the bootstrap Job.
 - The Agent injector and CSI provider are both disabled: each is a cluster-wide
   mutating path we have no use for while ESO is the reader.
 
