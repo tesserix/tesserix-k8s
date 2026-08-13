@@ -82,7 +82,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-egress-openbao-keycloak-dns
+  name: allow-egress-openbao-google-dns
   namespace: {{ .Values.namespace }}
 spec:
   podSelector: {}
@@ -109,14 +109,18 @@ spec:
       ports:
         - protocol: TCP
           port: 8200
-    # Back-channel OIDC: token exchange and JWKS go to the in-cluster Keycloak.
+    # Google token exchange and JWKS, and the GKE control plane for discovery —
+    # both are 443 outside the cluster network. The metadata server is excluded:
+    # nothing here needs it, and it hands out node-scoped credentials.
     - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: identity-internal
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+              - {{ .Values.networkPolicy.podCIDR }}
       ports:
         - protocol: TCP
-          port: 8080
+          port: 443
     - to:
         - namespaceSelector:
             matchLabels:

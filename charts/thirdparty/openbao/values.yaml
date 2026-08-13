@@ -319,14 +319,19 @@ bootstrap:
         path "kv/data/ai-database/*"     { capabilities = ["read"] }
         path "kv/metadata/ai-database/*" { capabilities = ["read", "list"] }
 
-    # The admin console. It is the one identity that writes secrets and mints
-    # per-namespace grants, so it holds the whole KV mount — but its grant-making
-    # is confined to the `app-` prefix, which this Job never reconciles, so the
-    # two never fight over the same policy or role.
+    # The admin console. It writes secrets and mints per-app grants, but has no
+    # `read` on kv/data — deliberately, and enforced here rather than in the
+    # console's own code, so that compromising the console still yields no secret
+    # value. It sees only kv/metadata: versions, timestamps, and the key names it
+    # records itself in custom_metadata. Its grant-making is confined to the
+    # `app-` prefix, which this Job never reconciles, so the two never fight over
+    # the same policy or role.
     - name: secret-service
       hcl: |
-        path "kv/data/*"     { capabilities = ["create", "read", "update", "delete", "list"] }
+        path "kv/data/*"     { capabilities = ["create", "update", "delete"] }
         path "kv/metadata/*" { capabilities = ["create", "read", "update", "delete", "list"] }
+        path "kv/destroy/*"  { capabilities = ["update"] }
+        path "kv/undelete/*" { capabilities = ["update"] }
         path "sys/policies/acl/app-*"   { capabilities = ["create", "read", "update", "delete"] }
         path "auth/kubernetes/role/app-*" { capabilities = ["create", "read", "update", "delete"] }
         path "auth/kubernetes/role"       { capabilities = ["list"] }
@@ -436,3 +441,24 @@ clusterSecretStore:
   serviceAccount:
     name: external-secrets
     namespace: external-secrets
+
+# The whitelist. One entry per app that may read from OpenBao, and the single
+# place that fact is written down: it renders that app's SecretStore and gates
+# which namespaces the ClusterSecretStore will serve at all. The secret-service
+# console proposes changes here as a pull request — it never edits the cluster.
+#
+# The matching OpenBao policy and auth role (`app-<namespace>_<app>`) are minted
+# by the console, not by the bootstrap Job, so the two never reconcile the same
+# object. An entry here without a grant reads nothing; a grant without an entry
+# has no store to be read through.
+namespaceWhitelist:
+  - namespace: homechef
+    apps:
+      - name: homechef-api
+        serviceAccount: homechef-api
+      - name: homechef-worker
+        serviceAccount: homechef-worker
+  - namespace: ai-database
+    apps:
+      - name: qdrant
+        serviceAccount: qdrant
