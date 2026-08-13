@@ -13,27 +13,34 @@ spec:
   cooldownPeriod: {{ .Values.keda.cooldownPeriod }}
   minReplicaCount: {{ .Values.keda.minReplicaCount }}
   maxReplicaCount: {{ .Values.keda.maxReplicaCount }}
+  # Multiple triggers are OR-ed: the HPA takes the highest replica count
+  # any one of them asks for.
   triggers:
     {{- if and .Values.keda.prometheus .Values.keda.prometheus.enabled }}
-    # Explicit prometheus trigger: scale on the chart-supplied query.
-    # Supports scale-to-zero in UAT and traffic-tracking in prod.
+    # Only valid where a Prometheus is actually running and serving the
+    # query. A trigger pointing at an unreachable server puts the
+    # ScaledObject into TriggerError and the HPA stops scaling entirely,
+    # so this stays opt-in rather than the default.
     - type: prometheus
       metadata:
         serverAddress: {{ .Values.keda.prometheus.serverAddress | quote }}
         threshold: {{ .Values.keda.prometheus.threshold | quote }}
         query: {{ .Values.keda.prometheus.query | quote }}
-    {{- else }}
-    # Default trigger when no explicit prometheus block is supplied.
-    # Memory-utilization is the platform's fallback because CPU
-    # triggers are rejected by the KEDA vscaledobject admission
-    # webhook whenever resources.requests.cpu is absent — and platform
-    # policy is intentionally memory-only (see feedback_no_cpu_limits).
-    # The 80% threshold rarely fires for HTTP services and keeps
-    # min/maxReplicaCount in charge; charts that want traffic-based
-    # scaling should set keda.prometheus.* explicitly.
+    {{- end }}
+    {{- if and .Values.keda.cpu .Values.keda.cpu.enabled }}
+    # CPU is the load signal that actually tracks request volume for this
+    # service. The KEDA admission webhook rejects a cpu trigger unless the
+    # container declares resources.requests.cpu, so the two must be set
+    # together — see resources.requests.cpu in values.yaml.
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: {{ .Values.keda.cpu.threshold | quote }}
+    {{- end }}
+    {{- if .Values.keda.memory.enabled }}
     - type: memory
       metricType: Utilization
       metadata:
-        value: "80"
+        value: {{ .Values.keda.memory.threshold | quote }}
     {{- end }}
 {{- end }}

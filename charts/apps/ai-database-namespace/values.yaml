@@ -1,0 +1,26 @@
+namespace: ai-database
+
+# Namespaces whose workloads may call INTO ai-database (Qdrant REST 6333 /
+# gRPC 6334). Add a namespace here when an agent in it starts using the
+# vector store — nothing reaches Qdrant at L3 otherwise.
+allowedSources:
+  - ai-database
+  # DevAI / agentic control planes are the first consumers.
+  - devai
+  - agentregistry-system
+  - agentgateway-system
+  - kagent-system
+  # Support platform's RAG pipeline (embedder + reranker) is the intended
+  # second consumer once it moves off pgvector.
+  - support-platform
+
+# mTLS mode for the namespace. STRICT means every caller must be in the mesh
+# (ambient or sidecar); a non-mesh caller gets a connection reset with no
+# useful error, so flip to PERMISSIVE before onboarding one rather than
+# debugging it. API-key auth on Qdrant is enforced independently of this.
+peerAuthenticationMode: STRICT
+
+# Cluster pod CIDR for the ambient HBONE NetworkPolicy. Must match
+# tesseract-prod-in-gke's pod range — a wrong value silently kills all
+# east-west traffic for the namespace.
+podCIDR: 10.20.0.0/16
