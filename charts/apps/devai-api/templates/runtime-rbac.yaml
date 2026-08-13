@@ -29,7 +29,7 @@ rules:
   # triage. The api never mutates pods directly; the Job controller does.
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "create", "delete"]
 
   - apiGroups: [""]
     resources: ["pods/log"]
@@ -55,6 +55,17 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
     verbs: ["create", "get", "list", "watch", "patch", "delete"]
+
+  # Per-sandbox workspace: the volume it works in, the pod serving shell +
+  # file, its Service, and the Secret holding that workspace's capability
+  # token — which the api reads at call time rather than storing anywhere.
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims", "services"]
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
+
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "get", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
