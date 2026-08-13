@@ -45,6 +45,16 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["get", "list", "watch"]
+
+  # Per-sandbox isolation objects — created when an agent sandbox is
+  # provisioned and deleted with it. Namespaced, like everything else here.
+  - apiGroups: [""]
+    resources: ["resourcequotas", "limitranges"]
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
+
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "get", "list", "watch", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -81,4 +91,17 @@ metadata:
     # terraform-new/stacks/12-vertex.
     iam.gke.io/gcp-service-account: {{ .Values.gcp.workloadIdentity.gcpServiceAccount }}
   {{- end }}
+---
+# Identity for sandboxed agent runs. Deliberately has no Workload Identity
+# annotation and no RoleBinding: a sandbox must not be able to mint ADC for
+# the production GSA. Sandbox pods also run with automountServiceAccountToken
+# disabled, so this is belt-and-braces.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.k8sRuntime.sandboxServiceAccount | default "devai-sandbox" }}
+  namespace: {{ .Values.k8sRuntime.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox
 {{- end }}
