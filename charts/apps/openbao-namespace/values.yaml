@@ -8,12 +8,18 @@ allowedSources:
   # ESO is the only intended reader: apps get Kubernetes Secrets, not tokens.
   - external-secrets
 
-# Istio principals allowed to call the API, enforced at L7 on top of the
-# NetworkPolicy. Format: <namespace>/<serviceaccount>.
-allowedPrincipals:
-  - external-secrets/external-secrets
+# Istio principals allowed to call the API, on top of the NetworkPolicy.
+# Format: <namespace>/<serviceaccount>. Only mesh-enrolled callers have one —
+# see `allowedSources` for the rest.
+allowedPrincipals: []
 
-peerAuthenticationMode: STRICT
+# PERMISSIVE, not STRICT: `external-secrets` is not enrolled in the mesh (no
+# `istio.io/dataplane-mode` label), so ESO dials OpenBao in plaintext with no
+# SPIFFE identity. STRICT would reject it outright and nothing could ever read
+# a secret. The NetworkPolicy above is the hard boundary; OpenBao's own
+# Kubernetes auth is what authorises the caller. Move this to STRICT once ESO
+# is ambient-enrolled, and put it back in `allowedPrincipals` at the same time.
+peerAuthenticationMode: PERMISSIVE
 
 # Cluster pod CIDR for the ambient HBONE NetworkPolicy. A wrong value silently
 # kills all east-west traffic for the namespace.
