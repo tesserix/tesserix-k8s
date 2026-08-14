@@ -125,4 +125,31 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
+{{- if has "gcpsm" .Values.backends.enabled }}
+---
+# Workload Identity tokens come from the GKE metadata server, which the blanket
+# 443 egress rule above deliberately excludes. Only the API pod gets it, and
+# under Workload Identity it hands out this ServiceAccount's GSA token rather
+# than the node's.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-gke-metadata
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "secret-service.selectorLabels" (dict "component" "secret-service-api" "release" .Release.Name) | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.metadataServerIP }}/32
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 988
+{{- end }}
 {{- end }}

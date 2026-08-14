@@ -3615,6 +3615,22 @@ service_accounts = [
       }
     ]
     secret_bindings = []
+  },
+  # secret-service console, Google Secret Manager backend. The custom role is
+  # everything but versions.access, so the console cannot read back a payload
+  # it wrote — the same write-blindness its OpenBao policy gives it.
+  {
+    name         = "secret-service"
+    display_name = "Secret Service Console"
+    description  = "Manages Secret Manager secrets for the secret-service console"
+    project_roles = [
+      "projects/tesseracthub-480811/roles/secretManagerWriteBlind"
+    ]
+    workload_identity_bindings = [
+      { namespace = "secret-service", kubernetes_service_account = "secret-service-api" }
+    ]
+    bucket_bindings = []
+    secret_bindings = []
   }
 ]
 
