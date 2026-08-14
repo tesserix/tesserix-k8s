@@ -25,10 +25,16 @@ postgres:
 zitadel:
   replicaCount: 3
 
+  # Pulled through the GAR remote repositories rather than ghcr.io and
+  # docker.io directly, same as the rest of the estate.
   image:
-    repository: ghcr.io/zitadel/zitadel
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/zitadel/zitadel
     tag: v4.15.3
     pullPolicy: IfNotPresent
+
+  # Applies to the wait4x and kubectl tool images only, which the chart
+  # otherwise prefixes with docker.io.
+  imageRegistry: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote
 
   zitadel:
     autoscaling:
@@ -271,6 +277,9 @@ zitadel:
   login:
     enabled: true
     replicaCount: 2
+    image:
+      repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/zitadel/zitadel-login
+      tag: v4.15.3
     # Left to the chart, the login client keypair is regenerated on every
     # render because `lookup` returns nothing under Argo CD's client-side
     # templating — each sync would rotate the key and log everyone out.
