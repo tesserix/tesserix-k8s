@@ -44,9 +44,9 @@ instead.
 
 ## Database
 
-`zitadel-postgres` is a two-instance CNPG cluster in the same namespace. Two,
-not one, because this is the authentication path for the estate on Spot-only
-nodes — see [`postgres-cluster-policy.md`](postgres-cluster-policy.md) for why
+`zitadel-postgres` is a three-instance CNPG cluster in the same namespace.
+Three, not one, because this is the authentication path for the estate on
+Spot-only nodes and losing one still has to leave a replica to promote — see [`postgres-cluster-policy.md`](postgres-cluster-policy.md) for why
 that policy has a per-product exception here.
 
 Zitadel's own init Job creates the `zitadel` database, role and grants using
