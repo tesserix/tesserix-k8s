@@ -1,0 +1,26 @@
+{{- if .Values.networkPolicy.enabled }}
+# cnpg-system must be in the ingress policy of any namespace hosting a
+# cluster, or the operator cannot reach the instance manager on 8000 and
+# replicas are never created (docs/postgres-cluster-policy.md).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-operator
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: {{ .Values.clusterName }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 5432
+{{- end }}

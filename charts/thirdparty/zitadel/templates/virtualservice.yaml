@@ -1,0 +1,51 @@
+{{- if .Values.istio.enabled }}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: zitadel
+  namespace: {{ .Values.namespace }}
+spec:
+  hosts:
+    - {{ .Values.host }}
+  gateways:
+    - {{ .Values.istio.gateway }}
+  exportTo:
+    - "."
+    - "istio-ingress"
+  http:
+    # Login v2 is a separate Next.js service; it must match before the catch-all.
+    - match:
+        - uri:
+            prefix: /ui/v2/login
+      headers:
+        request:
+          set:
+            X-Forwarded-Proto: https
+            X-Forwarded-Port: "443"
+      route:
+        - destination:
+            host: zitadel-login.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: 3000
+      timeout: 60s
+    # Everything else — OIDC, SAML, SCIM, the gRPC APIs and the console — is
+    # h2c on 8080; the Service's appProtocol tells the gateway not to downgrade.
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            X-Forwarded-Proto: https
+            X-Forwarded-Port: "443"
+      route:
+        - destination:
+            host: zitadel.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 60s
+      retries:
+        attempts: 3
+        perTryTimeout: 20s
+        retryOn: gateway-error,connect-failure,refused-stream
+{{- end }}
