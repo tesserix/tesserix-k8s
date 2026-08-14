@@ -107,6 +107,7 @@ are never created.
 | `agentregistry-postgres` | `agentregistry-system` | 1 | 8Gi | **no** |
 | `postiz-postgres` | `postiz` | 1 | 10Gi | **no** |
 | `stockpilot-postgres` | `stockpilot` | hibernated | 100Gi + 20Gi | yes |
+| `planning-poker-postgres` | `planning-poker` | 1 | 10Gi + 2Gi | **no** — needs the WI binding first |
 
 Known gaps worth fixing when touching any of these: three clusters run with no
 backup at all, and `global-postgres` is single-instance while hosting both

@@ -55,12 +55,6 @@ bootstrap:
     # fresh bootstrap — see docs/postgres-cluster-policy.md).
     - "CREATE ROLE kora LOGIN"
     - "CREATE DATABASE kora_db OWNER kora"
-    # planning_poker_db — same shape as kora above: its own LOGIN-only role so
-    # the app's credentials reach exactly one database. The API creates its own
-    # tables through idempotent startup migrations, so there is no schema file
-    # for db-schema-bootstrap to apply — only the role and the database.
-    - "CREATE ROLE planning_poker LOGIN"
-    - "CREATE DATABASE planning_poker_db OWNER planning_poker"
   # Runs once against template1 at cluster creation; every database
   # subsequently CREATEd (including from postInitSQL above) inherits
   # whatever is installed here via Postgres's normal template-copy
@@ -88,12 +82,6 @@ managedRoles:
     # This password MUST match whatever is embedded in the
     # prod-kora-database-url secret kora-api reads its DATABASE_URL from —
     # a human coordination point, not something GitOps can enforce.
-  - name: planning_poker
-    passwordSecret: global-postgres-planning-poker
-    # Secret created by the ExternalSecret in external-secrets/prod/global/,
-    # sourced from prod-planning-poker-postgresql-password. The planning-poker
-    # chart mirrors that SAME GCP key into its own namespace and assembles
-    # DATABASE_URL from it, so unlike kora there is no second copy to drift.
 
 # PostgreSQL tuning
 postgresql:
