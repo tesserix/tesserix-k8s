@@ -1,0 +1,309 @@
+namespace: zitadel
+host: auth.tesserix.app
+
+istio:
+  enabled: true
+  gateway: istio-ingress/tesseract-gateway
+
+networkPolicy:
+  enabled: true
+
+externalSecrets:
+  enabled: true
+  storeName: gcp-secret-store
+  refreshInterval: 1h
+
+postgres:
+  host: zitadel-postgres-rw.zitadel.svc.cluster.local
+  port: 5432
+  database: zitadel
+  user: zitadel
+  # CNPG publishes the superuser it generated here; the setup Job needs it to
+  # CREATE DATABASE and CREATE ROLE before the API has a role of its own.
+  superuserSecret: zitadel-postgres-superuser
+
+zitadel:
+  replicaCount: 3
+
+  # Pulled through the GAR remote repositories rather than ghcr.io and
+  # docker.io directly, same as the rest of the estate.
+  image:
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/zitadel/zitadel
+    tag: v4.15.3
+    pullPolicy: IfNotPresent
+
+  # Applies to the wait4x and kubectl tool images only, which the chart
+  # otherwise prefixes with docker.io.
+  imageRegistry: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote
+
+  zitadel:
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 10
+      targetCPU: 70
+
+    # Immutable: every encryption key in the database is derived from it, so a
+    # changed masterkey makes the existing eventstore unreadable. Supplied by
+    # External Secrets from prod-zitadel-masterkey, never by the chart.
+    masterkey: ""
+    masterkeySecretName: zitadel-masterkey
+
+    # Istio terminates TLS at the gateway and ztunnel carries mTLS from there,
+    # so the pod serves plaintext h2c.
+    selfSignedCert:
+      enabled: false
+
+    configmapConfig:
+      ExternalDomain: auth.tesserix.app
+      ExternalPort: 443
+      ExternalSecure: true
+
+      TLS:
+        Enabled: false
+
+      Log:
+        Level: info
+        Formatter:
+          Format: json
+
+      Telemetry:
+        Enabled: false
+
+      Database:
+        postgres:
+          Host: zitadel-postgres-rw.zitadel.svc.cluster.local
+          Port: 5432
+          Database: zitadel
+          MaxOpenConns: 15
+          MaxIdleConns: 5
+          MaxConnLifetime: 30m
+          MaxConnIdleTime: 5m
+          User:
+            Username: zitadel
+            SSL:
+              Mode: require
+          Admin:
+            # The superuser has to land somewhere that already exists before it
+            # can create the zitadel database.
+            ExistingDatabase: postgres
+            SSL:
+              Mode: require
+
+      # Shared cache in Postgres rather than per-pod memory: with three
+      # replicas a memory cache holds three divergent views of the same object,
+      # and IdP form callbacks are cache-backed.
+      Caches:
+        Connectors:
+          Postgres:
+            Enabled: true
+            AutoPrune:
+              Interval: 15m
+              TimeOut: 30s
+
+      Machine:
+        Identification:
+          PrivateIp:
+            Enabled: true
+          Hostname:
+            Enabled: true
+          # The GKE metadata server is unreachable under the namespace egress
+          # policy; each pod's hostname is already unique.
+          Webhook:
+            Enabled: false
+
+      # The chart already asks for the iam-admin machine user; without a human
+      # here there is no way to sign in to the console at all. Merged with the
+      # chart's own FirstInstance block, so the machine user survives.
+      FirstInstance:
+        Org:
+          Human:
+            UserName: zitadel-admin
+            FirstName: Tesserix
+            LastName: Admin
+            Email:
+              Address: unidevidp@gmail.com
+              Verified: true
+
+      DefaultInstance:
+        InstanceName: Tesserix
+        DefaultLanguage: en
+
+        Org:
+          Name: Tesserix
+
+        PasswordComplexityPolicy:
+          MinLength: 12
+          HasLowercase: true
+          HasUppercase: true
+          HasNumber: true
+          HasSymbol: true
+
+        LockoutPolicy:
+          MaxPasswordAttempts: 10
+          MaxOTPAttempts: 10
+          ShouldShowLockoutFailure: true
+
+        DomainPolicy:
+          UserLoginMustBeDomain: false
+          ValidateOrgDomains: false
+          SMTPSenderAddressMatchesInstanceDomain: false
+
+        LoginPolicy:
+          AllowUsernamePassword: true
+          AllowRegister: true
+          AllowExternalIDP: true
+          ForceMFA: false
+          HidePasswordReset: false
+          IgnoreUnknownUsernames: true
+          # Routes a user straight to their organization's IdP by email domain,
+          # which is what makes one hostname serve every tenant's SSO.
+          AllowDomainDiscovery: true
+          PasswordlessType: 1
+
+        PrivacyPolicy:
+          TOSLink: https://tesserix.app/terms
+          PrivacyLink: https://tesserix.app/privacy
+          SupportEmail: support@tesserix.app
+          DocsLink: https://tesserix.app/docs
+
+        NotificationPolicy:
+          PasswordChange: true
+
+        WebKeys:
+          Type: rsa
+          Config:
+            RSABits: "2048"
+            RSAHasher: "sha256"
+
+        OIDCSettings:
+          AccessTokenLifetime: 1h
+          IdTokenLifetime: 1h
+          RefreshTokenIdleExpiration: 720h
+          RefreshTokenExpiration: 2160h
+
+        Features:
+          LoginDefaultOrg: true
+          LoginV2:
+            Required: true
+            BaseURI: https://auth.tesserix.app/ui/v2/login
+          PermissionCheckV2: true
+          ConsoleUseV2UserApi: true
+
+        Restrictions:
+          # Organizations are created by the platform on a tenant's behalf, not
+          # by anyone who can reach the hostname.
+          DisallowPublicOrgRegistration: true
+
+  # Credentials stay out of git: the user password comes from External Secrets,
+  # the admin credentials from the Secret CNPG generated for its superuser.
+  env:
+    # Env rather than configmapConfig: the initial admin password would
+    # otherwise sit in a ConfigMap in plaintext.
+    - name: ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: zitadel-admin-password
+          key: password
+    - name: ZITADEL_DATABASE_POSTGRES_USER_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: zitadel-db-credentials
+          key: password
+    - name: ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME
+      valueFrom:
+        secretKeyRef:
+          name: zitadel-postgres-superuser
+          key: username
+    - name: ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: zitadel-postgres-superuser
+          key: password
+
+  service:
+    type: ClusterIP
+    port: 8080
+    protocol: http2
+    appProtocol: kubernetes.io/h2c
+
+  ingress:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+  pdb:
+    enabled: true
+    minAvailable: 2
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: zitadel
+              app.kubernetes.io/instance: zitadel
+
+  initJob:
+    enabled: true
+    # Empty runs every init step: create the database, the role and the grants.
+    command: ""
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+
+  setupJob:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+
+  login:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/zitadel/zitadel-login
+      tag: v4.15.3
+    # Left to the chart, the login client keypair is regenerated on every
+    # render because `lookup` returns nothing under Argo CD's client-side
+    # templating — each sync would rotate the key and log everyone out.
+    loginServiceKeySecretName: zitadel-login-service-key
+    service:
+      type: ClusterIP
+      port: 3000
+    ingress:
+      enabled: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+    pdb:
+      enabled: true
+      minAvailable: 1
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+
+  # The estate runs its own CNPG cluster; the bundled subchart would be a
+  # second, unmanaged database.
+  postgresql:
+    enabled: false

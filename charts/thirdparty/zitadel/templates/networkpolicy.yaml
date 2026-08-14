@@ -1,0 +1,126 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zitadel-network-policy
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: zitadel
+spec:
+  # Only the Zitadel pods. Selecting the whole namespace would also select the
+  # CNPG pods and cut their egress, which breaks replica streaming.
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: ["zitadel", "zitadel-login"]
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Istio ambient (HBONE): all mesh traffic tunnels through ztunnel on port
+    # 15008, so rules on app ports never match without this.
+    - from:
+        - ipBlock:
+            cidr: 10.20.0.0/16
+      ports:
+        - protocol: TCP
+          port: 15008
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 3000
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 3000
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 3000
+    # Every product in the mesh exchanges codes and validates tokens here.
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.20.0.0/16
+      ports:
+        - protocol: TCP
+          port: 15008
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - ipBlock:
+            cidr: 10.30.0.0/16
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector: {}
+        - ipBlock:
+            cidr: 10.30.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 8080
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: 15010
+        - protocol: TCP
+          port: 15012
+        - protocol: TCP
+          port: 15014
+        - protocol: TCP
+          port: 15017
+        - protocol: TCP
+          port: 443
+    # The setup Job writes the admin machine key back as a Secret, so it needs
+    # the API server — a private endpoint that the RFC1918 exclusion below
+    # would otherwise drop.
+    - to:
+        - ipBlock:
+            cidr: 172.16.0.2/32
+      ports:
+        - protocol: TCP
+          port: 443
+    # External IdPs (GitHub, Google, Okta, Entra) and SMTP.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 587
+        - protocol: TCP
+          port: 465
+{{- end }}
