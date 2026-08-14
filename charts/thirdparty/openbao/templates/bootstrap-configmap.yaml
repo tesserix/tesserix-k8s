@@ -155,6 +155,24 @@ data:
 {{ .hcl | indent 4 }}
 {{- end }}
 
+{{/* Every whitelisted app gets the same policy and role the secret-service
+     console writes into raft, so a rebuilt OpenBao comes back with its grants
+     rather than with SecretStores pointing at roles that no longer exist. The
+     console may widen the TTL at runtime; this run puts it back to what the
+     repository says, which is the point. */}}
+{{- range $ns := .Values.namespaceWhitelist }}
+{{- range $app := $ns.apps }}
+  policy-app-{{ $ns.namespace }}_{{ $app.name }}.hcl: |
+    path "{{ $.Values.bootstrap.kvMount }}/data/{{ $ns.namespace }}/{{ $app.name }}/*" { capabilities = ["read"] }
+    path "{{ $.Values.bootstrap.kvMount }}/metadata/{{ $ns.namespace }}/{{ $app.name }}/*" { capabilities = ["read", "list"] }
+  role-app-{{ $ns.namespace }}_{{ $app.name }}.json: |
+{{ dict "bound_service_account_names" (list $app.serviceAccount)
+        "bound_service_account_namespaces" (list $ns.namespace)
+        "token_policies" (list (printf "app-%s_%s" $ns.namespace $app.name))
+        "token_ttl" (default "1h" $app.ttl) | toPrettyJson | indent 4 }}
+{{- end }}
+{{- end }}
+
 {{- range .Values.bootstrap.kubernetesRoles }}
   role-{{ .name }}.json: |
 {{/* No `audience`: OpenBao then skips audience validation, which is what we
