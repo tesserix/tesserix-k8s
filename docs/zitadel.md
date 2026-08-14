@@ -25,6 +25,12 @@ The API and console are one HTTP/2 service on 8080; the login UI is a separate
 Next.js service on 3000 serving `/ui/v2/login`. The VirtualService splits on
 that prefix.
 
+`auth.tesserix.app` must also be listed in `frontendApps` in
+`argocd/prod/infrastructure/istio-auth-policies.yaml`. That allowlist is
+enforced at the ingress gateway, before any policy in this namespace is
+consulted, and a missing host answers every request with `403 RBAC: access
+denied` no matter how healthy the pods are.
+
 ## Three things that will bite you
 
 **The masterkey is immutable.** Every encryption key in the eventstore is
