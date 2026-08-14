@@ -1,10 +1,11 @@
 namespace: zitadel
 clusterName: zitadel-postgres
 
-# Two instances, unlike the single-instance product clusters: this is the
+# Three instances, unlike the single-instance product clusters: this is the
 # authentication path for the whole estate on Spot-only nodes, so a node loss
-# has to resolve as a leader election rather than an outage.
-instances: 2
+# has to resolve as a leader election rather than an outage. Three, not two, so
+# that losing one node still leaves a replica to promote.
+instances: 3
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
 storageSize: 20Gi
@@ -46,7 +47,7 @@ monitoring:
 
 affinity:
   # required, not preferred: two instances on one Spot node is the failure
-  # mode the second instance exists to avoid.
+  # mode the extra instances exist to avoid.
   podAntiAffinityType: required
 
 # Off until the Workload Identity binding exists: CNPG authenticates to GCS as
