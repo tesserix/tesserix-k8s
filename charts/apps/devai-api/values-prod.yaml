@@ -66,7 +66,11 @@ keda:
   # rolls. (Re-enable scaling only once SSE/events are Redis pub/sub backed.)
   maxReplicaCount: 1
   prometheus:
-    enabled: true
+    # Off: prometheus-server is scaled to zero on this cluster, so the scaler
+    # errors, KEDA marks the ScaledObject Degraded and every Kargo promotion
+    # times out waiting on devai-api's health. Nothing is lost — replicas are
+    # pinned at 1 above. Re-enable together with Prometheus.
+    enabled: false
     serverAddress: "http://prometheus-server.monitoring.svc.cluster.local:80"
     requestRateQuery: 'sum(rate(istio_requests_total{destination_canonical_service="devai-api",reporter="destination"}[2m]))'
     requestRateThreshold: "10"
