@@ -1,0 +1,92 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: planning-poker
+    app.kubernetes.io/component: database
+spec:
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.imageName }}
+
+  bootstrap:
+    initdb:
+      database: {{ .Values.bootstrap.database }}
+      owner: {{ .Values.bootstrap.owner }}
+      encoding: UTF8
+      localeCType: C
+      localeCollate: C
+      # No secret.name: CNPG generates planning-poker-postgres-app and keeps the
+      # role's password in step with it. A hand-managed secret would need the
+      # matching managed.roles block or the role ends up with a password nobody
+      # holds — see the global-postgres chart for that shape.
+
+  storage:
+    size: {{ .Values.storageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  walStorage:
+    size: {{ .Values.walStorageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  resources:
+    {{- toYaml .Values.resources | nindent 4 }}
+
+  postgresql:
+    parameters:
+      {{- range $key, $value := .Values.postgresql }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+
+  replicationSlots:
+    highAvailability:
+      enabled: true
+      slotPrefix: "_cnpg_"
+    updateInterval: 30
+
+  # The API connects as planning_poker. Nothing needs postgres itself.
+  enableSuperuserAccess: false
+
+  {{- if .Values.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.backup.destinationPath | quote }}
+      googleCredentials:
+        gkeEnvironment: true
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        immediateCheckpoint: true
+        jobs: 2
+    retentionPolicy: {{ .Values.backup.retentionPolicy | quote }}
+    target: prefer-standby
+
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: {{ .Values.backup.serviceAccount }}
+  {{- end }}
+
+  monitoring:
+    enablePodMonitor: {{ .Values.monitoring.enablePodMonitor }}
+    disableDefaultQueries: false
+
+  inheritedMetadata:
+    annotations:
+      cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+      traffic.sidecar.istio.io/excludeInboundPorts: "5432,8000"
+      traffic.istio.io/excludeInboundPorts: "5432,8000"
+
+  affinity:
+    podAntiAffinityType: {{ .Values.affinity.podAntiAffinityType }}
+
+  primaryUpdateStrategy: unsupervised
+  failoverDelay: 0
+  switchoverDelay: 3600
+
+  enablePDB: true

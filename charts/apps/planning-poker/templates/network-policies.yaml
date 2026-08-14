@@ -101,16 +101,8 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Cross-namespace to global-postgres. Once any egress policy selects these
-    # pods the namespace denies by default, and without this the failure looks
-    # like the database being down rather than a policy drop.
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: global
-      ports:
-        - protocol: TCP
-          port: 5432
+    # Postgres and NATS are both in this namespace, covered by
+    # allow-intra-namespace above.
     # GitHub, Jira and Slack APIs for issue import and estimate write-back —
     # all 443 outside the cluster. The metadata server is excluded: nothing
     # here uses Workload Identity, and it hands out node-scoped credentials.

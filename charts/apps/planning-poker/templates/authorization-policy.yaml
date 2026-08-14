@@ -32,4 +32,29 @@ spec:
   action: ALLOW
   rules:
     - {}
+---
+{{/* NATS ships from the shared nats chart, which has no policy of its own, so
+     the deny-all would swallow every publish from the API with no log. Only
+     the API's identity needs the backplane. */}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: planning-poker-nats
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "planning-poker.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nats
+      app.kubernetes.io/instance: planning-poker-nats
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/{{ .Values.namespace }}/sa/planning-poker-api
+    - from:
+        - source:
+            namespaces: ["monitoring", "istio-system"]
 {{- end }}

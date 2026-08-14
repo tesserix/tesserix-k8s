@@ -1,0 +1,38 @@
+{{- if .Values.istio.enabled }}
+{{/* The mesh-wide deny-all reaches this ambient namespace, so the database
+     needs an explicit ALLOW. Scoped to the API's identity rather than the
+     namespace: web, NATS and any future workload here have no business on
+     5432, and ztunnel can enforce that because it is an L4 decision. */}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: {{ .Values.clusterName }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/{{ .Values.namespace }}/sa/planning-poker-api
+      to:
+        - operation:
+            ports: ["5432"]
+    # The operator drives the instance manager on 8000; replicas stream from
+    # the primary on 5432 as the cluster's own identity.
+    - from:
+        - source:
+            namespaces: ["cnpg-system"]
+        - source:
+            principals:
+              - cluster.local/ns/{{ .Values.namespace }}/sa/{{ .Values.clusterName }}
+    - from:
+        - source:
+            namespaces: ["monitoring", "istio-system"]
+      to:
+        - operation:
+            ports: ["9187"]
+{{- end }}
