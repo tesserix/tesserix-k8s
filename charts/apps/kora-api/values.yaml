@@ -59,25 +59,6 @@ service:
   # homechef-api-direct — the working ambient-mesh reference in this repo.
   nameOverride: kora-api-direct
 
-# Knative Serving — DISABLED. Kora is the only service that ran on Knative;
-# the rest of the fleet uses plain Deployments behind ClusterIP Services in
-# the Istio ambient mesh, and Knative's ingress (knative-local-gateway +
-# activator) does not compose with ambient (ztunnel + waypoint). Converted
-# to a plain Deployment (templates/deployment.yaml) + ClusterIP Service
-# (templates/service.yaml), routed to directly by the kora-istio
-# VirtualService — mirroring homechef-api. The knative-service.yaml template
-# is gated on this flag and renders nothing while it is false; kept in-tree
-# for reference / rollback only.
-knative:
-  enabled: false
-  minScale: 0
-  maxScale: 3
-  scaleDownDelay: "120s"
-  containerConcurrency: 0
-  # Retained for the (disabled) Knative template. The plain Deployment has
-  # no request-timeout knob of its own — long LLM round-trips are bounded by
-  # the VirtualService `timeout: 600s`, which matches this value.
-  timeoutSeconds: 600
 
 resources:
   limits:
