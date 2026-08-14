@@ -44,8 +44,9 @@ spec:
       serviceAccountName: {{ include "kora-api.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if .Values.migrate.enabled }}
+      {{- if or .Values.migrate.enabled .Values.redis.enabled }}
       initContainers:
+      {{- if .Values.migrate.enabled }}
         # Schema migration runs HERE, not as a separate ArgoCD wave -1 Job.
         #
         # WHY: as a Job the ordering was timing-dependent and was observed
@@ -97,6 +98,73 @@ spec:
               memory: 256Mi
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- end }}
+      {{- if .Values.redis.enabled }}
+        # Resolve-cache Redis, as a NATIVE SIDECAR (kora#105).
+        #
+        # An initContainer with restartPolicy: Always, NOT an entry under
+        # `containers`. That distinction is the whole fix.
+        #
+        # As a normal container this raced and lost: Kubernetes starts regular
+        # containers in PARALLEL, kora-api probes Redis exactly once at boot,
+        # and on the first deploy the API dialled 127.0.0.1:6379 at 04:30:36
+        # while Redis only reached "Ready to accept connections" at 04:30:39.
+        # The API logged "redis unreachable, cache disabled" and ran the whole
+        # pod lifetime with no cache — the sidecar present and healthy, and
+        # completely unused.
+        #
+        # A native sidecar is started BEFORE the app containers and kubelet
+        # waits for its startupProbe, so the API cannot boot until Redis
+        # answers PING. Listed after the migrate initContainer so a failed
+        # migration still fails fast without spinning Redis up first.
+        - name: redis
+          restartPolicy: Always
+          image: "{{ .Values.redis.image }}"
+          imagePullPolicy: IfNotPresent
+          args:
+            # maxmemory-policy is NOT a default worth accepting. The resolve
+            # cache's generation counter (ai:resolve-cache:generation) is
+            # deliberately persistent with NO TTL, so under allkeys-lru or
+            # allkeys-random Redis is free to evict it under memory pressure
+            # like any other key — silently breaking invalidation. The OPS
+            # PRECONDITION on api/internal/ai/cache.go:117 requires a
+            # TTL-respecting policy. Verified empirically: filling to the
+            # memory ceiling evicts ~800 TTL'd entries under volatile-lru and
+            # the counter survives, while allkeys-lru destroys it.
+            - "--maxmemory-policy"
+            - "volatile-lru"
+            # A hard ceiling so the cache can never compete with the API for
+            # the pod's memory. Entries carry a 24h TTL (cmd/api/main.go), so
+            # this bounds a day of resolutions, not unbounded growth.
+            - "--maxmemory"
+            - "{{ .Values.redis.maxmemory }}"
+            # No persistence: every entry is reconstructible from the AI
+            # provider, so RDB/AOF would buy nothing and cost disk I/O.
+            - "--save"
+            - ""
+            - "--appendonly"
+            - "no"
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          # THE gate: kubelet will not start kora-api until this passes, which
+          # is what closes the race described above.
+          startupProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 1
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 30
+            failureThreshold: 3
+      {{- end }}
       {{- end }}
       containers:
         - name: kora-api
@@ -156,70 +224,4 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 10
             failureThreshold: 3
-        {{- if .Values.redis.enabled }}
-        # Resolve-cache Redis (kora#105).
-        #
-        # WHY THIS EXISTS: kora-api's REDIS_URL defaults to
-        # redis://localhost:6379/0 (api/internal/config/config.go), and this
-        # chart never set it — so the pod dialled its own localhost, found
-        # nothing, and logged "resolve engine: redis unreachable, cache
-        # disabled". Every resolve was therefore a cache MISS and cost a real
-        # Gemini call: direct, ongoing spend on the most latency-sensitive
-        # path in the product. It also left the generation-counter
-        # invalidation inert, because the resolver falls back to ai.NoCache{},
-        # which satisfies ai.Generation and makes every bump a silent no-op.
-        #
-        # A SIDECAR rather than a shared instance: replicaCount is 1, so there
-        # is no cross-pod cache to share, and a resolve cache is rebuildable
-        # by definition — losing it on a pod restart costs one cold window of
-        # Gemini calls, never correctness. The only Redis instances otherwise
-        # in this cluster belong to argocd and identity-customer; borrowing
-        # either would couple Kora's cache to another system's lifecycle.
-        - name: redis
-          image: "{{ .Values.redis.image }}"
-          imagePullPolicy: IfNotPresent
-          args:
-            # maxmemory-policy is NOT a default worth accepting. The resolve
-            # cache's generation counter (ai:resolve-cache:generation) is
-            # deliberately persistent with NO TTL, so under allkeys-lru or
-            # allkeys-random Redis is free to evict it under memory pressure
-            # like any other key — silently breaking invalidation. The OPS
-            # PRECONDITION on api/internal/ai/cache.go:117 requires a
-            # TTL-respecting policy; volatile-lru evicts only keys that have
-            # a TTL, which is every cache entry and not the counter.
-            - "--maxmemory-policy"
-            - "volatile-lru"
-            # A hard ceiling so the cache can never compete with the API for
-            # the pod's memory. Entries carry a 24h TTL (cmd/api/main.go), so
-            # this bounds a day of resolutions, not unbounded growth.
-            - "--maxmemory"
-            - "{{ .Values.redis.maxmemory }}"
-            # No persistence: this is a cache whose entire contents are
-            # reconstructible from the AI provider. RDB snapshots would buy
-            # nothing and cost disk I/O on a shared node.
-            - "--save"
-            - ""
-            - "--appendonly"
-            - "no"
-          ports:
-            - name: redis
-              containerPort: 6379
-              protocol: TCP
-          resources:
-            {{- toYaml .Values.redis.resources | nindent 12 }}
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          livenessProbe:
-            exec:
-              command: ["redis-cli", "ping"]
-            initialDelaySeconds: 5
-            periodSeconds: 30
-            failureThreshold: 3
-          readinessProbe:
-            exec:
-              command: ["redis-cli", "ping"]
-            initialDelaySeconds: 2
-            periodSeconds: 10
-            failureThreshold: 3
-        {{- end }}
 {{- end }}
