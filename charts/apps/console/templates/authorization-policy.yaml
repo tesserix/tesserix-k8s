@@ -49,6 +49,22 @@ charts/thirdparty/istio-config/templates/authorization-policies.yaml). If
 `tesserix` is ever added back to ambient, add it to
 `ambient.waypointNamespaces` in the SAME change, or drop the `to:` block here
 first.
+
+OWNERSHIP COUPLING — THIS CHART OWNS A POLICY THAT GATES ANOTHER WORKLOAD.
+The selector below matches the `company` pods, but the resource is rendered by
+the `console` chart and therefore owned by the `console` ArgoCD Application,
+which runs with `syncPolicy.automated.prune: true`
+(argocd/prod/apps/global/console.yaml). Deleting or renaming the console
+Application would prune a policy that gates the web app. That is harmless today
+— the namespace is ambient-excluded, so nothing enforces this — but it means
+tesserix.app's future reachability hangs off an unrelated app's lifecycle.
+
+The clean end state is to move this policy into charts/apps/company, whose
+Application already owns the workload it selects. That is deliberately NOT done
+here: it would change a live chart's rendered output inside a PR whose purpose
+is adding a new app. FOLLOW-UP: move `allow-console-to-web-admin-api` into
+charts/apps/company/templates/authorization-policy.yaml, in its own change, at
+the same time as any ambient re-enrollment.
 =============================================================================
 */}}
 ---

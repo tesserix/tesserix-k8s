@@ -32,6 +32,19 @@ affinity:
             matchLabels:
               app.kubernetes.io/name: console
 
+# Readiness is what makes maxUnavailable: 0 mean anything: without it a pod
+# counts as available the moment the container starts, so the rollout swaps
+# traffic onto a Next.js server that is not listening yet and 503s exactly as
+# an unguarded rollout would. No `httpGet` key, so the template renders a
+# tcpSocket probe against the container port — no health route required. See
+# the note in values.yaml for why liveness stays off.
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
 resources:
   requests:
     memory: 256Mi

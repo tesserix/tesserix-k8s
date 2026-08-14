@@ -79,9 +79,20 @@ resources:
   limits:
     memory: 512Mi
 
-# The console has no /api/health route (apps/console has no API routes at all —
-# every path is session-gated). Probes stay off until it grows one; a probe
-# against `/` would only ever be asserting that the auth redirect still fires.
+# The console has no /api/health route — apps/console has no API routes at all,
+# and every path is session-gated.
+#
+# LIVENESS stays off deliberately. Restarting a wedged pod is a decision that
+# genuinely wants a real health check; a TCP accept succeeds happily while the
+# event loop is blocked, so a tcpSocket liveness probe would be a check that
+# can never fail usefully. Enable it when the console grows /api/health.
+#
+# READINESS is on in prod (values-prod.yaml) as a tcpSocket probe. It needs no
+# application change, and without it a pod counts as available the instant the
+# container starts — which, with replicaCount: 2 and maxUnavailable: 0, lets a
+# rollout retire the old pod while Next.js is still binding its port. The
+# template falls back to tcpSocket whenever readinessProbe.httpGet is unset, so
+# pointing it at a real path later is a values-only change.
 livenessProbe:
   enabled: false
 readinessProbe:
