@@ -43,7 +43,7 @@ spec:
         - name: redis
           image: {{ .Values.redis.image }}
           securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: ["ALL"] } }
-          command: ["redis-server"]
+          command: ["valkey-server"]
           args:
             - "--requirepass"
             - "$(REDIS_PASSWORD)"
@@ -57,7 +57,7 @@ spec:
           ports:
             - { name: redis, containerPort: 6379 }
           readinessProbe:
-            exec: { command: ["sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" ping | grep -q PONG"] }
+            exec: { command: ["sh", "-c", "valkey-cli -a \"$REDIS_PASSWORD\" ping | grep -q PONG"] }
             initialDelaySeconds: 3
             periodSeconds: 5
           resources: {{- toYaml .Values.redis.resources | nindent 12 }}
