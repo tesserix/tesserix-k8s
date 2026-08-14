@@ -1,0 +1,58 @@
+namespace: planning-poker
+clusterName: planning-poker-postgres
+
+instances: 1
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+storageSize: 10Gi
+storageClass: standard-rwo-retain
+walStorageSize: 2Gi
+
+resources:
+  requests:
+    memory: 384Mi
+  limits:
+    memory: 1Gi
+
+bootstrap:
+  database: planning_poker_db
+  owner: planning_poker
+
+# The API talks to the -rw service directly, never a pooler: pgx prepares
+# statements and PgBouncer in transaction mode drops them across a boundary
+# (docs/postgres-cluster-policy.md).
+postgresql:
+  max_connections: "100"
+  shared_buffers: "128MB"
+  effective_cache_size: "512MB"
+  work_mem: "8MB"
+  maintenance_work_mem: "64MB"
+  ssl_min_protocol_version: "TLSv1.3"
+  ssl_max_protocol_version: "TLSv1.3"
+  idle_in_transaction_session_timeout: "300000"
+  statement_timeout: "120000"
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"
+
+monitoring:
+  enablePodMonitor: true
+
+affinity:
+  podAntiAffinityType: preferred
+
+# Off until the Workload Identity binding exists: CNPG authenticates to GCS as
+# the KSA it generates for this cluster, so cnpg-backup@ needs an
+# iam.workloadIdentityUser grant for planning-poker/planning-poker-postgres.
+# Enabling this without it leaves every WAL archive failing in a retry loop.
+backup:
+  enabled: false
+  destinationPath: "gs://tesserix-cnpg-backups/planning-poker"
+  retentionPolicy: "30d"
+  serviceAccount: cnpg-backup@tesseracthub-480811.iam.gserviceaccount.com
+  schedule: "0 0 3 * * *"
+
+istio:
+  enabled: true
+
+networkPolicy:
+  enabled: true
