@@ -9,6 +9,11 @@ metadata:
     app.kubernetes.io/component: authz
 spec:
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ .Values.name }}
@@ -24,6 +29,15 @@ spec:
         traffic.sidecar.istio.io/excludeOutboundPorts: "5432"
     spec:
       serviceAccountName: {{ .Values.name }}
+      # Best-effort spread — the cluster is memory-tight, so a hard constraint
+      # would leave the second replica Pending instead of merely co-located.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .Values.name }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 4000
@@ -62,12 +76,17 @@ spec:
               value: "0.0.0.0:{{ .Values.service.grpcPort }}"
             - name: OPENFGA_PLAYGROUND_ENABLED
               value: "false"
+          # /healthz reports DATASTORE health, so an HTTP liveness probe turns
+          # a Postgres failover into a restart loop that cannot fix anything
+          # (10 restarts on 2026-08-13). Liveness now only asks whether the
+          # process is up; readiness still uses /healthz, so a pod that cannot
+          # reach Postgres leaves the Service instead of being killed.
           livenessProbe:
-            httpGet:
-              path: /healthz
+            tcpSocket:
               port: http
             initialDelaySeconds: 15
             periodSeconds: 30
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /healthz
