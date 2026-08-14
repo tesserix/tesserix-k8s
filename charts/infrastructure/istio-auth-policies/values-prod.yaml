@@ -71,6 +71,17 @@ frontendApps:
     hosts:
       - "tesserix.app"
       - "www.tesserix.app"
+  # tesserix-console — the operator console (Deployment/console, same namespace
+  # as company). Without an entry here the gateway denies the host outright and
+  # the browser sees Envoy's "RBAC: access denied" 403 — the app itself is
+  # healthy and never sees the request. The console does its own session check
+  # in middleware and redirects anonymous visitors to the login on tesserix.app,
+  # so the gateway ALLOW is not what protects it.
+  - name: tesserix-console
+    label: console
+    namespace: tesserix
+    hosts:
+      - "console.tesserix.app"
   # yes-hospital — Next.js marketing site. Drives the gateway-level ALLOW
   # for the host AND the per-app allow-yes-hospital-public policy in the
   # yes-hospital namespace (which is in the default-ambient deny-all mesh).
