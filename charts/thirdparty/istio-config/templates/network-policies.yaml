@@ -819,88 +819,6 @@ spec:
 {{- end }}
 
 # =============================================================================
-# Redis Namespace Policies (STRICT MULTI-TENANT ISOLATION)
-# Each product can ONLY access its own Redis namespace
-# Cross-product access explicitly configured via crossProductRedisAccess
-# =============================================================================
-{{- range $key, $redisNs := .Values.redisNamespaces }}
----
-# Strict Redis access for {{ $key }} - only {{ index $.Values.appNamespaces $key }} can access
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: strict-{{ $key }}-redis-access
-  namespace: {{ $redisNs }}
-  labels:
-    {{- include "istio-config.labels" $ | nindent 4 }}
-    security.tesserix.app/isolation: "product-boundary"
-    security.tesserix.app/product: "{{ $key }}"
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-  ingress:
-    # ONLY allow from the corresponding app namespace - NO OTHER PRODUCTS
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ index $.Values.appNamespaces $key }}
-      ports:
-        - protocol: TCP
-          port: 6379
-    # Allow internal Redis sentinel/replica communication
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $redisNs }}
-      ports:
-        - protocol: TCP
-          port: 6379
-        - protocol: TCP
-          port: 26379  # Sentinel
-    # Allow cross-product Redis access (for shared caching)
-    {{- if $.Values.crossProductRedisAccess }}
-    {{- range $appKey, $allowedRedis := $.Values.crossProductRedisAccess }}
-    {{- range $allowedRedisNs := $allowedRedis }}
-    {{- if eq $allowedRedisNs $redisNs }}
-    {{- $appNs := index $.Values.appNamespaces $appKey }}
-    {{- if $appNs }}
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $appNs }}
-      ports:
-        - protocol: TCP
-          port: 6379
-    {{- end }}
-    {{- end }}
-    {{- end }}
-    {{- end }}
-    {{- end }}
-    # Allow monitoring (for metrics only)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-      ports:
-        - protocol: TCP
-          port: 9121  # redis-exporter metrics only
-    {{- if $.Values.redisExternalAccess }}
-    {{- if index $.Values.redisExternalAccess $key }}
-    # Allow external access via ILB (Cloud Run VPC connector)
-    - from:
-      {{- range index $.Values.redisExternalAccess $key }}
-        - ipBlock:
-            cidr: {{ . }}
-      {{- end }}
-      ports:
-        - protocol: TCP
-          port: 6379
-    {{- end }}
-    {{- end }}
-{{- end }}
-
-# =============================================================================
 # MongoDB Namespace Policies (STRICT MULTI-TENANT ISOLATION)
 # Each product can ONLY access its own MongoDB namespace
 # =============================================================================
@@ -1141,7 +1059,7 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
-    # Allow internal (postgresql, clickhouse, redis within namespace)
+    # Allow internal (postgresql, clickhouse within namespace)
     - from:
         - namespaceSelector:
             matchLabels:
@@ -1515,9 +1433,9 @@ spec:
 
 # =============================================================================
 # Cross-Product Isolation - Enforced via:
-# 1. Strict ingress policies on database/redis namespaces (only allow from owner)
+# 1. Strict ingress policies on database namespaces (only allow from owner)
 # 2. Istio AuthorizationPolicies (deny cross-product access)
-# 3. Egress policies only allow access to own database/redis namespace
+# 3. Egress policies only allow access to own database namespace
 # =============================================================================
 
 # =============================================================================
@@ -1587,16 +1505,6 @@ spec:
               kubernetes.io/metadata.name: {{ $allowedNs }}
     {{- end }}
     {{- end }}
-    {{- if index $.Values.redisNamespaces $key }}
-    # Allow egress to own Redis namespace
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ index $.Values.redisNamespaces $key }}
-      ports:
-        - protocol: TCP
-          port: 6379
-    {{- end }}
     {{- if $.Values.mongoNamespaces }}
     {{- if index $.Values.mongoNamespaces $key }}
     # Allow egress to own MongoDB namespace
@@ -1607,19 +1515,6 @@ spec:
       ports:
         - protocol: TCP
           port: 27017
-    {{- end }}
-    {{- end }}
-    # Allow egress to cross-product Redis (for shared caching)
-    {{- if $.Values.crossProductRedisAccess }}
-    {{- $allowedRedis := index $.Values.crossProductRedisAccess $key }}
-    {{- range $allowedRedisNs := $allowedRedis }}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $allowedRedisNs }}
-      ports:
-        - protocol: TCP
-          port: 6379
     {{- end }}
     {{- end }}
     # Allow egress to global namespace (shared services)

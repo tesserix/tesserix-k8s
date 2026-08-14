@@ -7,7 +7,6 @@
 #   istio-system            → all homechef workloads (Cloudflare Tunnel + ingress gateway)
 #   homechef                → homechef            (intra-namespace east-west)
 #   homechef                → postgresql-homechef (API → Postgres only)
-#   homechef                → redis-homechef      (API/auth-bff → Redis only)
 #   identity-customer       → homechef            (Keycloak callback to auth-bff)
 #   identity-internal       → homechef            (Keycloak admin realm)
 
@@ -65,22 +64,7 @@ spec:
         - operation:
             ports: ["5432", "6432"] # 6432 covers PgBouncer pooler
 ---
-apiVersion: security.istio.io/v1beta1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-homechef-to-redis
-  namespace: redis-homechef
-spec:
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            namespaces: ["homechef"]
-      to:
-        - operation:
-            ports: ["6379"]
----
-# Strict mTLS for the homechef + DB + cache namespaces. Belt-and-suspenders
+# Strict mTLS for the homechef + DB namespaces. Belt-and-suspenders
 # alongside the cluster-wide PeerAuthentication if one exists.
 apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
@@ -96,15 +80,6 @@ kind: PeerAuthentication
 metadata:
   name: default
   namespace: postgresql-homechef
-spec:
-  mtls:
-    mode: STRICT
----
-apiVersion: security.istio.io/v1beta1
-kind: PeerAuthentication
-metadata:
-  name: default
-  namespace: redis-homechef
 spec:
   mtls:
     mode: STRICT

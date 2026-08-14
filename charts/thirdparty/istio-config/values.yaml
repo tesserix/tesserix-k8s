@@ -229,14 +229,6 @@ crossProductNamespaceAccess:
     - agentregistry-system
     - agentgateway-system
 
-# Cross-product Redis access
-# Allows specific app namespaces to access other product's Redis for shared services
-# Use case: global services need redis-marketplace for caching
-crossProductRedisAccess:
-  # global namespace needs access to redis-marketplace for shared caching
-  global:
-    - redis-marketplace              # Shared caching for auth, notification, etc.
-
 # Backup namespace configuration
 # Backup namespaces need access to ALL database namespaces for backup/restore operations
 backupNamespaces:
@@ -246,17 +238,6 @@ backupNamespaces:
 # so dedicated postgresql-* namespaces are no longer needed.
 # This map is kept empty; egress to own namespace is already allowed.
 databaseNamespaces: {}
-
-# Redis namespaces - each product has isolated cache
-# Only deploy when product is active
-redisNamespaces:
-  marketplace: redis-marketplace     # Active - marketplace caching
-  # global: redis-global             # Enable when global namespace needs Redis
-  # fanzone: redis-fanzone           # FanZone — DECOMMISSIONED 2026-07-23
-  homechef: redis-homechef           # HomeChef session store + caching
-  stockpilot: redis-stockpilot       # StockPilot caching
-  scrapper: redis-scrapper           # Scrapper caching
-  devai: redis-devai                 # DevAI state, sessions, memory cache
 
 # MongoDB namespaces - product-specific document stores
 mongoNamespaces: {}   # fanzone (mongodb-fanzone) — DECOMMISSIONED 2026-07-23
@@ -271,13 +252,6 @@ databaseExternalAccess:
   global:
     - 10.10.16.32/28  # Cloud Run VPC connector (gl-prod-vpc-connector)
     - 10.10.16.16/28  # Cloud Run VPC connector (mp-prod-vpc-connector) — marketplace services access global DB
-    - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
-
-redisExternalAccess:
-  # fanzone — DECOMMISSIONED 2026-07-23
-  marketplace:
-    - 10.10.16.16/28  # Cloud Run VPC connector (mp-prod-vpc-connector)
-    - 10.10.16.32/28  # Cloud Run VPC connector (gl-prod-vpc-connector) — global services use marketplace Redis
     - 10.10.0.0/20    # GKE node subnet (SNAT source from ILB)
 
 mongoExternalAccess: {}   # fanzone — DECOMMISSIONED 2026-07-23
@@ -368,8 +342,6 @@ sidecarInjection:
     # - nats           # DISABLED: NATS handles its own TLS and doesn't need Istio sidecar
     - typesense
     # Database namespaces removed — CNPG runs in app namespaces (already listed above)
-    # Redis namespaces - DISABLED: Redis doesn't need sidecar, causes connectivity issues
-    # - redis-marketplace
   # Namespaces that need database access (adds database-access=allowed label for NetworkPolicy)
   databaseAccessNamespaces:
     - marketplace
@@ -397,20 +369,10 @@ sidecarInjection:
     translation: infrastructure
     typesense: infrastructure
     nats: messaging
-    redis-marketplace: cache
-    redis-global: cache
-    redis-homechef: cache
     db-backup-and-restore: backup
   # Namespaces where sidecar injection should be explicitly disabled
   disabledNamespaces:
     - nats
-    - redis-marketplace
-    - redis-global
-    # - redis-fanzone   # DECOMMISSIONED 2026-07-23
-    - redis-homechef
-    - redis-stockpilot
-    - redis-scrapper
-    - redis-devai
     # - mongodb-fanzone   # DECOMMISSIONED 2026-07-23
     - db-backup-and-restore        # Backup jobs don't need sidecar
   # Namespaces in `namespaces` but NOT enrolled in Ambient mesh.

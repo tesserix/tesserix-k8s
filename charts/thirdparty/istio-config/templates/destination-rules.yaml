@@ -329,30 +329,6 @@ spec:
 {{- end }}
 
 # =============================================================================
-# Redis DestinationRules
-# DISABLE mTLS for Redis (use native Redis AUTH)
-# =============================================================================
-{{- range $key, $redisNs := .Values.redisNamespaces }}
----
-apiVersion: networking.istio.io/v1
-kind: DestinationRule
-metadata:
-  name: {{ $key }}-redis-dr
-  namespace: {{ $redisNs }}
-  labels:
-    {{- include "istio-config.labels" $ | nindent 4 }}
-spec:
-  host: redis-master.{{ $redisNs }}.svc.cluster.local
-  trafficPolicy:
-    tls:
-      mode: DISABLE
-    connectionPool:
-      tcp:
-        maxConnections: 100
-        connectTimeout: 10s
-{{- end }}
-
-# =============================================================================
 # App Namespace to Database DestinationRules
 # CRITICAL: Apps need DestinationRules in their OWN namespace to access databases
 # =============================================================================
@@ -379,29 +355,6 @@ spec:
       tcp:
         maxConnections: 100
         connectTimeout: 30s
-{{- end }}
-{{- $redisNs := index $.Values.redisNamespaces $key }}
-{{- if $redisNs }}
----
-# {{ $ns }} -> redis namespace - DISABLE mTLS
-apiVersion: networking.istio.io/v1
-kind: DestinationRule
-metadata:
-  name: {{ $key }}-to-redis-dr
-  namespace: {{ $ns }}
-  labels:
-    {{- include "istio-config.labels" $ | nindent 4 }}
-spec:
-  host: redis.{{ $redisNs }}.svc.cluster.local
-  exportTo:
-    - "."
-  trafficPolicy:
-    tls:
-      mode: DISABLE
-    connectionPool:
-      tcp:
-        maxConnections: 100
-        connectTimeout: 10s
 {{- end }}
 {{- end }}
 

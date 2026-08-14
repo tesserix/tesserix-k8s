@@ -389,31 +389,6 @@ spec:
 {{- end }}
 
 # =============================================================================
-# Redis Access Policies
-# Each app namespace can only access its own Redis namespace
-# =============================================================================
-{{- range $key, $redisNs := .Values.redisNamespaces }}
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-{{ $key }}-redis-access
-  namespace: {{ $redisNs }}
-  labels:
-    {{- include "istio-config.labels" $ | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - {{ index $.Values.appNamespaces $key }}
-        - source:
-            principals:
-              - "cluster.local/ns/{{ index $.Values.appNamespaces $key }}/sa/*"
-{{- end }}
-
-# =============================================================================
 # Infrastructure Service Policies
 # NATS, Typesense, Email accessible by all app namespaces
 # =============================================================================
