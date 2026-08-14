@@ -50,12 +50,12 @@ affinity:
   # mode the extra instances exist to avoid.
   podAntiAffinityType: required
 
-# Off until the Workload Identity binding exists: CNPG authenticates to GCS as
-# the KSA it generates for the cluster, so cnpg-backup@ needs an
-# iam.workloadIdentityUser grant for zitadel/zitadel-postgres. Enabling it
-# before that leaves the WAL archive in a retry loop.
+# Requires the Workload Identity binding: CNPG authenticates to GCS as the KSA
+# it generates for the cluster, so cnpg-backup@ needs an iam.workloadIdentityUser
+# grant for zitadel/zitadel-postgres. Without it the WAL archive retries forever
+# and CNPGWALArchiveFailing fires.
 backup:
-  enabled: false
+  enabled: true
   destinationPath: "gs://tesserix-cnpg-backups/zitadel"
   retentionPolicy: "30d"
   serviceAccount: cnpg-backup@tesseracthub-480811.iam.gserviceaccount.com

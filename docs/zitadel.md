@@ -55,8 +55,16 @@ the CNPG-generated superuser (`zitadel-postgres-superuser`). The cluster's
 role's password comes from `prod-zitadel-db-password`, not from CNPG, because
 CNPG never creates that role.
 
-Backups are **off** until `cnpg-backup@tesseracthub-480811.iam.gserviceaccount.com`
-has an `iam.workloadIdentityUser` binding for `zitadel/zitadel-postgres`.
+Backups write to `gs://tesserix-cnpg-backups/zitadel` at 02:30 daily with 30-day
+retention. They depend on an `iam.workloadIdentityUser` binding for
+`cnpg-backup@tesseracthub-480811.iam.gserviceaccount.com` on
+`zitadel/zitadel-postgres` — CNPG authenticates as the KSA it generates, so
+without the binding the WAL archive retries forever and `CNPGWALArchiveFailing`
+fires within ten minutes.
+
+A backup that has never been restored is not a backup. Rehearse it against a
+throwaway cluster before relying on it — see
+[`cnpg-backup-restore.md`](cnpg-backup-restore.md).
 
 ### Passwordless connections (mutual TLS)
 
@@ -134,6 +142,34 @@ Notable choices:
 
 Per-organization policy overrides everything here, so a tenant can force MFA or
 disable password login without touching this file.
+
+## What is not in git
+
+Three things cannot be declared in this chart, and the instance is not
+production-ready until they are done in the console.
+
+**SMTP.** `DefaultInstance` applies only at first instance creation, so the
+provider is configured under *Instance → Notifications → SMTP provider*. The
+password is already mounted as `ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_PASSWORD`
+from `prod-zitadel-smtp-password`; only the host, port and sender need entering.
+Until then there is no email verification and no password reset, so a locked-out
+user has no route back in.
+
+**IdP connectors.** GitHub, Google, Okta and Entra are runtime objects bound to
+an organization, not config — that binding is the reason Zitadel replaced
+Keycloak. Create them per tenant through the API with the `iam-admin` machine
+key, or in the console under *Organization → Identity Providers*.
+
+**Actions.** Custom claims, token enrichment and provisioning hooks are Actions
+v2 objects, created through the API.
+
+## Alerting
+
+`zitadel-alerts` covers the API and login deployments; `zitadel-postgres-alerts`
+covers the database on the same rule set as the rest of the estate. Both use
+`absent()` rather than `== 0` for liveness, because a Deployment scaled to zero
+or an evicted pod emits no series at all and an equality check never fires on a
+missing series — the failure mode that hid the 2026-05-12 outage for five weeks.
 
 ## Licence
 
