@@ -1,0 +1,25 @@
+# global-valkey-queue — durable, never evicts. These keys are queued jobs, not
+# cache: dropping one loses work, so the instance returns OOM rather than
+# evicting, and AOF keeps the backlog across a restart.
+nameOverride: global-valkey-queue
+
+valkey:
+  maxmemory: 512mb
+  maxmemoryPolicy: noeviction
+  appendonly: "yes"
+
+persistence:
+  enabled: true
+  size: 4Gi
+
+# openpanel and postiz are third-party apps whose Redis client is not
+# configurable beyond REDIS_URL, so they connect as the default user.
+acl:
+  enabled: false
+  users: []
+
+networkPolicy:
+  enabled: true
+  allowedNamespaces:
+    - openpanel
+    - postiz
