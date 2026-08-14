@@ -86,11 +86,20 @@ spec:
                   # one is a gzipped tar of the raft store; anything this small
                   # is a truncated stream, and the prune below would age out the
                   # last good one behind it.
-                  SIZE=$(gcloud storage ls -l "${DEST}/${RUN_DATE}/openbao-${RUN_TS}.snap" | awk 'NR==1{print $1}')
+                  SNAP="${DEST}/${RUN_DATE}/openbao-${RUN_TS}.snap"
+                  SIZE=$(gcloud storage ls -l "${SNAP}" | awk 'NR==1{print $1}')
                   if [[ "${SIZE}" -lt {{ .Values.backup.minSnapshotBytes }} ]]; then
                     echo "snapshot is ${SIZE} bytes; refusing to prune behind a truncated backup"
                     exit 1
                   fi
+
+                  # Read it back through gzip. A snapshot is a gzipped tar, and
+                  # a stream that broke mid-upload still lands as a plausible
+                  # object — this is the difference between having a file and
+                  # having a backup. Streamed, so the job still needs no disk.
+                  echo "--- verifying ${SNAP}"
+                  gcloud storage cat "${SNAP}" | gzip -t
+                  echo "verified: readable to the end"
 
                   curl -sS -X POST -H "X-Vault-Token: ${TOKEN}" \
                     "${ADDR}/v1/auth/token/revoke-self" >/dev/null

@@ -1,0 +1,91 @@
+{{- if .Values.alerts.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: openbao-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: openbao
+    role: alert-rules
+spec:
+  groups:
+    - name: openbao.rules
+      rules:
+        # Sealed means every ExternalSecret refresh fails. Auto-unseal makes
+        # this either a KMS problem or a seal misconfiguration, never a human
+        # forgetting to unseal.
+        - alert: OpenBaoSealed
+          expr: vault_core_unsealed{namespace="{{ .Release.Namespace }}"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "OpenBao node is sealed"
+            description: "{{`{{ $labels.pod }}`}} has been sealed for 5 minutes; auto-unseal is failing, so check the gcpckms seal and Workload Identity."
+
+        # Raft elects in seconds. No active node for two minutes is a quorum
+        # loss, and nothing can read or write until it comes back.
+        - alert: OpenBaoNoLeader
+          expr: sum(vault_core_active{namespace="{{ .Release.Namespace }}"}) == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "OpenBao has no active node"
+            description: "No node has held raft leadership for 2 minutes; the cluster is serving nothing."
+
+        # Two of three nodes is the whole safety margin on a Spot pool: one
+        # more preemption and quorum is gone.
+        - alert: OpenBaoQuorumAtRisk
+          expr: count(vault_core_unsealed{namespace="{{ .Release.Namespace }}"} == 1) < 3
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "OpenBao is running below three nodes"
+            description: "Fewer than three unsealed nodes for 15 minutes; one more loss costs raft quorum."
+
+        # An audit device that cannot write fails every request. The stdout
+        # device keeps the cluster serving, so this is the warning before the
+        # PVC one would have been the outage.
+        - alert: OpenBaoAuditVolumeFilling
+          expr: kubelet_volume_stats_used_bytes{namespace="{{ .Release.Namespace }}", persistentvolumeclaim=~"audit-openbao-.*"} / kubelet_volume_stats_capacity_bytes{namespace="{{ .Release.Namespace }}", persistentvolumeclaim=~"audit-openbao-.*"} > {{ .Values.alerts.volumeUsedRatio }}
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "OpenBao audit volume is filling"
+            description: "{{`{{ $labels.persistentvolumeclaim }}`}} is over {{ .Values.alerts.volumeUsedRatio }} full. The audit log does not rotate; truncate it or grow the PVC."
+
+        - alert: OpenBaoDataVolumeFilling
+          expr: kubelet_volume_stats_used_bytes{namespace="{{ .Release.Namespace }}", persistentvolumeclaim=~"data-openbao-.*"} / kubelet_volume_stats_capacity_bytes{namespace="{{ .Release.Namespace }}", persistentvolumeclaim=~"data-openbao-.*"} > {{ .Values.alerts.volumeUsedRatio }}
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "OpenBao raft volume is filling"
+            description: "{{`{{ $labels.persistentvolumeclaim }}`}} is over {{ .Values.alerts.volumeUsedRatio }} full. A raft store with no room stops accepting writes."
+
+{{- if .Values.backup.enabled }}
+        # A backup nobody watches is not a backup.
+        - alert: OpenBaoSnapshotJobFailed
+          expr: kube_job_failed{namespace="{{ .Release.Namespace }}", job_name=~"openbao-snapshot-backup-.*"} > 0
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "OpenBao snapshot job failed"
+            description: "{{`{{ $labels.job_name }}`}} failed. Until it succeeds the newest restorable snapshot is getting older every day."
+
+        # Silence is the failure mode a failed-job alert misses: a CronJob that
+        # never ran raises nothing at all.
+        - alert: OpenBaoSnapshotStale
+          expr: time() - max(kube_job_status_completion_time{namespace="{{ .Release.Namespace }}", job_name=~"openbao-snapshot-backup-.*"}) > {{ .Values.alerts.snapshotStaleSeconds }}
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "No OpenBao snapshot completed recently"
+            description: "The last successful snapshot is older than {{ div .Values.alerts.snapshotStaleSeconds 3600 }}h against a daily schedule."
+{{- end }}
+{{- end }}

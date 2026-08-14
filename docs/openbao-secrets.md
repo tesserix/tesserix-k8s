@@ -401,6 +401,47 @@ gcloud storage cp gs://tesseract-prod-backups-in/openbao/<date>/<file>.snap .
 bao operator raft snapshot restore -force <file>.snap
 ```
 
+`-force` overwrites the live raft store with the snapshot's. Everything written
+since it was taken is gone, and every token issued before it is invalid.
+
+**Rehearsing the restore.** The snapshot job verifies each upload is readable to
+the end, which is not the same as knowing a restore works. Rehearse it against a
+throwaway cluster, never against prod:
+
+```bash
+# 1. A single-node OpenBao with the same seal, in its own namespace.
+kubectl create namespace openbao-drill
+helm template drill charts/thirdparty/openbao \
+  --namespace openbao-drill \
+  --set openbao.server.ha.replicas=1 \
+  --set bootstrap.enabled=false --set backup.enabled=false | kubectl apply -f -
+
+# 2. Initialise it, then restore the newest prod snapshot into it.
+kubectl exec -n openbao-drill drill-openbao-0 -- bao operator init
+gcloud storage cp "$(gcloud storage ls -r 'gs://tesseract-prod-backups-in/openbao/**.snap' | tail -1)" /tmp/drill.snap
+kubectl cp /tmp/drill.snap openbao-drill/drill-openbao-0:/tmp/drill.snap
+kubectl exec -n openbao-drill drill-openbao-0 -- bao operator raft snapshot restore -force /tmp/drill.snap
+
+# 3. The proof: a path only prod ever wrote is there, and the policies are too.
+kubectl exec -n openbao-drill drill-openbao-0 -- bao kv list kv/homechef
+kubectl exec -n openbao-drill drill-openbao-0 -- bao policy list
+
+# 4. Tear it down. The PVCs are Retain, so delete them by hand.
+kubectl delete namespace openbao-drill
+```
+
+The drill needs the same KMS key, so run it in this project with a service
+account holding `roles/cloudkms.cryptoKeyEncrypterDecrypter` on
+`openbao-unseal-key` — the snapshot is ciphertext without it.
+
+## Alerting
+
+`charts/thirdparty/openbao/templates/prometheusrule.yaml` carries the rules:
+sealed node, no raft leader, fewer than three nodes, either PVC over 80%, a
+failed snapshot job, and no snapshot completed in 26 hours. They evaluate in
+Prometheus and go no further — there is no Alertmanager receiver yet, so add a
+Slack route when that exists. Turn them off with `alerts.enabled: false`.
+
 ## Auto-upgrades (Kargo)
 
 Version bumps are not hand-edited. The `openbao` Warehouse in `kargo-infra`
