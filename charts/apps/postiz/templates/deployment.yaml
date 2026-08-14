@@ -66,6 +66,9 @@ spec:
               value: "postgresql://{{ .Values.database.user }}:$(POSTIZ_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.database }}"
 
             # ─── Redis ───────────────────────────────────────────────────
+            # No passwordSecret means global-valkey-queue, which has no
+            # password: sending one there is an error, not a no-op.
+            {{- if .Values.redis.passwordSecret.name }}
             # REDIS_PASSWORD must come BEFORE REDIS_URL — k8s `$(VAR)` env
             # substitution only resolves variables defined earlier in the list.
             - name: REDIS_PASSWORD
@@ -75,6 +78,10 @@ spec:
                   key: {{ .Values.redis.passwordSecret.key }}
             - name: REDIS_URL
               value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            {{- else }}
+            - name: REDIS_URL
+              value: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+            {{- end }}
 
             # ─── Temporal ────────────────────────────────────────────────
             - name: TEMPORAL_ADDRESS
