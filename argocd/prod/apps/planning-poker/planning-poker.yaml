@@ -1,0 +1,47 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: planning-poker
+  namespace: argocd
+  annotations:
+    kargo.akuity.io/authorized-stage: kargo-planning-poker:prod
+  labels:
+    app.kubernetes.io/part-of: planning-poker
+    app.kubernetes.io/component: app
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: planning-poker
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/planning-poker
+    helm:
+      releaseName: planning-poker
+      valueFiles:
+        - values.yaml
+      # Overwritten by the kargo-planning-poker:prod Stage on every promotion.
+      # `latest` only applies to the very first sync, before Kargo has run.
+      parameters:
+        - name: api.image.tag
+          value: "latest"
+        - name: web.image.tag
+          value: "latest"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: planning-poker
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

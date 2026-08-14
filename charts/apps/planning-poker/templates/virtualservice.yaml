@@ -1,0 +1,48 @@
+{{- if .Values.istio.enabled }}
+{{/* /api goes to the Go API, everything else to the UI — same origin, so the
+     participant token is first-party and CORS never enters the picture. */}}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: planning-poker
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "planning-poker.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.host | quote }}
+  gateways:
+    {{- toYaml .Values.istio.gateways | nindent 4 }}
+  http:
+    # The room stream (WebSocket, SSE fallback) is a long-lived connection.
+    # Istio's default 15s route timeout applies to the whole stream, not to
+    # time-to-first-byte, so it would cut every room off after 15 seconds —
+    # 0s disables it. Keep this ahead of the general /api/ rule: Istio matches
+    # in order and the prefix rule below would otherwise swallow these.
+    - match:
+        - uri:
+            regex: ^/api/rooms/[^/]+/(ws|events)$
+      route:
+        - destination:
+            host: planning-poker-api.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.api.port }}
+      timeout: 0s
+    - match:
+        - uri:
+            prefix: /api/
+      route:
+        - destination:
+            host: planning-poker-api.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.api.port }}
+      timeout: 30s
+    - route:
+        - destination:
+            host: planning-poker-web.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.web.port }}
+      timeout: 15s
+  exportTo:
+    - "*"
+{{- end }}

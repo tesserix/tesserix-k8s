@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: planning-poker-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "planning-poker.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "planning-poker.selectorLabels" (dict "component" "planning-poker-api" "release" .Release.Name) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.api.port }}
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: planning-poker-web
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "planning-poker.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "planning-poker.selectorLabels" (dict "component" "planning-poker-web" "release" .Release.Name) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.web.port }}
+      targetPort: http
