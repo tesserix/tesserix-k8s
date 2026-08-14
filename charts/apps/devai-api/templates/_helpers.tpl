@@ -401,11 +401,6 @@ identical environment — defined once here so the two never drift.
       key: token
 - name: DEVAI_SCM_AUTH_METHOD
   value: "github_app"
-- name: DEVAI_KEYCLOAK_CLIENT_SECRET
-  valueFrom:
-    secretKeyRef:
-      name: devai-api-secrets
-      key: DEVAI_KEYCLOAK_CLIENT_SECRET
 - name: DEVAI_LANGCHAIN_API_KEY
   valueFrom:
     secretKeyRef:

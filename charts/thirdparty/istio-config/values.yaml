@@ -59,33 +59,11 @@ subdomains:
   apiDocs: dev-api-docs
   # Search Engine (Typesense)
   typesense: dev-search
-  # Identity Provider (Keycloak)
-  customerIdp: dev-customer-idp
   # Logging Stack (Kibana)
   kibana: kibana-dev
   # Web Analytics (OpenPanel)
   analytics: dev-analytics
 
-# Identity Provider Aliases
-# Additional domains that should route to the same Keycloak identity-customer service
-# Used when multiple products share the same Keycloak instance but need product-specific URLs
-# Each entry creates a VirtualService routing to keycloak.identity-customer.svc.cluster.local:8080
-identityAliases:
-  - host: identity-blog.tesserix.app
-    name: identity-blog-vs
-# Example:
-#   - host: identity.fe3dr.com
-#     name: identity-fe3dr-vs
-
-# Internal Identity Provider Aliases
-# Additional domains that should route to the same Keycloak identity-internal service
-# Each entry creates a VirtualService routing to keycloak.identity-internal.svc.cluster.local:8080
-internalIdentityAliases: []
-# Example:
-#   - host: internal-identity.fe3dr.com
-#     name: internal-identity-fe3dr-vs
-#   - host: internal-identity.fanzonebattleground.com
-#     name: internal-identity-fanzone-vs
 
 # Kibana host override - when set, overrides subdomains.kibana + domain
 # Used in prod where Kibana uses tesserix.app instead of mark8ly.com
@@ -164,8 +142,6 @@ skipAuthPolicyNamespaces:
 # NOTE: keys must be lowercase with hyphens only (RFC 1123 compliant)
 infrastructureNamespaces:
   translation: translation           # Translation services (LibreTranslate, Bergamot, HuggingFace)
-  identity: identity-customer        # Customer identity (Keycloak)
-  identity-internal: identity-internal # Internal identity (Keycloak)
   growthbook: growthbook             # Feature flags (GrowthBook)
   # photon: photon                   # DISABLED: High network cost for planet data download
   typesense: typesense               # Search engine
@@ -189,8 +165,6 @@ backupMongoNamespaces:
 # NOTE: keys must be lowercase with hyphens only (RFC 1123 compliant)
 infrastructureDatabaseMapping:
   # CNPG clusters run in app namespaces — identity connects to global namespace directly
-  identity: global
-  identity-internal: global
   growthbook: global
 
 # Cross-product database access
@@ -331,8 +305,6 @@ ambient:
     # gameverse 05-03); roll back via `ambientExcluded` if the chain wobbles.
     - kora
     - devai
-    - identity-customer
-    - identity-internal
     - stockpilot
     - scrapper
     # support-platform hosts Otto + slm-router + mcp-gateway. The
@@ -390,9 +362,6 @@ sidecarInjection:
     - kagent-system
     # Infrastructure namespaces
     - translation
-    - identity
-    - identity-customer
-    - identity-internal
     - growthbook
     - openpanel
     # - photon  # DISABLED: High network cost for planet data download
@@ -407,9 +376,6 @@ sidecarInjection:
     - global
     # - fanzone   # DECOMMISSIONED 2026-07-23
     - homechef
-    - identity
-    - identity-internal
-    - identity-customer
     - growthbook
     - openpanel
     - db-backup-and-restore
@@ -426,8 +392,6 @@ sidecarInjection:
     marketplace: application
     tesserix: application
     homechef: application
-    identity-customer: identity
-    identity-internal: identity
     growthbook: infrastructure
     openpanel: infrastructure
     translation: infrastructure
@@ -557,6 +521,6 @@ observability:
 # JWT Authentication
 # =============================================================================
 # NOTE: JWT authentication is now handled by the istio-auth-policies chart
-# which configures Keycloak-based RequestAuthentication policies.
+# which configures the GIP RequestAuthentication policies.
 # See: charts/infrastructure/istio-auth-policies/
 # =============================================================================
