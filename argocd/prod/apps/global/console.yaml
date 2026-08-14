@@ -1,0 +1,62 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: console
+  namespace: argocd
+  # Without this annotation Kargo refuses to mutate the Application. The value
+  # must match the Stage that owns the promotion — see
+  # kargo-manifests/projects/tesserix-home/stages/prod.yaml, whose
+  # argocd-update step now lists both `company` and `console`.
+  annotations:
+    kargo.akuity.io/authorized-stage: kargo-tesserix-home:prod
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: frontend
+    environment: prod
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/console
+    helm:
+      valueFiles:
+      # ORDER IS LOAD-BEARING — Helm applies these left to right and the LAST
+      # file wins on any shared key, so the shared ../global-config-prod.yaml
+      # sits in the MIDDLE. With it last, values-prod.yaml could never override
+      # anything global-config sets. This chart depends on that: values-prod
+      # blanks gcp.workloadIdentity.gcpServiceAccount, which global-config-prod
+      # otherwise sets to the shared app-secrets-marketplace-prod account.
+      # Reordering these silently re-annotates the ServiceAccount and the sync
+      # still goes green (tesserix-k8s#196 did exactly this to `company`).
+      - values.yaml
+      - ../global-config-prod.yaml
+      - values-prod.yaml
+      parameters:
+      # Kargo's prod Stage (kargo-tesserix-home:prod) rewrites this to the
+      # newest main-<sha7> console image. `latest` here is only the bootstrap
+      # value for the very first sync, before any promotion has run — the
+      # steady state is a per-commit SHA tag, which is what forces the GAR
+      # remote-repository mirror to pull fresh on every build.
+      - name: image.tag
+        value: "latest"
+      - name: ingress.hosts[0].host
+        value: console.tesserix.app
+      - name: ingress.tls[0].hosts[0]
+        value: console.tesserix.app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tesserix
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+    - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

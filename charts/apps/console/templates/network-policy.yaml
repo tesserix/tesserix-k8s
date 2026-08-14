@@ -1,0 +1,98 @@
+{{/*
+Network policies for the console in the tesserix namespace.
+Defence in depth alongside the Istio AuthorizationPolicy.
+
+SCOPED WITH A podSelector, unlike charts/apps/company's pair, which use
+`podSelector: {}` and therefore apply namespace-wide. Two reasons:
+  1. A second namespace-wide policy here would silently widen the company
+     app's ingress/egress as well — NetworkPolicies in a namespace are
+     additive, so anything permitted for the console would become permitted
+     for the web app too.
+  2. Keeping this chart's blast radius to its own pods means the console can
+     be tightened or removed without touching tesserix.app.
+
+NOTE: because the company chart's policies ARE namespace-wide, console pods
+already inherit that (broader) allow-set today. These rules are the console's
+own floor, not its ceiling; narrowing the ceiling means narrowing the company
+chart, which is out of scope here.
+
+`default-deny-ingress` is intentionally NOT declared — it is owned
+platform-wide by the istio-config chart. Declaring it in an app chart creates
+a SharedResourceWarning and pins the ArgoCD app OutOfSync (which is what stalled
+Kargo promotions for `company`).
+*/}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-console-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "console.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "console.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # Istio ingress gateway — the only public path in.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+    # Same namespace.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    # Prometheus scrape and Istio control plane.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-console-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "console.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "console.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - ipBlock:
+            cidr: 10.30.0.10/32
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The web app's ClusterIP — this is the dashboard read
+    # (WEB_INTERNAL_ORIGIN → /api/admin/dashboard). Same namespace, so no
+    # cross-namespace egress is needed for the console's own function.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    # Istio control plane (telemetry, certs).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
