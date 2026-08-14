@@ -123,6 +123,18 @@ spec:
               value: {{ .Values.memory.embeddingModel | default "text-embedding-3-small" | quote }}
             - name: DEVAI_EMBEDDING_DIMENSIONS
               value: {{ .Values.memory.embeddingDimensions | default 1536 | quote }}
+            # Qdrant — same store and collection as devai-api, so a scan's
+            # learnings are recallable from the ALM side.
+            - name: DEVAI_QDRANT_URL
+              value: {{ .Values.memory.qdrantUrl | default "" | quote }}
+            - name: DEVAI_QDRANT_COLLECTION
+              value: {{ .Values.memory.qdrantCollection | default "devai_memories" | quote }}
+            - name: DEVAI_QDRANT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: devai-api-secrets
+                  key: DEVAI_QDRANT_API_KEY
+                  optional: true
             {{- end }}
             {{- if .Values.agenticControlPlane }}
             - name: DEVAI_AREGISTRY_URL

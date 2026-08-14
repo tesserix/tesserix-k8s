@@ -59,15 +59,17 @@ specializations:
   enabled: true
   dir: "specializations"
 
-# Memory adapter — SRE uses the same pgvector backend for the
-# "learn" stage (writes episodic memories about each scan).
-# Embedding settings must match devai-api so SRE-written records
-# are searchable by the API side's queries.
+# Memory adapter — SRE uses the same qdrant store for the "learn"
+# stage (writes episodic memories about each scan). Provider, store
+# and embedding settings must match devai-api or SRE-written records
+# are invisible to the API side's queries.
 memory:
-  provider: "pgvector"
+  provider: "qdrant"
   embeddingProvider: "auto"
   embeddingModel: "text-embedding-3-small"
   embeddingDimensions: 1536
+  qdrantUrl: "http://qdrant.ai-database.svc.cluster.local:6333"
+  qdrantCollection: "devai_memories"
 
 # Agentic control planes (read-only for SRE — it doesn't create agents).
 agenticControlPlane:
