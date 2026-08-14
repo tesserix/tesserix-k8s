@@ -56,17 +56,6 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ $ns }}
     {{- end }}
-    # Allow from identity namespaces (Keycloak uses global PG for keycloak_customer/internal DBs)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.infrastructureNamespaces.identity }}
-    {{- if index .Values.infrastructureNamespaces "identity-internal" }}
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ index .Values.infrastructureNamespaces "identity-internal" }}
-    {{- end }}
     # Allow from monitoring
     - from:
         - namespaceSelector:
@@ -1084,87 +1073,6 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Values.infrastructureNamespaces.translation }}
 
-# =============================================================================
-# Identity (Keycloak) Namespace Policies
-# Allow from all app namespaces (authentication)
-# =============================================================================
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-apps-to-identity
-  namespace: {{ .Values.infrastructureNamespaces.identity }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-  ingress:
-    # Allow from istio-ingress (user login flows)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: istio-ingress
-    # Allow from all app namespaces
-    {{- range $key, $ns := .Values.appNamespaces }}
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $ns }}
-    {{- end }}
-    # Allow monitoring
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-    # Allow internal communication (redis)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.infrastructureNamespaces.identity }}
-
-{{- if index .Values.infrastructureNamespaces "identity-internal" }}
-# =============================================================================
-# Identity Internal (Keycloak) Namespace Policies
-# Allow from all app namespaces (staff/admin authentication)
-# =============================================================================
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-apps-to-identity-internal
-  namespace: {{ index .Values.infrastructureNamespaces "identity-internal" }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-  ingress:
-    # Allow from istio-ingress (staff login flows)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: istio-ingress
-    # Allow from all app namespaces
-    {{- range $key, $ns := .Values.appNamespaces }}
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $ns }}
-    {{- end }}
-    # Allow monitoring
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-    # Allow internal communication (redis)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ index .Values.infrastructureNamespaces "identity-internal" }}
-{{- end }}
 
 # =============================================================================
 # GrowthBook Namespace Policies
@@ -1724,17 +1632,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ $.Values.infrastructureNamespaces.nats }}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $.Values.infrastructureNamespaces.identity }}
-    # Allow egress to identity-internal namespace (Keycloak internal realm for staff/admin auth)
-    {{- if index $.Values.infrastructureNamespaces "identity-internal" }}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ index $.Values.infrastructureNamespaces "identity-internal" }}
-    {{- end }}
     - to:
         - namespaceSelector:
             matchLabels:

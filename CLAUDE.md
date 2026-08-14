@@ -201,8 +201,8 @@ validation.
 |---|---|
 | **Which PostgreSQL cluster a new service should use** (answer: an existing one) | [`docs/postgres-cluster-policy.md`](docs/postgres-cluster-policy.md) |
 | **Creating/modifying/debugging/migrating PostgreSQL** | [`docs/cnpg-migration-guide.md`](docs/cnpg-migration-guide.md) |
-| **Admin login, BFF auth, OIDC clients, Google SSO, internal Keycloak** (`identity-internal` / `tesserix-internal` realm) | [`docs/internal-keycloak-admin-bff-fix.md`](docs/internal-keycloak-admin-bff-fix.md) |
-| **Customer login/signup, Google/Facebook sign-in, first-broker-login** (`identity-customer` / `homechef` realm) | [`docs/customer-keycloak-social-login.md`](docs/customer-keycloak-social-login.md) |
+| **Auth — GIP tenants, auth-BFF wiring, admin claims** | [`docs/gip-migration-plan.md`](docs/gip-migration-plan.md) |
+| **Keycloak decommission** — what was removed and what still needs cutting over | [`docs/keycloak-decommission-plan.md`](docs/keycloak-decommission-plan.md) |
 | **HomeChef platform topology** — services, domains, infra, E2E | [`docs/homechef-platform.md`](docs/homechef-platform.md) |
 | **Vector store / embeddings for AI agents** (Qdrant, `ai-database` namespace — and why there is no operator) | [`docs/qdrant-vector-db.md`](docs/qdrant-vector-db.md) |
 | **Secret storage** — OpenBao, `openbao` namespace: auth roles, policies, ESO wiring, unseal and recovery | [`docs/openbao-secrets.md`](docs/openbao-secrets.md) |
@@ -235,21 +235,17 @@ including how to add a database and the two traps that waste an afternoon:
   replicas are never created. See `charts/thirdparty/istio-config/templates/network-policies.yaml`.
 - Operator lives in `cnpg-system` (v1.24.1)
 
-### Keycloak quick facts
+### Auth quick facts
+
+Keycloak is decommissioned — there is no `identity-customer` / `identity-internal`
+namespace, chart, or realm. All auth is Google Identity Platform, one tenant per
+product, issuer `https://securetoken.google.com/tesseracthub-480811`.
 
 The reference chart for the shared `ghcr.io/tesseract-nexus/global-services/auth-bff`
 image is `charts/apps/devai-auth-bff/` — **not** `mark8ly-auth-bff`, which is a
 different image with its own database and OpenFGA.
 
-Internal-realm admin login needs four things solved together (all detailed in the
-doc above): the `<product>-admin-bff` OIDC client existing with a matching secret;
-`attributes.frontendUrl` set on the realm; the BFF using the **in-cluster**
-Keycloak URL for back-channel calls (Cloudflare strips `Authorization` on
-`GET /protocol/openid-connect/userinfo`); and a `realm-roles` mapper plus
-pre-created admin users with `realmRoles: ["admin"]`.
-
-To add an admin user, edit `realm-configmap.yaml` **and** the `ADMIN_EMAILS` list
-in `homechef-clients-bootstrap-job.yaml`. The bootstrap job is idempotent.
+Admin access is the `admin: true` custom claim, granted by `gip-admin-claims`.
 
 ---
 
@@ -300,7 +296,7 @@ in `homechef-clients-bootstrap-job.yaml`. The bootstrap job is idempotent.
 
 - **Backend:** Go 1.26, Gin, GORM, PostgreSQL (microservices) / MongoDB (blog)
 - **Frontend:** Next.js 16, React 19, TypeScript, Tailwind v4, `@tesserix/web`
-- **Auth:** Keycloak + OpenFGA (marketplace) / Keycloak OIDC (blog)
+- **Auth:** Google Identity Platform + OpenFGA (marketplace) / GIP (blog)
 - **Infra:** GKE, Istio, ArgoCD, Helm, KEDA, cert-manager
 - **Messaging:** Google Pub/Sub · **Caching:** Redis
 - **Secrets:** GCP Secret Manager via External Secrets Operator
