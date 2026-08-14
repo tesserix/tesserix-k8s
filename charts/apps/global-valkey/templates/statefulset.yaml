@@ -1,0 +1,172 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "global-valkey.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "global-valkey.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "global-valkey.headless" . }}
+  replicas: {{ .Values.replicaCount }}
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "global-valkey.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "global-valkey.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "global-valkey.name" . }}
+      {{- end }}
+      terminationGracePeriodSeconds: 30
+      # 999 is the valkey user baked into the official image; running as any
+      # other uid leaves /data unreadable on the persistent variant.
+      securityContext:
+        fsGroup: 999
+        runAsUser: 999
+        runAsGroup: 999
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          {{- if eq .Values.podAntiAffinity "hard" }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  {{- include "global-valkey.selectorLabels" . | nindent 18 }}
+          {{- else }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "global-valkey.selectorLabels" . | nindent 20 }}
+          {{- end }}
+      containers:
+        - name: valkey
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/sh", "/scripts/start-valkey.sh"]
+          ports:
+            - name: valkey
+              containerPort: {{ .Values.valkey.port }}
+          livenessProbe:
+            tcpSocket:
+              port: valkey
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - >-
+                  valkey-cli -p {{ .Values.valkey.port }} --no-auth-warning
+                  {{- if .Values.acl.enabled }} --user healthcheck --pass x {{- end }}
+                  ping | grep -q PONG
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/valkey
+            - name: scripts
+              mountPath: /scripts
+            - name: data
+              mountPath: /data
+            # The rendered config lives here: valkey rewrites it on failover,
+            # and the ConfigMap mount is read-only.
+            - name: tmp
+              mountPath: /tmp
+        {{- if .Values.sentinel.enabled }}
+        - name: sentinel
+          image: "{{ .Values.sentinel.image.repository }}:{{ .Values.sentinel.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/sh", "/scripts/start-sentinel.sh"]
+          ports:
+            - name: sentinel
+              containerPort: {{ .Values.sentinel.port }}
+          livenessProbe:
+            tcpSocket:
+              port: sentinel
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/valkey
+            - name: scripts
+              mountPath: /scripts
+            - name: sentinel-tmp
+              mountPath: /tmp
+        {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "global-valkey.name" . }}-config
+            items:
+              - key: valkey.conf
+                path: valkey.conf
+              - key: sentinel.conf.tmpl
+                path: sentinel.conf.tmpl
+              {{- if .Values.acl.enabled }}
+              - key: users.acl
+                path: users.acl
+              {{- end }}
+        - name: scripts
+          configMap:
+            name: {{ include "global-valkey.name" . }}-config
+            defaultMode: 0755
+            items:
+              - key: start-valkey.sh
+                path: start-valkey.sh
+              - key: start-sentinel.sh
+                path: start-sentinel.sh
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.sentinel.enabled }}
+        - name: sentinel-tmp
+          emptyDir: {}
+        {{- end }}
+        {{- if not .Values.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}

@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: global-valkey-cache
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: global
+    app.kubernetes.io/component: cache
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/global-valkey
+    helm:
+      valueFiles:
+        - values.yaml
+        - values-cache.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: global
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
