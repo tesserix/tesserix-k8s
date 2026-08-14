@@ -26,6 +26,27 @@ bootstrap:
     - "CREATE EXTENSION IF NOT EXISTS pgcrypto"
     - "CREATE EXTENSION IF NOT EXISTS pg_trgm"
 
+# =========================================================================
+# Backup — continuous WAL archiving + 6-hourly base backups to GCS
+#
+# Kora is single-instance on a Spot-only node pool holding ~7,900 food-index
+# rows plus the admin audit trail (kora_admin_events). Without this block there
+# is no replica to fail over to AND no point in time to restore from — a lost
+# volume is a lost product.
+#
+# PREREQUISITE, and this will fail at runtime without it: the service account
+# below must exist and hold roles/storage.objectAdmin on
+# tesseract-prod-backups-in, bound to the `kora` namespace via Workload
+# Identity. Verify before merging; the chart renders either way.
+backup:
+  enabled: true
+  destinationPath: "gs://tesseract-prod-backups-in/kora-postgres"
+  retentionPolicy: "30d"
+  # The bucket's lifecycle is Standard -> Nearline@7d -> Delete@37d. The 37/30
+  # gap is a deliberate orphan backstop, not drift.
+  schedule: "0 0 */6 * * *"
+  serviceAccount: "app-secrets-kora-prod@tesseracthub-480811.iam.gserviceaccount.com"
+
 postgresql:
   max_connections: "100"
   shared_buffers: "512MB"
