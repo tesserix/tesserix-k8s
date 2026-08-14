@@ -89,6 +89,18 @@ resources:
 # and be sourced from the ExternalSecret target.
 env:
   GIN_MODE: "release"
+  # Without this the Go config default wins and the prod pod logged
+  # {"msg":"api listening","env":"development"} — see kora#163.
+  #
+  # Today this is ONLY a log label: `cfg.Env` is read in exactly one place
+  # (cmd/api/main.go's startup line) and nothing branches on it, so the audit
+  # that issue asked for came back clean — no permissive auth, no debug
+  # routes, and GIN_MODE was already "release". It is still worth setting:
+  # log-based filtering by environment was silently wrong, anyone reading prod
+  # logs had reason to doubt what they were looking at, and the first piece of
+  # code to branch on Env would otherwise take the development path in
+  # production without anyone noticing.
+  ENV: "production"
   # NOTE: do NOT set PORT here. Knative Serving reserves the PORT env
   # var and INJECTS it itself based on the container port. Defining it
   # in the manifest causes the validation webhook to reject:
