@@ -1,0 +1,86 @@
+# Shared Valkey. Instantiated twice — see values-cache.yaml / values-queue.yaml.
+# Cache and queue workloads are split because they need opposite eviction
+# policies: an LRU that protects cache hit rate would silently evict queued jobs.
+
+nameOverride: ""
+
+image:
+  repository: valkey/valkey
+  tag: "9.1.1-alpine"
+  pullPolicy: IfNotPresent
+
+# 1 primary + 2 replicas. Two nodes would give durability but not availability:
+# Sentinel needs a 3-member quorum to promote without a split brain.
+replicaCount: 3
+
+valkey:
+  port: 6379
+  maxmemory: 256mb
+  maxmemoryPolicy: allkeys-lru
+  appendonly: "no"
+  # Sentinel drives failover, so the replica's own view must never be
+  # authoritative — it follows whatever Sentinel promotes.
+  replicaAnnounceIP: true
+  extraConfig: []
+
+sentinel:
+  enabled: true
+  port: 26379
+  quorum: 2
+  downAfterMilliseconds: 5000
+  failoverTimeout: 30000
+  parallelSyncs: 1
+  image:
+    repository: valkey/valkey
+    tag: "9.1.1-alpine"
+
+# HAProxy always routes to whichever node answers `role:master`, so clients
+# that only speak `redis://host:6379` (openpanel, postiz — third-party, not
+# Sentinel-aware) still get automatic failover.
+haproxy:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: haproxy
+    tag: "3.0-alpine"
+  port: 6379
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+
+persistence:
+  enabled: false
+  size: 1Gi
+  storageClass: ""
+
+# Passwordless per-consumer users. `nopass` accepts any password, so clients
+# authenticate by username alone (redis://homechef@host:6379) and each is
+# confined to its own key prefix — one product cannot read another's keys.
+acl:
+  enabled: true
+  users: []
+
+# The real boundary. Only these namespaces may reach the data ports.
+networkPolicy:
+  enabled: true
+  allowedNamespaces: []
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# The cluster is pinned at 3 nodes per pool, so soft anti-affinity keeps the
+# three members apart without making them unschedulable when a node is full.
+podAntiAffinity: soft
+
+metrics:
+  enabled: false
+
+serviceAccount:
+  create: true
