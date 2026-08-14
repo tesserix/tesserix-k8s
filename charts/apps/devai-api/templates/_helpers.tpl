@@ -95,14 +95,17 @@ identical environment — defined once here so the two never drift.
   # connection mid-upgrade). Intra-cluster encryption is
   # handled by Istio.
   value: "postgresql://{{ .Values.database.user }}:$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode=disable"
-# Redis — password must be defined before URL for $(VAR) expansion
+# Redis/Valkey — password must be defined before URL for $(VAR) expansion.
+# redis.user is the Valkey ACL user that confines this app to its own key
+# prefix; it is nopass, so the password is ignored there. Empty in local
+# sandbox mode, where the URL falls back to password-only auth.
 - name: REDIS_PASSWORD
   valueFrom:
     secretKeyRef:
       name: redis-devai-password
       key: password
 - name: DEVAI_REDIS_URL
-  value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+  value: "redis://{{ .Values.redis.user }}:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
 # NATS
 - name: DEVAI_NATS_URL
   value: {{ .Values.nats.url | quote }}
