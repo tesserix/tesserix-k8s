@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: planning-poker-nats
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: planning-poker
+    app.kubernetes.io/component: event-backbone
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "-6"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: planning-poker
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/nats
+    helm:
+      valueFiles:
+        - values-planning-poker.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: planning-poker
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
