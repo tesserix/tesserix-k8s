@@ -118,6 +118,12 @@ env:
   # OS push go-live is a user-owned step (eas init, APNs creds, physical
   # device test). Flip to "true" only after that's done.
   PUSH_ENABLED: "false"
+  # Set EXPLICITLY rather than leaning on the Go default
+  # (redis://localhost:6379/0, api/internal/config/config.go). Relying on that
+  # implicit default is precisely how kora#105 went unnoticed: nothing in this
+  # chart said Redis was expected, so its absence flagged nothing and every
+  # resolve silently cost a Gemini call. Points at the sidecar below.
+  REDIS_URL: "redis://localhost:6379/0"
 
 # Each entry maps an env var name to a key in the k8s Secret created by
 # the ExternalSecret. Keep this in sync with externalsecret.yaml.
@@ -264,6 +270,33 @@ seed:
       -sr /usr/local/share/kora/food/usda_sr_legacy.json
       -curated /usr/local/share/kora/food/au_in_dishes.json &&
       /usr/local/bin/embed
+
+# Resolve-cache Redis, as a SIDECAR in the kora-api pod (kora#105).
+#
+# Disabling this does not break the API — the resolver degrades to
+# ai.NoCache{} — but it returns the service to paying for a Gemini call on
+# every single resolve, and makes the generation-counter invalidation a
+# silent no-op. Turn it off deliberately, never incidentally.
+#
+# maxmemory-policy is pinned to volatile-lru in the Deployment, NOT here:
+# it is a correctness precondition of the cache design (the generation key
+# has no TTL and must survive eviction), not a tuning knob.
+redis:
+  enabled: true
+  # Alpine variant: this is a cache with no persistence and no modules, so the
+  # smaller image is strictly better on a cost-constrained node.
+  image: "redis:7.4-alpine"
+  # Bounds a day of cached resolutions (entries carry a 24h TTL, set in
+  # cmd/api/main.go). Raise only with evidence of eviction pressure.
+  maxmemory: "64mb"
+  resources:
+    requests:
+      memory: 32Mi
+      cpu: 10m
+    limits:
+      # Must exceed maxmemory with headroom for Redis' own overhead, or the
+      # container is OOMKilled before its own eviction policy ever engages.
+      memory: 96Mi
 
 # Prometheus metrics. Scraped in-cluster by GCP Managed Prometheus via the
 # PodMonitoring below; deliberately NOT exposed through the Istio gateway.
