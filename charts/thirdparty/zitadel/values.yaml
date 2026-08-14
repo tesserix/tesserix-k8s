@@ -82,7 +82,12 @@ zitadel:
           User:
             Username: zitadel
             SSL:
-              Mode: require
+              # verify-full, not require: a client certificate is only an
+              # identity if the server it is presented to is verified too.
+              Mode: verify-full
+              RootCert: /db-certs/ca/ca.crt
+              Cert: /db-certs/client/tls.crt
+              Key: /db-certs/client/tls.key
           Admin:
             # The superuser has to land somewhere that already exists before it
             # can create the zitadel database.
@@ -205,6 +210,10 @@ zitadel:
         secretKeyRef:
           name: zitadel-admin-password
           key: password
+    # Still set, but no longer an authentication path: pg_hba matches the
+    # zitadel role on `cert` first and a failed match is never retried. It
+    # survives only because the init Job issues CREATE ROLE ... PASSWORD before
+    # any certificate exists to authenticate with.
     - name: ZITADEL_DATABASE_POSTGRES_USER_PASSWORD
       valueFrom:
         secretKeyRef:
@@ -220,6 +229,35 @@ zitadel:
         secretKeyRef:
           name: zitadel-postgres-superuser
           key: password
+
+  # Honoured by the deployment, the login deployment and both the init and setup
+  # Jobs, which is every workload that opens a database connection.
+  extraVolumes:
+    # CNPG's server CA, for verify-full. Not the client CA — this verifies the
+    # server's identity, the client cert below asserts ours.
+    - name: db-ca
+      secret:
+        secretName: zitadel-postgres-ca
+        items:
+          - key: ca.crt
+            path: ca.crt
+    - name: db-client-cert
+      secret:
+        secretName: zitadel-db-client-cert
+        defaultMode: 0400
+        items:
+          - key: tls.crt
+            path: tls.crt
+          - key: tls.key
+            path: tls.key
+
+  extraVolumeMounts:
+    - name: db-ca
+      mountPath: /db-certs/ca
+      readOnly: true
+    - name: db-client-cert
+      mountPath: /db-certs/client
+      readOnly: true
 
   service:
     type: ClusterIP

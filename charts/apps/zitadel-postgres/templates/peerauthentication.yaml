@@ -1,0 +1,19 @@
+{{- if .Values.istio.enabled }}
+# The CNPG operator runs outside the mesh, so its status probe to port 8000
+# arrives as plaintext and mesh-wide STRICT mTLS rejects it before authorization
+# runs. Without this the operator reports "Instance Status Extraction Error" and
+# cannot see instance state — which is what failover decisions are made from.
+# Same shape as devai-cnpg-port-exception and agentregistry-cnpg-port-exception.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: {{ .Values.clusterName }}-cnpg-port-exception
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/podRole: instance
+  portLevelMtls:
+    "8000":
+      mode: DISABLE
+{{- end }}
