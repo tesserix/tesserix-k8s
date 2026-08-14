@@ -1,0 +1,22 @@
+{{- if .Values.istio.enabled }}
+# The CNPG operator runs outside the mesh, so its status probe to port 8000
+# arrives as plaintext and mesh-wide STRICT mTLS rejects it before authorization
+# runs. Without this the operator reports "Instance Status Extraction Error" and
+# cannot see instance state — which is what failover decisions are made from.
+# PERMISSIVE is what drops istio_converted_static_strict for these pods; the port
+# exception alone does not.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: {{ .Values.clusterName }}-cnpg-port-exception
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/podRole: instance
+  mtls:
+    mode: PERMISSIVE
+  portLevelMtls:
+    "8000":
+      mode: DISABLE
+{{- end }}
