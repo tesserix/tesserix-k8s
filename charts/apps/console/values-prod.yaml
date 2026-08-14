@@ -1,0 +1,73 @@
+# Production overrides for console (Tesserix Platform Console).
+# Use with: helm upgrade --values values.yaml --values ../global-config-prod.yaml --values values-prod.yaml
+#
+# ORDER IS LOAD-BEARING — see the note in argocd/prod/apps/global/console.yaml.
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/tesserix-console
+  tag: "latest"
+
+# Two replicas so a deploy or a node drain does not black-hole the surface for
+# the length of an image pull, which is what a single replica did to
+# tesserix.app (see charts/apps/company/values-prod.yaml).
+replicaCount: 2
+
+# Zero-downtime rollout: maxUnavailable 0 keeps the old pod serving until the
+# new one is up, maxSurge 1 allows the extra pod needed to do that.
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+# Preferred, not required: with a hard rule the surge pod during a rollout
+# would be unschedulable if only one node had room.
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: console
+
+# Readiness is what makes maxUnavailable: 0 mean anything: without it a pod
+# counts as available the moment the container starts, so the rollout swaps
+# traffic onto a Next.js server that is not listening yet and 503s exactly as
+# an unguarded rollout would. No `httpGet` key, so the template renders a
+# tcpSocket probe against the container port — no health route required. See
+# the note in values.yaml for why liveness stays off.
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+resources:
+  requests:
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+env:
+  NODE_ENV: "production"
+  NEXT_PUBLIC_WEB_URL: "https://tesserix.app"
+  WEB_INTERNAL_ORIGIN: "http://company.tesserix.svc.cluster.local"
+
+# The console makes no GCP API calls of its own — its secrets arrive as env
+# vars via the ExternalSecret, which ESO resolves with its own credentials.
+# Blanking this overrides global-config-prod.yaml's shared
+# app-secrets-marketplace-prod account (project-level secretmanager.admin over
+# every secret in the project) so the KSA is not annotated to impersonate an
+# account it neither needs nor is trusted by. See the long note in
+# charts/apps/company/values-prod.yaml for how that bit the company chart.
+gcp:
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "prod"
+
+pdb:
+  enabled: true
