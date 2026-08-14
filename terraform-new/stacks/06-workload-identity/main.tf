@@ -85,6 +85,34 @@ resource "google_service_account_iam_member" "secret_provisioner_workload_identi
 }
 
 # =============================================================================
+# Write-blind Secret Manager role
+# =============================================================================
+# The secret-service console creates, versions, disables and destroys secrets
+# but must never read one back. roles/secretmanager.admin includes
+# versions.access, so the console gets this role instead: everything except the
+# payload. Referenced from tfvars as projects/<project>/roles/<role_id>.
+
+resource "google_project_iam_custom_role" "secret_manager_write_blind" {
+  role_id     = "secretManagerWriteBlind"
+  title       = "Secret Manager Write-Blind"
+  description = "Manage secrets and versions without permission to read a payload"
+  project     = var.project_id
+  permissions = [
+    "secretmanager.secrets.create",
+    "secretmanager.secrets.delete",
+    "secretmanager.secrets.get",
+    "secretmanager.secrets.list",
+    "secretmanager.secrets.update",
+    "secretmanager.versions.add",
+    "secretmanager.versions.destroy",
+    "secretmanager.versions.disable",
+    "secretmanager.versions.enable",
+    "secretmanager.versions.get",
+    "secretmanager.versions.list",
+  ]
+}
+
+# =============================================================================
 # Self-impersonation (signing) — scoped to the SA itself
 # =============================================================================
 

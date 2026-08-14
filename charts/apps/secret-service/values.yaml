@@ -38,6 +38,25 @@ web:
     limits:
       memory: 512Mi
 
+# Which stores the console can drive, and which one it opens on. A backend
+# absent from `enabled` cannot be reached by any request, whatever it asks for.
+backends:
+  enabled:
+    - openbao
+  # Add `gcpsm` here only once stack 06-workload-identity has been applied: the
+  # API takes Application Default Credentials at startup, and without the GSA
+  # binding it would authenticate as the node instead.
+  default: openbao
+
+# Google Secret Manager backend. Authentication is Workload Identity: the API's
+# ServiceAccount impersonates this GSA, which holds the write-blind custom role
+# from terraform-new/stacks/06-workload-identity — no key file exists.
+gcpSecretManager:
+  projectId: tesseracthub-480811
+  serviceAccount: secret-service@tesseracthub-480811.iam.gserviceaccount.com
+  # Empty asks Google to replicate automatically.
+  locations: []
+
 openbao:
   address: http://openbao.openbao.svc.cluster.local:8200
   mount: kv
@@ -90,6 +109,9 @@ networkPolicy:
   # Cluster pod CIDR for the ambient HBONE rule. A wrong value silently kills
   # all east-west traffic for the namespace.
   podCIDR: 10.20.0.0/16
+  # GKE metadata server, which mints the Workload Identity token. Only the API
+  # pod may reach it, and only while the Secret Manager backend is enabled.
+  metadataServerIP: 169.254.169.254
 
 pdb:
   enabled: true
