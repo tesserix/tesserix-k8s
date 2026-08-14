@@ -21,11 +21,14 @@ spec:
       to:
         - operation:
             ports: ["5432"]
-    # The operator drives the instance manager on 8000; replicas stream from
-    # the primary on 5432 as the cluster's own identity.
+    # The operator's probe is plaintext, so ztunnel can attribute no namespace
+    # or principal to it and a `from` rule can never match. Port only, with the
+    # NetworkPolicy restricting the source to cnpg-system.
+    - to:
+        - operation:
+            ports: ["8000"]
+    # Replicas stream from the primary on 5432 as the cluster's own identity.
     - from:
-        - source:
-            namespaces: ["cnpg-system"]
         - source:
             principals:
               - cluster.local/ns/{{ .Values.namespace }}/sa/{{ .Values.clusterName }}

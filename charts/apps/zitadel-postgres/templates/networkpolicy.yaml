@@ -23,4 +23,27 @@ spec:
           port: 8000
         - protocol: TCP
           port: 5432
+    # Selecting these pods at all makes them deny-by-default, so the namespace's
+    # own workloads need an explicit rule. Under ambient the connection arrives
+    # on the HBONE port, not 5432, and blocking it surfaces as a Postgres TLS
+    # reset rather than anything network-shaped.
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 15008
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: 9187
+        - protocol: TCP
+          port: 15008
 {{- end }}
