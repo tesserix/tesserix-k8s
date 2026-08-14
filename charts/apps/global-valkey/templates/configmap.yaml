@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "global-valkey.name" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "global-valkey.labels" . | nindent 4 }}
+data:
+  valkey.conf: |
+    port {{ .Values.valkey.port }}
+    dir /data
+    maxmemory {{ .Values.valkey.maxmemory }}
+    maxmemory-policy {{ .Values.valkey.maxmemoryPolicy }}
+    appendonly {{ .Values.valkey.appendonly }}
+    save ""
+    protected-mode no
+    repl-diskless-sync yes
+    repl-diskless-load swapdb
+    {{- if .Values.acl.enabled }}
+    aclfile /etc/valkey/users.acl
+    masteruser replication
+    masterauth replication
+    {{- end }}
+    {{- range .Values.valkey.extraConfig }}
+    {{ . }}
+    {{- end }}
+
+  sentinel.conf.tmpl: |
+    port {{ .Values.sentinel.port }}
+    dir /tmp
+    sentinel resolve-hostnames yes
+    sentinel announce-hostnames yes
+    protected-mode no
+
+{{- if .Values.acl.enabled }}
+  users.acl: |
+    user default off
+    user healthcheck on nopass resetkeys resetchannels +ping +info +auth +hello
+    user replication on nopass ~* &* +psync +replconf +ping +info +sync +subscribe
+    user sentinel on nopass ~* &* +@all
+    {{- range .Values.acl.users }}
+    user {{ .name }} on nopass ~{{ .prefix }}:* &{{ .prefix }}:* +@all -@dangerous
+    {{- end }}
+{{- end }}
+
+  start-valkey.sh: |
+    #!/bin/sh
+    set -eu
+    ORDINAL="${HOSTNAME##*-}"
+    HEADLESS="{{ include "global-valkey.headless" . }}.{{ .Release.Namespace }}.svc.cluster.local"
+    SELF="{{ include "global-valkey.name" . }}-${ORDINAL}.${HEADLESS}"
+    cp /etc/valkey/valkey.conf /tmp/valkey.conf
+    echo "replica-announce-ip ${SELF}" >> /tmp/valkey.conf
+
+    # Sentinel is the source of truth for who is primary; only fall back to
+    # ordinal 0 when no sentinel answers, which is first boot.
+    PRIMARY=""
+    for i in $(seq 0 {{ sub (int .Values.replicaCount) 1 }}); do
+      PEER="{{ include "global-valkey.name" . }}-${i}.${HEADLESS}"
+      ADDR=$(valkey-cli -h "${PEER}" -p {{ .Values.sentinel.port }} --no-auth-warning \
+        sentinel get-master-addr-by-name {{ include "global-valkey.name" . }} 2>/dev/null | head -1 || true)
+      if [ -n "${ADDR}" ]; then PRIMARY="${ADDR}"; break; fi
+    done
+    if [ -z "${PRIMARY}" ]; then
+      PRIMARY="{{ include "global-valkey.name" . }}-0.${HEADLESS}"
+    fi
+    if [ "${PRIMARY}" != "${SELF}" ]; then
+      echo "replicaof ${PRIMARY} {{ .Values.valkey.port }}" >> /tmp/valkey.conf
+    fi
+    exec valkey-server /tmp/valkey.conf
+
+  start-sentinel.sh: |
+    #!/bin/sh
+    set -eu
+    HEADLESS="{{ include "global-valkey.headless" . }}.{{ .Release.Namespace }}.svc.cluster.local"
+    cp /etc/valkey/sentinel.conf.tmpl /tmp/sentinel.conf
+
+    # Wait for the primary to accept connections before monitoring it —
+    # sentinel resolves the monitor target once, at startup.
+    PRIMARY=""
+    for i in $(seq 0 {{ sub (int .Values.replicaCount) 1 }}); do
+      PEER="{{ include "global-valkey.name" . }}-${i}.${HEADLESS}"
+      ADDR=$(valkey-cli -h "${PEER}" -p {{ .Values.sentinel.port }} --no-auth-warning \
+        sentinel get-master-addr-by-name {{ include "global-valkey.name" . }} 2>/dev/null | head -1 || true)
+      if [ -n "${ADDR}" ]; then PRIMARY="${ADDR}"; break; fi
+    done
+    if [ -z "${PRIMARY}" ]; then
+      PRIMARY="{{ include "global-valkey.name" . }}-0.${HEADLESS}"
+      until valkey-cli -h "${PRIMARY}" -p {{ .Values.valkey.port }} --no-auth-warning \
+        {{- if .Values.acl.enabled }} --user healthcheck --pass x {{- end }} ping 2>/dev/null | grep -q PONG; do
+        sleep 2
+      done
+    fi
+
+    cat >> /tmp/sentinel.conf <<EOF
+    sentinel monitor {{ include "global-valkey.name" . }} ${PRIMARY} {{ .Values.valkey.port }} {{ .Values.sentinel.quorum }}
+    sentinel down-after-milliseconds {{ include "global-valkey.name" . }} {{ .Values.sentinel.downAfterMilliseconds }}
+    sentinel failover-timeout {{ include "global-valkey.name" . }} {{ .Values.sentinel.failoverTimeout }}
+    sentinel parallel-syncs {{ include "global-valkey.name" . }} {{ .Values.sentinel.parallelSyncs }}
+    {{- if .Values.acl.enabled }}
+    sentinel auth-user {{ include "global-valkey.name" . }} sentinel
+    sentinel auth-pass {{ include "global-valkey.name" . }} x
+    {{- end }}
+    EOF
+    exec valkey-sentinel /tmp/sentinel.conf
