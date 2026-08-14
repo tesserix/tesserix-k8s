@@ -4,14 +4,7 @@
 image:
   pullPolicy: IfNotPresent
 
-# Knative Serving — always-on (minScale: 1, never scales to zero)
-knative:
-  enabled: true
-  minScale: 0
-  maxScale: 10
-  scaleDownDelay: "60s"
 
-# Disable traditional Deployment-based autoscaling — Knative handles it
 autoscaling:
   enabled: false
 
@@ -21,7 +14,6 @@ keda:
 # =============================================================================
 # Backend Service Routing (Istio VirtualService)
 # =============================================================================
-# Knative services use knative: true — routes through the Knative local gateway
 # for scale-to-zero support (activator stays in the data path).
 # GKE services use serviceName/servicePort (direct in-cluster routing).
 # Order matters: Istio matches top-to-bottom, first match wins.
@@ -29,148 +21,123 @@ keda:
 ingress:
   backendServices:
     # ---------------------------------------------------------
-    # SportsBook service routes — GKE Knative (scale-to-zero)
+    # SportsBook service routes
     # MUST be before /api/v1/sports to avoid prefix collision
     # ---------------------------------------------------------
     - path: /api/v1/sportsbook
       pathType: Prefix
-      knative: true
       serviceName: fanzone-sportsbook
     # ---------------------------------------------------------
-    # Sports Data routes — GKE Knative (scale-to-zero)
+    # Sports Data routes
     # ---------------------------------------------------------
     - path: /api/v1/sports
       pathType: Prefix
-      knative: true
       serviceName: sports-data
     - path: /api/v1/cricket
       pathType: Prefix
-      knative: true
       serviceName: sports-data
     - path: /api/v1/nfl
       pathType: Prefix
-      knative: true
       serviceName: sports-data
     - path: /api/v1/nba
       pathType: Prefix
-      knative: true
       serviceName: sports-data
     - path: /api/v1/nhl
       pathType: Prefix
-      knative: true
       serviceName: sports-data
     - path: /api/v1/mlb
       pathType: Prefix
-      knative: true
       serviceName: sports-data
     - path: /api/v1/ratings
       pathType: Prefix
-      knative: true
       serviceName: sports-data
     - path: /api/v1/admin/hot-game
       pathType: Prefix
-      knative: true
       serviceName: sports-data
     # ---------------------------------------------------------
-    # User service routes — GKE Knative (scale-to-zero)
+    # User service routes
     # ---------------------------------------------------------
     - path: /api/v1/users
       pathType: Prefix
-      knative: true
       serviceName: fanzone-user
     - path: /api/v1/user
       pathType: Prefix
-      knative: true
       serviceName: fanzone-user
     - path: /api/v1/leaderboard
       pathType: Prefix
-      knative: true
       serviceName: fanzone-user
     - path: /api/v1/rooms
       pathType: Prefix
-      knative: true
       serviceName: fanzone-user
     # ---------------------------------------------------------
-    # Notification service routes — GKE Knative (scale-to-zero)
+    # Notification service routes
     # ---------------------------------------------------------
     - path: /api/v1/notifications
       pathType: Prefix
-      knative: true
       serviceName: fanzone-notification
     # ---------------------------------------------------------
-    # Prediction service routes — GKE Knative (scale-to-zero)
+    # Prediction service routes
     # ---------------------------------------------------------
     - path: /api/v1/predictions
       pathType: Prefix
-      knative: true
       serviceName: fanzone-prediction
     - path: /api/v1/admin/predictions
       pathType: Prefix
-      knative: true
       serviceName: fanzone-prediction
     # ---------------------------------------------------------
     # Admin pool routes — GKE Knative (user service)
     # ---------------------------------------------------------
     - path: /api/v1/admin/pool
       pathType: Prefix
-      knative: true
       serviceName: fanzone-user
     # ---------------------------------------------------------
     # Admin point config routes — GKE Knative (user service)
     # ---------------------------------------------------------
     - path: /api/v1/admin/point-config
       pathType: Prefix
-      knative: true
       serviceName: fanzone-user
     # ---------------------------------------------------------
     # Chat service routes — GKE Knative (scale-to-zero via local gateway)
     # ---------------------------------------------------------
     - path: /api/rooms
       pathType: Prefix
-      knative: true
       serviceName: fanzone-chat
     # ---------------------------------------------------------
     # Media service routes — GKE Knative (scale-to-zero via local gateway)
     # ---------------------------------------------------------
     - path: /api/media
       pathType: Prefix
-      knative: true
       serviceName: fanzone-media
     # ---------------------------------------------------------
     # Docs route — GKE Knative (fanzone-api)
     # ---------------------------------------------------------
     - path: /docs
       pathType: Prefix
-      knative: true
       serviceName: fanzone-api
     # ---------------------------------------------------------
-    # Commentary service routes — GKE Knative (scale-to-zero)
+    # Commentary service routes
     # ---------------------------------------------------------
     - path: /commentary/
       pathType: Prefix
-      knative: true
       serviceName: fanzone-commentary
       rewrite: /
     # ---------------------------------------------------------
-    # Fan Connect service routes — GKE Knative (scale-to-zero)
+    # Fan Connect service routes
     # ---------------------------------------------------------
     - path: /api/v1/fan-connect
       pathType: Prefix
-      knative: true
       serviceName: fanzone-fan-connect
     # ---------------------------------------------------------
-    # Quest service routes — GKE Knative (scale-to-zero)
+    # Quest service routes
     # ---------------------------------------------------------
     - path: /api/v1/quest
       pathType: Prefix
-      knative: true
       serviceName: fanzone-quest
     # ---------------------------------------------------------
-    # Micro Prediction service routes — GKE Knative (scale-to-zero)
+    # Micro Prediction service routes
     # ---------------------------------------------------------
     - path: /api/v1/micro
       pathType: Prefix
-      knative: true
       serviceName: fanzone-micro-prediction
     # ---------------------------------------------------------
     # Otto support-chat — Next.js [...path] proxy in fanzone-web.
@@ -179,7 +146,6 @@ ingress:
     # ---------------------------------------------------------
     - path: /api/otto
       pathType: Prefix
-      knative: true
       serviceName: fanzone-web
     # ---------------------------------------------------------
     # Otto WebSocket + REST passthrough — the widget opens
@@ -204,38 +170,33 @@ ingress:
     # ---------------------------------------------------------
     - path: /api
       pathType: Prefix
-      knative: true
       serviceName: fanzone-api
     # ---------------------------------------------------------
-    # Game service routes — GKE Knative (scale-to-zero)
+    # Game service routes
     # ---------------------------------------------------------
     - path: /game/
       pathType: Prefix
-      knative: true
       serviceName: fanzone-game
       rewrite: /
     # ---------------------------------------------------------
-    # Book Cricket service routes — GKE Knative (scale-to-zero)
+    # Book Cricket service routes
     # ---------------------------------------------------------
     - path: /book-cricket/
       pathType: Prefix
-      knative: true
       serviceName: fanzone-book-cricket
       rewrite: /
     # ---------------------------------------------------------
-    # Cricket Quiz service routes — GKE Knative (scale-to-zero)
+    # Cricket Quiz service routes
     # ---------------------------------------------------------
     - path: /cricket-quiz/
       pathType: Prefix
-      knative: true
       serviceName: fanzone-cricket-quiz
       rewrite: /
     # ---------------------------------------------------------
-    # Auth BFF routes — GKE Knative (scale-to-zero)
+    # Auth BFF routes
     # ---------------------------------------------------------
     - path: /bff/
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth-bff
       rewrite: /
     # ---------------------------------------------------------
@@ -243,63 +204,48 @@ ingress:
     # ---------------------------------------------------------
     - path: /auth/me
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/username
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/profile
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/avatars
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /avatars/
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/admin
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/logout
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/refresh
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/phone
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/providers
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/stats
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/track
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/google
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/instagram
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     - path: /auth/twitter
       pathType: Prefix
-      knative: true
       serviceName: fanzone-auth
     # /ws and /events are handled by virtualService sections below (no retries, 3600s timeout)
 
@@ -309,16 +255,13 @@ ingress:
 virtualService:
   websocket:
     path: "/ws"
-    knative: true
     serviceName: fanzone-ws
   sse:
     path: "/events"
-    knative: true
     serviceName: fanzone-ws
 
 # Default route: fanzone-web on GKE Knative (always-on, minScale: 1)
 defaultRoute:
-  knative: true
   serviceName: fanzone-web
 
 # API subdomain VirtualService (api.fanzonebattleground.com)
@@ -329,7 +272,6 @@ apiVirtualService:
   defaultService:
     name: "fanzone-api"
     port: 80
-    knative: true
 
 # Pod Disruption Budget - disabled (Knative manages pods)
 pdb:
