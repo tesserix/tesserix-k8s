@@ -16,23 +16,11 @@ spec:
     - match:
         - uri:
             prefix: /
-      {{- if .Values.knative.enabled }}
-      headers:
-        request:
-          set:
-            Host: {{ include "fanzone-auth-bff.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      {{- else }}
       route:
         - destination:
             host: {{ include "fanzone-auth-bff.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
             port:
               number: {{ .Values.service.port }}
-      {{- end }}
       timeout: 60s
       retries:
         attempts: 3
