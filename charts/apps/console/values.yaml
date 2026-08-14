@@ -1,0 +1,164 @@
+# Default values for console (Tesserix Platform Console).
+#
+# Deliberately smaller than charts/apps/company. There is no traffic on this
+# surface yet, so HPA, VPA, KEDA, the uptime-probe CronJob and the rollout RBAC
+# that the company chart carries are all intentionally ABSENT rather than
+# present-and-disabled: anything in this chart should read as something the
+# console actually needs. Add them when there is load to justify them.
+replicaCount: 1
+
+image:
+  # Pulled via the in-region Artifact Registry mirror of ghcr.io — see
+  # docs/artifact-registry-mirror.md. Built and pushed by tesserix-home CI
+  # (.github/workflows/ci.yml, CONSOLE_IMAGE_NAME: tesserix-console) as a
+  # single-arch linux/amd64 image tagged `main-<sha7>` and `latest`.
+  #
+  # The effective tag in prod is the `image.tag` Helm parameter on the ArgoCD
+  # Application, which Kargo (kargo-tesserix-home:prod) rewrites to the newest
+  # main-<sha7>. The value here is only the chart default.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/tesserix-console
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1001
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+# Kong is decommissioned cluster-wide (see charts/apps/company/values.yaml) —
+# routing is the Istio VirtualService below. The Ingress object is kept only so
+# `ingress.hosts[0].host` remains the single place the hostname is declared;
+# the VirtualService reads it from there.
+ingress:
+  enabled: false
+  className: "kong"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: console.tesserix.app
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: console-tls
+      hosts:
+        - console.tesserix.app
+  backendServices: []
+
+# Memory only — no CPU requests/limits, per project convention.
+resources:
+  requests:
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+# The console has no /api/health route — apps/console has no API routes at all,
+# and every path is session-gated.
+#
+# LIVENESS stays off deliberately. Restarting a wedged pod is a decision that
+# genuinely wants a real health check; a TCP accept succeeds happily while the
+# event loop is blocked, so a tcpSocket liveness probe would be a check that
+# can never fail usefully. Enable it when the console grows /api/health.
+#
+# READINESS is on in prod (values-prod.yaml) as a tcpSocket probe. It needs no
+# application change, and without it a pod counts as available the instant the
+# container starts — which, with replicaCount: 2 and maxUnavailable: 0, lets a
+# rollout retire the old pod while Next.js is still binding its port. The
+# template falls back to tcpSocket whenever readinessProbe.httpGet is unset, so
+# pointing it at a real path later is a values-only change.
+livenessProbe:
+  enabled: false
+readinessProbe:
+  enabled: false
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# The web app (tesserix-home) this console reads from and hands login off to.
+# Deployed by charts/apps/company as Deployment/Service `company` in this same
+# namespace. Used by the AuthorizationPolicy and NetworkPolicy templates; the
+# URLs the app itself consumes are the WEB_* entries under `env` below.
+web:
+  serviceName: company
+  # Path prefix the console's dashboard client calls on the web app.
+  adminApiPath: /api/admin
+
+env:
+  NODE_ENV: production
+  NEXT_TELEMETRY_DISABLED: "1"
+  PORT: "3000"
+  HOSTNAME: "0.0.0.0"
+
+  # Session cookie. MUST match charts/apps/company/values.yaml exactly — the
+  # console does not mint sessions, it only verifies the cookie the web app
+  # issued, and the cookie is only visible here because the domain is the
+  # shared parent `.tesserix.app` rather than either host.
+  SESSION_COOKIE_NAME: "tx_session"
+  SESSION_COOKIE_DOMAIN: ".tesserix.app"
+
+  # Public origin of the web app. The console has no /login of its own, so its
+  # middleware redirects unauthenticated visitors to `${NEXT_PUBLIC_WEB_URL}/login`
+  # (apps/console/middleware.ts). Unset, that falls back to http://localhost:3002
+  # — i.e. a production console that redirects operators to their own laptop.
+  NEXT_PUBLIC_WEB_URL: "https://tesserix.app"
+
+  # Cluster-internal origin of the web app. The dashboard client reads this
+  # name EXACTLY (apps/console/lib/platform-api.ts: process.env.WEB_INTERNAL_ORIGIN)
+  # and calls ${WEB_INTERNAL_ORIGIN}/api/admin/dashboard. ClusterIP, so the
+  # dashboard read never egresses to the public internet and never meets an
+  # ingress gateway policy. Same localhost:3002 dev fallback caveat as above.
+  WEB_INTERNAL_ORIGIN: "http://company.tesserix.svc.cluster.local"
+
+# External Secrets Configuration (GCP Secret Manager → K8s Secrets)
+externalSecrets:
+  enabled: true
+  secretStoreRef: "gcp-secret-store"
+
+# GCP Secret Manager configuration
+gcp:
+  projectId: ""  # Inherited from global-config.yaml if empty
+  namespace: "tesserix"
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "devtest"
+
+# ConfigMap for additional non-secret configuration. Empty by default; kept so
+# operator tweaks have somewhere to land without a chart change.
+configMap:
+  enabled: false
+  data: {}
+
+# Pod Disruption Budget — no minAvailable: with a single replica,
+# minAvailable: 1 pins disruptionsAllowed at 0 and blocks every node
+# drain/scale-down. The template falls back to maxUnavailable: 1.
+pdb:
+  enabled: true
