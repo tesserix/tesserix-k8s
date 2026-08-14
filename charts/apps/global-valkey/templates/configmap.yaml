@@ -73,6 +73,10 @@ data:
     #!/bin/sh
     set -eu
     HEADLESS="{{ include "global-valkey.headless" . }}.{{ .Release.Namespace }}.svc.cluster.local"
+    # Held in a variable rather than inline: a conditional flag spliced into a
+    # backslash-continued command loses the newline to Helm's trim and the
+    # continuation swallows the next argument.
+    AUTH="{{ if .Values.acl.enabled }}--user healthcheck --pass x{{ end }}"
     cp /etc/valkey/sentinel.conf.tmpl /tmp/sentinel.conf
 
     # Wait for the primary to accept connections before monitoring it —
@@ -86,8 +90,7 @@ data:
     done
     if [ -z "${PRIMARY}" ]; then
       PRIMARY="{{ include "global-valkey.name" . }}-0.${HEADLESS}"
-      until valkey-cli -h "${PRIMARY}" -p {{ .Values.valkey.port }} --no-auth-warning \
-        {{- if .Values.acl.enabled }} --user healthcheck --pass x {{- end }} ping 2>/dev/null | grep -q PONG; do
+      until valkey-cli -h "${PRIMARY}" -p {{ .Values.valkey.port }} --no-auth-warning ${AUTH} ping 2>/dev/null | grep -q PONG; do
         sleep 2
       done
     fi
