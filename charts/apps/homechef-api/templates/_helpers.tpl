@@ -90,13 +90,17 @@ refactored here; the worker is a prod-only concern.)
     secretKeyRef:
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: DB_PASSWORD
+# Redis/Valkey — password must be defined before URL for $(VAR) expansion.
+# redis.user is the Valkey ACL user that confines this app to its own key
+# prefix; it is nopass, so the password is ignored there. Empty in local
+# sandbox mode, where the URL falls back to password-only auth.
 - name: REDIS_PASSWORD
   valueFrom:
     secretKeyRef:
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: REDIS_PASSWORD
 - name: REDIS_URL
-  value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+  value: "redis://{{ .Values.redis.user }}:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
 # MongoDB — in-app chat (#53), backed by the Percona-operator replica set. The
 # operator generates the databaseAdmin credentials into <cluster>-secrets;
 # optional so the API still starts before the operator has provisioned them
