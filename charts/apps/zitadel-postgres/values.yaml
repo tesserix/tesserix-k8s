@@ -60,6 +60,27 @@ backup:
   serviceAccount: cnpg-backup@tesseracthub-480811.iam.gserviceaccount.com
   schedule: "0 30 2 * * *"
 
+# Passwordless authentication for the application roles. GCP IAM database auth
+# is a Cloud SQL feature and does not exist for self-hosted Postgres; mutual TLS
+# with the CN mapped to the role is the equivalent. See docs/zitadel.md.
+certAuth:
+  enabled: true
+  caDuration: 87600h
+  caRenewBefore: 8760h
+  certDuration: 2160h
+  certRenewBefore: 360h
+  clients:
+    # enforce: false — CNPG owns this role's pg_hba line and adding a second
+    # one for it would shadow the operator's own replication rule.
+    - name: replication
+      role: streaming_replica
+      secretName: zitadel-postgres-client-replication
+      enforce: false
+    - name: zitadel
+      role: zitadel
+      secretName: zitadel-db-client-cert
+      enforce: true
+
 istio:
   enabled: true
 
