@@ -1,0 +1,95 @@
+namespace: planning-poker
+host: planningpoker.tesserix.app
+
+api:
+  image:
+    # GAR pull-through mirror, never ghcr.io directly — Kargo promotes the tag
+    # and the nodes pull from GAR with their own SA (so no imagePullSecret).
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/planning-poker-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  port: 8080
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+web:
+  image:
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/planning-poker-web
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  port: 3000
+  resources:
+    requests:
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+
+# Room state is fanned out between API replicas over NATS, so >1 replica is
+# only correct with the bus reachable. The chart does not deploy NATS — the
+# planning-poker-nats ArgoCD app does, from charts/apps/nats.
+nats:
+  url: nats://planning-poker-nats.planning-poker.svc.cluster.local:4222
+
+postgres:
+  # A database on the shared global cluster, not a new one
+  # (docs/postgres-cluster-policy.md). The `planning_poker` role owns only
+  # planning_poker_db. Direct -rw, not the pooler: pgx prepares statements and
+  # the poolers are transaction-mode PgBouncer.
+  host: global-postgres-rw.global.svc.cluster.local
+  port: 5432
+  database: planning_poker_db
+  user: planning_poker
+  sslMode: require
+  # basic-auth Secret reconciled by CNPG managedRoles on global-postgres and
+  # mirrored into this namespace by the ExternalSecret below.
+  passwordSecretName: planning-poker-postgres
+
+auth:
+  # Off until the Okta app is registered; the guest provider keeps anonymous
+  # create/join working in the meantime (api/internal/config/config.go).
+  required: false
+  oktaIssuer: ""
+  oktaClientID: ""
+
+slack:
+  # Non-secret; empty disables the "Install to Slack" affordance. The client
+  # secret and bot token come from the ExternalSecret.
+  clientID: ""
+
+externalSecret:
+  enabled: true
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+  tokenSecret: prod-planning-poker-token-secret
+  postgresPasswordSecret: prod-planning-poker-postgresql-password
+  slackClientSecret: prod-planning-poker-slack-client-secret
+  slackBotTokenSecret: prod-planning-poker-slack-bot-token
+
+istio:
+  enabled: true
+  gateways:
+    - istio-ingress/tesseract-gateway
+    - istio-ingress/custom-domain-gateway
+
+networkPolicy:
+  enabled: true
+  dnsServiceIP: 10.30.0.10
+  podCIDR: 10.20.0.0/16
+  metadataServerIP: 169.254.169.254
+  linkLocalCIDR: 169.254.0.0/16
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

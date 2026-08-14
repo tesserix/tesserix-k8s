@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: planning-poker
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: planning-poker
+    environment: prod
+spec:
+  description: Planning Poker — real-time sprint estimation at planningpoker.tesserix.app
+  sourceRepos:
+    - https://github.com/tesserix/tesserix-k8s.git
+    - https://github.com/tesserix/planning-poker.git
+  destinations:
+    - namespace: planning-poker
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  orphanedResources:
+    warn: true

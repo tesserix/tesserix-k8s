@@ -1,0 +1,25 @@
+# NATS for planning-poker.
+#
+# The room backplane, not an event store. Stateless API replicas fan live room
+# events (votes, reveals, timer ticks) out to each other so any replica can
+# serve any room; clients refetch room state on reconnect, so an event lost
+# during a restart is corrected within a second rather than being a durability
+# problem.
+#
+# JetStream is therefore OFF — the API uses core NATS publish/subscribe
+# (api/internal/realtime/bus.go), so a file store would buy nothing and cost a
+# PVC. This is the deliberate opposite of the dwellm8 values next to it, where
+# an outbox has already promised at-least-once delivery.
+namespace: planning-poker
+fullnameOverride: planning-poker-nats
+
+replicaCount: 1
+
+jetstream:
+  enabled: false
+
+resources:
+  requests:
+    memory: 96Mi
+  limits:
+    memory: 256Mi
