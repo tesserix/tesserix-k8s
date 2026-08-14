@@ -36,6 +36,26 @@ spec:
       {{- range $key, $value := .Values.postgresql }}
       {{ $key }}: {{ $value | quote }}
       {{- end }}
+    {{- if .Values.certAuth.enabled }}
+    # First match wins in pg_hba and a failed match is never retried, so this
+    # makes the certificate the only way in for these roles — the password on
+    # the role stops being an authentication path at all.
+    pg_hba:
+      {{- range .Values.certAuth.clients }}
+      {{- if .enforce }}
+      - hostssl all {{ .role }} all cert
+      {{- end }}
+      {{- end }}
+    {{- end }}
+
+  {{- if .Values.certAuth.enabled }}
+  certificates:
+    clientCASecret: {{ .Values.clusterName }}-client-ca
+    # Required whenever clientCASecret is set without a ca.key CNPG can sign
+    # with; without it the operator cannot mint the streaming_replica cert and
+    # replicas never join.
+    replicationTLSSecret: {{ .Values.clusterName }}-client-replication
+  {{- end }}
 
   replicationSlots:
     highAvailability:

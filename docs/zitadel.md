@@ -58,6 +58,40 @@ CNPG never creates that role.
 Backups are **off** until `cnpg-backup@tesseracthub-480811.iam.gserviceaccount.com`
 has an `iam.workloadIdentityUser` binding for `zitadel/zitadel-postgres`.
 
+### Passwordless connections (mutual TLS)
+
+The `zitadel` role authenticates with a **client certificate**, not a password.
+GCP IAM database authentication is a Cloud SQL feature and does not exist for
+self-hosted Postgres; certificate auth with the CN mapped to the role is the
+equivalent, and CNPG supports it natively.
+
+The chain, all in `charts/apps/zitadel-postgres`:
+
+1. A cert-manager self-signed CA, `zitadel-postgres-client-ca`. CNPG's own CA
+   secret cannot be reused — it publishes `ca.crt`/`ca.key` while cert-manager's
+   CA issuer reads `tls.crt`/`tls.key`.
+2. Client certificates issued from it, with `commonName` set to the Postgres
+   role. Postgres maps CN to role, so the two must match exactly.
+3. The Cluster sets `certificates.clientCASecret`. Overriding the client CA
+   means CNPG can no longer mint the `streaming_replica` certificate itself, so
+   `replicationTLSSecret` is supplied as well — **omit it and replicas silently
+   never join.**
+4. `pg_hba` gets `hostssl all zitadel all cert`. First match wins and a failed
+   match is never retried, so the password stops being an authentication path.
+
+Zitadel connects with `Mode: verify-full` — a client certificate is only an
+identity if the server presenting itself is verified too. Note that `RootCert`
+is the *server* CA (`zitadel-postgres-ca`), not the client CA.
+
+Two deliberate exceptions:
+
+- `ZITADEL_DATABASE_POSTGRES_USER_PASSWORD` is still set. The init Job runs
+  `CREATE ROLE ... PASSWORD` before any certificate exists to authenticate with.
+  It is no longer usable for login.
+- The **superuser stays on password auth**. It is the escape hatch if a
+  certificate expires or the CA is rotated badly. Do not add a `cert` rule for
+  it without another way in.
+
 ## Credentials
 
 Secrets read from GCP Secret Manager:
