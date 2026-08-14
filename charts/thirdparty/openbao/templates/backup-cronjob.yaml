@@ -82,6 +82,16 @@ spec:
                     | gcloud storage cp - "${DEST}/${RUN_DATE}/openbao-${RUN_TS}.snap"
                   echo "uploaded openbao-${RUN_TS}.snap"
 
+                  # A snapshot the job never looked at is not a backup. A real
+                  # one is a gzipped tar of the raft store; anything this small
+                  # is a truncated stream, and the prune below would age out the
+                  # last good one behind it.
+                  SIZE=$(gcloud storage ls -l "${DEST}/${RUN_DATE}/openbao-${RUN_TS}.snap" | awk 'NR==1{print $1}')
+                  if [[ "${SIZE}" -lt {{ .Values.backup.minSnapshotBytes }} ]]; then
+                    echo "snapshot is ${SIZE} bytes; refusing to prune behind a truncated backup"
+                    exit 1
+                  fi
+
                   curl -sS -X POST -H "X-Vault-Token: ${TOKEN}" \
                     "${ADDR}/v1/auth/token/revoke-self" >/dev/null
 

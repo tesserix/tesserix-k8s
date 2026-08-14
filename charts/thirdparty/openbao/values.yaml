@@ -31,6 +31,10 @@ openbao:
     logLevel: info
     logFormat: json
 
+    # Declared by the openbao-namespace chart, which syncs first. Node pressure
+    # on a Spot pool must not take raft quorum before it takes an app pod.
+    priorityClassName: tesserix-platform-critical
+
     # Memory-only: no cpu request or limit anywhere (repo-wide rule). OpenBao
     # is barely cpu-bound; raft holds the whole keyspace in memory.
     resources:
@@ -170,6 +174,17 @@ openbao:
             }
           }
 
+          # A second device, because an audit device that cannot write fails
+          # every request: with only the PVC, a full or read-only volume takes
+          # the cluster down. One device succeeding is enough, and stdout also
+          # lands the trail in Cloud Logging where the PVC never does.
+          audit "file" "stdout" {
+            description = "Audit trail on stdout, for Cloud Logging."
+            options {
+              file_path = "stdout"
+            }
+          }
+
           # node_id is deliberately absent: `setNodeId: true` supplies it as
           # BAO_RAFT_NODE_ID, and a literal here would win and give all three
           # pods the same id. retry_join is what makes a restarted pod rejoin
@@ -195,6 +210,12 @@ openbao:
 
           # Required without CAP_IPC_LOCK, which the container drops.
           disable_mlock = true
+
+          # A token nobody renews dies within the day rather than in 32 days,
+          # which is the default cap. Every role here asks for an hour or less,
+          # so this only ever bites a role that asks for more by mistake.
+          default_lease_ttl = "1h"
+          max_lease_ttl     = "24h"
 
           telemetry {
             prometheus_retention_time = "30s"
@@ -393,6 +414,10 @@ backup:
   enabled: true
   schedule: "0 3 * * *"
   retentionDays: 30
+
+  # Floor a real snapshot clears easily; below it the run failed and the job
+  # must not prune the previous day's backup behind it.
+  minSnapshotBytes: 4096
 
   gcs:
     bucket: tesseract-prod-backups-in

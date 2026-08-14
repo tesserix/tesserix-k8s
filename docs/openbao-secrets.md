@@ -202,9 +202,19 @@ it can read every namespace can request — which is why its policy stops at
   reached by `kubectl port-forward`.
 - Read-only root filesystem, all capabilities dropped, non-root, seccomp
   `RuntimeDefault`.
-- Audit device on its own PVC at `/openbao/audit/audit.log`, declared as an
-  `audit "file" "file"` stanza in the server config. 2.6 rejects
-  `POST /v1/sys/audit/file`, so it cannot be enabled from the bootstrap Job.
+- Two audit devices: one on its own PVC at `/openbao/audit/audit.log`, one on
+  stdout for Cloud Logging. Both are `audit "file"` stanzas in the server
+  config — 2.6 rejects `POST /v1/sys/audit/file`, so neither can be enabled from
+  the bootstrap Job. The second device is not redundancy for its own sake: an
+  audit device that cannot write fails every request, and one device succeeding
+  is enough, so a full or read-only PVC no longer takes the cluster down.
+- `max_lease_ttl = "24h"` caps any token a role asks too much for; the console's
+  periodic grant tokens are exempt by design.
+- `priorityClassName: tesserix-platform-critical`, declared by the
+  openbao-namespace chart. The system-* classes are reserved for system
+  namespaces by a cluster ResourceQuota and would have the pods rejected.
+- The snapshot CronJob checks the uploaded object's size before pruning, so a
+  truncated run cannot age out the last good backup behind it.
 - The Agent injector and CSI provider are both disabled: each is a cluster-wide
   mutating path we have no use for while ESO is the reader.
 
