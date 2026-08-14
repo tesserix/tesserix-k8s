@@ -151,37 +151,6 @@ EOF
     log_info "PostgreSQL password for ${ns}: ${password} (save this!)"
 }
 
-# Generate Redis secrets for a namespace
-generate_redis_secrets() {
-    local env="$1"
-    local ns="$2"
-    local output_dir="${SEALEDSECRET_DIR}/${env}/${ns}"
-
-    mkdir -p "${output_dir}"
-
-    local password
-    password=$(generate_password 24)
-
-    local temp_file
-    temp_file=$(mktemp)
-
-    cat > "${temp_file}" <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: redis-password
-  namespace: redis-${ns}
-type: Opaque
-stringData:
-  redis-password: "${password}"
-EOF
-
-    seal_secret "${env}" "${temp_file}" "${output_dir}/redis-password.yaml"
-    rm -f "${temp_file}"
-
-    log_info "Redis password for ${ns}: ${password} (save this!)"
-}
-
 # Generate GHCR (GitHub Container Registry) secrets
 generate_ghcr_secret() {
     local env="$1"
@@ -451,7 +420,6 @@ generate_namespace_secrets() {
     log_info "Generating secrets for namespace: ${ns}"
 
     generate_postgresql_secrets "${env}" "${ns}"
-    generate_redis_secrets "${env}" "${ns}"
     generate_jwt_secret "${env}" "${ns}"
     generate_ghcr_secret "${env}" "${ns}"
 }
@@ -524,7 +492,6 @@ kind: Kustomization
 
 resources:
   - postgresql-password.yaml
-  - redis-password.yaml
   - jwt-secret.yaml
   - ghcr-secret.yaml
 EOF
@@ -547,7 +514,7 @@ Arguments:
   environment   Required. One of: devtest, pilot, prod
   namespace     Optional. One of: infrastructure, global, marketplace, bookkeeping, hms, fanzone, homechef, all
                 Default: all
-  secret-type   Optional. One of: postgresql, redis, jwt, ghcr, keycloak, typesense, email, growthbook, all
+  secret-type   Optional. One of: postgresql, jwt, ghcr, keycloak, typesense, email, growthbook, all
                 Default: all
 
 Environment Variables:
@@ -601,9 +568,6 @@ main() {
             case "${SECRET_TYPE}" in
                 postgresql)
                     generate_postgresql_secrets "${ENVIRONMENT}" "${NAMESPACE}"
-                    ;;
-                redis)
-                    generate_redis_secrets "${ENVIRONMENT}" "${NAMESPACE}"
                     ;;
                 jwt)
                     generate_jwt_secret "${ENVIRONMENT}" "${NAMESPACE}"
