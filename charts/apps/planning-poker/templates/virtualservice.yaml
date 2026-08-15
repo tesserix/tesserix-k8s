@@ -16,9 +16,11 @@ spec:
   http:
     # The room stream (WebSocket, SSE fallback) is a long-lived connection.
     # Istio's default 15s route timeout applies to the whole stream, not to
-    # time-to-first-byte, so it would cut every room off after 15 seconds —
-    # 0s disables it. Keep this ahead of the general /api/ rule: Istio matches
-    # in order and the prefix rule below would otherwise swallow these.
+    # time-to-first-byte, so it would cut every room off after 15 seconds.
+    # 24h stands in for "no timeout": the CRD rejects 0s outright, which left
+    # this VirtualService failing to apply and the app permanently OutOfSync.
+    # Keep this ahead of the general /api/ rule: Istio matches in order and
+    # the prefix rule below would otherwise swallow these.
     - match:
         - uri:
             regex: ^/api/rooms/[^/]+/(ws|events)$
@@ -27,7 +29,7 @@ spec:
             host: planning-poker-api.{{ .Values.namespace }}.svc.cluster.local
             port:
               number: {{ .Values.api.port }}
-      timeout: 0s
+      timeout: 24h
     - match:
         - uri:
             prefix: /api/
