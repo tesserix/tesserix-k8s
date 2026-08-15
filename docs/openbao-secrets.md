@@ -40,10 +40,12 @@ unlocks everything.
 2. **Auto-unseal, because every node is Spot.** A preempted node on a manually
    unsealed cluster means someone unsealing three pods at 3am. With `gcpckms`
    a restarted pod is ready on its own.
-3. **The root token is never stored.** The bootstrap Job initialises the
-   cluster, writes the *recovery* keys to Secret Manager, applies the config,
-   then calls `auth/token/revoke-self`. Day-2 admin access is minted from the
-   recovery keys via `bao operator generate-root` — a deliberate, auditable act.
+3. **The root token is revoked at the end of bootstrap.** The Job initialises
+   the cluster, writes the *recovery* keys to Secret Manager, applies the
+   config, then calls `auth/token/revoke-self`. It stores init's whole JSON, so
+   a dead `root_token` field is visible in the secret; it authenticates nothing.
+   Day-2 admin access was meant to be minted from the recovery keys via `bao
+   operator generate-root`, which does not currently work — see Day-2 below.
 4. **Applications authenticate as themselves.** Kubernetes auth roles bind a
    named ServiceAccount in a named namespace to a policy scoped to one KV path
    prefix. ESO mints a token for the *application's* ServiceAccount, so the
@@ -127,27 +129,14 @@ reads nothing, and a grant with no entry has no store to be read through.
 
 ### Wiring an application to it
 
-Put a `SecretStore` — namespaced, not cluster-scoped — in the application's own
-chart, authenticating as the application's ServiceAccount:
+Do **not** write a `SecretStore` by hand. The openbao chart renders one per
+whitelisted app, named `openbao-<app>` in that app's namespace, bound to that
+app's ServiceAccount — see `templates/app-secret-stores.yaml`. A store called
+plain `openbao` does not exist and never resolves.
+
+The application's chart contributes only the `ExternalSecret`:
 
 ```yaml
-apiVersion: external-secrets.io/v1beta1
-kind: SecretStore
-metadata:
-  name: openbao
-  namespace: homechef
-spec:
-  provider:
-    vault:
-      server: "http://openbao.openbao.svc:8200"
-      path: kv
-      version: v2
-      auth:
-        kubernetes:
-          mountPath: kubernetes
-          role: read-homechef
-          serviceAccountRef:
-            name: homechef-api
 ---
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
@@ -157,7 +146,8 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    name: openbao
+    # openbao-<app>, not `openbao`. The app here is homechef-api.
+    name: openbao-homechef-api
     kind: SecretStore
   target:
     name: homechef-api-db
@@ -170,9 +160,12 @@ spec:
         property: password
 ```
 
-The namespace also has to be added to `allowedSources` and `allowedPrincipals`
-in `charts/apps/openbao-namespace/values.yaml`, or ESO's connection is dropped
-at L3 before any of this matters.
+The namespace also needs a `destinations` entry in
+`argocd/prod/projects/security.yaml`, or the rendered store fails to sync with
+"namespace X is not permitted in project 'security'". Nothing has to change in
+`charts/apps/openbao-namespace/values.yaml`: `allowedSources` covers the
+*callers*, and the only caller is ESO from the `external-secrets` namespace,
+whichever app it is reading for.
 
 The `ClusterSecretStore` named `openbao-secret-store` exists for shared
 platform credentials only. It authenticates as ESO's own identity, so anything
@@ -374,24 +367,24 @@ kubectl logs -n openbao job/openbao-bootstrap
 kubectl port-forward -n openbao svc/openbao 8200:8200
 ```
 
-**Getting an admin token.** There is no stored root token. Fetch a recovery key
-share, then:
+**Writing a secret.** Through the admin console at
+https://secret-service.tesserix.app — New secret, then namespace / app / name,
+then one key per field and Write version. This is the only route that works;
+there is no CLI equivalent, for the reasons below.
 
-```bash
-gcloud secrets versions access latest --secret=prod-openbao-recovery-keys \
-  --project=tesseracthub-480811 | jq -r '.recovery_keys_b64[]'
-bao operator generate-root -init          # prints nonce + one-time password
-bao operator generate-root -nonce=<nonce> # once per share, up to the threshold of 3
-bao operator generate-root -decode=<encoded-token> -otp=<otp>
-```
+**Getting an admin token — currently not possible.** Both documented routes are
+dead ends as of 2026-08-15:
 
-Revoke it (`bao token revoke -self`) when you are done.
+- The `root_token` field in `prod-openbao-recovery-keys` is the one `bao
+  operator init` returned. The bootstrap Job calls `auth/token/revoke-self`
+  before exiting, so it 403s on every call. The field is persisted only because
+  the Job stores init's whole JSON.
+- `bao operator generate-root -init` 403s on `sys/generate-root-token/attempt`,
+  including from the active raft node, so the recovery-share ceremony cannot be
+  started. Root cause not yet isolated.
 
-**Writing a secret.**
-
-```bash
-bao kv put kv/homechef/api/db password=...
-```
+The console works because it holds the `secret-service` Kubernetes auth role,
+whose policy has `create` and `update` — never `read` — on `kv/data/*`.
 
 **Restoring from a snapshot.** The snapshot is sealed with the same KMS key, so
 restoring needs the key, not the recovery shares:
