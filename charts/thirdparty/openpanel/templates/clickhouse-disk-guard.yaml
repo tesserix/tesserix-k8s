@@ -55,14 +55,26 @@ spec:
                         echo "recovered to ${used}%, stopping"
                         break
                       fi
+                      # A schema change renames the old table aside as <name>_N and
+                      # leaves it without a TTL, so it never expires. Dead already.
+                      if [[ "$tbl" =~ _[0-9]+$ ]]; then
+                        echo "dropping orphaned system.${tbl}"
+                        ch -q "DROP TABLE IF EXISTS system.${tbl} SYNC" || echo "  skipped ${tbl}"
+                        continue
+                      fi
+                      # TRUNCATE has to reserve ~1MiB, which fails at a genuinely
+                      # full disk; DROP only unlinks, and the server recreates it.
                       echo "truncating system.${tbl}"
-                      ch -q "TRUNCATE TABLE IF EXISTS system.${tbl}" || echo "  skipped ${tbl}"
+                      if ! ch -q "TRUNCATE TABLE IF EXISTS system.${tbl}"; then
+                        echo "  truncate failed, dropping system.${tbl}"
+                        ch -q "DROP TABLE IF EXISTS system.${tbl} SYNC" || echo "  skipped ${tbl}"
+                      fi
                     done
 
                   final=$(ch -q "SELECT toUInt8(round((1 - free_space / total_space) * 100)) FROM system.disks WHERE name = 'default'")
                   echo "final disk usage: ${final}%"
                   if [ "$final" -ge "$THRESHOLD" ]; then
-                    echo "WARNING: still at or above threshold after truncating system logs" >&2
+                    echo "WARNING: still at or above threshold after clearing system logs" >&2
                   fi
               resources:
                 requests:
