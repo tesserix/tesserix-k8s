@@ -4,37 +4,30 @@ openbao:
     enabled: true
     # No TLS on the listener — see server.ha.raft.config below.
     tlsDisable: true
-
   # The Agent injector mutates pods to sidecar-inject secrets. We read secrets
   # through ESO instead, so this is a webhook with cluster-wide reach and no job.
   injector:
     enabled: false
-
   # Secrets Store CSI driver — same reasoning as the injector.
   csi:
     enabled: false
-
   ui:
     # ClusterIP only, reached by `kubectl port-forward`. There is no Ingress
     # and no Cloudflare record: the UI accepts root-capable logins.
     enabled: true
     serviceType: ClusterIP
     externalPort: 8200
-
   server:
     image:
       registry: quay.io
       repository: openbao/openbao
       tag: 2.6.1
       pullPolicy: IfNotPresent
-
     logLevel: info
     logFormat: json
-
     # Declared by the openbao-namespace chart, which syncs first. Node pressure
     # on a Spot pool must not take raft quorum before it takes an app pod.
     priorityClassName: tesserix-platform-critical
-
     # Memory-only: no cpu request or limit anywhere (repo-wide rule). OpenBao
     # is barely cpu-bound; raft holds the whole keyspace in memory.
     resources:
@@ -42,20 +35,17 @@ openbao:
         memory: 512Mi
       limits:
         memory: 2Gi
-
     # RollingUpdate, not the chart's OnDelete default: auto-unseal means a
     # restarted pod comes back ready on its own, and under ArgoCD selfHeal
     # OnDelete would leave config changes unapplied with the app reporting Synced.
     updateStrategyType: RollingUpdate
     podManagementPolicy: Parallel
-
     # No Ingress and no Gateway route. OpenBao is in-cluster only; every client
     # reaches it over service DNS inside the mesh.
     ingress:
       enabled: false
     route:
       enabled: false
-
     # readiness only. The chart's liveness probe hits /v1/sys/health, which
     # returns 503 on a standby node — enabling it restarts every follower.
     readinessProbe:
@@ -66,11 +56,9 @@ openbao:
       failureThreshold: 6
     livenessProbe:
       enabled: false
-
     # Long enough for a raft leadership transfer before SIGKILL.
     terminationGracePeriodSeconds: 60
     preStopSleepSeconds: 10
-
     serviceAccount:
       create: true
       name: openbao
@@ -82,7 +70,6 @@ openbao:
       # to label themselves active/standby.
       serviceDiscovery:
         enabled: true
-
     statefulSet:
       securityContext:
         pod:
@@ -97,7 +84,6 @@ openbao:
           readOnlyRootFilesystem: true
           capabilities:
             drop: ["ALL"]
-
     # The entrypoint copies the config to /tmp and seds it in place, which a
     # read-only root filesystem forbids. The chart mounts /home/openbao itself.
     volumes:
@@ -106,7 +92,6 @@ openbao:
     volumeMounts:
       - name: tmp
         mountPath: /tmp
-
     dataStorage:
       enabled: true
       size: 10Gi
@@ -114,34 +99,27 @@ openbao:
       # nodes is unrecoverable except from a snapshot.
       storageClass: premium-rwo-retain
       accessMode: ReadWriteOnce
-
     auditStorage:
       enabled: true
       size: 10Gi
       storageClass: standard-rwo-retain
       accessMode: ReadWriteOnce
-
     # Belt and braces with the namespace chart's Retain storage classes.
     persistentVolumeClaimRetentionPolicy:
       whenDeleted: Retain
       whenScaled: Retain
-
     # The chart ships its own NetworkPolicy that allows every namespace to
     # reach 8200. Ours is default-deny with an explicit allow-list.
     networkPolicy:
       enabled: false
-
     standalone:
       enabled: false
-
     ha:
       enabled: true
       replicas: 3
-
       disruptionBudget:
         enabled: true
         maxUnavailable: 1
-
       raft:
         enabled: true
         setNodeId: true
@@ -221,7 +199,6 @@ openbao:
             prometheus_retention_time = "30s"
             disable_hostname          = true
           }
-
     # Never two replicas on one node. Required, not preferred: every node is
     # Spot, so a co-located pair means one preemption costs raft quorum.
     affinity: |
@@ -243,11 +220,9 @@ openbao:
           matchLabels:
             app.kubernetes.io/name: openbao
             component: server
-
     annotations:
       # Ambient namespace — make it explicit that no sidecar is wanted.
       sidecar.istio.io/inject: "false"
-
   serverTelemetry:
     serviceMonitor:
       enabled: true
@@ -257,11 +232,9 @@ openbao:
         release: prometheus
     grafanaDashboard:
       enabled: true
-
   # The upstream snapshot agent only writes to S3. Ours writes to GCS below.
   snapshotAgent:
     enabled: false
-
 # =============================================================================
 # Bootstrap — this chart's own addition
 # =============================================================================
@@ -270,42 +243,34 @@ openbao:
 # Manager, then applies every policy and auth role below on each sync.
 bootstrap:
   enabled: true
-
   image:
     repository: google/cloud-sdk
     tag: "slim"
     pullPolicy: IfNotPresent
-
   serviceAccount:
     name: openbao-bootstrap
     annotations:
       # Writes the recovery keys to Secret Manager. Needs
       # roles/secretmanager.admin on prod-openbao-recovery-keys only.
       iam.gke.io/gcp-service-account: openbao-bootstrap@tesseracthub-480811.iam.gserviceaccount.com
-
   resources:
     requests:
       memory: 256Mi
     limits:
       memory: 512Mi
-
   # Recovery keys, not unseal keys: with an auto-unseal seal, `init` returns
   # recovery keys that regenerate a root token and nothing else.
   recoveryShares: 5
   recoveryThreshold: 3
-
   # GCP Secret Manager secret holding the recovery keys. It is created by the
   # Job on first run and never read back by anything in-cluster.
   recoverySecretName: prod-openbao-recovery-keys
   gcpProject: tesseracthub-480811
-
   # KV v2 mount every application secret lives under.
   kvMount: kv
-
   # The Job's own way back in on later runs. Created during init, bound to the
   # bootstrap ServiceAccount, so the root token is revoked and never stored.
   bootstrapRole: bootstrap
-
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
@@ -322,11 +287,9 @@ bootstrap:
         # The method's own config lives under `auth/`, not `sys/auth/` — without
         # this the Job can enable the method but never configure it.
         path "auth/kubernetes/config" { capabilities = ["create", "read", "update"] }
-
     - name: snapshot
       hcl: |
         path "sys/storage/raft/snapshot" { capabilities = ["read"] }
-
     # One read-only policy per consuming namespace. The path prefix is the
     # namespace name, so `kv/data/homechef/api/db` belongs to homechef and to
     # nothing else.
@@ -334,12 +297,10 @@ bootstrap:
       hcl: |
         path "kv/data/homechef/*"     { capabilities = ["read"] }
         path "kv/metadata/homechef/*" { capabilities = ["read", "list"] }
-
     - name: read-ai-database
       hcl: |
         path "kv/data/ai-database/*"     { capabilities = ["read"] }
         path "kv/metadata/ai-database/*" { capabilities = ["read", "list"] }
-
     # The admin console. It writes secrets and mints per-app grants, but has no
     # `read` on kv/data — deliberately, and enforced here rather than in the
     # console's own code, so that compromising the console still yields no secret
@@ -356,14 +317,12 @@ bootstrap:
         path "sys/policies/acl/app-*"   { capabilities = ["create", "read", "update", "delete"] }
         path "auth/kubernetes/role/app-*" { capabilities = ["create", "read", "update", "delete"] }
         path "auth/kubernetes/role"       { capabilities = ["list"] }
-
     # Backing the ClusterSecretStore. Confined to `kv/data/platform/*` — shared
     # infrastructure credentials that genuinely belong to no single namespace.
     - name: read-platform
       hcl: |
         path "kv/data/platform/*"     { capabilities = ["read"] }
         path "kv/metadata/platform/*" { capabilities = ["read", "list"] }
-
   # Kubernetes auth roles. Each binds a named ServiceAccount in a named
   # namespace to a policy — `bound_service_account_names: ["*"]` is never
   # correct here, it grants the role to every pod in the namespace.
@@ -373,13 +332,11 @@ bootstrap:
       namespaces: ["openbao"]
       policies: ["bootstrap"]
       ttl: 10m
-
     - name: snapshot
       serviceAccounts: ["openbao-snapshot"]
       namespaces: ["openbao"]
       policies: ["snapshot"]
       ttl: 30m
-
     # ESO authenticates as the *application's* ServiceAccount, not its own, so
     # the role a secret is read under is decided by which pod will consume it.
     - name: read-homechef
@@ -387,26 +344,22 @@ bootstrap:
       namespaces: ["homechef"]
       policies: ["read-homechef"]
       ttl: 1h
-
     - name: read-ai-database
       serviceAccounts: ["qdrant"]
       namespaces: ["ai-database"]
       policies: ["read-ai-database"]
       ttl: 1h
-
     - name: secret-service
       serviceAccounts: ["secret-service-api"]
       namespaces: ["secret-service"]
       policies: ["secret-service"]
       ttl: 15m
-
     # The one role ESO holds under its own identity, for the ClusterSecretStore.
     - name: read-platform
       serviceAccounts: ["external-secrets"]
       namespaces: ["external-secrets"]
       policies: ["read-platform"]
       ttl: 1h
-
 # =============================================================================
 # Raft snapshots to GCS
 # =============================================================================
@@ -417,40 +370,32 @@ alerts:
   volumeUsedRatio: 0.8
   # 26h: a daily schedule that missed one run, with an hour of slack.
   snapshotStaleSeconds: 93600
-
 backup:
   enabled: true
   schedule: "0 3 * * *"
   retentionDays: 30
-
   # Floor a real snapshot clears easily; below it the run failed and the job
   # must not prune the previous day's backup behind it.
   minSnapshotBytes: 4096
-
   gcs:
     bucket: tesseract-prod-backups-in
     prefix: openbao
-
   # Kubernetes auth role the job logs in under — must match a bootstrap role
   # below whose only capability is read on sys/storage/raft/snapshot.
   baoRole: snapshot
-
   image:
     repository: google/cloud-sdk
     tag: "slim"
     pullPolicy: IfNotPresent
-
   serviceAccount:
     name: openbao-snapshot
     annotations:
       iam.gke.io/gcp-service-account: openbao-snapshot@tesseracthub-480811.iam.gserviceaccount.com
-
   resources:
     requests:
       memory: 256Mi
     limits:
       memory: 1Gi
-
   cronJob:
     concurrencyPolicy: Forbid
     successfulJobsHistoryLimit: 3
@@ -458,7 +403,6 @@ backup:
     startingDeadlineSeconds: 3600
     activeDeadlineSeconds: 3600
     backoffLimit: 2
-
 # =============================================================================
 # ESO integration
 # =============================================================================
@@ -474,7 +418,6 @@ clusterSecretStore:
   serviceAccount:
     name: external-secrets
     namespace: external-secrets
-
 # The whitelist. One entry per app that may read from OpenBao, and the single
 # place that fact is written down: it renders that app's SecretStore and gates
 # which namespaces the ClusterSecretStore will serve at all. The secret-service
