@@ -234,6 +234,7 @@ validation.
 | **HomeChef platform topology** — services, domains, infra, E2E | [`docs/homechef-platform.md`](docs/homechef-platform.md) |
 | **Vector store / embeddings for AI agents** (Qdrant, `ai-database` namespace — and why there is no operator) | [`docs/qdrant-vector-db.md`](docs/qdrant-vector-db.md) |
 | **Secret storage** — OpenBao, `openbao` namespace: auth roles, policies, ESO wiring, unseal and recovery | [`docs/openbao-secrets.md`](docs/openbao-secrets.md) |
+| **Whether a new app should set `prune: true`** — and why `requiresPruning` lies | [`docs/argocd-prune-audit.md`](docs/argocd-prune-audit.md) |
 
 ### CloudNativePG (CNPG) quick facts
 
