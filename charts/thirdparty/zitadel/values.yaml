@@ -3,7 +3,15 @@ host: auth.tesserix.app
 
 istio:
   enabled: true
-  gateway: istio-ingress/tesseract-gateway
+  # Both are listed during the Cloudflare tunnel cutover so either path serves.
+  gateways:
+    - istio-ingress/tesseract-gateway
+    - zitadel/zitadel-gateway
+  # The shared gateway's RequestAuthentication policies reject Zitadel's opaque
+  # access tokens and PATs with 401 before they reach the API — see docs/zitadel.md.
+  dedicatedGateway:
+    enabled: true
+    istioLabel: zitadel-ingressgateway
 
 networkPolicy:
   enabled: true
