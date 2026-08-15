@@ -8,7 +8,9 @@ Workspace, Entra, Okta, or a SAML appliance nobody has heard of — without any
 change to the product or a deploy.
 
 For what Zitadel *is* and how it is deployed, see [`zitadel.md`](zitadel.md).
-This file assumes that is already running.
+This file assumes that is already running. For the object model from first
+principles, the Zitadel/OpenFGA boundary, and the design that automates both
+parts below, see [`identity-control-plane.md`](identity-control-plane.md).
 
 Every API path below was probed against the live instance on 2026-08-14
 (Zitadel v4.15.3). Paths differ between major versions; re-probe before
