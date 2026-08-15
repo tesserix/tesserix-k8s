@@ -15,7 +15,7 @@ on `charts/apps/homechef-*`, `argocd/prod/apps/homechef/`, or the
 - **CI/CD:** 7 GitHub Actions workflows → GHCR → GKE/ArgoCD
 - **Namespace:** `homechef`
 
-## Services (all Knative Serving)
+## Services
 
 | Service | Image | Port | Purpose |
 |---------|-------|------|---------|

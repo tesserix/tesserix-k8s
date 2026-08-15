@@ -69,5 +69,5 @@ the entire authorisation model. Two properties are enforced in code:
 - An empty allowlist is a **startup failure**, not a permissive default.
   Otherwise anyone with a Google account could sign in.
 
-To add someone: edit `allowedEmails`, commit, let ArgoCD sync. No Keycloak realm
-or user record is involved.
+To add someone: edit `allowedEmails`, commit, let ArgoCD sync. No separate
+identity record is involved.
