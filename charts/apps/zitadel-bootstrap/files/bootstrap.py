@@ -23,8 +23,6 @@ PAT_PATH = os.environ.get("PAT_PATH", "/pat/pat")
 with open(PAT_PATH) as fh:
     TOKEN = fh.read().strip()
 
-changed = False
-
 
 def request(method, path, body=None, headers=None, raw=None, content_type=None):
     url = f"{API}{path}"
@@ -55,14 +53,38 @@ def log(message):
     print(message, flush=True)
 
 
+def drift_between(desired, live):
+    """Fields where live differs from desired.
+
+    Zitadel serialises protobuf defaults by omission, so a field we want set to
+    false or "" comes back absent rather than false. Comparing against the live
+    dict directly reports drift on every run and the job never converges.
+    """
+    return {
+        key: value for key, value in desired.items()
+        if live.get(key, type(value)() if isinstance(value, (bool, str, int)) else None) != value
+    }
+
+
+def strip_readonly(policy):
+    """Drop server-owned fields: metadata, and the asset URLs the assets API sets."""
+    return {
+        key: value for key, value in policy.items()
+        if key not in ("details", "isDefault") and not key.endswith(("Url", "UrlDark"))
+    }
+
+
 def reconcile_label_policy(desired):
     live = get_json("/admin/v1/policies/label")["policy"]
-    drift = {k: v for k, v in desired.items() if live.get(k) != v}
+    drift = drift_between(desired, live)
     if not drift:
         log("label policy: in sync")
         return False
+    # PUT replaces the policy, so undeclared fields have to be sent back.
+    body = strip_readonly(live)
+    body.update(desired)
     log(f"label policy: updating {sorted(drift)}")
-    status, payload = request("PUT", "/admin/v1/policies/label", desired)
+    status, payload = request("PUT", "/admin/v1/policies/label", body)
     if status != 200:
         raise SystemExit(f"label policy update failed: {status} {payload!r}")
     return True
@@ -106,13 +128,21 @@ def activate_label_policy():
 
 
 def reconcile_login_policy(desired):
+    """Overlay the declared fields onto the live policy and PUT the whole thing.
+
+    The endpoint replaces the policy rather than patching it, so sending only
+    the declared fields would reset the lifetimes and redirect URI this chart
+    deliberately does not manage.
+    """
     live = get_json("/admin/v1/policies/login")["policy"]
-    drift = {k: v for k, v in desired.items() if live.get(k) != v}
+    drift = drift_between(desired, live)
     if not drift:
         log("login policy: in sync")
         return
+    body = strip_readonly(live)
+    body.update(desired)
     log(f"login policy: updating {sorted(drift)}")
-    status, payload = request("PUT", "/admin/v1/policies/login", desired)
+    status, payload = request("PUT", "/admin/v1/policies/login", body)
     if status != 200:
         raise SystemExit(f"login policy update failed: {status} {payload!r}")
 

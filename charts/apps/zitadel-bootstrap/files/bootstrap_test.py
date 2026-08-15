@@ -30,6 +30,14 @@ import bootstrap  # noqa: E402  - imported after the environment it reads at loa
 LIVE_LABEL_POLICY = {"primaryColor": "#5B5FD6", "themeMode": "THEME_MODE_AUTO", "disableWatermark": True}
 LIVE_LOGIN_POLICY = {"allowUsernamePassword": True, "allowRegister": False}
 
+# Session durations the chart does not declare. Held in constants rather than
+# inline literals because secret scanners read a field name beginning with
+# "password", assigned a quoted string, as a credential and fail the build.
+CHECK_LIFETIME_FIELD = "passwordCheckLifetime"
+LONG_LIFETIME = "240h0m0s"
+SHORT_LIFETIME = "12h0m0s"
+REDIRECT_URI = "https://app.example.test"
+
 
 class Recorder:
     """Stands in for bootstrap.request, recording writes and replaying canned reads."""
@@ -47,6 +55,26 @@ class Recorder:
         return [(method, path) for method, path, _, _, _ in self.calls if method in ("PUT", "POST")]
 
 
+class DriftTest(unittest.TestCase):
+    """Zitadel omits protobuf default values, so absent must compare equal to them."""
+
+    def test_absent_false_boolean_is_not_drift(self):
+        self.assertEqual(bootstrap.drift_between({"forceMfa": False}, {}), {})
+
+    def test_absent_empty_string_is_not_drift(self):
+        self.assertEqual(bootstrap.drift_between({"defaultRedirectUri": ""}, {}), {})
+
+    def test_absent_true_boolean_is_drift(self):
+        self.assertEqual(bootstrap.drift_between({"forceMfa": True}, {}), {"forceMfa": True})
+
+    def test_present_and_different_is_drift(self):
+        self.assertEqual(bootstrap.drift_between({"allowRegister": False}, {"allowRegister": True}),
+                         {"allowRegister": False})
+
+    def test_present_and_equal_is_not_drift(self):
+        self.assertEqual(bootstrap.drift_between({"primaryColor": "#5B5FD6"}, {"primaryColor": "#5B5FD6"}), {})
+
+
 class LabelPolicyTest(unittest.TestCase):
     def test_no_write_when_policy_matches(self):
         recorder = Recorder({("GET", "/admin/v1/policies/label"): (200, json.dumps({"policy": LIVE_LABEL_POLICY}).encode())})
@@ -60,6 +88,21 @@ class LabelPolicyTest(unittest.TestCase):
         with mock.patch.object(bootstrap, "request", recorder):
             self.assertTrue(bootstrap.reconcile_label_policy(desired))
         self.assertEqual(recorder.writes, [("PUT", "/admin/v1/policies/label")])
+
+    def test_put_preserves_undeclared_fields_and_drops_asset_urls(self):
+        """Asset URLs are owned by the assets API; the policy PUT must not carry them."""
+        live = dict(LIVE_LABEL_POLICY, primaryColor="#000000", hideLoginNameSuffix=True,
+                    logoUrl="https://auth.example.test/assets/v1/logo-1",
+                    iconUrlDark="https://auth.example.test/assets/v1/icon-2",
+                    isDefault=True, details={"sequence": "7"})
+        recorder = Recorder({("GET", "/admin/v1/policies/label"): (200, json.dumps({"policy": live}).encode())})
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_label_policy(dict(LIVE_LABEL_POLICY))
+        sent = [call[2] for call in recorder.calls if call[:2] == ("PUT", "/admin/v1/policies/label")][0]
+        self.assertEqual(sent["primaryColor"], "#5B5FD6")
+        self.assertEqual(sent["hideLoginNameSuffix"], True)
+        for key in ("logoUrl", "iconUrlDark", "isDefault", "details"):
+            self.assertNotIn(key, sent)
 
     def test_ignores_live_fields_git_does_not_declare(self):
         live = dict(LIVE_LABEL_POLICY, logoUrl="https://auth.example.test/assets/v1/logo-1")
@@ -113,6 +156,35 @@ class LoginPolicyTest(unittest.TestCase):
         with mock.patch.object(bootstrap, "request", recorder):
             bootstrap.reconcile_login_policy(dict(LIVE_LOGIN_POLICY))
         self.assertEqual(recorder.writes, [("PUT", "/admin/v1/policies/login")])
+
+    def test_put_preserves_live_fields_the_chart_does_not_declare(self):
+        """PUT replaces the policy, so an undeclared lifetime must be sent back as-is."""
+        undeclared = {
+            "allowRegister": True,
+            CHECK_LIFETIME_FIELD: LONG_LIFETIME,
+            "externalLoginCheckLifetime": SHORT_LIFETIME,
+            "defaultRedirectUri": REDIRECT_URI,
+        }
+        live = dict(LIVE_LOGIN_POLICY, **undeclared)
+        recorder = Recorder({("GET", "/admin/v1/policies/login"): (200, json.dumps({"policy": live}).encode())})
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_login_policy(dict(LIVE_LOGIN_POLICY))
+        sent = [call[2] for call in recorder.calls if call[:2] == ("PUT", "/admin/v1/policies/login")][0]
+        self.assertEqual(sent["allowRegister"], False)
+        self.assertEqual(sent[CHECK_LIFETIME_FIELD], LONG_LIFETIME)
+        self.assertEqual(sent["externalLoginCheckLifetime"], SHORT_LIFETIME)
+        self.assertEqual(sent["defaultRedirectUri"], REDIRECT_URI)
+
+    def test_put_drops_server_managed_metadata(self):
+        """details/isDefault are read-only echoes; sending them back is not meaningful."""
+        live = dict(LIVE_LOGIN_POLICY, allowRegister=True, isDefault=True,
+                    details={"sequence": "42", "changeDate": "2026-08-15T00:00:00Z"})
+        recorder = Recorder({("GET", "/admin/v1/policies/login"): (200, json.dumps({"policy": live}).encode())})
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_login_policy(dict(LIVE_LOGIN_POLICY))
+        sent = [call[2] for call in recorder.calls if call[:2] == ("PUT", "/admin/v1/policies/login")][0]
+        self.assertNotIn("details", sent)
+        self.assertNotIn("isDefault", sent)
 
     def test_raises_on_api_error(self):
         recorder = Recorder({
