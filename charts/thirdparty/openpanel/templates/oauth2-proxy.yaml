@@ -1,0 +1,169 @@
+{{/*
+Auth gate for the dashboard. OpenPanel has no OIDC and no email allow-list of
+its own, so access control for the two admins lives here, not in the product.
+Only the dashboard sits behind this — event ingestion on /api stays open.
+*/}}
+{{- if .Values.oauth2Proxy.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "openpanel.fullname" . }}-oauth2-proxy
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: auth
+spec:
+  replicas: {{ .Values.oauth2Proxy.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "openpanel.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: auth
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      annotations:
+        {{- toYaml .Values.podAnnotations | nindent 8 }}
+        checksum/emails: {{ .Values.oauth2Proxy.allowedEmails | join "," | sha256sum }}
+      labels:
+        {{- include "openpanel.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: auth
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+      containers:
+        - name: oauth2-proxy
+          image: "{{ .Values.oauth2Proxy.image.repository }}:{{ .Values.oauth2Proxy.image.tag }}"
+          imagePullPolicy: {{ .Values.oauth2Proxy.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 4180
+              protocol: TCP
+          args:
+            - --provider={{ .Values.oauth2Proxy.provider }}
+            - --http-address=0.0.0.0:4180
+            - --upstream=http://{{ include "openpanel.fullname" . }}-dashboard.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.dashboard.port }}
+            - --redirect-url={{ .Values.config.dashboardUrl }}/oauth2/callback
+            - --cookie-name={{ .Values.oauth2Proxy.cookie.name }}
+            - --cookie-secure=true
+            - --cookie-expire={{ .Values.oauth2Proxy.cookie.expire }}
+            - --cookie-refresh={{ .Values.oauth2Proxy.cookie.refresh }}
+            - --cookie-samesite=lax
+            - --reverse-proxy=true
+            - --set-xauthrequest=true
+            - --skip-provider-button=true
+            # The allow-list below is the only gate; never widen this to a domain.
+            - --email-domain=*
+            - --authenticated-emails-file=/etc/oauth2-proxy/authenticated-emails.txt
+          env:
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oauth2Proxy.secretName }}
+                  key: client-id
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oauth2Proxy.secretName }}
+                  key: client-secret
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oauth2Proxy.secretName }}
+                  key: cookie-secret
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.oauth2Proxy.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: authenticated-emails
+              mountPath: /etc/oauth2-proxy
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: authenticated-emails
+          configMap:
+            name: {{ include "openpanel.fullname" . }}-oauth2-emails
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "openpanel.fullname" . }}-oauth2-proxy
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: auth
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4180
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "openpanel.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: auth
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openpanel.fullname" . }}-oauth2-emails
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: auth
+data:
+  authenticated-emails.txt: |
+    {{- range .Values.oauth2Proxy.allowedEmails }}
+    {{ . }}
+    {{- end }}
+{{- if .Values.oauth2Proxy.externalSecret.enabled }}
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: {{ .Values.oauth2Proxy.secretName }}
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: auth
+spec:
+  refreshInterval: {{ .Values.oauth2Proxy.externalSecret.refreshInterval }}
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: {{ .Values.oauth2Proxy.externalSecret.secretStore }}
+  target:
+    name: {{ .Values.oauth2Proxy.secretName }}
+    creationPolicy: Owner
+  data:
+    - secretKey: client-id
+      remoteRef:
+        key: {{ .Values.oauth2Proxy.externalSecret.secrets.googleClientId }}
+    - secretKey: client-secret
+      remoteRef:
+        key: {{ .Values.oauth2Proxy.externalSecret.secrets.googleClientSecret }}
+    - secretKey: cookie-secret
+      remoteRef:
+        key: {{ .Values.oauth2Proxy.externalSecret.secrets.cookieSecret }}
+{{- end }}
+{{- end }}
