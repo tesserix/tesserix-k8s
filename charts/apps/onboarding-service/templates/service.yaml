@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: onboarding-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "onboarding-service.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "onboarding-service.selectorLabels" (dict "component" "onboarding-api" "release" .Release.Name) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.api.port }}
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: onboarding-web
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "onboarding-service.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "onboarding-service.selectorLabels" (dict "component" "onboarding-web" "release" .Release.Name) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.web.port }}
+      targetPort: http

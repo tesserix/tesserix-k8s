@@ -134,7 +134,10 @@ CREATE TABLE IF NOT EXISTS audit_events (
     target      TEXT,
     outcome     TEXT NOT NULL CHECK (outcome IN ('success', 'denied', 'error')),
     request_id  TEXT NOT NULL,
-    detail      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- TEXT, not JSONB: the hash is taken over these exact bytes, and jsonb
+    -- re-renders what it is given (key order, whitespace), so a jsonb column
+    -- returns a different string than the one that was hashed.
+    detail      TEXT NOT NULL DEFAULT '{}' CHECK (detail::jsonb IS NOT NULL),
     prev_hash   TEXT NOT NULL,
     hash        TEXT NOT NULL UNIQUE
 );
