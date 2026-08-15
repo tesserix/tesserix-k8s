@@ -91,7 +91,34 @@ Cluster:  tesseract-prod-in-gke   Region: asia-south1
 
 ---
 
-## GCP Secret Manager
+## Secret stores — pick by *whose* secret it is
+
+Two stores, one rule, no exceptions. Before creating any secret, ask who the
+subject is:
+
+| The secret belongs to… | Store | Read by |
+|---|---|---|
+| **The platform** — infra, our own accounts, one value for the whole estate: DB superuser passwords, GHCR/registry tokens, OAuth client credentials, API keys we bought, signing/session keys, TLS material | **GCP Secret Manager** | ESO via `gcp-secret-store` |
+| **A product's customers or end users** — anything scoped to a tenant, merchant, vendor or person: per-tenant API keys and webhook secrets, customer payment/PSP credentials, user tokens, BYO-key material, per-tenant encryption keys | **OpenBao** (`kv/`) | ESO via the Vault provider, or the service at runtime |
+
+Restated so it cannot be missed:
+
+- **Never** put a customer's, tenant's or end user's secret in GCP Secret
+  Manager. It is a flat, project-wide namespace with no per-tenant boundary —
+  one IAM grant reads every tenant's data, and it has no dynamic secrets, no
+  leases and no per-tenant audit trail.
+- **Never** put a platform credential in OpenBao as the source of truth. GCP
+  Secret Manager is the root of trust: it holds OpenBao's own recovery keys, so
+  a platform secret stored only in OpenBao is unrecoverable exactly when
+  OpenBao is what's broken.
+- Tenant count is not a reason to switch stores. One tenant today is still a
+  tenant; it goes in OpenBao.
+- If a secret looks like both, split it. A shared PSP *platform* account key is
+  Secret Manager; each merchant's connected-account credential is OpenBao.
+
+Path conventions and the ESO wiring for each: [`docs/openbao-secrets.md`](docs/openbao-secrets.md).
+
+### GCP Secret Manager
 
 Project `tesseracthub-480811`. Naming: `{env}-{service}-{secret-name}` —
 e.g. `dev-blog-mongodb-uri`, `prod-ghcr-token`, `dev-auth-bff-session-secret`.
@@ -128,7 +155,8 @@ New-service template checklist:
 - [ ] `service.yaml` — ClusterIP
 - [ ] `serviceaccount.yaml` — Workload Identity annotation
 - [ ] `ingress.yaml` — Kong (dev) / Istio (prod)
-- [ ] `externalsecret.yaml` — GCP Secret Manager
+- [ ] `externalsecret.yaml` — platform secrets from GCP Secret Manager; any
+      tenant- or user-scoped secret from OpenBao instead (see Secret stores)
 - [ ] `network-policy.yaml` — default deny + explicit allows
 - [ ] `authorization-policy.yaml` — Istio RBAC
 - [ ] `scaledobject.yaml` — KEDA (conditional)

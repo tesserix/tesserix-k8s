@@ -15,6 +15,55 @@ Secrets into application namespaces. Applications never hold an OpenBao token.
 | Recovery keys | GCP Secret Manager, `prod-openbao-recovery-keys` |
 | Snapshots | `gs://tesseract-prod-backups-in/openbao/`, daily 03:00 UTC, 30 days |
 
+## What belongs here, and what does not
+
+The split is by *subject*, not by sensitivity — both stores are equally secret.
+Ask who the secret is about.
+
+**GCP Secret Manager — the platform's own credentials.** One value for the whole
+estate, owned by us, rotated by us: database superuser passwords, GHCR and
+registry tokens, OAuth client id/secret pairs, third-party API keys we bought,
+session and signing keys, TLS material, and OpenBao's own recovery keys. It is
+the root of trust and it stays that way.
+
+**OpenBao — anything scoped to a customer, tenant or end user.** Per-tenant API
+keys and webhook signing secrets, merchant/vendor PSP and connected-account
+credentials, BYO-key material a customer uploaded, per-tenant encryption keys,
+and any user-held token we must store at rest.
+
+Why the boundary is absolute, not a preference:
+
+- Secret Manager has no tenant boundary. It is one flat namespace per project,
+  and IAM grants are per-secret at best — the pattern in practice is one grant
+  covering a service's whole prefix. Put two tenants' keys there and any
+  principal that can read one can read the other. OpenBao gives a path prefix
+  per tenant and a policy that stops at it.
+- Secret Manager has no leases, no dynamic secrets and no per-read audit entry
+  naming the identity. When a customer asks who touched their key, only OpenBao
+  can answer.
+- Deleting a tenant means deleting `kv/<namespace>/<app>/<tenant>/` — one
+  prefix. In Secret Manager it means finding every secret whose *name* encodes
+  that tenant and hoping the naming held.
+- Conversely, a platform credential kept only in OpenBao is unreachable during
+  an OpenBao outage — including the credentials you would need to fix it.
+
+Path convention, matching the authorization model below:
+
+```
+kv/<namespace>/<app>/<tenant-or-user-id>/<secret-name>
+kv/mark8ly/marketplace-api/store-4f2a/stripe-connect
+```
+
+The policy a grant creates stops at `kv/data/<namespace>/<app>/*`, so tenant
+isolation *within* an app is the app's job: it must derive the tenant segment
+from the authenticated request, never from a client-supplied parameter. That is
+the same per-object authorization rule as any other IDOR surface.
+
+Migrating a tenant secret that is already in Secret Manager: write it to the
+OpenBao path, cut the consumer over, verify, then destroy the Secret Manager
+version. Do not leave it in both — two sources of truth for one credential is
+how a rotation silently half-applies.
+
 ## There is no OpenBao Kubernetes operator
 
 `bao operator` is a CLI command group — `init`, `unseal`, `raft`, `rekey`,
