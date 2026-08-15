@@ -91,6 +91,42 @@ Cluster:  tesseract-prod-in-gke   Region: asia-south1
 
 ---
 
+## New product — answer these two before writing any code
+
+Every new product, chart or service in this estate has to declare both of these
+up front, because each one determines a different set of files and neither can
+be retrofitted cheaply. **Ask the user; never assume a default.**
+
+**1. Which identity provider?**
+
+| Answer | What it means | What you build |
+|---|---|---|
+| **Zitadel** (`auth.tesserix.app`) | Multi-tenant. Customers get their own org and connect their own Okta/Entra/Google/SAML. This is the target for every new product. | Project + apps via `zitadel-bootstrap` `desired.projects`, issuer in `extraGip`, project-audience scope, org onboarded through `onboard.tesserix.app` |
+| **GIP** (Google Identity Platform) | Single-tenant or consumer sign-in, one GIP tenant per product. Grandfathered — HomeChef, blog, HMS today. | GIP tenant, auth-BFF on the `devai-auth-bff` pattern, `docs/gip-migration-plan.md` |
+
+Pick Zitadel unless the product genuinely has no notion of a customer
+organization. A product that starts on GIP and later needs enterprise SSO pays
+for the migration twice.
+
+**2. Which secret store — and there are two answers, not one.**
+
+Every product needs *both* halves decided, because they are different subjects:
+
+| Subject | Store | What you build |
+|---|---|---|
+| The product's **own** credentials — DB password, OIDC client secret, registry token, session key | **GCP Secret Manager** | `ExternalSecret` in `external-secrets/prod/<ns>/`, naming `{env}-{service}-{secret}` |
+| The product's **customers'** secrets — a tenant's API key, webhook secret, PSP credential, BYO key | **OpenBao** | Path `products/<product>/tenants/<tenant-uuid>/<scope>/<name>`, read at runtime via the broker-token model — **not** ESO |
+
+A product whose customers never store a secret still answers this: the answer is
+"none yet, and when that changes it is OpenBao". Writing a customer secret into
+GCP Secret Manager is the failure this table exists to prevent.
+
+Details: [`docs/tenant-secrets.md`](docs/tenant-secrets.md) for the path
+standard and why not ESO; [`docs/onboarding-api.md`](docs/onboarding-api.md)
+for onboarding the product itself.
+
+---
+
 ## Secret stores — pick by *whose* secret it is
 
 Two stores, one rule, no exceptions. Before creating any secret, ask who the

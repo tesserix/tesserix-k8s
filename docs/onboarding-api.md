@@ -134,7 +134,7 @@ returns a checklist the console renders as copyable YAML:
 ```
 
 The API creates the live objects; the YAML it hands back is what makes them
-reproducible. Both are needed — see § 6.
+reproducible. Both are needed — see § 8.
 
 ### S2 — Platform creates an organization and grants it products
 
@@ -331,7 +331,92 @@ gets `404`, not `403`, so the API does not confirm that an org id exists.
 
 ---
 
-## 5. Storage — `onboarding_db` on `global-postgres`
+## 5. The console — what a human actually sees
+
+`onboard.tesserix.app` is a thin Next.js front end over the same API. It holds no
+credential of its own, adds no endpoint, and every action it takes is one a
+product could take with a machine token. If a screen needs something the API
+cannot do, the API is what is wrong.
+
+| Screen | Who | What it does | API it calls |
+|---|---|---|---|
+| **Sign in** | platform | Zitadel OIDC, PKCE, session cookie. Email allowlist is the backstop. | `/api/auth/login`, `/api/auth/me` |
+| **Dashboard** | platform | Orgs by state, products, grants added this week, last 20 audit events. The audit strip is on the landing page deliberately — an audit log nobody sees is decoration. | `/v1/orgs`, `/v1/products`, `/v1/audit` |
+| **Products** | platform | List, plus **New product** — the § S1 wizard | `/v1/products` |
+| **New product** wizard | platform | 4 steps: identity (name, key, hosts) → **capabilities** (§ 6) → review → create. Ends on a *Copy the YAML* screen with the four git snippets and a "I've raised the PR" checkbox that is recorded in the audit ledger. | `POST /v1/products` |
+| **Organizations** | platform | Search by name or domain, filter by product and state | `/v1/orgs` |
+| **Organization detail** | platform | Five tabs, each mapping to one resource: Overview · Products · Domains · Identity providers · Audit | `/v1/orgs/{id}/…` |
+| **New organization** | platform | Name, owner email, which products to grant, metadata (§ 6) | `POST /v1/orgs`, `POST /v1/orgs/{id}/grants` |
+| **Domains tab** | platform or customer | Add domain → shows the TXT record with a copy button, a *Check now* button, and "last checked 30s ago". Never a bare "failed". | `/domains/*` |
+| **Identity providers tab** | platform or customer | Add IdP: pick type first, then a form shaped for that type. Shows *bound to login policy* as a green state, and for SAML shows the SP metadata to hand to the customer's IdP team. | `/idps/*` |
+| **Audit** | platform | Filter by org, product, actor, action, outcome; chain-verification status shown at the top | `/v1/audit` |
+
+The same Domains and Identity-provider components are published as a React
+package so a product can embed the customer-facing half in its own settings page
+rather than reimplementing DNS-challenge UX per product. The product's backend
+proxies the calls with its own machine token; the component never holds one.
+
+**Three UI rules that come from real onboarding failures:**
+
+- **Never show a bare boolean for a slow operation.** Domain verification and
+  SAML connection both show state plus *when it was last checked* plus whose
+  turn it is. "Waiting for the customer's IdP team" is a state a human can act on.
+- **Never show a secret.** Where a client secret exists, show the GCP Secret
+  Manager name and a copy-the-name button. A value on screen ends up in a
+  screenshot in a chat.
+- **Every destructive action names what it destroys** and requires typing the
+  org or product key. Revoking a grant logs out a customer's entire staff.
+
+---
+
+## 6. What we capture — the metadata model
+
+Onboarding is worth automating only if the record it leaves is complete enough
+that nobody has to ask a follow-up question. Two levels.
+
+### Product capabilities — asked once, at S1
+
+Every product declares these when it is created, and the answers drive what the
+API and console do for it afterwards. They are the same two questions the repo
+`CLAUDE.md` requires before any product is built, recorded as data rather than
+as tribal knowledge.
+
+| Field | Values | Why it is asked |
+|---|---|---|
+| `identity` | `zitadel` \| `gip` | Zitadel products get orgs, IdPs and domain discovery. A GIP product gets a `products` row and audit only — the org endpoints refuse it rather than silently doing nothing. |
+| `tenantSecrets` | `openbao` \| `none` | `openbao` provisions the OpenBao path prefix and policy for each new org at grant time. `none` means the product stores nothing on a customer's behalf *yet*; it is a decision, not a blank. |
+| `platformSecrets` | always `gcp-sm` | Recorded for completeness, and to make the asymmetry explicit in the record rather than in someone's memory. |
+| `tenancy` | `org` \| `ephemeral+org` | `ephemeral+org` means the product has anonymous or free-tier usage that can later be claimed into an org — Planning Poker's T0→T2 ladder in `tenancy-model.md`. It tells the API to expect `POST /v1/orgs` calls carrying a `claim` block. |
+| `roles` | list | The Zitadel project roles to assert, kept deliberately short. Anything that depends on a row in the product's own database is OpenFGA's, not Zitadel's. |
+| `hosts` | list | Drives the `frontendApps` and `extraGip` snippets the wizard emits. |
+| `dataResidency` | `in` \| `other` | Recorded now because retrofitting it after the first customer asks is a migration. |
+
+A `POST /v1/orgs` naming a product whose `identity` is `gip` is refused with a
+problem document that says so. That is the whole value of storing the answer:
+the mistake is caught at the API, not three screens into a wizard.
+
+### Organization metadata — asked at S2/S3
+
+| Field | Required | Note |
+|---|---|---|
+| `name`, `ownerEmail` | yes | The owner becomes `ORG_OWNER` and is the only human who can invite others |
+| `id` (= `tenant_id`) | generated | Never supplied by the caller |
+| `primaryDomain` | no | Unverified until § S5 completes; used for discovery only once verified |
+| `billingEmail`, `supportEmail` | no | So an incident does not start with "who do we tell" |
+| `plan`, `seats` | no | Free-form; billing lives elsewhere and this is a label, not an entitlement |
+| `region` | no | Defaults to the product's `dataResidency` |
+| `sourceProduct` | generated | Which product self-served this org, or `platform` |
+| `externalRef` | no | The caller's own id for this customer — a CRM record, a signup id. The one field that makes reconciliation with a product's own tables possible without a name match. |
+| `labels` | no | `map[string]string`, for anything the platform team wants to slice on later. Free-form by design; every attempt to enumerate this up front has been wrong. |
+
+Metadata is projected into Zitadel org metadata for `tenant_id` **only**. The
+rest stays in `onboarding_db`: Zitadel org metadata is read by anything holding
+an org-scoped token, and a customer's billing email does not belong in a token's
+blast radius.
+
+---
+
+## 7. Storage — `onboarding_db` on `global-postgres`
 
 No new cluster. `global-postgres` already hosts eleven databases and is a
 configured target of `db-schema-bootstrap`; the policy is in
@@ -379,7 +464,7 @@ secrets in Zitadel's eventstore.
 
 ---
 
-## 6. What still lives in git
+## 8. What still lives in git
 
 The API creates live objects. It cannot be the only record of them, or a cluster
 rebuild loses the estate. So `POST /v1/products` returns the YAML it would take
@@ -400,7 +485,7 @@ TESSERIX/ZITADEL org invariants; it must never try to reconcile customer orgs.
 
 ---
 
-## 7. Security requirements
+## 9. Security requirements
 
 Non-negotiable, in rough order of how much damage skipping each one does.
 
@@ -436,7 +521,97 @@ Non-negotiable, in rough order of how much damage skipping each one does.
 
 ---
 
-## 8. Build order
+## 10. First product onboarded: Planning Poker
+
+Planning Poker is the proving ground, deliberately. It is small, it is already
+running, nobody is harmed if an onboarding step has to be redone, and it
+exercises the hardest case in the model — a product with anonymous usage that a
+customer can later claim into a real organization. If onboarding works for
+Planning Poker, HMS is the easy case.
+
+### Its capability record
+
+```
+key             planning-poker
+identity        zitadel
+tenantSecrets   openbao          -- Jira/Slack tokens a team stores, per tenant
+platformSecrets gcp-sm
+tenancy         ephemeral+org    -- the T0 → T2 ladder in tenancy-model.md
+roles           [ pp-user ]      -- everything finer is the product's own concern
+hosts           [ planningpoker.tesserix.app ]
+dataResidency   in
+```
+
+`tenancy: ephemeral+org` is the interesting one. It tells the API that
+`POST /v1/orgs` from this product may carry a `claim` block naming rooms created
+anonymously, and that the org's creation must be visible to the product
+synchronously — a team clicking *Upgrade* is watching the screen.
+
+### The walkthrough
+
+```
+1. Platform, once
+   console → New product → planning-poker, capabilities as above
+   POST /v1/products
+     ├─ Zitadel project planning-poker in TESSERIX, role pp-user
+     ├─ OIDC web app (PKCE)  +  API app
+     ├─ machine user svc-planning-poker
+     ├─ GCP SM: prod-planning-poker-oidc-client-secret, -machine-key
+     └─ copyable YAML: zitadel-bootstrap desired.projects, ExternalSecret,
+        AuthorizationPolicy
+   → raise the PR, merge, ArgoCD syncs. The product now exists in git AND live.
+
+2. A team uses it anonymously — no call to this API at all
+   Rooms are T0. Capability tokens, 10-minute purge after close.
+   tenancy-model.md § 2–3. Nothing here knows they exist.
+
+3. That team upgrades
+   Planning Poker backend → POST /v1/orgs
+     Authorization: Bearer <svc-planning-poker JWT>
+     Idempotency-Key: <uuid>
+     { name: "Northwind", ownerEmail: "lead@northwind.io",
+       productKey: "planning-poker", externalRef: "pp_team_8412",
+       claim: { rooms: ["r_9f21", "r_a044"] } }
+   ← { orgId, tenantId }
+     ├─ Zitadel: org, metadata tenant_id, grant planning-poker/pp-user,
+     │           lead@northwind.io as ORG_OWNER
+     ├─ OpenBao: prefix products/planning-poker/tenants/<tenantId>/ + policy,
+     │           because tenantSecrets = openbao
+     └─ ledger:  org.create by product planning-poker
+   Planning Poker, in its own transaction:
+     UPDATE rooms SET tenant_id = <tenantId> WHERE id IN (claimed) AND tenant_id IS NULL
+     — which is what stops the purge job deleting them, per tenancy-model.md § 5.
+
+4. Northwind connects Google Workspace, from Planning Poker's own settings page
+   POST /v1/orgs/{id}/domains        northwind.io
+   POST …/domains/northwind.io/verify   (poll until verified)
+   POST /v1/orgs/{id}/idps           { type: "google", … }   creates AND binds
+   From here nobody at Northwind sees a password field again.
+
+5. Northwind stores a Jira token
+   Planning Poker writes it to
+   products/planning-poker/tenants/<tenantId>/integrations/jira in OpenBao,
+   with the child token minted for that tenant. tenant-secrets.md § 4.
+   This API is not involved — it provisioned the path and got out of the way.
+```
+
+### What this proves before HMS
+
+| Proven | By |
+|---|---|
+| A product can create an org with no human in the loop | step 3 |
+| The `tenant_id` claim, the product's own row and OpenFGA agree | step 3 |
+| Anonymous data can be claimed into a tenant without a migration | step 3, `claim` |
+| The OpenBao path is provisioned at grant time, not at first write | step 3 |
+| A customer can self-serve SSO end to end | step 4 |
+| The audit ledger names the product, not a shared service account | steps 1–4 |
+
+The one thing it does not prove is enterprise SSO under load — Google Workspace
+is the easy IdP. Entra and SAML wait for a customer who has them.
+
+---
+
+## 11. Build order
 
 Each step is useful on its own; do not build the console before the API works.
 
