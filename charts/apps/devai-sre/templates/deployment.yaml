@@ -65,10 +65,11 @@ spec:
               # asyncpg's auto-SSL upgrade against CNPG's pooler fails
               # with "Connection reset by peer" during startTLS. Skip it.
               value: "postgresql://{{ .Values.database.user }}:$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode=disable"
-            # redis.user is the Valkey ACL user that confines this app to its
-            # own key prefix; it is nopass, so no credential is in the URL.
+            # redis.user is the Valkey ACL user confining this app to its own
+            # key prefix. The user is nopass and the literal below is discarded,
+            # but clients skip AUTH when the password is empty.
             - name: DEVAI_REDIS_URL
-              value: "redis://{{ with .Values.redis.user }}{{ . }}@{{ end }}{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+              value: "redis://{{ with .Values.redis.user }}{{ . }}:nopass@{{ end }}{{ .Values.redis.host }}:{{ .Values.redis.port }}"
             # ─── Auth gate ────────────────────────────────────────
             # DEVAI_REQUIRE_AUTH flips the in-app enforce_auth check from
             # advisory to blocking (401 on anonymous mutating / sensitive

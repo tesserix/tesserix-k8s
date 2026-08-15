@@ -96,9 +96,10 @@ identical environment — defined once here so the two never drift.
   # handled by Istio.
   value: "postgresql://{{ .Values.database.user }}:$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode=disable"
 # redis.user is the Valkey ACL user that confines this app to its own key
-# prefix; it is nopass, so no credential is carried in the URL.
+# prefix. The user is nopass and the literal below is discarded, but clients
+# skip AUTH entirely when the password is empty — hence a placeholder.
 - name: DEVAI_REDIS_URL
-  value: "redis://{{ with .Values.redis.user }}{{ . }}@{{ end }}{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+  value: "redis://{{ with .Values.redis.user }}{{ . }}:nopass@{{ end }}{{ .Values.redis.host }}:{{ .Values.redis.port }}"
 # NATS
 - name: DEVAI_NATS_URL
   value: {{ .Values.nats.url | quote }}

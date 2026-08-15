@@ -52,9 +52,10 @@ spec:
               value: {{ .Values.gip.tenantId | quote }}
             - name: GIP_ADDITIONAL_TENANT_IDS
               value: {{ .Values.gip.additionalTenantIds | default "" | quote }}
-            # Redis configuration
+            # redis.user is nopass, but the placeholder password is required —
+            # clients skip AUTH when it is empty and the default user is off.
             - name: REDIS_URL
-              value: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+              value: "redis://{{ with .Values.redis.user }}{{ . }}:nopass@{{ end }}{{ .Values.redis.host }}:{{ .Values.redis.port }}"
             # Secrets from ExternalSecret
             - name: SESSION_SECRET
               valueFrom:

@@ -35,7 +35,8 @@ clients may instead talk to `<instance>-sentinel:26379` directly.
 redis://global-valkey-cache.global.svc.cluster.local:6379
 
 # With an ACL user (cache instance), confining the client to its own prefix.
-redis://homechef@global-valkey-cache.global.svc.cluster.local:6379
+# The password is a required placeholder — see Auth below.
+redis://homechef:nopass@global-valkey-cache.global.svc.cluster.local:6379
 ```
 
 ## Auth
@@ -48,6 +49,10 @@ There is no password. Access control is two layers:
    prefix (`~homechef:*`), so a shared instance still isolates products from
    each other. `nopass` accepts any password, which is what lets replication and
    Sentinel authenticate without a stored secret.
+
+The URL must still carry a placeholder password. go-redis only sends AUTH when
+the password is non-empty (`redis.go`: `} else if password != ""`), so a
+username-only URL authenticates as `default` and fails with NOAUTH.
 
 The queue instance runs with `acl.enabled: false` because openpanel and postiz
 are third-party apps whose Redis client is not configurable beyond `REDIS_URL`.
