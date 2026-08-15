@@ -17,6 +17,24 @@ spec:
   gateways:
     - {{ .Values.ingress.gateway | quote }}
   http:
+{{- if .Values.oauth2Proxy.enabled }}
+    # Auth surface. ALLOW_REGISTRATION gates sign-in and sign-up with one flag
+    # upstream, so these must not bypass the proxy or anyone could self-register.
+    # Istio strips /api here; oauth2-proxy maps the remainder back to the API.
+    {{- range $prefix := list "trpc" "oauth" }}
+    - match:
+        - uri:
+            prefix: /api/{{ $prefix }}/
+      rewrite:
+        uri: /{{ $prefix }}/
+      route:
+        - destination:
+            host: {{ include "openpanel.fullname" $ }}-oauth2-proxy.{{ $.Release.Namespace }}.svc.cluster.local
+            port:
+              number: 4180
+      timeout: 60s
+    {{- end }}
+{{- end }}
     # The API serves its routes at the root, so /api is stripped before proxying.
     - match:
         - uri:
