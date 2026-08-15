@@ -201,6 +201,42 @@ Notable choices:
 Per-organization policy overrides everything here, so a tenant can force MFA or
 disable password login without touching this file.
 
+## Branding, login policy and admins are reconciled
+
+`charts/apps/zitadel-bootstrap` runs a CronJob every 30 minutes that reconciles
+the instance label policy, the two logo assets, the instance login policy and
+the IAM_OWNER list from `values.yaml`. It exists because all of those were
+console-only settings that nothing detected drifting.
+
+Every step compares desired to live and writes only on a difference. Fields the
+chart does not declare are left alone, so a console change to something outside
+`desired` survives. Logos are compared by content hash — an unconditional
+re-upload would mint a new asset URL each run and invalidate every cached logo.
+The label policy is edited as a preview and only activated when something
+actually changed, which is the workflow the assets API requires.
+
+Admins are matched by login name or by **verified** email, because a federated
+admin's login name is their IdP subject, not their address. An admin who has
+never signed in does not exist yet and is skipped rather than failing the run.
+
+The reconciler is stdlib-only Python with its own suite; run it before changing
+the logic, since a bug here rewrites the instance login policy:
+
+```bash
+python3 charts/apps/zitadel-bootstrap/files/bootstrap_test.py
+```
+
+**Branding is cached in the login pods.** Login v2 caches
+`getBrandingSettings` for an hour per pod, so a colour or logo change stays
+invisible on a live pod long after the API returns the new value — it looks
+exactly like the change not having been saved. `login.env.API_CACHE_CONFIG` in
+the Zitadel chart drops that to one minute. If branding still looks stale,
+confirm against the rendered HTML, not the API:
+
+```bash
+curl -s https://auth.tesserix.app/ui/v2/login/loginname | grep -o '#[0-9A-Fa-f]\{6\}' | sort -u
+```
+
 ## What is not in git
 
 Three things cannot be declared in this chart, and the instance is not
@@ -216,6 +252,12 @@ no route back in.
 an organization, not config — that binding is the reason Zitadel replaced
 Keycloak. Create them per tenant through the API with the `iam-admin` machine
 key, or in the console under *Organization → Identity Providers*.
+
+The Google IdP on the ZITADEL org is deliberately outside `zitadel-bootstrap`:
+its update endpoint replaces the whole config including the client secret, and
+that secret was typed into the console and never stored in Secret Manager, so
+reconciling it from git would blank it. Put the secret in Secret Manager first
+if this ever needs to be declared.
 
 **Actions.** Custom claims, token enrichment and provisioning hooks are Actions
 v2 objects, created through the API.

@@ -164,7 +164,9 @@ zitadel:
 
         LoginPolicy:
           AllowUsernamePassword: true
-          AllowRegister: true
+          # Tenants are provisioned by the platform, never self-registered.
+          # Only read at instance creation; zitadel-bootstrap keeps it false.
+          AllowRegister: false
           AllowExternalIDP: true
           ForceMFA: false
           HidePasswordReset: false
@@ -332,6 +334,12 @@ zitadel:
     # render because `lookup` returns nothing under Argo CD's client-side
     # templating — each sync would rotate the key and log everyone out.
     loginServiceKeySecretName: zitadel-login-service-key
+    # Branding is cached per pod for an hour by default, so a logo or colour
+    # change stays invisible until the pods are restarted — unacceptable once
+    # tenants set their own. One small RPC a minute is cheaper than that.
+    env:
+      - name: API_CACHE_CONFIG
+        value: '{"getBrandingSettings":1}'
     service:
       type: ClusterIP
       port: 3000
