@@ -282,6 +282,8 @@ Products (platform only)
   GET    /v1/products
   GET    /v1/products/{key}
   POST   /v1/products/{key}/rotate-secret   rotates client secret, writes GCP SM
+  POST   /v1/products/{key}/manifests-acknowledged
+                                            records that the git PR was raised
 
 Organizations
   POST   /v1/orgs                           create org + owner + optional grant
