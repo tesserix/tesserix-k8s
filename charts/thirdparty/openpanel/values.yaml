@@ -78,13 +78,25 @@ clickhouse:
   database: openpanel
   persistence:
     enabled: true
-    size: 10Gi
+    size: 240Gi
     storageClassName: standard-rwo
   resources:
     requests:
       memory: 512Mi
     limits:
       memory: 2Gi
+  # system.* log tables, not analytics data. Unbounded trace_log filled the
+  # 50Gi volume and stalled all event inserts with NOT_ENOUGH_SPACE.
+  systemLogs:
+    ttlDays: 7
+    # The query profiler is what makes trace_log grow by billions of rows.
+    disableQueryProfiler: true
+    textLogLevel: warning
+  # Last-resort watchdog: truncates system logs when the volume fills anyway.
+  diskGuard:
+    enabled: true
+    schedule: "*/15 * * * *"
+    thresholdPercent: 90
 
 # Redis
 redis:

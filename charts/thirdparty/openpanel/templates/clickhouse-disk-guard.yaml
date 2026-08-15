@@ -1,0 +1,73 @@
+{{- if and .Values.clickhouse.enabled .Values.clickhouse.diskGuard.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "openpanel.fullname" . }}-clickhouse-disk-guard
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickhouse-disk-guard
+spec:
+  schedule: {{ .Values.clickhouse.diskGuard.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            {{- include "openpanel.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: clickhouse-disk-guard
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: disk-guard
+              image: "{{ .Values.clickhouse.image.repository }}:{{ .Values.clickhouse.image.tag }}"
+              imagePullPolicy: {{ .Values.clickhouse.image.pullPolicy }}
+              env:
+                - name: CH_HOST
+                  value: {{ include "openpanel.fullname" . }}-clickhouse.{{ .Release.Namespace }}.svc.cluster.local
+                - name: CH_PORT
+                  value: {{ .Values.clickhouse.nativePort | quote }}
+                - name: THRESHOLD
+                  value: {{ .Values.clickhouse.diskGuard.thresholdPercent | quote }}
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  ch() { clickhouse-client --host "$CH_HOST" --port "$CH_PORT" "$@"; }
+
+                  used=$(ch -q "SELECT toUInt8(round((1 - free_space / total_space) * 100)) FROM system.disks WHERE name = 'default'")
+                  echo "clickhouse disk usage: ${used}% (threshold ${THRESHOLD}%)"
+                  if [ "$used" -lt "$THRESHOLD" ]; then
+                    echo "below threshold, nothing to do"
+                    exit 0
+                  fi
+
+                  # Reclaim from system.* diagnostics only, largest first. Analytics
+                  # tables in the default database are never touched.
+                  ch -q "SELECT table FROM system.parts WHERE active AND database = 'system' GROUP BY table ORDER BY sum(bytes_on_disk) DESC" \
+                  | while read -r tbl; do
+                      used=$(ch -q "SELECT toUInt8(round((1 - free_space / total_space) * 100)) FROM system.disks WHERE name = 'default'")
+                      if [ "$used" -lt "$THRESHOLD" ]; then
+                        echo "recovered to ${used}%, stopping"
+                        break
+                      fi
+                      echo "truncating system.${tbl}"
+                      ch -q "TRUNCATE TABLE IF EXISTS system.${tbl}" || echo "  skipped ${tbl}"
+                    done
+
+                  final=$(ch -q "SELECT toUInt8(round((1 - free_space / total_space) * 100)) FROM system.disks WHERE name = 'default'")
+                  echo "final disk usage: ${final}%"
+                  if [ "$final" -ge "$THRESHOLD" ]; then
+                    echo "WARNING: still at or above threshold after truncating system logs" >&2
+                  fi
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+                limits:
+                  memory: 256Mi
+{{- end }}
