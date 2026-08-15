@@ -201,6 +201,50 @@ Notable choices:
 Per-organization policy overrides everything here, so a tenant can force MFA or
 disable password login without touching this file.
 
+## Organizations — TESSERIX is the default, ZITADEL is reserved
+
+**Every product project belongs in TESSERIX.** It is the instance default org, so
+new users and registrations land there, and it is the org this platform runs on.
+
+**The ZITADEL org cannot be deleted or deactivated, and must not be.** It is the
+instance's initial org and it owns:
+
+- the `ZITADEL` project — the console, and the Admin, Management and Auth API
+  applications. Removing it takes `auth.tesserix.app` down completely.
+- `iam-admin`, the service user behind the PAT `zitadel-bootstrap` authenticates
+  with. Deactivating the org kills the reconciler along with it.
+- `zitadel-admin`, the break-glass password admin — the only way back in when an
+  IdP misroutes a federated login.
+
+So it is demoted rather than removed: `zitadel-bootstrap` sets TESSERIX as the
+default org and then fails the run if any project other than `ZITADEL` appears
+in the ZITADEL org. Nothing is deleted automatically — a project holds live OIDC
+clients, and dropping one takes an application's logins down.
+
+If that check fires, move the project out with the runbook below.
+
+### Moving a project between orgs
+
+There is no API for it. A project's org is fixed at creation, so a move is a
+recreate plus a cutover, and the new app gets a **new clientId and a new client
+secret**. Existing sessions do not survive it.
+
+```bash
+export ZITADEL_PAT=$(kubectl get secret iam-admin-pat -n zitadel -o jsonpath='{.data.pat}' | base64 -d)
+scripts/identity/migrate-zitadel-project.py --project <name> --to-org TESSERIX          # dry run
+scripts/identity/migrate-zitadel-project.py --project <name> --to-org TESSERIX --apply
+```
+
+Then, in order:
+
+1. Store the printed secret: `gcloud secrets versions add <secret> --project=tesseracthub-480811 --data-file=-`
+2. Update `clientId` in the app's Helm values, commit, let ArgoCD sync.
+3. Restart the pods so ESO re-reads the secret, and verify a real login.
+4. Only then delete the old project from the ZITADEL org, in the console.
+
+The script never deletes anything, so until step 4 the old clientId still works
+and the cutover rolls back by reverting step 2.
+
 ## Branding, login policy and admins are reconciled
 
 `charts/apps/zitadel-bootstrap` runs a CronJob every 30 minutes that reconciles
@@ -218,6 +262,21 @@ actually changed, which is the workflow the assets API requires.
 Admins are matched by login name or by **verified** email, because a federated
 admin's login name is their IdP subject, not their address. An admin who has
 never signed in does not exist yet and is skipped rather than failing the run.
+
+### The skin applies to every org
+
+The Aurora palette in `desired.labelPolicy` is set on the **instance** label
+policy, which is what every org renders unless it has its own. An org-level
+policy shadows it silently, for every login scoped to that org — which is how
+the platform look forks without anyone noticing.
+
+So the reconciler resets any org that has one back to the instance skin. Orgs
+listed in `desired.selfBrandedOrgs` are exempt: per-tenant branding is a product
+feature, and a customer who supplies their own logo and colours keeps them. Add
+a tenant there the moment they brand themselves, or the next run reverts it.
+
+The layout half of Aurora — the mesh, the glass card, the derived palette — is
+in the login v2 fork, not in any policy, so it applies to every org regardless.
 
 The reconciler is stdlib-only Python with its own suite; run it before changing
 the logic, since a bug here rewrites the instance login policy:

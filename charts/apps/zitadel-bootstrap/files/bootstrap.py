@@ -186,6 +186,80 @@ def reconcile_admins(admins):
         log(f"admin {login_name}: granted IAM_OWNER")
 
 
+def list_orgs():
+    status, payload = request("POST", "/admin/v1/orgs/_search", {"query": {"limit": 100}})
+    if status != 200:
+        raise SystemExit(f"org search failed: {status} {payload!r}")
+    return json.loads(payload).get("result", [])
+
+
+def reconcile_default_org(name):
+    """Point new users and registrations at TESSERIX rather than the ZITADEL org.
+
+    The ZITADEL org cannot be deleted — it owns the console project and the
+    break-glass admin — so demoting it is as far as this goes. See docs/zitadel.md.
+    """
+    wanted = next((org for org in list_orgs() if org["name"] == name), None)
+    if not wanted:
+        raise SystemExit(f"default org {name!r} does not exist")
+    current = get_json("/admin/v1/orgs/default")["org"]["id"]
+    if current == wanted["id"]:
+        log(f"default org: {name} in sync")
+        return
+    status, payload = request("PUT", f"/admin/v1/orgs/default/{wanted['id']}", {})
+    if status != 200:
+        raise SystemExit(f"default org update failed: {status} {payload!r}")
+    log(f"default org: promoted {name}")
+
+
+def reconcile_org_branding(self_branded):
+    """Reset any org that has quietly overridden the instance skin.
+
+    An org-level label policy shadows the instance one for every login scoped to
+    that org, so an override is how the platform look silently diverges. Orgs
+    named in selfBrandedOrgs supply their own branding by design and are skipped.
+    """
+    for org in list_orgs():
+        if org["name"] in self_branded:
+            log(f"org branding {org['name']}: self-branded, skipping")
+            continue
+        scope = {"x-zitadel-orgid": org["id"]}
+        status, payload = request("GET", "/management/v1/policies/label", headers=scope)
+        if status != 200:
+            raise SystemExit(f"org {org['name']} label policy read failed: {status} {payload!r}")
+        if json.loads(payload)["policy"].get("isDefault"):
+            log(f"org branding {org['name']}: inheriting instance skin")
+            continue
+        status, payload = request("DELETE", "/management/v1/policies/label", headers=scope)
+        if status != 200:
+            raise SystemExit(f"org {org['name']} label policy reset failed: {status} {payload!r}")
+        log(f"org branding {org['name']}: reset to the instance skin")
+
+
+def assert_reserved_org_clean(name, allowed):
+    """Fail if a product project has been created in the reserved ZITADEL org.
+
+    Reports rather than deletes: a project holds live OIDC clients, and removing
+    one takes an application's logins down. Moving it out is a manual cutover —
+    docs/zitadel.md "Moving a project between orgs".
+    """
+    org = next((org for org in list_orgs() if org["name"] == name), None)
+    if not org:
+        log(f"reserved org {name}: does not exist, nothing to check")
+        return
+    status, payload = request("POST", "/management/v1/projects/_search", {"query": {"limit": 100}},
+                              headers={"x-zitadel-orgid": org["id"]})
+    if status != 200:
+        raise SystemExit(f"reserved org {name} project search failed: {status} {payload!r}")
+    strays = sorted(p["name"] for p in json.loads(payload).get("result", []) if p["name"] not in allowed)
+    if strays:
+        raise SystemExit(
+            f"reserved org {name} holds non-platform projects: {', '.join(strays)}. "
+            f"Products belong in the default org; see docs/zitadel.md."
+        )
+    log(f"reserved org {name}: clean")
+
+
 def main():
     with open(CONFIG_PATH) as fh:
         desired = json.load(fh)
@@ -198,6 +272,10 @@ def main():
 
     reconcile_login_policy(desired["loginPolicy"])
     reconcile_admins(desired["admins"])
+    reconcile_default_org(desired["defaultOrg"])
+    reconcile_org_branding(desired["selfBrandedOrgs"])
+    # Last: a stray project is a report, and must not stop branding converging.
+    assert_reserved_org_clean(desired["reservedOrg"]["name"], desired["reservedOrg"]["allowedProjects"])
     log("bootstrap complete")
 
 
