@@ -35,6 +35,18 @@ spec:
       timeout: 60s
     {{- end }}
 {{- end }}
+    # The tracking script every instrumented site loads. It carries no data, so
+    # it must skip the auth proxy — behind it, visitors get a Google sign-in
+    # redirect instead of JavaScript and nothing is ever tracked.
+    - match:
+        - uri:
+            exact: /op1.js
+      route:
+        - destination:
+            host: {{ include "openpanel.fullname" . }}-dashboard.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.dashboard.port }}
+      timeout: 30s
     # The API serves its routes at the root, so /api is stripped before proxying.
     - match:
         - uri:
