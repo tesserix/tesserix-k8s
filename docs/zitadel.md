@@ -162,11 +162,10 @@ Three things cannot be declared in this chart, and the instance is not
 production-ready until they are done in the console.
 
 **SMTP.** `DefaultInstance` applies only at first instance creation, so the
-provider is configured under *Instance → Notifications → SMTP provider*. The
-password is already mounted as `ZITADEL_DEFAULTINSTANCE_SMTPCONFIGURATION_SMTP_PASSWORD`
-from `prod-zitadel-smtp-password`; only the host, port and sender need entering.
-Until then there is no email verification and no password reset, so a locked-out
-user has no route back in.
+provider is configured under *Instance → Notifications → SMTP provider* — host,
+port, sender and password all entered there, not through the chart. Until then
+there is no email verification and no password reset, so a locked-out user has
+no route back in.
 
 **IdP connectors.** GitHub, Google, Okta and Entra are runtime objects bound to
 an organization, not config — that binding is the reason Zitadel replaced
