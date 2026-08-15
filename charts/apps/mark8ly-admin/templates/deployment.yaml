@@ -41,6 +41,18 @@ spec:
             - name: http
               containerPort: {{ .Values.service.port }}
           env:
+            {{- if .Values.openpanel.enabled }}
+            # Written into this namespace by the openpanel project-init job;
+            # optional so a first deploy doesn't block on the job finishing.
+            - name: OPENPANEL_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.openpanel.secretName }}
+                  key: {{ .Values.openpanel.clientIdKey }}
+                  optional: true
+            - name: OPENPANEL_API_URL
+              value: {{ .Values.openpanel.apiUrl | quote }}
+            {{- end }}
             - name: NODE_ENV
               value: "production"
             - name: HOSTNAME
