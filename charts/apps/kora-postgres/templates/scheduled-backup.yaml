@@ -1,0 +1,18 @@
+{{- if .Values.backup.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ .Values.clusterName }}-scheduled-backup
+  namespace: {{ .Values.namespace }}
+spec:
+  # Base backup every 6h. Continuous WAL archiving (see cluster.yaml) is what
+  # actually bounds RPO to seconds; more frequent bases bound RTO instead, by
+  # shortening the WAL replay needed at restore.
+  schedule: {{ .Values.backup.schedule | default "0 0 */6 * * *" | quote }}
+  backupOwnerReference: self
+  cluster:
+    name: {{ .Values.clusterName }}
+  # Single instance — backup from the primary. There is no replica to offload to.
+  target: primary
+  method: barmanObjectStore
+{{- end }}
