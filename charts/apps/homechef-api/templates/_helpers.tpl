@@ -91,9 +91,10 @@ refactored here; the worker is a prod-only concern.)
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: DB_PASSWORD
 # redis.user is the Valkey ACL user that confines this app to its own key
-# prefix; it is nopass, so no credential is carried in the URL.
+# prefix. The user is nopass and the literal below is discarded, but clients
+# skip AUTH entirely when the password is empty — hence a placeholder.
 - name: REDIS_URL
-  value: "redis://{{ with .Values.redis.user }}{{ . }}@{{ end }}{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+  value: "redis://{{ with .Values.redis.user }}{{ . }}:nopass@{{ end }}{{ .Values.redis.host }}:{{ .Values.redis.port }}"
 # MongoDB — in-app chat (#53), backed by the Percona-operator replica set. The
 # operator generates the databaseAdmin credentials into <cluster>-secrets;
 # optional so the API still starts before the operator has provisioned them
