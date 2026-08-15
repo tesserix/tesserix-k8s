@@ -54,8 +54,16 @@ against the same API.
 
 ## Step 1. Create the project and its applications
 
+**Create it in the TESSERIX org, never in ZITADEL.** The console opens on
+whichever org you last used, and the ZITADEL org is the reserved home of the
+console project and the break-glass admin — nothing else. `zitadel-bootstrap`
+fails its run if a project turns up there, and getting one out again means a
+new clientId, a new secret and a cutover. Check the org switcher first.
+
 Console: *Projects → Create*, then *Applications → New* per deployable.
-Via the API, with an `iam-admin` token (Part 2, Step 1):
+Via the API, with an `iam-admin` token (Part 2, Step 1) and the TESSERIX org id
+in `x-zitadel-orgid` — omit the header and the project lands in the PAT's own
+org, which is ZITADEL:
 
 ```
 POST /management/v1/projects

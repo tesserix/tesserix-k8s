@@ -45,9 +45,12 @@ class Recorder:
     def __init__(self, responses):
         self.responses = responses
         self.calls = []
+        # Kept beside calls rather than in it, so the 5-tuple unpacking below stays valid.
+        self.headers = []
 
     def __call__(self, method, path, body=None, headers=None, raw=None, content_type=None):
         self.calls.append((method, path, body, raw, content_type))
+        self.headers.append((path, headers or {}))
         return self.responses.get((method, path), (200, b"{}"))
 
     @property
@@ -269,6 +272,118 @@ class AdminTest(unittest.TestCase):
         self.assertEqual([call[2] for call in grants], [{"userId": "u-1", "roles": ["IAM_OWNER"]}])
 
 
+ORGS = {"result": [
+    {"id": "org-zitadel", "name": "ZITADEL"},
+    {"id": "org-tesserix", "name": "TESSERIX"},
+]}
+
+
+class DefaultOrgTest(unittest.TestCase):
+    def _recorder(self, current, extra=None):
+        return Recorder({
+            ("POST", "/admin/v1/orgs/_search"): (200, json.dumps(ORGS).encode()),
+            ("GET", "/admin/v1/orgs/default"): (200, json.dumps({"org": {"id": current}}).encode()),
+            **(extra or {}),
+        })
+
+    def test_no_write_when_already_default(self):
+        recorder = self._recorder("org-tesserix")
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_default_org("TESSERIX")
+        self.assertEqual([w for w in recorder.writes if not w[1].endswith("_search")], [])
+
+    def test_promotes_the_named_org_when_another_is_default(self):
+        recorder = self._recorder("org-zitadel")
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_default_org("TESSERIX")
+        self.assertIn(("PUT", "/admin/v1/orgs/default/org-tesserix"), recorder.writes)
+
+    def test_unknown_org_name_is_fatal(self):
+        """A typo must not silently leave the old default in place."""
+        recorder = self._recorder("org-zitadel")
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_default_org("TYPO")
+
+    def test_raises_on_api_error(self):
+        recorder = self._recorder("org-zitadel",
+                                  {("PUT", "/admin/v1/orgs/default/org-tesserix"): (403, b'{"message":"nope"}')})
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_default_org("TESSERIX")
+
+
+class OrgBrandingTest(unittest.TestCase):
+    """Every org inherits the instance skin unless git says it brands itself."""
+
+    def _recorder(self, is_default):
+        return Recorder({
+            ("POST", "/admin/v1/orgs/_search"): (200, json.dumps(ORGS).encode()),
+            ("GET", "/management/v1/policies/label"): (200, json.dumps({"policy": {"isDefault": is_default}}).encode()),
+        })
+
+    def _deletes(self, recorder):
+        return [call for call in recorder.calls if call[:2] == ("DELETE", "/management/v1/policies/label")]
+
+    def test_no_reset_when_every_org_already_inherits(self):
+        recorder = self._recorder(True)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_org_branding([])
+        self.assertEqual(self._deletes(recorder), [])
+
+    def test_resets_every_org_that_overrode_the_skin(self):
+        recorder = self._recorder(False)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_org_branding([])
+        self.assertEqual(len(self._deletes(recorder)), len(ORGS["result"]))
+
+    def test_leaves_a_deliberately_branded_tenant_alone(self):
+        """Per-org branding is a product feature; only undeclared drift is reset."""
+        recorder = self._recorder(False)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_org_branding(["TESSERIX", "ZITADEL"])
+        self.assertEqual(self._deletes(recorder), [])
+
+    def test_scopes_every_call_to_the_org_it_is_reading(self):
+        """Without x-zitadel-orgid the call reads the PAT's own org instead."""
+        recorder = self._recorder(False)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_org_branding([])
+        scoped = [headers.get("x-zitadel-orgid") for path, headers in recorder.headers
+                  if path == "/management/v1/policies/label"]
+        self.assertEqual(sorted(set(scoped)), ["org-tesserix", "org-zitadel"])
+
+
+class ReservedOrgTest(unittest.TestCase):
+    """The ZITADEL org holds the console and the break-glass admin, nothing else."""
+
+    def _recorder(self, projects):
+        return Recorder({
+            ("POST", "/admin/v1/orgs/_search"): (200, json.dumps(ORGS).encode()),
+            ("POST", "/management/v1/projects/_search"): (200, json.dumps({"result": projects}).encode()),
+        })
+
+    def test_passes_when_only_the_console_project_remains(self):
+        recorder = self._recorder([{"id": "p-1", "name": "ZITADEL"}])
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.assert_reserved_org_clean("ZITADEL", ["ZITADEL"])
+
+    def test_fails_when_a_product_project_is_still_there(self):
+        recorder = self._recorder([{"id": "p-1", "name": "ZITADEL"}, {"id": "p-2", "name": "tesserix-blog"}])
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.assert_reserved_org_clean("ZITADEL", ["ZITADEL"])
+        self.assertIn("tesserix-blog", str(caught.exception))
+
+    def test_is_a_read_only_check(self):
+        """It reports the violation; deleting a project is never automatic."""
+        recorder = self._recorder([{"id": "p-1", "name": "ZITADEL"}, {"id": "p-2", "name": "stockpilot-web"}])
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.assert_reserved_org_clean("ZITADEL", ["ZITADEL"])
+        self.assertEqual([c for c in recorder.calls if c[0] == "DELETE"], [])
+
+
 class MainTest(unittest.TestCase):
     def _responses(self):
         return {
@@ -277,6 +392,10 @@ class MainTest(unittest.TestCase):
             ("GET", "/assets/v1/instance/policy/label/logo"): (200, b"light-bytes"),
             ("POST", "/admin/v1/members/_search"): (200, json.dumps({"result": [{"userId": "u-1", "roles": ["IAM_OWNER"]}]}).encode()),
             ("POST", "/v2/users"): (200, json.dumps(AdminTest.USERS).encode()),
+            ("POST", "/admin/v1/orgs/_search"): (200, json.dumps(ORGS).encode()),
+            ("GET", "/admin/v1/orgs/default"): (200, json.dumps({"org": {"id": "org-tesserix"}}).encode()),
+            ("GET", "/management/v1/policies/label"): (200, json.dumps({"policy": {"isDefault": True}}).encode()),
+            ("POST", "/management/v1/projects/_search"): (200, json.dumps({"result": [{"id": "p-1", "name": "ZITADEL"}]}).encode()),
         }
 
     def _config(self, path):
@@ -286,6 +405,9 @@ class MainTest(unittest.TestCase):
                 "loginPolicy": LIVE_LOGIN_POLICY,
                 "assets": {"logo": "logo-light.png"},
                 "admins": ["samyak.rout@gmail.com"],
+                "defaultOrg": "TESSERIX",
+                "selfBrandedOrgs": [],
+                "reservedOrg": {"name": "ZITADEL", "allowedProjects": ["ZITADEL"]},
             }, fh)
 
     def test_fully_in_sync_instance_performs_no_writes(self):
