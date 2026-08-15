@@ -34,6 +34,18 @@ spec:
               value: "0.0.0.0"
             - name: PORT
               value: {{ .Values.service.targetPort | quote }}
+            {{- if .Values.openpanel.enabled }}
+            # Written into this namespace by the openpanel project-init job;
+            # optional so a first deploy doesn't block on the job finishing.
+            - name: OPENPANEL_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.openpanel.secretName }}
+                  key: {{ .Values.openpanel.clientIdKey }}
+                  optional: true
+            - name: OPENPANEL_API_URL
+              value: {{ .Values.openpanel.apiUrl | quote }}
+            {{- end }}
           resources: {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
