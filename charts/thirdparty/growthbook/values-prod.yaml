@@ -1,7 +1,9 @@
 # Production overrides for growthbook
 # Use with: helm upgrade --values values.yaml --values values-prod.yaml
 
-replicaCount: 2
+# One replica: the uploads PVC is ReadWriteOnce, so a second pod scheduled to
+# another node sits in ContainerCreating forever.
+replicaCount: 1
 
 # Production resource allocation
 resources:
@@ -25,8 +27,3 @@ ingress:
     - secretName: growthbook-tls
       hosts:
         - growthbook.tesserix.app
-
-# High availability settings
-podDisruptionBudget:
-  enabled: true
-  minAvailable: 1
