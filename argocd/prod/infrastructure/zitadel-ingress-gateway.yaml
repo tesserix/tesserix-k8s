@@ -1,0 +1,157 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: zitadel-ingress-gateway
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: zitadel
+    app.kubernetes.io/component: infrastructure
+  annotations:
+    # Provision the gateway pods before any VirtualService starts targeting them.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://istio-release.storage.googleapis.com/charts
+    chart: gateway
+    targetRevision: 1.29.6
+    helm:
+      # The ArgoCD 3.4 repo-server's helm applies the gateway chart's values
+      # schema $defs to the root document and rejects every root key. Same
+      # workaround as homechef-ingress-gateway.
+      skipSchemaValidation: true
+      releaseName: zitadel-ingress
+      values: |
+        # =================================================================
+        # ZITADEL DEDICATED INGRESS GATEWAY
+        # =================================================================
+        # Isolates auth.tesserix.app from the shared istio-ingressgateway
+        # workload so the gateway-wide RequestAuthentication policies
+        # (jwt-auth-gip and friends) do NOT apply to Zitadel requests.
+        #
+        # Istio rejects a bearer token that is present but validates against
+        # no configured issuer. Zitadel's console access tokens and PATs are
+        # opaque, not JWTs, so Envoy answered every authenticated call with
+        # 401 "Jwt is not in the form of Header.Payload.Signature" and the
+        # console never reached the API. Same failure HomeChef hit — see
+        # homechef-ingress-gateway.yaml.
+        #
+        # Routing: Cloudflare tunnel auth.tesserix.app →
+        # http://zitadel-ingressgateway.istio-ingress.svc.cluster.local:80
+        # → zitadel/zitadel-gateway → the zitadel VirtualService.
+        # =================================================================
+
+        name: zitadel-ingressgateway
+
+        revision: ""
+
+        # ClusterIP — cloudflared connects over in-cluster DNS, so no public
+        # LoadBalancer is needed. TLS terminates at the Cloudflare edge.
+        service:
+          type: ClusterIP
+          ports:
+            - name: status-port
+              port: 15021
+              protocol: TCP
+              targetPort: 15021
+            - name: http2
+              port: 80
+              protocol: TCP
+              targetPort: 80
+            - name: https
+              port: 443
+              protocol: TCP
+              targetPort: 443
+
+        resources:
+          requests:
+            cpu: null
+            memory: 256Mi
+          limits:
+            cpu: null
+            memory: 1Gi
+
+        autoscaling:
+          enabled: true
+          minReplicas: 2
+          maxReplicas: 6
+          # CPU target nulled: with no cpu request the metric reads <unknown>
+          # and the HPA never scales.
+          targetCPUUtilizationPercentage: null
+          targetMemoryUtilizationPercentage: 80
+
+        podDisruptionBudget:
+          maxUnavailable: 1
+
+        serviceAccount:
+          create: true
+          name: zitadel-ingressgateway
+
+        podAnnotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "15020"
+          prometheus.io/path: "/stats/prometheus"
+
+        securityContext:
+          runAsUser: 1337
+          runAsGroup: 1337
+          runAsNonRoot: true
+          fsGroup: 1337
+
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1337
+
+        # The `istio` value is the selector key RequestAuthentication binds on.
+        # It deliberately matches neither `ingressgateway` nor
+        # `custom-ingressgateway`, which is the entire point of this workload.
+        labels:
+          app: zitadel-ingressgateway
+          istio: zitadel-ingressgateway
+
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: topology.kubernetes.io/zone
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app: zitadel-ingressgateway
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector:
+              matchLabels:
+                app: zitadel-ingressgateway
+
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      app: zitadel-ingressgateway
+                  topologyKey: kubernetes.io/hostname
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-ingress
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

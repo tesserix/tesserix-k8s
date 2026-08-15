@@ -29,11 +29,27 @@ The API and console are one HTTP/2 service on 8080; the login UI is a separate
 Next.js service on 3000 serving `/ui/v2/login`. The VirtualService splits on
 that prefix.
 
-`auth.tesserix.app` must also be listed in `frontendApps` in
-`argocd/prod/infrastructure/istio-auth-policies.yaml`. That allowlist is
-enforced at the ingress gateway, before any policy in this namespace is
-consulted, and a missing host answers every request with `403 RBAC: access
-denied` no matter how healthy the pods are.
+## It has its own ingress gateway, and must
+
+`auth.tesserix.app` is served by `zitadel-ingressgateway`, not the shared
+`istio-ingressgateway`. The shared gateway carries `jwt-auth-gip` and three
+sibling `RequestAuthentication` policies, all selecting `istio: ingressgateway`
+with no host scoping. Istio rejects a bearer token that is present but
+validates against no configured issuer — and Zitadel's console access tokens
+and PATs are **opaque**, not JWTs. Every authenticated call therefore died at
+Envoy with `401 Jwt is not in the form of Header.Payload.Signature` and never
+reached the API. The console showed "Your authorization token has expired";
+the API logs showed nothing at all, because nothing arrived.
+
+`RequestAuthentication` cannot be scoped by host, so a separate gateway
+workload is the only fix. HomeChef hit the same wall — see
+`argocd/prod/infrastructure/homechef-ingress-gateway.yaml`.
+
+The VirtualService lists both gateways, so the Cloudflare tunnel route
+(`auth.tesserix.app` → `zitadel-ingressgateway.istio-ingress.svc:80`) can be
+flipped and reverted without a window where nothing serves. Verify which
+gateway is in use by sending a junk bearer token: a `text/plain` body means
+the shared gateway is still in front of it.
 
 ## The login UI is a fork
 
