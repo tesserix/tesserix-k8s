@@ -62,7 +62,7 @@ spec:
             namespaces:
               - {{ $ns }}
     {{- end }}
-    # Allow infrastructure namespaces that connect to global DB (e.g. Keycloak → global-postgres)
+    # Allow infrastructure namespaces that connect to global DB
     {{- range $key, $ns := .Values.infrastructureNamespaces }}
     - from:
         - source:
@@ -128,13 +128,9 @@ spec:
             namespaces:
               - monitoring
               - istio-system
-    - from:
-        - source:
-            namespaces:
-              - knative-serving
 
 ---
-# Allow mesh-internal traffic (Knative local gateway routes without mTLS identity)
+# Allow mesh-internal traffic (routes that arrive without an mTLS identity)
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -158,9 +154,8 @@ spec:
 # with no valid rule = deny-all, which is what kept kora-api unreachable (503
 # even from inside the mesh; kubectl described the ZtunnelAccepted "HTTP
 # attributes omitted" warning). These L4 namespace-level policies are what
-# ztunnel CAN enforce, mirroring the working homechef set. No knative-serving
-# source: kora is a plain Deployment now, not Knative. App-layer GIP auth still
-# gates real endpoints (e.g. /v1/dashboard → 401 without a token).
+# ztunnel CAN enforce, mirroring the working homechef set. App-layer GIP auth
+# still gates real endpoints (e.g. /v1/dashboard → 401 without a token).
 # =============================================================================
 ---
 apiVersion: security.istio.io/v1

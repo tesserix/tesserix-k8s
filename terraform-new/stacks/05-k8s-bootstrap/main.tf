@@ -1,4 +1,4 @@
-# Kubernetes Bootstrap Stack - Kong, Cert-Manager, ArgoCD, Sealed Secrets
+# Kubernetes Bootstrap Stack - Kong, Cert-Manager, ArgoCD, External Secrets
 # State: stacks/{environment}/k8s-bootstrap/default.tfstate
 # Dependencies: 04-gke
 
@@ -19,8 +19,7 @@ data "terraform_remote_state" "gke" {
 locals {
   # Use boolean flags instead of deriving from sensitive values
   # This avoids Terraform 1.6.x crash with sensitive values in conditionals
-  has_cloudflare_token             = var.enable_cloudflare_dns
-  use_existing_sealed_secrets_cert = var.use_existing_sealed_secrets_cert
+  has_cloudflare_token = var.enable_cloudflare_dns
 }
 
 # =============================================================================
@@ -56,18 +55,6 @@ resource "kubernetes_namespace" "argocd" {
 
   metadata {
     name = var.argocd_namespace
-    labels = {
-      "app.kubernetes.io/managed-by" = "terraform"
-      "environment"                  = var.environment
-    }
-  }
-}
-
-resource "kubernetes_namespace" "sealed_secrets" {
-  count = var.install_sealed_secrets && var.sealed_secrets_namespace != "kube-system" ? 1 : 0
-
-  metadata {
-    name = var.sealed_secrets_namespace
     labels = {
       "app.kubernetes.io/managed-by" = "terraform"
       "environment"                  = var.environment
@@ -286,120 +273,6 @@ resource "kubernetes_manifest" "letsencrypt_prod" {
   depends_on = [
     helm_release.cert_manager,
     kubernetes_secret.cloudflare_api_token
-  ]
-}
-
-# =============================================================================
-# Sealed Secrets
-# =============================================================================
-
-resource "tls_private_key" "sealed_secrets" {
-  count = var.install_sealed_secrets && var.generate_sealed_secrets_cert && !local.use_existing_sealed_secrets_cert ? 1 : 0
-
-  algorithm = "RSA"
-  rsa_bits  = 4096
-}
-
-resource "tls_self_signed_cert" "sealed_secrets" {
-  count = var.install_sealed_secrets && var.generate_sealed_secrets_cert && !local.use_existing_sealed_secrets_cert ? 1 : 0
-
-  private_key_pem = tls_private_key.sealed_secrets[0].private_key_pem
-
-  subject {
-    common_name  = "sealed-secret-controller.${var.sealed_secrets_namespace}.svc"
-    organization = var.sealed_secrets_cert_organization
-  }
-
-  validity_period_hours = var.sealed_secrets_cert_validity_hours
-
-  allowed_uses = [
-    "key_encipherment",
-    "digital_signature",
-    "server_auth",
-    "client_auth",
-  ]
-
-  dns_names = [
-    "sealed-secrets-controller",
-    "sealed-secrets-controller.${var.sealed_secrets_namespace}",
-    "sealed-secrets-controller.${var.sealed_secrets_namespace}.svc",
-    "sealed-secrets-controller.${var.sealed_secrets_namespace}.svc.cluster.local",
-  ]
-
-  depends_on = [tls_private_key.sealed_secrets]
-}
-
-# Sealed secrets key using EXISTING certificates (from GitHub Secrets)
-resource "kubernetes_secret" "sealed_secrets_key_existing" {
-  count = var.install_sealed_secrets && local.use_existing_sealed_secrets_cert ? 1 : 0
-
-  metadata {
-    name      = "sealed-secrets-key"
-    namespace = var.sealed_secrets_namespace
-    labels = {
-      "sealedsecrets.bitnami.com/sealed-secrets-key" = "active"
-    }
-  }
-
-  type = "kubernetes.io/tls"
-
-  data = {
-    "tls.crt" = var.sealed_secrets_tls_cert
-    "tls.key" = var.sealed_secrets_tls_key
-  }
-
-  depends_on = [kubernetes_namespace.sealed_secrets]
-}
-
-# Sealed secrets key using GENERATED certificates
-resource "kubernetes_secret" "sealed_secrets_key_generated" {
-  count = var.install_sealed_secrets && var.generate_sealed_secrets_cert && !local.use_existing_sealed_secrets_cert ? 1 : 0
-
-  metadata {
-    name      = "sealed-secrets-key"
-    namespace = var.sealed_secrets_namespace
-    labels = {
-      "sealedsecrets.bitnami.com/sealed-secrets-key" = "active"
-    }
-  }
-
-  type = "kubernetes.io/tls"
-
-  data = {
-    "tls.crt" = tls_self_signed_cert.sealed_secrets[0].cert_pem
-    "tls.key" = tls_private_key.sealed_secrets[0].private_key_pem
-  }
-
-  depends_on = [
-    kubernetes_namespace.sealed_secrets,
-    tls_self_signed_cert.sealed_secrets
-  ]
-}
-
-resource "helm_release" "sealed_secrets" {
-  count = var.install_sealed_secrets ? 1 : 0
-
-  name             = "sealed-secrets"
-  repository       = "https://bitnami-labs.github.io/sealed-secrets"
-  chart            = "sealed-secrets"
-  version          = var.sealed_secrets_chart_version
-  namespace        = var.sealed_secrets_namespace
-  create_namespace = false
-  wait             = true
-  timeout          = 300
-
-  values = [
-    yamlencode({
-      fullnameOverride = "sealed-secrets-controller"
-      resources        = var.sealed_secrets_resources
-      secretName       = (local.use_existing_sealed_secrets_cert || var.generate_sealed_secrets_cert) ? "sealed-secrets-key" : null
-    })
-  ]
-
-  depends_on = [
-    kubernetes_namespace.sealed_secrets,
-    kubernetes_secret.sealed_secrets_key_existing,
-    kubernetes_secret.sealed_secrets_key_generated
   ]
 }
 

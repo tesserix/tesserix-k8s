@@ -5,7 +5,6 @@
 # This script removes all data associated with a specific store (tenant) from:
 # - tesseract_hub database (marketplace PostgreSQL)
 # - staff_db database (marketplace PostgreSQL)
-# - Keycloak user attributes (customer IDP)
 #
 # Usage: ./cleanup-store-data.sh <store-slug>
 # Example: ./cleanup-store-data.sh demo-store
@@ -239,5 +238,5 @@ if [ -n "$TENANT_ID" ]; then
 fi
 echo "- Databases cleaned: tesseract_hub, staff_db, vendors_db"
 echo ""
-echo -e "${YELLOW}Note: Keycloak user data should be cleaned up separately if needed.${NC}"
+echo -e "${YELLOW}Note: identity provider user data should be cleaned up separately if needed.${NC}"
 echo "The user can re-register with the same email after cleanup."

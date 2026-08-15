@@ -4,9 +4,8 @@ This document describes the secrets management architecture for the Tesserix pla
 
 ## Overview
 
-Secrets are managed using a hybrid approach:
-1. **GCP Secret Manager** - For application secrets (via Terraform using GitHub Secrets as source)
-2. **Sealed Secrets** - For third-party infrastructure services (PostgreSQL, Redis, Keycloak, Postal)
+Secrets live in GCP Secret Manager (created by Terraform from GitHub Secrets)
+and are projected into the cluster by the External Secrets Operator.
 
 ## Environment Naming Convention
 
@@ -84,32 +83,10 @@ GitHub Secrets serve as the source of truth for all application secrets. Terrafo
 |-------------|-------------|--------|
 | `{ENV}_TENANT_ONBOARDING_API_KEY` | Internal API key for tenant onboarding | Generated per environment |
 
-## Sealed Secrets (Third-Party Infrastructure)
+## Third-Party Infrastructure Secrets
 
-These secrets remain as Sealed Secrets because they are tightly coupled with infrastructure:
-
-### PostgreSQL
-- `postgresql-password` - Database passwords for each namespace
-- Namespaces: postgresql-global, postgresql-marketplace, postgresql-hms, postgresql-fanzone, postgresql-homechef, postgresql-bookkeeping
-
-### Redis
-- `redis-password` - Redis auth passwords
-- Namespaces: redis-global, redis-marketplace, redis-hms, redis-fanzone, redis-homechef
-
-### Keycloak (Identity)
-- `keycloak-admin-credentials` - Admin username/password
-- `keycloak-db-credentials` - PostgreSQL credentials for Keycloak
-- `keycloak-redis-credentials` - Redis password for Keycloak sessions
-- `keycloak-google-sso` - Google OAuth (should migrate to GCP Secret Manager)
-- Namespaces: identity-customer, identity-internal
-
-### Email Infrastructure
-- `mysql-credentials` - MySQL for Postal/Mautic
-- `postal-credentials` - Postal signing keys
-- `postal-smtp-credentials` - SMTP auth
-- `mautic-credentials` - Mautic admin
-- `rabbitmq-credentials` - RabbitMQ auth
-- Namespace: email
+PostgreSQL, Redis and the email stack (Postal, Mautic, RabbitMQ) read their
+credentials from GCP Secret Manager through ExternalSecrets in each namespace.
 
 ## Terraform Integration
 
@@ -173,7 +150,7 @@ secret, _ := client.AccessSecretVersion(ctx, &secretmanagerpb.AccessSecretVersio
 1. **Phase 1 (Current)**: All secrets in GitHub Secrets ✅
 2. **Phase 2**: Terraform reads GitHub Secrets → Creates GCP Secret Manager secrets
 3. **Phase 3**: Update Helm charts to use GCP Secret Manager via Workload Identity
-4. **Phase 4**: Remove sealed secrets for application secrets (keep for infra)
+4. **Phase 4**: Project every secret with the External Secrets Operator
 
 ## Placeholder Secrets Checklist
 
@@ -199,7 +176,7 @@ Secrets that need real values before going to production:
 
 ## Security Notes
 
-1. **Never commit secrets to git** - All secrets are in GitHub Secrets or Sealed Secrets
+1. **Never commit secrets to git** - All secrets are in GitHub Secrets or GCP Secret Manager
 2. **Rotate secrets regularly** - Use Terraform to rotate and update
 3. **Use separate credentials per environment** - DEVTEST, PROD, PILOT have unique values
 4. **Audit access** - GCP Secret Manager provides access logging

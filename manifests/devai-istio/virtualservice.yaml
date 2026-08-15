@@ -9,8 +9,6 @@
 #   - sre.tesserix.app/             → devai-sre-dashboard (SRE UI, auth-protected)
 #   - sre.tesserix.app/bff/*        → devai-auth-bff (OIDC auth flows)
 #   - sre.tesserix.app/auth/*       → devai-auth-bff (OIDC callbacks)
-#   - identity-devai.tesserix.app/  → Keycloak (devai realm login pages)
-#   - identity-sre.tesserix.app/    → Keycloak (devai-sre realm login pages)
 #
 # INTERNAL routes (cluster-only, no gateway):
 #   - devai-api.devai.svc.cluster.local:8080  → all API endpoints
@@ -48,7 +46,7 @@ spec:
               number: 8090
       timeout: 30s
 
-    # Auth callbacks (Keycloak redirects here after login)
+    # Auth callbacks (IdP redirects here after login)
     - match:
         - uri:
             prefix: /auth/
@@ -216,10 +214,6 @@ spec:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
----
-# NOTE: identity-devai.tesserix.app and identity-sre.tesserix.app
-# are routed via the identity-internal Keycloak Helm chart VirtualService
-# (additionalHosts in identity-internal/values.yaml)
 ---
 # Internal-only VirtualService for devai-api (mesh traffic, no gateway)
 apiVersion: networking.istio.io/v1beta1

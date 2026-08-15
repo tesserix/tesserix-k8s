@@ -75,7 +75,7 @@ The GrowthBook Helm chart includes:
 - Main GrowthBook deployment (growthbook/growthbook image)
 - MongoDB for data persistence
 - Persistent volumes for uploads
-- SealedSecrets for JWT and encryption keys
+- ExternalSecrets for JWT and encryption keys
 
 ### 2. Feature Flags Service
 
@@ -147,50 +147,31 @@ Kubernetes Job that automatically creates all 34 feature flags on GrowthBook ins
 ### Prerequisites
 
 1. Kubernetes cluster with:
-   - Sealed Secrets controller installed
+   - External Secrets Operator installed
    - ArgoCD for GitOps deployments
    - Istio service mesh (for VirtualService routing)
 
-2. Access to `kubeseal` CLI tool
+2. Access to GCP Secret Manager in `tesseracthub-480811`
 
-### Step 1: Create Admin Password Sealed Secret
-
-Generate an encrypted admin password for production:
+### Step 1: Store the admin password
 
 ```bash
-# Generate a strong password
 ADMIN_PASSWORD=$(openssl rand -base64 24)
-echo "Save this password securely: $ADMIN_PASSWORD"
-
-# Create sealed secret
-echo -n "$ADMIN_PASSWORD" | kubeseal --raw \
-  --namespace growthbook \
-  --name growthbook-admin \
-  --controller-namespace sealed-secrets \
-  --controller-name sealed-secrets-controller
+echo -n "$ADMIN_PASSWORD" | gcloud secrets versions add prod-growthbook-admin-password \
+  --project=tesseracthub-480811 --data-file=-
 ```
 
-Copy the output (encrypted string) for the next step.
-
-### Step 2: Create GrowthBook Secrets
-
-Create sealed secrets for JWT and encryption keys:
+### Step 2: Store the JWT secret and encryption key
 
 ```bash
-# Generate JWT secret
-JWT_SECRET=$(openssl rand -hex 32)
-echo -n "$JWT_SECRET" | kubeseal --raw \
-  --namespace growthbook \
-  --name growthbook-secrets \
-  --controller-namespace sealed-secrets
-
-# Generate encryption key
-ENCRYPTION_KEY=$(openssl rand -hex 32)
-echo -n "$ENCRYPTION_KEY" | kubeseal --raw \
-  --namespace growthbook \
-  --name growthbook-secrets \
-  --controller-namespace sealed-secrets
+echo -n "$(openssl rand -hex 32)" | gcloud secrets versions add prod-growthbook-jwt-secret \
+  --project=tesseracthub-480811 --data-file=-
+echo -n "$(openssl rand -hex 32)" | gcloud secrets versions add prod-growthbook-encryption-key \
+  --project=tesseracthub-480811 --data-file=-
 ```
+
+An ExternalSecret in the `growthbook` namespace projects both into
+`growthbook-secrets`.
 
 ### Step 3: Create ArgoCD Application
 
@@ -257,7 +238,7 @@ spec:
             tag: "7.0"
           auth:
             enabled: true  # Enable auth for production
-            # Configure with sealed secrets
+            # Credentials come from the growthbook ExternalSecret
           persistence:
             enabled: true
             size: 50Gi  # Larger for production
@@ -287,9 +268,6 @@ spec:
           adminPasswordSecret:
             name: "growthbook-admin"
             key: "password"
-          sealedSecret:
-            enabled: true
-            encryptedPassword: "<YOUR_ENCRYPTED_PASSWORD_HERE>"
           image:
             repository: curlimages/curl
             tag: "8.5.0"
@@ -318,25 +296,11 @@ spec:
         maxDuration: 3m
 ```
 
-### Step 4: Create SealedSecrets Resources
+### Step 4: Create the ExternalSecret
 
-Create `argocd/production/infrastructure/growthbook-secrets.yaml`:
-
-```yaml
-apiVersion: bitnami.com/v1alpha1
-kind: SealedSecret
-metadata:
-  name: growthbook-secrets
-  namespace: growthbook
-spec:
-  encryptedData:
-    jwt-secret: "<YOUR_ENCRYPTED_JWT_SECRET>"
-    encryption-key: "<YOUR_ENCRYPTED_ENCRYPTION_KEY>"
-  template:
-    metadata:
-      name: growthbook-secrets
-    type: Opaque
-```
+Create `external-secrets/prod/growthbook/externalsecret.yaml` mapping
+`prod-growthbook-jwt-secret` and `prod-growthbook-encryption-key` onto the
+`growthbook-secrets` Secret keys `jwt-secret` and `encryption-key`.
 
 ### Step 5: Update Feature Flags Service
 
@@ -358,11 +322,9 @@ After deployment, get the SDK key from GrowthBook and update the Admin app:
 # Get SDK key from GrowthBook (login first)
 # Or check the seeding job logs for the SDK key
 
-# Create sealed secret for SDK key
-echo -n "sdk-XXXXXX" | kubeseal --raw \
-  --namespace production \
-  --name growthbook-sdk-secret \
-  --controller-namespace sealed-secrets
+# Store it in GCP Secret Manager
+echo -n "sdk-XXXXXX" | gcloud secrets versions add prod-growthbook-sdk-client-key \
+  --project=tesseracthub-480811 --data-file=-
 ```
 
 Update `charts/apps/admin/values.yaml`:
@@ -372,8 +334,6 @@ growthbook:
   enabled: true
   secretName: "growthbook-sdk-secret"
   secretKey: "sdk-client-key"
-  encryptedData:
-    sdk-client-key: "<YOUR_ENCRYPTED_SDK_KEY>"
 ```
 
 ### Step 7: Configure Istio VirtualService
@@ -505,8 +465,6 @@ spec:
 | `featureSeeding.adminPassword` | Plain text password (dev only) | `""` |
 | `featureSeeding.adminPasswordSecret.name` | Secret name for admin password | `growthbook-admin` |
 | `featureSeeding.adminPasswordSecret.key` | Secret key for admin password | `password` |
-| `featureSeeding.sealedSecret.enabled` | Use SealedSecret for password | `true` |
-| `featureSeeding.sealedSecret.encryptedPassword` | Encrypted password value | `""` |
 | `featureSeeding.backoffLimit` | Job retry limit | `3` |
 | `featureSeeding.ttlSecondsAfterFinished` | Job cleanup time | `600` |
 | `featureSeeding.image.repository` | Seeding job image | `curlimages/curl` |
@@ -732,7 +690,7 @@ To add new feature flags to the automated seeding:
 
 ## Security Considerations
 
-1. **Never commit plain text passwords** - Always use SealedSecrets
+1. **Never commit plain text passwords** - Always use GCP Secret Manager
 2. **Rotate secrets periodically** - Update JWT and encryption keys
 3. **Limit admin access** - Use RBAC for GrowthBook access
 4. **Enable MongoDB auth** - Required for production

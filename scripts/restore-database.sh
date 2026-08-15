@@ -15,8 +15,8 @@
 #   # Restore with specific timestamp
 #   ./restore-database.sh devtest marketplace tenants_db 2026-02-05T02-02-07Z
 #
-#   # Restore keycloak_customer from global PostgreSQL in prod
-#   ./restore-database.sh prod global keycloak_customer
+#   # Restore tenants_db from global PostgreSQL in prod
+#   ./restore-database.sh prod global tenants_db
 #
 # =============================================================================
 
@@ -40,7 +40,7 @@ if [ $# -lt 3 ]; then
     echo ""
     echo "Examples:"
     echo "  $0 devtest marketplace tenants_db"
-    echo "  $0 prod global keycloak_customer 2026-02-05T00-00-04Z"
+    echo "  $0 prod global tenants_db 2026-02-05T00-00-04Z"
     exit 1
 fi
 

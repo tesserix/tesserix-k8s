@@ -97,12 +97,12 @@ postgresql:
   idle_in_transaction_session_timeout: "300000"
   statement_timeout: "120000"
   # Server-side TCP keepalives — GKE Dataplane V2 / Cilium conntrack
-  # evicts idle flows after ~5 min, which was killing Keycloak's JDBC
-  # pool every time the pool sat between Agroal validation cycles.
+  # evicts idle flows after ~5 min, which was killing long-lived JDBC
+  # pools that sat idle between validation cycles.
   # Have Postgres push a keepalive probe every 60s (first after 60s,
   # then every 30s, giving up after 6 missed) so the flow is never
   # quiet long enough for conntrack to drop it. Affects all clients
-  # of this cluster (Keycloak, auth-bff, etc.) which is the right
+  # of this cluster (auth-bff, etc.) which is the right
   # blast radius — every consumer benefits.
   tcp_keepalives_idle: "60"
   tcp_keepalives_interval: "30"

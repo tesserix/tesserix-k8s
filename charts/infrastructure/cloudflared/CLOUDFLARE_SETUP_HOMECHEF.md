@@ -37,9 +37,8 @@ VirtualService:
 | `vendors.fe3dr.com` | `homechef-vendor-portal` SPA |
 | `admin.fe3dr.com` | `homechef-admin-portal` SPA |
 | `delivery.fe3dr.com` | `homechef-delivery-portal` SPA |
-| `api.fe3dr.com` | `homechef-api` (Knative service) |
-| `identity.fe3dr.com` | Customer Keycloak realm |
-| `internal-identity.fe3dr.com` | Internal Keycloak realm (admin) |
+| `api.fe3dr.com` | `homechef-api` |
+| `identity.fe3dr.com` | `homechef-auth-bff` (Google Identity Platform) |
 | `analytics.fe3dr.com` | `homechef-analytics` (when enabled) |
 
 ## DNS — automated by external-dns

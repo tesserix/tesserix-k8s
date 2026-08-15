@@ -72,8 +72,6 @@ Add the following secrets to your GitHub repository:
 | `ARGOCD_GITHUB_APP_ID` | GitHub App ID for ArgoCD |
 | `ARGOCD_GITHUB_APP_INSTALLATION_ID` | GitHub App installation ID |
 | `ARGOCD_GITHUB_APP_PRIVATE_KEY` | GitHub App private key (PEM format) |
-| `SEALED_SECRETS_TLS_CERT` | Sealed Secrets TLS certificate |
-| `SEALED_SECRETS_TLS_KEY` | Sealed Secrets TLS private key |
 
 ### Step 3: Update Repository Settings
 
@@ -240,8 +238,6 @@ jobs:
           TF_VAR_argocd_github_app_id: ${{ secrets.ARGOCD_GITHUB_APP_ID }}
           TF_VAR_argocd_github_app_installation_id: ${{ secrets.ARGOCD_GITHUB_APP_INSTALLATION_ID }}
           TF_VAR_argocd_github_app_private_key: ${{ secrets.ARGOCD_GITHUB_APP_PRIVATE_KEY }}
-          TF_VAR_sealed_secrets_tls_cert: ${{ secrets.SEALED_SECRETS_TLS_CERT }}
-          TF_VAR_sealed_secrets_tls_key: ${{ secrets.SEALED_SECRETS_TLS_KEY }}
 ```
 
 ### Single Stack Deployment
