@@ -2271,18 +2271,6 @@ secrets = [
     replication_locations = null
   },
   {
-    secret_id             = "prod-fanzone-redis-url"
-    labels                = { tier = "database", type = "redis", environment = "prod", namespace = "fanzone" }
-    annotations           = { "managed-by" = "terraform", "description" = "Fanzone Redis URL for external access" }
-    replication_locations = null
-  },
-  {
-    secret_id             = "prod-fanzone-redis-password"
-    labels                = { tier = "database", type = "redis", environment = "prod", namespace = "fanzone" }
-    annotations           = { "managed-by" = "terraform", "description" = "Fanzone Redis password for external access" }
-    replication_locations = null
-  },
-  {
     secret_id             = "prod-fanzone-klipy-api-key"
     labels                = { tier = "thirdparty", type = "api-key", environment = "prod", namespace = "fanzone" }
     annotations           = { "managed-by" = "terraform", "description" = "Klipy GIF API key for media service" }
@@ -2592,12 +2580,6 @@ secrets = [
     secret_id             = "prod-marketplace-postgresql-password"
     labels                = { tier = "database", type = "postgresql", environment = "prod", namespace = "marketplace" }
     annotations           = { "managed-by" = "terraform", "description" = "Marketplace PostgreSQL password" }
-    replication_locations = [{ location = "asia-south1" }]
-  },
-  {
-    secret_id             = "prod-marketplace-redis-password"
-    labels                = { tier = "database", type = "redis", environment = "prod", namespace = "marketplace" }
-    annotations           = { "managed-by" = "terraform", "description" = "Marketplace Redis password" }
     replication_locations = [{ location = "asia-south1" }]
   },
   {
