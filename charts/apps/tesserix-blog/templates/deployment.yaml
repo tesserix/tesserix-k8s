@@ -94,6 +94,20 @@ spec:
                   key: RESEND_API_KEY
                   optional: true
             {{- end }}
+            {{- if .Values.auth.zitadel.clientId }}
+            - name: OIDC_ISSUER
+              value: {{ .Values.auth.zitadel.issuer | quote }}
+            - name: OIDC_CLIENT_ID
+              value: {{ .Values.auth.zitadel.clientId | quote }}
+            - name: OIDC_REDIRECT_URI
+              value: {{ printf "https://%s/api/auth/callback" .Values.domains.primary | quote }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-oidc-secrets
+                  key: OIDC_CLIENT_SECRET
+                  optional: true
+            {{- end }}
           {{- if .Values.startupProbe.enabled }}
           startupProbe:
             httpGet:

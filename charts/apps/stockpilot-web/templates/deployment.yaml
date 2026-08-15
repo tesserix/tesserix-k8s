@@ -53,6 +53,18 @@ spec:
               value: "true"
             - name: ALLOWED_EMAILS
               value: {{ .Values.auth.allowedEmails | default "" | quote }}
+            {{- if .Values.auth.zitadel.clientId }}
+            - name: AUTH_ZITADEL_ISSUER
+              value: {{ .Values.auth.zitadel.issuer | quote }}
+            - name: AUTH_ZITADEL_ID
+              value: {{ .Values.auth.zitadel.clientId | quote }}
+            - name: AUTH_ZITADEL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: stockpilot-oidc-secrets
+                  key: ZITADEL_CLIENT_SECRET
+                  optional: true
+            {{- end }}
             - name: NEXTAUTH_SECRET
               valueFrom:
                 secretKeyRef:

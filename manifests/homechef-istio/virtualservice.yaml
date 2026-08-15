@@ -482,7 +482,7 @@ spec:
         allowCredentials: true
         maxAge: "86400s"
 ---
-# --- Identity (identity.fe3dr.com) - Keycloak auth (customer realm) ---
+# --- Identity (identity.fe3dr.com) - GIP auth via homechef-auth-bff ---
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -506,41 +506,12 @@ spec:
   hosts:
     - identity.fe3dr.com
   http:
-    # Keycloak realm endpoints — must go DIRECTLY to Keycloak (not BFF)
-    # Browser visits these for login pages, token exchange, OIDC discovery
-    - match:
-        - uri:
-            prefix: /realms/
-      headers:
-        request:
-          set:
-            x-forwarded-host: identity.fe3dr.com
-            x-forwarded-proto: https
-      route:
-        - destination:
-            host: keycloak.identity-customer.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 60s
-    # Keycloak resources (JS, CSS, images for login pages)
-    - match:
-        - uri:
-            prefix: /resources/
-      route:
-        - destination:
-            host: keycloak.identity-customer.svc.cluster.local
-            port:
-              number: 8080
-      timeout: 30s
-    # Keycloak robots.txt
-    - match:
-        - uri:
-            exact: /robots.txt
-      route:
-        - destination:
-            host: keycloak.identity-customer.svc.cluster.local
-            port:
-              number: 8080
+    # The /realms/, /resources/ and /robots.txt routes are gone with Keycloak:
+    # homechef-auth-bff has been on GIP since the BFF cutover, and the
+    # identity-customer namespace has had no workload behind those three routes
+    # for months, so every request to them answered 503. There is no login page
+    # to serve at this host any more — the BFF owns the whole redirect flow.
+    #
     # Auth BFF routes — handles /auth/*, /bff/* for OIDC redirect flows
     # NOTE: No retry policy — auth callbacks consume state on first read (non-idempotent).
     # Retrying causes invalid_state errors because the state is deleted after retrieval.
@@ -662,7 +633,7 @@ spec:
     # dangling through knative-local-gateway. The /auth/ and /api routes above
     # are real and still work; re-add a catch-all when an analytics SPA ships.
 
-# NOTE: internal-identity.fe3dr.com is handled by the identity-internal Keycloak
-# VirtualService (in identity-internal namespace), NOT by the homechef BFF.
-# The admin portal auth flow uses admin.fe3dr.com/bff/* -> auth-bff -> Keycloak.
-# The browser then visits internal-identity.fe3dr.com/realms/* for login pages.
+# NOTE: internal-identity.fe3dr.com no longer routes anywhere — the
+# identity-internal Keycloak it named never had a VirtualService and the admin
+# portal now authenticates through admin.fe3dr.com/bff/* -> auth-bff -> GIP.
+# The hostname stays in the gateway allowlist only until DNS is retired.
