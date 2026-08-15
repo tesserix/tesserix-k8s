@@ -232,7 +232,8 @@ validation.
 | **Auth — GIP tenants, auth-BFF wiring, admin claims** | [`docs/gip-migration-plan.md`](docs/gip-migration-plan.md) |
 | **Keycloak decommission** — what was removed and what still needs cutting over | [`docs/keycloak-decommission-plan.md`](docs/keycloak-decommission-plan.md) |
 | **Zitadel object model, org-per-tenant, and automating onboarding** | [`docs/identity-control-plane.md`](docs/identity-control-plane.md) |
-| **Anonymous/ephemeral vs onboarded tenants, data TTL, per-tenant secrets** | [`docs/tenancy-model.md`](docs/tenancy-model.md) |
+| **Anonymous/ephemeral vs onboarded tenants, data TTL, tier upgrades** | [`docs/tenancy-model.md`](docs/tenancy-model.md) |
+| **Per-tenant secrets at runtime** — OpenBao namespaces, path standard, why not ESO | [`docs/tenant-secrets.md`](docs/tenant-secrets.md) |
 | **HomeChef platform topology** — services, domains, infra, E2E | [`docs/homechef-platform.md`](docs/homechef-platform.md) |
 | **Vector store / embeddings for AI agents** (Qdrant, `ai-database` namespace — and why there is no operator) | [`docs/qdrant-vector-db.md`](docs/qdrant-vector-db.md) |
 | **Secret storage** — OpenBao, `openbao` namespace: auth roles, policies, ESO wiring, unseal and recovery | [`docs/openbao-secrets.md`](docs/openbao-secrets.md) |

@@ -283,15 +283,12 @@ because a tenant's Jira token is unambiguously a customer secret.
 | **Acme's Slack workspace access token** | Tenant | **OpenBao** |
 | Acme's SSO client secret | Tenant | OpenBao (or straight into Zitadel) |
 
-Path convention from [`openbao-secrets.md`](openbao-secrets.md):
-
-```
-kv/<namespace>/<app>/<tenant-id>/<secret-name>
-kv/planning-poker/planning-poker-api/acme/jira-token
-```
-
-The policy grant stops at `kv/data/planning-poker/planning-poker-api/*`, and a
-tenant delete is a delete of one prefix.
+**Tenant secrets do not travel through External Secrets.** ESO runs before the
+process starts and refreshes hourly, which cannot serve a customer who pastes a
+token and expects the next sync to use it. The product API reads and writes them
+directly against OpenBao at request time, under a per-tenant path and a token
+scoped to one tenant. The naming standard, the token model and the provisioning
+flow are in [`tenant-secrets.md`](tenant-secrets.md).
 
 ### Today this is app-encrypted in Postgres, and that has to move
 
@@ -301,47 +298,9 @@ than plaintext, and it is still the product holding every tenant's credentials i
 one table under one key. Moving them to OpenBao gets per-tenant path isolation,
 an audit trail, and a delete that actually deletes.
 
-### The problem nobody has solved yet: OpenBao is read-only here
-
-`openbao-secrets.md` is explicit — *"Read only. Nothing in the cluster writes
-`kv/` except the admin console"* — and secrets reach pods through ESO with an
-hourly refresh. Both properties are correct for platform secrets and **wrong for
-this use case**:
-
-- A tenant pasting a Jira token expects it to work immediately, not within the
-  hour.
-- The write comes from the product at runtime, not from an operator in a console.
-
-So T1/T2 secrets need a second path alongside ESO, and it should be scoped as
-narrowly as possible:
-
-```
-   ESO path (unchanged)              Runtime path (new)
-   platform secrets                  tenant secrets
-        │                                 │
-   OpenBao ──► K8s Secret ──► pod     pod ──► OpenBao (direct, per request)
-        hourly refresh                  Kubernetes auth, SA-bound,
-                                        write scoped to
-                                        kv/data/planning-poker/planning-poker-api/*
-```
-
-Conditions on the new path, all of which need to hold before it ships:
-
-- **A separate OpenBao role and policy** from the app's ESO read role, granting
-  `create`/`update` on that one prefix and nothing else. Never `kv/data/*`.
-- **The tenant id in the path comes from the verified principal**, never from
-  the request body. This is the § 2 invariant again, one layer down: a tenant
-  writing to `.../acme/` must be Acme.
-- **The product never returns a stored secret.** Write-only from the UI's
-  perspective; show `••••1234` and a *Replace* button. A read endpoint on tenant
-  credentials is an exfiltration endpoint.
-- **No caching in the product's database**, not even encrypted — otherwise the
-  move has bought nothing.
-
-Note the operational constraint: the stored OpenBao root token is revoked and
-`generate-root` returns 403, so **creating this policy and role is a console
-action**, not something a chart can do. Budget for it as a manual step, and
-script the policy document into git so what is in the console is reviewable.
+T0 holds no secrets at all, and cannot: there is no identity to scope a path to.
+An anonymous room that needs a Jira credential is a room that needs to be
+claimed into T1 first (§ 5).
 
 ---
 
@@ -358,7 +317,7 @@ what exists rather than new surface.
 3. **Schema into `db-schema-bootstrap`, then sentinel + forced RLS.** In that
    order — RLS policies should not be created by whichever pod booted first.
 4. **Room claiming**, with participant proof and visible notice.
-5. **Tenant secrets to OpenBao**, including the runtime write role. Needs the
+5. **Tenant secrets to OpenBao** via the runtime path in `tenant-secrets.md`. Needs the
    console step above.
 6. **T2 onboarding**, reusing `identity-service` — no Planning-Poker-specific
    work beyond the tenant row and retention policy.
