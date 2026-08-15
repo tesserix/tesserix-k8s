@@ -356,6 +356,11 @@ evaluate HTTP attributes and drops those rules silently
 
 ## 5. `identity-service` — hospitals, at runtime
 
+> Built as **`onboarding-service`** behind `onboard.tesserix.app`. The API
+> surface, authorization model, audit ledger and every onboarding scenario are
+> specified in [`onboarding-api.md`](onboarding-api.md); this section stays as
+> the rationale.
+
 A Go service in the `zitadel` namespace holding the `iam-admin` credential and
 exposing a small REST API that **every product calls** instead of each product
 learning the Zitadel management API. This is the "global API" the design is for.

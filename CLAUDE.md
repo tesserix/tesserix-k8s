@@ -232,6 +232,7 @@ validation.
 | **Auth — GIP tenants, auth-BFF wiring, admin claims** | [`docs/gip-migration-plan.md`](docs/gip-migration-plan.md) |
 | **Keycloak decommission** — what was removed and what still needs cutting over | [`docs/keycloak-decommission-plan.md`](docs/keycloak-decommission-plan.md) |
 | **Zitadel object model, org-per-tenant, and automating onboarding** | [`docs/identity-control-plane.md`](docs/identity-control-plane.md) |
+| **`onboard.tesserix.app`** — the onboarding API/console, its authorization model and audit ledger | [`docs/onboarding-api.md`](docs/onboarding-api.md) |
 | **Anonymous/ephemeral vs onboarded tenants, data TTL, tier upgrades** | [`docs/tenancy-model.md`](docs/tenancy-model.md) |
 | **Per-tenant secrets at runtime** — OpenBao namespaces, path standard, why not ESO | [`docs/tenant-secrets.md`](docs/tenant-secrets.md) |
 | **HomeChef platform topology** — services, domains, infra, E2E | [`docs/homechef-platform.md`](docs/homechef-platform.md) |
