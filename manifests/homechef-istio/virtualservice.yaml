@@ -1,7 +1,7 @@
 ##############################################################################
 # HomeChef Istio VirtualService Configuration
 # All services run in-cluster as plain Deployments behind ClusterIP Services
-# All portals authenticate via customer Keycloak realm (homechef)
+# All portals authenticate via Google Identity Platform (homechef tenant)
 ##############################################################################
 
 # --- Customer-facing SPA (fe3dr.com / www.fe3dr.com) ---
@@ -49,7 +49,7 @@ spec:
 
     # GIP auth-bff — handles /auth/login, /auth/callback, /auth/logout,
     # /auth/refresh, /auth/whoami. Replaces the legacy /bff/* and
-    # /driver-bff/* Keycloak prefixes (deleted 2026-05-15 cutover).
+    # /driver-bff/* legacy prefixes (deleted 2026-05-15 cutover).
     # Routes directly to the homechef-auth-bff ClusterIP service (8080),
     # mirroring mark8ly-auth-bff. No retries — auth callbacks consume
     # state on first read (non-idempotent).
@@ -137,7 +137,7 @@ spec:
               number: 80
       timeout: 120s
 
-    # API routes -> HomeChef API Knative service
+    # API routes -> HomeChef API service
     - match:
         - uri:
             prefix: /api
@@ -152,7 +152,7 @@ spec:
               number: 8080
       timeout: 60s
 
-    # WebSocket routes -> API Knative service
+    # WebSocket routes -> API service
     - match:
         - uri:
             prefix: /ws
@@ -332,7 +332,7 @@ spec:
       timeout: 30s
 
     # GIP auth-bff — handles /auth/* for the vendor portal. Replaces the
-    # legacy /bff/* Keycloak prefix (deleted 2026-05-15 cutover). Routes
+    # legacy /bff/* prefix (deleted 2026-05-15 cutover). Routes
     # directly to the homechef-auth-bff ClusterIP service (8080).
     - match:
         - uri:
@@ -578,7 +578,7 @@ spec:
     - analytics.fe3dr.com
   http:
     # GIP auth-bff — handles /auth/* for the analytics portal. Replaces
-    # the legacy /bff/* Keycloak prefix (deleted 2026-05-15 cutover).
+    # the legacy /bff/* prefix (deleted 2026-05-15 cutover).
     - match:
         - uri:
             prefix: /auth/
