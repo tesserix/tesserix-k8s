@@ -41,21 +41,28 @@ Login v2 runs from `tesserix/zitadel`, branch `feat/aurora-theme`, cut from tag
 `v4.15.3` — it carries the aurora background and the side-by-side brand panel.
 The UI has no standalone repo; it is `apps/login` inside the monorepo.
 
-Rebuild it whenever the theme changes, then bump `login.image.tag`:
+Release it whenever the theme changes, then bump `login.image.tag`. The image is
+built by `tesserix-login-release.yml` in the fork, which fires on any
+`v*-aurora.*` tag — never build it by hand:
 
 ```bash
-git clone --filter=blob:none -b feat/aurora-theme git@github.com:tesserix/zitadel.git
-cd zitadel && pnpm install
-(cd packages/zitadel-proto  && pnpm generate)   # buf; skip it and the build fails to resolve
-(cd packages/zitadel-client && pnpm build)      # tsup
-(cd apps/login && pnpm build)                   # emits .next/standalone
-docker build -t ghcr.io/tesserix/third-party/zitadel-login:<tag> apps/login && docker push …
+git tag v4.15.3-aurora.N && git push origin v4.15.3-aurora.N
+gh run watch --repo tesserix/zitadel
 ```
+
+The workflow generates `@zitadel/proto` and builds `@zitadel/client` first;
+neither is produced by `pnpm install` and the Next build cannot resolve them
+without both.
 
 `NEXT_PUBLIC_THEME_LAYOUT` and friends live in `apps/login/.env` because Next
 inlines them into the client bundle at build time — the entrypoint does no
 substitution, so setting them on the pod does nothing. Per-tenant colour, logo
 and tagline are read at runtime from the org's label policy and metadata.
+
+The layout is also chosen client-side, after hydration, so the server always
+emits the side-by-side markup regardless of viewport. That markup is therefore
+responsive on its own (stacked below `md`) — a phone must not have to wait for
+hydration to get a usable page.
 
 ## Three things that will bite you
 
