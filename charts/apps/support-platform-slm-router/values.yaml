@@ -6,10 +6,10 @@ image:
   tag: "main"  # ArgoCD overrides via image.tag parameter; Kargo
   # support-platform/prod writes the newest main-<sha> on every CI
   # build, so no manual bump needed.
-  # IfNotPresent: the pod crashloops on an OTel schema conflict, and with
-  # Always it re-pulled the full image from ghcr on every restart, driving
-  # Cloud NAT cost. New Kargo-promoted tags are still pulled (different tag).
-  pullPolicy: IfNotPresent
+  # Always: the NAT cost that justified IfNotPresent applied to ghcr.io pulls;
+  # this now reads the in-region GAR mirror. IfNotPresent pinned the nodes to
+  # pre-patch layers whenever a base-image rebuild republished the same tag.
+  pullPolicy: Always
 
 imagePullSecrets:
   - name: ghcr-secret
@@ -213,3 +213,7 @@ routes:
 # routes config above). The ExternalSecret for support-platform-slm-router
 # materialises these from GCP Secret Manager.
 mcpKeysSecret: support-platform-slm-router-mcp-keys
+
+podAnnotations:
+  # Bump to force a repull when a mutable tag's content changed upstream.
+  tesserix.app/rollout: "2026-08-15-cve-base-rebuild"
