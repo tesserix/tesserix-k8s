@@ -67,9 +67,9 @@ hotfix/short-description
 
 ### Workflow patterns
 
-- **Next.js apps:** lint → Docker build → GHCR push → GKE/Knative deploy → Trivy.
-  Build uses `--secret id=NODE_AUTH_TOKEN` for `@tesserix/web`. Deploy via
-  `kubectl patch ksvc <service> -n <namespace>`. Images: `ghcr.io/tesserix/<service>:<tag>`.
+- **Next.js apps:** lint → Docker build → GHCR push → GKE deploy → Trivy.
+  Build uses `--secret id=NODE_AUTH_TOKEN` for `@tesserix/web`. Images:
+  `ghcr.io/tesserix/<service>:<tag>`.
 - **Go services:** `go vet` → tests → Docker build → GHCR + GAR push → Cloud Run
   deploy → Trivy. Private modules via `GOPRIVATE=github.com/tesserix/*` and the
   `go-private-token` secret.
@@ -260,28 +260,26 @@ Admin access is the `admin: true` custom claim, granted by `gip-admin-claims`.
    `/app/.next/cache`.
 5. **GKE metadata server** — Workload Identity pods must exclude
    `169.254.169.254/32` via `traffic.sidecar.istio.io/excludeOutboundIPRanges`.
-6. **Knative deploys** — `kubectl patch ksvc` with a timestamp annotation, not
-   `kubectl rollout restart`.
-7. **External Secrets refresh** — hourly. For immediate rotation, delete the K8s
+6. **External Secrets refresh** — hourly. For immediate rotation, delete the K8s
    secret and let ESO recreate it.
-8. **MongoDB** — uses `_id` (ObjectId), not `id`. Frontend must use `post._id`.
-9. **Image registries** — GHCR `ghcr.io/tesserix/` is primary; GAR
+7. **MongoDB** — uses `_id` (ObjectId), not `id`. Frontend must use `post._id`.
+8. **Image registries** — GHCR `ghcr.io/tesserix/` is primary; GAR
    `asia-south1-docker.pkg.dev/tesseracthub-480811/` is secondary for Cloud Run.
-10. **Ports** — Go services 8080–8099; Next.js local 3001–3200, in-container 3000.
-11. **`RespectIgnoreDifferences=true` + SSA + jq ignores into a list** — the
+9. **Ports** — Go services 8080–8099; Next.js local 3001–3200, in-container 3000.
+10. **`RespectIgnoreDifferences=true` + SSA + jq ignores into a list** — the
     normalisation can strip the whole list from the apply: sync reports
     Succeeded, the resource's `generation` never moves, and the change silently
     never lands. Bit dwellm8-postgres via the argocd-cm jq ignores into
     `spec.managed.roles[]`. If a synced change is not taking effect, check
     `generation` and the `managedFields` timestamps before anything else.
-12. **Memory-only resources — never set `cpu` requests or limits.** For an
+11. **Memory-only resources — never set `cpu` requests or limits.** For an
     upstream chart, *omitting* cpu is not enough: Helm deep-merges, so a
     memory-only `resources:` block still inherits the chart's cpu default.
     Write `cpu: null` explicitly. Two knock-on rules: a cpu-target HPA or a
     KEDA `cpu` trigger cannot work without a request (metric reads
     `<unknown>`; KEDA's webhook rejects it outright), so scale on memory; and
     a VPA must use `controlledResources: ["memory"]` or it re-injects cpu.
-13. **Never ignore all of `/status` in `ignoreResourceUpdates`.** A pod going
+12. **Never ignore all of `/status` in `ignoreResourceUpdates`.** A pod going
     ready is a status-only event, so the controller drops it, its cached copy
     of the workload never changes, and cached health freezes until an
     unrelated non-status write or the 12h cache resync. Anything gated on that
@@ -300,4 +298,4 @@ Admin access is the `admin: true` custom claim, granted by `gip-admin-claims`.
 - **Infra:** GKE, Istio, ArgoCD, Helm, KEDA, cert-manager
 - **Messaging:** Google Pub/Sub · **Caching:** Redis
 - **Secrets:** GCP Secret Manager via External Secrets Operator
-- **CI/CD:** GitHub Actions → GHCR → GKE/Knative (ArgoCD for Helm sync)
+- **CI/CD:** GitHub Actions → GHCR → GKE (ArgoCD for Helm sync)

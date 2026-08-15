@@ -29,7 +29,7 @@ echo "==> Creating GSA ${GSA_EMAIL}"
 gcloud iam service-accounts create "${GSA_NAME}" \
   --project="${PROJECT}" \
   --display-name="Home Chef auth-bff" \
-  --description="Workload Identity for the homechef-auth-bff Knative/Deployment pods" \
+  --description="Workload Identity for the homechef-auth-bff pods" \
   || echo "    GSA already exists — continuing"
 
 echo "==> Granting project-level GIP/Firebase viewer roles"

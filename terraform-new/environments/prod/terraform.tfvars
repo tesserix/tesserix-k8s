@@ -2020,64 +2020,6 @@ secrets = [
   },
 
   # ===========================================================================
-  # Keycloak Secrets
-  # ===========================================================================
-  {
-    secret_id             = "prod-keycloak-internal-admin-username"
-    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations           = { "managed-by" = "terraform", "description" = "Keycloak internal admin username" }
-    replication_locations = [{ location = "asia-south1" }]
-  },
-  {
-    secret_id             = "prod-keycloak-internal-admin-password"
-    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations           = { "managed-by" = "terraform", "description" = "Keycloak internal admin password" }
-    replication_locations = [{ location = "asia-south1" }]
-  },
-  {
-    secret_id             = "prod-keycloak-customer-admin-username"
-    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations           = { "managed-by" = "terraform", "description" = "Keycloak customer admin username" }
-    replication_locations = [{ location = "asia-south1" }]
-  },
-  {
-    secret_id             = "prod-keycloak-customer-admin-password"
-    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations           = { "managed-by" = "terraform", "description" = "Keycloak customer admin password" }
-    replication_locations = [{ location = "asia-south1" }]
-  },
-  {
-    secret_id             = "prod-keycloak-customer-admin-client-secret"
-    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations           = { "managed-by" = "terraform", "description" = "Keycloak customer admin client secret" }
-    replication_locations = [{ location = "asia-south1" }]
-  },
-  {
-    secret_id             = "prod-keycloak-customer-dashboard-client-secret"
-    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations           = { "managed-by" = "terraform", "description" = "Keycloak customer dashboard client secret" }
-    replication_locations = [{ location = "asia-south1" }]
-  },
-  {
-    secret_id             = "prod-keycloak-customer-onboarding-client-secret"
-    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations           = { "managed-by" = "terraform", "description" = "Keycloak customer onboarding client secret" }
-    replication_locations = [{ location = "asia-south1" }]
-  },
-  {
-    secret_id             = "prod-keycloak-admin-bff-client-secret"
-    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations           = { "managed-by" = "terraform", "description" = "Keycloak admin BFF client secret" }
-    replication_locations = [{ location = "asia-south1" }]
-  },
-  {
-    secret_id             = "prod-keycloak-token-exchange-client-secret"
-    labels                = { tier = "identity", type = "keycloak", environment = "prod" }
-    annotations           = { "managed-by" = "terraform", "description" = "Keycloak token exchange client secret" }
-    replication_locations = [{ location = "asia-south1" }]
-  },
-
-  # ===========================================================================
   # Customer Tier Secrets
   # ===========================================================================
   {
@@ -2352,18 +2294,6 @@ secrets = [
     secret_id             = "prod-fanzone-admin-init-secret"
     labels                = { tier = "auth", type = "admin", environment = "prod", namespace = "fanzone" }
     annotations           = { "managed-by" = "terraform", "description" = "Fanzone admin initialization secret" }
-    replication_locations = null
-  },
-  {
-    secret_id             = "prod-fanzone-keycloak-client-secret"
-    labels                = { tier = "auth", type = "keycloak", environment = "prod", namespace = "fanzone" }
-    annotations           = { "managed-by" = "terraform", "description" = "Keycloak OIDC client secret for BFF" }
-    replication_locations = [{ location = "asia-south1" }]
-  },
-  {
-    secret_id             = "prod-fanzone-keycloak-admin-client-secret"
-    labels                = { tier = "auth", type = "keycloak", environment = "prod", namespace = "fanzone" }
-    annotations           = { "managed-by" = "terraform", "description" = "Keycloak admin client secret for BFF" }
     replication_locations = null
   },
   {
@@ -2711,13 +2641,6 @@ argocd_repo_revision     = "main" # Use main branch for production
 argocd_bootstrap_enabled = true
 argocd_repo_auth_method  = "github-app"
 
-# Sealed Secrets
-install_sealed_secrets           = true
-sealed_secrets_namespace         = "sealed-secrets"
-sealed_secrets_chart_version     = "2.13.3"
-generate_sealed_secrets_cert     = false # Use existing from GitHub Secrets
-use_existing_sealed_secrets_cert = true  # Certs provided via TF_VAR_sealed_secrets_tls_*
-sealed_secrets_cert_organization = "TesseractHub"
 
 # =============================================================================
 # Workload Identity Configuration
@@ -3130,7 +3053,7 @@ service_accounts = [
     secret_bindings = []
   },
   # App Secrets Fanzone
-  # All fanzone Knative services use this GCP SA via Workload Identity
+  # All fanzone services use this GCP SA via Workload Identity
   {
     name         = "app-secrets-fanzone-prod"
     self_token_creator = true
@@ -3772,7 +3695,7 @@ runner_scale_sets = [
 
 # =============================================================================
 # NOTE: Cloud Run stack (10-cloud-run) has been removed.
-# All services run on GKE with Knative Serving.
+# All services run on GKE.
 # =============================================================================
 
 # =============================================================================

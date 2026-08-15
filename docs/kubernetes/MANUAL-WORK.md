@@ -29,27 +29,6 @@ kubectl label secret ghcr-image-creds \
 - `repoURLIsRegex: "true"` must be set for the pattern to work
 - The `kargo.akuity.io/cred-type: image` label is required for Kargo to recognize it as image credentials
 
-### Sealed Secret Version
-
-To store credentials in Git, create a SealedSecret instead:
-
-```bash
-kubectl create secret generic ghcr-image-creds \
-  --namespace=tesseract-hub-devtest \
-  --from-literal=repoURL='^ghcr\.io/tesserix/.*' \
-  --from-literal=repoURLIsRegex='true' \
-  --from-literal=username=tesserix \
-  --from-literal=password='<GITHUB_PAT>' \
-  --dry-run=client -o yaml | \
-kubeseal --cert sealed-secrets-cert.pem --format yaml > sealed-ghcr-image-creds.yaml
-
-# Manually add the label to the sealed secret metadata
-# Edit sealed-ghcr-image-creds.yaml and add:
-#   metadata:
-#     labels:
-#       kargo.akuity.io/cred-type: image
-```
-
 ## Kargo Dex Configuration
 
 The Kargo Dex GitHub connector requires specific configuration for organization group membership to work correctly.
@@ -158,26 +137,6 @@ syncOptions:
   - ServerSideApply=true
 ```
 
-## Sealed Secrets Certificate
-
-The Sealed Secrets public certificate is stored at `sealed-secrets-cert.pem` in the project root.
-
-### Fetch Fresh Certificate
-
-```bash
-kubeseal --fetch-cert \
-  --controller-name=sealed-secrets \
-  --controller-namespace=kube-system \
-  > sealed-secrets-cert.pem
-```
-
-### Certificate Details
-
-```bash
-# View certificate info
-openssl x509 -in sealed-secrets-cert.pem -noout -text
-```
-
 ## Environment Configuration
 
 ### KUBECONFIG Setup
@@ -225,17 +184,4 @@ argocd app list
 
 # Get detailed app info
 argocd app get <app-name>
-```
-
-### Check Sealed Secrets
-
-```bash
-# Check controller logs
-kubectl logs -n kube-system -l app.kubernetes.io/name=sealed-secrets
-
-# List sealed secrets
-kubectl get sealedsecrets -A
-
-# Verify a sealed secret was decrypted
-kubectl get secret <secret-name> -n <namespace>
 ```

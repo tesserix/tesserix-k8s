@@ -165,7 +165,7 @@ Each project is locked to specific namespaces:
 
 | Project | Allowed Namespaces |
 |---------|-------------------|
-| infrastructure | istio-system, istio-ingress, istio-egress, cert-manager, external-dns, external-secrets, keda, knative-serving, knative-eventing, cloudflared, nats, monitoring, logging, growthbook, typesense, translation, marketplace |
+| infrastructure | istio-system, istio-ingress, istio-egress, cert-manager, external-dns, external-secrets, keda, cloudflared, nats, monitoring, logging, growthbook, typesense, translation, marketplace |
 | identity | identity-customer, identity-internal |
 | data | postgresql-global, postgresql-marketplace, postgresql-bookkeeping, postgresql-hms, postgresql-fanzone, postgresql-homechef, redis-global, redis-marketplace, redis-hms, redis-fanzone, redis-homechef, redis-tesserix, mongodb-fanzone, db-backup-and-restore |
 | platform | marketplace, global, translation, tesserix, yes-hospital |
