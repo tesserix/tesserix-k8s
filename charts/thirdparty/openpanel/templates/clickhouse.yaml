@@ -286,6 +286,39 @@ data:
           <access_management>1</access_management>
         </default>
       </users>
+      {{- if .Values.clickhouse.systemLogs.disableQueryProfiler }}
+      <profiles>
+        <default>
+          <query_profiler_real_time_period_ns>0</query_profiler_real_time_period_ns>
+          <query_profiler_cpu_time_period_ns>0</query_profiler_cpu_time_period_ns>
+          <memory_profiler_step>0</memory_profiler_step>
+          <trace_profile_events>0</trace_profile_events>
+        </default>
+      </profiles>
+      {{- end }}
+    </clickhouse>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "openpanel.fullname" . }}-clickhouse-config
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: clickhouse
+data:
+  # Retention for system.* diagnostics only; analytics tables are untouched.
+  system-logs.xml: |
+    {{- $ttl := printf "event_date + INTERVAL %d DAY DELETE" (int .Values.clickhouse.systemLogs.ttlDays) }}
+    <clickhouse>
+      {{- range $t := list "trace_log" "metric_log" "asynchronous_metric_log" "query_log" "query_views_log" "part_log" "processors_profile_log" "query_metric_log" "error_log" }}
+      <{{ $t }}>
+        <ttl>{{ $ttl }}</ttl>
+      </{{ $t }}>
+      {{- end }}
+      <text_log>
+        <ttl>{{ $ttl }}</ttl>
+        <level>{{ .Values.clickhouse.systemLogs.textLogLevel }}</level>
+      </text_log>
     </clickhouse>
 ---
 apiVersion: v1
@@ -321,6 +354,7 @@ spec:
   template:
     metadata:
       annotations:
+        checksum/server-config: {{ .Values.clickhouse.systemLogs | toYaml | sha256sum }}
         sidecar.istio.io/inject: "true"
         traffic.sidecar.istio.io/excludeInboundPorts: "{{ .Values.clickhouse.httpPort }},{{ .Values.clickhouse.nativePort }}"
         # Ambient equivalent. These namespaces run ambient with sidecar
@@ -352,6 +386,9 @@ spec:
             - name: users-config
               mountPath: /etc/clickhouse-server/users.d/allow-remote.xml
               subPath: allow-remote.xml
+            - name: server-config
+              mountPath: /etc/clickhouse-server/config.d/system-logs.xml
+              subPath: system-logs.xml
           livenessProbe:
             httpGet:
               path: /ping
@@ -381,6 +418,9 @@ spec:
         - name: users-config
           configMap:
             name: {{ include "openpanel.fullname" . }}-clickhouse-users
+        - name: server-config
+          configMap:
+            name: {{ include "openpanel.fullname" . }}-clickhouse-config
 ---
 apiVersion: v1
 kind: Service
