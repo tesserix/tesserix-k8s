@@ -1,0 +1,49 @@
+{{/*
+Ingress route for the dashboard and the event-ingestion API.
+Host is derived from config.dashboardUrl so it stays correct across environments.
+*/}}
+{{- if .Values.ingress.enabled }}
+{{- $host := .Values.config.dashboardUrl | trimPrefix "https://" | trimPrefix "http://" | trimSuffix "/" }}
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ include "openpanel.fullname" . }}
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ $host | quote }}
+  gateways:
+    - {{ .Values.ingress.gateway | quote }}
+  http:
+    # The API serves its routes at the root, so /api is stripped before proxying.
+    - match:
+        - uri:
+            prefix: /api/
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: {{ include "openpanel.fullname" . }}-api.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.api.port }}
+      timeout: 30s
+    - match:
+        - uri:
+            exact: /api
+      rewrite:
+        uri: /
+      route:
+        - destination:
+            host: {{ include "openpanel.fullname" . }}-api.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.api.port }}
+      timeout: 30s
+    - route:
+        - destination:
+            host: {{ include "openpanel.fullname" . }}-dashboard.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.dashboard.port }}
+      timeout: 60s
+{{- end }}

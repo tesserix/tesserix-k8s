@@ -126,10 +126,12 @@ not reach.
   2026-07-29**: its binary exits on `otel init: conflicting Schema URL 1.41.0
   vs 1.26.0`, a semconv mismatch that needs fixing in the product repo. Unpark
   this tier together with that fix.
-- `openpanel` — its Application was applied by hand and is **not** registered in
+- `openpanel` — its Application was applied by hand and was **not** registered in
   `argocd/prod/infrastructure/kustomization.yaml`, so commenting the file out
-  never stopped it. ClickHouse held zero rows in every table. Editing the file
-  does nothing; the Application itself has to be deleted.
+  never stopped it. It was never deleted and has run continuously since. As of
+  2026-08-15 it is retained as the analytics backend, registered in the
+  kustomization, and the Application now reads `values.yaml` + `values-prod.yaml`
+  instead of a divergent inline block.
 - Node count went 4 → 3 once those requests were freed. The blocker was
   `dwellm8-temporal-postgres`, a single-instance CNPG cluster whose primary PDB
   allows zero disruptions — the autoscaler can never evict it. Deleting the pod
