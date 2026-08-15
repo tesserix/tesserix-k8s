@@ -8,7 +8,7 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 
 pass=0; fail=0
 
-for chart in company tesserix-blog; do
+for chart in company tesserix-blog homechef-web mark8ly-admin mark8ly-storefront mark8ly-onboarding; do
   helm dependency build "$REPO/charts/apps/$chart" >/dev/null 2>&1
   url=$(helm template "$chart" "$REPO/charts/apps/$chart" \
     | python3 -c '
