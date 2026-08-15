@@ -7,8 +7,6 @@
 #   istio-system            → all homechef workloads (Cloudflare Tunnel + ingress gateway)
 #   homechef                → homechef            (intra-namespace east-west)
 #   homechef                → postgresql-homechef (API → Postgres only)
-#   identity-customer       → homechef            (Keycloak callback to auth-bff)
-#   identity-internal       → homechef            (Keycloak admin realm)
 
 ---
 apiVersion: security.istio.io/v1beta1
@@ -34,18 +32,6 @@ spec:
     - from:
         - source:
             namespaces: ["homechef"]
----
-apiVersion: security.istio.io/v1beta1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-identity-to-homechef
-  namespace: homechef
-spec:
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            namespaces: ["identity-customer", "identity-internal"]
 ---
 # Postgres reachable ONLY from the homechef API workload's service account.
 # This is intentionally tighter than namespace-wide allow.

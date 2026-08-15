@@ -1,7 +1,6 @@
 ##############################################################################
 # GameVerse Istio VirtualService Configuration
-# All services run in-cluster via Knative Serving
-# Traffic routes through knative-local-gateway with Host header rewriting
+# Routes straight to the in-cluster ClusterIP services.
 ##############################################################################
 
 # --- GameVerse Platform (stayandplays.com) ---
@@ -49,67 +48,60 @@ spec:
               number: 8089
       timeout: 3600s
 
-    # WebSocket routes -> Game Server Knative service
+    # WebSocket routes -> Game Server
     - match:
         - uri:
             prefix: /ws
       headers:
         request:
           set:
-            Host: gameverse-server.gameverse.svc.cluster.local
             x-forwarded-host: stayandplays.com
             x-forwarded-proto: https
       route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: gameverse-server.gameverse.svc.cluster.local
             port:
-              number: 80
+              number: 8090
       timeout: 3600s
 
-    # Chat WebSocket routes -> Game Server Knative service
+    # Chat WebSocket routes -> Game Server
     - match:
         - uri:
             prefix: /chat
       headers:
         request:
           set:
-            Host: gameverse-server.gameverse.svc.cluster.local
             x-forwarded-host: stayandplays.com
             x-forwarded-proto: https
       route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: gameverse-server.gameverse.svc.cluster.local
             port:
-              number: 80
+              number: 8090
       timeout: 3600s
 
-    # Health check routes -> Game Server Knative service
+    # Health check routes -> Game Server
     - match:
         - uri:
             prefix: /healthz
-      headers:
-        request:
-          set:
-            Host: gameverse-server.gameverse.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: gameverse-server.gameverse.svc.cluster.local
             port:
-              number: 80
+              number: 8090
       timeout: 30s
 
-    # Room management routes -> Game Server Knative service
+    # Room management routes -> Game Server
     - match:
         - uri:
             prefix: /rooms
       headers:
         request:
           set:
-            Host: gameverse-server.gameverse.svc.cluster.local
             x-forwarded-host: stayandplays.com
             x-forwarded-proto: https
       retries:
@@ -118,9 +110,9 @@ spec:
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: gameverse-server.gameverse.svc.cluster.local
             port:
-              number: 80
+              number: 8090
       timeout: 60s
       corsPolicy:
         allowOrigins:
@@ -140,21 +132,17 @@ spec:
         allowCredentials: true
         maxAge: "86400s"
 
-    # All other routes -> Shell SPA Knative service
+    # All other routes -> Shell SPA
     - match:
         - uri:
             prefix: /
-      headers:
-        request:
-          set:
-            Host: gameverse-shell.gameverse.svc.cluster.local
       retries:
         attempts: 3
         perTryTimeout: 10s
         retryOn: gateway-error,connect-failure,refused-stream
       route:
         - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
+            host: gameverse-shell.gameverse.svc.cluster.local
             port:
-              number: 80
+              number: 3100
       timeout: 30s

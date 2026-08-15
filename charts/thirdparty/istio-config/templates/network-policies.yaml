@@ -200,11 +200,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
-    # Allow from knative-serving (activator probes and routing)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: knative-serving
     # Allow DNS (both UDP and TCP)
     # Allow from cnpg-system (CloudNativePG operator status checks)
     - from:
@@ -229,7 +224,7 @@ spec:
 
 # =============================================================================
 # HomeChef Namespace Policies
-# Allow from ingress, global, monitoring, knative-serving
+# Allow from ingress, global, monitoring
 # =============================================================================
 {{- if .Values.appNamespaces.homechef }}
 ---
@@ -277,11 +272,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
-    # Allow from knative-serving (activator probes and routing)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: knative-serving
     # Allow from cnpg-system (CloudNativePG operator status checks on port 8000)
     - from:
         - namespaceSelector:
@@ -308,16 +298,15 @@ spec:
 # Kora Namespace Policies
 # Allow from ingress, global, monitoring — deny cross-product.
 #
-# Kora was the last product without an allow-ingress policy: it ran on Knative
-# (routed via knative-local-gateway) and, until it joined the ambient mesh, the
-# blanket default-deny-ingress had never actually gated its traffic. After the
+# Kora was the last product without an allow-ingress policy: until it joined the
+# ambient mesh, the blanket default-deny-ingress had never actually gated its
+# traffic. After the
 # ambient onboarding (waypoint + dataplane label) the gateway reaches kora pods
 # over HBONE (15008), which default-deny-ingress drops unless the source
 # namespace is allowlisted — exactly the gap that kept kora-api.tesserix.app
 # unreachable (000) even with a healthy pod. This restores the same allowances
-# every other product has. NOTE: no knative-serving source — kora is a plain
-# Deployment now (charts/apps/kora-api), routed to directly by the kora-istio
-# VirtualService, so there is no activator hop to permit.
+# every other product has. kora is a plain Deployment (charts/apps/kora-api),
+# routed to directly by the kora-istio VirtualService.
 # =============================================================================
 {{- if .Values.appNamespaces.kora }}
 ---
@@ -386,7 +375,7 @@ spec:
 
 # =============================================================================
 # GameVerse Namespace Policies
-# Allow from ingress, global, monitoring, knative-serving
+# Allow from ingress, global, monitoring
 # =============================================================================
 {{- if .Values.appNamespaces.gameverse }}
 ---
@@ -427,11 +416,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
-    # Allow from knative-serving (activator probes and routing)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: knative-serving
     # Allow DNS (both UDP and TCP)
     # Allow from cnpg-system (CloudNativePG operator status checks)
     - from:
@@ -712,7 +696,7 @@ spec:
 # Database Namespace Policies (STRICT MULTI-TENANT ISOLATION)
 # Each product can ONLY access its own database namespace
 # Cross-product access is DENIED
-# Infrastructure services (Keycloak, GrowthBook) have explicit database mappings
+# Infrastructure services (e.g. GrowthBook) have explicit database mappings
 # =============================================================================
 {{- range $key, $dbNs := .Values.databaseNamespaces }}
 ---
@@ -1560,16 +1544,11 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
-    # Allow istio-ingress (Knative local gateway for service-to-service routing)
+    # Allow istio-ingress (service-to-service routing)
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-ingress
-    # Allow knative-serving (activator, autoscaler)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: knative-serving
     # Allow monitoring
     - to:
         - namespaceSelector:

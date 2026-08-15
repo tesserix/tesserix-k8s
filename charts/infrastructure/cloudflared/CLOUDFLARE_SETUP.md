@@ -38,7 +38,7 @@ Add the following public hostname routes pointing to the Istio ingress gateway:
 - **Service type:** HTTP
 - **URL:** `http://istio-ingressgateway.istio-ingress.svc.cluster.local:80`
 
-#### Customer IDP (Keycloak)
+#### Customer IDP
 - **Public hostname:** `devtest-customer-idp.tesserix.app`
 - **Service type:** HTTP
 - **URL:** `http://istio-ingressgateway.istio-ingress.svc.cluster.local:80`

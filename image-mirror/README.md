@@ -132,6 +132,6 @@ digest behind the tag changes.
 
 ## Not mirrored (already NAT-free)
 
-`gcr.io/knative-releases/*`, `gcr.io/kubecost1/*`, `gke.gcr.io/*`,
+`gcr.io/kubecost1/*`, `gke.gcr.io/*`,
 `gcr.io/gke-release/*` (Google-hosted, reached via Private Google Access), and
 `ghcr.io/tesseract-nexus/*` + `*.pkg.dev/*` (our own apps, already in AR).

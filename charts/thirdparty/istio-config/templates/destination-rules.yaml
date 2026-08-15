@@ -42,45 +42,6 @@ spec:
       maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
     {{- end }}
 
-# =============================================================================
-# Knative Frontend ExternalName Service DestinationRules
-# CRITICAL: Knative creates ExternalName services that point to knative-local-gateway.
-# A wildcard DR can apply ISTIO_MUTUAL, but the ExternalName service
-# resolves to knative-local-gateway which doesn't accept mTLS inbound.
-# These specific DRs override the wildcard to disable TLS for ExternalName services.
-# =============================================================================
----
-apiVersion: networking.istio.io/v1
-kind: DestinationRule
-metadata:
-  name: knative-local-gateway-dr
-  namespace: istio-ingress
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  host: knative-local-gateway.istio-ingress.svc.cluster.local
-  trafficPolicy:
-    tls:
-      mode: DISABLE
-    connectionPool:
-      tcp:
-        maxConnections: 200
-        connectTimeout: 30s
-      http:
-        h2UpgradePolicy: DO_NOT_UPGRADE
-        useClientProtocol: true
-        http1MaxPendingRequests: 200
-        http2MaxRequests: 2000
-        maxRequestsPerConnection: 0
-
-# =============================================================================
-# FanZone Namespace DestinationRules
-# Sports/gaming platform services
-# Uses auto-mTLS (no explicit tls.mode) so Knative services work correctly.
-# Knative revision services route to the activator (knative-serving ns, no
-# sidecar), and ISTIO_MUTUAL would force TLS to a non-TLS endpoint.
-# Auto-mTLS uses mTLS when sidecars are present, plaintext when absent.
-# =============================================================================
 # fanzone-services-dr removed 2026-07-23 — FanZone decommissioned.
 
 # =============================================================================
@@ -360,7 +321,7 @@ spec:
 
 # =============================================================================
 # Infrastructure Namespace to Database DestinationRules
-# CRITICAL: Infrastructure services (Keycloak, GrowthBook) need access to databases
+# CRITICAL: Infrastructure services (e.g. GrowthBook) need access to databases
 # =============================================================================
 {{- if .Values.infrastructureDatabaseMapping }}
 {{- range $key, $dbNs := .Values.infrastructureDatabaseMapping }}
