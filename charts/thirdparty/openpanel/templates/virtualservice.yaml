@@ -40,10 +40,21 @@ spec:
             port:
               number: {{ .Values.api.port }}
       timeout: 30s
+    # Everything else, /oauth2/* included, goes through the auth proxy, which
+    # forwards to the dashboard only once the caller is on the allow-list.
+{{- if .Values.oauth2Proxy.enabled }}
+    - route:
+        - destination:
+            host: {{ include "openpanel.fullname" . }}-oauth2-proxy.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: 4180
+      timeout: 60s
+{{- else }}
     - route:
         - destination:
             host: {{ include "openpanel.fullname" . }}-dashboard.{{ .Release.Namespace }}.svc.cluster.local
             port:
               number: {{ .Values.dashboard.port }}
       timeout: 60s
+{{- end }}
 {{- end }}
