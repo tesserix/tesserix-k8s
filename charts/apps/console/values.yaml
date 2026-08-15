@@ -158,20 +158,23 @@ env:
   # the callback surfaces in its error log rather than as a blank page.
   ZITADEL_REDIRECT_URI: "https://console.tesserix.app/auth/callback"
 
-  # The organization whose USERS the console accepts — checked on the token's
-  # `urn:zitadel:iam:org:id` claim by the callback, which refuses anything else.
+  # Organization check — DELIBERATELY UNSET.
   #
-  # This is the operators' HOME org, NOT the org that owns the platform-console
-  # project. They are different here, and conflating them broke the first
-  # cutover attempt: login was scoped to the project's org, Zitadel tried to
-  # authenticate people as members of an org none of them belong to, and failed
-  # with `409 User already exists` against the username they already held.
-  # Role grants are project-scoped, so roles resolve wherever the user lives.
+  # The callback compares the token's `urn:zitadel:iam:org:id` claim against
+  # this value when it is set. That claim only appears when the authorization
+  # request carries an org scope, and the console does NOT send one: scoping
+  # login to an organization made Zitadel try to authenticate operators as
+  # members of an org none of them belong to, failing with
+  # `409 User already exists` (tesserix/tesserix-home#170).
   #
-  # Optional. Unset means "any org, provided the roles are there" — role
-  # possession is the primary control; this is defence in depth for the
-  # `.tesserix.app` cookie being shared with the web app.
-  ZITADEL_INTERNAL_ORG_ID: "386261254651576970"
+  # So the claim is always absent, and setting this would refuse every login
+  # regardless of roles — a gate that can never open.
+  #
+  # Nothing meaningful is lost. ROLE POSSESSION IS THE CONTROL: the console
+  # requires `read` on the platform-console project, granted per user, and
+  # Zitadel independently enforces `project_role_check` (a user without a grant
+  # cannot authenticate at all). `iam-admin` holds no roles and stays out.
+  # ZITADEL_INTERNAL_ORG_ID: ""
 
   # Platform Console project. Requested as an audience scope so the project's
   # roles are guaranteed to appear in the token's role claim. The project and
