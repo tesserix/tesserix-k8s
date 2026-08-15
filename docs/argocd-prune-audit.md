@@ -14,7 +14,7 @@ The controller flagged 35 resources across 8 apps as `requiresPruning`. Only
 | App | Flagged | Real | Why the rest are not |
 |---|---|---|---|
 | `istio-egress-gateway`, `istio-ingress-gateway-internal` | 13 | 0 | Neither can render its source, so ArgoCD compares live against *nothing* and calls every live resource an orphan. Fixed in #304. |
-| `zitadel` | 8 | 0 | Helm `pre-install,pre-upgrade` hook resources. Hooks are not part of the manifest set and are never pruned. |
+| `zitadel` | 8 | 0 | Helm `pre-install,pre-upgrade` hook resources, one of which is the ServiceAccount the running Deployment mounts. |
 | `openpanel` | 4 | 0 | Three `PostSync` hook resources, plus `Job/openpanel-migrate`, which does not exist in the cluster — a stale entry in `status.resources`. |
 | `homechef-api` | 1 | 0 | A `PreSync` hook Job with `hook-delete-policy: BeforeHookCreation`; it persists between syncs by design. |
 | `homechef-identity-bootstrap` | 7 | — | The app itself is an orphan with no definition in git; see below. |
@@ -39,10 +39,15 @@ Deployment runs 2, so removing it changes nothing.
 
 ## What got `prune: true`
 
-58 apps, all of which manage only replaceable resources — Deployments,
+56 apps, all of which manage only replaceable resources — Deployments,
 Services, ConfigMaps, ExternalSecrets, Istio policies, child Applications. For
-56 of them the flag has no effect today; they have nothing to prune. It stops
+54 of them the flag has no effect today; they have nothing to prune. It stops
 the next deletion from accumulating.
+
+`zitadel` and `homechef-api` are excluded despite being stateless, because both
+carry hook resources the audit reads as orphans. ArgoCD should not prune a hook,
+but `zitadel`'s hook set includes the ServiceAccount its running Deployment
+mounts, and that is not a semantic worth betting a live product on.
 
 ## What deliberately did not
 
