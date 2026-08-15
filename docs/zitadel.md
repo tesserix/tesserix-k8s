@@ -65,9 +65,12 @@ the CNPG-generated superuser (`zitadel-postgres-superuser`). The cluster's
 role's password comes from `prod-zitadel-db-password`, not from CNPG, because
 CNPG never creates that role.
 
-Backups write to `gs://tesserix-cnpg-backups/zitadel` at 02:30 daily with 30-day
-retention. They depend on an `iam.workloadIdentityUser` binding for
-`cnpg-backup@tesseracthub-480811.iam.gserviceaccount.com` on
+Backups write to `gs://tesseract-prod-backups-in/zitadel-postgres` at 02:30
+daily, keeping the latest three — see
+[`gcs-backup-lifecycle/README.md`](gcs-backup-lifecycle/README.md) for why the
+bucket rule sits at 10 days rather than 3. They depend on an
+`iam.workloadIdentityUser` binding for
+`app-secrets-infra-prod@tesseracthub-480811.iam.gserviceaccount.com` on
 `zitadel/zitadel-postgres` — CNPG authenticates as the KSA it generates, so
 without the binding the WAL archive retries forever and `CNPGWALArchiveFailing`
 fires within ten minutes.
