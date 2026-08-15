@@ -4,6 +4,10 @@ metadata:
   name: {{ include "stockpilot-web.fullname" . }}
   labels:
     {{- include "stockpilot-web.labels" . | nindent 4 }}
+  annotations:
+    # Secrets are injected optional, so a pod predating an ExternalSecret sync
+    # runs with them unset and fails auth silently. See tesserix-blog.
+    reloader.stakater.com/auto: "true"
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
