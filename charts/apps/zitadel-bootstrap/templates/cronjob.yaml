@@ -9,6 +9,8 @@ spec:
   schedule: {{ .Values.schedule | quote }}
   suspend: {{ .Values.suspend }}
   concurrencyPolicy: {{ .Values.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.failedJobsHistoryLimit }}
   jobTemplate:
     metadata:
       labels:
@@ -24,7 +26,9 @@ spec:
             sidecar.istio.io/inject: "false"
         spec:
           serviceAccountName: {{ include "zitadel-bootstrap.serviceAccountName" . }}
-          restartPolicy: OnFailure
+          # Never, not OnFailure: OnFailure replaces the pod on each retry and
+          # takes the log of the attempt that explained the failure with it.
+          restartPolicy: Never
           securityContext:
             runAsNonRoot: true
             runAsUser: 65532
