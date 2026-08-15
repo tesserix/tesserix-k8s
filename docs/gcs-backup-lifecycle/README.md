@@ -41,41 +41,50 @@ tiers were never held long enough to pay for themselves.
 > class's minimum duration**.
 
 At a 30-day retention that means Coldline and Archive can never pay off — an
-object deleted at d30 that reached Archive is billed for a full year.
+object deleted at d30 that reached Archive is billed for a full year. At the
+3-day Postgres retention below, **no** tiering pays off, which is why the
+Nearline transition is scoped away from the Postgres prefixes.
 
-## Current policy (30-day recovery window)
+## Current policy
 
-```
-Standard -> NEARLINE @7d -> Delete @37d
-```
+The bucket has two classes of tenant with different retention, so the rules are
+prefix-scoped rather than bucket-wide.
 
-≈ **$0.018/GB**, and Nearline retrieval is $0.01/GB versus Archive's $0.05/GB,
-so restores are cheaper too — which matters precisely when you are already
-having a bad day.
+| Prefixes | Engine retention | Lifecycle |
+|---|---|---|
+| `*-postgres/` (CNPG) | 3 days — one daily base backup, latest 3 kept | Standard, `Delete @10d` |
+| `openbao/`, `homechef-mongodb/` | 30 days | `Standard -> NEARLINE @7d -> Delete @37d` |
+| `qdrant/` | 14 days | Standard, `Delete @37d` |
 
-The 0–7d Standard window is deliberate: that is the range you actually restore
-from, and Standard has no retrieval fee.
+Postgres objects never leave Standard: they live at most 10 days and Nearline
+bills a 30-day minimum, so tiering them is a pure loss. Standard also has no
+retrieval fee, which is what you want for the window you actually restore from.
 
-## The 37 vs 30 day gap is load-bearing
+## The backstop gap is load-bearing
 
 Barman (CNPG) and PBM (MongoDB) are **chain-aware** pruners — they delete a base
 backup together with the WAL segments or oplog slices that depend on it, so
-point-in-time recovery is never left with a hole. Both are set to a 30-day
-window.
+point-in-time recovery is never left with a hole.
 
-The bucket's `Delete @37d` is a **backstop for orphans only**. It must stay
-strictly longer than the engine retention. If GCS deleted an object the Barman
-catalogue still referenced, PITR would fail at restore time with no prior
-warning — the failure only surfaces when you need it.
+Every bucket `Delete` rule is a **backstop for orphans only**, and each must stay
+strictly longer than the engine retention it covers — 10d against a 3-day Barman
+window, 37d against a 30-day one. If GCS deleted an object the Barman catalogue
+still referenced, PITR would fail at restore time with no prior warning; the
+failure only surfaces when you need it.
 
-**Never set the bucket Delete rule to less than the engine retention.**
+**Never set a bucket Delete rule to less than the engine retention under it**,
+and when adding a new CNPG cluster, add its prefix to the 10-day rule — without
+it the cluster falls through to the 37-day rule and quietly keeps a month of
+backups nobody costed for.
 
 ## Applying it
 
-> **This is destructive.** Measured 2026-07-26: the bucket held 38,426 objects
-> / 11.24GiB, of which **10,999 objects (8.11GiB) were older than 37 days** and
-> are permanently deleted the first time the new rule runs. Most were
-> stockpilot base backups. Confirm that is acceptable before applying.
+> **This is destructive.** The 10-day Postgres rule permanently deletes every
+> base backup and WAL segment older than 10 days across all `*-postgres/`
+> prefixes the first time it runs — roughly 27 of the 30 days currently held.
+> Apply it only after the charts in this repo are on `retentionPolicy: "3d"`,
+> so Barman has already pruned its own catalogue to match; applying it first
+> leaves the catalogue referencing objects GCS has removed.
 
 ```bash
 gcloud storage buckets update gs://tesseract-prod-backups-in \
