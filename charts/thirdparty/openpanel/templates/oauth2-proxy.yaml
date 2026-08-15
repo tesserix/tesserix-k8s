@@ -12,6 +12,10 @@ metadata:
   labels:
     {{- include "openpanel.labels" . | nindent 4 }}
     app.kubernetes.io/component: auth
+  annotations:
+    # Roll the proxy when the Google credentials change; without this a fixed
+    # client ID in Secret Manager sits unused until the next manual restart.
+    secret.reloader.stakater.com/reload: {{ .Values.oauth2Proxy.secretName }}
 spec:
   replicas: {{ .Values.oauth2Proxy.replicaCount }}
   selector:
