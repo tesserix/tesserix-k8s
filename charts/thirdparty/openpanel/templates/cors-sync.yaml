@@ -1,0 +1,113 @@
+{{- define "openpanel.corsSync.podSpec" -}}
+restartPolicy: Never
+serviceAccountName: {{ include "openpanel.fullname" . }}
+containers:
+  - name: cors-sync
+    image: "{{ .Values.projectInit.image.repository }}:{{ .Values.projectInit.image.tag }}"
+    imagePullPolicy: IfNotPresent
+    env:
+      - name: DB_HOST
+        value: "{{ include "openpanel.fullname" . }}-postgresql.{{ .Release.Namespace }}.svc.cluster.local"
+      - name: DB_USER
+        value: "{{ .Values.postgresql.username }}"
+      - name: DB_NAME
+        value: "{{ .Values.postgresql.database }}"
+      - name: PGPASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.secrets.name }}
+            key: {{ .Values.secrets.postgresqlPasswordKey }}
+      - name: MARKETPLACE_API_URL
+        value: {{ .Values.corsSync.marketplaceApiUrl | quote }}
+      - name: PROJECT_ID
+        value: "tesserix-{{ .Values.corsSync.app }}"
+      - name: BASE_CORS
+        value: {{ (index .Values.projectInit.apps .Values.corsSync.app).cors | quote }}
+      - name: INTERNAL_AUTH
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.secrets.name }}
+            key: {{ .Values.corsSync.internalAuthKey }}
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        psql="psql -h $DB_HOST -U $DB_USER -d $DB_NAME -v ON_ERROR_STOP=1 -tA"
+
+        wget -q -O /tmp/domains.json \
+          --header="X-Internal-Auth: $INTERNAL_AUTH" \
+          "$MARKETPLACE_API_URL/internal/active-domains"
+
+        # Merchants land on the apex and on www, and OpenPanel matches the
+        # Origin exactly, so both spellings have to be listed.
+        $psql -v payload="$(cat /tmp/domains.json)" -v base="$BASE_CORS" -v project="$PROJECT_ID" <<'EOSQL'
+        WITH custom AS (
+          SELECT 'https://' || d AS origin
+            FROM jsonb_array_elements_text((:'payload'::jsonb) -> 'domains') AS d
+          UNION
+          SELECT 'https://www.' || d
+            FROM jsonb_array_elements_text((:'payload'::jsonb) -> 'domains') AS d
+        ), base AS (
+          SELECT unnest(string_to_array(:'base', ',')) AS origin
+        ), merged AS (
+          SELECT origin FROM base
+          UNION
+          SELECT origin FROM custom
+        )
+        UPDATE projects
+           SET cors = ARRAY(SELECT origin FROM merged ORDER BY origin)
+         WHERE id = :'project';
+        EOSQL
+
+        echo "synced cors for $PROJECT_ID:"
+        $psql -c "SELECT unnest(cors) FROM projects WHERE id = '$PROJECT_ID';"
+{{- end }}
+{{- if .Values.corsSync.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "openpanel.fullname" . }}-cors-sync
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cors-sync
+spec:
+  schedule: {{ .Values.corsSync.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "openpanel.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: cors-sync
+        spec:
+          {{- include "openpanel.corsSync.podSpec" . | nindent 10 }}
+---
+# project-init reassigns cors wholesale, so without this an ArgoCD sync would
+# drop every custom domain until the next cron tick.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "openpanel.fullname" . }}-cors-sync
+  labels:
+    {{- include "openpanel.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cors-sync
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "openpanel.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: cors-sync
+    spec:
+      {{- include "openpanel.corsSync.podSpec" . | nindent 6 }}
+{{- end }}
