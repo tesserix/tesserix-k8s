@@ -1,0 +1,79 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "zitadel-bootstrap.fullname" . }}
+  namespace: {{ include "zitadel-bootstrap.namespace" . }}
+  labels:
+    {{- include "zitadel-bootstrap.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  suspend: {{ .Values.suspend }}
+  concurrencyPolicy: {{ .Values.concurrencyPolicy }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "zitadel-bootstrap.selectorLabels" . | nindent 8 }}
+    spec:
+      ttlSecondsAfterFinished: {{ .Values.ttlSecondsAfterFinished }}
+      backoffLimit: {{ .Values.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "zitadel-bootstrap.selectorLabels" . | nindent 12 }}
+            sidecar.istio.io/inject: "false"
+        spec:
+          serviceAccountName: {{ include "zitadel-bootstrap.serviceAccountName" . }}
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: bootstrap
+              image: {{ .Values.image.python }}
+              command:
+                - python3
+                - /scripts/bootstrap.py
+              env:
+                - name: ZITADEL_API
+                  value: {{ .Values.zitadel.api | quote }}
+                - name: ZITADEL_HOST
+                  value: {{ .Values.zitadel.host | quote }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+                - name: assets
+                  mountPath: /assets
+                  readOnly: true
+                - name: pat
+                  mountPath: /pat
+                  readOnly: true
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+          volumes:
+            - name: scripts
+              configMap:
+                name: {{ include "zitadel-bootstrap.fullname" . }}-scripts
+            - name: config
+              configMap:
+                name: {{ include "zitadel-bootstrap.fullname" . }}-config
+            - name: assets
+              configMap:
+                name: {{ include "zitadel-bootstrap.fullname" . }}-assets
+            - name: pat
+              secret:
+                secretName: {{ .Values.zitadel.patSecret.name }}
+                items:
+                  - key: {{ .Values.zitadel.patSecret.key }}
+                    path: pat
