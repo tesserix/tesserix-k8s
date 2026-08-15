@@ -1,0 +1,71 @@
+namespaceOverride: zitadel
+
+schedule: "*/30 * * * *"
+suspend: false
+concurrencyPolicy: Forbid
+ttlSecondsAfterFinished: 600
+backoffLimit: 3
+activeDeadlineSeconds: 300
+
+image:
+  python: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/library/python@sha256:78098ea6a3a9c6a7727a5d4674e4a44e57e01fac878ee9cb4d24a86bd93916ff
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+zitadel:
+  # In-cluster, so the Host header carries the instance domain instead.
+  api: http://zitadel.zitadel.svc.cluster.local:8080
+  host: auth.tesserix.app
+  patSecret:
+    name: iam-admin-pat
+    key: pat
+
+# Serialised to /config/desired.json and reconciled field by field. Anything not
+# listed here is left alone, so console-set fields survive.
+desired:
+  labelPolicy:
+    primaryColor: "#5B5FD6"
+    primaryColorDark: "#8E91F4"
+    backgroundColor: "#fafafa"
+    backgroundColorDark: "#111827"
+    warnColor: "#cd3d56"
+    warnColorDark: "#ff3b5b"
+    fontColor: "#000000"
+    fontColorDark: "#ffffff"
+    disableWatermark: true
+    themeMode: THEME_MODE_AUTO
+
+  # Keys are the asset path segment under /assets/v1/instance/policy/label/.
+  assets:
+    logo: logo-light.png
+    logo/dark: logo-dark.png
+
+  loginPolicy:
+    allowUsernamePassword: true
+    allowExternalIdp: true
+    # Self-registration is how an unrelated Google account got an admin-console
+    # login once before; tenants are provisioned by the platform, not by anyone
+    # who can reach the hostname.
+    allowRegister: false
+    forceMfa: false
+    hidePasswordReset: false
+    ignoreUnknownUsernames: true
+    allowDomainDiscovery: true
+    passwordlessType: PASSWORDLESS_TYPE_ALLOWED
+
+  # Granted IAM_OWNER if they exist. A federated admin only exists after their
+  # first sign-in, so a missing user is skipped, not an error.
+  admins:
+    - unidevidp@gmail.com
+    - samyak.rout@gmail.com
+    - mahesh.sangawar@gmail.com
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
