@@ -67,16 +67,18 @@ postgresql:
 # Continuous backup to GCS via Barman Cloud
 backup:
   enabled: true
+  schedule: "0 50 2 * * *"
   destinationPath: "gs://tesseract-prod-backups-in/homechef-postgres"
-  # 30-day recovery window. CNPG/Barman is the chain-aware pruner (deletes whole
-  # base backups + their WAL together so PITR never breaks).
+  # 3-day recovery window — one daily base backup, three kept. CNPG/Barman is
+  # the chain-aware pruner (deletes whole base backups + their WAL together so
+  # PITR never breaks).
   #
   # The bucket's lifecycle Delete rule MUST stay strictly longer than this (it
-  # is set to 37d) — if GCS removed an object the Barman catalogue still
+  # is set to 10d) — if GCS removed an object the Barman catalogue still
   # referenced, PITR would fail at restore time with no prior warning. Barman
   # prunes first; the bucket rule is only a backstop for orphans.
   # See docs/cnpg-backup-restore.md.
-  retentionPolicy: "30d"
+  retentionPolicy: "3d"
   # GCP Service Account for Workload Identity. Must have
   # roles/storage.objectAdmin on the backup bucket.
   serviceAccount: "app-secrets-homechef-prod@tesseracthub-480811.iam.gserviceaccount.com"

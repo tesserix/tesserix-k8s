@@ -126,9 +126,10 @@ Other targets: `targetLSN`, `targetXID`, `targetName` (a restore point).
 #    the restore is confirmed good, then delete it.
 ```
 
-> Restore reads base backups + WAL from GCS. Objects older than 30 days are in
-> COLDLINE/ARCHIVE — retrieval is slightly slower/costed but works for any point
-> in the 90-day window.
+> Restore reads base backups + WAL from GCS. Postgres backups stay in STANDARD
+> for their whole life, so there is no retrieval fee or restore delay — but the
+> recovery window is only **3 days** (one daily base backup, latest three kept).
+> Anything older is gone; there is no fallback copy.
 
 ## Where it's configured
 
