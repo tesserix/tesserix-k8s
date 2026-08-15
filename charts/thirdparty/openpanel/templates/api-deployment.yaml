@@ -9,6 +9,11 @@ metadata:
   labels:
     {{- include "openpanel.labels" . | nindent 4 }}
     app.kubernetes.io/component: api
+  {{- if .Values.googleAuth.enabled }}
+  annotations:
+    # Roll the API when the Google credentials rotate, same as the proxy.
+    secret.reloader.stakater.com/reload: {{ .Values.googleAuth.secretName }}
+  {{- end }}
 spec:
   replicas: {{ .Values.api.replicaCount }}
   selector:
@@ -91,6 +96,22 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
                   key: {{ .Values.secrets.cookieSecretKey }}
+            {{- if .Values.googleAuth.enabled }}
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.googleAuth.secretName }}
+                  key: client-id
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.googleAuth.secretName }}
+                  key: client-secret
+            # Must be registered on the Google client verbatim; /api is stripped
+            # by the VirtualService, so the API sees /oauth/google/callback.
+            - name: GOOGLE_REDIRECT_URI
+              value: "{{ .Values.config.apiUrl }}/oauth/google/callback"
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthcheck
