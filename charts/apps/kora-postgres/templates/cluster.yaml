@@ -82,6 +82,40 @@ spec:
   enableSuperuserAccess: false
 
   # =========================================================================
+  # Backup — continuous WAL archiving + base backups to GCS via Barman Cloud
+  #
+  # Gated so the chart still renders for a cluster that has no bucket or
+  # service account yet. But note what "disabled" means here: a single-instance
+  # cluster with no WAL archiving and no base backup is UNRECOVERABLE. There is
+  # no replica to fail over to and no point in time to restore from.
+  #
+  # Requires the GCS service account named in .Values.backup.serviceAccount to
+  # exist and hold roles/storage.objectAdmin on the destination bucket, bound to
+  # this namespace via Workload Identity. googleCredentials.gkeEnvironment: true
+  # tells Barman to use the pod's Workload Identity rather than a key file.
+  # =========================================================================
+  {{- if .Values.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.backup.destinationPath | quote }}
+      googleCredentials:
+        gkeEnvironment: true
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        immediateCheckpoint: true
+        jobs: 2
+    retentionPolicy: {{ .Values.backup.retentionPolicy | quote }}
+
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: {{ .Values.backup.serviceAccount }}
+  {{- end }}
+
+  # =========================================================================
   # Monitoring — built-in Prometheus exporter
   # =========================================================================
   monitoring:
