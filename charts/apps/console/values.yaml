@@ -184,15 +184,28 @@ env:
   # application bug rather than a configuration gap.
   ZITADEL_PROJECT_ID: "386377618200461939"
 
-  # THE SWITCH. Uncomment to cut over; comment out to revert. Reverting takes
-  # effect on the next pod restart and needs no code rollback.
+  # THE SWITCH — now on. Comment out to revert; reverting takes effect on the
+  # next pod restart and needs no code rollback.
   #
-  # Before uncommenting, confirm in Zitadel:
-  #   - project: "Return user roles during authentication" is ON
-  #   - project: "Only authorized users can authenticate" is ON
-  #   - application Token Settings: type JWT, "User roles inside ID token" ON
-  #   - every operator has at least the `read` role, or they lose access
-  # AUTH_PROVIDER: "zitadel"
+  # Two things change when this is set:
+  #   1. Unauthenticated visitors go to the console's OWN /auth/login (Zitadel)
+  #      instead of being bounced to the web app's login.
+  #   2. The middleware starts REQUIRING the `read` capability on every request,
+  #      rather than accepting any valid `.tesserix.app` session. That is the
+  #      internal-only gate: the cookie is scoped to the shared parent domain,
+  #      so without this any session the web app mints would be accepted here.
+  #
+  # Verified against prod before enabling (a real login completed end to end):
+  #   - project "Return user roles during authentication" ON
+  #   - application Token Settings: "User roles inside ID token" ON,
+  #     "User Info inside ID token" ON  (without the latter the token carries
+  #     no email and verification fails with `invalid_id_token`)
+  #   - project org-restriction OFF — operators live in a different org from the
+  #     project, so it rejected everyone with `ProjectRequired`
+  #   - both operators hold all seven roles on platform-console
+  #
+  # ANYONE WITHOUT THE `read` ROLE LOSES ACCESS THE MOMENT THIS DEPLOYS.
+  AUTH_PROVIDER: "zitadel"
 
 # External Secrets Configuration (GCP Secret Manager → K8s Secrets)
 externalSecrets:
