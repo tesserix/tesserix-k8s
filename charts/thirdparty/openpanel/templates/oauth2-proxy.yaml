@@ -51,6 +51,11 @@ spec:
           args:
             - --provider={{ .Values.oauth2Proxy.provider }}
             - --http-address=0.0.0.0:4180
+            # Longest prefix wins; the bare dashboard entry is the catch-all.
+            # /trpc and /oauth reach here already stripped of /api by Istio.
+            {{- range $prefix := list "trpc" "oauth" }}
+            - --upstream=http://{{ include "openpanel.fullname" $ }}-api.{{ $.Release.Namespace }}.svc.cluster.local:{{ $.Values.api.port }}/{{ $prefix }}/
+            {{- end }}
             - --upstream=http://{{ include "openpanel.fullname" . }}-dashboard.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.dashboard.port }}
             - --redirect-url={{ .Values.config.dashboardUrl }}/oauth2/callback
             - --cookie-name={{ .Values.oauth2Proxy.cookie.name }}
