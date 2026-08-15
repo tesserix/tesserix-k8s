@@ -165,6 +165,23 @@ env:
   # chart can't silently let the world in.
   ALLOWED_ADMIN_EMAILS: "mahesh.sangawar@gmail.com,samyak.rout@gmail.com,unidevidp@gmail.com"
 
+  # Origins permitted to issue cookie-authenticated writes to this app's API.
+  #
+  # The platform console calls /api/admin/* server-side, forwarding the
+  # operator's session cookie so the reply is attributed to the human who wrote
+  # it rather than to a service account. A server-to-server request carries no
+  # browser Origin, and evaluateCsrf blocks a cookie-bearing mutation that has
+  # neither Origin nor Referer — so the console sends its own public origin and
+  # this declares that origin trusted.
+  #
+  # This is an allowlist, not a bypass: the check still runs, and any origin not
+  # named here (or matching this app's own host) is still refused. Adding an
+  # entry here is granting write access to this API — treat it as such.
+  #
+  # Retires with apps/web's admin: once the console owns these surfaces, there
+  # is no cross-origin write to permit.
+  CSRF_ALLOWED_DOMAINS: "console.tesserix.app"
+
   # Google OAuth client (public — same client mark8ly uses). The matching
   # OAUTH_CLIENT_SECRET comes via ExternalSecret. Register the redirect
   # URI (OAUTH_REDIRECT_URI above) under "Authorized redirect URIs"
