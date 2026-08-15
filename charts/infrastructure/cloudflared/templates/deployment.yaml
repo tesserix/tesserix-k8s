@@ -4,6 +4,10 @@ metadata:
   name: {{ include "cloudflared.fullname" . }}
   labels:
     {{- include "cloudflared.labels" . | nindent 4 }}
+  annotations:
+    # A rotated tunnel token rewrites the Secret; without this the connectors
+    # keep the old one until they happen to restart.
+    reloader.stakater.com/auto: "true"
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
