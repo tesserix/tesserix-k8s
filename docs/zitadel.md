@@ -10,6 +10,10 @@ Google, Okta and Entra per tenant without a realm each. Keycloak needs a realm
 per tenant, and a realm is a heavyweight object to create, template and keep in
 step.
 
+To move a product onto it, or to let a product's tenants connect their own IdP,
+see [`zitadel-onboarding.md`](zitadel-onboarding.md). This file covers the
+deployment itself.
+
 ## What is deployed
 
 | Argo CD Application | Path | Wave |
