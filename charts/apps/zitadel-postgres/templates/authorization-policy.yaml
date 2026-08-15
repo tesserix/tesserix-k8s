@@ -1,0 +1,40 @@
+{{- if .Values.istio.enabled }}
+{{/* The mesh-wide deny-all reaches this namespace too, so the database needs
+     an explicit ALLOW. Scoped to Zitadel's own identity: the login UI never
+     touches Postgres and nothing else in the namespace has business on 5432. */}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: {{ .Values.clusterName }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/{{ .Values.namespace }}/sa/zitadel
+      to:
+        - operation:
+            ports: ["5432"]
+    # The operator's probe is plaintext, so ztunnel can attribute no namespace
+    # or principal to it and a `from` rule can never match. Port only, with the
+    # NetworkPolicy restricting the source to cnpg-system.
+    - to:
+        - operation:
+            ports: ["8000"]
+    # Replicas stream from the primary on 5432 under the cluster's own identity.
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/{{ .Values.namespace }}/sa/{{ .Values.clusterName }}
+    - from:
+        - source:
+            namespaces: ["monitoring", "istio-system"]
+      to:
+        - operation:
+            ports: ["9187"]
+{{- end }}

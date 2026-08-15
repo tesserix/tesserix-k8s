@@ -1,5 +1,4 @@
-{{- if not .Values.knative.enabled }}
-# Plain Deployment for kora-api — replaces the Knative Service (which does not
+# Plain Deployment for kora-api — replaces the legacy Service (which does not
 # compose with the Istio ambient mesh this fleet runs). Mirrors homechef-api:
 # a long-lived Deployment behind a ClusterIP Service, joined to ambient via the
 # namespace's istio.io/dataplane-mode label (no sidecar, no queue-proxy). The
@@ -23,7 +22,7 @@ spec:
     matchLabels:
       {{- include "kora-api.selectorLabels" . | nindent 6 }}
       # Extra stack label keeps this Deployment's Service (and any leftover
-      # Knative revision pods, which carry the same app.kubernetes.io labels)
+      # legacy revision pods, which carry the same app.kubernetes.io labels)
       # from cross-selecting during the cutover window.
       kora.tesserix.app/stack: deployment
   template:
@@ -178,7 +177,7 @@ spec:
               containerPort: {{ .Values.metrics.port | default 9090 }}
               protocol: TCP
           env:
-            # PORT is set explicitly now that Knative (which reserved and
+            # PORT is set explicitly now that the legacy runtime (which reserved and
             # injected it) is gone. Kora's config defaults to 8080 when unset
             # (internal/config/config.go), so this just makes the listen port
             # match the container/Service port unambiguously.
@@ -224,4 +223,3 @@ spec:
             initialDelaySeconds: 3
             periodSeconds: 10
             failureThreshold: 3
-{{- end }}

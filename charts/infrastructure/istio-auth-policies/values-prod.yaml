@@ -22,11 +22,6 @@ frontendApps:
     namespace: growthbook
     hosts:
       - "growthbook.mark8ly.com"
-  - name: idp-customer
-    label: keycloak
-    namespace: identity-customer
-    hosts:
-      - "identity.fanzonebattleground.com"
   - name: kibana
     label: kibana
     hosts:
@@ -71,6 +66,17 @@ frontendApps:
     hosts:
       - "tesserix.app"
       - "www.tesserix.app"
+  # tesserix-console — the operator console (Deployment/console, same namespace
+  # as company). Without an entry here the gateway denies the host outright and
+  # the browser sees Envoy's "RBAC: access denied" 403 — the app itself is
+  # healthy and never sees the request. The console does its own session check
+  # in middleware and redirects anonymous visitors to the login on tesserix.app,
+  # so the gateway ALLOW is not what protects it.
+  - name: tesserix-console
+    label: console
+    namespace: tesserix
+    hosts:
+      - "console.tesserix.app"
   # yes-hospital — Next.js marketing site. Drives the gateway-level ALLOW
   # for the host AND the per-app allow-yes-hospital-public policy in the
   # yes-hospital namespace (which is in the default-ambient deny-all mesh).
@@ -150,10 +156,6 @@ frontendApps:
     label: identity-stock-tesserix
     hosts:
       - "identity-stock.tesserix.app"
-  - name: identity-devai-tesserix
-    label: identity-devai-tesserix
-    hosts:
-      - "identity-devai.tesserix.app"
   - name: identity-sre-tesserix
     label: identity-sre-tesserix
     hosts:
@@ -190,7 +192,7 @@ frontendApps:
 # reaches marketplace-api. Verified 2026-07-15 against prod with a real token.
 #
 # Additive: Istio merges jwtRules across policies on the same workload, so this
-# does not affect FanZone's Keycloak rules below.
+# adding one does not disturb the others.
 # =============================================================================
 gip:
   enabled: true
@@ -230,32 +232,12 @@ extraGip:
 # /pubsub/merchant-push) present a Google-signed OIDC token issued by
 # accounts.google.com. Without this rule the gateway rejects it with 401 "Jwt
 # issuer is not configured" before it reaches the service. Additive — merges
-# with the gip + keycloak rules; the service still enforces audience + SA.
+# with the gip rules; the service still enforces audience + SA.
 # =============================================================================
 googleOidc:
   enabled: true
   issuer: "https://accounts.google.com"
   jwksUri: "https://www.googleapis.com/oauth2/v3/certs"
-
-# Production Keycloak IDP Configuration
-# FanZone only — every other product is on GIP (see gip: above).
-keycloak:
-  customer:
-    enabled: true
-    issuer: "https://identity.fanzonebattleground.com/realms/tesserix-customer"
-    jwksUri: "https://identity.fanzonebattleground.com/realms/tesserix-customer/protocol/openid-connect/certs"
-    audiences:
-      - "tesserix-api"
-      - "mobile-app"
-      - "storefront-mobile"
-      - "web-storefront"
-      - "admin-dashboard"
-      - "account"
-  master:
-    enabled: true
-    issuer: "https://identity.fanzonebattleground.com/realms/master"
-    jwksUri: "https://identity.fanzonebattleground.com/realms/master/protocol/openid-connect/certs"
-    audiences: []
 
 # Production app namespaces
 appNamespaces:

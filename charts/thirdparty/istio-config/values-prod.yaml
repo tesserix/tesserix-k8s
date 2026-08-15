@@ -1,14 +1,11 @@
 # Production overrides for istio-config
 # Use with: helm upgrade --values values.yaml --values values-prod.yaml
 
-# Cloud Run routing DISABLED — all services migrated to GKE Knative
+# Cloud Run routing DISABLED — all services run on GKE
 cloudRun:
   enabled: false
 
-# FanZone services migrated to GKE Knative — route through Knative local gateway
-fanzoneKnative: false   # DECOMMISSIONED 2026-07-23
-
-# Cloud Run IAM auth — DISABLED: all services migrated to GKE Knative
+# Cloud Run IAM auth — DISABLED: all services run on GKE
 cloudRunAuth:
   enabled: false
   audience: ""
@@ -19,7 +16,7 @@ domain: mark8ly.com
 # Company website on tesserix.app — DISABLED: migrated to tesserix/tesserix-k8s repo
 companyHost: ""
 
-# Cloud Run Host header rewrite DISABLED — all services on GKE Knative
+# Cloud Run Host header rewrite DISABLED — all services run on GKE
 cloudRunHostRewrite: []
 
 # Cloudflare Tunnel configuration for custom domains
@@ -40,36 +37,11 @@ subdomains:
   growthbook: growthbook
   apiDocs: api-docs
   typesense: search
-  # Identity Provider (Keycloak)
-  customerIdp: customer-idp
   # Logging Stack (Kibana) - uses tesserix.app domain, not mark8ly.com
   kibana: kibana
   # Web Analytics (OpenPanel)
   analytics: analytics
 
-# Identity Provider Aliases — product-specific domains for shared Keycloak
-# These create VirtualServices routing to keycloak.identity-customer.svc.cluster.local:8080
-identityAliases:
-  - host: identity.fe3dr.com
-    name: identity-fe3dr-vs
-  # fanzonebattleground.com — DECOMMISSIONED 2026-07-23
-  - host: identity-blog.tesserix.app
-    name: identity-blog-vs
-
-# Internal Identity Provider Aliases — product-specific domains for shared internal Keycloak
-# These create VirtualServices routing to keycloak.identity-internal.svc.cluster.local:8080
-internalIdentityAliases:
-  - host: internal-identity.fe3dr.com
-    name: internal-identity-fe3dr-vs
-  # internal-identity.fanzonebattleground.com — DECOMMISSIONED 2026-07-23
-  - host: identity-stock.tesserix.app
-    name: identity-stock-vs
-  - host: identity-social.tesserix.app
-    name: identity-social-vs
-  # identity-devai.tesserix.app and identity-sre.tesserix.app were the
-  # Keycloak frontend URLs for the (now-removed) devai + devai-sre realms.
-  # Auth has moved to Google Identity Platform via devai-auth-bff — the
-  # frontend never needs to redirect to Keycloak on these hostnames again.
 
 # Production CORS configuration
 # Kibana host override - uses tesserix.app in prod (not mark8ly.com)

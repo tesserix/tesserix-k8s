@@ -43,9 +43,7 @@ web:
 backends:
   enabled:
     - openbao
-  # Add `gcpsm` here only once stack 06-workload-identity has been applied: the
-  # API takes Application Default Credentials at startup, and without the GSA
-  # binding it would authenticate as the node instead.
+    - gcpsm
   default: openbao
 
 # Google Secret Manager backend. Authentication is Workload Identity: the API's
@@ -64,7 +62,7 @@ openbao:
   kubernetesRole: secret-service
   kubernetesMount: kubernetes
 
-# Sign-in is Google directly rather than the internal Keycloak: both
+# Sign-in is Google directly: both
 # administrators are Google identities, and it removes the console's dependency
 # on the identity realm being reachable to log in and revoke access.
 google:
@@ -112,6 +110,8 @@ networkPolicy:
   # GKE metadata server, which mints the Workload Identity token. Only the API
   # pod may reach it, and only while the Secret Manager backend is enabled.
   metadataServerIP: 169.254.169.254
+  # The metadata server also answers from elsewhere in the link-local range.
+  linkLocalCIDR: 169.254.0.0/16
 
 pdb:
   enabled: true

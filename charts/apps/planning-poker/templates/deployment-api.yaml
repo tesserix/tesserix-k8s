@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: planning-poker-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "planning-poker.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "planning-poker.selectorLabels" (dict "component" "planning-poker-api" "release" .Release.Name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "planning-poker.labels" . | nindent 8 }}
+        {{- include "planning-poker.selectorLabels" (dict "component" "planning-poker-api" "release" .Release.Name) | nindent 8 }}
+        app.kubernetes.io/component: api
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: planning-poker-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.port }}
+          env:
+            - name: PORT
+              value: {{ .Values.api.port | quote }}
+            # Same origin as the UI — the VirtualService splits /api/ off to
+            # this service, so the CORS allowlist is just the public host.
+            - name: WEB_ORIGIN
+              value: https://{{ .Values.host }}
+            - name: NATS_URL
+              value: {{ .Values.nats.url | quote }}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.passwordSecretName }}
+                  key: password
+            # Assembled here rather than stored whole: CNPG owns the password
+            # and the Secret it generated, so there is no second copy to keep
+            # in step. A password containing URL-reserved characters would need
+            # percent-encoding first.
+            - name: DATABASE_URL
+              value: postgres://{{ .Values.postgres.user }}:$(PGPASSWORD)@{{ .Values.postgres.host }}:{{ .Values.postgres.port }}/{{ .Values.postgres.database }}?sslmode={{ .Values.postgres.sslMode }}
+            - name: AUTH_REQUIRED
+              value: {{ .Values.auth.required | quote }}
+            - name: OKTA_ISSUER
+              value: {{ .Values.auth.oktaIssuer | quote }}
+            - name: OKTA_CLIENT_ID
+              value: {{ .Values.auth.oktaClientID | quote }}
+            - name: SLACK_CLIENT_ID
+              value: {{ .Values.slack.clientID | quote }}
+          envFrom:
+            - secretRef:
+                name: planning-poker-api
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

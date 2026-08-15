@@ -4,6 +4,11 @@ metadata:
   name: {{ .Release.Name }}
   labels:
     {{- include "common.labels" . | nindent 4 }}
+  annotations:
+    # Without this the pods keep whatever env they started with: OIDC_CLIENT_SECRET
+    # is injected optional, so a pod that predates the ExternalSecret sync runs
+    # with it unset and every login fails token exchange.
+    reloader.stakater.com/auto: "true"
 spec:
   {{- if not .Values.keda.enabled }}
   replicas: {{ .Values.replicaCount }}
@@ -50,7 +55,19 @@ spec:
               containerPort: {{ .Values.service.targetPort | default 3000 }}
               protocol: TCP
           env:
-            {{- $secretKeys := list "MONGODB_URI" "KEYCLOAK_CLIENT_SECRET" "SESSION_SECRET" "SENDGRID_API_KEY" "RESEND_API_KEY" }}
+            {{- if .Values.openpanel.enabled }}
+            # Written into this namespace by the openpanel project-init job;
+            # optional so a first deploy doesn't block on the job finishing.
+            - name: OPENPANEL_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.openpanel.secretName }}
+                  key: {{ .Values.openpanel.clientIdKey }}
+                  optional: true
+            - name: OPENPANEL_API_URL
+              value: {{ .Values.openpanel.apiUrl | quote }}
+            {{- end }}
+            {{- $secretKeys := list "MONGODB_URI" "SESSION_SECRET" "SENDGRID_API_KEY" "RESEND_API_KEY" }}
             {{- range $key, $value := .Values.env }}
             {{- if not (and $.Values.externalSecrets.enabled (has $key $secretKeys)) }}
             - name: {{ $key }}
@@ -72,12 +89,6 @@ spec:
                   name: {{ .Release.Name }}-secrets
                   key: MONGODB_URI
                   optional: true
-            - name: KEYCLOAK_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Release.Name }}-secrets
-                  key: KEYCLOAK_CLIENT_SECRET
-                  optional: true
             - name: SESSION_SECRET
               valueFrom:
                 secretKeyRef:
@@ -98,6 +109,24 @@ spec:
                 secretKeyRef:
                   name: {{ .Release.Name }}-secrets
                   key: RESEND_API_KEY
+                  optional: true
+            {{- end }}
+            {{- if .Values.auth.zitadel.clientId }}
+            - name: OIDC_ISSUER
+              value: {{ .Values.auth.zitadel.issuer | quote }}
+            - name: OIDC_CLIENT_ID
+              value: {{ .Values.auth.zitadel.clientId | quote }}
+            - name: OIDC_REDIRECT_URI
+              value: {{ printf "https://%s/api/auth/callback" .Values.domains.primary | quote }}
+            {{- if .Values.auth.zitadel.idpId }}
+            - name: OIDC_IDP_ID
+              value: {{ .Values.auth.zitadel.idpId | quote }}
+            {{- end }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-oidc-secrets
+                  key: OIDC_CLIENT_SECRET
                   optional: true
             {{- end }}
           {{- if .Values.startupProbe.enabled }}

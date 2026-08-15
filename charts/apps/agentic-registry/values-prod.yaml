@@ -33,21 +33,15 @@ config:
   # AUTH_MODE=anonymous — the security boundary is the mesh + the BFF, NOT the
   # app's own token check (this mirrors how the replaced solo.io registry ran
   # with enableAnonymousAuth=true):
-  #   * Public UI  -> devai-auth-bff (Keycloak SSO) gates every human request,
+  #   * Public UI  -> devai-auth-bff (GIP SSO) gates every human request,
   #     then reverse-proxies in.
   #   * In-cluster -> Istio AuthorizationPolicies (manifests/agentic-istio)
   #     restrict /v0 WRITES to the devai-registry-bootstrap SA and READS to the
   #     devai / kagent-system / agentgateway-system namespaces.
   # The agent control plane (devai-registry-bootstrap writes, agentgateway +
-  # kagent reads) authenticates with the shared HMAC jwt-secret, which a
-  # Keycloak JWKS check would reject — so flipping authMode to "jwks" here would
-  # break catalog seeding + internal reads. Native per-user JWKS on the external
-  # API is a follow-up: it needs a hybrid auth mode (try-bearer, else trust the
-  # mesh) plus an M2M Keycloak token for the bootstrap Job. JWKS endpoints are
-  # left wired below for that flip.
+  # kagent reads) authenticates with the shared HMAC jwt-secret, so flipping
+  # authMode to "jwks" would break catalog seeding and internal reads.
   authMode: anonymous
-  authJwksUrl: "https://identity-devai.tesserix.app/realms/devai/protocol/openid-connect/certs"
-  authIssuer: "https://identity-devai.tesserix.app/realms/devai"
   authAudience: agentic-registry
   # Single-org (tesserix) registry behind anonymous auth — the BFF + mesh are
   # the security boundary. Namespace is just an optional grouping/uniqueness

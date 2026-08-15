@@ -44,22 +44,6 @@ spec:
           agentgateway: agentgateway-system
           kagent: kagent-system
 
-        # Keycloak IDP Configuration - Production (customer-idp only)
-        keycloak:
-          customer:
-            issuer: "https://identity.fanzonebattleground.com/realms/tesserix-customer"
-            jwksUri: "https://identity.fanzonebattleground.com/realms/tesserix-customer/protocol/openid-connect/certs"
-            audiences:
-              - "tesserix-api"
-              - "mobile-app"
-              - "web-storefront"
-              - "admin-dashboard"
-              - "marketplace-dashboard"
-              - "account"
-          # Internal IDP disabled - using customer-idp only
-          internal:
-            enabled: false
-
         # Service mesh principals for internal communication
         meshPrincipals:
           - "cluster.local/ns/global/sa/*"
@@ -106,6 +90,17 @@ spec:
             hosts:
               - "tesserix.app"
               - "www.tesserix.app"
+          # console — the operator console (Deployment/console, tesserix ns).
+          # NOTE for anyone adding a host later: this inline `helm.values` block
+          # OVERRIDES charts/infrastructure/istio-auth-policies/values*.yaml
+          # entirely. An entry added to those files renders locally, syncs
+          # green, and still 403s in the cluster, because this list is what the
+          # chart actually receives. Add hosts HERE.
+          - name: console
+            label: console
+            namespace: tesserix
+            hosts:
+              - "console.tesserix.app"
           # tesserix-blog MUST stay listed here. The frontendApps list drives
           # both the per-app ALLOW policy (attached to the pods) AND the
           # gateway-level aggregate ALLOW (allow-frontend-apps-public). Once
@@ -147,13 +142,6 @@ spec:
             namespace: yes-hospital
             hosts:
               - "yes-hospital.tesserix.app"
-          - name: keycloak
-            label: keycloak
-            namespace: identity-customer
-            hosts:
-              - "identity.fanzonebattleground.com"
-              - "identity.fe3dr.com"
-              - "identity.fanzonebattleground.com"
           - name: kibana
             label: kibana
             hosts:
@@ -217,17 +205,6 @@ spec:
               - "stayandplays.com"
               - "www.stayandplays.com"
               - "identity.stayandplays.com"
-          - name: keycloak-internal
-            label: keycloak-internal
-            hosts:
-              - "internal-idp.mark8ly.com"
-              - "internal-identity.fe3dr.com"
-              - "internal-identity.fanzonebattleground.com"
-              - "internal-identity.tesserix.app"
-              - "identity-social.tesserix.app"
-              - "identity-stock.tesserix.app"
-              # identity-devai.tesserix.app + identity-sre.tesserix.app
-              # removed when DevAI migrated off Keycloak to GIP.
           # secret-service — the OpenBao admin console. No `namespace`: the
           # console is two workloads (UI + API) and this template's per-app
           # policy selects a single label, so the pod-level ALLOWs live in
@@ -270,7 +247,7 @@ spec:
               - "sre.tesserix.app"
           # Agentic admin UIs — gateway only talks to oauth2-proxy in
           # each namespace; the proxy reverse-proxies to the actual UI
-          # once the Keycloak (devai realm) login succeeds.
+          # once the devai login succeeds.
           - name: kagent-ui
             label: oauth2-proxy
             namespace: kagent-system
@@ -305,6 +282,12 @@ spec:
             label: kargo-api
             hosts:
               - "kargo.tesserix.app"
+          # No `namespace:` — the zitadel chart ships its own pod-level policies
+          # for the API and the login UI, which share this host.
+          - name: zitadel
+            label: zitadel
+            hosts:
+              - "auth.tesserix.app"
 
   destination:
     server: https://kubernetes.default.svc

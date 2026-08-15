@@ -1,6 +1,5 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-
 # Production Infrastructure - Full production environment
 # All components enabled with production-grade configuration
 resources:
@@ -17,7 +16,6 @@ resources:
 
   # External Secrets Operator - Syncs secrets from GCP Secret Manager
   - argocd.yaml
-  - sealed-secrets.yaml
   - external-secrets.yaml
   # External Secrets Resources - Creates all secrets from GCP Secret Manager
   - external-secrets-resources.yaml
@@ -50,10 +48,13 @@ resources:
   - custom-ingress-gateway.yaml
   - custom-domain-config.yaml
   # HomeChef dedicated gateway — isolates fe3dr.com from the shared
-  # istio-ingressgateway so the legacy Keycloak RequestAuthentication
+  # istio-ingressgateway so the legacy RequestAuthentication
   # policies (still required by Fanzone) don't reject GIP-issued
   # mobile session tokens.
   - homechef-ingress-gateway.yaml
+  # Zitadel dedicated gateway — the same RequestAuthentication policies reject
+  # Zitadel's opaque console tokens and PATs before they reach the API.
+  - zitadel-ingress-gateway.yaml
   # Internal gateway (private IP for Cloudflare Tunnel - mark8ly.com)
   - istio-ingress-gateway-internal.yaml
   - istio-egress-gateway.yaml
@@ -71,22 +72,20 @@ resources:
   # DECOMMISSIONED 2026-07-23 — file retained, uncomment to redeploy.
   # - mongodb-fanzone-backup.yaml
 
-  # Identity Platform (Customer + Internal Keycloak)
-  - identity-customer.yaml
-  - identity-internal.yaml
+
+  # Zitadel — identity platform evaluation. Runs
+  # alongside both realms until every product has moved; see docs/zitadel.md.
+  - zitadel-secrets.yaml
+  - zitadel-postgres.yaml
+  - zitadel.yaml
 
   # MongoDB - FanZone chat message persistence
   # DECOMMISSIONED 2026-07-23 — file retained, uncomment to redeploy.
   # - mongodb-fanzone.yaml
 
-  # Caching - Per-namespace Redis instances (all enabled for prod)
-  - redis-global.yaml
-  - redis-marketplace.yaml
-  # DECOMMISSIONED 2026-07-23 — file retained, uncomment to redeploy.
-  # - redis-fanzone.yaml
-  - redis-homechef.yaml
-  - redis-stockpilot.yaml
-  - redis-devai.yaml
+  # Caching now lives in argocd/prod/apps/global — the per-namespace Redis
+  # instances were removed 2026-08-15 once every consumer was on
+  # global-valkey-cache.
 
   # Messaging (NATS)
   - nats.yaml
@@ -174,10 +173,8 @@ resources:
   # Autoscaling (KEDA)
   - keda.yaml
 
-  # Serverless (Knative) - Operator + Serving (Istio networking) + Eventing
-  - knative-operator.yaml
-  - knative-serving.yaml
-  - knative-eventing.yaml
+  # Serverless (Knative) — DECOMMISSIONED 2026-08-15. Manifests and charts
+  # deleted; zero Knative Services, Brokers or Triggers existed cluster-wide.
 
   # Logging stack — DECOMMISSIONED 2026-07-26. Manifests deleted; restore from
   # git history if ever needed.
@@ -193,12 +190,9 @@ resources:
   # Feature Flags (GrowthBook)
   - growthbook.yaml
 
-  # Web Analytics (OpenPanel) — removed to save ~3.5 vCPU / 7 Gi / 75 Gi disk.
-  # Commenting this out never stopped it: the Application had been applied by
-  # hand, so it stayed in-cluster with prune+selfHeal and kept 6.6Gi reserved
-  # for months while its ClickHouse held zero rows. Delete the Application to
-  # actually remove it — see docs/observability-park.md.
-  # - openpanel.yaml
+  # Web Analytics (OpenPanel) — registered so the hand-applied Application that
+  # kept running through the 2026-08-01 "removal" is finally owned by GitOps.
+  - openpanel.yaml
 
   # Search Engine (Typesense)
   - typesense.yaml
@@ -213,16 +207,9 @@ resources:
   # GitHub SSO via built-in Dex; admin allowlist managed inline in kargo.yaml.
   - kargo.yaml
 
-  # GitHub Actions Runner Controller (ARC) - Self-hosted CI runners (disabled — not needed atm)
-  # - arc-external-secret.yaml
-  # - arc-ghcr-pull-secret.yaml
-  - arc-controller.yaml
-  # arc-runner-scale-set — DECOMMISSIONED 2026-07-26. Self-hosted runners are
-  # not used; CI runs on GitHub-hosted runners (workflows fall back to
-  # ubuntu-latest via ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}). Manifest
-  # deleted; restore from git history if self-hosted runners return.
-  # arc-controller is left in place: it is the controller, not the runners,
-  # and removing it is a separate decision.
+  # GitHub Actions Runner Controller (ARC) — DECOMMISSIONED 2026-08-15. The
+  # runner scale set went on 2026-07-26 and the controller had nothing left to
+  # reconcile; every workflow runs on GitHub-hosted runners.
 
   # API Documentation (disabled in prod for security)
   # - swagger-ui.yaml

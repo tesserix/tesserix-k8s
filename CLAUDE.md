@@ -67,9 +67,9 @@ hotfix/short-description
 
 ### Workflow patterns
 
-- **Next.js apps:** lint → Docker build → GHCR push → GKE/Knative deploy → Trivy.
-  Build uses `--secret id=NODE_AUTH_TOKEN` for `@tesserix/web`. Deploy via
-  `kubectl patch ksvc <service> -n <namespace>`. Images: `ghcr.io/tesserix/<service>:<tag>`.
+- **Next.js apps:** lint → Docker build → GHCR push → GKE deploy → Trivy.
+  Build uses `--secret id=NODE_AUTH_TOKEN` for `@tesserix/web`. Images:
+  `ghcr.io/tesserix/<service>:<tag>`.
 - **Go services:** `go vet` → tests → Docker build → GHCR + GAR push → Cloud Run
   deploy → Trivy. Private modules via `GOPRIVATE=github.com/tesserix/*` and the
   `go-private-token` secret.
@@ -91,7 +91,34 @@ Cluster:  tesseract-prod-in-gke   Region: asia-south1
 
 ---
 
-## GCP Secret Manager
+## Secret stores — pick by *whose* secret it is
+
+Two stores, one rule, no exceptions. Before creating any secret, ask who the
+subject is:
+
+| The secret belongs to… | Store | Read by |
+|---|---|---|
+| **The platform** — infra, our own accounts, one value for the whole estate: DB superuser passwords, GHCR/registry tokens, OAuth client credentials, API keys we bought, signing/session keys, TLS material | **GCP Secret Manager** | ESO via `gcp-secret-store` |
+| **A product's customers or end users** — anything scoped to a tenant, merchant, vendor or person: per-tenant API keys and webhook secrets, customer payment/PSP credentials, user tokens, BYO-key material, per-tenant encryption keys | **OpenBao** (`kv/`) | ESO via the Vault provider, or the service at runtime |
+
+Restated so it cannot be missed:
+
+- **Never** put a customer's, tenant's or end user's secret in GCP Secret
+  Manager. It is a flat, project-wide namespace with no per-tenant boundary —
+  one IAM grant reads every tenant's data, and it has no dynamic secrets, no
+  leases and no per-tenant audit trail.
+- **Never** put a platform credential in OpenBao as the source of truth. GCP
+  Secret Manager is the root of trust: it holds OpenBao's own recovery keys, so
+  a platform secret stored only in OpenBao is unrecoverable exactly when
+  OpenBao is what's broken.
+- Tenant count is not a reason to switch stores. One tenant today is still a
+  tenant; it goes in OpenBao.
+- If a secret looks like both, split it. A shared PSP *platform* account key is
+  Secret Manager; each merchant's connected-account credential is OpenBao.
+
+Path conventions and the ESO wiring for each: [`docs/openbao-secrets.md`](docs/openbao-secrets.md).
+
+### GCP Secret Manager
 
 Project `tesseracthub-480811`. Naming: `{env}-{service}-{secret-name}` —
 e.g. `dev-blog-mongodb-uri`, `prod-ghcr-token`, `dev-auth-bff-session-secret`.
@@ -128,7 +155,8 @@ New-service template checklist:
 - [ ] `service.yaml` — ClusterIP
 - [ ] `serviceaccount.yaml` — Workload Identity annotation
 - [ ] `ingress.yaml` — Kong (dev) / Istio (prod)
-- [ ] `externalsecret.yaml` — GCP Secret Manager
+- [ ] `externalsecret.yaml` — platform secrets from GCP Secret Manager; any
+      tenant- or user-scoped secret from OpenBao instead (see Secret stores)
 - [ ] `network-policy.yaml` — default deny + explicit allows
 - [ ] `authorization-policy.yaml` — Istio RBAC
 - [ ] `scaledobject.yaml` — KEDA (conditional)
@@ -201,11 +229,12 @@ validation.
 |---|---|
 | **Which PostgreSQL cluster a new service should use** (answer: an existing one) | [`docs/postgres-cluster-policy.md`](docs/postgres-cluster-policy.md) |
 | **Creating/modifying/debugging/migrating PostgreSQL** | [`docs/cnpg-migration-guide.md`](docs/cnpg-migration-guide.md) |
-| **Admin login, BFF auth, OIDC clients, Google SSO, internal Keycloak** (`identity-internal` / `tesserix-internal` realm) | [`docs/internal-keycloak-admin-bff-fix.md`](docs/internal-keycloak-admin-bff-fix.md) |
-| **Customer login/signup, Google/Facebook sign-in, first-broker-login** (`identity-customer` / `homechef` realm) | [`docs/customer-keycloak-social-login.md`](docs/customer-keycloak-social-login.md) |
+| **Auth — GIP tenants, auth-BFF wiring, admin claims** | [`docs/gip-migration-plan.md`](docs/gip-migration-plan.md) |
+| **Keycloak decommission** — what was removed and what still needs cutting over | [`docs/keycloak-decommission-plan.md`](docs/keycloak-decommission-plan.md) |
 | **HomeChef platform topology** — services, domains, infra, E2E | [`docs/homechef-platform.md`](docs/homechef-platform.md) |
 | **Vector store / embeddings for AI agents** (Qdrant, `ai-database` namespace — and why there is no operator) | [`docs/qdrant-vector-db.md`](docs/qdrant-vector-db.md) |
 | **Secret storage** — OpenBao, `openbao` namespace: auth roles, policies, ESO wiring, unseal and recovery | [`docs/openbao-secrets.md`](docs/openbao-secrets.md) |
+| **Whether a new app should set `prune: true`** — and why `requiresPruning` lies | [`docs/argocd-prune-audit.md`](docs/argocd-prune-audit.md) |
 
 ### CloudNativePG (CNPG) quick facts
 
@@ -235,21 +264,17 @@ including how to add a database and the two traps that waste an afternoon:
   replicas are never created. See `charts/thirdparty/istio-config/templates/network-policies.yaml`.
 - Operator lives in `cnpg-system` (v1.24.1)
 
-### Keycloak quick facts
+### Auth quick facts
+
+Keycloak is decommissioned — there is no `identity-customer` / `identity-internal`
+namespace, chart, or realm. All auth is Google Identity Platform, one tenant per
+product, issuer `https://securetoken.google.com/tesseracthub-480811`.
 
 The reference chart for the shared `ghcr.io/tesseract-nexus/global-services/auth-bff`
 image is `charts/apps/devai-auth-bff/` — **not** `mark8ly-auth-bff`, which is a
 different image with its own database and OpenFGA.
 
-Internal-realm admin login needs four things solved together (all detailed in the
-doc above): the `<product>-admin-bff` OIDC client existing with a matching secret;
-`attributes.frontendUrl` set on the realm; the BFF using the **in-cluster**
-Keycloak URL for back-channel calls (Cloudflare strips `Authorization` on
-`GET /protocol/openid-connect/userinfo`); and a `realm-roles` mapper plus
-pre-created admin users with `realmRoles: ["admin"]`.
-
-To add an admin user, edit `realm-configmap.yaml` **and** the `ADMIN_EMAILS` list
-in `homechef-clients-bootstrap-job.yaml`. The bootstrap job is idempotent.
+Admin access is the `admin: true` custom claim, granted by `gip-admin-claims`.
 
 ---
 
@@ -264,28 +289,26 @@ in `homechef-clients-bootstrap-job.yaml`. The bootstrap job is idempotent.
    `/app/.next/cache`.
 5. **GKE metadata server** — Workload Identity pods must exclude
    `169.254.169.254/32` via `traffic.sidecar.istio.io/excludeOutboundIPRanges`.
-6. **Knative deploys** — `kubectl patch ksvc` with a timestamp annotation, not
-   `kubectl rollout restart`.
-7. **External Secrets refresh** — hourly. For immediate rotation, delete the K8s
+6. **External Secrets refresh** — hourly. For immediate rotation, delete the K8s
    secret and let ESO recreate it.
-8. **MongoDB** — uses `_id` (ObjectId), not `id`. Frontend must use `post._id`.
-9. **Image registries** — GHCR `ghcr.io/tesserix/` is primary; GAR
+7. **MongoDB** — uses `_id` (ObjectId), not `id`. Frontend must use `post._id`.
+8. **Image registries** — GHCR `ghcr.io/tesserix/` is primary; GAR
    `asia-south1-docker.pkg.dev/tesseracthub-480811/` is secondary for Cloud Run.
-10. **Ports** — Go services 8080–8099; Next.js local 3001–3200, in-container 3000.
-11. **`RespectIgnoreDifferences=true` + SSA + jq ignores into a list** — the
+9. **Ports** — Go services 8080–8099; Next.js local 3001–3200, in-container 3000.
+10. **`RespectIgnoreDifferences=true` + SSA + jq ignores into a list** — the
     normalisation can strip the whole list from the apply: sync reports
     Succeeded, the resource's `generation` never moves, and the change silently
     never lands. Bit dwellm8-postgres via the argocd-cm jq ignores into
     `spec.managed.roles[]`. If a synced change is not taking effect, check
     `generation` and the `managedFields` timestamps before anything else.
-12. **Memory-only resources — never set `cpu` requests or limits.** For an
+11. **Memory-only resources — never set `cpu` requests or limits.** For an
     upstream chart, *omitting* cpu is not enough: Helm deep-merges, so a
     memory-only `resources:` block still inherits the chart's cpu default.
     Write `cpu: null` explicitly. Two knock-on rules: a cpu-target HPA or a
     KEDA `cpu` trigger cannot work without a request (metric reads
     `<unknown>`; KEDA's webhook rejects it outright), so scale on memory; and
     a VPA must use `controlledResources: ["memory"]` or it re-injects cpu.
-13. **Never ignore all of `/status` in `ignoreResourceUpdates`.** A pod going
+12. **Never ignore all of `/status` in `ignoreResourceUpdates`.** A pod going
     ready is a status-only event, so the controller drops it, its cached copy
     of the workload never changes, and cached health freezes until an
     unrelated non-status write or the 12h cache resync. Anything gated on that
@@ -300,8 +323,8 @@ in `homechef-clients-bootstrap-job.yaml`. The bootstrap job is idempotent.
 
 - **Backend:** Go 1.26, Gin, GORM, PostgreSQL (microservices) / MongoDB (blog)
 - **Frontend:** Next.js 16, React 19, TypeScript, Tailwind v4, `@tesserix/web`
-- **Auth:** Keycloak + OpenFGA (marketplace) / Keycloak OIDC (blog)
+- **Auth:** Google Identity Platform + OpenFGA (marketplace) / GIP (blog)
 - **Infra:** GKE, Istio, ArgoCD, Helm, KEDA, cert-manager
 - **Messaging:** Google Pub/Sub · **Caching:** Redis
 - **Secrets:** GCP Secret Manager via External Secrets Operator
-- **CI/CD:** GitHub Actions → GHCR → GKE/Knative (ArgoCD for Helm sync)
+- **CI/CD:** GitHub Actions → GHCR → GKE (ArgoCD for Helm sync)

@@ -42,8 +42,12 @@ spec:
         externalSecrets:
           enabled: true
           refreshInterval: "1h"
-          secretStore: "gcp-secret-store"
-          gcpSecretKey: "prod-cloudflare-tunnel-token"
+          # Namespaced store rendered by the openbao chart from its
+          # namespaceWhitelist; ESO authenticates as the cloudflared SA.
+          secretStore: "openbao-cloudflared"
+          secretStoreKind: SecretStore
+          remoteKey: "cloudflared/cloudflared/tunnel"
+          remoteProperty: "token"
 
         # Resources - production sizing
         resources:
@@ -62,6 +66,7 @@ spec:
     namespace: cloudflared
   syncPolicy:
     automated:
+      prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true

@@ -62,7 +62,7 @@ spec:
             namespaces:
               - {{ $ns }}
     {{- end }}
-    # Allow infrastructure namespaces that connect to global DB (e.g. Keycloak → global-postgres)
+    # Allow infrastructure namespaces that connect to global DB
     {{- range $key, $ns := .Values.infrastructureNamespaces }}
     - from:
         - source:
@@ -128,13 +128,9 @@ spec:
             namespaces:
               - monitoring
               - istio-system
-    - from:
-        - source:
-            namespaces:
-              - knative-serving
 
 ---
-# Allow mesh-internal traffic (Knative local gateway routes without mTLS identity)
+# Allow mesh-internal traffic (routes that arrive without an mTLS identity)
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -158,9 +154,8 @@ spec:
 # with no valid rule = deny-all, which is what kept kora-api unreachable (503
 # even from inside the mesh; kubectl described the ZtunnelAccepted "HTTP
 # attributes omitted" warning). These L4 namespace-level policies are what
-# ztunnel CAN enforce, mirroring the working homechef set. No knative-serving
-# source: kora is a plain Deployment now, not Knative. App-layer GIP auth still
-# gates real endpoints (e.g. /v1/dashboard → 401 without a token).
+# ztunnel CAN enforce, mirroring the working homechef set. App-layer GIP auth
+# still gates real endpoints (e.g. /v1/dashboard → 401 without a token).
 # =============================================================================
 ---
 apiVersion: security.istio.io/v1
@@ -389,31 +384,6 @@ spec:
 {{- end }}
 
 # =============================================================================
-# Redis Access Policies
-# Each app namespace can only access its own Redis namespace
-# =============================================================================
-{{- range $key, $redisNs := .Values.redisNamespaces }}
----
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-{{ $key }}-redis-access
-  namespace: {{ $redisNs }}
-  labels:
-    {{- include "istio-config.labels" $ | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            namespaces:
-              - {{ index $.Values.appNamespaces $key }}
-        - source:
-            principals:
-              - "cluster.local/ns/{{ index $.Values.appNamespaces $key }}/sa/*"
-{{- end }}
-
-# =============================================================================
 # Infrastructure Service Policies
 # NATS, Typesense, Email accessible by all app namespaces
 # =============================================================================
@@ -495,71 +465,6 @@ spec:
               - monitoring
               - istio-system
 
----
-# Identity (Keycloak) access policy
-# All app namespaces need auth
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-apps-to-identity
-  namespace: {{ .Values.infrastructureNamespaces.identity }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    # Allow from ingress gateway (user login flows)
-    - from:
-        - source:
-            namespaces:
-              - istio-ingress
-    # Allow all app namespaces (service-to-service auth)
-    {{- range $key, $ns := .Values.appNamespaces }}
-    - from:
-        - source:
-            namespaces:
-              - {{ $ns }}
-    {{- end }}
-    # Allow monitoring
-    - from:
-        - source:
-            namespaces:
-              - monitoring
-              - istio-system
-
-{{- if index .Values.infrastructureNamespaces "identity-internal" }}
----
-# Identity Internal (Keycloak) access policy
-# All app namespaces need internal auth (staff/admin login flows)
-apiVersion: security.istio.io/v1
-kind: AuthorizationPolicy
-metadata:
-  name: allow-apps-to-identity-internal
-  namespace: {{ index .Values.infrastructureNamespaces "identity-internal" }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  action: ALLOW
-  rules:
-    # Allow from ingress gateway (staff login flows)
-    - from:
-        - source:
-            namespaces:
-              - istio-ingress
-    # Allow all app namespaces (service-to-service auth)
-    {{- range $key, $ns := .Values.appNamespaces }}
-    - from:
-        - source:
-            namespaces:
-              - {{ $ns }}
-    {{- end }}
-    # Allow monitoring
-    - from:
-        - source:
-            namespaces:
-              - monitoring
-              - istio-system
-{{- end }}
 
 ---
 # GrowthBook access policy
@@ -592,6 +497,12 @@ spec:
             namespaces:
               - monitoring
               - istio-system
+    # Allow internal traffic: this ALLOW policy attaches to ztunnel for every
+    # workload in the namespace, so without it growthbook cannot reach its mongodb.
+    - from:
+        - source:
+            namespaces:
+              - {{ .Values.infrastructureNamespaces.growthbook }}
 
 ---
 # OpenPanel access policy

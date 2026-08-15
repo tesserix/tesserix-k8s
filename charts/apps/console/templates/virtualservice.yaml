@@ -1,0 +1,28 @@
+{{/*
+Routing for console.tesserix.app. Single catch-all destination — the console
+has no auth-bff hand-off and no realtime paths of its own: the login redirect
+leaves for tesserix.app entirely (NEXT_PUBLIC_WEB_URL) rather than being routed
+here, and the dashboard read is a server-side ClusterIP call that never comes
+back through the gateway.
+
+DNS for console.tesserix.app must be pointed at the Istio ingress separately —
+nothing in this chart creates it.
+*/}}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ include "console.fullname" . }}-vs
+  labels:
+    {{- include "console.labels" . | nindent 4 }}
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - {{ (index .Values.ingress.hosts 0).host }}
+  http:
+    - route:
+        - destination:
+            host: {{ include "console.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+      timeout: 30s

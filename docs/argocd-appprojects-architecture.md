@@ -28,12 +28,12 @@ After:   infrastructure (27)  — the plumbing
 ## The 9 Projects Explained
 
 ### infrastructure
-**What's in it:** Istio (service mesh), cert-manager (TLS certificates), Knative (serverless), KEDA (autoscaling), External Secrets Operator, Cloudflare tunnels, NATS (messaging), GrowthBook (feature flags), Typesense (search).
+**What's in it:** Istio (service mesh), cert-manager (TLS certificates), KEDA (autoscaling), External Secrets Operator, Cloudflare tunnels, NATS (messaging), GrowthBook (feature flags), Typesense (search).
 
 **Why it's separate:** These are the foundations that everything else runs on. If someone pushes a bad config to a fanzone service, it can't accidentally break Istio or certificates. Only infrastructure changes can touch infrastructure namespaces.
 
 ### identity
-**What's in it:** Two Keycloak instances — one for internal team login (`identity-internal`), one for customer login (`identity-customer`).
+**What's in it:** Google Identity Platform wiring — the auth-BFF deployments and the admin-claim enforcement job.
 
 **Why it's separate:** Authentication is critical. Isolating it means product teams can't accidentally interfere with the login system. Identity changes are reviewed independently.
 
@@ -100,7 +100,7 @@ ArgoCD sees:
     └── prod-infrastructure
          └── istio, certs, etc.     (project: infrastructure)
          └── databases, redis       (project: data)
-         └── keycloak               (project: identity)
+         └── auth-bff               (project: identity)
 ```
 
 Each project has rules:
@@ -165,7 +165,7 @@ Each project is locked to specific namespaces:
 
 | Project | Allowed Namespaces |
 |---------|-------------------|
-| infrastructure | istio-system, istio-ingress, istio-egress, cert-manager, external-dns, external-secrets, keda, knative-serving, knative-eventing, cloudflared, nats, monitoring, logging, growthbook, typesense, translation, marketplace |
+| infrastructure | istio-system, istio-ingress, istio-egress, cert-manager, external-dns, external-secrets, keda, cloudflared, nats, monitoring, logging, growthbook, typesense, translation, marketplace |
 | identity | identity-customer, identity-internal |
 | data | postgresql-global, postgresql-marketplace, postgresql-bookkeeping, postgresql-hms, postgresql-fanzone, postgresql-homechef, redis-global, redis-marketplace, redis-hms, redis-fanzone, redis-homechef, redis-tesserix, mongodb-fanzone, db-backup-and-restore |
 | platform | marketplace, global, translation, tesserix, yes-hospital |

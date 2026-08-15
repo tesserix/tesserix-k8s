@@ -1,0 +1,28 @@
+{{- if .Values.certAuth.enabled }}
+# Postgres maps the certificate CN to the role it authenticates, so every CN
+# here must match an existing role exactly.
+{{- range .Values.certAuth.clients }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $.Values.clusterName }}-client-{{ .name }}
+  namespace: {{ $.Values.namespace }}
+  annotations:
+    # Ahead of the Cluster, which cannot start until these secrets exist.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  commonName: {{ .role }}
+  secretName: {{ .secretName }}
+  duration: {{ $.Values.certAuth.certDuration }}
+  renewBefore: {{ $.Values.certAuth.certRenewBefore }}
+  usages:
+    - client auth
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: {{ $.Values.clusterName }}-client-issuer
+    kind: Issuer
+{{- end }}
+{{- end }}

@@ -1,0 +1,46 @@
+{{- if .Values.istio.enabled }}
+{{/* The mesh-wide deny-all applies here too, so every caller needs naming.
+     Port 8080 is deliberately open to the whole mesh: Zitadel is the token
+     issuer for the estate, and a per-product allowlist would need editing for
+     every new consumer. The ports are what this policy actually constrains —
+     nothing may reach anything else on these pods. */}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: zitadel
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zitadel
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            ports: ["8080"]
+    - from:
+        - source:
+            namespaces: ["monitoring"]
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: zitadel-login
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zitadel-login
+  action: ALLOW
+  rules:
+    # Browsers only — the login UI is never called service-to-service.
+    - from:
+        - source:
+            namespaces: ["istio-ingress", "istio-system"]
+      to:
+        - operation:
+            ports: ["3000"]
+    - from:
+        - source:
+            namespaces: ["monitoring"]
+{{- end }}

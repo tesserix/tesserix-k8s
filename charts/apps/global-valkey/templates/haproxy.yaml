@@ -1,0 +1,100 @@
+{{- if .Values.haproxy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "global-valkey.name" . }}-haproxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "global-valkey.labels" . | nindent 4 }}
+data:
+  # `|` not `|-`: haproxy rejects a config whose last line has no LF.
+  haproxy.cfg: |
+    {{- include "global-valkey.haproxyConfig" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "global-valkey.name" . }}-haproxy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "global-valkey.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.haproxy.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "global-valkey.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: haproxy
+  template:
+    metadata:
+      labels:
+        {{- include "global-valkey.labels" . | nindent 8 }}
+        app.kubernetes.io/component: haproxy
+      annotations:
+        checksum/haproxy: {{ include "global-valkey.haproxyConfig" . | sha256sum }}
+    spec:
+      securityContext:
+        runAsUser: 99
+        runAsGroup: 99
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    {{- include "global-valkey.selectorLabels" . | nindent 20 }}
+                    app.kubernetes.io/component: haproxy
+      containers:
+        - name: haproxy
+          image: "{{ .Values.haproxy.image.repository }}:{{ .Values.haproxy.image.tag }}"
+          ports:
+            - name: valkey
+              containerPort: {{ .Values.haproxy.port }}
+          livenessProbe:
+            tcpSocket:
+              port: valkey
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: valkey
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.haproxy.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /usr/local/etc/haproxy
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "global-valkey.name" . }}-haproxy
+---
+# The address every client uses. Named for the instance, not for a pod, so a
+# failover is invisible to consumers.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "global-valkey.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "global-valkey.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "global-valkey.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: haproxy
+  ports:
+    - name: valkey
+      port: {{ .Values.valkey.port }}
+      targetPort: valkey
+{{- end }}

@@ -13,9 +13,10 @@ dashboard:
   replicaCount: 2
   resources:
     requests:
-      memory: 256Mi
-    limits:
       memory: 512Mi
+    # Next.js SSR sits at ~400Mi steady state; 512Mi would OOMKill under load.
+    limits:
+      memory: 1Gi
 
 worker:
   replicaCount: 2
@@ -40,8 +41,9 @@ clickhouse:
   resources:
     requests:
       memory: 768Mi
+    # 4Gi is what it actually ran on; a merge can spike well past 2Gi on 50Gi.
     limits:
-      memory: 2Gi
+      memory: 4Gi
 
 redis:
   persistence:
@@ -54,4 +56,43 @@ redis:
 
 config:
   dashboardUrl: "https://analytics.tesserix.app"
-  apiUrl: "https://analytics.tesserix.app"
+  apiUrl: "https://analytics.tesserix.app/api"
+
+projectInit:
+  enabled: true
+  # Fallback only — every app below names the namespace its Deployment runs in.
+  targetNamespace: "mark8ly"
+  secretName: "openpanel-client-ids"
+  adminUser:
+    enabled: true
+  organization:
+    id: "tesserix-analytics"
+    name: "Prod"
+  apps:
+    admin:
+      namespace: "mark8ly"
+      projectName: "Tesserix Admin (prod)"
+      domain: "https://admin.mark8ly.com"
+    storefront:
+      namespace: "mark8ly"
+      projectName: "Tesserix Storefront (prod)"
+      domain: "https://marketplace.mark8ly.com"
+      cors: "https://marketplace.mark8ly.com,https://*.mark8ly.com"
+    tenant-onboarding:
+      namespace: "mark8ly"
+      projectName: "Tesserix Tenant Onboarding (prod)"
+      domain: "https://onboard-your-store.mark8ly.com"
+    tesserix-home:
+      namespace: "tesserix"
+      projectName: "Tesserix Home (prod)"
+      domain: "https://tesserix.app"
+      cors: "https://tesserix.app,https://www.tesserix.app"
+    tesserix-blog:
+      namespace: "tesserix"
+      projectName: "Tesserix Blog (prod)"
+      domain: "https://blog.tesserix.app"
+    homechef:
+      namespace: "homechef"
+      projectName: "HomeChef fe3dr (prod)"
+      domain: "https://fe3dr.com"
+      cors: "https://fe3dr.com,https://www.fe3dr.com,https://vendors.fe3dr.com"

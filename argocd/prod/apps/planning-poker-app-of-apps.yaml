@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: planning-poker-app-of-apps
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: planning-poker
+    app.kubernetes.io/component: planning-poker-services
+    environment: prod
+spec:
+  project: planning-poker
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: argocd/prod/apps/planning-poker
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  # Kargo writes image tags onto the child Application's helm parameters;
+  # without this the parent's selfHeal reverts every promotion.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /spec/source/helm/parameters
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

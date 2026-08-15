@@ -6,9 +6,7 @@
 #
 # kora-api runs in-cluster as a plain Deployment behind the ClusterIP Service
 # `kora-api-direct` (see charts/apps/kora-api). We route to it DIRECTLY — no
-# knative-local-gateway hop, no Host header rewrite — mirroring homechef-api.
-# Knative was removed because its ingress (knative-local-gateway + activator)
-# does not compose with this cluster's Istio ambient mesh (ztunnel + waypoint).
+# Host header rewrite — mirroring homechef-api.
 #
 # DNS: this VirtualService has NO `external-dns.alpha.kubernetes.io/target`
 # annotation. external-dns will fall back to its --default-targets value,
@@ -108,8 +106,7 @@ spec:
               number: 8080
       # LLM round-trips (Gemini embeddings + OpenAI-compatible parse) can
       # chain, so hold a generous request timeout. The plain Deployment has
-      # no request-timeout of its own; this bound replaces the former Knative
-      # timeoutSeconds: 600.
+      # no request-timeout of its own, so this bound is the only one.
       timeout: 600s
       retries:
         attempts: 3

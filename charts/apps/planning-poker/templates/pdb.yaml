@@ -1,0 +1,27 @@
+{{- if .Values.pdb.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: planning-poker-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "planning-poker.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "planning-poker.selectorLabels" (dict "component" "planning-poker-api" "release" .Release.Name) | nindent 6 }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: planning-poker-web
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "planning-poker.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "planning-poker.selectorLabels" (dict "component" "planning-poker-web" "release" .Release.Name) | nindent 6 }}
+{{- end }}

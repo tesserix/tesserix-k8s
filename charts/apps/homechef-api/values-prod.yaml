@@ -1,7 +1,7 @@
 # Production overrides for homechef-api
 # Use with: helm upgrade --values values.yaml --values values-prod.yaml
 
-# Bump this timestamp when you need to force Knative to create a new
+# Bump this timestamp when you need to force a new
 # Revision (pulls :latest fresh). The ghcr-remote pull-through cache in
 # Artifact Registry can hold a stale :latest manifest; a spec change is
 # the cheapest way to break it out.
@@ -183,19 +183,21 @@ database:
   name: "homechef_db"
   sslmode: "require"
 
-# Production Redis
+# Shared Valkey. The Service is HAProxy, which only routes to the node
+# reporting role:master, so a Sentinel failover needs no client awareness.
 redis:
-  host: "redis.redis-homechef.svc.cluster.local"
+  host: "global-valkey-cache.global.svc.cluster.local"
   port: "6379"
+  user: "homechef"
 
 # Canonical Service name for the Deployment. Kept as <svc>-direct: the bare
-# name was owned by the Knative Route and is not reclaimed.
+# name was owned by the legacy route Service and is not reclaimed.
 service:
   nameOverride: "homechef-api-direct"
 
 # No Kong in this cluster — `kubectl get ingressclass` returns nothing, so these
 # Ingress objects have sat with an empty status.loadBalancer since creation.
-# ArgoCD blocks on their health, which stalled the sync that prunes the Knative
+# ArgoCD blocks on their health, which stalled the sync that prunes the legacy
 # Services. HomeChef serves through the Istio Gateway + VirtualServices in
 # manifests/homechef-istio, not through an Ingress controller.
 ingress:

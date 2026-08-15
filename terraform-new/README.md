@@ -28,7 +28,7 @@ terraform-new/
     ├── 02-network/             # VPC, Subnets, Firewall, NAT
     ├── 03-storage/             # Buckets, Secrets, KMS
     ├── 04-gke/                 # GKE Cluster
-    ├── 05-k8s-bootstrap/       # Kong, Cert-Manager, ArgoCD, Sealed Secrets
+    ├── 05-k8s-bootstrap/       # Kong, Cert-Manager, ArgoCD, External Secrets
     ├── 06-workload-identity/   # Service Accounts, WI Bindings
     ├── 07-app-secrets/         # Application Secrets
     ├── 08-communication-services/ # Email, SMS, Push

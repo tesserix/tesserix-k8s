@@ -373,30 +373,6 @@ store_github_secret() {
   fi
 }
 
-create_k8s_sealed_secret() {
-  local name="$1"
-  local namespace="$2"
-  local key="$3"
-  local value="$4"
-
-  log_info "Creating Kubernetes sealed secret: $name"
-
-  # Create sealed secret
-  local sealed
-  sealed=$(echo -n "$value" | kubeseal --raw \
-    --namespace "$namespace" \
-    --name "$name" \
-    --controller-namespace sealed-secrets 2>/dev/null)
-
-  if [ -n "$sealed" ]; then
-    log_success "Created sealed secret"
-    echo "$sealed"
-  else
-    log_error "Failed to create sealed secret"
-    return 1
-  fi
-}
-
 # =============================================================================
 # Feature Flags Definition
 # =============================================================================
@@ -553,20 +529,6 @@ main() {
     log_warning "gh CLI not found, skipping GitHub Secrets storage"
   fi
 
-  # Create K8s sealed secret (if kubeseal is available)
-  if command -v kubeseal &> /dev/null; then
-    log_info "Creating Kubernetes sealed secret..."
-    local sealed_password
-    sealed_password=$(create_k8s_sealed_secret "growthbook-admin-secret" "growthbook" "password" "$ADMIN_PASSWORD") || true
-
-    if [ -n "$sealed_password" ]; then
-      echo ""
-      echo "Add this to your SealedSecret YAML:"
-      echo "  password: $sealed_password"
-    fi
-  else
-    log_warning "kubeseal not found, skipping K8s sealed secret creation"
-  fi
 
   echo ""
   echo "=============================================="

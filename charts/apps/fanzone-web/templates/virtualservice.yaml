@@ -27,17 +27,7 @@ spec:
       rewrite:
         uri: {{ .rewrite }}
       {{- end }}
-      {{- if .knative }}
-      headers:
-        request:
-          set:
-            Host: {{ .serviceName }}.{{ $.Release.Namespace }}.svc.cluster.local
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      {{- else if .externalHost }}
+      {{- if .externalHost }}
       headers:
         request:
           set:
@@ -83,17 +73,7 @@ spec:
     - match:
         - uri:
             prefix: {{ .Values.virtualService.sse.path | default "/events" }}
-      {{- if .Values.virtualService.sse.knative }}
-      headers:
-        request:
-          set:
-            Host: {{ .Values.virtualService.sse.serviceName | default "fanzone-ws" }}.{{ .Release.Namespace }}.svc.cluster.local
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      {{- else if .Values.virtualService.sse.externalHost }}
+      {{- if .Values.virtualService.sse.externalHost }}
       headers:
         request:
           set:
@@ -116,17 +96,7 @@ spec:
     - match:
         - uri:
             prefix: {{ .Values.virtualService.websocket.path | default "/ws" }}
-      {{- if .Values.virtualService.websocket.knative }}
-      headers:
-        request:
-          set:
-            Host: {{ .Values.virtualService.websocket.serviceName | default "fanzone-ws" }}.{{ .Release.Namespace }}.svc.cluster.local
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      {{- else if .Values.virtualService.websocket.externalHost }}
+      {{- if .Values.virtualService.websocket.externalHost }}
       headers:
         request:
           set:
@@ -154,17 +124,7 @@ spec:
         - uri:
             prefix: /
       {{- if .Values.defaultRoute }}
-      {{- if .Values.defaultRoute.knative }}
-      headers:
-        request:
-          set:
-            Host: {{ .Values.defaultRoute.serviceName | default (include "fanzone-web.fullname" .) }}.{{ .Release.Namespace }}.svc.cluster.local
-      route:
-        - destination:
-            host: knative-local-gateway.istio-ingress.svc.cluster.local
-            port:
-              number: 80
-      {{- else if .Values.defaultRoute.externalHost }}
+      {{- if .Values.defaultRoute.externalHost }}
       headers:
         request:
           set:

@@ -46,30 +46,11 @@ service:
   port: 8080
   targetPort: 8080
   # Distinct name from the workload so the ClusterIP never collides with a
-  # Knative-created `kora-api` route Service during the cutover, and so the
+  # legacy `kora-api` route Service during the cutover, and so the
   # VirtualService routes to a stable, obviously-direct host. Mirrors
   # homechef-api-direct — the working ambient-mesh reference in this repo.
   nameOverride: kora-api-direct
 
-# Knative Serving — DISABLED. Kora is the only service that ran on Knative;
-# the rest of the fleet uses plain Deployments behind ClusterIP Services in
-# the Istio ambient mesh, and Knative's ingress (knative-local-gateway +
-# activator) does not compose with ambient (ztunnel + waypoint). Converted
-# to a plain Deployment (templates/deployment.yaml) + ClusterIP Service
-# (templates/service.yaml), routed to directly by the kora-istio
-# VirtualService — mirroring homechef-api. The knative-service.yaml template
-# is gated on this flag and renders nothing while it is false; kept in-tree
-# for reference / rollback only.
-knative:
-  enabled: false
-  minScale: 0
-  maxScale: 3
-  scaleDownDelay: "120s"
-  containerConcurrency: 0
-  # Retained for the (disabled) Knative template. The plain Deployment has
-  # no request-timeout knob of its own — long LLM round-trips are bounded by
-  # the VirtualService `timeout: 600s`, which matches this value.
-  timeoutSeconds: 600
 
 resources:
   limits:
@@ -81,7 +62,19 @@ resources:
 # and be sourced from the ExternalSecret target.
 env:
   GIN_MODE: "release"
-  # NOTE: do NOT set PORT here. Knative Serving reserves the PORT env
+  # Without this the Go config default wins and the prod pod logged
+  # {"msg":"api listening","env":"development"} — see kora#163.
+  #
+  # Today this is ONLY a log label: `cfg.Env` is read in exactly one place
+  # (cmd/api/main.go's startup line) and nothing branches on it, so the audit
+  # that issue asked for came back clean — no permissive auth, no debug
+  # routes, and GIN_MODE was already "release". It is still worth setting:
+  # log-based filtering by environment was silently wrong, anyone reading prod
+  # logs had reason to doubt what they were looking at, and the first piece of
+  # code to branch on Env would otherwise take the development path in
+  # production without anyone noticing.
+  ENV: "production"
+  # NOTE: PORT is set by the container spec, not here.
   # var and INJECTS it itself based on the container port. Defining it
   # in the manifest causes the validation webhook to reject:
   #   "PORT" is a reserved environment variable

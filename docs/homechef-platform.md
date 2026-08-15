@@ -15,7 +15,7 @@ on `charts/apps/homechef-*`, `argocd/prod/apps/homechef/`, or the
 - **CI/CD:** 7 GitHub Actions workflows → GHCR → GKE/ArgoCD
 - **Namespace:** `homechef`
 
-## Services (all Knative Serving)
+## Services
 
 | Service | Image | Port | Purpose |
 |---------|-------|------|---------|
@@ -35,13 +35,11 @@ on `charts/apps/homechef-*`, `argocd/prod/apps/homechef/`, or the
 | `admin.fe3dr.com` | homechef-admin-portal |
 | `delivery.fe3dr.com` | homechef-delivery-portal |
 | `api.fe3dr.com` | homechef-api |
-| `identity.fe3dr.com` | Keycloak customer realm |
-| `internal-identity.fe3dr.com` | Keycloak internal realm |
 
 ### Route prefixes on `fe3dr.com`
 
-- `/bff/` → auth-bff (customer realm)
-- `/auth/` → Keycloak auth callback
+- `/bff/` → homechef-auth-bff (GIP)
+- `/auth/` → auth callback
 - `/driver-bff/` → driver auth
 - `/api/*` → API service
 - `/ws/*` → WebSocket (3600s timeout)
@@ -59,18 +57,14 @@ on `charts/apps/homechef-*`, `argocd/prod/apps/homechef/`, or the
 - **DB bootstrap CronJob:** every 30 min, idempotent schema provisioning
 - **GCP SA:** `app-secrets-homechef-prod@tesseracthub-480811.iam.gserviceaccount.com`
 
-## Auth (dual Keycloak)
+## Auth (Google Identity Platform)
 
-- **Customer realm (`homechef`):** `identity.fe3dr.com` /
-  `keycloak.identity-customer.svc.cluster.local:8080`
-- **Internal realm (`tesserix-internal`):** `internal-identity.fe3dr.com` /
-  `keycloak.identity-internal.svc.cluster.local:8080`
-- Admin portal uses the internal realm; customer, vendor, and delivery use the
-  customer realm.
+- `homechef-auth-bff` in the `homechef` namespace fronts every portal at `/bff/`,
+  issuing HttpOnly session cookies from a verified GIP ID token.
+- Admin access is the `admin: true` custom claim, granted by `gip-admin-claims`.
 
-For login/SSO debugging see [`internal-keycloak-admin-bff-fix.md`](internal-keycloak-admin-bff-fix.md)
-(admin/internal) and [`customer-keycloak-social-login.md`](customer-keycloak-social-login.md)
-(customer/social).
+Keycloak was decommissioned on 2026-08-15 — see
+[`keycloak-decommission-plan.md`](keycloak-decommission-plan.md).
 
 ## Helm charts
 
@@ -84,21 +78,21 @@ All under `charts/apps/homechef-*`, with ArgoCD apps in
 **TEMPORARY** — the test users and the project itself are for development and
 debugging only, and must be removed before a production-ready release:
 
-- Keycloak test user `e2e-test@fe3dr.com` in the `homechef` realm (customer)
-- Keycloak test user `e2e-admin@fe3dr.com` in the `tesserix-internal` realm (admin)
+- GIP test user `e2e-test@fe3dr.com` in the `HomeChef-gufzu` tenant (customer)
+- GIP test user `e2e-admin@fe3dr.com` with the `admin: true` claim
 - Firebase test phone `+91 650 555 3434` with OTP `654321` (mobile-app phone
   sign-in; configured as a fictional test number in Firebase Auth, no SMS sent)
 - The `homechef-e2e-tests/` directory
 
 ### Login flow per portal
 
-- **Web** (`fe3dr.com`): homepage → "Login" → "Sign in with email" → Keycloak form
+- **Web** (`fe3dr.com`): homepage → "Login" → "Sign in with email" → GIP form
 - **Vendor** (`vendors.fe3dr.com`): login page auto-loads → "Sign in with Email" →
-  Keycloak form
-- **Admin** (`admin.fe3dr.com`): go to `/bff/login` → redirects to internal
-  Keycloak → form login (BFF uses HttpOnly cookies, no `storageState`)
+  GIP form
+- **Admin** (`admin.fe3dr.com`): go to `/bff/login` → GIP form login (BFF uses
+  HttpOnly cookies, no `storageState`)
 - **Delivery** (`delivery.fe3dr.com`): role selection ("I'm a Driver" / "I'm
-  Staff") → email login → Keycloak form
+  Staff") → email login → GIP form
 
 ### Commands
 

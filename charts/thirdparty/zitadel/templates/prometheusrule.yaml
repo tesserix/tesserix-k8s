@@ -1,0 +1,55 @@
+{{- if .Values.zitadel.metrics.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: zitadel-alerts
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/component: identity
+    role: alert-rules
+spec:
+  groups:
+    - name: zitadel.rules
+      rules:
+        # absent(), not == 0: a Deployment scaled to zero or evicted emits no
+        # series at all, and an equality check never fires on a missing series.
+        - alert: ZitadelAPIDown
+          expr: absent(up{namespace={{ .Values.namespace | quote }},job=~".*zitadel.*"} == 1)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Zitadel API is not reachable"
+            description: "No Zitadel API instance has been scraped successfully for 5 minutes. Every product's sign-in is down."
+
+        # Below the PDB's minAvailable, so this fires before a voluntary
+        # disruption can be blocked or a node drain stalls.
+        - alert: ZitadelInsufficientReplicas
+          expr: kube_deployment_status_replicas_available{namespace={{ .Values.namespace | quote }},deployment="zitadel"} < {{ .Values.zitadel.pdb.minAvailable }}
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Zitadel is below its disruption budget"
+            description: "Only {{ "{{" }} $value {{ "}}" }} replicas are available, under the minAvailable of {{ .Values.zitadel.pdb.minAvailable }}."
+
+        - alert: ZitadelLoginDown
+          expr: absent(up{namespace={{ .Values.namespace | quote }},job=~".*login.*"} == 1)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Zitadel login UI is not reachable"
+            description: "Login v2 serves /ui/v2/login and is Required on this instance, so the API being up does not make sign-in possible."
+
+        - alert: ZitadelHighErrorRate
+          expr: |
+            sum(rate(http_server_duration_count{namespace={{ .Values.namespace | quote }},http_status_code=~"5.."}[5m]))
+            / sum(rate(http_server_duration_count{namespace={{ .Values.namespace | quote }}}[5m])) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Zitadel is returning 5xx on more than 5% of requests"
+            description: "Error ratio is {{ "{{" }} $value | humanizePercentage {{ "}}" }} over the last 5 minutes."
+{{- end }}

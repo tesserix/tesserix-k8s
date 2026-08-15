@@ -194,16 +194,13 @@ env:
   NEXT_PUBLIC_BLOG_URL: "https://blog.tesserix.app"
   NEXT_PUBLIC_BLOG_NAME: "Tesserix Blog"
 
-  # MongoDB URI and Keycloak client secret are injected from External Secrets
+  # MongoDB URI and session secret are injected from External Secrets
   # See: templates/externalsecret.yaml → GCP Secret Manager (prod-blog-*)
 
-  # Keycloak (via Identity Customer - blog realm)
-  KEYCLOAK_ISSUER: "https://identity-blog.tesserix.app/realms/blog"
-  KEYCLOAK_INTERNAL_URL: "http://keycloak.identity-customer.svc.cluster.local:8080/realms/blog"
-  KEYCLOAK_CLIENT_ID: "blog-bff"
 
-  # Allowed authors
-  ALLOWED_AUTHORS: "unidevidp@gmail.com,samyak.rout@gmail.com,mahesh.sangawar@gmail.com"
+  # Full admin (create/edit posts). Everyone else who signs in is a reader:
+  # they can comment, react and subscribe. See lib/config/authors.ts.
+  ALLOWED_AUTHORS: "samyak.rout@gmail.com,mahesh.sangawar@gmail.com"
 
   # GCS public bucket for blog images (10yr+ retention)
   GCS_BLOG_BUCKET: "tesserix-blog-assets"
@@ -221,6 +218,18 @@ env:
 externalSecrets:
   enabled: true
   secretStoreRef: "gcp-secret-store"
+
+# Zitadel project 386314488103568012, application tesserix-blog-web. Redirect
+# URI registered there is https://blog.tesserix.app/api/auth/callback exactly.
+# This file is the one prod reads: the Argo app loads values.yaml +
+# ../global-config.yaml and never values-prod.yaml.
+auth:
+  zitadel:
+    issuer: "https://auth.tesserix.app"
+    clientId: "386314489043092108"
+    # Zitadel Google IdP id, sent as an idp-hint scope. The v2 login UI ignores
+    # the hint today and still shows its loginname form with a Google button.
+    idpId: "386336249998213772"
 
 # ConfigMap
 configMap:
@@ -242,3 +251,12 @@ gcp:
     gcpServiceAccount: ""
   secretManager:
     secretPrefix: "prod"
+
+# Page-view analytics via the self-hosted OpenPanel at analytics.tesserix.app.
+# The client ID is a public write key, so it lives in a Secret only because the
+# project-init job is what mints it — nothing here is confidential.
+openpanel:
+  enabled: true
+  secretName: openpanel-client-ids
+  clientIdKey: tesserix-blog-client-id
+  apiUrl: https://analytics.tesserix.app/api

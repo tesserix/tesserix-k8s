@@ -32,10 +32,8 @@ bootstrap:
   secret: global-postgres-app-credentials
   gcpSecretName: prod-global-postgresql-password
   # Post-init SQL runs once after the cluster is created (idempotent).
-  # Global PG hosts 13 databases: global_db (bootstrap) + 12 additional below.
+  # Global PG hosts 11 databases: global_db (bootstrap) + 10 additional below.
   postInitSQL:
-    - "CREATE DATABASE keycloak_customer OWNER global"
-    - "CREATE DATABASE keycloak_internal OWNER global"
     - "CREATE DATABASE tenants_db OWNER global"
     - "CREATE DATABASE notifications_db OWNER global"
     - "CREATE DATABASE subscriptions_db OWNER global"
@@ -99,12 +97,12 @@ postgresql:
   idle_in_transaction_session_timeout: "300000"
   statement_timeout: "120000"
   # Server-side TCP keepalives — GKE Dataplane V2 / Cilium conntrack
-  # evicts idle flows after ~5 min, which was killing Keycloak's JDBC
-  # pool every time the pool sat between Agroal validation cycles.
+  # evicts idle flows after ~5 min, which was killing long-lived JDBC
+  # pools that sat idle between validation cycles.
   # Have Postgres push a keepalive probe every 60s (first after 60s,
   # then every 30s, giving up after 6 missed) so the flow is never
   # quiet long enough for conntrack to drop it. Affects all clients
-  # of this cluster (Keycloak, auth-bff, etc.) which is the right
+  # of this cluster (auth-bff, etc.) which is the right
   # blast radius — every consumer benefits.
   tcp_keepalives_idle: "60"
   tcp_keepalives_interval: "30"
@@ -129,8 +127,10 @@ postgresql:
 # Continuous backup to GCS via Barman Cloud
 backup:
   enabled: true
+  # Staggered: base backups are IO-heavy and the estate shares Spot nodes.
+  schedule: "0 10 2 * * *"
   destinationPath: "gs://tesseract-prod-backups-in/global-postgres"
-  retentionPolicy: "30d"
+  retentionPolicy: "3d"
   # GCP Service Account for Workload Identity. Must have
   # roles/storage.objectAdmin on the backup bucket.
   serviceAccount: "app-secrets-global-prod@tesseracthub-480811.iam.gserviceaccount.com"

@@ -1,27 +1,18 @@
 # Production overrides for sports-data
-# Migrated to Knative Serving (scale-to-zero)
+# Scale-to-zero workload
 
 image:
   pullPolicy: IfNotPresent
 
-# Knative replaces Deployment + HPA
-knative:
-  enabled: true
-  minScale: 0
-  maxScale: 5
-  scaleDownDelay: "60s"
-  concurrencyTarget: 100
-  containerConcurrency: 0
-  timeoutSeconds: 300
 
-# Disable HPA and KEDA (Knative handles autoscaling)
+# HPA and KEDA disabled
 autoscaling:
   enabled: false
 
 keda:
   enabled: false
 
-# PDB not needed — Knative manages pod lifecycle
+# PDB not needed
 podDisruptionBudget:
   enabled: false
 
@@ -44,7 +35,7 @@ env:
   REFRESH_INTERVAL: "30s"
   WRITE_TIMEOUT: "0"
   USE_REDIS_CACHE: "true"
-  REDIS_HOST: "redis.redis-fanzone.svc.cluster.local"
+  REDIS_HOST: "global-valkey-cache.global.svc.cluster.local"
   REDIS_PORT: "6379"
   REDIS_DB: "1"
   REDIS_POOL_SIZE: "50"

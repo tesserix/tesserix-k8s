@@ -154,7 +154,7 @@ All routes point to: `http://istio-ingressgateway.istio-ingress.svc.cluster.loca
 | `store.mark8ly.com` | Storefront |
 | `onboard-your-store.mark8ly.com` | Tenant Onboarding |
 | `api.mark8ly.com` | API Gateway |
-| `identity.fanzonebattleground.com` | Keycloak (Customer IDP) |
+| `identity.fanzonebattleground.com` | Customer IDP |
 | `growthbook.mark8ly.com` | Feature Flags |
 | `search.mark8ly.com` | Typesense Search |
 | `postal.mark8ly.com` | Email (Postal) |

@@ -68,9 +68,9 @@ spec:
           enabled: true
           minReplicas: 2
           maxReplicas: 5
-          # CPU target nulled: the chart defaults it to 80, and with no cpu
-          # request the metric reads <unknown> so the HPA never scales.
-          targetCPUUtilizationPercentage: null
+          # CPU target zeroed rather than nulled: the chart's values schema types it
+          # as an integer, and 0 skips the metric just as null was meant to.
+          targetCPUUtilizationPercentage: 0
           targetMemoryUtilizationPercentage: 80
 
         # Pod disruption budget
@@ -119,8 +119,10 @@ spec:
     server: https://kubernetes.default.svc
     namespace: istio-ingress
   ignoreDifferences:
-    - group: ""
-      kind: Service
+    # No `group: ""`. It is the zero value, so the API server drops the key on
+    # write and the app-of-apps diffs git (present) against live (absent),
+    # pinning this app OutOfSync forever. Core group is the default.
+    - kind: Service
       jsonPointers:
         - /spec/clusterIP
         - /spec/clusterIPs

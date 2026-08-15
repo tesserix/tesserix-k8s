@@ -43,9 +43,11 @@ spec:
         - '.spec.volumeClaimTemplates[]?.spec.volumeMode'
   syncPolicy:
     automated:
-      # prune is deliberately omitted, not set false: `false` is the zero value
-      # and gets dropped on write, pinning the app OutOfSync forever. Pruning
-      # the raft PVCs is harmless anyway — the storage class is Retain.
+      # Without prune, anything dropped from the chart — a superseded bootstrap
+      # Job, an app removed from the whitelist — stays in the cluster and pins
+      # the app OutOfSync forever. The raft PVCs are not at risk: they come from
+      # volumeClaimTemplates and their storage class is Retain.
+      prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true

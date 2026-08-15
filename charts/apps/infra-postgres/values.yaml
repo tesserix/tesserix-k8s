@@ -14,7 +14,7 @@
 # because the estate needed a second shared cluster. Temporal alone runs ~36
 # connections and dominates the write rate — measured against 11 connections
 # across all twelve of global's databases combined. Putting that load on the
-# cluster that serves Keycloak means a Temporal write storm degrades auth for
+# shared platform cluster means a Temporal write storm degrades auth for
 # every product. Keeping it separate is a blast-radius decision.
 #
 # WHY IT IS HA
@@ -161,11 +161,11 @@ pooler:
 # sentence.
 backup:
   enabled: true
-  schedule: "0 30 2 * * *"
+  schedule: "0 0 2 * * *"
   # Same bucket and layout as every other cluster here; GKE workload identity
   # supplies the credentials (googleCredentials.gkeEnvironment in the template).
   destinationPath: "gs://tesseract-prod-backups-in/infra-postgres"
-  retentionPolicy: "30d"
+  retentionPolicy: "3d"
   # The GSA the cluster's ServiceAccount impersonates to reach the bucket.
   #
   # Follows the app-secrets-<tenant>-prod convention the other clusters use.

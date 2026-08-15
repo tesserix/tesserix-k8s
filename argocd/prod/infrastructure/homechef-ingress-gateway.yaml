@@ -32,14 +32,14 @@ spec:
         # HOMECHEF DEDICATED INGRESS GATEWAY
         # =================================================================
         # Isolates fe3dr.com traffic from the shared istio-ingressgateway
-        # workload so the legacy Keycloak RequestAuthentication policies
+        # workload so the legacy RequestAuthentication policies
         # (jwt-auth-customer / jwt-auth-internal — still required by
         # Fanzone and other workloads) do NOT apply to HomeChef requests.
         #
         # HomeChef is fully on Google Identity Platform. The auth-bff mints
         # an AES-GCM-encrypted session blob and ships it to mobile clients,
         # which return it as `Authorization: Bearer`. The shared gateway's
-        # Istio JWT filter rejects anything that isn't a Keycloak JWT, which
+        # Istio JWT filter rejects anything that isn't a bearer JWT, which
         # broke mobile login end-to-end.
         #
         # Routing: Cloudflare Zero Trust tunnel `homechef-prod` →
@@ -83,9 +83,9 @@ spec:
           enabled: true
           minReplicas: 2
           maxReplicas: 10
-          # CPU target nulled: the chart defaults it to 80, and with no cpu
-          # request the metric reads <unknown> so the HPA never scales.
-          targetCPUUtilizationPercentage: null
+          # CPU target zeroed rather than nulled: the chart's values schema types it
+          # as an integer, and 0 skips the metric just as null was meant to.
+          targetCPUUtilizationPercentage: 0
           targetMemoryUtilizationPercentage: 80
 
         podDisruptionBudget:
@@ -117,7 +117,7 @@ spec:
 
         # Labels — the `istio` value is the selector key that RequestAuthentication
         # uses. This deliberately does NOT match `istio: ingressgateway` or
-        # `istio: custom-ingressgateway`, so the legacy Keycloak policies in
+        # `istio: custom-ingressgateway`, so the legacy policies in
         # istio-ingress namespace do not bind to these pods.
         labels:
           app: homechef-ingressgateway
@@ -152,6 +152,7 @@ spec:
     namespace: istio-ingress
   syncPolicy:
     automated:
+      prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true

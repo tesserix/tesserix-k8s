@@ -42,45 +42,6 @@ spec:
       maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
     {{- end }}
 
-# =============================================================================
-# Knative Frontend ExternalName Service DestinationRules
-# CRITICAL: Knative creates ExternalName services that point to knative-local-gateway.
-# A wildcard DR can apply ISTIO_MUTUAL, but the ExternalName service
-# resolves to knative-local-gateway which doesn't accept mTLS inbound.
-# These specific DRs override the wildcard to disable TLS for ExternalName services.
-# =============================================================================
----
-apiVersion: networking.istio.io/v1
-kind: DestinationRule
-metadata:
-  name: knative-local-gateway-dr
-  namespace: istio-ingress
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  host: knative-local-gateway.istio-ingress.svc.cluster.local
-  trafficPolicy:
-    tls:
-      mode: DISABLE
-    connectionPool:
-      tcp:
-        maxConnections: 200
-        connectTimeout: 30s
-      http:
-        h2UpgradePolicy: DO_NOT_UPGRADE
-        useClientProtocol: true
-        http1MaxPendingRequests: 200
-        http2MaxRequests: 2000
-        maxRequestsPerConnection: 0
-
-# =============================================================================
-# FanZone Namespace DestinationRules
-# Sports/gaming platform services
-# Uses auto-mTLS (no explicit tls.mode) so Knative services work correctly.
-# Knative revision services route to the activator (knative-serving ns, no
-# sidecar), and ISTIO_MUTUAL would force TLS to a non-TLS endpoint.
-# Auto-mTLS uses mTLS when sidecars are present, plaintext when absent.
-# =============================================================================
 # fanzone-services-dr removed 2026-07-23 — FanZone decommissioned.
 
 # =============================================================================
@@ -329,30 +290,6 @@ spec:
 {{- end }}
 
 # =============================================================================
-# Redis DestinationRules
-# DISABLE mTLS for Redis (use native Redis AUTH)
-# =============================================================================
-{{- range $key, $redisNs := .Values.redisNamespaces }}
----
-apiVersion: networking.istio.io/v1
-kind: DestinationRule
-metadata:
-  name: {{ $key }}-redis-dr
-  namespace: {{ $redisNs }}
-  labels:
-    {{- include "istio-config.labels" $ | nindent 4 }}
-spec:
-  host: redis-master.{{ $redisNs }}.svc.cluster.local
-  trafficPolicy:
-    tls:
-      mode: DISABLE
-    connectionPool:
-      tcp:
-        maxConnections: 100
-        connectTimeout: 10s
-{{- end }}
-
-# =============================================================================
 # App Namespace to Database DestinationRules
 # CRITICAL: Apps need DestinationRules in their OWN namespace to access databases
 # =============================================================================
@@ -380,34 +317,11 @@ spec:
         maxConnections: 100
         connectTimeout: 30s
 {{- end }}
-{{- $redisNs := index $.Values.redisNamespaces $key }}
-{{- if $redisNs }}
----
-# {{ $ns }} -> redis namespace - DISABLE mTLS
-apiVersion: networking.istio.io/v1
-kind: DestinationRule
-metadata:
-  name: {{ $key }}-to-redis-dr
-  namespace: {{ $ns }}
-  labels:
-    {{- include "istio-config.labels" $ | nindent 4 }}
-spec:
-  host: redis.{{ $redisNs }}.svc.cluster.local
-  exportTo:
-    - "."
-  trafficPolicy:
-    tls:
-      mode: DISABLE
-    connectionPool:
-      tcp:
-        maxConnections: 100
-        connectTimeout: 10s
-{{- end }}
 {{- end }}
 
 # =============================================================================
 # Infrastructure Namespace to Database DestinationRules
-# CRITICAL: Infrastructure services (Keycloak, GrowthBook) need access to databases
+# CRITICAL: Infrastructure services (e.g. GrowthBook) need access to databases
 # =============================================================================
 {{- if .Values.infrastructureDatabaseMapping }}
 {{- range $key, $dbNs := .Values.infrastructureDatabaseMapping }}
@@ -514,72 +428,6 @@ spec:
       maxEjectionPercent: {{ .Values.circuitBreaker.maxEjectionPercent }}
     {{- end }}
 
----
-# Identity (Keycloak) - critical auth service
-# No explicit tls.mode — auto-mTLS detects ambient vs sidecar automatically
-# h2UpgradePolicy: DO_NOT_UPGRADE — Keycloak's HTTP listener only serves
-# HTTP/1.1. Forcing an h2 upstream negotiation under ambient/HBONE causes
-# Envoy "delayed connect error: Invalid argument" on the ingress path
-# (identity.<brand>.com → keycloak), which breaks OIDC /auth redirects.
-apiVersion: networking.istio.io/v1
-kind: DestinationRule
-metadata:
-  name: identity-dr
-  namespace: {{ .Values.infrastructureNamespaces.identity }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  host: "*.{{ .Values.infrastructureNamespaces.identity }}.svc.cluster.local"
-  trafficPolicy:
-    loadBalancer:
-      simple: LEAST_REQUEST
-    connectionPool:
-      tcp:
-        maxConnections: 200
-        connectTimeout: 10s
-      http:
-        h2UpgradePolicy: DO_NOT_UPGRADE
-        http1MaxPendingRequests: 200
-        http2MaxRequests: 2000
-        maxRetries: 3
-    outlierDetection:
-      consecutive5xxErrors: 3
-      interval: 10s
-      baseEjectionTime: 30s
-      maxEjectionPercent: 30
-
-{{- if index .Values.infrastructureNamespaces "identity-internal" }}
----
-# Identity Internal (Keycloak) - internal auth service
-# No explicit tls.mode — auto-mTLS detects ambient vs sidecar automatically
-# h2UpgradePolicy: DO_NOT_UPGRADE — see note on identity-dr above.
-apiVersion: networking.istio.io/v1
-kind: DestinationRule
-metadata:
-  name: identity-internal-dr
-  namespace: {{ index .Values.infrastructureNamespaces "identity-internal" }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  host: "*.{{ index .Values.infrastructureNamespaces "identity-internal" }}.svc.cluster.local"
-  trafficPolicy:
-    loadBalancer:
-      simple: LEAST_REQUEST
-    connectionPool:
-      tcp:
-        maxConnections: 200
-        connectTimeout: 10s
-      http:
-        h2UpgradePolicy: DO_NOT_UPGRADE
-        http1MaxPendingRequests: 200
-        http2MaxRequests: 2000
-        maxRetries: 3
-    outlierDetection:
-      consecutive5xxErrors: 3
-      interval: 10s
-      baseEjectionTime: 30s
-      maxEjectionPercent: 30
-{{- end }}
 
 ---
 # GrowthBook - feature flags
@@ -707,51 +555,6 @@ spec:
         http1MaxPendingRequests: 20
         http2MaxRequests: 100
 
----
-# {{ $ns }} -> identity namespace (auto-mTLS for ambient compatibility)
-apiVersion: networking.istio.io/v1
-kind: DestinationRule
-metadata:
-  name: {{ $ns }}-to-identity-dr
-  namespace: {{ $ns }}
-  labels:
-    {{- include "istio-config.labels" $ | nindent 4 }}
-spec:
-  host: "*.{{ $.Values.infrastructureNamespaces.identity }}.svc.cluster.local"
-  exportTo:
-    - "."
-  trafficPolicy:
-    connectionPool:
-      tcp:
-        maxConnections: 50
-        connectTimeout: 10s
-      http:
-        http1MaxPendingRequests: 50
-        http2MaxRequests: 500
-
-{{- if index $.Values.infrastructureNamespaces "identity-internal" }}
----
-# {{ $ns }} -> identity-internal namespace (auto-mTLS for ambient compatibility)
-apiVersion: networking.istio.io/v1
-kind: DestinationRule
-metadata:
-  name: {{ $ns }}-to-identity-internal-dr
-  namespace: {{ $ns }}
-  labels:
-    {{- include "istio-config.labels" $ | nindent 4 }}
-spec:
-  host: "*.{{ index $.Values.infrastructureNamespaces "identity-internal" }}.svc.cluster.local"
-  exportTo:
-    - "."
-  trafficPolicy:
-    connectionPool:
-      tcp:
-        maxConnections: 50
-        connectTimeout: 10s
-      http:
-        http1MaxPendingRequests: 50
-        http2MaxRequests: 500
-{{- end }}
 
 ---
 # {{ $ns }} -> growthbook namespace

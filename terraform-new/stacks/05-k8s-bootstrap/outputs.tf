@@ -44,25 +44,6 @@ output "letsencrypt_prod_issuer" {
 }
 
 # =============================================================================
-# Sealed Secrets Outputs
-# =============================================================================
-
-output "sealed_secrets_installed" {
-  description = "Sealed Secrets installation status"
-  value       = var.install_sealed_secrets
-}
-
-output "sealed_secrets_namespace" {
-  description = "Sealed Secrets namespace"
-  value       = var.sealed_secrets_namespace
-}
-
-output "sealed_secrets_controller_name" {
-  description = "Sealed Secrets controller name"
-  value       = var.install_sealed_secrets ? "sealed-secrets-controller" : null
-}
-
-# =============================================================================
 # ArgoCD Outputs
 # =============================================================================
 
@@ -121,7 +102,6 @@ output "k8s_bootstrap_ready" {
   depends_on = [
     helm_release.kong,
     helm_release.cert_manager,
-    helm_release.sealed_secrets,
     helm_release.argocd,
     helm_release.external_secrets
   ]

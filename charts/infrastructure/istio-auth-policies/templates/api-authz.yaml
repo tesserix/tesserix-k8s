@@ -74,10 +74,10 @@ spec:
               - "GET"
               - "POST"
 
-    # FanZone auth endpoints (uses app-issued JWT in X-FZ-Auth, not Keycloak).
+    # FanZone auth endpoints (uses app-issued JWT in X-FZ-Auth).
     # Covers login, OAuth, profile, avatars, and all auth service routes.
     # Istio RequestAuthentication only validates Authorization: Bearer tokens
-    # from configured Keycloak issuers, so all FanZone /auth/* routes must
+    # from configured issuers, so all FanZone /auth/* routes must
     # be explicitly allowed here.
     - to:
         - operation:
@@ -119,7 +119,7 @@ spec:
             methods:
               - "GET"
 
-    # FanZone BFF auth endpoints (app-level cookie/token auth, not Keycloak JWT)
+    # FanZone BFF auth endpoints (app-level cookie/token auth, not a bearer JWT)
     # Path arrives as /bff/* at the gateway; VirtualService rewrites to / at the BFF.
     # AuthorizationPolicy evaluates the original path before rewrite.
     # PUT/DELETE needed for profile updates, username claims, logout, etc.
@@ -136,8 +136,8 @@ spec:
               - "OPTIONS"
 
     # FanZone API endpoints that use X-FZ-Auth header for auth.
-    # These are authenticated by the FanZone API service, not by Istio/Keycloak.
-    # Must be allowed at gateway level since no Keycloak JWT is present.
+    # These are authenticated by the FanZone API service, not by Istio.
+    # Must be allowed at gateway level since no bearer JWT is present.
     - to:
         - operation:
             hosts:
@@ -152,7 +152,7 @@ spec:
               - "PATCH"
               - "DELETE"
 
-    # HomeChef API endpoints (uses app-issued JWT in Go backend, not Keycloak).
+    # HomeChef API endpoints (uses app-issued JWT in the Go backend).
     # All API traffic to fe3dr.com is authenticated by the HomeChef API service.
     - to:
         - operation:

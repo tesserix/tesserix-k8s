@@ -56,17 +56,6 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ $ns }}
     {{- end }}
-    # Allow from identity namespaces (Keycloak uses global PG for keycloak_customer/internal DBs)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.infrastructureNamespaces.identity }}
-    {{- if index .Values.infrastructureNamespaces "identity-internal" }}
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ index .Values.infrastructureNamespaces "identity-internal" }}
-    {{- end }}
     # Allow from monitoring
     - from:
         - namespaceSelector:
@@ -211,11 +200,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
-    # Allow from knative-serving (activator probes and routing)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: knative-serving
     # Allow DNS (both UDP and TCP)
     # Allow from cnpg-system (CloudNativePG operator status checks)
     - from:
@@ -240,7 +224,7 @@ spec:
 
 # =============================================================================
 # HomeChef Namespace Policies
-# Allow from ingress, global, monitoring, knative-serving
+# Allow from ingress, global, monitoring
 # =============================================================================
 {{- if .Values.appNamespaces.homechef }}
 ---
@@ -288,11 +272,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
-    # Allow from knative-serving (activator probes and routing)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: knative-serving
     # Allow from cnpg-system (CloudNativePG operator status checks on port 8000)
     - from:
         - namespaceSelector:
@@ -319,16 +298,15 @@ spec:
 # Kora Namespace Policies
 # Allow from ingress, global, monitoring — deny cross-product.
 #
-# Kora was the last product without an allow-ingress policy: it ran on Knative
-# (routed via knative-local-gateway) and, until it joined the ambient mesh, the
-# blanket default-deny-ingress had never actually gated its traffic. After the
+# Kora was the last product without an allow-ingress policy: until it joined the
+# ambient mesh, the blanket default-deny-ingress had never actually gated its
+# traffic. After the
 # ambient onboarding (waypoint + dataplane label) the gateway reaches kora pods
 # over HBONE (15008), which default-deny-ingress drops unless the source
 # namespace is allowlisted — exactly the gap that kept kora-api.tesserix.app
 # unreachable (000) even with a healthy pod. This restores the same allowances
-# every other product has. NOTE: no knative-serving source — kora is a plain
-# Deployment now (charts/apps/kora-api), routed to directly by the kora-istio
-# VirtualService, so there is no activator hop to permit.
+# every other product has. kora is a plain Deployment (charts/apps/kora-api),
+# routed to directly by the kora-istio VirtualService.
 # =============================================================================
 {{- if .Values.appNamespaces.kora }}
 ---
@@ -397,7 +375,7 @@ spec:
 
 # =============================================================================
 # GameVerse Namespace Policies
-# Allow from ingress, global, monitoring, knative-serving
+# Allow from ingress, global, monitoring
 # =============================================================================
 {{- if .Values.appNamespaces.gameverse }}
 ---
@@ -438,11 +416,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
-    # Allow from knative-serving (activator probes and routing)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: knative-serving
     # Allow DNS (both UDP and TCP)
     # Allow from cnpg-system (CloudNativePG operator status checks)
     - from:
@@ -723,7 +696,7 @@ spec:
 # Database Namespace Policies (STRICT MULTI-TENANT ISOLATION)
 # Each product can ONLY access its own database namespace
 # Cross-product access is DENIED
-# Infrastructure services (Keycloak, GrowthBook) have explicit database mappings
+# Infrastructure services (e.g. GrowthBook) have explicit database mappings
 # =============================================================================
 {{- range $key, $dbNs := .Values.databaseNamespaces }}
 ---
@@ -825,88 +798,6 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
-    {{- end }}
-    {{- end }}
-{{- end }}
-
-# =============================================================================
-# Redis Namespace Policies (STRICT MULTI-TENANT ISOLATION)
-# Each product can ONLY access its own Redis namespace
-# Cross-product access explicitly configured via crossProductRedisAccess
-# =============================================================================
-{{- range $key, $redisNs := .Values.redisNamespaces }}
----
-# Strict Redis access for {{ $key }} - only {{ index $.Values.appNamespaces $key }} can access
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: strict-{{ $key }}-redis-access
-  namespace: {{ $redisNs }}
-  labels:
-    {{- include "istio-config.labels" $ | nindent 4 }}
-    security.tesserix.app/isolation: "product-boundary"
-    security.tesserix.app/product: "{{ $key }}"
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-  ingress:
-    # ONLY allow from the corresponding app namespace - NO OTHER PRODUCTS
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ index $.Values.appNamespaces $key }}
-      ports:
-        - protocol: TCP
-          port: 6379
-    # Allow internal Redis sentinel/replica communication
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $redisNs }}
-      ports:
-        - protocol: TCP
-          port: 6379
-        - protocol: TCP
-          port: 26379  # Sentinel
-    # Allow cross-product Redis access (for shared caching)
-    {{- if $.Values.crossProductRedisAccess }}
-    {{- range $appKey, $allowedRedis := $.Values.crossProductRedisAccess }}
-    {{- range $allowedRedisNs := $allowedRedis }}
-    {{- if eq $allowedRedisNs $redisNs }}
-    {{- $appNs := index $.Values.appNamespaces $appKey }}
-    {{- if $appNs }}
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $appNs }}
-      ports:
-        - protocol: TCP
-          port: 6379
-    {{- end }}
-    {{- end }}
-    {{- end }}
-    {{- end }}
-    {{- end }}
-    # Allow monitoring (for metrics only)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-      ports:
-        - protocol: TCP
-          port: 9121  # redis-exporter metrics only
-    {{- if $.Values.redisExternalAccess }}
-    {{- if index $.Values.redisExternalAccess $key }}
-    # Allow external access via ILB (Cloud Run VPC connector)
-    - from:
-      {{- range index $.Values.redisExternalAccess $key }}
-        - ipBlock:
-            cidr: {{ . }}
-      {{- end }}
-      ports:
-        - protocol: TCP
-          port: 6379
     {{- end }}
     {{- end }}
 {{- end }}
@@ -1084,87 +975,6 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Values.infrastructureNamespaces.translation }}
 
-# =============================================================================
-# Identity (Keycloak) Namespace Policies
-# Allow from all app namespaces (authentication)
-# =============================================================================
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-apps-to-identity
-  namespace: {{ .Values.infrastructureNamespaces.identity }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-  ingress:
-    # Allow from istio-ingress (user login flows)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: istio-ingress
-    # Allow from all app namespaces
-    {{- range $key, $ns := .Values.appNamespaces }}
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $ns }}
-    {{- end }}
-    # Allow monitoring
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-    # Allow internal communication (redis)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ .Values.infrastructureNamespaces.identity }}
-
-{{- if index .Values.infrastructureNamespaces "identity-internal" }}
-# =============================================================================
-# Identity Internal (Keycloak) Namespace Policies
-# Allow from all app namespaces (staff/admin authentication)
-# =============================================================================
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-apps-to-identity-internal
-  namespace: {{ index .Values.infrastructureNamespaces "identity-internal" }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  podSelector: {}
-  policyTypes:
-    - Ingress
-  ingress:
-    # Allow from istio-ingress (staff login flows)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: istio-ingress
-    # Allow from all app namespaces
-    {{- range $key, $ns := .Values.appNamespaces }}
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $ns }}
-    {{- end }}
-    # Allow monitoring
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: monitoring
-    # Allow internal communication (redis)
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ index .Values.infrastructureNamespaces "identity-internal" }}
-{{- end }}
 
 # =============================================================================
 # GrowthBook Namespace Policies
@@ -1233,7 +1043,7 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: monitoring
-    # Allow internal (postgresql, clickhouse, redis within namespace)
+    # Allow internal (postgresql, clickhouse within namespace)
     - from:
         - namespaceSelector:
             matchLabels:
@@ -1607,9 +1417,9 @@ spec:
 
 # =============================================================================
 # Cross-Product Isolation - Enforced via:
-# 1. Strict ingress policies on database/redis namespaces (only allow from owner)
+# 1. Strict ingress policies on database namespaces (only allow from owner)
 # 2. Istio AuthorizationPolicies (deny cross-product access)
-# 3. Egress policies only allow access to own database/redis namespace
+# 3. Egress policies only allow access to own database namespace
 # =============================================================================
 
 # =============================================================================
@@ -1679,16 +1489,6 @@ spec:
               kubernetes.io/metadata.name: {{ $allowedNs }}
     {{- end }}
     {{- end }}
-    {{- if index $.Values.redisNamespaces $key }}
-    # Allow egress to own Redis namespace
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ index $.Values.redisNamespaces $key }}
-      ports:
-        - protocol: TCP
-          port: 6379
-    {{- end }}
     {{- if $.Values.mongoNamespaces }}
     {{- if index $.Values.mongoNamespaces $key }}
     # Allow egress to own MongoDB namespace
@@ -1701,19 +1501,6 @@ spec:
           port: 27017
     {{- end }}
     {{- end }}
-    # Allow egress to cross-product Redis (for shared caching)
-    {{- if $.Values.crossProductRedisAccess }}
-    {{- $allowedRedis := index $.Values.crossProductRedisAccess $key }}
-    {{- range $allowedRedisNs := $allowedRedis }}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $allowedRedisNs }}
-      ports:
-        - protocol: TCP
-          port: 6379
-    {{- end }}
-    {{- end }}
     # Allow egress to global namespace (shared services)
     - to:
         - namespaceSelector:
@@ -1724,17 +1511,6 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ $.Values.infrastructureNamespaces.nats }}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $.Values.infrastructureNamespaces.identity }}
-    # Allow egress to identity-internal namespace (Keycloak internal realm for staff/admin auth)
-    {{- if index $.Values.infrastructureNamespaces "identity-internal" }}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ index $.Values.infrastructureNamespaces "identity-internal" }}
-    {{- end }}
     - to:
         - namespaceSelector:
             matchLabels:
@@ -1768,16 +1544,11 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
-    # Allow istio-ingress (Knative local gateway for service-to-service routing)
+    # Allow istio-ingress (service-to-service routing)
     - to:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-ingress
-    # Allow knative-serving (activator, autoscaler)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: knative-serving
     # Allow monitoring
     - to:
         - namespaceSelector:

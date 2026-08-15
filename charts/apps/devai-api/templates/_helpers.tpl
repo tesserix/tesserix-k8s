@@ -95,14 +95,11 @@ identical environment — defined once here so the two never drift.
   # connection mid-upgrade). Intra-cluster encryption is
   # handled by Istio.
   value: "postgresql://{{ .Values.database.user }}:$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode=disable"
-# Redis — password must be defined before URL for $(VAR) expansion
-- name: REDIS_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: redis-devai-password
-      key: password
+# redis.user is the Valkey ACL user that confines this app to its own key
+# prefix. The user is nopass and the literal below is discarded, but clients
+# skip AUTH entirely when the password is empty — hence a placeholder.
 - name: DEVAI_REDIS_URL
-  value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+  value: "redis://{{ with .Values.redis.user }}{{ . }}:nopass@{{ end }}{{ .Values.redis.host }}:{{ .Values.redis.port }}"
 # NATS
 - name: DEVAI_NATS_URL
   value: {{ .Values.nats.url | quote }}
@@ -398,11 +395,6 @@ identical environment — defined once here so the two never drift.
       key: token
 - name: DEVAI_SCM_AUTH_METHOD
   value: "github_app"
-- name: DEVAI_KEYCLOAK_CLIENT_SECRET
-  valueFrom:
-    secretKeyRef:
-      name: devai-api-secrets
-      key: DEVAI_KEYCLOAK_CLIENT_SECRET
 - name: DEVAI_LANGCHAIN_API_KEY
   valueFrom:
     secretKeyRef:

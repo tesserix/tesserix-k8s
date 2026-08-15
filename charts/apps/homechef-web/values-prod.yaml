@@ -37,25 +37,25 @@ gcp:
     secretPrefix: "prod"
 
 # Canonical Service name for the Deployment. Kept as <svc>-direct: the bare
-# name was owned by the Knative Route and is not reclaimed.
+# name was owned by the legacy route Service and is not reclaimed.
 service:
   nameOverride: "homechef-web-direct"
 
-# The Knative Service never rendered a securityContext, so these nginx SPAs have
+# The legacy Service never rendered a securityContext, so these nginx SPAs have
 # always run as root in prod. The Deployment template does render one, and
 # runAsUser 1001 makes nginx fail at startup:
 #   nginx: [emerg] mkdir() "/var/cache/nginx/client_temp" failed (13: Permission denied)
 # Cleared here to preserve the exact runtime the ksvc had. Running these
 # non-root needs writable /var/cache/nginx, /var/run and /etc/nginx/conf.d
 # (emptyDir mounts or an nginx-unprivileged base image) — tracked separately so
-# the Knative removal stays behaviour-preserving.
+# the migration stays behaviour-preserving.
 # (null, not {} — Helm deep-merges maps, so {} would not clear the base values.)
 podSecurityContext: null
 securityContext: null
 
 # No Kong in this cluster — `kubectl get ingressclass` returns nothing, so these
 # Ingress objects have sat with an empty status.loadBalancer since creation.
-# ArgoCD blocks on their health, which stalled the sync that prunes the Knative
+# ArgoCD blocks on their health, which stalled the sync that prunes the legacy
 # Services. HomeChef serves through the Istio Gateway + VirtualServices in
 # manifests/homechef-istio, not through an Ingress controller.
 ingress:

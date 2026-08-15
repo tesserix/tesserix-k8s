@@ -20,7 +20,9 @@ spec:
       releaseName: growthbook
       values: |
         # GrowthBook configuration for PRODUCTION environment
-        replicaCount: 2
+        # One replica: the uploads PVC is ReadWriteOnce, so a second pod
+        # scheduled to another node sits in ContainerCreating forever.
+        replicaCount: 1
 
         image:
           repository: growthbook/growthbook
@@ -113,11 +115,6 @@ spec:
           adminPasswordSecret:
             name: "growthbook-admin-secret"
             key: "password"
-          sealedSecret:
-            enabled: true
-            # TODO: Generate sealed secret for prod cluster:
-            # echo -n 'PROD_PASSWORD_HERE' | kubeseal --raw --namespace growthbook --name growthbook-admin-secret --controller-namespace sealed-secrets --context prod-cluster
-            encryptedPassword: "REPLACE_WITH_PROD_SEALED_SECRET"
           image:
             repository: curlimages/curl
             tag: "8.5.0"

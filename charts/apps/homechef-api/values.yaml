@@ -53,8 +53,8 @@ securityContext:
   runAsUser: 1000
 
 service:
-  # Set during the Knative migration only (the canonical name is still owned by
-  # the Knative Route). Cleared once the ksvc is removed.
+  # Legacy override from the Deployment migration; cleared once the old
+  # route Service is gone.
   nameOverride: ""
   type: ClusterIP
   port: 8080
@@ -193,7 +193,7 @@ env:
   DATABASE_NAME: "homechef"
   DATABASE_SSLMODE: "require"
   # Redis
-  REDIS_HOST: "redis.redis.svc.cluster.local"
+  REDIS_HOST: "global-valkey-cache.global.svc.cluster.local"
   REDIS_PORT: "6379"
   # MongoDB — in-app chat + document uploads (#53). MONGODB_URI is assembled in
   # _helpers.tpl from the Percona-operator credentials secret (it interpolates
@@ -361,8 +361,10 @@ gcp:
 
 # Redis connection settings
 redis:
-  host: "redis.redis.svc.cluster.local"
+  host: "global-valkey-cache.global.svc.cluster.local"
   port: "6379"
+  # Valkey ACL user; empty means password-only auth (local sandbox).
+  user: ""
 
 # LOCAL / kind mode. OFF by default — prod behavior is completely unchanged.
 # When enabled (see values-local.yaml), the API stops using GCP Secret Manager

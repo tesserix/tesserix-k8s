@@ -1,6 +1,6 @@
 # =============================================================================
 # Istio Auth Policies Configuration
-# JWT authentication and authorization for Keycloak-protected services
+# JWT authentication and authorization for GIP-protected services
 # =============================================================================
 
 # Environment name (devtest, pilot, prod)
@@ -32,7 +32,7 @@ appNamespaces:
 # =============================================================================
 # Google Identity Platform (GIP) Configuration
 #
-# Every product EXCEPT FanZone is on GIP; FanZone remains on Keycloak below.
+# Every product is on GIP.
 # Only native mobile clients present a Bearer JWT at the ingress — the web apps
 # use session cookies + HeaderTrustAuth — so this rule exists solely to stop
 # Envoy rejecting GIP tokens with "Jwt issuer is not configured".
@@ -73,50 +73,6 @@ gip:
 extraGip: []
 
 # =============================================================================
-# Keycloak IDP Configuration
-# Dual IDP setup: customer (B2C) and internal (staff/admin)
-#
-# NOTE: only FanZone still uses Keycloak. `internal` below points at a DEVTEST
-# host and its audiences (admin-web, admin-bff, marketplace-dashboard) belong to
-# mark8ly, which migrated to GIP — it is stale. Left as-is deliberately; removing
-# it is a separate change from adding GIP.
-# =============================================================================
-keycloak:
-  # Customer IDP - for mobile apps, web storefronts, B2C customers, and tenant staff
-  customer:
-    enabled: true
-    issuer: "https://devtest-customer-idp.tesserix.app/realms/tesserix-customer"
-    jwksUri: "https://devtest-customer-idp.tesserix.app/realms/tesserix-customer/protocol/openid-connect/certs"
-    audiences:
-      - "tesserix-api"
-      - "mobile-app"
-      - "storefront-mobile"
-      - "web-storefront"
-      - "admin-dashboard"
-      - "account"
-
-  # Master realm - for Keycloak admin console access
-  # This allows the Keycloak admin UI to work through Istio ingress
-  # Note: No audience restriction needed - master realm tokens don't include aud claim
-  master:
-    enabled: true
-    issuer: "https://devtest-customer-idp.tesserix.app/realms/master"
-    jwksUri: "https://devtest-customer-idp.tesserix.app/realms/master/protocol/openid-connect/certs"
-    audiences: []
-
-  # Internal IDP - for admin dashboard and staff authentication
-  # Separate realm for stricter security on admin operations
-  internal:
-    enabled: true
-    issuer: "https://devtest-internal-idp.tesserix.app/realms/tesserix-internal"
-    jwksUri: "https://devtest-internal-idp.tesserix.app/realms/tesserix-internal/protocol/openid-connect/certs"
-    audiences:
-      - "admin-web"
-      - "admin-bff"
-      - "marketplace-dashboard"
-      - "marketplace-onboarding-admin"
-
-# =============================================================================
 # Frontend apps configuration
 # These apps serve static content and don't require JWT validation
 # =============================================================================
@@ -131,16 +87,6 @@ frontendApps:
     label: tenant-onboarding
   - name: growthbook
     label: growthbook
-  - name: idp-customer
-    label: keycloak
-    namespace: identity-customer
-    hosts:
-      - "devtest-customer-idp.tesserix.app"  # Customer Keycloak IDP
-  - name: idp-internal
-    label: keycloak
-    namespace: identity-internal
-    hosts:
-      - "devtest-internal-idp.tesserix.app"  # Internal Keycloak IDP for admin/staff
 # =============================================================================
 # Service mesh configuration
 # =============================================================================
@@ -164,7 +110,7 @@ mtls:
 # Backend services should trust these headers (no re-validation needed)
 # =============================================================================
 # Headers output by Istio:
-#   x-jwt-claim-sub          - User ID (Keycloak subject)
+#   x-jwt-claim-sub          - User ID (GIP subject)
 #   x-jwt-claim-email        - User email
 #   x-jwt-claim-tenant-id    - Tenant UUID
 #   x-jwt-claim-tenant-slug  - Tenant slug
@@ -190,6 +136,9 @@ opsEndpointDeny:
       namespace: istio-ingress
     - name: homechef
       istioLabel: homechef-ingressgateway
+      namespace: istio-ingress
+    - name: zitadel
+      istioLabel: zitadel-ingressgateway
       namespace: istio-ingress
     - name: internal
       istioLabel: ingressgateway-internal

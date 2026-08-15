@@ -83,24 +83,6 @@ spec:
 {{- end }}
 
 # =============================================================================
-# Redis Namespace mTLS Policies
-# DISABLE mTLS for Redis namespaces (use native Redis AUTH)
-# =============================================================================
-{{- range $key, $redisNs := .Values.redisNamespaces }}
----
-apiVersion: security.istio.io/v1
-kind: PeerAuthentication
-metadata:
-  name: {{ $key }}-redis-mtls
-  namespace: {{ $redisNs }}
-  labels:
-    {{- include "istio-config.labels" $ | nindent 4 }}
-spec:
-  mtls:
-    mode: DISABLE
-{{- end }}
-
-# =============================================================================
 # MongoDB Namespace mTLS Policies
 # DISABLE mTLS for MongoDB namespaces (use native MongoDB wire protocol)
 # =============================================================================
@@ -176,33 +158,6 @@ spec:
   mtls:
     mode: PERMISSIVE
 
----
-# Identity Customer (Keycloak) - PERMISSIVE mTLS
-apiVersion: security.istio.io/v1
-kind: PeerAuthentication
-metadata:
-  name: identity-mtls
-  namespace: {{ .Values.infrastructureNamespaces.identity }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  mtls:
-    mode: PERMISSIVE
-
-{{- if index .Values.infrastructureNamespaces "identity-internal" }}
----
-# Identity Internal (Keycloak) - PERMISSIVE mTLS
-apiVersion: security.istio.io/v1
-kind: PeerAuthentication
-metadata:
-  name: identity-internal-mtls
-  namespace: {{ index .Values.infrastructureNamespaces "identity-internal" }}
-  labels:
-    {{- include "istio-config.labels" . | nindent 4 }}
-spec:
-  mtls:
-    mode: PERMISSIVE
-{{- end }}
 
 ---
 # GrowthBook - PERMISSIVE mTLS

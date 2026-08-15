@@ -275,80 +275,109 @@ spec:
               echo "[5/6] Admin user creation skipped (disabled)"
               {{- end }}
 
-              # --- Create K8s Secret in target namespace ---
-              echo "[6/6] Writing client IDs to K8s Secret: $TARGET_NAMESPACE/$SECRET_NAME"
+              {{- if .Values.googleAuth.enabled }}
+              # --- Pre-link the allowed Google accounts to this organization ---
+              # A google account row with providerId NULL is upstream's migration
+              # path: the callback matches it on email and adopts it, so these
+              # users land in the org instead of a fresh empty one.
+              echo "[5b/6] Pre-provisioning Google sign-in for allowed admins..."
+              {{- range .Values.oauth2Proxy.allowedEmails }}
+              GEMAIL='{{ . }}'
+              GUSER=$($PSQL -c "SELECT id FROM users WHERE email = '$GEMAIL' LIMIT 1;")
+              if [ -z "$GUSER" ]; then
+                GUSER="user_$(head -c 16 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=' | head -c 20)"
+                $PSQL -c "INSERT INTO users (id, email, \"firstName\", \"lastName\", \"createdAt\", \"updatedAt\") VALUES ('$GUSER', '$GEMAIL', '', '', NOW(), NOW());"
+              fi
+              if [ -z "$($PSQL -c "SELECT id FROM accounts WHERE \"userId\" = '$GUSER' AND provider = 'google' LIMIT 1;")" ]; then
+                $PSQL -c "INSERT INTO accounts (id, \"userId\", provider, \"providerId\", email, \"createdAt\", \"updatedAt\") VALUES (gen_random_uuid()::text, '$GUSER', 'google', NULL, '$GEMAIL', NOW(), NOW());"
+              fi
+              if [ -z "$($PSQL -c "SELECT id FROM members WHERE \"userId\" = '$GUSER' AND \"organizationId\" = '$ORG_ID' LIMIT 1;")" ]; then
+                $PSQL -c "INSERT INTO members (role, email, \"userId\", \"organizationId\", \"createdAt\", \"updatedAt\") VALUES ('org:admin', '$GEMAIL', '$GUSER', '$ORG_ID', NOW(), NOW());"
+              fi
+              echo "  $GEMAIL ready ($GUSER)"
+              {{- end }}
+              {{- end }}
+
+              # --- Write client IDs to a Secret in each consuming namespace ---
+              echo "[6/6] Writing client IDs to K8s Secrets..."
 
               TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
               CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
               API="https://kubernetes.default.svc"
 
-              # Collect client IDs
-              {{- $apps := list }}
-              {{- range $app, $config := .Values.projectInit.apps }}
-              {{- $apps = append $apps $app }}
-              {{- end }}
+              write_secret() {
+                local ns="$1"
+                local string_data="$2"
 
-              # Build stringData JSON dynamically
-              STRING_DATA="{"
-              {{- range $i, $app := (keys .Values.projectInit.apps | sortAlpha) }}
-              CLIENT_VAR="CLIENT_ID_{{ $app | replace "-" "_" }}"
-              CLIENT_VAL=$(eval echo "\$$CLIENT_VAR")
-              {{ if $i }}STRING_DATA="$STRING_DATA,"{{ end }}
-              STRING_DATA="$STRING_DATA\"{{ $app }}-client-id\":\"$CLIENT_VAL\""
-              {{- end }}
-              STRING_DATA="$STRING_DATA}"
-
-              SECRET_JSON=$(cat <<EOJSON
+                local body
+                body=$(cat <<EOJSON
               {
                 "apiVersion": "v1",
                 "kind": "Secret",
                 "metadata": {
                   "name": "$SECRET_NAME",
-                  "namespace": "$TARGET_NAMESPACE",
+                  "namespace": "$ns",
                   "labels": {
                     "app.kubernetes.io/managed-by": "openpanel-init",
                     "app.kubernetes.io/part-of": "tesseract-hub"
                   }
                 },
                 "type": "Opaque",
-                "stringData": $STRING_DATA
+                "stringData": $string_data
               }
               EOJSON
               )
 
-              # Try create (POST), if exists (409) then replace (PUT)
-              HTTP_CODE=$(curl -s -o /tmp/k8s-response.json -w "%{http_code}" \
-                --cacert "$CA" \
-                -H "Authorization: Bearer $TOKEN" \
-                -H "Content-Type: application/json" \
-                -X POST \
-                -d "$SECRET_JSON" \
-                "$API/api/v1/namespaces/$TARGET_NAMESPACE/secrets")
-
-              if [ "$HTTP_CODE" = "409" ]; then
-                echo "  Secret already exists, updating..."
-                HTTP_CODE=$(curl -s -o /tmp/k8s-response.json -w "%{http_code}" \
+                local code
+                code=$(curl -s -o /tmp/k8s-response.json -w "%{http_code}" \
                   --cacert "$CA" \
                   -H "Authorization: Bearer $TOKEN" \
                   -H "Content-Type: application/json" \
-                  -X PUT \
-                  -d "$SECRET_JSON" \
-                  "$API/api/v1/namespaces/$TARGET_NAMESPACE/secrets/$SECRET_NAME")
-              fi
+                  -X POST -d "$body" \
+                  "$API/api/v1/namespaces/$ns/secrets")
 
-              if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "201" ]; then
-                echo "  Secret created/updated successfully (HTTP $HTTP_CODE)"
-              else
-                echo "  ERROR: Failed to create/update secret (HTTP $HTTP_CODE)"
-                cat /tmp/k8s-response.json 2>/dev/null
-                exit 1
-              fi
+                if [ "$code" = "409" ]; then
+                  code=$(curl -s -o /tmp/k8s-response.json -w "%{http_code}" \
+                    --cacert "$CA" \
+                    -H "Authorization: Bearer $TOKEN" \
+                    -H "Content-Type: application/json" \
+                    -X PUT -d "$body" \
+                    "$API/api/v1/namespaces/$ns/secrets/$SECRET_NAME")
+                fi
+
+                if [ "$code" = "200" ] || [ "$code" = "201" ]; then
+                  echo "  $ns/$SECRET_NAME (HTTP $code)"
+                else
+                  echo "  ERROR: $ns/$SECRET_NAME failed (HTTP $code)"
+                  cat /tmp/k8s-response.json 2>/dev/null
+                  exit 1
+                fi
+              }
+
+              {{/* Group apps by the namespace that consumes them, so each app's
+                   client ID lands where its Deployment can mount it. */}}
+              {{- $default := .Values.projectInit.targetNamespace }}
+              {{- $byNamespace := dict }}
+              {{- range $app, $config := .Values.projectInit.apps }}
+              {{-   $ns := default $default $config.namespace }}
+              {{-   $_ := set $byNamespace $ns (append (get $byNamespace $ns | default list) $app) }}
+              {{- end }}
+              {{- range $ns, $apps := $byNamespace }}
+
+              STRING_DATA="{"
+              {{- range $i, $app := $apps }}
+              CLIENT_VAL=$(eval echo "\$CLIENT_ID_{{ $app | replace "-" "_" }}")
+              {{ if $i }}STRING_DATA="$STRING_DATA,"{{ end }}
+              STRING_DATA="$STRING_DATA\"{{ $app }}-client-id\":\"$CLIENT_VAL\""
+              {{- end }}
+              STRING_DATA="$STRING_DATA}"
+              write_secret "{{ $ns }}" "$STRING_DATA"
+              {{- end }}
 
               echo ""
               echo "=== OpenPanel Project Init Complete ==="
-              echo "Client IDs written to Secret: $TARGET_NAMESPACE/$SECRET_NAME"
               {{- range $app, $config := .Values.projectInit.apps }}
-              echo "  {{ $app }}: $(eval echo \$CLIENT_ID_{{ $app | replace "-" "_" }})"
+              echo "  {{ $app }} -> {{ default $default $config.namespace }}: $(eval echo \$CLIENT_ID_{{ $app | replace "-" "_" }})"
               {{- end }}
           resources:
             requests:

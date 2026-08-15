@@ -1,0 +1,89 @@
+namespace: zitadel
+clusterName: zitadel-postgres
+
+# Three instances, unlike the single-instance product clusters: this is the
+# authentication path for the whole estate on Spot-only nodes, so a node loss
+# has to resolve as a leader election rather than an outage. Three, not two, so
+# that losing one node still leaves a replica to promote.
+instances: 3
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+storageSize: 20Gi
+storageClass: standard-rwo-retain
+walStorageSize: 8Gi
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+# Placeholder database only. Zitadel's setup Job creates the `zitadel`
+# database and role itself using the superuser credentials below, so letting
+# initdb create them here would leave the role holding a password Zitadel
+# does not have.
+bootstrap:
+  database: app
+  owner: app
+
+# Zitadel's own pool is capped at MaxOpenConns per pod; this leaves headroom
+# for 3 API pods, the login service, the setup Job and the CNPG probes.
+postgresql:
+  max_connections: "200"
+  shared_buffers: "512MB"
+  effective_cache_size: "1536MB"
+  work_mem: "8MB"
+  maintenance_work_mem: "128MB"
+  ssl_min_protocol_version: "TLSv1.3"
+  ssl_max_protocol_version: "TLSv1.3"
+  idle_in_transaction_session_timeout: "300000"
+  statement_timeout: "120000"
+  random_page_cost: "1.1"
+  effective_io_concurrency: "200"
+
+monitoring:
+  enablePodMonitor: true
+
+affinity:
+  # required, not preferred: two instances on one Spot node is the failure
+  # mode the extra instances exist to avoid.
+  podAntiAffinityType: required
+
+# Requires the Workload Identity binding: CNPG authenticates to GCS as the KSA
+# it generates for the cluster, so app-secrets-infra-prod@ needs an
+# iam.workloadIdentityUser grant for zitadel/zitadel-postgres. Without it the WAL
+# archive retries forever and CNPGWALArchiveFailing fires.
+backup:
+  enabled: true
+  destinationPath: "gs://tesseract-prod-backups-in/zitadel-postgres"
+  retentionPolicy: "3d"
+  serviceAccount: "app-secrets-infra-prod@tesseracthub-480811.iam.gserviceaccount.com"
+  schedule: "0 30 2 * * *"
+
+# Passwordless authentication for the application roles. GCP IAM database auth
+# is a Cloud SQL feature and does not exist for self-hosted Postgres; mutual TLS
+# with the CN mapped to the role is the equivalent. See docs/zitadel.md.
+certAuth:
+  enabled: true
+  caDuration: 87600h
+  caRenewBefore: 8760h
+  certDuration: 2160h
+  certRenewBefore: 360h
+  clients:
+    # enforce: false — CNPG owns this role's pg_hba line and adding a second
+    # one for it would shadow the operator's own replication rule.
+    - name: replication
+      role: streaming_replica
+      secretName: zitadel-postgres-client-replication
+      enforce: false
+    - name: zitadel
+      role: zitadel
+      secretName: zitadel-db-client-cert
+      enforce: true
+
+istio:
+  enabled: true
+
+networkPolicy:
+  enabled: true

@@ -107,6 +107,8 @@ are never created.
 | `agentregistry-postgres` | `agentregistry-system` | 1 | 8Gi | **no** |
 | `postiz-postgres` | `postiz` | 1 | 10Gi | **no** |
 | `stockpilot-postgres` | `stockpilot` | hibernated | 100Gi + 20Gi | yes |
+| `planning-poker-postgres` | `planning-poker` | 1 | 10Gi + 2Gi | **no** — needs the WI binding first |
+| `zitadel-postgres` | `zitadel` | 3 (primary + 2 replicas) | 20Gi + 8Gi | **no** — needs the WI binding first |
 
 Known gaps worth fixing when touching any of these: three clusters run with no
 backup at all, and `global-postgres` is single-instance while hosting both
@@ -124,6 +126,11 @@ Otherwise the bar is: different compliance/residency boundary, or an extension
 or major version the shared cluster cannot run.
 
 "It is a new product" is not a reason.
+
+`zitadel-postgres` was granted on the first test: it is event-sourced, so every
+authentication is a write, and `global` already carries both Keycloak stores —
+putting the replacement on the same cluster as the thing it replaces makes the
+cutover a single point of failure. See [`zitadel.md`](zitadel.md).
 
 ## Related
 

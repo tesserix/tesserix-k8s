@@ -1,0 +1,95 @@
+{{/*
+=============================================================================
+CONSOLE → WEB ADMIN API
+=============================================================================
+Grants the console's identity access to the web app's operator dashboard API.
+The console's server component calls ${WEB_INTERNAL_ORIGIN}/api/admin/dashboard
+(apps/console/lib/platform-api.ts) over the in-namespace ClusterIP.
+
+WHY THERE IS NO SEPARATE "allow ingress to console" POLICY HERE.
+charts/apps/company/templates/authorization-policy.yaml already declares
+`allow-ingress-to-tesserix` with NO selector — it is namespace-wide and
+therefore already covers every pod in `tesserix`, console included. Restating
+it here would duplicate an existing grant for no gain; declaring a resource of
+the SAME name would make two ArgoCD apps co-own it, which is the
+SharedResourceWarning that pinned the `company` app OutOfSync and timed out
+Kargo promotions.
+
+RELATIONSHIP TO THE ADMIN-SURFACE DENY.
+charts/infrastructure/istio-auth-policies/templates/admin-surface-deny.yaml
+attaches a DENY to the ingress GATEWAYS (ns istio-ingress, selectors
+`istio: ingressgateway` and `istio: custom-ingressgateway`). Its rules are
+host-scoped, and values.yaml lists exactly one surface:
+`kora-api.tesserix.app` with paths `/v1/admin` and `/v1/admin/*`. The console
+is untouched by it on two independent grounds:
+  1. Host. The DENY only matches Host/Authority `kora-api.tesserix.app`
+     (and its `:*` twin). The console is served on `console.tesserix.app` and
+     the path it needs is `/api/admin/*`, not `/v1/admin/*` — neither the host
+     nor the path matches, so no rule fires.
+  2. Topology. That policy is enforced at the ingress gateway. The console →
+     web call is a ClusterIP call inside `tesserix` and never traverses a
+     gateway at all, exactly as tesserix-home → kora-api does not.
+If WEB_INTERNAL_ORIGIN is ever changed to the public hostname, this reasoning
+stops holding — that is the same trade written down in admin-surface-deny.yaml.
+
+ENFORCEMENT CAVEAT — READ BEFORE ADDING L7 RULES IN THIS NAMESPACE.
+`tesserix` is listed under sidecarInjection.ambientExcluded in
+charts/thirdparty/istio-config/values.yaml, so the namespace carries
+`istio-injection: disabled` and NO `istio.io/dataplane-mode: ambient`: there is
+neither a sidecar nor a ztunnel in the path, and namespace-scoped
+AuthorizationPolicies here are not enforced by any proxy today. This policy is
+therefore a declaration of intent, and safe as written.
+It becomes load-bearing — and dangerous — the moment `tesserix` is re-enrolled
+in ambient. Under ambient WITHOUT a waypoint, ztunnel strips the HTTP
+attributes below, leaving an ALLOW policy with no valid rule, which Istio reads
+as deny-all for every workload the selector matches — here, the web app itself.
+That is precisely what took kora-api offline with 503s (see the Kora Namespace
+Policies note in
+charts/thirdparty/istio-config/templates/authorization-policies.yaml). If
+`tesserix` is ever added back to ambient, add it to
+`ambient.waypointNamespaces` in the SAME change, or drop the `to:` block here
+first.
+
+OWNERSHIP COUPLING — THIS CHART OWNS A POLICY THAT GATES ANOTHER WORKLOAD.
+The selector below matches the `company` pods, but the resource is rendered by
+the `console` chart and therefore owned by the `console` ArgoCD Application,
+which runs with `syncPolicy.automated.prune: true`
+(argocd/prod/apps/global/console.yaml). Deleting or renaming the console
+Application would prune a policy that gates the web app. That is harmless today
+— the namespace is ambient-excluded, so nothing enforces this — but it means
+tesserix.app's future reachability hangs off an unrelated app's lifecycle.
+
+The clean end state is to move this policy into charts/apps/company, whose
+Application already owns the workload it selects. That is deliberately NOT done
+here: it would change a live chart's rendered output inside a PR whose purpose
+is adding a new app. FOLLOW-UP: move `allow-console-to-web-admin-api` into
+charts/apps/company/templates/authorization-policy.yaml, in its own change, at
+the same time as any ambient re-enrollment.
+=============================================================================
+*/}}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-console-to-web-admin-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "console.labels" . | nindent 4 }}
+spec:
+  # Istio enforces authorization at the DESTINATION, so this selects the web
+  # app's pods, not the console's.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.web.serviceName }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/{{ .Release.Namespace }}/sa/{{ include "console.serviceAccountName" . }}"
+      to:
+        - operation:
+            # Both forms: "/api/admin/*" does NOT match the bare "/api/admin".
+            paths:
+              - {{ .Values.web.adminApiPath | quote }}
+              - {{ printf "%s/*" .Values.web.adminApiPath | quote }}

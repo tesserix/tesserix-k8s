@@ -5,8 +5,6 @@
 # This script removes all data associated with a specific store (tenant) from:
 # - tesseract_hub database (marketplace PostgreSQL)
 # - staff_db database (marketplace PostgreSQL)
-# - Redis cache (marketplace Redis)
-# - Keycloak user attributes (customer IDP)
 #
 # Usage: ./cleanup-store-data.sh <store-slug>
 # Example: ./cleanup-store-data.sh demo-store
@@ -25,8 +23,6 @@ NC='\033[0m' # No Color
 # Default namespaces
 POSTGRES_NS="${POSTGRES_NS:-postgresql-marketplace}"
 POSTGRES_POD="${POSTGRES_POD:-postgresql-0}"
-REDIS_NS="${REDIS_NS:-redis-marketplace}"
-REDIS_POD="${REDIS_POD:-redis-0}"
 
 # Databases
 HUB_DB="tesseract_hub"
@@ -233,28 +229,6 @@ else
 fi
 
 echo ""
-echo -e "${YELLOW}Step 5: Cleaning up Redis cache...${NC}"
-
-if [ -n "$TENANT_ID" ]; then
-    # Clear tenant-specific cache keys
-    kubectl exec -n $REDIS_NS $REDIS_POD -- redis-cli --pass "$(kubectl get secret redis-secret -n $REDIS_NS -o jsonpath='{.data.redis-password}' 2>/dev/null | base64 -d 2>/dev/null || echo '')" KEYS "tenant:$TENANT_ID:*" 2>/dev/null | while read key; do
-        if [ -n "$key" ]; then
-            kubectl exec -n $REDIS_NS $REDIS_POD -- redis-cli DEL "$key" 2>/dev/null
-        fi
-    done
-
-    kubectl exec -n $REDIS_NS $REDIS_POD -- redis-cli --pass "$(kubectl get secret redis-secret -n $REDIS_NS -o jsonpath='{.data.redis-password}' 2>/dev/null | base64 -d 2>/dev/null || echo '')" KEYS "permissions:$TENANT_ID:*" 2>/dev/null | while read key; do
-        if [ -n "$key" ]; then
-            kubectl exec -n $REDIS_NS $REDIS_POD -- redis-cli DEL "$key" 2>/dev/null
-        fi
-    done
-
-    echo -e "${GREEN}Redis cache cleanup completed${NC}"
-else
-    echo "Skipping Redis cleanup (no tenant ID)"
-fi
-
-echo ""
 echo -e "${GREEN}=== Cleanup Complete ===${NC}"
 echo ""
 echo "Summary:"
@@ -263,7 +237,6 @@ if [ -n "$TENANT_ID" ]; then
     echo "- Tenant ID: $TENANT_ID"
 fi
 echo "- Databases cleaned: tesseract_hub, staff_db, vendors_db"
-echo "- Redis cache cleared"
 echo ""
-echo -e "${YELLOW}Note: Keycloak user data should be cleaned up separately if needed.${NC}"
+echo -e "${YELLOW}Note: identity provider user data should be cleaned up separately if needed.${NC}"
 echo "The user can re-register with the same email after cleanup."

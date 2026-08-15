@@ -15,6 +15,55 @@ Secrets into application namespaces. Applications never hold an OpenBao token.
 | Recovery keys | GCP Secret Manager, `prod-openbao-recovery-keys` |
 | Snapshots | `gs://tesseract-prod-backups-in/openbao/`, daily 03:00 UTC, 30 days |
 
+## What belongs here, and what does not
+
+The split is by *subject*, not by sensitivity — both stores are equally secret.
+Ask who the secret is about.
+
+**GCP Secret Manager — the platform's own credentials.** One value for the whole
+estate, owned by us, rotated by us: database superuser passwords, GHCR and
+registry tokens, OAuth client id/secret pairs, third-party API keys we bought,
+session and signing keys, TLS material, and OpenBao's own recovery keys. It is
+the root of trust and it stays that way.
+
+**OpenBao — anything scoped to a customer, tenant or end user.** Per-tenant API
+keys and webhook signing secrets, merchant/vendor PSP and connected-account
+credentials, BYO-key material a customer uploaded, per-tenant encryption keys,
+and any user-held token we must store at rest.
+
+Why the boundary is absolute, not a preference:
+
+- Secret Manager has no tenant boundary. It is one flat namespace per project,
+  and IAM grants are per-secret at best — the pattern in practice is one grant
+  covering a service's whole prefix. Put two tenants' keys there and any
+  principal that can read one can read the other. OpenBao gives a path prefix
+  per tenant and a policy that stops at it.
+- Secret Manager has no leases, no dynamic secrets and no per-read audit entry
+  naming the identity. When a customer asks who touched their key, only OpenBao
+  can answer.
+- Deleting a tenant means deleting `kv/<namespace>/<app>/<tenant>/` — one
+  prefix. In Secret Manager it means finding every secret whose *name* encodes
+  that tenant and hoping the naming held.
+- Conversely, a platform credential kept only in OpenBao is unreachable during
+  an OpenBao outage — including the credentials you would need to fix it.
+
+Path convention, matching the authorization model below:
+
+```
+kv/<namespace>/<app>/<tenant-or-user-id>/<secret-name>
+kv/mark8ly/marketplace-api/store-4f2a/stripe-connect
+```
+
+The policy a grant creates stops at `kv/data/<namespace>/<app>/*`, so tenant
+isolation *within* an app is the app's job: it must derive the tenant segment
+from the authenticated request, never from a client-supplied parameter. That is
+the same per-object authorization rule as any other IDOR surface.
+
+Migrating a tenant secret that is already in Secret Manager: write it to the
+OpenBao path, cut the consumer over, verify, then destroy the Secret Manager
+version. Do not leave it in both — two sources of truth for one credential is
+how a rotation silently half-applies.
+
 ## There is no OpenBao Kubernetes operator
 
 `bao operator` is a CLI command group — `init`, `unseal`, `raft`, `rekey`,
@@ -40,10 +89,12 @@ unlocks everything.
 2. **Auto-unseal, because every node is Spot.** A preempted node on a manually
    unsealed cluster means someone unsealing three pods at 3am. With `gcpckms`
    a restarted pod is ready on its own.
-3. **The root token is never stored.** The bootstrap Job initialises the
-   cluster, writes the *recovery* keys to Secret Manager, applies the config,
-   then calls `auth/token/revoke-self`. Day-2 admin access is minted from the
-   recovery keys via `bao operator generate-root` — a deliberate, auditable act.
+3. **The root token is revoked at the end of bootstrap.** The Job initialises
+   the cluster, writes the *recovery* keys to Secret Manager, applies the
+   config, then calls `auth/token/revoke-self`. It stores init's whole JSON, so
+   a dead `root_token` field is visible in the secret; it authenticates nothing.
+   Day-2 admin access was meant to be minted from the recovery keys via `bao
+   operator generate-root`, which does not currently work — see Day-2 below.
 4. **Applications authenticate as themselves.** Kubernetes auth roles bind a
    named ServiceAccount in a named namespace to a policy scoped to one KV path
    prefix. ESO mints a token for the *application's* ServiceAccount, so the
@@ -127,27 +178,14 @@ reads nothing, and a grant with no entry has no store to be read through.
 
 ### Wiring an application to it
 
-Put a `SecretStore` — namespaced, not cluster-scoped — in the application's own
-chart, authenticating as the application's ServiceAccount:
+Do **not** write a `SecretStore` by hand. The openbao chart renders one per
+whitelisted app, named `openbao-<app>` in that app's namespace, bound to that
+app's ServiceAccount — see `templates/app-secret-stores.yaml`. A store called
+plain `openbao` does not exist and never resolves.
+
+The application's chart contributes only the `ExternalSecret`:
 
 ```yaml
-apiVersion: external-secrets.io/v1beta1
-kind: SecretStore
-metadata:
-  name: openbao
-  namespace: homechef
-spec:
-  provider:
-    vault:
-      server: "http://openbao.openbao.svc:8200"
-      path: kv
-      version: v2
-      auth:
-        kubernetes:
-          mountPath: kubernetes
-          role: read-homechef
-          serviceAccountRef:
-            name: homechef-api
 ---
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
@@ -157,7 +195,8 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    name: openbao
+    # openbao-<app>, not `openbao`. The app here is homechef-api.
+    name: openbao-homechef-api
     kind: SecretStore
   target:
     name: homechef-api-db
@@ -170,9 +209,12 @@ spec:
         property: password
 ```
 
-The namespace also has to be added to `allowedSources` and `allowedPrincipals`
-in `charts/apps/openbao-namespace/values.yaml`, or ESO's connection is dropped
-at L3 before any of this matters.
+The namespace also needs a `destinations` entry in
+`argocd/prod/projects/security.yaml`, or the rendered store fails to sync with
+"namespace X is not permitted in project 'security'". Nothing has to change in
+`charts/apps/openbao-namespace/values.yaml`: `allowedSources` covers the
+*callers*, and the only caller is ESO from the `external-secrets` namespace,
+whichever app it is reading for.
 
 The `ClusterSecretStore` named `openbao-secret-store` exists for shared
 platform credentials only. It authenticates as ESO's own identity, so anything
@@ -202,9 +244,19 @@ it can read every namespace can request — which is why its policy stops at
   reached by `kubectl port-forward`.
 - Read-only root filesystem, all capabilities dropped, non-root, seccomp
   `RuntimeDefault`.
-- Audit device on its own PVC at `/openbao/audit/audit.log`, declared as an
-  `audit "file" "file"` stanza in the server config. 2.6 rejects
-  `POST /v1/sys/audit/file`, so it cannot be enabled from the bootstrap Job.
+- Two audit devices: one on its own PVC at `/openbao/audit/audit.log`, one on
+  stdout for Cloud Logging. Both are `audit "file"` stanzas in the server
+  config — 2.6 rejects `POST /v1/sys/audit/file`, so neither can be enabled from
+  the bootstrap Job. The second device is not redundancy for its own sake: an
+  audit device that cannot write fails every request, and one device succeeding
+  is enough, so a full or read-only PVC no longer takes the cluster down.
+- `max_lease_ttl = "24h"` caps any token a role asks too much for; the console's
+  periodic grant tokens are exempt by design.
+- `priorityClassName: tesserix-platform-critical`, declared by the
+  openbao-namespace chart. The system-* classes are reserved for system
+  namespaces by a cluster ResourceQuota and would have the pods rejected.
+- The snapshot CronJob checks the uploaded object's size before pruning, so a
+  truncated run cannot age out the last good backup behind it.
 - The Agent injector and CSI provider are both disabled: each is a cluster-wide
   mutating path we have no use for while ESO is the reader.
 
@@ -364,24 +416,24 @@ kubectl logs -n openbao job/openbao-bootstrap
 kubectl port-forward -n openbao svc/openbao 8200:8200
 ```
 
-**Getting an admin token.** There is no stored root token. Fetch a recovery key
-share, then:
+**Writing a secret.** Through the admin console at
+https://secret-service.tesserix.app — New secret, then namespace / app / name,
+then one key per field and Write version. This is the only route that works;
+there is no CLI equivalent, for the reasons below.
 
-```bash
-gcloud secrets versions access latest --secret=prod-openbao-recovery-keys \
-  --project=tesseracthub-480811 | jq -r '.recovery_keys_b64[]'
-bao operator generate-root -init          # prints nonce + one-time password
-bao operator generate-root -nonce=<nonce> # once per share, up to the threshold of 3
-bao operator generate-root -decode=<encoded-token> -otp=<otp>
-```
+**Getting an admin token — currently not possible.** Both documented routes are
+dead ends as of 2026-08-15:
 
-Revoke it (`bao token revoke -self`) when you are done.
+- The `root_token` field in `prod-openbao-recovery-keys` is the one `bao
+  operator init` returned. The bootstrap Job calls `auth/token/revoke-self`
+  before exiting, so it 403s on every call. The field is persisted only because
+  the Job stores init's whole JSON.
+- `bao operator generate-root -init` 403s on `sys/generate-root-token/attempt`,
+  including from the active raft node, so the recovery-share ceremony cannot be
+  started. Root cause not yet isolated.
 
-**Writing a secret.**
-
-```bash
-bao kv put kv/homechef/api/db password=...
-```
+The console works because it holds the `secret-service` Kubernetes auth role,
+whose policy has `create` and `update` — never `read` — on `kv/data/*`.
 
 **Restoring from a snapshot.** The snapshot is sealed with the same KMS key, so
 restoring needs the key, not the recovery shares:
@@ -390,6 +442,47 @@ restoring needs the key, not the recovery shares:
 gcloud storage cp gs://tesseract-prod-backups-in/openbao/<date>/<file>.snap .
 bao operator raft snapshot restore -force <file>.snap
 ```
+
+`-force` overwrites the live raft store with the snapshot's. Everything written
+since it was taken is gone, and every token issued before it is invalid.
+
+**Rehearsing the restore.** The snapshot job verifies each upload is readable to
+the end, which is not the same as knowing a restore works. Rehearse it against a
+throwaway cluster, never against prod:
+
+```bash
+# 1. A single-node OpenBao with the same seal, in its own namespace.
+kubectl create namespace openbao-drill
+helm template drill charts/thirdparty/openbao \
+  --namespace openbao-drill \
+  --set openbao.server.ha.replicas=1 \
+  --set bootstrap.enabled=false --set backup.enabled=false | kubectl apply -f -
+
+# 2. Initialise it, then restore the newest prod snapshot into it.
+kubectl exec -n openbao-drill drill-openbao-0 -- bao operator init
+gcloud storage cp "$(gcloud storage ls -r 'gs://tesseract-prod-backups-in/openbao/**.snap' | tail -1)" /tmp/drill.snap
+kubectl cp /tmp/drill.snap openbao-drill/drill-openbao-0:/tmp/drill.snap
+kubectl exec -n openbao-drill drill-openbao-0 -- bao operator raft snapshot restore -force /tmp/drill.snap
+
+# 3. The proof: a path only prod ever wrote is there, and the policies are too.
+kubectl exec -n openbao-drill drill-openbao-0 -- bao kv list kv/homechef
+kubectl exec -n openbao-drill drill-openbao-0 -- bao policy list
+
+# 4. Tear it down. The PVCs are Retain, so delete them by hand.
+kubectl delete namespace openbao-drill
+```
+
+The drill needs the same KMS key, so run it in this project with a service
+account holding `roles/cloudkms.cryptoKeyEncrypterDecrypter` on
+`openbao-unseal-key` — the snapshot is ciphertext without it.
+
+## Alerting
+
+`charts/thirdparty/openbao/templates/prometheusrule.yaml` carries the rules:
+sealed node, no raft leader, fewer than three nodes, either PVC over 80%, a
+failed snapshot job, and no snapshot completed in 26 hours. They evaluate in
+Prometheus and go no further — there is no Alertmanager receiver yet, so add a
+Slack route when that exists. Turn them off with `alerts.enabled: false`.
 
 ## Auto-upgrades (Kargo)
 

@@ -1,0 +1,48 @@
+{{- if .Values.certAuth.enabled }}
+# CNPG's built-in client CA cannot sign these: its secret publishes ca.crt/ca.key,
+# while cert-manager's CA issuer reads tls.crt/tls.key. A cert-manager-owned CA
+# satisfies both — CNPG reads ca.crt from it, the issuer reads tls.crt/tls.key.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ .Values.clusterName }}-client-ca-bootstrap
+  namespace: {{ .Values.namespace }}
+  annotations:
+    # Ahead of the Cluster, which cannot start until these secrets exist.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Values.clusterName }}-client-ca
+  namespace: {{ .Values.namespace }}
+  annotations:
+    # Ahead of the Cluster, which cannot start until these secrets exist.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  isCA: true
+  commonName: {{ .Values.clusterName }}-client-ca
+  secretName: {{ .Values.clusterName }}-client-ca
+  duration: {{ .Values.certAuth.caDuration }}
+  renewBefore: {{ .Values.certAuth.caRenewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: {{ .Values.clusterName }}-client-ca-bootstrap
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ .Values.clusterName }}-client-issuer
+  namespace: {{ .Values.namespace }}
+  annotations:
+    # Ahead of the Cluster, which cannot start until these secrets exist.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  ca:
+    secretName: {{ .Values.clusterName }}-client-ca
+{{- end }}

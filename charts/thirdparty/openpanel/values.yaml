@@ -109,13 +109,68 @@ redis:
 # Application configuration
 config:
   dashboardUrl: "https://dev-analytics.tesserix.app"
-  apiUrl: "https://dev-analytics.tesserix.app"
+  # SDKs post here; the /api prefix is required and is stripped at the VirtualService.
+  apiUrl: "https://dev-analytics.tesserix.app/api"
   nodeEnv: "production"
   selfHosted: true
-  allowRegistration: false
+  # Upstream gates OAuth sign-in and sign-up with this single flag, so it has to
+  # be true for the two pre-provisioned admins to use Google at all. Safe only
+  # because /api/trpc and /api/oauth are routed through oauth2-proxy.
+  allowRegistration: true
+  allowInvitation: false
   batchSize: 5000
   batchInterval: 10000
   concurrency: 10
+
+# OpenPanel's own Google sign-in, sharing the oauth2-proxy client so there is a
+# single Google app and the inner login is one click rather than a password.
+# It is not an access control: upstream handleNewUser registers any Google
+# address it sees, so oauth2Proxy stays in front as the allow-list.
+googleAuth:
+  enabled: true
+  secretName: openpanel-oauth2-secrets
+
+# Istio ingress — host is derived from config.dashboardUrl
+ingress:
+  enabled: true
+  gateway: "istio-ingress/tesseract-gateway"
+
+# Google sign-in gate in front of the dashboard. OpenPanel itself has no OIDC
+# and no per-user allow-list, so this is the only thing keeping the dashboard
+# private. /api is deliberately not routed through it — SDK ingestion is public.
+oauth2Proxy:
+  enabled: true
+  replicaCount: 1
+  provider: google
+  image:
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    tag: v7.7.1
+    pullPolicy: IfNotPresent
+  secretName: openpanel-oauth2-secrets
+  # Exhaustive list of who may sign in. Adding a line grants full admin.
+  allowedEmails:
+    - samyak.rout@gmail.com
+    - mahesh.sangawar@gmail.com
+  cookie:
+    name: _openpanel_auth
+    expire: 168h
+    refresh: 1h
+  externalSecret:
+    enabled: true
+    # Short interval so a corrected Google client ID reaches the proxy in
+    # minutes; reloader then rolls the pod.
+    refreshInterval: 10m
+    secretStore: gcp-secret-store
+    secrets:
+      googleClientId: prod-openpanel-oauth2-client-id
+      googleClientSecret: prod-openpanel-oauth2-client-secret
+      cookieSecret: prod-openpanel-oauth2-cookie-secret
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
 
 # Secrets (created by ExternalSecrets)
 secrets:

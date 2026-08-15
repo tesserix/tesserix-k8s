@@ -66,15 +66,9 @@ spec:
               value: "postgresql://{{ .Values.database.user }}:$(POSTIZ_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.database }}"
 
             # ─── Redis ───────────────────────────────────────────────────
-            # REDIS_PASSWORD must come BEFORE REDIS_URL — k8s `$(VAR)` env
-            # substitution only resolves variables defined earlier in the list.
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.redis.passwordSecret.name }}
-                  key: {{ .Values.redis.passwordSecret.key }}
+            # global-valkey-queue authenticates by ACL user, not password.
             - name: REDIS_URL
-              value: "redis://:$(REDIS_PASSWORD)@{{ .Values.redis.host }}:{{ .Values.redis.port }}"
+              value: "redis://{{ .Values.redis.host }}:{{ .Values.redis.port }}"
 
             # ─── Temporal ────────────────────────────────────────────────
             - name: TEMPORAL_ADDRESS

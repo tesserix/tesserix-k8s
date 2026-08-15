@@ -57,14 +57,6 @@ livenessProbe:
 readinessProbe:
   enabled: false
 
-knative:
-  enabled: false
-  minScale: 0
-  maxScale: 5
-  scaleDownDelay: "60s"
-  concurrencyTarget: 100
-  containerConcurrency: 0
-  timeoutSeconds: 300
 
 autoscaling:
   enabled: false
@@ -80,14 +72,13 @@ env:
   SERVER_PORT: "8086"
 
 # Secrets from existing K8s secrets
+# Secrets from existing K8s secrets
 secretEnv:
-  - name: REDIS_PASSWORD
-    secretName: redis-fanzone-password
-    secretKey: password
   # GIPHY_API_KEY is injected via ExternalSecret when externalSecrets.enabled=true
 
-# Redis URL constructed with password
-redisURL: "redis://:$(REDIS_PASSWORD)@redis.redis-fanzone.svc.cluster.local:6379/3"
+# The fanzone ACL user is nopass, but the placeholder password is required —
+# clients skip AUTH when it is empty and Valkey's default user is off.
+redisURL: "redis://fanzone:nopass@global-valkey-cache.global.svc.cluster.local:6379/3"
 
 # PostgreSQL for GIF catalog
 database:

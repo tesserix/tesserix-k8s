@@ -35,36 +35,10 @@ spec:
           global: marketplace
           marketplace: marketplace
 
-        # Keycloak IDP Configuration - DevTest
-        # Dual IDP setup: customer (B2C) and internal (staff/admin)
-        keycloak:
-          customer:
-            enabled: true
-            issuer: "https://devtest-customer-idp.tesserix.app/realms/tesserix-customer"
-            jwksUri: "https://devtest-customer-idp.tesserix.app/realms/tesserix-customer/protocol/openid-connect/certs"
-            audiences:
-              - "tesserix-api"
-              - "mobile-app"
-              - "web-storefront"
-              - "admin-dashboard"
-              - "account"
-          internal:
-            enabled: true
-            issuer: "https://devtest-internal-idp.tesserix.app/realms/tesserix-internal"
-            jwksUri: "https://devtest-internal-idp.tesserix.app/realms/tesserix-internal/protocol/openid-connect/certs"
-            audiences:
-              - "admin-web"
-              - "admin-bff"
-              - "marketplace-dashboard"
-              - "marketplace-onboarding-admin"
-
         # Service mesh principals for internal communication
         meshPrincipals:
           - "cluster.local/ns/devtest/sa/*"
           - "cluster.local/ns/marketplace/sa/*"
-          - "cluster.local/ns/identity-internal/sa/*"
-          - "cluster.local/ns/identity-customer/sa/*"
-          - "cluster.local/ns/identity/sa/*"
           - "cluster.local/ns/istio-ingress/sa/*"
           - "cluster.local/ns/istio-system/sa/*"
           - "cluster.local/ns/monitoring/sa/*"
@@ -89,16 +63,6 @@ spec:
             hosts:
               # Wildcard matches all subdomains - routing controls actual access
               - "*.tesserix.app"
-          - name: keycloak-customer
-            label: keycloak
-            namespace: identity-customer
-            hosts:
-              - "devtest-customer-idp.tesserix.app"
-          - name: keycloak-internal
-            label: keycloak
-            namespace: identity-internal
-            hosts:
-              - "devtest-internal-idp.tesserix.app"
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-ingress
