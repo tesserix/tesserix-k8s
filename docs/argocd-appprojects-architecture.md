@@ -28,12 +28,12 @@ After:   infrastructure (27)  — the plumbing
 ## The 9 Projects Explained
 
 ### infrastructure
-**What's in it:** Istio (service mesh), cert-manager (TLS certificates), Knative (serverless), KEDA (autoscaling), External Secrets Operator, Cloudflare tunnels, NATS (messaging), GrowthBook (feature flags), Typesense (search).
+**What's in it:** Istio (service mesh), cert-manager (TLS certificates), KEDA (autoscaling), External Secrets Operator, Cloudflare tunnels, NATS (messaging), GrowthBook (feature flags), Typesense (search).
 
 **Why it's separate:** These are the foundations that everything else runs on. If someone pushes a bad config to a fanzone service, it can't accidentally break Istio or certificates. Only infrastructure changes can touch infrastructure namespaces.
 
 ### identity
-**What's in it:** Two Keycloak instances — one for internal team login (`identity-internal`), one for customer login (`identity-customer`).
+**What's in it:** Google Identity Platform wiring — the auth-BFF deployments and the admin-claim enforcement job.
 
 **Why it's separate:** Authentication is critical. Isolating it means product teams can't accidentally interfere with the login system. Identity changes are reviewed independently.
 
@@ -100,7 +100,7 @@ ArgoCD sees:
     └── prod-infrastructure
          └── istio, certs, etc.     (project: infrastructure)
          └── databases, redis       (project: data)
-         └── keycloak               (project: identity)
+         └── auth-bff               (project: identity)
 ```
 
 Each project has rules:

@@ -8,7 +8,7 @@ GKE prod. Everything runs on your Mac behind stable `*.sandbox.app:8443` URLs.
 > **Decoupled from prod by design.** Nothing here talks to the GKE prod
 > cluster, GCP Secret Manager, or prod Postgres/Redis. Secrets are plain local
 > Secrets (not ExternalSecrets), images are built locally, Workload Identity is
-> off, and the GKE/Keycloak/dashboard env values are neutralised in the
+> off, and the GKE/auth/dashboard env values are neutralised in the
 > `values-local.yaml` overlays. See [Decoupling guarantees](#decoupling-guarantees).
 
 ---
@@ -150,9 +150,9 @@ The local overlays are verified to never reach prod:
 - **No ExternalSecrets / GCP SM** — plain local Secrets from `k8s/secrets.yaml`.
 - **No Workload Identity** — `gcp.workloadIdentity.enabled=false`; the SA
   carries no `iam.gke.io/gcp-service-account` annotation.
-- **GKE/Keycloak/dashboard neutralised** — `devai-api/values-local.yaml` sets
+- **GKE/auth/dashboard neutralised** — `devai-api/values-local.yaml` sets
   `DEVAI_GKE_PROJECT=""` (no GCP Secret Manager fetch to the prod project),
-  `DEVAI_KEYCLOAK_URL=""`, `DEVAI_DASHBOARD_BASE_URL=http://localhost:8080`,
+  `DEVAI_DASHBOARD_BASE_URL=http://localhost:8080`,
   `DEVAI_PREVIEW_DOMAIN=localhost`. `DEVAI_GKE_USE_IN_CLUSTER=true` resolves to
   the **local kind** apiserver via its in-cluster SA — never a prod kubeconfig.
 - **Local images** — `:local` / `localhost:5050/*`, `pullPolicy: IfNotPresent`,
