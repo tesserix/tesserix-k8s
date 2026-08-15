@@ -137,6 +137,53 @@ env:
   # ingress gateway policy. Same localhost:3002 dev fallback caveat as above.
   WEB_INTERNAL_ORIGIN: "http://company.tesserix.svc.cluster.local"
 
+  # ---------------------------------------------------------------------
+  # Zitadel — the console's own OIDC login.
+  #
+  # NOT ACTIVE YET. Every value below is inert until AUTH_PROVIDER=zitadel is
+  # set (see the commented line at the end of this block). Until then the
+  # console keeps redirecting to the web app's /login exactly as before, so
+  # deploying this chart change on its own is a no-op — which is the point:
+  # config lands first, is verified in place, and the switch is one variable.
+  # ---------------------------------------------------------------------
+
+  ZITADEL_ISSUER: "https://auth.tesserix.app"
+
+  # The OIDC application registered under the `platform-console` project.
+  # Public value — it travels in the authorization URL regardless.
+  ZITADEL_CLIENT_ID: "386382971877196703"
+
+  # Must be listed verbatim under the application's Redirect URIs in Zitadel.
+  # A mismatch fails at the token exchange with redirect_uri_mismatch, which
+  # the callback surfaces in its error log rather than as a blank page.
+  ZITADEL_REDIRECT_URI: "https://console.tesserix.app/auth/callback"
+
+  # TESSERIX org. Login is scoped to it (so the org-level Google IdP is offered
+  # and users provision into the right org), and — separately — the callback
+  # REFUSES a token from any other organization. That second check is what
+  # keeps the console internal-only: the tx_session cookie is scoped to the
+  # shared `.tesserix.app` parent, so without it any org's session would be
+  # accepted here the moment the web app admits a non-staff user.
+  ZITADEL_INTERNAL_ORG_ID: "386377229942128837"
+
+  # Platform Console project. Requested as an audience scope so the project's
+  # roles are guaranteed to appear in the token's role claim. The project and
+  # application settings are meant to ensure this too, but those are UI
+  # checkboxes and this is one string in code — and when they are wrong the
+  # token is perfectly valid and simply carries no roles, which reads as an
+  # application bug rather than a configuration gap.
+  ZITADEL_PROJECT_ID: "386377618200461939"
+
+  # THE SWITCH. Uncomment to cut over; comment out to revert. Reverting takes
+  # effect on the next pod restart and needs no code rollback.
+  #
+  # Before uncommenting, confirm in Zitadel:
+  #   - project: "Return user roles during authentication" is ON
+  #   - project: "Only authorized users can authenticate" is ON
+  #   - application Token Settings: type JWT, "User roles inside ID token" ON
+  #   - every operator has at least the `read` role, or they lose access
+  # AUTH_PROVIDER: "zitadel"
+
 # External Secrets Configuration (GCP Secret Manager → K8s Secrets)
 externalSecrets:
   enabled: true
