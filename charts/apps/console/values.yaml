@@ -158,13 +158,20 @@ env:
   # the callback surfaces in its error log rather than as a blank page.
   ZITADEL_REDIRECT_URI: "https://console.tesserix.app/auth/callback"
 
-  # TESSERIX org. Login is scoped to it (so the org-level Google IdP is offered
-  # and users provision into the right org), and — separately — the callback
-  # REFUSES a token from any other organization. That second check is what
-  # keeps the console internal-only: the tx_session cookie is scoped to the
-  # shared `.tesserix.app` parent, so without it any org's session would be
-  # accepted here the moment the web app admits a non-staff user.
-  ZITADEL_INTERNAL_ORG_ID: "386377229942128837"
+  # The organization whose USERS the console accepts — checked on the token's
+  # `urn:zitadel:iam:org:id` claim by the callback, which refuses anything else.
+  #
+  # This is the operators' HOME org, NOT the org that owns the platform-console
+  # project. They are different here, and conflating them broke the first
+  # cutover attempt: login was scoped to the project's org, Zitadel tried to
+  # authenticate people as members of an org none of them belong to, and failed
+  # with `409 User already exists` against the username they already held.
+  # Role grants are project-scoped, so roles resolve wherever the user lives.
+  #
+  # Optional. Unset means "any org, provided the roles are there" — role
+  # possession is the primary control; this is defence in depth for the
+  # `.tesserix.app` cookie being shared with the web app.
+  ZITADEL_INTERNAL_ORG_ID: "386261254651576970"
 
   # Platform Console project. Requested as an audience scope so the project's
   # roles are guaranteed to appear in the token's role claim. The project and
