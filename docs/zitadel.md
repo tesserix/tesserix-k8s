@@ -35,6 +35,28 @@ enforced at the ingress gateway, before any policy in this namespace is
 consulted, and a missing host answers every request with `403 RBAC: access
 denied` no matter how healthy the pods are.
 
+## The login UI is a fork
+
+Login v2 runs from `tesserix/zitadel`, branch `feat/aurora-theme`, cut from tag
+`v4.15.3` — it carries the aurora background and the side-by-side brand panel.
+The UI has no standalone repo; it is `apps/login` inside the monorepo.
+
+Rebuild it whenever the theme changes, then bump `login.image.tag`:
+
+```bash
+git clone --filter=blob:none -b feat/aurora-theme git@github.com:tesserix/zitadel.git
+cd zitadel && pnpm install
+(cd packages/zitadel-proto  && pnpm generate)   # buf; skip it and the build fails to resolve
+(cd packages/zitadel-client && pnpm build)      # tsup
+(cd apps/login && pnpm build)                   # emits .next/standalone
+docker build -t ghcr.io/tesserix/third-party/zitadel-login:<tag> apps/login && docker push …
+```
+
+`NEXT_PUBLIC_THEME_LAYOUT` and friends live in `apps/login/.env` because Next
+inlines them into the client bundle at build time — the entrypoint does no
+substitution, so setting them on the pod does nothing. Per-tenant colour, logo
+and tagline are read at runtime from the org's label policy and metadata.
+
 ## Three things that will bite you
 
 **The masterkey is immutable.** Every encryption key in the eventstore is
