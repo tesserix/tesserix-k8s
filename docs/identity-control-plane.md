@@ -9,6 +9,11 @@ gets automated.
 Read [`zitadel.md`](zitadel.md) first for the deployment, the TESSERIX/ZITADEL
 org split, and what `zitadel-bootstrap` already reconciles.
 
+This file assumes every user is authenticated before they touch anything. For
+products with an anonymous tier — a guest opens a room, no account, data gone
+shortly after — see [`tenancy-model.md`](tenancy-model.md), which covers
+capability-based authorization, data TTL, and per-tenant secrets.
+
 The worked example throughout is **HMS**, where a **hospital is a tenant**: one
 Zitadel organization per hospital, one Zitadel project for the product, and
 OpenFGA for every role and permission inside it.
