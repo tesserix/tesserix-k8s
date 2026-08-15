@@ -124,6 +124,41 @@ ingress:
   enabled: true
   gateway: "istio-ingress/tesseract-gateway"
 
+# Google sign-in gate in front of the dashboard. OpenPanel itself has no OIDC
+# and no per-user allow-list, so this is the only thing keeping the dashboard
+# private. /api is deliberately not routed through it — SDK ingestion is public.
+oauth2Proxy:
+  enabled: true
+  replicaCount: 1
+  provider: google
+  image:
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    tag: v7.7.1
+    pullPolicy: IfNotPresent
+  secretName: openpanel-oauth2-secrets
+  # Exhaustive list of who may sign in. Adding a line grants full admin.
+  allowedEmails:
+    - samyak.rout@gmail.com
+    - mahesh.sangawar@gmail.com
+  cookie:
+    name: _openpanel_auth
+    expire: 168h
+    refresh: 1h
+  externalSecret:
+    enabled: true
+    refreshInterval: 1h
+    secretStore: gcp-secret-store
+    secrets:
+      googleClientId: prod-openpanel-oauth2-client-id
+      googleClientSecret: prod-openpanel-oauth2-client-secret
+      cookieSecret: prod-openpanel-oauth2-cookie-secret
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+
 # Secrets (created by ExternalSecrets)
 secrets:
   name: openpanel-secrets
