@@ -62,7 +62,7 @@ CREATE POLICY tenant_platform_write ON identity.tenant
 GRANT USAGE ON SCHEMA identity, catalog, pricing, availability, booking, handover,
                       payments, kyc, telematics, maintenance, incidents, partners,
                       trips, storefront, support, audit, financial_archive
-    TO vehicle_rental_app, vehicle_rental_platform_role;
+    TO vehicle_rental_app, vehicle_rental_platform_role, vehicle_rental_readonly;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA
     identity, catalog, pricing, availability, booking, handover, payments, kyc,
@@ -77,6 +77,15 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA
     telematics, maintenance, incidents, partners, trips, storefront, support,
     audit, financial_archive
     TO vehicle_rental_platform_role;
+
+-- Reporting reads everything and writes nothing. It is not exempt from RLS, so
+-- an analyst still sees one tenant per connection unless a platform-role
+-- transaction opts out — the credential is narrower, not a side door.
+GRANT SELECT ON ALL TABLES IN SCHEMA
+    identity, catalog, pricing, availability, booking, handover, payments, kyc,
+    telematics, maintenance, incidents, partners, trips, storefront, support,
+    audit, financial_archive
+    TO vehicle_rental_readonly;
 
 -- Append-only means append-only. These three are the record of what happened;
 -- a correction is a new row, never an edit to an old one.
@@ -105,6 +114,15 @@ BEGIN
             'ALTER DEFAULT PRIVILEGES IN SCHEMA %I
                  GRANT SELECT, INSERT ON TABLES TO vehicle_rental_app', s);
     END LOOP;
+    FOREACH s IN ARRAY ARRAY[
+        'identity','catalog','pricing','availability','booking','handover',
+        'payments','kyc','telematics','maintenance','incidents','partners',
+        'trips','storefront','support','audit','financial_archive'
+    ] LOOP
+        EXECUTE format(
+            'ALTER DEFAULT PRIVILEGES IN SCHEMA %I
+                 GRANT SELECT ON TABLES TO vehicle_rental_readonly', s);
+    END LOOP;
 END
 $$;
 
@@ -118,6 +136,9 @@ BEGIN
     END IF;
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vehicle_rental_platform') THEN
         GRANT vehicle_rental_platform_role TO vehicle_rental_platform;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vehicle_rental_reporting') THEN
+        GRANT vehicle_rental_readonly TO vehicle_rental_reporting;
     END IF;
 END
 $$;
@@ -154,6 +175,48 @@ BEGIN
         WHERE conname = 'reservation_no_overlap' AND contype = 'x'
     ) THEN
         RAISE EXCEPTION 'availability.reservation has no exclusion constraint — double-booking is possible';
+    END IF;
+END
+$$;
+
+-- RLS is only a boundary while no connecting role can step over or around it.
+-- Both halves matter: BYPASSRLS ignores the policies, and table ownership lets
+-- a role turn them off with one ALTER TABLE.
+DO $$
+DECLARE
+    offender text;
+BEGIN
+    SELECT string_agg(rolname, ', ') INTO offender
+      FROM pg_roles
+     WHERE rolcanlogin
+       AND rolname LIKE 'vehicle\_rental%'
+       AND (rolbypassrls OR rolsuper);
+    IF offender IS NOT NULL THEN
+        RAISE EXCEPTION 'login roles exempt from RLS: %', offender;
+    END IF;
+
+    FOREACH offender IN ARRAY ARRAY['vehicle_rental_api','vehicle_rental_reporting'] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = offender)
+           AND pg_has_role(offender, 'vehicle_rental', 'MEMBER') THEN
+            RAISE EXCEPTION '% inherits the owner role and can disable RLS', offender;
+        END IF;
+    END LOOP;
+END
+$$;
+
+-- Reporting is a read credential. If it ever gains a write, it stops being the
+-- safe thing to hand an analyst and becomes a second API role.
+DO $$
+DECLARE
+    writable text;
+BEGIN
+    SELECT string_agg(DISTINCT format('%s.%s', table_schema, table_name), ', ')
+      INTO writable
+      FROM information_schema.role_table_grants
+     WHERE grantee = 'vehicle_rental_readonly'
+       AND privilege_type IN ('INSERT','UPDATE','DELETE','TRUNCATE');
+    IF writable IS NOT NULL THEN
+        RAISE EXCEPTION 'vehicle_rental_readonly can write: %', writable;
     END IF;
 END
 $$;

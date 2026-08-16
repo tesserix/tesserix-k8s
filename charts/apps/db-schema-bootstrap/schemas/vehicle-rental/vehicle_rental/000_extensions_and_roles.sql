@@ -79,9 +79,10 @@ COMMENT ON FUNCTION uuid_generate_v7() IS
 
 -- Two login roles, created by CNPG's managed.roles, not here. This file only
 -- grants; creating them would fight the operator every reconcile.
---   vehicle_rental_api      — the storefront and admin surfaces. Tenant-scoped.
---   vehicle_rental_platform — onboarding and platform reporting. Crosses tenants
---                             deliberately, and only via the exemption in 010.
+--   vehicle_rental_api       — the storefront and admin surfaces. Tenant-scoped.
+--   vehicle_rental_platform  — onboarding and platform reporting. Crosses tenants
+--                              deliberately, and only via the exemption in 010.
+--   vehicle_rental_reporting — SELECT only, and still inside RLS.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vehicle_rental_app') THEN
@@ -89,6 +90,9 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vehicle_rental_platform_role') THEN
         CREATE ROLE vehicle_rental_platform_role NOLOGIN;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vehicle_rental_readonly') THEN
+        CREATE ROLE vehicle_rental_readonly NOLOGIN;
     END IF;
 END
 $$;

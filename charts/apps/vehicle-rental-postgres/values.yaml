@@ -43,8 +43,11 @@ bootstrap:
 # Login roles. Privileges are granted in the schema files, where a reviewer can
 # see them; only password reconciliation happens here.
 #
-# vehicle_rental_api      — what every request runs as. No BYPASSRLS, ever.
-# vehicle_rental_platform — the audited cross-tenant exemption, named by policy.
+# vehicle_rental_api       — what every request runs as. No BYPASSRLS, ever.
+# vehicle_rental_platform  — the audited cross-tenant exemption, named by policy.
+# vehicle_rental_reporting — SELECT only, and still inside RLS. Analysts get a
+#                            credential that cannot write, so nobody is tempted
+#                            to hand out the API role for a one-off query.
 applicationRoles:
   - name: vehicle_rental_api
     secret: vehicle-rental-postgres-api-credentials
@@ -52,8 +55,15 @@ applicationRoles:
   - name: vehicle_rental_platform
     secret: vehicle-rental-postgres-platform-credentials
     gcpSecretName: prod-vehicle-rental-platform-postgresql-password
+  - name: vehicle_rental_reporting
+    secret: vehicle-rental-postgres-reporting-credentials
+    gcpSecretName: prod-vehicle-rental-reporting-postgresql-password
 
 postgresql:
+  # The RPO. Without it a quiet cluster ships WAL only when a 16 MB segment
+  # fills, so an overnight failure could lose hours of bookings while the
+  # backup dashboard still reads green.
+  archive_timeout: "5min"
   max_connections: "200"
   shared_buffers: "256MB"
   effective_cache_size: "1536MB"
