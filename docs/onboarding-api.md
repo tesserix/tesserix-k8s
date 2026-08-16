@@ -77,7 +77,7 @@ Three classes, and they must not be allowed to blur into "has a valid token".
 
 | Caller | Credential | Scope of what it may do |
 |---|---|---|
-| Platform engineer | Zitadel OIDC session cookie (auth code + PKCE), sealed, `SameSite=Lax`, `Secure`, `HttpOnly` | Everything, gated by role: `platform-admin` writes, `platform-operator` reads |
+| Platform engineer | Google sign-in (auth code + PKCE + client secret), sealed session cookie, `SameSite=Lax`, `Secure`, `HttpOnly` | Everything, gated by role: `platform-admin` writes, `platform-operator` reads |
 | Product backend | Zitadel machine-user JWT, audience-scoped to the `onboarding` project | Only orgs granted its own project; only its own project's grants |
 | Customer org admin | End-user token carrying `urn:zitadel:iam:org:id` | Only the org in that claim, and only domains/IdPs/members — never grants |
 
@@ -87,6 +87,26 @@ token's *own* claims joined against the projection, never from a path parameter.
 token is only served if `org_products` holds a row `(orgId, callersProjectId)`.
 HMS holding a valid token is not permission to read Apollo's config unless Apollo
 is an HMS customer.
+
+### Console sign-in — Google, and an allowlist behind it
+
+Console humans sign in with Google (`console.googleClientId`); Zitadel remains
+the authority for product machine tokens only. Two verifiers, each pinning its
+own issuer and audience, so a token from one is never accepted as the other.
+
+The callback refuses the sign-in unless all of these hold: the `state` matches
+the sealed login cookie, the ID token's `nonce` matches the one this login
+issued, `email_verified` is true, and the address is on the allowlist. Roles are
+not taken from Google — being on the allowlist is what makes someone platform
+staff, and the session is minted with the platform org and `platform-admin`.
+
+The allowlist is `console.adminEmails` in `values-prod.yaml`, not a secret and
+not code: adding or removing a person is a reviewed PR and an ArgoCD sync, and
+the API re-checks it on **every** request, so a removal ends an existing session
+instead of waiting out its eight hours. An empty list fails the Helm render and,
+if it somehow reached the pod, startup — a console with no users is a
+misconfiguration, not a configuration. Matching is verbatim: Gmail's dot and
+`+tag` aliasing is deliberately not honoured.
 
 ### Why a session cookie for humans and not a bearer token
 
@@ -513,11 +533,13 @@ Non-negotiable, in rough order of how much damage skipping each one does.
 8. **Structured audit before the response is written**, including failures.
    An event whose write fails fails the request; a silent audit gap is worse than
    a 500.
-9. **Email allowlist plus role** for console access. The allowlist is the
-   backstop for a Zitadel misconfiguration and costs nothing.
+9. **Email allowlist plus role** for console access, checked at sign-in and on
+   every request. It is the backstop for an identity-provider misconfiguration:
+   a valid Google sign-in by anyone else is still refused. See §2.
 10. **Deny-by-default NetworkPolicy**: ingress only from the ingress gateway,
-    egress only to Zitadel, `global-postgres`, OpenBao, GCP Secret Manager and
-    DNS. It talks to the internet for nothing else.
+    egress only to Zitadel, Google's OAuth endpoints, `global-postgres`,
+    OpenBao, GCP Secret Manager and DNS. It talks to the internet for nothing
+    else.
 11. **`readOnlyRootFilesystem`, non-root, dropped capabilities, seccomp
     `RuntimeDefault`** on both workloads.
 12. **No org deletion endpoint.** § S9.
@@ -560,6 +582,30 @@ The numeric platform org id is **not** configured. The API resolves it from
 `PLATFORM_ORG_NAME` (`TESSERIX`) at boot via `/admin/v1/orgs/_search` and fails
 startup on anything but one exact match, so a recreated org cannot silently
 scope every management call to the wrong tenant.
+
+### 9.2 The console's Google client
+
+Google Cloud → Google Auth Platform → Clients → Create client → Web application,
+in `tesseracthub-480811`:
+
+| Field | Value |
+|---|---|
+| Authorised JavaScript origin | `https://onboard.tesserix.app` |
+| Authorised redirect URI | `https://onboard.tesserix.app/api/auth/callback` |
+
+The client id is `console.googleClientId` in `values-prod.yaml` — public, and
+kept in git so the value in use is reviewable. The secret half is a platform
+credential and goes to Secret Manager:
+
+```bash
+gcloud secrets create prod-onboarding-google-client-secret \
+  --project=tesseracthub-480811 --replication-policy=automatic
+printf %s "$SECRET" | gcloud secrets versions add prod-onboarding-google-client-secret \
+  --project=tesseracthub-480811 --data-file=-
+```
+
+Rotating it is a new secret version; ESO picks it up within the refresh interval.
+Who may sign in is `console.adminEmails`, not part of this credential — see §2.
 
 ---
 
