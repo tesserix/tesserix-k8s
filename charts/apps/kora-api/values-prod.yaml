@@ -17,3 +17,20 @@ podAnnotations:
 
 env:
   GIN_MODE: "release"
+  # Vertex AI, authenticated by the kora-api Kubernetes service account through
+  # Workload Identity (kora-api-prod@, granted roles/aiplatform.user) rather
+  # than by an API key. Setting VERTEX_PROJECT is what selects it — cmd/api
+  # prefers Vertex over GEMINI_API_KEY when both are present.
+  #
+  # Replaces a PERSONAL Gemini free-tier key, which capped embeddings at 1,000
+  # per project per day (kora#97, which stalled the OpenFoodFacts backfill at
+  # 607 of 5,669 rows) and shared a demand pool that returned a 503 and took
+  # photo logging down entirely (kora#179).
+  #
+  # Location is "global", not asia-south1. Verified against the live API on
+  # 2026-08-16: asia-south1 serves gemini-3.5-flash and gemini-embedding-001 but
+  # 404s on gemini-3.5-flash-lite, which the identify path uses. Only "global"
+  # serves all three, so pinning the cluster's own region would have forced a
+  # model change.
+  VERTEX_PROJECT: "tesseracthub-480811"
+  VERTEX_LOCATION: "global"
