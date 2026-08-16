@@ -27,7 +27,11 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-      - RespectIgnoreDifferences=true
+      # RespectIgnoreDifferences is deliberately absent — same trap as
+      # dwellm8-postgres. With SSA and the argocd-cm jq ignores into
+      # spec.managed.roles[], it normalised the roles list out of every apply:
+      # sync reported Succeeded, the Cluster's generation never moved, and the
+      # onboarding role could not land. The ignore rules still quiet the diff.
     retry:
       limit: 5
       backoff:
