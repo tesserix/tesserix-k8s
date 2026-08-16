@@ -607,6 +607,16 @@ printf %s "$SECRET" | gcloud secrets versions add prod-onboarding-google-client-
 Rotating it is a new secret version; ESO picks it up within the refresh interval.
 Who may sign in is `console.adminEmails`, not part of this credential — see §2.
 
+### 9.3 Reaching the host
+
+`onboard.tesserix.app` already resolves through the `*.tesserix.app` Cloudflare
+wildcard to the ingress gateway, and the gateway's port-80 server accepts every
+host, so no Gateway server is needed. What is needed is a `frontendApps` entry in
+`charts/infrastructure/istio-auth-policies/values-prod.yaml`: without it the
+gateway answers `403 RBAC: access denied` before any route is consulted, and the
+pods never see the request. The entry carries no `namespace` — the chart ships
+its own pod-level ALLOWs for both workloads.
+
 ---
 
 ## 10. First product onboarded: Planning Poker
