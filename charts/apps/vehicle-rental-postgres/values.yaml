@@ -81,13 +81,23 @@ affinity:
 monitoring:
   enablePodMonitor: true
 
-# Poolers are transaction-mode PgBouncer: a driver that reuses prepared
-# statements must dial -rw directly (pgx: QueryExecModeSimpleProtocol).
+# Transaction-mode PgBouncer. The API disables its prepared-statement cache to
+# match (crates/kernel/src/db.rs), which is why max_prepared_statements stays 0.
+#
+# The budget, because pool sizes multiply and max_connections does not:
+#   default_pool_size is per (user, database) pair, and there are three login
+#   roles. 2 instances x 3 pairs x 15 = 90 server connections, plus reserve,
+#   against max_connections 200 — leaving room for db-schema-bootstrap, the
+#   monitoring collector and a human with psql. maxDbConnections is the hard
+#   ceiling per pooler process, so a fourth role cannot quietly overcommit the
+#   cluster later.
 pooler:
   enabled: true
   instances: 2
   maxClientConn: 500
-  defaultPoolSize: 25
+  defaultPoolSize: 15
+  maxDbConnections: 50
+  reservePoolSize: 3
 
 # Backup via the barman-cloud CNPG-I plugin, not the in-tree barmanObjectStore
 # that CNPG deprecated in 1.26. This cluster is greenfield, so it adopts the
