@@ -611,11 +611,16 @@ Who may sign in is `console.adminEmails`, not part of this credential — see §
 
 `onboard.tesserix.app` already resolves through the `*.tesserix.app` Cloudflare
 wildcard to the ingress gateway, and the gateway's port-80 server accepts every
-host, so no Gateway server is needed. What is needed is a `frontendApps` entry in
-`charts/infrastructure/istio-auth-policies/values-prod.yaml`: without it the
-gateway answers `403 RBAC: access denied` before any route is consulted, and the
-pods never see the request. The entry carries no `namespace` — the chart ships
-its own pod-level ALLOWs for both workloads.
+host, so no Gateway server is needed. What is needed is a `frontendApps` entry:
+without it the gateway answers `403 RBAC: access denied` before any route is
+consulted, and the pods never see the request. The entry carries no `namespace`
+— the chart ships its own pod-level ALLOWs for both workloads.
+
+Put it in `argocd/prod/infrastructure/istio-auth-policies.yaml`, **not** in the
+chart's `values-prod.yaml`. That Application carries an inline `helm.values`
+block, and Helm replaces lists rather than merging them, so the inline
+`frontendApps` wins outright and an entry added to the chart values is silently
+never rendered — ArgoCD still reports `Synced`.
 
 ---
 
