@@ -491,9 +491,10 @@ TESSERIX/ZITADEL org invariants; it must never try to reconcile customer orgs.
 
 Non-negotiable, in rough order of how much damage skipping each one does.
 
-1. **`iam-admin` exists in exactly one pod.** Mounted from GCP Secret Manager via
-   ESO into `onboarding-service-api` and nowhere else. No product, no CronJob, no
-   console.
+1. **The Zitadel credential is a scoped machine key, in exactly one pod.**
+   Mounted from GCP Secret Manager via ESO into `onboarding-service-api` and
+   nowhere else — no product, no CronJob, no console. See §9.1; the instance-wide
+   `iam-admin` PAT is break-glass, not the running credential.
 2. **Per-caller scoping on every handler**, computed from the token, joined
    against `org_products`. Tested with an explicit "HMS cannot read Mark8ly's
    org" case, not merely by reading the code.
@@ -520,6 +521,45 @@ Non-negotiable, in rough order of how much damage skipping each one does.
 11. **`readOnlyRootFilesystem`, non-root, dropped capabilities, seccomp
     `RuntimeDefault`** on both workloads.
 12. **No org deletion endpoint.** § S9.
+
+### 9.1 The credential between the onboarding API and Zitadel
+
+The API authenticates to Zitadel as the `svc-onboarding` machine user with a
+private-key JWT (RFC 7523), exchanged at `/oauth/v2/token` for an access token
+that lives ~1h and is refreshed 60s before expiry. Nothing long-lived crosses
+the network, and revoking the credential is deleting the key in Zitadel.
+
+Creating it, once per environment:
+
+```bash
+# Zitadel console -> TESSERIX -> Users -> Service Users -> New
+#   username svc-onboarding, access token type: JWT
+# then Keys -> New -> type JSON, download the file (shown once).
+
+gcloud secrets create prod-onboarding-zitadel-machine-key \
+  --project=tesseracthub-480811 --replication-policy=automatic
+gcloud secrets versions add prod-onboarding-zitadel-machine-key \
+  --project=tesseracthub-480811 --data-file=svc-onboarding.json
+```
+
+Grants the machine user needs, and no more:
+
+| Grant | Where | Why |
+|---|---|---|
+| `IAM_OWNER` | instance | create organizations (S2/S3) — Zitadel has no narrower org-create role |
+| `ORG_OWNER` | TESSERIX | manage the product projects and their grants |
+
+`IAM_OWNER` is wider than we would like; it is the reason for §9 items 1–3 and
+the audit ledger. If Zitadel later ships an org-create-only role, narrow it.
+
+Break-glass: set `externalSecret.credential: pat` to fall back to
+`prod-onboarding-zitadel-pat`. The API logs a warning on every start under a
+PAT, and refuses to start if both credentials are present.
+
+The numeric platform org id is **not** configured. The API resolves it from
+`PLATFORM_ORG_NAME` (`TESSERIX`) at boot via `/admin/v1/orgs/_search` and fails
+startup on anything but one exact match, so a recreated org cannot silently
+scope every management call to the wrong tenant.
 
 ---
 

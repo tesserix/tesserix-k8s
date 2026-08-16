@@ -29,10 +29,11 @@ web:
 
 zitadel:
   issuer: https://auth.tesserix.app
-  # Numeric ID of TESSERIX, the org that owns every product project and so the
-  # only org that can grant one. Set per environment in values-prod.yaml; the
-  # template requires it rather than defaulting, because a wrong value would
-  # make every caller an org admin of the wrong tenant.
+  # TESSERIX owns every product project and so is the only org that can grant
+  # one. The API resolves its numeric id from this name at boot and refuses to
+  # start on anything but one exact match; platformOrgId is an escape hatch for
+  # an environment where the name is ambiguous.
+  platformOrgName: TESSERIX
   platformOrgId: ""
   audience: onboarding-api
   consoleClientId: ""
@@ -51,8 +52,12 @@ externalSecret:
     name: gcp-secret-store
     kind: ClusterSecretStore
   passwordSecret: prod-onboarding-postgresql-password
-  patSecret: prod-onboarding-zitadel-pat
   sessionKeySecret: prod-onboarding-session-key
+  # machineKey is the scoped, expiring credential; pat is break-glass only and
+  # is instance-wide. Exactly one is mounted — the API refuses to start on both.
+  credential: machineKey
+  machineKeySecret: prod-onboarding-zitadel-machine-key
+  patSecret: prod-onboarding-zitadel-pat
 
 istio:
   enabled: true

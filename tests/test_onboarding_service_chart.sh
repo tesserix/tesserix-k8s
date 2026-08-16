@@ -1,6 +1,6 @@
 #!/bin/bash
-# The onboarding API holds the iam-admin PAT and can create a tenant in any
-# product, so its posture is asserted rather than assumed.
+# The onboarding API can create a tenant in any product, so its posture is
+# asserted rather than assumed.
 # Usage: tests/test_onboarding_service_chart.sh
 set -uo pipefail
 
@@ -13,15 +13,21 @@ check() { # check <description> <condition-result>
   else echo "  FAIL $1"; fail=$((fail+1)); fi
 }
 
-# A blank platformOrgId must fail the render, not default to something.
+# Without the console's OIDC client id nobody can log in, so a blank one fails
+# the render instead of shipping a console that silently cannot authenticate.
 helm template onboarding-service "$CHART" >/dev/null 2>&1
-check "a blank zitadel.platformOrgId fails the render" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+check "a blank zitadel.consoleClientId fails the render" "$([ $? -ne 0 ] && echo 0 || echo 1)"
 
-RENDER=$(helm template onboarding-service "$CHART" --set zitadel.platformOrgId=123456 2>/dev/null)
+RENDER=$(helm template onboarding-service "$CHART" --set zitadel.consoleClientId=console-app 2>/dev/null)
 if [ -z "$RENDER" ]; then
-  echo "  FAIL chart does not render with a platformOrgId set"
+  echo "  FAIL chart does not render with a consoleClientId set"
   echo; echo "passed=$pass failed=1"; exit 1
 fi
+
+# The org id is resolved from the name at boot; a hand-copied id goes stale the
+# moment the org is recreated.
+echo "$RENDER" | grep -q 'name: PLATFORM_ORG_NAME'
+check "the platform org is named, not numbered" $?
 
 echo "$RENDER" | grep -q 'name: default-deny'
 check "the namespace has a default-deny NetworkPolicy" $?
@@ -29,9 +35,26 @@ check "the namespace has a default-deny NetworkPolicy" $?
 echo "$RENDER" | grep -q 'port: 15008'
 check "ambient HBONE 15008 is open both ways" $?
 
-# The PAT and the database password reach the pod only through the ExternalSecret.
-echo "$RENDER" | grep -Eq 'ZITADEL_PAT: "\{\{ \.pat \}\}"'
-check "the Zitadel PAT comes from the secret store, not a value" $?
+# The Zitadel credential and the database password reach the pod only through
+# the ExternalSecret, and the default credential is the scoped machine key.
+echo "$RENDER" | grep -Eq 'ZITADEL_MACHINE_KEY: "\{\{ \.machineKey \}\}"'
+check "the Zitadel machine key comes from the secret store, not a value" $?
+
+echo "$RENDER" | grep -q 'ZITADEL_PAT'
+check "the instance-wide PAT is not mounted by default" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+
+# The PAT is break-glass: reachable, but only by asking for it.
+PAT_RENDER=$(helm template onboarding-service "$CHART" \
+  --set zitadel.consoleClientId=console-app --set externalSecret.credential=pat 2>/dev/null)
+echo "$PAT_RENDER" | grep -Eq 'ZITADEL_PAT: "\{\{ \.pat \}\}"'
+check "the break-glass PAT is available on request" $?
+
+echo "$PAT_RENDER" | grep -q 'ZITADEL_MACHINE_KEY'
+check "the two credentials are never mounted together" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+
+helm template onboarding-service "$CHART" \
+  --set zitadel.consoleClientId=console-app --set externalSecret.credential=both >/dev/null 2>&1
+check "an unknown credential mode fails the render" "$([ $? -ne 0 ] && echo 0 || echo 1)"
 
 echo "$RENDER" | grep -q 'urlquery'
 check "the database password is url-encoded into DATABASE_URL" $?

@@ -41,12 +41,16 @@ spec:
               value: {{ .Values.api.port | quote }}
             - name: ZITADEL_ISSUER
               value: {{ .Values.zitadel.issuer | quote }}
+            - name: PLATFORM_ORG_NAME
+              value: {{ required "zitadel.platformOrgName must be set — see values.yaml" .Values.zitadel.platformOrgName | quote }}
+            {{- with .Values.zitadel.platformOrgId }}
             - name: PLATFORM_ORG_ID
-              value: {{ required "zitadel.platformOrgId must be set — see values.yaml" .Values.zitadel.platformOrgId | quote }}
+              value: {{ . | quote }}
+            {{- end }}
             - name: TOKEN_AUDIENCE
               value: {{ .Values.zitadel.audience | quote }}
             - name: CONSOLE_CLIENT_ID
-              value: {{ .Values.zitadel.consoleClientId | quote }}
+              value: {{ required "zitadel.consoleClientId must be set — nobody can log in without it" .Values.zitadel.consoleClientId | quote }}
             - name: CONSOLE_URL
               value: https://{{ .Values.host }}
             - name: DB_MAX_CONNS
