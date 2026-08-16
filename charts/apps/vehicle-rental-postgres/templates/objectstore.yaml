@@ -1,0 +1,25 @@
+{{- if and .Values.backup.enabled (not .Values.hibernate) }}
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: {{ .Values.backup.objectStoreName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: vehicle-rental-app
+    app.kubernetes.io/component: database
+spec:
+  configuration:
+    destinationPath: {{ .Values.backup.destinationPath | quote }}
+    googleCredentials:
+      gkeEnvironment: true
+    wal:
+      compression: gzip
+      maxParallel: 2
+    data:
+      compression: gzip
+      immediateCheckpoint: true
+      jobs: 2
+  # A recovery window, not a backup count: barman keeps the newest base backup
+  # older than now-14d so PITR to any point inside the window still works.
+  retentionPolicy: {{ .Values.backup.retentionPolicy | quote }}
+{{- end }}

@@ -1,0 +1,115 @@
+# The vehicle-rental-app system of record.
+#
+# Its own cluster, against the standing "use global-postgres" policy, on the
+# policy's own extension criterion: PostGIS is not installed anywhere in the
+# estate and adding it to global-postgres re-images the Keycloak-era and Kora
+# databases at once. See vehicle-rental-app docs/01-architecture/infrastructure.md.
+
+hibernate: false
+
+namespace: vehicle-rental-data
+clusterName: vehicle-rental-postgres
+
+instances: 3
+
+# CNPG's PostGIS variant — 3.5 on PG17. btree_gist for the availability
+# exclusion constraint (ADR-0010) ships with core.
+imageName: ghcr.io/cloudnative-pg/postgis:17-3.5
+
+# Sized for the first year, not for the 36-month projection: volumes carry
+# resizeInUseVolumes and the estate's standing problem is provisioned-and-empty,
+# not full. Raise with the measured growth curve.
+storageSize: 20Gi
+walStorageSize: 8Gi
+storageClass: standard-rwo-retain
+
+# Memory only — the platform sets no CPU requests or limits.
+resources:
+  requests:
+    memory: 1Gi
+  limits:
+    memory: 4Gi
+
+bootstrap:
+  database: vehicle_rental
+  owner: vehicle_rental
+  secret: vehicle-rental-postgres-app-credentials
+  gcpSecretName: prod-vehicle-rental-postgresql-password
+  postInitSQL:
+    # RLS on tenant_id is the isolation boundary; the owner must not be exempt
+    # from it by default either.
+    - "ALTER ROLE vehicle_rental SET row_security = on"
+
+# Login roles. Privileges are granted in the schema files, where a reviewer can
+# see them; only password reconciliation happens here.
+#
+# vehicle_rental_api       — what every request runs as. No BYPASSRLS, ever.
+# vehicle_rental_platform  — the audited cross-tenant exemption, named by policy.
+# vehicle_rental_reporting — SELECT only, and still inside RLS. Analysts get a
+#                            credential that cannot write, so nobody is tempted
+#                            to hand out the API role for a one-off query.
+applicationRoles:
+  - name: vehicle_rental_api
+    secret: vehicle-rental-postgres-api-credentials
+    gcpSecretName: prod-vehicle-rental-api-postgresql-password
+  - name: vehicle_rental_platform
+    secret: vehicle-rental-postgres-platform-credentials
+    gcpSecretName: prod-vehicle-rental-platform-postgresql-password
+  - name: vehicle_rental_reporting
+    secret: vehicle-rental-postgres-reporting-credentials
+    gcpSecretName: prod-vehicle-rental-reporting-postgresql-password
+
+postgresql:
+  # The RPO. Without it a quiet cluster ships WAL only when a 16 MB segment
+  # fills, so an overnight failure could lose hours of bookings while the
+  # backup dashboard still reads green.
+  archive_timeout: "5min"
+  max_connections: "200"
+  shared_buffers: "256MB"
+  effective_cache_size: "1536MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "128MB"
+  random_page_cost: "1.1"
+
+replication:
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
+
+affinity:
+  podAntiAffinityType: preferred
+
+monitoring:
+  enablePodMonitor: true
+
+# Transaction-mode PgBouncer. The API disables its prepared-statement cache to
+# match (crates/kernel/src/db.rs), which is why max_prepared_statements stays 0.
+#
+# The budget, because pool sizes multiply and max_connections does not:
+#   default_pool_size is per (user, database) pair, and there are three login
+#   roles. 2 instances x 3 pairs x 15 = 90 server connections, plus reserve,
+#   against max_connections 200 — leaving room for db-schema-bootstrap, the
+#   monitoring collector and a human with psql. maxDbConnections is the hard
+#   ceiling per pooler process, so a fourth role cannot quietly overcommit the
+#   cluster later.
+pooler:
+  enabled: true
+  instances: 2
+  maxClientConn: 500
+  defaultPoolSize: 15
+  maxDbConnections: 50
+  reservePoolSize: 3
+
+# Backup via the barman-cloud CNPG-I plugin, not the in-tree barmanObjectStore
+# that CNPG deprecated in 1.26. This cluster is greenfield, so it adopts the
+# replacement with no migration; the other 14 clusters move separately
+# (docs/cnpg-barman-plugin-migration.md).
+#
+# Requires operator >= 1.26 and the plugin installed in cnpg-system. Sync order
+# matters — see docs/cnpg-1.30-upgrade.md.
+backup:
+  enabled: true
+  objectStoreName: vehicle-rental-postgres-store
+  destinationPath: "gs://tesseract-prod-backups-in/vehicle-rental-postgres"
+  retentionPolicy: "14d"
+  schedule: "0 30 2 * * *"
+  serviceAccount: "app-secrets-infra-prod@tesseracthub-480811.iam.gserviceaccount.com"

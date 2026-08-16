@@ -1,0 +1,29 @@
+{{- if .Values.authz.enabled }}
+{{/*
+The API has no public host, so the only thing standing between a compromised
+pod elsewhere in the namespace and the database is this. Principals are an L4
+match, which ztunnel enforces on its own — no waypoint needed.
+
+An ALLOW policy on a workload denies everything it does not match, so adding a
+fourth caller means adding it here.
+*/ -}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ .Values.name }}-callers
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: {{ .Values.partOf }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              {{- range .Values.authz.callers }}
+              - cluster.local/ns/{{ $.Values.namespace }}/sa/{{ . }}
+              {{- end }}
+{{- end }}
