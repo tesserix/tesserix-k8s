@@ -233,9 +233,15 @@ migrate:
 # embed runs LAST, after the index is fully populated, and backfills
 # food_items.embedding — the ONLY source of sub-0.70 resolver match scores.
 # Without it the embedding tier is dead: everything scores 0.70-0.99 via
-# full-text, so `follow_up` is unreachable. It needs GEMINI_API_KEY (wired in
-# templates/seed-job.yaml); without the key it logs and exits 0, so a missing
+# full-text, so `follow_up` is unreachable. It uses Vertex via workload
+# identity where available, falling back to GEMINI_API_KEY (both wired in
+# templates/seed-job.yaml); with neither it logs and exits 0, so a missing
 # secret degrades to "no embeddings" rather than a crashlooping Job.
+#
+# Note it now exits NON-ZERO when it gives up with rows outstanding (kora#97) —
+# a run that embedded some rows and then hit a fully-failed batch used to exit
+# 0, which is how the index sat at 42% embedded with this Job and ArgoCD both
+# green. Draining the queue, or having nothing to do, is still green.
 #
 # Requires the image to ship /usr/local/bin/{seed,ingest,embed} and the AFCD /
 # USDA / SR Legacy / curated JSON at /usr/local/share/kora/food (kora PR #67
