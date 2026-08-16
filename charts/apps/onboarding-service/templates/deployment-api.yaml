@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: onboarding-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "onboarding-service.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "onboarding-service.selectorLabels" (dict "component" "onboarding-api" "release" .Release.Name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "onboarding-service.labels" . | nindent 8 }}
+        {{- include "onboarding-service.selectorLabels" (dict "component" "onboarding-api" "release" .Release.Name) | nindent 8 }}
+        app.kubernetes.io/component: api
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: onboarding-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.port }}
+          env:
+            - name: PORT
+              value: {{ .Values.api.port | quote }}
+            - name: ZITADEL_ISSUER
+              value: {{ .Values.zitadel.issuer | quote }}
+            - name: PLATFORM_ORG_NAME
+              value: {{ required "zitadel.platformOrgName must be set — see values.yaml" .Values.zitadel.platformOrgName | quote }}
+            {{- with .Values.zitadel.platformOrgId }}
+            - name: PLATFORM_ORG_ID
+              value: {{ . | quote }}
+            {{- end }}
+            - name: TOKEN_AUDIENCE
+              value: {{ .Values.zitadel.audience | quote }}
+            - name: CONSOLE_CLIENT_ID
+              value: {{ required "zitadel.consoleClientId must be set — nobody can log in without it" .Values.zitadel.consoleClientId | quote }}
+            - name: CONSOLE_URL
+              value: https://{{ .Values.host }}
+            - name: DB_MAX_CONNS
+              value: {{ .Values.database.maxConns | quote }}
+          envFrom:
+            - secretRef:
+                name: onboarding-api
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,79 @@
+namespace: onboarding
+host: onboard.tesserix.app
+
+api:
+  image:
+    repository: ghcr.io/tesserix/onboarding-api
+    tag: latest
+    pullPolicy: Always
+  replicaCount: 2
+  port: 8080
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+web:
+  image:
+    repository: ghcr.io/tesserix/onboarding-web
+    tag: latest
+    pullPolicy: Always
+  replicaCount: 2
+  port: 3500
+  resources:
+    requests:
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+
+zitadel:
+  issuer: https://auth.tesserix.app
+  # TESSERIX owns every product project and so is the only org that can grant
+  # one. The API resolves its numeric id from this name at boot and refuses to
+  # start on anything but one exact match; platformOrgId is an escape hatch for
+  # an environment where the name is ambiguous.
+  platformOrgName: TESSERIX
+  platformOrgId: ""
+  audience: onboarding-api
+  consoleClientId: ""
+
+database:
+  host: global-postgres-rw.global.svc.cluster.local
+  port: 5432
+  name: onboarding_db
+  user: onboarding
+  maxConns: 10
+
+externalSecret:
+  enabled: true
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+  passwordSecret: prod-onboarding-postgresql-password
+  sessionKeySecret: prod-onboarding-session-key
+  # machineKey is the scoped, expiring credential; pat is break-glass only and
+  # is instance-wide. Exactly one is mounted — the API refuses to start on both.
+  credential: machineKey
+  machineKeySecret: prod-onboarding-zitadel-machine-key
+  patSecret: prod-onboarding-zitadel-pat
+
+istio:
+  enabled: true
+  gateways:
+    - istio-ingress/tesseract-gateway
+
+networkPolicy:
+  enabled: true
+  dnsServiceIP: 10.30.0.10
+  podCIDR: 10.20.0.0/16
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

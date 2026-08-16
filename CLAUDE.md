@@ -91,6 +91,42 @@ Cluster:  tesseract-prod-in-gke   Region: asia-south1
 
 ---
 
+## New product — answer these two before writing any code
+
+Every new product, chart or service in this estate has to declare both of these
+up front, because each one determines a different set of files and neither can
+be retrofitted cheaply. **Ask the user; never assume a default.**
+
+**1. Which identity provider?**
+
+| Answer | What it means | What you build |
+|---|---|---|
+| **Zitadel** (`auth.tesserix.app`) | Multi-tenant. Customers get their own org and connect their own Okta/Entra/Google/SAML. This is the target for every new product. | Project + apps via `zitadel-bootstrap` `desired.projects`, issuer in `extraGip`, project-audience scope, org onboarded through `onboard.tesserix.app` |
+| **GIP** (Google Identity Platform) | Single-tenant or consumer sign-in, one GIP tenant per product. Grandfathered — HomeChef, blog, HMS today. | GIP tenant, auth-BFF on the `devai-auth-bff` pattern, `docs/gip-migration-plan.md` |
+
+Pick Zitadel unless the product genuinely has no notion of a customer
+organization. A product that starts on GIP and later needs enterprise SSO pays
+for the migration twice.
+
+**2. Which secret store — and there are two answers, not one.**
+
+Every product needs *both* halves decided, because they are different subjects:
+
+| Subject | Store | What you build |
+|---|---|---|
+| The product's **own** credentials — DB password, OIDC client secret, registry token, session key | **GCP Secret Manager** | `ExternalSecret` in `external-secrets/prod/<ns>/`, naming `{env}-{service}-{secret}` |
+| The product's **customers'** secrets — a tenant's API key, webhook secret, PSP credential, BYO key | **OpenBao** | Path `products/<product>/tenants/<tenant-uuid>/<scope>/<name>`, read at runtime via the broker-token model — **not** ESO |
+
+A product whose customers never store a secret still answers this: the answer is
+"none yet, and when that changes it is OpenBao". Writing a customer secret into
+GCP Secret Manager is the failure this table exists to prevent.
+
+Details: [`docs/tenant-secrets.md`](docs/tenant-secrets.md) for the path
+standard and why not ESO; [`docs/onboarding-api.md`](docs/onboarding-api.md)
+for onboarding the product itself.
+
+---
+
 ## Secret stores — pick by *whose* secret it is
 
 Two stores, one rule, no exceptions. Before creating any secret, ask who the
@@ -232,6 +268,7 @@ validation.
 | **Auth — GIP tenants, auth-BFF wiring, admin claims** | [`docs/gip-migration-plan.md`](docs/gip-migration-plan.md) |
 | **Keycloak decommission** — what was removed and what still needs cutting over | [`docs/keycloak-decommission-plan.md`](docs/keycloak-decommission-plan.md) |
 | **Zitadel object model, org-per-tenant, and automating onboarding** | [`docs/identity-control-plane.md`](docs/identity-control-plane.md) |
+| **`onboard.tesserix.app`** — the onboarding API/console, its authorization model and audit ledger | [`docs/onboarding-api.md`](docs/onboarding-api.md) |
 | **Anonymous/ephemeral vs onboarded tenants, data TTL, tier upgrades** | [`docs/tenancy-model.md`](docs/tenancy-model.md) |
 | **Per-tenant secrets at runtime** — OpenBao namespaces, path standard, why not ESO | [`docs/tenant-secrets.md`](docs/tenant-secrets.md) |
 | **HomeChef platform topology** — services, domains, infra, E2E | [`docs/homechef-platform.md`](docs/homechef-platform.md) |

@@ -53,6 +53,12 @@ bootstrap:
     # fresh bootstrap — see docs/postgres-cluster-policy.md).
     - "CREATE ROLE kora LOGIN"
     - "CREATE DATABASE kora_db OWNER kora"
+    # onboarding_db (onboard.tesserix.app). Owned by "global", not by the
+    # application's own role: onboarding-service connects as "onboarding" and
+    # must NOT own audit_events, or it could re-grant itself the UPDATE and
+    # DELETE the schema revokes. See docs/onboarding-api.md § 5.
+    - "CREATE ROLE onboarding LOGIN"
+    - "CREATE DATABASE onboarding_db OWNER global"
   # Runs once against template1 at cluster creation; every database
   # subsequently CREATEd (including from postInitSQL above) inherits
   # whatever is installed here via Postgres's normal template-copy
@@ -72,6 +78,8 @@ bootstrap:
 # works even for a role that never has direct superuser access. Same pattern
 # as mark8ly-postgres's `openfga` / `marketplace_api` secondary roles.
 managedRoles:
+  - name: onboarding
+    passwordSecret: global-postgres-onboarding
   - name: kora
     passwordSecret: global-postgres-kora
     # Secret created by ExternalSecret in external-secrets/prod/global/
