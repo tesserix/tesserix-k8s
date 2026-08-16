@@ -72,6 +72,12 @@ every 30 minutes. `global-postgres` is already a configured target of that job.
 Keep both in sync. A database created only in step 2 vanishes on a rebuild; one
 declared only in step 1 never exists at all.
 
+> **The bootstrap CronJob needs its target role to have CREATEDB.** It connects
+> as the cluster's owner role, and CNPG creates that role without CREATEDB, so
+> `CREATE DATABASE` fails and the run reports an error nobody reads — the
+> database simply never appears. Grant it in `managedRoles` (`createdb: true`),
+> which reconciles on a running cluster, not in `postInitSQL`.
+
 ## Two traps that cost real debugging time
 
 **Poolers are transaction-mode PgBouncer.** They do not carry prepared
