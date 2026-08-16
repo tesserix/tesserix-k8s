@@ -318,6 +318,35 @@ Admin access is the `admin: true` custom claim, granted by `gip-admin-claims`.
 
 ---
 
+## New product — ask these two before writing anything
+
+Every new product is onboarded through `onboard.tesserix.app`, and the wizard
+asks two questions that decide what gets built. Ask them here too, and do not
+guess a default:
+
+1. **Who signs the user in — Zitadel or GIP?**
+   - *Zitadel* (the direction of travel): the product gets a project under the
+     TESSERIX org, one organization per customer, and its customers' SSO is
+     wired through the onboarding API. Build against the Zitadel issuer
+     `https://auth.tesserix.app` and carry `tenant_id` from the org metadata.
+   - *GIP*: one GIP tenant per product, issuer
+     `https://securetoken.google.com/tesseracthub-480811`, `auth-bff` in front.
+     Pick this only for a product already on it.
+
+2. **Where do its tenants' secrets live — OpenBao or nowhere?**
+   - A product that holds anything scoped to a customer (per-tenant API keys,
+     webhook secrets, BYO keys, PSP credentials) gets an OpenBao policy and an
+     ESO Vault-provider ExternalSecret. **Never GCP Secret Manager** — see
+     *Secret stores* above.
+   - A product with only platform credentials says so explicitly and gets none.
+
+The answers become `identity` and `tenantSecrets` on the product record, and the
+console emits the matching git manifests (bootstrap values, ExternalSecret,
+`RequestAuthentication`, OpenBao policy) for the PR. Full flow:
+[`docs/onboarding-api.md`](docs/onboarding-api.md).
+
+---
+
 ## Gotchas
 
 1. **`@tesserix/web` auth** — needs `NODE_AUTH_TOKEN` from `prod-ghcr-token`.
