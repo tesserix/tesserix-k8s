@@ -78,6 +78,16 @@ bootstrap:
 # works even for a role that never has direct superuser access. Same pattern
 # as mark8ly-postgres's `openfga` / `marketplace_api` secondary roles.
 managedRoles:
+  # "global" is the bootstrap owner role and is already managed in every other
+  # sense; it is listed here only for createdb. Without it db-schema-bootstrap
+  # cannot provision a new database on this cluster at all — it connects as
+  # "global", and CNPG creates the app role without CREATEDB, so every
+  # postInitSQL database added after bootstrap (onboarding_db) silently never
+  # appeared. The passwordSecret is the same app secret CNPG generated, so
+  # reconciling it changes nothing.
+  - name: global
+    passwordSecret: global-postgres-app-credentials
+    createdb: true
   - name: onboarding
     passwordSecret: global-postgres-onboarding
   - name: kora
