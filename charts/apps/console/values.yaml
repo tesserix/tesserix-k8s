@@ -232,3 +232,24 @@ configMap:
 # drain/scale-down. The template falls back to maxUnavailable: 1.
 pdb:
   enabled: true
+
+# tesserix-postgres — the console's own store.
+#
+# Same cluster, same database and the SAME Secret the company deployment reads
+# (charts/apps/company/values.yaml). Nothing new is provisioned here: the
+# console is a second reader of a store it co-owns, not a new tenant of it.
+#
+# Used for the notification bell's per-operator last-seen timestamp, and for
+# reading the ticket/reply rows the bell derives its feed from. Everything else
+# the console shows still comes through the web app's admin API.
+#
+# .enabled gates the env block, so the chart still renders where the Secret is
+# absent — and the console degrades to a quiet, disabled bell rather than
+# failing to start.
+database:
+  tesserix:
+    enabled: true
+    host: tesserix-postgres-rw.tesserix.svc.cluster.local
+    port: 5432
+    name: tesserix_admin
+    secretName: tesserix-postgres-tesserix-admin

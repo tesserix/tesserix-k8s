@@ -58,6 +58,27 @@ spec:
             - name: GCP_PROJECT_ID
               value: {{ .Values.gcp.projectId | quote }}
             {{- end }}
+            {{- if .Values.database.tesserix.enabled }}
+            # tesserix-postgres — notification state + the bell's feed.
+            # Host/port/name are static; user+password come from the
+            # tesserix-postgres-tesserix-admin Secret synced by ESO.
+            - name: TESSERIX_DB_HOST
+              value: {{ .Values.database.tesserix.host | quote }}
+            - name: TESSERIX_DB_PORT
+              value: {{ .Values.database.tesserix.port | quote }}
+            - name: TESSERIX_DB_NAME
+              value: {{ .Values.database.tesserix.name | quote }}
+            - name: TESSERIX_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.tesserix.secretName | quote }}
+                  key: username
+            - name: TESSERIX_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.tesserix.secretName | quote }}
+                  key: password
+            {{- end }}
           {{- if and .Values.livenessProbe .Values.livenessProbe.enabled }}
           livenessProbe:
             httpGet:
