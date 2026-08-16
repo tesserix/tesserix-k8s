@@ -56,6 +56,14 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ $ns }}
     {{- end }}
+    # Namespaces that hold a database on global-postgres but ship their own
+    # mesh policies, so they are deliberately not in appNamespaces.
+    {{- range .Values.globalIngressExtraNamespaces }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+    {{- end }}
     # Allow from monitoring
     - from:
         - namespaceSelector:
