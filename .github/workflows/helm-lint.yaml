@@ -173,7 +173,11 @@ jobs:
                 continue
               fi
               echo "Templating $chart_name..."
-              helm template "$chart_name" "$chart" > /dev/null
+              # ci/lint-values.yaml supplies the per-environment values a chart
+              # `required`s, so a guard on a real value is not a CI failure.
+              ci_values=""
+              [ -f "$chart/ci/lint-values.yaml" ] && ci_values="-f $chart/ci/lint-values.yaml"
+              helm template "$chart_name" "$chart" $ci_values > /dev/null
               if [ $? -eq 0 ]; then
                 echo "✓ $chart_name templates valid"
               else

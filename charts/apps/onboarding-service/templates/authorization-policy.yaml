@@ -1,0 +1,35 @@
+{{- if .Values.istio.enabled }}
+{{/* The mesh-wide deny-all-default reaches this ambient namespace too, so both
+     workloads need an explicit ALLOW or the gateway gets "RBAC: access denied".
+     ztunnel is L4-only — the token, session and per-object authorization are
+     enforced by the API itself, not here. */}}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: onboarding-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "onboarding-service.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "onboarding-service.selectorLabels" (dict "component" "onboarding-api" "release" .Release.Name) | nindent 6 }}
+  action: ALLOW
+  rules:
+    - {}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: onboarding-web
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "onboarding-service.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "onboarding-service.selectorLabels" (dict "component" "onboarding-web" "release" .Release.Name) | nindent 6 }}
+  action: ALLOW
+  rules:
+    - {}
+{{- end }}
