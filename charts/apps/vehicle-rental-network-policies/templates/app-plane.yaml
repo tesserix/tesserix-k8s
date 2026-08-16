@@ -78,23 +78,36 @@ spec:
 {{- end }}
 ---
 {{/*
-Egress stays broad and the lock is on the way in, matching dwellm8. What the app
-plane must reach is external and moves — Zitadel's JWKS, GCP Secret Manager, the
-payment gateway — and an allow-list of those IPs goes stale and then presents as
-checkout failing at 3am.
+Default-deny egress. Everything the app plane may reach is enumerated in the
+policy below and in values.yaml; there is no 0.0.0.0/0 rule and adding one is a
+review failure (vehicle-rental-app#15).
 
-infrastructure.md asks for a hostname allow-list (PSP, VAHAN, DigiLocker, …).
-NetworkPolicy cannot express one — it matches CIDRs. That belongs in a set of
-Istio ServiceEntries plus an egress gateway, which is a separate change.
+Note what this closes that an ingress-only lock does not: a compromised pod
+cannot post the customer table to an address of its choosing, and cannot resolve
+a name through a resolver of its choosing either — DNS is pinned to kube-system,
+so DNS tunnelling has nowhere to tunnel to.
 
-The metadata IP is excluded: these pods have no Workload Identity binding, their
-credentials arrive as Secrets ESO wrote. A pod that can curl the metadata server
-is a pod that can go looking for a token it was never given.
+The metadata IP is not excepted, it is simply not listed: these pods have no
+Workload Identity binding, their credentials arrive as Secrets ESO wrote. A pod
+that can curl the metadata server is a pod that can go looking for a token it was
+never given.
 */ -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-egress-broad
+  name: default-deny-egress
+  namespace: {{ .Values.appNamespace }}
+  labels:
+    app.kubernetes.io/part-of: vehicle-rental-app
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-named
   namespace: {{ .Values.appNamespace }}
   labels:
     app.kubernetes.io/part-of: vehicle-rental-app
@@ -103,8 +116,26 @@ spec:
   policyTypes:
     - Egress
   egress:
+    # The api, the three web apps and the worker talk to each other.
     - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-            except:
-              - 169.254.169.254/32
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.appNamespace }}
+    {{- range .Values.egress.inCluster }}
+    # {{ .name }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .namespace }}
+      ports:
+        {{- toYaml .ports | nindent 8 }}
+    {{- end }}
+    {{- if .Values.egress.gateway.enabled }}
+    # The only route off-cluster. See externalHosts for what may travel it.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.egress.gateway.namespace }}
+      ports:
+        {{- toYaml .Values.egress.gateway.ports | nindent 8 }}
+    {{- end }}

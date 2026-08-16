@@ -328,6 +328,10 @@ sidecarInjection:
     - scrapper
     - devai
     - gameverse
+    - vehicle-rental
+    # The rental database sits in its own namespace so that reaching it is a
+    # cross-namespace call a NetworkPolicy can refuse (vehicle-rental-app#15).
+    - vehicle-rental-data
     # Agentic control plane — added so the sidecar-injection.yaml
     # template stamps the istio.io/use-waypoint label on these
     # namespaces (their waypoint Gateways are created by
@@ -379,16 +383,25 @@ sidecarInjection:
     kora: application
     scrapper: application
     agentregistry-system: infrastructure
+    vehicle-rental: application
+    vehicle-rental-data: application
   # Namespaces where sidecar injection should be explicitly disabled
   disabledNamespaces:
     - nats
     # - mongodb-fanzone   # DECOMMISSIONED 2026-07-23
     - db-backup-and-restore        # Backup jobs don't need sidecar
+    # Out of the mesh on purpose: it exists to prove, every sync, that a pod
+    # nobody allow-listed cannot open the rental database (vehicle-rental-app#15).
+    - vehicle-rental-conformance
   # Namespaces in `namespaces` but NOT enrolled in Ambient mesh.
   # Keeps istio-injection=disabled + name labels but skips dataplane-mode=ambient.
   # Use when ambient enrollment breaks ingress (504s through cloudflared).
   ambientExcluded:
     - gameverse
+    # CNPG and MongoDB speak their own wire protocols and replicate pod-to-pod.
+    # ztunnel in front of that buys nothing the NetworkPolicy does not already
+    # give us, and adds a drain window to every reconcile of the namespace.
+    - vehicle-rental-data
     # tesserix added: ztunnel was draining the per-pod proxy on EVERY ArgoCD
     # reconcile of the namespace-wide AuthorizationPolicies
     # (allow-ingress-to-tesserix, public-endpoints-tesserix). Drain windows
