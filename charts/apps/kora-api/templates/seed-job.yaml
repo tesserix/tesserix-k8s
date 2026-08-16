@@ -67,9 +67,37 @@ spec:
                 secretKeyRef:
                   name: {{ $secretName }}
                   key: {{ index .Values.secretEnv "DATABASE_URL" }}
-            # embed needs GEMINI_API_KEY to generate vectors. Without it
-            # cmd/embed logs and exits 0, so a missing secret degrades to "no
-            # embeddings" rather than a crashlooping Job.
+            # embed prefers Vertex over GEMINI_API_KEY when VERTEX_PROJECT is
+            # set, authenticated by the workload-identity service account this
+            # pod already runs under (kora-api-prod@, roles/aiplatform.user) —
+            # no key. That lifts the free-tier ceiling of 1,000 embeddings per
+            # project per day, which is what stalled the backfill (kora#97):
+            # GEMINI_API_KEY belongs to kora-app-e6d38, where billing is
+            # DISABLED, while tesseracthub-480811 already pays.
+            #
+            # Scoped to THIS Job on purpose. VERTEX_* must NOT go into
+            # .Values.env, which only the API Deployment consumes (see
+            # values-prod.yaml) — setting it there switches the resolve engine
+            # over too, and that is exactly what kora#202 rolled back: the
+            # Vertex primary missed IdentifyText's 1500ms textBudget and every
+            # /v1/resolve/text 500'd. A batch backfill has no such budget, so
+            # it can move ahead of the resolve path rather than wait on it.
+            #
+            # Location is "global" for the reason kora#202 recorded:
+            # asia-south1 serves gemini-embedding-001 but 404s on
+            # gemini-3.5-flash-lite, so "global" is the one location that
+            # serves every model this image uses.
+            {{- if .Values.gcp.workloadIdentity.enabled }}
+            - name: VERTEX_PROJECT
+              value: {{ .Values.gcp.projectId | quote }}
+            - name: VERTEX_LOCATION
+              value: "global"
+            {{- end }}
+            # Retained as the fallback for environments without workload
+            # identity. cmd/embed takes VERTEX_PROJECT over this when both are
+            # present, and with neither it logs and exits 0 — so a missing
+            # secret still degrades to "no embeddings" rather than a
+            # crashlooping Job.
             - name: GEMINI_API_KEY
               valueFrom:
                 secretKeyRef:
