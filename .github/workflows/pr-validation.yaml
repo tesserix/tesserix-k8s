@@ -13,12 +13,27 @@ on:
       - 'charts/**'
       - 'argocd/**'
       - '.github/workflows/**'
+      - 'scripts/gke-upgrade/**'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
   HELM_VERSION: '3.14.0'
 
 jobs:
+  gke-upgrade-scripts:
+    name: GKE Upgrade Scripts
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck -x -P scripts/gke-upgrade scripts/gke-upgrade/*.sh scripts/gke-upgrade/tests/*.sh
+
+      - name: Unit tests
+        run: bash scripts/gke-upgrade/tests/run-tests.sh
+
   # ---------------------------------------------------------------------------
   # Helm Chart Validation
   # ---------------------------------------------------------------------------

@@ -1,0 +1,243 @@
+name: GKE Upgrade (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: 'GKE cluster to upgrade'
+        required: true
+        default: 'tesseract-prod-in-gke'
+        type: string
+      region:
+        description: 'Cluster region'
+        required: true
+        default: 'asia-south1'
+        type: string
+      target_version:
+        description: 'Exact target version, e.g. 1.36.2-gke.2064000 (never "latest")'
+        required: true
+        type: string
+      scope:
+        description: 'What to upgrade — control plane must be done before nodes'
+        required: true
+        default: 'control-plane'
+        type: choice
+        options:
+          - control-plane
+          - node-pools
+          - both
+      pool_strategy:
+        description: 'How to upgrade capacity-constrained pools (see recreate_pools). Switch to surge once those pools run on CUD/on-demand.'
+        required: true
+        default: 'recreate'
+        type: choice
+        options:
+          - recreate
+          - surge
+          - skip
+      recreate_pools:
+        description: 'Comma-separated pools that pool_strategy applies to. Everything else always surges.'
+        required: false
+        default: 'gpu-l4-spot'
+        type: string
+      only_pool:
+        description: 'Limit to a single node pool (optional)'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Run preflight and print the actions without making changes'
+        required: true
+        default: true
+        type: boolean
+      allow_blocking_pdbs:
+        description: 'Proceed even though PDBs allow zero evictions (GKE force-drains after ~1h/node)'
+        required: false
+        default: false
+        type: boolean
+      allow_out_of_channel:
+        description: 'Allow a version not offered by the cluster release channel'
+        required: false
+        default: false
+        type: boolean
+      confirm:
+        description: 'Type the cluster name to confirm'
+        required: true
+        default: ''
+        type: string
+
+concurrency:
+  group: gke-upgrade-${{ inputs.cluster_name }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  PROJECT_ID: tesseracthub-480811
+  WIF_PROVIDER: projects/849928263410/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+  SA_EMAIL: github-actions@tesseracthub-480811.iam.gserviceaccount.com
+
+jobs:
+  preflight:
+    name: Preflight
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Confirm cluster name
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          CLUSTER: ${{ inputs.cluster_name }}
+          TARGET: ${{ inputs.target_version }}
+        run: |
+          if [[ "$CONFIRM" != "$CLUSTER" ]]; then
+            echo "::error::confirm must be exactly '$CLUSTER'"
+            exit 1
+          fi
+          if [[ ! "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-gke\.[0-9]+)?$ ]]; then
+            echo "::error::target_version '$TARGET' is not a GKE version like 1.36.2-gke.2064000"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.SA_EMAIL }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          install_components: gke-gcloud-auth-plugin
+
+      - name: Run preflight checks
+        env:
+          ALLOW_BLOCKING_PDBS: ${{ inputs.allow_blocking_pdbs }}
+          ALLOW_OUT_OF_CHANNEL: ${{ inputs.allow_out_of_channel }}
+          USE_GKE_GCLOUD_AUTH_PLUGIN: 'True'
+          CLUSTER: ${{ inputs.cluster_name }}
+          REGION: ${{ inputs.region }}
+          TARGET: ${{ inputs.target_version }}
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          ./scripts/gke-upgrade/preflight.sh \
+            "$CLUSTER" "$REGION" "$PROJECT_ID" "$TARGET" "$SCOPE" upgrade-artifacts
+
+      - name: Upload baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: gke-upgrade-baseline
+          path: upgrade-artifacts/
+          retention-days: 30
+
+  upgrade:
+    name: Upgrade
+    needs: preflight
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 300
+    # Gated: requires a reviewer on the gke-upgrade environment before it runs.
+    environment: gke-upgrade
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: gke-upgrade-baseline
+          path: upgrade-artifacts
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.SA_EMAIL }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          install_components: gke-gcloud-auth-plugin
+
+      - name: Upgrade
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          POOL_STRATEGY: ${{ inputs.pool_strategy }}
+          RECREATE_POOLS: ${{ inputs.recreate_pools }}
+          ONLY_POOL: ${{ inputs.only_pool }}
+          USE_GKE_GCLOUD_AUTH_PLUGIN: 'True'
+          CLUSTER: ${{ inputs.cluster_name }}
+          REGION: ${{ inputs.region }}
+          TARGET: ${{ inputs.target_version }}
+          SCOPE: ${{ inputs.scope }}
+        run: |
+          ./scripts/gke-upgrade/upgrade.sh \
+            "$CLUSTER" "$REGION" "$PROJECT_ID" "$TARGET" "$SCOPE" upgrade-artifacts
+
+      - name: Upload recovery scripts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gke-upgrade-recovery
+          path: upgrade-artifacts/
+          retention-days: 90
+
+  verify:
+    name: Verify
+    needs: [preflight, upgrade]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: gke-upgrade-baseline
+          path: upgrade-artifacts
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.SA_EMAIL }}
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          install_components: gke-gcloud-auth-plugin
+
+      - name: Verify cluster health
+        env:
+          # A pool left on the old version is expected when only part of the cluster was touched.
+          EXPECT_NODE_VERSIONS: ${{ inputs.scope == 'both' && inputs.only_pool == '' && inputs.pool_strategy != 'skip' }}
+          USE_GKE_GCLOUD_AUTH_PLUGIN: 'True'
+          CLUSTER: ${{ inputs.cluster_name }}
+          REGION: ${{ inputs.region }}
+          TARGET: ${{ inputs.target_version }}
+        run: |
+          ./scripts/gke-upgrade/verify.sh \
+            "$CLUSTER" "$REGION" "$PROJECT_ID" "$TARGET" \
+            upgrade-artifacts/before upgrade-artifacts/after
+
+      - name: Upload post-upgrade state
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gke-upgrade-verification
+          path: upgrade-artifacts/
+          retention-days: 30
