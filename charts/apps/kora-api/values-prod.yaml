@@ -17,20 +17,18 @@ podAnnotations:
 
 env:
   GIN_MODE: "release"
-  # Vertex AI, authenticated by the kora-api Kubernetes service account through
-  # Workload Identity (kora-api-prod@, granted roles/aiplatform.user) rather
-  # than by an API key. Setting VERTEX_PROJECT is what selects it — cmd/api
-  # prefers Vertex over GEMINI_API_KEY when both are present.
+  # VERTEX_* is deliberately UNSET — see kora#202.
   #
-  # Replaces a PERSONAL Gemini free-tier key, which capped embeddings at 1,000
-  # per project per day (kora#97, which stalled the OpenFoodFacts backfill at
-  # 607 of 5,669 rows) and shared a demand pool that returned a 503 and took
-  # photo logging down entirely (kora#179).
+  # Vertex was enabled on 2026-08-16 and rolled back within minutes: every
+  # /v1/resolve/text 500'd after 28.8s. The Vertex primary missed IdentifyText's
+  # 1500ms textBudget (most likely acquiring a metadata-server token on the
+  # first call, where an API key is just a header), fell through to the NVIDIA
+  # fallback, and that ran until the request was cancelled. No ai_usage_events
+  # row was written at all, which is consistent with the primary dying before it
+  # recorded anything.
   #
-  # Location is "global", not asia-south1. Verified against the live API on
-  # 2026-08-16: asia-south1 serves gemini-3.5-flash and gemini-embedding-001 but
-  # 404s on gemini-3.5-flash-lite, which the identify path uses. Only "global"
-  # serves all three, so pinning the cluster's own region would have forced a
-  # model change.
-  VERTEX_PROJECT: "tesseracthub-480811"
-  VERTEX_LOCATION: "global"
+  # Setting VERTEX_PROJECT is ALL it takes to switch the engine over — cmd/api
+  # prefers it to GEMINI_API_KEY — so leaving it here would re-break production
+  # the moment any newer image is deployed. The IAM grant
+  # (kora-api-prod@ -> roles/aiplatform.user) and the provider code stay in
+  # place; only this switch is off.
