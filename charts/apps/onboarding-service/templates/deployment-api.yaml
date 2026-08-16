@@ -49,8 +49,13 @@ spec:
             {{- end }}
             - name: TOKEN_AUDIENCE
               value: {{ .Values.zitadel.audience | quote }}
-            - name: CONSOLE_CLIENT_ID
-              value: {{ required "zitadel.consoleClientId must be set — nobody can log in without it" .Values.zitadel.consoleClientId | quote }}
+            - name: GOOGLE_CLIENT_ID
+              value: {{ required "console.googleClientId must be set — nobody can sign in without it" .Values.console.googleClientId | quote }}
+            {{- if not .Values.console.adminEmails }}
+            {{- fail "console.adminEmails must name at least one address, or the console has no users" }}
+            {{- end }}
+            - name: PLATFORM_ADMIN_EMAILS
+              value: {{ join "," .Values.console.adminEmails | quote }}
             - name: CONSOLE_URL
               value: https://{{ .Values.host }}
             - name: DB_MAX_CONNS

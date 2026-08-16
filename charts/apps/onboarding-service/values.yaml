@@ -36,7 +36,16 @@ zitadel:
   platformOrgName: TESSERIX
   platformOrgId: ""
   audience: onboarding-api
-  consoleClientId: ""
+
+console:
+  # Console humans sign in with Google; Zitadel stays the authority for product
+  # machine tokens. The client id is public, its secret half lives in Secret
+  # Manager (externalSecret.googleClientSecret).
+  googleClientId: ""
+  # Who may hold a console session, checked at sign-in and on every request.
+  # Kept in git rather than a secret so granting or revoking console access is a
+  # reviewed PR and an ArgoCD sync, not an unlogged edit in Secret Manager.
+  adminEmails: []
 
 database:
   host: global-postgres-rw.global.svc.cluster.local
@@ -53,6 +62,7 @@ externalSecret:
     kind: ClusterSecretStore
   passwordSecret: prod-onboarding-postgresql-password
   sessionKeySecret: prod-onboarding-session-key
+  googleClientSecret: prod-onboarding-google-client-secret
   # machineKey is the scoped, expiring credential; pat is break-glass only and
   # is instance-wide. Exactly one is mounted — the API refuses to start on both.
   credential: machineKey

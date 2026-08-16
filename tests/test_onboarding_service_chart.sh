@@ -13,16 +13,35 @@ check() { # check <description> <condition-result>
   else echo "  FAIL $1"; fail=$((fail+1)); fi
 }
 
-# Without the console's OIDC client id nobody can log in, so a blank one fails
-# the render instead of shipping a console that silently cannot authenticate.
-helm template onboarding-service "$CHART" >/dev/null 2>&1
-check "a blank zitadel.consoleClientId fails the render" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+CONSOLE_ARGS=(--set console.googleClientId=console-app --set 'console.adminEmails={first@example.test,second@example.test}')
 
-RENDER=$(helm template onboarding-service "$CHART" --set zitadel.consoleClientId=console-app 2>/dev/null)
+# Without the Google client id nobody can sign in, so a blank one fails the
+# render instead of shipping a console that silently cannot authenticate.
+helm template onboarding-service "$CHART" --set 'console.adminEmails={first@example.test}' >/dev/null 2>&1
+check "a blank console.googleClientId fails the render" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+
+# An empty allowlist would be a console with no users; that is a mistake, not a
+# configuration.
+helm template onboarding-service "$CHART" --set console.googleClientId=console-app >/dev/null 2>&1
+check "an empty console.adminEmails fails the render" "$([ $? -ne 0 ] && echo 0 || echo 1)"
+
+RENDER=$(helm template onboarding-service "$CHART" "${CONSOLE_ARGS[@]}" 2>/dev/null)
 if [ -z "$RENDER" ]; then
-  echo "  FAIL chart does not render with a consoleClientId set"
+  echo "  FAIL chart does not render with the console settings supplied"
   echo; echo "passed=$pass failed=1"; exit 1
 fi
+
+# The allowlist is a chart value, so changing who may sign in is a reviewed PR.
+echo "$RENDER" | grep -q 'value: "first@example.test,second@example.test"'
+check "the admin allowlist reaches the pod from the chart" $?
+
+echo "$RENDER" | grep -Eq 'GOOGLE_CLIENT_SECRET: "\{\{ \.googleClientSecret \}\}"'
+check "the Google client secret comes from the secret store, not a value" $?
+
+# The three addresses prod actually ships with, read from values-prod.yaml.
+PROD_RENDER=$(helm template onboarding-service "$CHART" -f "$CHART/values-prod.yaml" 2>/dev/null)
+echo "$PROD_RENDER" | grep -q 'value: "samyak.rout@gmail.com,unidevidp@gmail.com,mahesh.sangawar@gmail.com"'
+check "prod admits exactly the three platform admins" $?
 
 # The org id is resolved from the name at boot; a hand-copied id goes stale the
 # moment the org is recreated.
@@ -45,7 +64,7 @@ check "the instance-wide PAT is not mounted by default" "$([ $? -ne 0 ] && echo 
 
 # The PAT is break-glass: reachable, but only by asking for it.
 PAT_RENDER=$(helm template onboarding-service "$CHART" \
-  --set zitadel.consoleClientId=console-app --set externalSecret.credential=pat 2>/dev/null)
+  "${CONSOLE_ARGS[@]}" --set externalSecret.credential=pat 2>/dev/null)
 echo "$PAT_RENDER" | grep -Eq 'ZITADEL_PAT: "\{\{ \.pat \}\}"'
 check "the break-glass PAT is available on request" $?
 
@@ -53,7 +72,7 @@ echo "$PAT_RENDER" | grep -q 'ZITADEL_MACHINE_KEY'
 check "the two credentials are never mounted together" "$([ $? -ne 0 ] && echo 0 || echo 1)"
 
 helm template onboarding-service "$CHART" \
-  --set zitadel.consoleClientId=console-app --set externalSecret.credential=both >/dev/null 2>&1
+  "${CONSOLE_ARGS[@]}" --set externalSecret.credential=both >/dev/null 2>&1
 check "an unknown credential mode fails the render" "$([ $? -ne 0 ] && echo 0 || echo 1)"
 
 echo "$RENDER" | grep -q 'urlquery'
