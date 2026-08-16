@@ -1,0 +1,59 @@
+{{- if .Values.ingress.enabled }}
+{{- /*
+One VirtualService for the *.tesserix.app wildcard, split by authority. Istio
+merges same-host VirtualServices badly, so onboarding, admin and storefront are
+routed from this one object rather than three.
+
+Order is load-bearing: rentme is exact, the -admin regex must be evaluated
+before the storefront catch-all, and the catch-all must be last.
+
+Exact-host VirtualServices elsewhere in the estate (console, blog, argocd, …)
+still win over this wildcard — Istio prefers the more specific host. What this
+DOES change is that a tesserix.app host with no VirtualService of its own now
+lands on the storefront instead of 404ing at the gateway.
+*/ -}}
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: vehicle-rental-wildcard
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: {{ .Values.partOf }}
+spec:
+  hosts:
+    - {{ .Values.ingress.wildcardHost | quote }}
+  gateways:
+    - {{ .Values.ingress.gateway }}
+  http:
+    {{- if .Values.ingress.onboarding.enabled }}
+    # rentme.tesserix.app — where a rental shop signs itself up. Exact, and
+    # first, so it can never be eaten by the storefront catch-all.
+    - match:
+        - authority:
+            exact: {{ .Values.ingress.onboarding.host | quote }}
+      route:
+        - destination:
+            host: {{ .Values.ingress.onboarding.serviceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.ingress.onboarding.servicePort }}
+      timeout: 30s
+    {{- end }}
+    # <shop>-admin.tesserix.app → Counter admin.
+    - match:
+        - authority:
+            regex: "^[^.]+-admin\\.tesserix\\.app$"
+      route:
+        - destination:
+            host: {{ .Values.ingress.adminServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.ingress.adminServicePort }}
+      timeout: 30s
+    # <shop>.tesserix.app → Rider storefront. The shop is resolved from Host by
+    # the app, which is also how a tenant custom domain arrives.
+    - route:
+        - destination:
+            host: {{ .Values.name }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+      timeout: 30s
+{{- end }}

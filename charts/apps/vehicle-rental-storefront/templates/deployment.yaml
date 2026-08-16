@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/part-of: {{ .Values.partOf }}
+    app.kubernetes.io/component: storefront
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.name }}
+        app.kubernetes.io/part-of: {{ .Values.partOf }}
+    spec:
+      serviceAccountName: {{ .Values.name }}
+      imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 8 }}
+      # In-flight bookings finish before the pod goes; the preStop sleep covers
+      # the window where the gateway still holds this endpoint.
+      terminationGracePeriodSeconds: 45
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .Values.name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: PORT
+              value: {{ .Values.service.port | quote }}
+            - name: PLATFORM_HOST_SUFFIX
+              value: {{ trimPrefix "*." .Values.ingress.wildcardHost | quote }}
+            - name: CUSTOM_DOMAINS_ENABLED
+              value: {{ .Values.customDomains.enabled | quote }}
+            - name: AUTH_ISSUER
+              value: {{ .Values.auth.issuer | quote }}
+            - name: AUTH_CLIENT_ID
+              value: {{ .Values.auth.clientId | quote }}
+            - name: API_BASE_URL
+              value: {{ .Values.api.baseUrl | quote }}
+            - name: SESSION_ENCRYPT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.name }}-session
+                  key: SESSION_ENCRYPT_KEY
+          # Probes hit a static route, not /. SSR'ing the homepage under
+          # cold-start blows the default 1s timeout and restarts a healthy pod.
+          #
+          # Readiness deliberately does not check the API: a slow backend must
+          # not remove the storefront from the gateway (infrastructure.md).
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 3
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 10
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /app/.next/cache
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        # Next writes its ISR cache at runtime and readOnlyRootFilesystem makes
+        # that fatal, not slow.
+        - name: next-cache
+          emptyDir: {}

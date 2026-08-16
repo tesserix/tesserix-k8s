@@ -1,0 +1,74 @@
+name: vehicle-rental-api
+namespace: vehicle-rental
+partOf: vehicle-rental-app
+
+image:
+  repository: ghcr.io/tesserix/vehicle-rental-api
+  tag: "v0.1.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-pull-secret
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# No VirtualService, deliberately. The three Next apps call this over the mesh
+# and proxy for the browser, so the API has no public host, no CORS surface and
+# no cookie it has to trust. A public host is a separate decision, and the one
+# the Expo apps will force.
+replicas: 2
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+database:
+  # The pooler, not the -rw service. PgBouncer runs in transaction mode, so pgx
+  # must be configured with simple protocol — no prepared statements.
+  host: vehicle-rental-postgres-pooler-rw.vehicle-rental-data.svc.cluster.local
+  port: 5432
+  name: vehicle_rental
+  # Two roles, two pools. Request handling uses the tenant-scoped role; only
+  # onboarding and platform reporting borrow the platform one, and that role has
+  # to opt out of tenant scoping per transaction to see across tenants.
+  user: vehicle_rental_api
+  platformUser: vehicle_rental_platform
+  sslMode: require
+
+mongodb:
+  # Chatbot transcripts only (ADR-0012). Nothing here is a system of record.
+  host: vehicle-rental-mongodb.vehicle-rental-data.svc.cluster.local
+  port: 27017
+  database: vehicle_rental_conversations
+
+auth:
+  issuer: https://auth.tesserix.app
+  audience: vehicle-rental
+
+authz:
+  enabled: true
+  callers:
+    - vehicle-rental-storefront
+    - vehicle-rental-admin
+    - vehicle-rental-onboarding
+
+gcp:
+  secretManager:
+    enabled: true
+    refreshInterval: 1h
+    secretStore: gcp-secret-store
+  secrets:
+    dbPassword: prod-vehicle-rental-api-postgresql-password
+    platformDbPassword: prod-vehicle-rental-platform-postgresql-password
+    mongoUsername: prod-vehicle-rental-mongodb-username
+    mongoPassword: prod-vehicle-rental-mongodb-password

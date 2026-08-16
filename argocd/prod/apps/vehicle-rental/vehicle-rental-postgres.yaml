@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vehicle-rental-postgres
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: vehicle-rental-app
+    app.kubernetes.io/component: database
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: vehicle-rental-app
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/vehicle-rental-postgres
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vehicle-rental-data
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      # CreateNamespace is deliberately absent: istio-config owns both
+      # namespaces so it can label them for the mesh. Retry covers the
+      # first sync if this app lands before istio-config has run.
+      - ServerSideApply=true
+      # RespectIgnoreDifferences stays absent. With SSA and the argocd-cm jq
+      # ignores into spec.managed.roles[], it normalised the roles list out of
+      # every apply: sync reported Succeeded, the Cluster's generation never
+      # moved, and the app roles could not land.
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,122 @@
+{{- if not .Values.hibernate }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: vehicle-rental-app
+    app.kubernetes.io/component: database
+spec:
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.imageName }}
+
+  bootstrap:
+    initdb:
+      database: {{ .Values.bootstrap.database }}
+      owner: {{ .Values.bootstrap.owner }}
+      encoding: UTF8
+      localeCType: C
+      localeCollate: C
+      secret:
+        name: {{ .Values.bootstrap.secret }}
+      {{- with .Values.bootstrap.postInitSQL }}
+      postInitSQL:
+        {{- range . }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- end }}
+
+  storage:
+    size: {{ .Values.storageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  walStorage:
+    size: {{ .Values.walStorageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  resources:
+    {{- toYaml .Values.resources | nindent 4 }}
+
+  postgresql:
+    parameters:
+      {{- range $key, $value := .Values.postgresql }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+
+  minSyncReplicas: {{ .Values.replication.minSyncReplicas }}
+  maxSyncReplicas: {{ .Values.replication.maxSyncReplicas }}
+
+  replicationSlots:
+    highAvailability:
+      enabled: true
+      slotPrefix: "_cnpg_"
+    updateInterval: 30
+
+  enableSuperuserAccess: false
+
+  {{- if .Values.backup.enabled }}
+  # The plugin is the WAL archiver too, not just the base-backup mover.
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: {{ .Values.backup.objectStoreName }}
+
+  # gkeEnvironment on the ObjectStore only works if the instance pods carry the
+  # Workload Identity annotation; the plugin sidecar runs in those pods.
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: {{ .Values.backup.serviceAccount }}
+  {{- end }}
+
+  # bootstrap.secret only applies at initdb; without managed roles a rotated
+  # secret leaves a password nobody holds and every client fails to authenticate.
+  #
+  # No `superuser: false` / `bypassrls: false` here — those fields are
+  # omitempty, so the API server drops them and the app pins OutOfSync forever.
+  # Absent unmarshals to false, which is what we want anyway.
+  managed:
+    roles:
+      - name: {{ .Values.bootstrap.owner }}
+        ensure: present
+        login: true
+        # createrole is what lets db-schema-bootstrap build the role tree in prod
+        # the same way CI does.
+        createdb: true
+        createrole: true
+        passwordSecret:
+          name: {{ .Values.bootstrap.secret }}
+      {{- range .Values.applicationRoles }}
+      - name: {{ .name }}
+        ensure: present
+        login: true
+        inherit: true
+        passwordSecret:
+          name: {{ .secret }}
+      {{- end }}
+
+  monitoring:
+    enablePodMonitor: {{ .Values.monitoring.enablePodMonitor }}
+    disableDefaultQueries: false
+
+  inheritedMetadata:
+    labels:
+      app.kubernetes.io/part-of: vehicle-rental-app
+    annotations:
+      cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+      traffic.sidecar.istio.io/excludeInboundPorts: "5432,8000"
+      traffic.istio.io/excludeInboundPorts: "5432,8000"
+
+  affinity:
+    podAntiAffinityType: {{ .Values.affinity.podAntiAffinityType | default "preferred" }}
+
+  primaryUpdateStrategy: unsupervised
+  failoverDelay: 0
+  switchoverDelay: 3600
+
+  enablePDB: true
+{{- end }}
