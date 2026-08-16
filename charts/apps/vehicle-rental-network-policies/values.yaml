@@ -1,0 +1,103 @@
+# Two namespaces because the data plane gets a strictly narrower policy than the
+# app plane. Following the dwellm8-network-policies precedent.
+
+appNamespace: vehicle-rental
+dataNamespace: vehicle-rental-data
+
+# Namespaces that may reach the app plane. Each is a real dependency, not a
+# convenience: removing one breaks a named feature.
+allowedSources:
+  - istio-ingress
+  - istio-system
+  - external-secrets
+  - monitoring
+  - logging
+
+hbone:
+  enabled: true
+
+# Same cluster as dwellm8, so the same pod CIDR.
+podCIDR: 10.20.0.0/16
+
+# Every in-cluster destination the app plane may open a connection to, named and
+# portered. Nothing else leaves these pods except through the egress gateway
+# below. Adding an entry here is the reviewable act; there is no catch-all.
+egress:
+  inCluster:
+    - name: kube-dns
+      namespace: kube-system
+      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+    - name: postgres-and-mongo
+      namespace: vehicle-rental-data
+      ports:
+        # 6432 is PgBouncer, 5432 the cluster service, 27017 MongoDB.
+        - { protocol: TCP, port: 6432 }
+        - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 27017 }
+    - name: nats-jetstream
+      namespace: nats
+      ports: [{ protocol: TCP, port: 4222 }]
+    - name: zitadel
+      namespace: zitadel
+      ports: [{ protocol: TCP, port: 8080 }]
+    - name: clickhouse
+      namespace: observability
+      ports: [{ protocol: TCP, port: 8123 }, { protocol: TCP, port: 9000 }]
+    - name: istiod-xds
+      namespace: istio-system
+      ports: [{ protocol: TCP, port: 15012 }]
+    # Traces and metrics out. Without this the app is silent under load, which
+    # is when you need it least to be.
+    - name: otel-collector
+      namespace: monitoring
+      ports: [{ protocol: TCP, port: 4317 }, { protocol: TCP, port: 4318 }]
+
+  # The single door to the internet. The PSP, VAHAN, DigiLocker, WhatsApp, MSG91
+  # and Resend are reached through it and are named as ServiceEntries, because a
+  # NetworkPolicy matches CIDRs and those hosts move.
+  gateway:
+    enabled: true
+    namespace: istio-egress
+    ports: [{ protocol: TCP, port: 80 }, { protocol: TCP, port: 443 }]
+
+# The external hosts the app plane is allowed to reach, as Istio ServiceEntries.
+# This is where "every egress destination is named" actually lives.
+externalHosts:
+  - name: psp-cashfree
+    hosts: [api.cashfree.com, sandbox.cashfree.com]
+  - name: psp-razorpay
+    hosts: [api.razorpay.com]
+  - name: vahan-digilocker
+    hosts: [apisetu.gov.in, digilocker.meripehchaan.gov.in]
+  - name: whatsapp
+    hosts: [graph.facebook.com]
+  - name: msg91
+    hosts: [control.msg91.com]
+  - name: resend
+    hosts: [api.resend.com]
+  - name: google-storage
+    hosts: [storage.googleapis.com]
+
+# Where the conformance jobs look for the database. Kept here rather than
+# templated from the postgres chart because these are the names a *stranger*
+# would use, and that is exactly what is being tested.
+postgres:
+  poolerHost: vehicle-rental-postgres-pooler-rw.vehicle-rental-data.svc.cluster.local
+  clusterHost: vehicle-rental-postgres-rw.vehicle-rental-data.svc.cluster.local
+  mongoHost: vehicle-rental-mongodb.vehicle-rental-data.svc.cluster.local
+
+# A PostSync probe of both locks. It is cheap and it runs every sync, which is
+# the only way a policy stays true after the fifth person edits it.
+conformance:
+  enabled: true
+  # A namespace of its own, deliberately outside the mesh and outside every
+  # allow-list: it stands in for any other product's pod. Running the probe in
+  # `default` would have meant giving this project write access there.
+  namespace: vehicle-rental-conformance
+  image: busybox:1.37.0-musl
+  timeoutSeconds: 5
+  # Reachable from anywhere on the internet, and deliberately not in the
+  # allow-list. If either becomes reachable, egress has been widened.
+  mustNotReach:
+    - { host: example.com, port: 443 }
+    - { host: 1.1.1.1, port: 53 }

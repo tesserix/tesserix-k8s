@@ -1,0 +1,141 @@
+{{- if .Values.conformance.enabled }}
+{{- /*
+A policy nobody tested is a policy nobody has. This runs after every sync and
+fails the app if either lock has come undone.
+
+It runs in `default` — a third namespace, which is the point: it stands in for
+any other product's pod that should not be able to open the rental database.
+
+The assertions are inverted, so read them carefully: this job succeeds when the
+connections FAIL. A `nc` that returns 0 here is the incident.
+*/ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vehicle-rental-netpol-conformance
+  namespace: {{ .Values.conformance.namespace }}
+  labels:
+    app.kubernetes.io/part-of: vehicle-rental-app
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: vehicle-rental-app
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: probe
+          image: {{ .Values.conformance.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 32Mi }
+          command: [/bin/sh, -c]
+          args:
+            - |
+              set -u
+              fail=0
+
+              # Each probe is given {{ .Values.conformance.timeoutSeconds }}s. A
+              # refused connection returns immediately; a dropped one hangs,
+              # which is what a working default-deny looks like.
+              refused() {
+                if nc -z -w {{ .Values.conformance.timeoutSeconds }} "$1" "$2" 2>/dev/null; then
+                  echo "FAIL: reached $1:$2 from {{ .Values.conformance.namespace }} — it should be unreachable"
+                  fail=1
+                else
+                  echo "ok: $1:$2 unreachable"
+                fi
+              }
+
+              echo "--- the database must not be reachable from another namespace"
+              refused {{ .Values.postgres.poolerHost }} 6432
+              refused {{ .Values.postgres.clusterHost }} 5432
+              refused {{ .Values.postgres.mongoHost }} 27017
+
+              exit $fail
+---
+{{/*
+The other half: from inside the app plane, an unlisted destination must be
+unreachable. If this passes while the job above fails, the egress list has been
+widened; if it fails on its own, someone added a catch-all.
+*/ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vehicle-rental-egress-conformance
+  namespace: {{ .Values.appNamespace }}
+  labels:
+    app.kubernetes.io/part-of: vehicle-rental-app
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: vehicle-rental-app
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: probe
+          image: {{ .Values.conformance.image }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 32Mi }
+          command: [/bin/sh, -c]
+          args:
+            - |
+              set -u
+              fail=0
+
+              refused() {
+                if nc -z -w {{ .Values.conformance.timeoutSeconds }} "$1" "$2" 2>/dev/null; then
+                  echo "FAIL: reached $1:$2 from {{ .Values.appNamespace }} — egress is wider than the allow-list"
+                  fail=1
+                else
+                  echo "ok: $1:$2 unreachable"
+                fi
+              }
+
+              echo "--- an unlisted external host must be unreachable"
+              {{- range .Values.conformance.mustNotReach }}
+              refused {{ .host }} {{ .port }}
+              {{- end }}
+
+              # Not a destination — a credential source. These pods authenticate
+              # with Secrets ESO wrote, so a reachable metadata server is a token
+              # nobody granted.
+              echo "--- the GKE metadata server must be unreachable"
+              refused 169.254.169.254 80
+
+              exit $fail
+{{- end }}
