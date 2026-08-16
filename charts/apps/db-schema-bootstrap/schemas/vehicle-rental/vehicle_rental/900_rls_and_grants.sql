@@ -23,15 +23,17 @@ BEGIN
         FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
         JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenant_id'
-        WHERE c.relkind = 'r'
+        -- 'p' as well as 'r', and partitions as well as parents. A partitioned
+        -- parent is not relkind 'r', so audit.entry, payments.ledger_entry and
+        -- telematics.position_hot had no RLS at all; and a query naming a
+        -- partition directly is not covered by the parent's policy, so each
+        -- child needs its own. One policy per partition is the price.
+        WHERE c.relkind IN ('r','p')
           AND NOT a.attisdropped
           AND n.nspname IN ('identity','catalog','pricing','availability','booking',
                             'handover','payments','kyc','telematics','maintenance',
                             'incidents','partners','trips','storefront','support',
                             'audit','financial_archive')
-          -- Partitions inherit the parent's policies; covering them separately
-          -- would create one redundant policy per month, forever.
-          AND NOT EXISTS (SELECT 1 FROM pg_inherits WHERE inhrelid = c.oid)
     LOOP
         EXECUTE format('ALTER TABLE %I.%I ENABLE ROW LEVEL SECURITY', t.schema_name, t.table_name);
         EXECUTE format('ALTER TABLE %I.%I FORCE  ROW LEVEL SECURITY', t.schema_name, t.table_name);
@@ -156,9 +158,8 @@ BEGIN
       FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
       JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenant_id'
-     WHERE c.relkind = 'r'
+     WHERE c.relkind IN ('r','p')
        AND NOT a.attisdropped
-       AND NOT EXISTS (SELECT 1 FROM pg_inherits WHERE inhrelid = c.oid)
        AND n.nspname NOT IN ('pg_catalog','information_schema')
        AND NOT (c.relrowsecurity AND c.relforcerowsecurity);
 
