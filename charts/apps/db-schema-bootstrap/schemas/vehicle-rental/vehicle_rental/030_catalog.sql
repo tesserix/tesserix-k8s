@@ -52,6 +52,12 @@ CREATE TABLE IF NOT EXISTS catalog.vehicle (
     engine_cc              int,
     colour                 text,
     spec_actual            jsonb NOT NULL DEFAULT '{}'::jsonb,
+    -- Shown on the storefront card and asked for at the counter; optional
+    -- because a shop should not be blocked from listing a vehicle it has not
+    -- measured yet.
+    seats                  smallint CHECK (seats BETWEEN 1 AND 60),
+    fuel_capacity_l        numeric(5,1) CHECK (fuel_capacity_l > 0),
+    mileage_kmpl           numeric(4,1) CHECK (mileage_kmpl > 0),
     odometer_km            int NOT NULL DEFAULT 0 CHECK (odometer_km >= 0),
     acquisition_cost_paise bigint CHECK (acquisition_cost_paise >= 0),
     acquired_at            date,
@@ -88,6 +94,9 @@ ALTER TABLE catalog.vehicle ADD COLUMN IF NOT EXISTS verification_source text NO
 ALTER TABLE catalog.vehicle ADD COLUMN IF NOT EXISTS verified_at timestamptz;
 ALTER TABLE catalog.vehicle ADD COLUMN IF NOT EXISTS registered_owner_name text;
 ALTER TABLE catalog.vehicle ADD COLUMN IF NOT EXISTS retired_at timestamptz;
+ALTER TABLE catalog.vehicle ADD COLUMN IF NOT EXISTS seats smallint;
+ALTER TABLE catalog.vehicle ADD COLUMN IF NOT EXISTS fuel_capacity_l numeric(5,1);
+ALTER TABLE catalog.vehicle ADD COLUMN IF NOT EXISTS mileage_kmpl numeric(4,1);
 
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vehicle_verification_status_check') THEN
@@ -111,7 +120,6 @@ CREATE TABLE IF NOT EXISTS catalog.tenant_spec_override (
     updated_at             timestamptz NOT NULL DEFAULT now(),
     UNIQUE (tenant_id, spec_model_id)
 );
-
 -- Redundant against the primary key, and load-bearing anyway: it is the target
 -- other modules point a composite (tenant_id, vehicle_id) FK at. A foreign key
 -- check runs with RLS bypassed, so a plain FK to id lets one tenant reference
