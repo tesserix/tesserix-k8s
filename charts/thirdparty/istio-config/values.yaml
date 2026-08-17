@@ -158,6 +158,23 @@ infrastructureNamespaces:
 # NetworkPolicy and AuthorizationPolicy allow-lists.
 vectorStoreNamespace: ai-database
 
+# Private Service Connect endpoints for Google APIs, reachable on 443.
+#
+# The `vertex-aiplatform` private DNS zone points aiplatform.googleapis.com at
+# the PSC endpoint 10.255.0.2, so a pod dialling Vertex targets an RFC1918
+# address. The catch-all 0.0.0.0/0 egress rule in allow-<ns>-egress excepts
+# 10.0.0.0/8, and nothing else in that policy covers 10.255.0.0/24 — so every
+# app namespace silently lost Vertex (kora#209). The drop is invisible from
+# inside an ambient pod: `nc -z 10.255.0.2 443` still succeeds, because that
+# connects to ztunnel's local redirect socket, not to the endpoint. ztunnel's
+# own upstream dial is what Calico drops, which surfaces 10s later as a TLS
+# reset and reads as "the PSC endpoint rejects pod TLS". It does not.
+#
+# Same class of bug as the crossProductNamespaceAccess note above: an in-cluster
+# destination hidden behind the 10.0.0.0/8 except.
+privateServiceConnectCIDRs:
+  - 10.255.0.2/32
+
 # MongoDB namespaces that the backup namespace can access
 backupMongoNamespaces:
   - mongodb-blog
