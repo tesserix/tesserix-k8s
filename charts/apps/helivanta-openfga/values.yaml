@@ -1,0 +1,53 @@
+# OpenFGA for Helivanta — one of the three dependencies the rebranded API
+# requires at boot (alongside Postgres and NATS).
+#
+# The datastore is `postgres`, deliberately not `memory`. The local dev stack
+# (docker-compose.dev.yml) runs OPENFGA_DATASTORE_ENGINE: memory for
+# convenience; in this deployment that would silently discard every
+# authorisation tuple on the first pod restart, which is invisible until it
+# happens and expensive when it does. The datastore is a database on the
+# existing helivanta-postgres cluster — not a new cluster — created by Task 5's
+# schema bootstrap and owned by the `openfga` role that Task 3 provisioned.
+namespace: helivanta
+name: helivanta-openfga
+
+image:
+  # In-region Artifact Registry mirror of Docker Hub — same repository as the
+  # dwellm8 deployment of this chart, and not the ghcr-remote mirror: this
+  # image is upstream OpenFGA, published to Docker Hub, not to GHCR.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/openfga/openfga
+  tag: v1.18.1
+  pullPolicy: IfNotPresent
+
+# One replica while no traffic exists.
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  httpPort: 8080
+  grpcPort: 8081
+  metricsPort: 2112
+
+database:
+  # The -rw service, never a pooler: OpenFGA holds a connection pool and runs
+  # its own migrations, and the combination poolers multiplex badly.
+  host: helivanta-postgres-rw.helivanta.svc.cluster.local
+  port: 5432
+  name: openfga
+  # Basic-auth secret reconciled by the helivanta-postgres chart's
+  # applicationRoles ExternalSecret from OpenBao (kv/helivanta/helivanta-api/
+  # postgres-openfga) — already live from Task 3, not recreated here.
+  secretName: helivanta-postgres-openfga-credentials
+
+# The check latency budget: p50 <= 20ms, p99 <= 100ms in-cluster. Alerts fire
+# on the p99 and on the deployment being unreachable, because unreachable
+# means every guarded write on the platform is refused.
+latency:
+  p99Seconds: 0.1
+
+# Memory only — the platform sets no CPU requests or limits.
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 512Mi
