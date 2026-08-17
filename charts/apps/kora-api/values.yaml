@@ -249,18 +249,28 @@ migrate:
 # image is promoted the Job exec-fails loudly, matching the migrate Job's
 # convention of a visible failure over a silent skip.
 seed:
-  # Vertex for the embed step. OFF because Vertex is currently UNREACHABLE from
-  # the pod network: aiplatform.googleapis.com resolves to the PSC endpoint
-  # 10.255.0.2, which accepts the node netns but resets a Pod's TLS handshake.
-  # The ip-masq-agent SNAT config (k8s/cluster/ip-masq-agent.yaml) fixed the TCP
-  # layer only. hostNetwork reaches Vertex but bypasses the Workload Identity
-  # metadata server, so every call 403s on scopes — the two cannot be combined.
+  # Vertex for the embed step.
   #
-  # With this false, cmd/embed falls back to GEMINI_API_KEY, which resolves
-  # publicly and works from pods — capped at the free tier's 1,000/day, so the
-  # ~6,270-row backlog drains over about a week of syncs rather than one run.
-  # Flip to true once pod-sourced TLS to the PSC endpoint is solved; that is the
-  # single change needed, and it also unblocks kora#202 for the resolve path.
+  # This was OFF because Vertex looked unreachable from the pod network. The
+  # actual cause was a NetworkPolicy gap, not the PSC endpoint: the private DNS
+  # zone points aiplatform.googleapis.com at 10.255.0.2, and allow-kora-egress
+  # only permitted 0.0.0.0/0 `except: 10.0.0.0/8` on 443 — which excludes it.
+  # Calico dropped ztunnel's upstream dial; the pod's own `nc -z` still
+  # succeeded against ztunnel's local redirect socket, so it read as "the PSC
+  # endpoint resets pod TLS". It does not — proved by pods in namespaces with
+  # no egress policy reaching it fine from the same nodes. Fixed by
+  # privateServiceConnectCIDRs in the istio-config chart (kora#209).
+  #
+  # Keep in mind for the same class of bug: ip-masq-agent SNAT
+  # (k8s/cluster/ip-masq-agent.yaml) and hostNetwork were both tried and are
+  # NOT the fix — hostNetwork in particular bypasses the Workload Identity
+  # metadata server, so every call 403s on scopes.
+  #
+  # Still false here ONLY because the egress fix must be synced and verified
+  # from a kora pod first; a single ArgoCD sync does not order the two charts.
+  # Flip to true once `openssl s_client aiplatform.googleapis.com:443` from a
+  # kora pod negotiates TLS. With it false, cmd/embed falls back to
+  # GEMINI_API_KEY (free tier, 1,000/day).
   useVertex: false
   enabled: true
   command:

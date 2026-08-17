@@ -1611,6 +1611,18 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+    # Allow Private Service Connect endpoints for Google APIs (Vertex AI).
+    # These are RFC1918 addresses, so the catch-all rule below cannot reach
+    # them — its `except: 10.0.0.0/8` carves them straight back out. Must stay
+    # a rule of its own. See privateServiceConnectCIDRs in values.yaml.
+    {{- range $psc := $.Values.privateServiceConnectCIDRs }}
+    - to:
+        - ipBlock:
+            cidr: {{ $psc }}
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
     # Allow external HTTPS (for external APIs like Stripe, SendGrid, etc)
     - to:
         - ipBlock:
