@@ -26,6 +26,32 @@ CREATE TABLE IF NOT EXISTS identity.tenant (
     created_at     timestamptz NOT NULL DEFAULT now()
 );
 
+-- A signup in flight: the owner's email is proved before the shop exists, so
+-- this row has no tenant to belong to and lives in platform scope alone. The
+-- column is created_tenant_id and not tenant_id on purpose — 900's RLS loop
+-- keys on the name tenant_id and would demand a tenant context to insert.
+CREATE TABLE IF NOT EXISTS identity.signup (
+    id                uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+    email             citext NOT NULL,
+    slug              citext NOT NULL,
+    legal_name        text NOT NULL,
+    display_name      text NOT NULL,
+    gstin             text,
+    state             text,
+    -- Only the digest of the mailed link is kept: a leaked backup must not be a
+    -- pile of working magic links.
+    token_digest      bytea NOT NULL UNIQUE,
+    expires_at        timestamptz NOT NULL,
+    verified_at       timestamptz,
+    created_tenant_id uuid REFERENCES identity.tenant(id) ON DELETE SET NULL,
+    -- Counted so a resend loop is visible rather than free.
+    sent_count        int NOT NULL DEFAULT 1,
+    created_at        timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS signup_email_created_idx
+    ON identity.signup (email, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS identity.tenant_link (
     from_tenant_id uuid NOT NULL REFERENCES identity.tenant(id) ON DELETE CASCADE,
     to_tenant_id   uuid NOT NULL REFERENCES identity.tenant(id) ON DELETE CASCADE,
