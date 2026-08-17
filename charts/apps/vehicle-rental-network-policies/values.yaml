@@ -100,4 +100,8 @@ conformance:
   # allow-list. If either becomes reachable, egress has been widened.
   mustNotReach:
     - { host: example.com, port: 443 }
-    - { host: 1.1.1.1, port: 53 }
+    # DNS over TLS, not plain 53: node-local DNSCache intercepts every port-53
+    # connection on the node and answers it locally, so a :53 probe can only
+    # ever measure the cache. 853 is the DNS exfiltration path a policy can
+    # actually close.
+    - { host: 1.1.1.1, port: 853 }
