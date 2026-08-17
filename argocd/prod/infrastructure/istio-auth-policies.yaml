@@ -302,6 +302,29 @@ spec:
             label: zitadel
             hosts:
               - "auth.tesserix.app"
+          # vehicle-rental. Per-shop hosts are <shop>.tesserix.app and
+          # <shop>-admin.tesserix.app, following mark8ly — the slug is not known
+          # at chart-render time, so the ALLOW has to be the wildcard.
+          #
+          # CONSEQUENCE, stated plainly: *.tesserix.app in the gateway ALLOW list
+          # ends the estate-wide "unknown host → 403" behaviour every entry above
+          # relies on. Per-app policies in each namespace still stand; the
+          # gateway-level host filter no longer does. Tenant custom domains
+          # (rentals.bikashmotors.in) come in through custom-domain-gateway and
+          # are unaffected either way.
+          - name: vehicle-rental-storefront
+            label: vehicle-rental-storefront
+            namespace: vehicle-rental
+            hosts:
+              - "*.tesserix.app"
+          - name: vehicle-rental-admin
+            label: vehicle-rental-admin
+            namespace: vehicle-rental
+          - name: vehicle-rental-onboarding
+            label: vehicle-rental-onboarding
+            namespace: vehicle-rental
+            hosts:
+              - "rentme.tesserix.app"
 
   destination:
     server: https://kubernetes.default.svc
