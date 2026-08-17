@@ -109,6 +109,44 @@ env:
   # chart said Redis was expected, so its absence flagged nothing and every
   # resolve silently cost a Gemini call. Points at the sidecar below.
   REDIS_URL: "redis://localhost:6379/0"
+  # Vertex AI for the RESOLVE ENGINE, closing out kora#209.
+  #
+  # cmd/api picks the provider with a switch, not a layering: VERTEX_PROJECT
+  # set means Vertex IS the primary and GEMINI_API_KEY is not used for resolve
+  # at all. That is the point — it takes a PERSONAL Gemini key belonging to
+  # kora-app-e6d38 (billing disabled, free tier) off the production critical
+  # path and authenticates with the pod's own workload identity instead.
+  #
+  # This reverses the "VERTEX_* must NOT go into .Values.env" instruction that
+  # seed-job.yaml carried, which was based on kora#202 being caused by Vertex
+  # missing IdentifyText's 1500ms textBudget. Measured from the running kora-api
+  # pod on 2026-08-17, against gemini-3.5-flash-lite at location "global":
+  #
+  #   warm, connection reused (n=14):  p50 0.98s  p90 1.24s  max 1.25s  0 over budget
+  #   fresh connection each time (n=20): p50 1.14s  p90 1.57s  max 1.69s  3 over budget
+  #   TLS handshake to the PSC endpoint: 44ms
+  #
+  # So Vertex fits 1.5s comfortably on a pooled connection, which is what the
+  # Go client uses. kora#202's total failure is far better explained by the
+  # egress bug fixed in #378 — every call was dropped by a NetworkPolicy and
+  # hung until timeout, so every /v1/resolve/text 500'd regardless of budget.
+  #
+  # NOT measured, and worth knowing before reading too much into the above: a
+  # head-to-head against the current GEMINI_API_KEY path. Doing it would have
+  # meant handing the API key to a debug container, and a latency delta is not
+  # worth exposing a secret for. Both paths call the same model, and Vertex is
+  # on a paid project rather than the free tier's shared demand pool.
+  #
+  # Rollback is deleting these two lines. On a budget miss the request falls to
+  # the OpenAI-compatible NVIDIA fallback on a 90s budget — a pre-existing risk
+  # that applies identically to the Gemini primary today, not something Vertex
+  # introduces.
+  #
+  # Location "global" for the reason kora#202 recorded: asia-south1 serves
+  # gemini-embedding-001 but 404s on gemini-3.5-flash-lite, so "global" is the
+  # one location serving every model this image uses.
+  VERTEX_PROJECT: "tesseracthub-480811"
+  VERTEX_LOCATION: "global"
 
 # Each entry maps an env var name to a key in the k8s Secret created by
 # the ExternalSecret. Keep this in sync with externalsecret.yaml.
