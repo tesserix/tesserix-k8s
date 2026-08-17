@@ -99,6 +99,40 @@ CREATE TABLE IF NOT EXISTS maintenance.service_schedule (
     CHECK (category_id IS NOT NULL OR vehicle_id IS NOT NULL)
 );
 
+ALTER TABLE maintenance.service_schedule
+    ADD COLUMN IF NOT EXISTS spec_model_id uuid REFERENCES catalog.spec_model(id) ON DELETE CASCADE,
+    ADD COLUMN IF NOT EXISTS name text NOT NULL DEFAULT 'Scheduled service',
+    ADD COLUMN IF NOT EXISTS duration_hours int NOT NULL DEFAULT 8 CHECK (duration_hours BETWEEN 1 AND 168),
+    ADD COLUMN IF NOT EXISTS safety_critical boolean NOT NULL DEFAULT false;
+
+DO $$ BEGIN
+    ALTER TABLE maintenance.service_schedule DROP CONSTRAINT IF EXISTS service_schedule_check;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'service_schedule_target_check'
+           AND conrelid = 'maintenance.service_schedule'::regclass
+    ) THEN
+        ALTER TABLE maintenance.service_schedule
+            ADD CONSTRAINT service_schedule_target_check
+            CHECK (num_nonnulls(category_id, vehicle_id, spec_model_id) = 1);
+    END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS service_schedule_vehicle_name_idx
+    ON maintenance.service_schedule (tenant_id, vehicle_id, name) WHERE vehicle_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS service_schedule_model_name_idx
+    ON maintenance.service_schedule (tenant_id, spec_model_id, name) WHERE spec_model_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS maintenance.garage_bay (
+    id          uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+    tenant_id   uuid NOT NULL REFERENCES identity.tenant(id) ON DELETE CASCADE,
+    name        text NOT NULL,
+    active      boolean NOT NULL DEFAULT true,
+    description text,
+    UNIQUE (tenant_id, name),
+    UNIQUE (tenant_id, id)
+);
+
 CREATE TABLE IF NOT EXISTS maintenance.work_order (
     id                 uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
     tenant_id          uuid NOT NULL REFERENCES identity.tenant(id) ON DELETE CASCADE,
@@ -117,6 +151,99 @@ CREATE TABLE IF NOT EXISTS maintenance.work_order (
     checklist          jsonb NOT NULL DEFAULT '{}'::jsonb
 );
 
+ALTER TABLE maintenance.work_order
+    ADD COLUMN IF NOT EXISTS schedule_id uuid REFERENCES maintenance.service_schedule(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS reservation_id uuid REFERENCES availability.reservation(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS period tstzrange,
+    ADD COLUMN IF NOT EXISTS location_type text NOT NULL DEFAULT 'in_house',
+    ADD COLUMN IF NOT EXISTS partner_name text;
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'work_order_location_type_check'
+           AND conrelid = 'maintenance.work_order'::regclass
+    ) THEN
+        ALTER TABLE maintenance.work_order ADD CONSTRAINT work_order_location_type_check
+            CHECK (location_type IN ('in_house','partner'));
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'work_order_bay_fkey'
+           AND conrelid = 'maintenance.work_order'::regclass
+    ) THEN
+        ALTER TABLE maintenance.work_order ADD CONSTRAINT work_order_bay_fkey
+            FOREIGN KEY (tenant_id, bay_id)
+            REFERENCES maintenance.garage_bay (tenant_id, id) ON DELETE RESTRICT;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'work_order_bay_no_overlap'
+           AND conrelid = 'maintenance.work_order'::regclass
+    ) THEN
+        ALTER TABLE maintenance.work_order ADD CONSTRAINT work_order_bay_no_overlap
+            EXCLUDE USING gist (bay_id WITH =, period WITH &&)
+            WHERE (bay_id IS NOT NULL AND state IN ('open','in_progress','awaiting_parts'));
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION maintenance.safety_service_overdue(p_vehicle_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY INVOKER
+SET search_path = pg_catalog, public, catalog, maintenance
+AS $$
+    WITH configured AS (
+        SELECT s.interval_km, s.interval_days, s.safety_critical,
+               CASE WHEN s.vehicle_id IS NOT NULL THEN 0
+                    WHEN s.spec_model_id IS NOT NULL THEN 1 ELSE 3 END AS priority
+          FROM catalog.vehicle v
+          JOIN maintenance.service_schedule s
+            ON s.vehicle_id = v.id
+            OR (s.vehicle_id IS NULL AND s.spec_model_id = v.spec_model_id)
+            OR (s.vehicle_id IS NULL AND s.spec_model_id IS NULL AND s.category_id = v.category_id)
+         WHERE v.id = p_vehicle_id
+        UNION ALL
+        SELECT (m.attributes #>> '{service,interval_km}')::int,
+               (m.attributes #>> '{service,interval_days}')::int,
+               (m.attributes #>> '{service,safety_critical}')::boolean, 2
+          FROM catalog.vehicle v JOIN catalog.spec_model m ON m.id = v.spec_model_id
+         WHERE v.id = p_vehicle_id AND m.attributes ? 'service'
+    ), applicable AS (
+        SELECT c.interval_km, c.interval_days, v.odometer_km, v.created_at,
+               row_number() OVER (
+                   ORDER BY c.priority
+               ) AS preference
+          FROM catalog.vehicle v CROSS JOIN configured c
+         WHERE v.id = p_vehicle_id AND c.safety_critical
+    ), last_service AS (
+        SELECT odometer_km, closed_at
+          FROM maintenance.work_order
+         WHERE vehicle_id = p_vehicle_id AND kind = 'scheduled' AND state = 'closed'
+         ORDER BY closed_at DESC NULLS LAST
+         LIMIT 1
+    )
+    SELECT coalesce(bool_or(
+        (a.interval_km IS NOT NULL AND
+         a.odometer_km - coalesce(l.odometer_km, 0) >= a.interval_km)
+        OR
+        (a.interval_days IS NOT NULL AND
+         coalesce(l.closed_at, a.created_at) + make_interval(days => a.interval_days) <= now())
+    ), false)
+      FROM applicable a
+      LEFT JOIN last_service l ON true
+     WHERE a.preference = 1
+$$;
+
+CREATE INDEX IF NOT EXISTS work_order_vehicle_history_idx
+    ON maintenance.work_order (tenant_id, vehicle_id, closed_at DESC, opened_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS work_order_one_open_service_idx
+    ON maintenance.work_order (tenant_id, vehicle_id)
+    WHERE kind = 'scheduled' AND state IN ('open','in_progress','awaiting_parts');
+CREATE UNIQUE INDEX IF NOT EXISTS work_order_tenant_id_idx
+    ON maintenance.work_order (tenant_id, id);
+
 CREATE TABLE IF NOT EXISTS maintenance.part (
     id              uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
     tenant_id       uuid NOT NULL REFERENCES identity.tenant(id) ON DELETE CASCADE,
@@ -124,8 +251,59 @@ CREATE TABLE IF NOT EXISTS maintenance.part (
     name            text NOT NULL,
     stock           int NOT NULL DEFAULT 0,
     unit_cost_paise bigint NOT NULL DEFAULT 0,
-    UNIQUE (tenant_id, sku)
+    UNIQUE (tenant_id, sku),
+    UNIQUE (tenant_id, id)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS part_tenant_id_idx
+    ON maintenance.part (tenant_id, id);
+
+CREATE TABLE IF NOT EXISTS maintenance.work_order_part (
+    id               uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+    tenant_id        uuid NOT NULL REFERENCES identity.tenant(id) ON DELETE CASCADE,
+    work_order_id    uuid NOT NULL,
+    part_id          uuid,
+    description      text NOT NULL,
+    quantity         numeric(10,2) NOT NULL CHECK (quantity > 0),
+    unit_cost_paise  bigint NOT NULL CHECK (unit_cost_paise >= 0),
+    created_at       timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS maintenance.work_order_photo (
+    id            uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
+    tenant_id     uuid NOT NULL REFERENCES identity.tenant(id) ON DELETE CASCADE,
+    work_order_id uuid NOT NULL,
+    object_key    text NOT NULL,
+    caption       text,
+    captured_at   timestamptz NOT NULL DEFAULT now()
+);
+
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'work_order_part_order_fkey'
+          AND conrelid = 'maintenance.work_order_part'::regclass
+    ) THEN
+        ALTER TABLE maintenance.work_order_part ADD CONSTRAINT work_order_part_order_fkey
+            FOREIGN KEY (tenant_id, work_order_id)
+            REFERENCES maintenance.work_order (tenant_id, id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'work_order_part_part_fkey'
+          AND conrelid = 'maintenance.work_order_part'::regclass
+    ) THEN
+        ALTER TABLE maintenance.work_order_part ADD CONSTRAINT work_order_part_part_fkey
+            FOREIGN KEY (tenant_id, part_id)
+            REFERENCES maintenance.part (tenant_id, id) ON DELETE SET NULL (part_id);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'work_order_photo_order_fkey'
+          AND conrelid = 'maintenance.work_order_photo'::regclass
+    ) THEN
+        ALTER TABLE maintenance.work_order_photo ADD CONSTRAINT work_order_photo_order_fkey
+            FOREIGN KEY (tenant_id, work_order_id)
+            REFERENCES maintenance.work_order (tenant_id, id) ON DELETE CASCADE;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS maintenance.fuel_log (
     id           uuid PRIMARY KEY DEFAULT uuid_generate_v7(),
