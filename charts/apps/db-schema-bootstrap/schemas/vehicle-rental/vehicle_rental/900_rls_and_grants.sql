@@ -59,6 +59,15 @@ DROP POLICY IF EXISTS tenant_platform_write ON identity.tenant;
 CREATE POLICY tenant_platform_write ON identity.tenant
     FOR ALL USING (is_platform_scope()) WITH CHECK (is_platform_scope());
 
+-- identity.signup is the other pre-tenant table, and it holds an email address
+-- and a link digest. No tenant may read it at all: only platform scope, which
+-- is the onboarding path itself.
+ALTER TABLE identity.signup ENABLE ROW LEVEL SECURITY;
+ALTER TABLE identity.signup FORCE  ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS signup_platform_only ON identity.signup;
+CREATE POLICY signup_platform_only ON identity.signup
+    FOR ALL USING (is_platform_scope()) WITH CHECK (is_platform_scope());
+
 -- --- grants ----------------------------------------------------------------
 
 GRANT USAGE ON SCHEMA identity, catalog, pricing, availability, booking, handover,
