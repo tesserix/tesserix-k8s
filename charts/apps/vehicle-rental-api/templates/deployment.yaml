@@ -64,6 +64,19 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.name }}-db
                   key: MONGODB_URI
+            - name: MAIL_FROM
+              value: {{ .Values.mail.from | quote }}
+            - name: ONBOARDING_BASE_URL
+              value: {{ .Values.mail.onboardingBaseUrl | quote }}
+            # Optional so the pod starts before ESO first syncs. Without it the
+            # API logs the verify link instead of mailing it, which is the right
+            # behaviour locally and a loud one in production.
+            - name: RESEND_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.name }}-mail
+                  key: RESEND_API_KEY
+                  optional: true
           # /healthz is process liveness only. /readyz checks the pools, because
           # unlike the storefront an API with no database has nothing to serve.
           livenessProbe:
