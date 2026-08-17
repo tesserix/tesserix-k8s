@@ -131,11 +131,21 @@ spec:
               refused {{ .host }} {{ .port }}
               {{- end }}
 
-              # Not a destination — a credential source. These pods authenticate
-              # with Secrets ESO wrote, so a reachable metadata server is a token
-              # nobody granted.
-              echo "--- the GKE metadata server must be unreachable"
-              refused 169.254.169.254 80
+              # The metadata server is link-local and served by a node-local
+              # DaemonSet, so it is reached before any NetworkPolicy is
+              # consulted — no policy can close the port. What must hold is the
+              # thing that actually matters: it hands this pod no token,
+              # because its service account is bound to no Google identity.
+              echo "--- the metadata server must issue no token"
+              if wget -q -T {{ .Values.conformance.timeoutSeconds }} -O - \
+                   --header 'Metadata-Flavor: Google' \
+                   'http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token' \
+                   2>/dev/null | grep -q access_token; then
+                echo "FAIL: the metadata server issued an access token to {{ .Values.appNamespace }}"
+                fail=1
+              else
+                echo "ok: no token issued"
+              fi
 
               exit $fail
 {{- end }}
