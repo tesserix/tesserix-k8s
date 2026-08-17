@@ -87,10 +87,9 @@ cannot post the customer table to an address of its choosing, and cannot resolve
 a name through a resolver of its choosing either — DNS is pinned to kube-system,
 so DNS tunnelling has nowhere to tunnel to.
 
-The metadata IP is not excepted, it is simply not listed: these pods have no
-Workload Identity binding, their credentials arrive as Secrets ESO wrote. A pod
-that can curl the metadata server is a pod that can go looking for a token it was
-never given.
+The metadata IP is not part of this general allow-list. The API has one narrow,
+pod-selected exception below because fleet media uses its bound Workload
+Identity to write sanitized images to GCS. No web or worker pod can mint a token.
 */ -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -143,3 +142,37 @@ spec:
       ports:
         {{- toYaml .Values.egress.gateway.ports | nindent 8 }}
     {{- end }}
+---
+{{/*
+Fleet media is the only app-plane path that needs a Google access token. GKE
+Standard exposes the node-local metadata server on 169.254.169.252:988 while
+the Compute-compatible endpoint is 169.254.169.254:80. Limit both destinations
+to the API pods; NetworkPolicies are additive, so this does not broaden their
+remaining egress or grant metadata access to any frontend.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-api-gke-metadata
+  namespace: {{ .Values.appNamespace }}
+  labels:
+    app.kubernetes.io/part-of: vehicle-rental-app
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vehicle-rental-api
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 80
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.252/32
+      ports:
+        - protocol: TCP
+          port: 988
