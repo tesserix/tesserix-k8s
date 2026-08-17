@@ -1,0 +1,62 @@
+# SNAT for the Vertex AI Private Service Connect endpoint.
+#
+# Without this ConfigMap, ip-masq-agent runs with GKE's defaults, which treat
+# ALL of RFC1918 as non-masquerade. Pod traffic therefore reaches the PSC
+# endpoint carrying a Pod source IP (10.20.x.x), and the endpoint resets it:
+#
+#   read tcp 10.20.1.254:48606->10.255.0.2:443: read: connection reset by peer
+#
+# Proven by testing the same request from both network namespaces on the same
+# node (2026-08-17): from the node netns aiplatform.googleapis.com answers
+# (HTTP 404, TCP 443 open); from a Pod netns TLS never completes. The PSC
+# endpoint accepts node IPs and rejects pod IPs, so pod traffic to it must be
+# masqueraded to the node IP.
+#
+# `aiplatform.googleapis.com` resolves to 10.255.0.2 because of the private DNS
+# zone `vertex-aiplatform`, which points it at the PSC endpoint `vertexapis`
+# (forwarding rule target `all-apis`). Note generativelanguage.googleapis.com
+# has no such override and resolves publicly, which is why the Gemini API key
+# path worked from pods all along while Vertex never did.
+#
+# THE ENTIRE CHANGE is that 10.255.0.0/24 is absent from the list below. Every
+# range that genuinely needs to keep its Pod source IP is enumerated, so only
+# traffic to the PSC endpoint is SNAT'd. The list was read off the live VPC
+# rather than assumed:
+#
+#   10.10.0.0/20    tesseract-prod-in-subnet (nodes)
+#   10.20.0.0/16    cluster secondary range `pods`
+#   10.30.0.0/20    cluster secondary range `services`
+#   10.249.0.0/16   tesseract-prod-in-vpc-private-ip (private service access)
+#   172.16.0.0/28   gke-tesseract-prod-in-gke-...-pe-subnet (control plane)
+#
+# Adding a range here later is safe; REMOVING one starts masquerading real
+# internal traffic to node IPs, which silently breaks anything that depends on
+# pod source identity. Change deliberately.
+#
+# ip-masq-agent picks this up within resyncInterval (60s); no restart needed.
+#
+# STATUS (2026-08-17): applied and confirmed loaded by all 6 agents, and it DID
+# change pod-level behaviour — raw TCP to 10.255.0.2:443 from a pod went from
+# failing to succeeding, on the same node as the workload. But a full TLS
+# handshake from a pod is still reset ("curl: (35) Recv failure"), while the
+# identical request from the node netns succeeds (HTTP 404). So this ConfigMap
+# is necessary but NOT sufficient — something above TCP still distinguishes pod
+# traffic. The cluster is not Dataplane V2 (netd, no anetd/cilium), so these
+# iptables rules are the live path. Do not assume Vertex-from-pods works until
+# a real client proves it; cmd/embed still fails at the time of writing.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ip-masq-agent
+  namespace: kube-system
+data:
+  config: |
+    nonMasqueradeCIDRs:
+      - 10.10.0.0/20
+      - 10.20.0.0/16
+      - 10.30.0.0/20
+      - 10.249.0.0/16
+      - 172.16.0.0/28
+      - 169.254.0.0/16
+    masqLinkLocal: false
+    resyncInterval: 60s
