@@ -47,6 +47,16 @@ resource "google_service_account_iam_member" "workload_identity_binding" {
   member             = "serviceAccount:${var.project_id}.svc.id.goog[${each.value.namespace}/${each.value.ksa_name}]"
 }
 
+# The shared infrastructure GSA predates this stack's service-account registry,
+# but its consumers still belong in Terraform. CNPG's barman sidecar runs as
+# this generated KSA and needs to mint a short-lived GCS token for WAL/archive
+# backups; no key file is mounted in the database pods.
+resource "google_service_account_iam_member" "vehicle_rental_postgres_backup" {
+  service_account_id = "projects/${var.project_id}/serviceAccounts/app-secrets-infra-prod@${var.project_id}.iam.gserviceaccount.com"
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[vehicle-rental-data/vehicle-rental-postgres]"
+}
+
 # =============================================================================
 # Secret Provisioner
 # =============================================================================
