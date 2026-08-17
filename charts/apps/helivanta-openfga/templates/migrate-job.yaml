@@ -30,6 +30,58 @@ spec:
         fsGroup: 4000
         seccompProfile:
           type: RuntimeDefault
+      # The sync-wave ordering (db-schema-bootstrap at -3, this Job at -2) is
+      # nominal, not real: db-schema-bootstrap ships a CronJob, which is
+      # Healthy the instant it's created, up to `schedule` (default every 30m)
+      # before it runs a single statement. On a rebuild or DR restore, this
+      # Job can therefore start before the `openfga` database exists, fail
+      # with "database does not exist", and exhaust backoffLimit long before
+      # the CronJob's first tick. This initContainer makes the dependency
+      # real: it blocks until the database is actually there, so the -3/-2
+      # wave edge holds regardless of when the CronJob happens to fire.
+      # What this does NOT guarantee: that the CronJob's bootstrap script
+      # ever succeeds. If it fails permanently (e.g. a bad schema file), this
+      # initContainer polls forever — it has no deadline of its own and does
+      # not itself alert. That failure mode is the CronJob's own Job history
+      # to surface, not this one's.
+      initContainers:
+        - name: wait-for-openfga-database
+          image: postgres:16-alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "[wait-for-openfga-database] waiting for the {{ .Values.database.name }} database to exist ..."
+              until PGPASSWORD="$DB_PASSWORD" psql -h "{{ .Values.database.host }}" -p "{{ .Values.database.port }}" \
+                  -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -tAc \
+                  "SELECT 1 FROM pg_database WHERE datname = '{{ .Values.database.name }}'" 2>/dev/null | grep -q 1; do
+                echo "  {{ .Values.database.name }} database not yet created by db-schema-bootstrap; waiting 10s ..."
+                sleep 10
+              done
+              echo "[wait-for-openfga-database] database exists, proceeding."
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 999
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              memory: 32Mi
+            limits:
+              memory: 64Mi
       containers:
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

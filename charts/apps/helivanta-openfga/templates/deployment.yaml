@@ -18,6 +18,13 @@ spec:
         app.kubernetes.io/name: {{ .Values.name }}
         app.kubernetes.io/part-of: helivanta
       annotations:
+        # Decorative on this cluster: GCP Managed Prometheus (see
+        # k8s/cluster/monitoring/gcp-managed-prometheus.yaml) does not honour
+        # annotation-based discovery — it is driven entirely by
+        # `PodMonitoring` objects, and none exists for the `helivanta`
+        # namespace. These three annotations currently have no reader. See
+        # prometheusrule.yaml for the full picture and what would need to
+        # exist for OpenFGA's metrics to actually be collected.
         prometheus.io/scrape: "true"
         prometheus.io/port: {{ .Values.service.metricsPort | quote }}
         prometheus.io/path: "/metrics"

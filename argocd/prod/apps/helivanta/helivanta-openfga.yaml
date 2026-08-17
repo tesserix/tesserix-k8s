@@ -9,6 +9,11 @@ metadata:
   annotations:
     # After the schema bootstrap that creates the openfga database (-3) and
     # before anything that calls Check — the API fails closed until this is up.
+    # The wave itself only orders when the Applications sync, not when the
+    # openfga database actually exists (db-schema-bootstrap ships a CronJob,
+    # Healthy the instant it's created, not when it next runs). The migrate
+    # Job's initContainer (templates/migrate-job.yaml) is what makes the
+    # dependency real — see the comment there.
     argocd.argoproj.io/sync-wave: "-2"
   finalizers:
     - resources-finalizer.argocd.argoproj.io

@@ -65,10 +65,16 @@ bootstrap:
   # operator sees with `bao kv get`, ESO having inserted the `data/` segment
   # itself for the KV v2 mount.
   openbaoName: postgres-app
-  postInitSQL:
-    # RLS is worthless if the owner bypasses it; hms_app below is
-    # NOBYPASSRLS and is what a request runs as.
-    - "ALTER ROLE helivanta SET row_security = on"
+  # No postInitSQL here. `row_security = on` is Postgres's default and does
+  # not govern owner bypass regardless — a table's owner bypasses that
+  # table's RLS policies no matter what `row_security` is set to, unless the
+  # table itself carries `FORCE ROW LEVEL SECURITY`. That is a per-table
+  # property that belongs in the application's migrations (slice 1b), not a
+  # role GUC set here. It's also moot on this list specifically:
+  # `bootstrap.postInitSQL` runs only once, during `initdb` — which already
+  # happened on this cluster — so anything added to this key now would never
+  # execute. The real, load-bearing control is that hms_app (applicationRoles
+  # below) is NOBYPASSRLS by omission and is the role every request runs as.
 
 # The two login roles CNPG creates and reconciles passwords for via
 # `Cluster.spec.managed.roles` (added in Task 4). Every privilege they hold
@@ -107,6 +113,15 @@ affinity:
   podAntiAffinityType: preferred
 
 monitoring:
+  # Decorative on this cluster: this produces a `monitoring.coreos.com/v1
+  # PodMonitor`, but this cluster runs GCP Managed Prometheus, which is
+  # driven by `monitoring.googleapis.com/v1 PodMonitoring` objects, not the
+  # prometheus-operator CRDs (only the CRDs are installed here, no operator,
+  # no server — see helivanta-openfga/templates/prometheusrule.yaml for the
+  # full picture). No `PodMonitoring` exists for the `helivanta` namespace,
+  # so nothing currently reads this PodMonitor. Left on rather than removed
+  # because it costs nothing and the fix — a `PodMonitoring` for this
+  # namespace — makes it real rather than deleting the intent.
   enablePodMonitor: true
 
 # Continuous backup to GCS. Off until the bucket and workload identity exist —

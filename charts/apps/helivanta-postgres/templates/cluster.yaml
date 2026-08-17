@@ -7,6 +7,15 @@ metadata:
   labels:
     app.kubernetes.io/part-of: helivanta
     app.kubernetes.io/component: database
+  annotations:
+    # The helivanta-postgres Application carries
+    # resources-finalizer.argocd.argoproj.io, so deleting or renaming that
+    # Application cascade-deletes every resource it manages — including this
+    # Cluster, whose ownerReferences in turn take the data and WAL PVCs with
+    # it. Delete=false turns that cascade into an orphan (Cluster released,
+    # recoverable by hand) instead of an unrecoverable deletion. A hospital
+    # database must not be deleted as a side effect of an Application rename.
+    argocd.argoproj.io/sync-options: Delete=false
 spec:
   instances: {{ .Values.instances }}
   imageName: {{ .Values.imageName }}

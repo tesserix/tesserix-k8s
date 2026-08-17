@@ -1,3 +1,25 @@
+{{- /*
+Nothing on this cluster currently evaluates this PrometheusRule, including
+the OpenFGADown (severity: critical) alert below.
+`k8s/cluster/monitoring/gcp-managed-prometheus.yaml` establishes that this
+cluster runs GCP Managed Service for Prometheus, driven by
+`monitoring.googleapis.com/v1 PodMonitoring` objects — not a self-hosted
+Prometheus server or the prometheus-operator. `argocd/prod/infrastructure/`
+installs `prometheus-operator-crds` (the CRDs only, no operator, no server),
+which is what makes this object admit at all. The only thing that consumes a
+`PrometheusRule` is `k8s/cluster/observability/kustomization.yaml`, which
+bundles a fixed set of rule files from `k8s/cluster/prometheus/rules` into
+the `monitoring` namespace — this file, generated per-release into the
+`helivanta` namespace, is not among them and nothing picks it up.
+
+For this to become real: a `PodMonitoring` resource for the `helivanta`
+namespace (see the same gap on `deployment.yaml`'s prometheus.io annotations
+and `helivanta-postgres/values.yaml`'s `monitoring.enablePodMonitor`) would
+get metrics into GMP, and this PrometheusRule (or its GMP-native equivalent,
+a `monitoring.googleapis.com/v1 Rules` object) would need to be wired into
+whatever actually evaluates GMP rules on this cluster — which today is
+nothing. Do not read this file's presence as "OpenFGA has alerting."
+*/ -}}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
