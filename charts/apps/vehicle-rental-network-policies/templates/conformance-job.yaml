@@ -117,19 +117,32 @@ spec:
               set -u
               fail=0
 
-              refused() {
-                if nc -z -w {{ .Values.conformance.timeoutSeconds }} "$1" "$2" 2>/dev/null; then
-                  echo "FAIL: reached $1:$2 from {{ .Values.appNamespace }} — egress is wider than the allow-list"
+              # The app plane is an ambient mesh namespace: ztunnel accepts the
+              # pod's outbound TCP inside the pod, so a handshake succeeds even
+              # when the packets never leave. Only a completed fetch proves it.
+              unreachable() {
+                if wget -q -T {{ .Values.conformance.timeoutSeconds }} -O /dev/null "$1" 2>/dev/null; then
+                  echo "FAIL: fetched $1 from {{ .Values.appNamespace }} — egress is wider than the allow-list"
                   fail=1
                 else
-                  echo "ok: $1:$2 unreachable"
+                  echo "ok: $1 unreachable"
                 fi
               }
 
               echo "--- an unlisted external host must be unreachable"
               {{- range .Values.conformance.mustNotReach }}
-              refused {{ .host }} {{ .port }}
+              unreachable {{ . }}
               {{- end }}
+
+              # An allowed destination, same tool: a wget that cannot succeed
+              # would make every check above pass for the wrong reason.
+              echo "--- an allowed destination must stay reachable"
+              if wget -q -T {{ .Values.conformance.timeoutSeconds }} -O /dev/null {{ .Values.conformance.mustReach }} 2>/dev/null; then
+                echo "ok: {{ .Values.conformance.mustReach }} reachable"
+              else
+                echo "FAIL: {{ .Values.conformance.mustReach }} unreachable — the probes above prove nothing"
+                fail=1
+              fi
 
               # The metadata server is link-local and served by a node-local
               # DaemonSet, so it is reached before any NetworkPolicy is
