@@ -249,6 +249,19 @@ migrate:
 # image is promoted the Job exec-fails loudly, matching the migrate Job's
 # convention of a visible failure over a silent skip.
 seed:
+  # Vertex for the embed step. OFF because Vertex is currently UNREACHABLE from
+  # the pod network: aiplatform.googleapis.com resolves to the PSC endpoint
+  # 10.255.0.2, which accepts the node netns but resets a Pod's TLS handshake.
+  # The ip-masq-agent SNAT config (k8s/cluster/ip-masq-agent.yaml) fixed the TCP
+  # layer only. hostNetwork reaches Vertex but bypasses the Workload Identity
+  # metadata server, so every call 403s on scopes — the two cannot be combined.
+  #
+  # With this false, cmd/embed falls back to GEMINI_API_KEY, which resolves
+  # publicly and works from pods — capped at the free tier's 1,000/day, so the
+  # ~6,270-row backlog drains over about a week of syncs rather than one run.
+  # Flip to true once pod-sourced TLS to the PSC endpoint is solved; that is the
+  # single change needed, and it also unblocks kora#202 for the resolve path.
+  useVertex: false
   enabled: true
   command:
     - /bin/sh
