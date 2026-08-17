@@ -19,6 +19,11 @@ hbone:
 # Same cluster as dwellm8, so the same pod CIDR.
 podCIDR: 10.20.0.0/16
 
+# NodeLocal DNSCache answers on the node, not from a kube-system pod, so a
+# namespaceSelector never matches the reply path and DNS dies. The ClusterIP has
+# to be named as a CIDR. Same value as ai-database and istio-config.
+dnsServiceIP: 10.30.0.10
+
 # Every in-cluster destination the app plane may open a connection to, named and
 # portered. Nothing else leaves these pods except through the egress gateway
 # below. Adding an entry here is the reviewable act; there is no catch-all.
@@ -26,6 +31,7 @@ egress:
   inCluster:
     - name: kube-dns
       namespace: kube-system
+      viaDNSClusterIP: true
       ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
     - name: postgres-and-mongo
       namespace: vehicle-rental-data
