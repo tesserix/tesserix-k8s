@@ -33,10 +33,36 @@ zitadel:
   namespace: zitadel
   port: 8080
 
-# OpenBao is deliberately NOT in this file's egress rules. OpenBao's own
-# NetworkPolicy (charts/apps/openbao-namespace/templates/network-policies.yaml)
-# only admits `external-secrets` and `secret-service` as callers on 8200 —
-# "apps get Kubernetes Secrets, not tokens." Helivanta already has its
-# SecretStore (openbao-helivanta-api) wired for ESO to read on its behalf;
-# an egress allow from this namespace to OpenBao would be traffic OpenBao's
-# own policy rejects on arrival, so it is not added here.
+# OpenBao is deliberately NOT in this file's egress rules, and this is not an
+# oversight — do not "fix" it by adding one. OpenBao's own NetworkPolicy
+# (charts/apps/openbao-namespace/templates/network-policies.yaml) admits only
+# `external-secrets` and `secret-service` as callers on 8200; no other
+# namespace, helivanta included, is on that list. Helivanta reads OpenBao
+# exclusively through ESO, via the SecretStore already in this namespace
+# (openbao-helivanta-api) — the design explicitly keeps secret-store code out
+# of Helivanta. An egress allow from here to OpenBao would be traffic
+# OpenBao's own ingress policy drops on arrival: dead configuration that
+# invites a future reader to believe helivanta pods talk to OpenBao directly,
+# when they never do and never should.
+
+# CNPG operator probe. The operator in cnpg-system polls every managed
+# instance directly on 8000, cluster health depends on it, and Task 4 stands
+# up the CNPG Cluster this rule exists for.
+cnpg:
+  namespace: cnpg-system
+  probePort: 8000
+
+# Cluster pod CIDR for the ambient HBONE NetworkPolicy. tesseract-prod-in-gke
+# uses the default GKE pod CIDR for asia-south1 — same value dwellm8,
+# vehicle-rental-network-policies and openbao-namespace use. If this is wrong
+# the namespace silently loses east-west connectivity the day it goes
+# ambient.
+podCIDR: 10.20.0.0/16
+
+# helivanta is not ambient-meshed today (the namespace carries no
+# istio.io/dataplane-mode label). The 15008 rule ships anyway: it costs
+# nothing while unmeshed, and it is the rule whose absence is invisible until
+# every call in the namespace times out at once — the same reasoning
+# dwellm8's values.yaml records for its own hbone.enabled.
+hbone:
+  enabled: true

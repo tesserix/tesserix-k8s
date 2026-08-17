@@ -1,0 +1,37 @@
+{{- /*
+Ambient HBONE. helivanta carries no istio.io/dataplane-mode label today, so
+this allows traffic that currently does not exist — same situation as
+dwellm8 (charts/apps/dwellm8-network-policies/templates/ingress.yaml:67-84,
+values.yaml:29) and every other sibling network-policies chart in this repo.
+It ships anyway because it costs nothing while unmeshed, and its absence is
+invisible right up until the day somebody labels the namespace ambient: at
+that point every call in it starts timing out with no error anywhere on
+either side, which is exactly how dwellm8's 2026-04-12 auth outage
+presented.
+*/ -}}
+{{- if .Values.hbone.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-hbone-15008
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 15008
+      from:
+        - ipBlock:
+            cidr: {{ .Values.podCIDR }}
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 15008
+      to:
+        - ipBlock:
+            cidr: {{ .Values.podCIDR }}
+{{- end }}
