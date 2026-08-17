@@ -49,3 +49,11 @@ Namespace
 {{- define "db-schema-bootstrap.namespace" -}}
 {{- default .Release.Namespace .Values.namespaceOverride }}
 {{- end }}
+
+{{/*
+A target is named after its database, and a database may hold an underscore.
+Object and volume names are RFC 1123, so they get the hyphenated form.
+*/}}
+{{- define "db-schema-bootstrap.targetSlug" -}}
+{{- . | replace "_" "-" | lower }}
+{{- end }}
