@@ -24,11 +24,22 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: {{ .Values.name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 4000
+        fsGroup: 4000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           args:
             - migrate
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: OPENFGA_DATASTORE_ENGINE
               value: postgres
