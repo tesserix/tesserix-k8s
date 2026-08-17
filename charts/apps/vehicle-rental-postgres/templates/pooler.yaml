@@ -24,10 +24,11 @@ spec:
       client_idle_timeout: "0"
       server_lifetime: "3600"
       query_wait_timeout: "60"
-      # The other half of the prepared-statement trap. The API disables its own
-      # cache; this refuses to keep one on PgBouncer's side either, so a driver
-      # that starts caching fails immediately rather than intermittently.
-      max_prepared_statements: "0"
+      # sqlx names every statement it prepares even with its own cache off, so
+      # in transaction mode the name lands on a server connection that already
+      # has it. PgBouncer 1.21+ tracks them per client, which is the only way
+      # this driver survives a transaction pool (api /readyz 503, 2026-08-17).
+      max_prepared_statements: "200"
   monitoring:
     enablePodMonitor: {{ .Values.monitoring.enablePodMonitor }}
 ---
@@ -56,10 +57,11 @@ spec:
       client_idle_timeout: "0"
       server_lifetime: "3600"
       query_wait_timeout: "60"
-      # The other half of the prepared-statement trap. The API disables its own
-      # cache; this refuses to keep one on PgBouncer's side either, so a driver
-      # that starts caching fails immediately rather than intermittently.
-      max_prepared_statements: "0"
+      # sqlx names every statement it prepares even with its own cache off, so
+      # in transaction mode the name lands on a server connection that already
+      # has it. PgBouncer 1.21+ tracks them per client, which is the only way
+      # this driver survives a transaction pool (api /readyz 503, 2026-08-17).
+      max_prepared_statements: "200"
   monitoring:
     enablePodMonitor: {{ .Values.monitoring.enablePodMonitor }}
 {{- end }}
