@@ -1,0 +1,31 @@
+{{- /*
+DNS to kube-system. Every other egress rule in this chart, and every client
+library in the namespace, resolves a name before it dials anything — without
+this the default-deny leaves the namespace unable to look anything up at all.
+
+NodeLocal DNSCache answers from the node rather than from a kube-system pod,
+so the namespaceSelector alone does not cover the reply path; the ClusterIP
+needs its own allow too. Same shape as onboarding-service's and
+openbao's DNS rule.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - ipBlock:
+            cidr: {{ .Values.dnsServiceIP }}/32
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

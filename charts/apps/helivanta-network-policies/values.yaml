@@ -1,0 +1,42 @@
+namespace: helivanta
+
+# The namespace that fronts the Istio gateway. helivanta.com and its
+# subdomains land here before reaching any pod in the helivanta namespace.
+istioIngressNamespace: istio-ingress
+
+# kube-dns service IP. NodeLocal DNSCache answers from the node, not from a
+# kube-system pod, so a namespaceSelector alone never matches the reply path
+# — the ClusterIP needs its own allow. Same value used by openbao,
+# onboarding-service and vehicle-rental-network-policies on
+# tesseract-prod-in-gke.
+dnsServiceIP: 10.30.0.10
+
+# External HTTPS egress. Reaches Zitadel's and OpenBao's public endpoints
+# (token exchange, JWKS, Secret Manager fallbacks) and any other external
+# HTTPS dependency the API adds later. The metadata server is excluded:
+# helivanta pods have no Workload Identity binding — their credentials
+# arrive as Secrets that ESO already wrote — so a pod that can reach
+# 169.254.169.254 is a pod that can go looking for a token it was never
+# given (same exclusion as dwellm8's egress rule).
+externalEgress:
+  port: 443
+  excludeCIDRs:
+    - 169.254.169.254/32
+
+# In-cluster Zitadel. Zitadel's own NetworkPolicy
+# (charts/thirdparty/zitadel/templates/networkpolicy.yaml) admits every
+# namespace in the mesh on 8080 for exactly this: exchanging codes and
+# validating tokens. That is the path helivanta-api uses, not a public HTTPS
+# hop through the gateway, so it needs its own allow alongside the 443 rule
+# above.
+zitadel:
+  namespace: zitadel
+  port: 8080
+
+# OpenBao is deliberately NOT in this file's egress rules. OpenBao's own
+# NetworkPolicy (charts/apps/openbao-namespace/templates/network-policies.yaml)
+# only admits `external-secrets` and `secret-service` as callers on 8200 —
+# "apps get Kubernetes Secrets, not tokens." Helivanta already has its
+# SecretStore (openbao-helivanta-api) wired for ESO to read on its behalf;
+# an egress allow from this namespace to OpenBao would be traffic OpenBao's
+# own policy rejects on arrival, so it is not added here.

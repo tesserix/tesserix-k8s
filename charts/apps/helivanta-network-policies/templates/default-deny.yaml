@@ -1,0 +1,28 @@
+{{- /*
+The namespace lock, first — so nothing in helivanta runs unprotected even
+briefly. This chart syncs ahead of every other Helivanta Application in the
+project (Tasks 3-7).
+
+Unlike dwellm8 (which denies only ingress and leaves egress broadly open),
+this default-deny covers both directions: helivanta holds patient and
+hospital-operations data behind the same threat model as openbao's and
+onboarding-service's namespaces, both of which also deny-both-ways. The
+allow-* templates in this chart are the only doors back in.
+
+This chart does NOT own the Namespace object — it already exists (created
+outside this chart, per Task 1) and is not managed by this Application, so a
+prune here can never delete it.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  # No rules: nothing may reach these pods, and these pods may reach nothing,
+  # except what the allow-* policies below add. NetworkPolicies are additive,
+  # so this is the floor, not an override.
