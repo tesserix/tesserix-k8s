@@ -84,13 +84,19 @@ spec:
             # GEMINI_API_KEY belongs to kora-app-e6d38, where billing is
             # DISABLED, while tesseracthub-480811 already pays.
             #
-            # Scoped to THIS Job on purpose. VERTEX_* must NOT go into
-            # .Values.env, which only the API Deployment consumes (see
-            # values-prod.yaml) — setting it there switches the resolve engine
-            # over too, and that is exactly what kora#202 rolled back: the
-            # Vertex primary missed IdentifyText's 1500ms textBudget and every
-            # /v1/resolve/text 500'd. A batch backfill has no such budget, so
-            # it can move ahead of the resolve path rather than wait on it.
+            # This was once scoped to THIS Job only, with the instruction that
+            # VERTEX_* must NOT go into .Values.env, because kora#202 was read
+            # as "the Vertex primary missed IdentifyText's 1500ms textBudget
+            # and every /v1/resolve/text 500'd".
+            #
+            # That instruction is now LIFTED and .Values.env sets VERTEX_* too.
+            # kora#202's total failure is far better explained by the egress bug
+            # fixed in tesserix-k8s#378: a NetworkPolicy silently dropped every
+            # call to the PSC endpoint, so each one hung until timeout — which
+            # 500s every request regardless of any budget. Measured from the
+            # running pod once egress worked, Vertex answers in p50 0.98s /
+            # p90 1.24s on a pooled connection, inside the 1.5s budget.
+            # See the VERTEX_PROJECT comment in values.yaml for the full numbers.
             #
             # Location is "global" for the reason kora#202 recorded:
             # asia-south1 serves gemini-embedding-001 but 404s on
