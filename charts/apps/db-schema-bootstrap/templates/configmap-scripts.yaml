@@ -166,14 +166,19 @@ data:
 
       # --- Parse psql output for detailed reporting ---
       total_lines=$(echo "$output" | wc -l | tr -d ' ')
-      error_lines=$(echo "$output" | grep -c "^ERROR:" || true)
+      # psql -f prefixes server errors with the input file and line number
+      # (for example `psql:/schemas/app.sql:42: ERROR:`). Matching only at the
+      # beginning silently reported failed DDL as success.
+      error_output=$(echo "$output" | grep "ERROR:" || true)
+      error_lines=$(echo "$error_output" | grep -c "ERROR:" || true)
       already_exists=$(echo "$output" | grep -c "already exists" || true)
+      expected_errors=$(echo "$error_output" | grep -c "already exists" || true)
       tables_created=$(echo "$output" | grep -c "^CREATE TABLE" || true)
       indexes_created=$(echo "$output" | grep -c "^CREATE INDEX" || true)
       sequences_created=$(echo "$output" | grep -c "^CREATE SEQUENCE" || true)
       functions_created=$(echo "$output" | grep -c "^CREATE FUNCTION" || true)
       alters_ok=$(echo "$output" | grep -c "^ALTER TABLE" || true)
-      real_errors=$((error_lines - already_exists))
+      real_errors=$((error_lines - expected_errors))
 
       DB_END=$(date +%s)
       DB_DURATION=$((DB_END - DB_START))
@@ -188,7 +193,7 @@ data:
 
       if [ "$real_errors" -gt 0 ]; then
         log_error "  [$db_name] $real_errors unexpected error(s):"
-        echo "$output" | grep "^ERROR:" | grep -v "already exists" | while IFS= read -r errline; do
+        echo "$error_output" | grep -v "already exists" | while IFS= read -r errline; do
           log_error "  [$db_name]   $errline"
         done
       else
@@ -200,8 +205,8 @@ data:
 
       # --- Verify: count tables in database ---
       table_count=$(psql -h {{ .host }} -p {{ .port }} -U {{ .user }} -d "$db_name" \
-        -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'" 2>/dev/null)
-      log_info "  [$db_name] Verification: $table_count table(s) in public schema"
+        -Atc "SELECT count(*) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema')" 2>/dev/null)
+      log_info "  [$db_name] Verification: $table_count application table(s)"
 
     done
 

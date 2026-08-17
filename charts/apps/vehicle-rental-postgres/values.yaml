@@ -40,6 +40,19 @@ bootstrap:
     # from it by default either.
     - "ALTER ROLE vehicle_rental SET row_security = on"
 
+# Extensions are reconciled by the CNPG operator as superuser. The application
+# owner deliberately has no superuser privilege, so putting CREATE EXTENSION in
+# the schema replay alone can never install PostGIS on an existing database.
+database:
+  name: vehicle_rental
+  owner: vehicle_rental
+  reclaimPolicy: retain
+  extensions:
+    - pgcrypto
+    - citext
+    - postgis
+    - btree_gist
+
 # Login roles. Privileges are granted in the schema files, where a reviewer can
 # see them; only password reconciliation happens here.
 #
