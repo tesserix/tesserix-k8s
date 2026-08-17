@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # The namespace lock first, so nothing runs unprotected even briefly.
+  - helivanta-network-policies.yaml
+  # CNPG first, then the schema (grants + the openfga database).
+  - helivanta-postgres.yaml
+  - helivanta-db-schema-bootstrap.yaml
+  # The broker, then the authorization engine. Both before slice 1b's API,
+  # which fails closed without either.
+  - helivanta-nats.yaml
+  - helivanta-openfga.yaml
