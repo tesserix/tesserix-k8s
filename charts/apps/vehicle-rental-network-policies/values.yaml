@@ -32,31 +32,31 @@ egress:
     - name: kube-dns
       namespace: kube-system
       viaDNSClusterIP: true
-      ports: [{ protocol: UDP, port: 53 }, { protocol: TCP, port: 53 }]
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
     - name: postgres-and-mongo
       namespace: vehicle-rental-data
       ports:
         # 6432 is PgBouncer, 5432 the cluster service, 27017 MongoDB.
-        - { protocol: TCP, port: 6432 }
-        - { protocol: TCP, port: 5432 }
-        - { protocol: TCP, port: 27017 }
+        - {protocol: TCP, port: 6432}
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 27017}
     - name: nats-jetstream
       namespace: nats
-      ports: [{ protocol: TCP, port: 4222 }]
+      ports: [{protocol: TCP, port: 4222}]
     - name: zitadel
       namespace: zitadel
-      ports: [{ protocol: TCP, port: 8080 }]
+      ports: [{protocol: TCP, port: 8080}]
     - name: clickhouse
       namespace: observability
-      ports: [{ protocol: TCP, port: 8123 }, { protocol: TCP, port: 9000 }]
+      ports: [{protocol: TCP, port: 8123}, {protocol: TCP, port: 9000}]
     - name: istiod-xds
       namespace: istio-system
-      ports: [{ protocol: TCP, port: 15012 }]
+      ports: [{protocol: TCP, port: 15012}]
     # Traces and metrics out. Without this the app is silent under load, which
     # is when you need it least to be.
     - name: otel-collector
       namespace: monitoring
-      ports: [{ protocol: TCP, port: 4317 }, { protocol: TCP, port: 4318 }]
+      ports: [{protocol: TCP, port: 4317}, {protocol: TCP, port: 4318}]
 
   # The single door to the internet. The PSP, VAHAN, DigiLocker, WhatsApp, MSG91
   # and Resend are reached through it and are named as ServiceEntries, because a
@@ -64,7 +64,7 @@ egress:
   gateway:
     enabled: true
     namespace: istio-egress
-    ports: [{ protocol: TCP, port: 80 }, { protocol: TCP, port: 443 }]
+    ports: [{protocol: TCP, port: 80}, {protocol: TCP, port: 443}]
 
 # The external hosts the app plane is allowed to reach, as Istio ServiceEntries.
 # This is where "every egress destination is named" actually lives.
@@ -105,9 +105,9 @@ conformance:
   # Reachable from anywhere on the internet, and deliberately not in the
   # allow-list. If either becomes reachable, egress has been widened.
   mustNotReach:
-    - { host: example.com, port: 443 }
+    - {host: example.com, port: 443}
     # DNS over TLS, not plain 53: node-local DNSCache intercepts every port-53
     # connection on the node and answers it locally, so a :53 probe can only
     # ever measure the cache. 853 is the DNS exfiltration path a policy can
     # actually close.
-    - { host: 1.1.1.1, port: 853 }
+    - {host: 1.1.1.1, port: 853}
