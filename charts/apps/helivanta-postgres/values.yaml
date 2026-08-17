@@ -14,6 +14,26 @@
 namespace: helivanta
 clusterName: helivanta-postgres
 
+openbao:
+  # KV v2 path prefix (relative to the `kv` mount the SecretStore already
+  # points at — spec: path: kv, version: v2), shared by every secret in this
+  # chart: kv/{namespace}/{app}/{name}. Each role's `openbaoName` below is
+  # appended to it, so the app segment is expressed once here instead of
+  # being repeated per role.
+  #
+  # `app` is fixed at "helivanta-api" and is NOT a free choice — do not
+  # "tidy" it to "postgres". The generated OpenBao policy
+  # (charts/thirdparty/openbao/templates/bootstrap-configmap.yaml,
+  # policy-app-helivanta_helivanta-api) grants read only on
+  # kv/data/helivanta/helivanta-api/* — that's the one app the `helivanta`
+  # namespace is whitelisted for
+  # (charts/thirdparty/openbao/values.yaml: namespaceWhitelist → helivanta →
+  # apps → name: helivanta-api), and the SecretStore authenticates as
+  # exactly that role (`role: app-helivanta_helivanta-api`). Any other app
+  # segment is unreadable by the ServiceAccount this chart's ExternalSecrets
+  # use, no matter how it renders.
+  app: helivanta-api
+
 bootstrap:
   # Database and owner role. The owner role is deliberately not the
   # application role — the application connects as hms_app (see
@@ -25,11 +45,11 @@ bootstrap:
   # templates/externalsecret.yaml. Task 4 wires this into
   # `Cluster.spec.bootstrap.initdb.secret`.
   secret: helivanta-postgres-app-credentials
-  # OpenBao KV v2 path, relative to the `kv` mount the SecretStore already
-  # points at (spec: path: kv, version: v2). ESO inserts the `data/` segment
-  # itself, so the value ESO actually reads is kv/data/helivanta/postgres/app
-  # — the raw path a human operator sees with `bao kv get`.
-  openbaoPath: helivanta/postgres/app
+  # Combined with .Values.openbao.app in the template to read
+  # kv/data/helivanta/helivanta-api/postgres-app — the raw path a human
+  # operator sees with `bao kv get`, ESO having inserted the `data/` segment
+  # itself for the KV v2 mount.
+  openbaoName: postgres-app
 
 # The two login roles CNPG creates and reconciles passwords for via
 # `Cluster.spec.managed.roles` (added in Task 4). Every privilege they hold
@@ -46,7 +66,7 @@ bootstrap:
 applicationRoles:
   - name: hms_app
     secret: helivanta-postgres-api-credentials
-    openbaoPath: helivanta/postgres/api
+    openbaoName: postgres-api
   - name: openfga
     secret: helivanta-postgres-openfga-credentials
-    openbaoPath: helivanta/postgres/openfga
+    openbaoName: postgres-openfga
