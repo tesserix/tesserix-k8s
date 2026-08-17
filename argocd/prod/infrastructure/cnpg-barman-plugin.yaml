@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cnpg-barman-plugin
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: database-backup
+  annotations:
+    # After the CNPG operator (-40) and cert-manager, before any Cluster that
+    # declares the plugin. Without it an ObjectStore is an unknown kind and the
+    # owning app fails to sync entirely.
+    argocd.argoproj.io/sync-wave: "-35"
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/cloudnative-pg/charts
+    chart: plugin-barman-cloud
+    targetRevision: 0.7.1
+    helm:
+      releaseName: barman-cloud
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cnpg-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
