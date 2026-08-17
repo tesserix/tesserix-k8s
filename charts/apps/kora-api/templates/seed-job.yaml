@@ -50,6 +50,28 @@ spec:
         sidecar.istio.io/inject: "false"
     spec:
       restartPolicy: OnFailure
+      # hostNetwork because the Vertex PSC endpoint (10.255.0.2, reached via the
+      # private DNS zone for aiplatform.googleapis.com) accepts the NODE's
+      # network namespace but not a Pod's. Measured on the same node, same
+      # request, 2026-08-17: from the node netns it answers HTTP 404; from a Pod
+      # netns the TLS handshake is reset. The ip-masq-agent ConfigMap in
+      # k8s/cluster/ip-masq-agent.yaml fixed the TCP layer (raw connect to :443
+      # now succeeds from a Pod) but NOT the TLS layer, so pods still cannot
+      # talk to Vertex and the whole food-index backfill fails call after call.
+      #
+      # Safe for THIS workload specifically: it is a short-lived batch Job that
+      # listens on no port, so it cannot collide with a node port or with
+      # another pod. It is not a pattern to copy to long-lived services — the
+      # right fix is whatever makes Pod-sourced TLS acceptable to the PSC
+      # endpoint, which is still unknown and tracked separately.
+      #
+      # dnsPolicy MUST be ClusterFirstWithHostNet: hostNetwork otherwise uses
+      # the node's resolver, which cannot resolve the in-cluster Postgres
+      # service this Job connects to, and the Job would fail before it embeds
+      # anything. This keeps kube-dns (and therefore the private zone that maps
+      # aiplatform.googleapis.com to the PSC endpoint) intact.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
       serviceAccountName: {{ include "kora-api.serviceAccountName" . }}
       containers:
         - name: seed
