@@ -50,28 +50,15 @@ spec:
         sidecar.istio.io/inject: "false"
     spec:
       restartPolicy: OnFailure
-      # hostNetwork because the Vertex PSC endpoint (10.255.0.2, reached via the
-      # private DNS zone for aiplatform.googleapis.com) accepts the NODE's
-      # network namespace but not a Pod's. Measured on the same node, same
-      # request, 2026-08-17: from the node netns it answers HTTP 404; from a Pod
-      # netns the TLS handshake is reset. The ip-masq-agent ConfigMap in
-      # k8s/cluster/ip-masq-agent.yaml fixed the TCP layer (raw connect to :443
-      # now succeeds from a Pod) but NOT the TLS layer, so pods still cannot
-      # talk to Vertex and the whole food-index backfill fails call after call.
-      #
-      # Safe for THIS workload specifically: it is a short-lived batch Job that
-      # listens on no port, so it cannot collide with a node port or with
-      # another pod. It is not a pattern to copy to long-lived services — the
-      # right fix is whatever makes Pod-sourced TLS acceptable to the PSC
-      # endpoint, which is still unknown and tracked separately.
-      #
-      # dnsPolicy MUST be ClusterFirstWithHostNet: hostNetwork otherwise uses
-      # the node's resolver, which cannot resolve the in-cluster Postgres
-      # service this Job connects to, and the Job would fail before it embeds
-      # anything. This keeps kube-dns (and therefore the private zone that maps
-      # aiplatform.googleapis.com to the PSC endpoint) intact.
-      hostNetwork: true
-      dnsPolicy: ClusterFirstWithHostNet
+      # NOTE: hostNetwork was tried here (chart 0.1.11) to reach the Vertex PSC
+      # endpoint, which accepts the node netns but rejects a Pod's. It DID fix
+      # the network — the error moved from "connection reset by peer" to a
+      # Vertex HTTP 403 — but it broke auth, because GKE's Workload Identity
+      # metadata server runs on the POD network. A hostNetwork pod bypasses it,
+      # picks up the node's default service account, and every call fails with
+      # "Request had insufficient authentication scopes". hostNetwork and
+      # Workload Identity are mutually exclusive here, so it was reverted in
+      # 0.1.12. Do not reintroduce it without solving the identity side.
       serviceAccountName: {{ include "kora-api.serviceAccountName" . }}
       containers:
         - name: seed
@@ -109,7 +96,7 @@ spec:
             # asia-south1 serves gemini-embedding-001 but 404s on
             # gemini-3.5-flash-lite, so "global" is the one location that
             # serves every model this image uses.
-            {{- if .Values.gcp.workloadIdentity.enabled }}
+            {{- if and .Values.gcp.workloadIdentity.enabled .Values.seed.useVertex }}
             - name: VERTEX_PROJECT
               value: {{ .Values.gcp.projectId | quote }}
             - name: VERTEX_LOCATION
