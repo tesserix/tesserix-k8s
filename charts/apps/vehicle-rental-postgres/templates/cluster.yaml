@@ -11,6 +11,15 @@ spec:
   instances: {{ .Values.instances }}
   imageName: {{ .Values.imageName }}
 
+  {{- if .Values.backup.enabled }}
+  # barman-cloud's GCS client requires an explicit project when the GKE
+  # metadata server exposes credentials but does not return project metadata.
+  # Cluster env is inherited by the CNPG-I plugin container in every instance.
+  env:
+    - name: GOOGLE_CLOUD_PROJECT
+      value: {{ .Values.backup.projectId | quote }}
+  {{- end }}
+
   bootstrap:
     initdb:
       database: {{ .Values.bootstrap.database }}
