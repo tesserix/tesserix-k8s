@@ -22,6 +22,14 @@ spec:
       values: |
         app: vehicle-rental
 
+        # Keep successful output long enough to audit the initial production
+        # convergence. The chart default removes it after ten minutes.
+        ttlSecondsAfterFinished: 3600
+
+        # Temporary recovery cadence while the first schema run is verified.
+        # Restore to */30 after catalog and booking have converged.
+        schedule: "*/5 * * * *"
+
         # The schema is written idempotent — CREATE ... IF NOT EXISTS, additive
         # ALTERs — and no ORM manages these tables at runtime, so replaying it
         # every 30 minutes converges. Same reasoning as dwellm8.
