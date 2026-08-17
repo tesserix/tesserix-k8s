@@ -89,6 +89,17 @@ CREATE TABLE IF NOT EXISTS identity.pickup_point (
     created_at   timestamptz NOT NULL DEFAULT now()
 );
 
+DO $$ BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+         WHERE conname = 'pickup_point_tenant_id_id_key'
+           AND conrelid = 'identity.pickup_point'::regclass
+    ) THEN
+        ALTER TABLE identity.pickup_point
+            ADD CONSTRAINT pickup_point_tenant_id_id_key UNIQUE (tenant_id, id);
+    END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS pickup_point_location_idx
     ON identity.pickup_point USING gist (location);
 CREATE INDEX IF NOT EXISTS staff_tenant_created_idx
