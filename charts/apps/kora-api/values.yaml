@@ -272,14 +272,31 @@ seed:
   # GEMINI_API_KEY and its 1,000/day free-tier cap.
   useVertex: true
   enabled: true
+  # EVERY source cmd/ingest knows about must be passed an explicit path here.
+  # The flag defaults are repo-relative (data/food/*.json) and nothing is
+  # mounted there in the image, so a source added to cmd/ingest without a line
+  # below makes the Job exit 1 and crash-loop. That is exactly what adding
+  # -ifct in kora#215 did: `ingest: read data/food/ifct.json: no such file or
+  # directory`. Files themselves are fine — the Dockerfile copies the whole
+  # data/food directory to /usr/local/share/kora/food.
+  #
+  # -backfill-usda-brands MUST stay on this command line. cmd/ingest runs it
+  # before the load, in-process, which is the required order: the loader emits
+  # ("FILET-O-FISH", "McDONALD'S") while an un-backfilled table still holds
+  # ("McDONALD'S, FILET-O-FISH", ""), and ingest dedupes on name+brand, so
+  # without it the load inserts 310 duplicate rows instead of recognising them.
+  # That happened in prod on 2026-08-17 and had to be cleaned up by hand.
+  # The flag is idempotent, so leaving it on every run costs nothing.
   command:
     - /bin/sh
     - -c
     - >-
       /usr/local/bin/seed &&
       /usr/local/bin/ingest
+      -backfill-usda-brands
       -afcd /usr/local/share/kora/food/afcd_staples.json
       -afcd-full /usr/local/share/kora/food/afcd_release3.json
+      -ifct /usr/local/share/kora/food/ifct.json
       -off-au /usr/local/share/kora/food/off_au.json
       -usda /usr/local/share/kora/food/usda_common.json
       -sr /usr/local/share/kora/food/usda_sr_legacy.json
