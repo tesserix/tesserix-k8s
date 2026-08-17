@@ -266,12 +266,11 @@ seed:
   # NOT the fix — hostNetwork in particular bypasses the Workload Identity
   # metadata server, so every call 403s on scopes.
   #
-  # Still false here ONLY because the egress fix must be synced and verified
-  # from a kora pod first; a single ArgoCD sync does not order the two charts.
-  # Flip to true once `openssl s_client aiplatform.googleapis.com:443` from a
-  # kora pod negotiates TLS. With it false, cmd/embed falls back to
-  # GEMINI_API_KEY (free tier, 1,000/day).
-  useVertex: false
+  # Enabled 2026-08-17, after the egress fix synced and TLS to Vertex was
+  # confirmed three times from the running kora-api pod. With this true,
+  # cmd/embed uses Vertex via Workload Identity instead of falling back to
+  # GEMINI_API_KEY and its 1,000/day free-tier cap.
+  useVertex: true
   enabled: true
   command:
     - /bin/sh
