@@ -225,10 +225,11 @@ CREATE INDEX IF NOT EXISTS vehicle_spec_model_idx
 INSERT INTO catalog.spec_model
     (make, model, variant, model_year_from, class, fuel, transmission, engine_cc, licence_class_required, attributes)
 VALUES
-    ('Royal Enfield', 'Himalayan 450', '', 2024, 'motorcycle', 'petrol', 'manual', 452, 'MCWG', '{"body_type":"adventure"}'),
-    ('Royal Enfield', 'Himalayan 411', '', 2021, 'motorcycle', 'petrol', 'manual', 411, 'MCWG', '{"body_type":"adventure"}'),
-    ('Royal Enfield', 'Classic 350', '', 2021, 'motorcycle', 'petrol', 'manual', 349, 'MCWG', '{"body_type":"cruiser"}'),
-    ('Royal Enfield', 'Interceptor 650', '', 2018, 'motorcycle', 'petrol', 'manual', 648, 'MCWG', '{"body_type":"roadster"}'),
-    ('KTM', '390 Duke', '', 2024, 'motorcycle', 'petrol', 'manual', 399, 'MCWG', '{"body_type":"street"}'),
-    ('Suzuki', 'Access 125', '', 2020, 'scooter', 'petrol', 'automatic', 124, 'MCWG', '{"body_type":"scooter"}')
-ON CONFLICT (make, model, variant, model_year_from) DO NOTHING;
+    ('Royal Enfield', 'Himalayan 450', '', 2024, 'motorcycle', 'petrol', 'manual', 452, 'MCWG', '{"body_type":"adventure","service":{"interval_km":5000,"interval_days":180,"duration_hours":8,"safety_critical":true,"tasks":["Engine oil and filter","Drive chain","Brakes and tyres","Fasteners"]}}'),
+    ('Royal Enfield', 'Himalayan 411', '', 2021, 'motorcycle', 'petrol', 'manual', 411, 'MCWG', '{"body_type":"adventure","service":{"interval_km":5000,"interval_days":180,"duration_hours":8,"safety_critical":true,"tasks":["Engine oil and filter","Drive chain","Brakes and tyres","Fasteners"]}}'),
+    ('Royal Enfield', 'Classic 350', '', 2021, 'motorcycle', 'petrol', 'manual', 349, 'MCWG', '{"body_type":"cruiser","service":{"interval_km":5000,"interval_days":180,"duration_hours":6,"safety_critical":true,"tasks":["Engine oil","Drive chain","Brakes","Electrical check"]}}'),
+    ('Royal Enfield', 'Interceptor 650', '', 2018, 'motorcycle', 'petrol', 'manual', 648, 'MCWG', '{"body_type":"roadster","service":{"interval_km":5000,"interval_days":180,"duration_hours":8,"safety_critical":true,"tasks":["Engine oil and filter","Valve check","Drive chain","Brakes and tyres"]}}'),
+    ('KTM', '390 Duke', '', 2024, 'motorcycle', 'petrol', 'manual', 399, 'MCWG', '{"body_type":"street","service":{"interval_km":7500,"interval_days":180,"duration_hours":8,"safety_critical":true,"tasks":["Engine oil and filter","Cooling system","Drive chain","Brakes and tyres"]}}'),
+    ('Suzuki', 'Access 125', '', 2020, 'scooter', 'petrol', 'automatic', 124, 'MCWG', '{"body_type":"scooter","service":{"interval_km":4000,"interval_days":180,"duration_hours":5,"safety_critical":true,"tasks":["Engine oil","CVT inspection","Brakes and tyres","Electrical check"]}}')
+ON CONFLICT (make, model, variant, model_year_from) DO UPDATE
+    SET attributes = catalog.spec_model.attributes || EXCLUDED.attributes;
