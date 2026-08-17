@@ -89,6 +89,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA
     audit, financial_archive
     TO vehicle_rental_platform_role;
 
+-- The model catalogue is shared reference data. A compromised tenant API role
+-- may read it but must never be able to alter the platform-wide vocabulary.
+REVOKE INSERT, UPDATE, DELETE ON catalog.spec_model FROM vehicle_rental_app;
+GRANT SELECT ON catalog.spec_model TO vehicle_rental_app;
+
 -- Reporting reads everything and writes nothing. It is not exempt from RLS, so
 -- an analyst still sees one tenant per connection unless a platform-role
 -- transaction opts out — the credential is narrower, not a side door.
