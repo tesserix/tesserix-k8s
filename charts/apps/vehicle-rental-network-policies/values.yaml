@@ -102,12 +102,12 @@ conformance:
   namespace: vehicle-rental-conformance
   image: busybox:1.37.0-musl
   timeoutSeconds: 5
-  # Reachable from anywhere on the internet, and deliberately not in the
-  # allow-list. If either becomes reachable, egress has been widened.
+  # Served over plain HTTP from anywhere on the internet, and deliberately not in
+  # the allow-list. If either becomes fetchable, egress has been widened.
   mustNotReach:
-    - {host: example.com, port: 443}
-    # DNS over TLS, not plain 53: node-local DNSCache intercepts every port-53
-    # connection on the node and answers it locally, so a :53 probe can only
-    # ever measure the cache. 853 is the DNS exfiltration path a policy can
-    # actually close.
-    - {host: 1.1.1.1, port: 853}
+    - http://example.com/
+    - http://neverssl.com/
+  # Named by the allow-list and fetched with the same tool: without it a wget
+  # that can never succeed would make every check above pass for the wrong
+  # reason.
+  mustReach: http://vehicle-rental-api.vehicle-rental.svc.cluster.local:8080/readyz
