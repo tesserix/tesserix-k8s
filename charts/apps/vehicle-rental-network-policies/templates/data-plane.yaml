@@ -66,8 +66,10 @@ Egress from the data plane is narrow on purpose: DNS, intra-namespace
 replication, and the object store the backups go to. A database that can reach
 the internet is a database that can exfiltrate to it.
 
-169.254.169.254 stays reachable — the plugin sidecar authenticates to GCS with
-Workload Identity, and the metadata server is how it gets the token.
+Both GKE metadata endpoints stay reachable — Standard clusters expose the
+node-local server at 169.254.169.252:988, while Autopilot/newer dataplanes can
+use the Compute-compatible 169.254.169.254:80 address. The plugin sidecar
+authenticates to GCS with Workload Identity through one of these endpoints.
 */ -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -104,11 +106,19 @@ spec:
       ports:
         - protocol: TCP
           port: 80
+    # GKE Metadata Server's node-local endpoint on Standard clusters.
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.252/32
+      ports:
+        - protocol: TCP
+          port: 988
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
             except:
               - 169.254.169.254/32
+              - 169.254.169.252/32
       ports:
         - protocol: TCP
           port: 443
