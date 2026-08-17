@@ -119,25 +119,26 @@ spec:
 
               # The app plane is an ambient mesh namespace: ztunnel accepts the
               # pod's outbound TCP inside the pod, so a handshake succeeds even
-              # when the packets never leave. Only a completed fetch proves it.
-              unreachable() {
-                if wget -q -T {{ .Values.conformance.timeoutSeconds }} -O /dev/null "$1" 2>/dev/null; then
-                  echo "FAIL: fetched $1 from {{ .Values.appNamespace }} — egress is wider than the allow-list"
-                  fail=1
-                else
-                  echo "ok: $1 unreachable"
-                fi
+              # when the packets never leave. A status line does not: it can
+              # only come from the far end. Its code is not this job's business.
+              answered() {
+                wget -T {{ .Values.conformance.timeoutSeconds }} -S -O /dev/null "$1" 2>&1 | grep -q 'HTTP/'
               }
 
               echo "--- an unlisted external host must be unreachable"
               {{- range .Values.conformance.mustNotReach }}
-              unreachable {{ . }}
+              if answered {{ . }}; then
+                echo "FAIL: {{ . }} answered — egress is wider than the allow-list"
+                fail=1
+              else
+                echo "ok: {{ . }} unreachable"
+              fi
               {{- end }}
 
-              # An allowed destination, same tool: a wget that cannot succeed
-              # would make every check above pass for the wrong reason.
+              # An allowed destination, same tool: a wget that can never reach
+              # anything would make every check above pass for the wrong reason.
               echo "--- an allowed destination must stay reachable"
-              if wget -q -T {{ .Values.conformance.timeoutSeconds }} -O /dev/null {{ .Values.conformance.mustReach }} 2>/dev/null; then
+              if answered {{ .Values.conformance.mustReach }}; then
                 echo "ok: {{ .Values.conformance.mustReach }} reachable"
               else
                 echo "FAIL: {{ .Values.conformance.mustReach }} unreachable — the probes above prove nothing"
