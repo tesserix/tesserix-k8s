@@ -147,5 +147,16 @@ spec:
                 echo "ok: no token issued"
               fi
 
+              # NodeLocal DNSCache answers from the node rather than from a
+              # kube-system pod, so a namespaceSelector alone leaves DNS dead
+              # and every hostname in the app becomes unreachable at once.
+              echo "--- cluster DNS must resolve"
+              if nslookup {{ .Values.postgres.poolerHost }} >/dev/null 2>&1; then
+                echo "ok: {{ .Values.postgres.poolerHost }} resolves"
+              else
+                echo "FAIL: cluster DNS does not resolve from {{ .Values.appNamespace }}"
+                fail=1
+              fi
+
               exit $fail
 {{- end }}
