@@ -1,18 +1,33 @@
 # Helivanta's database.
 #
-# This chart currently ships only the ExternalSecrets that project the three
-# CNPG role passwords out of OpenBao — app (owner), api (hms_app) and
-# openfga. The CNPG Cluster itself is added in a follow-up task, which is
-# expected to extend this file (cluster sizing, storage, postgresql tuning,
-# backup) rather than restructure the bootstrap/applicationRoles shape below.
+# This chart ships the ExternalSecrets that project the three CNPG role
+# passwords out of OpenBao — app (owner), api (hms_app) and openfga — plus
+# the CNPG Cluster and ScheduledBackup that consume them (Task 4).
 #
 # Unlike dwellm8-postgres, secrets here come from OpenBao via the
 # `openbao-helivanta-api` SecretStore that already exists in this namespace
 # (Task 2/#864), not from GCP Secret Manager — so there is no
 # gcpSecretName-equivalent key left dangling anywhere in this file.
 
+hibernate: false
+
 namespace: helivanta
 clusterName: helivanta-postgres
+
+# One instance to start, matching dwellm8's posture at this stage.
+instances: 1
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+storageSize: 10Gi
+storageClass: standard-rwo-retain
+walStorageSize: 5Gi
+
+# Memory only — the platform sets no CPU requests or limits.
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 2Gi
 
 openbao:
   # KV v2 path prefix (relative to the `kv` mount the SecretStore already
@@ -50,6 +65,10 @@ bootstrap:
   # operator sees with `bao kv get`, ESO having inserted the `data/` segment
   # itself for the KV v2 mount.
   openbaoName: postgres-app
+  postInitSQL:
+    # RLS is worthless if the owner bypasses it; hms_app below is
+    # NOBYPASSRLS and is what a request runs as.
+    - "ALTER ROLE helivanta SET row_security = on"
 
 # The two login roles CNPG creates and reconciles passwords for via
 # `Cluster.spec.managed.roles` (added in Task 4). Every privilege they hold
@@ -70,3 +89,30 @@ applicationRoles:
   - name: openfga
     secret: helivanta-postgres-openfga-credentials
     openbaoName: postgres-openfga
+
+postgresql:
+  max_connections: "200"
+  shared_buffers: "256MB"
+  effective_cache_size: "1536MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "128MB"
+  wal_level: "logical"
+  max_replication_slots: "10"
+
+replication:
+  minSyncReplicas: 0
+  maxSyncReplicas: 0
+
+affinity:
+  podAntiAffinityType: preferred
+
+monitoring:
+  enablePodMonitor: true
+
+# Continuous backup to GCS. Off until the bucket and workload identity exist —
+# turning it on is a values change, not a chart change.
+backup:
+  enabled: false
+  destinationPath: "gs://tesseract-prod-backups-in/helivanta-postgres"
+  retentionPolicy: "3d"
+  serviceAccount: "app-secrets-infra-prod@tesseracthub-480811.iam.gserviceaccount.com"
