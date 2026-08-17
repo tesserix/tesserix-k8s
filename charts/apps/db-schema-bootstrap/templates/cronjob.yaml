@@ -71,7 +71,7 @@ spec:
                 {{- range .Values.targets }}
                 {{- $schemaDir := printf "schemas/%s/%s" $.Values.app .name }}
                 {{- if $.Files.Glob (printf "%s/*.sql" $schemaDir) }}
-                - name: schemas-{{ .name }}
+                - name: schemas-{{ include "db-schema-bootstrap.targetSlug" .name }}
                   mountPath: /schemas/{{ .name }}
                   readOnly: true
                 {{- end }}
@@ -103,9 +103,9 @@ spec:
             {{- range .Values.targets }}
             {{- $schemaDir := printf "schemas/%s/%s" $.Values.app .name }}
             {{- if $.Files.Glob (printf "%s/*.sql" $schemaDir) }}
-            - name: schemas-{{ .name }}
+            - name: schemas-{{ include "db-schema-bootstrap.targetSlug" .name }}
               configMap:
-                name: {{ include "db-schema-bootstrap.fullname" $ }}-schemas-{{ .name }}
+                name: {{ include "db-schema-bootstrap.fullname" $ }}-schemas-{{ include "db-schema-bootstrap.targetSlug" .name }}
             {{- end }}
             {{- end }}
 {{- end }}
