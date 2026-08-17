@@ -148,7 +148,8 @@ Fleet media is the only app-plane path that needs a Google access token. GKE
 Standard exposes the node-local metadata server on 169.254.169.252:988 while
 the Compute-compatible endpoint is 169.254.169.254:80. Limit both destinations
 to the API pods; NetworkPolicies are additive, so this does not broaden their
-remaining egress or grant metadata access to any frontend.
+remaining egress or grant metadata access to any frontend. The same policy
+admits HTTPS only to Google's Private Access VIP range used by GCS.
 */ -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -176,3 +177,9 @@ spec:
       ports:
         - protocol: TCP
           port: 988
+    - to:
+        - ipBlock:
+            cidr: 199.36.153.8/30
+      ports:
+        - protocol: TCP
+          port: 443
