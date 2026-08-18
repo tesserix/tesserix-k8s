@@ -104,11 +104,11 @@ spec:
               # agentic-registry accepts them as-is at POST /v0/apply
               # (decodeMultiDoc parses YAML, Normalized() canonicalizes the
               # apiVersion, store.Apply upserts on kind/namespace/name/tag).
-              # Anonymous auth on this cluster (mesh-gated) — no Authorization
-              # header (a bearer would make the registry try to verify a real
-              # signed token and 401).
               SESSION = requests.Session()
-              SESSION.headers.update({"Content-Type": "application/yaml"})
+              SESSION.headers.update({
+                  "Authorization": f"Bearer {os.environ['AREGISTRY_DEPLOY_KEY']}",
+                  "Content-Type": "application/yaml",
+              })
 
               # Apply in dependency order: projects + skills + prompts + servers
               # before agents (which reference them). Any other *.yaml under the
@@ -150,11 +150,11 @@ spec:
                 AREGISTRY_ENDPOINT={{ .Values.aregistry.endpoint }} \
                 python /tmp/upsert.py
           env:
-            - name: AREGISTRY_JWT
+            - name: AREGISTRY_DEPLOY_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.aregistry.jwtSecret.name }}
-                  key: {{ .Values.aregistry.jwtSecret.key }}
+                  name: {{ .Values.aregistry.deployKeySecret.name }}
+                  key: {{ .Values.aregistry.deployKeySecret.key }}
           volumeMounts:
             - name: workspace
               mountPath: /workspace

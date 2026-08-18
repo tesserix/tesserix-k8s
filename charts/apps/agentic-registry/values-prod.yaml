@@ -42,6 +42,9 @@ config:
   # kagent reads) authenticates with the shared HMAC jwt-secret, so flipping
   # authMode to "jwks" would break catalog seeding and internal reads.
   authMode: anonymous
+  # Public reads remain available; every write now requires a tenant-scoped
+  # deploy key even after the mesh admits the request.
+  authAnonymousRole: read
   authAudience: agentic-registry
   # Single-org (tesserix) registry behind anonymous auth — the BFF + mesh are
   # the security boundary. Namespace is just an optional grouping/uniqueness
@@ -75,6 +78,9 @@ externalSecret:
   databaseUrlKey: prod-agentic-registry-database-url
   signingKeyEnabled: true
   signingKeyKey: prod-agentic-registry-signing-key
+  deployKeysEnabled: true
+  koraDeployKeyDigestKey: prod-agentic-registry-kora-deploy-key-sha256
+  devaiDeployKeyDigestKey: prod-agentic-registry-devai-deploy-key-sha256
 
 postgresql:
   enabled: false              # prod reuses the devai CNPG cluster (registry schema in devai_db)

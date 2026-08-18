@@ -125,6 +125,16 @@ spec:
         - operation:
             methods: ["POST", "PUT", "PATCH", "DELETE"]
             paths: ["/v0/*", "/v0.1/*", "/mcp", "/mcp/*"]
+    # The public ingress may reach only POST /v0/apply. Application auth still
+    # requires a tenant-scoped deploy key; anonymous identity is read-only.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
+      to:
+        - operation:
+            methods: ["POST"]
+            paths: ["/v0/apply"]
     # Kubelet probes
     - to:
         - operation:
@@ -244,6 +254,7 @@ spec:
               - "cluster.local/ns/devai/sa/devai-registry-bootstrap"
               - "cluster.local/ns/devai/sa/devai-api"
               - "cluster.local/ns/devai/sa/devai-auth-bff"
+              - "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
       to:
         - operation:
             methods: ["POST", "PUT", "PATCH", "DELETE"]

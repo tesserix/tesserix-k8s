@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "token-optimizer.fullname" . }}
+  labels:
+    {{- include "token-optimizer.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "token-optimizer.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "token-optimizer.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/part-of: kora-ai
+    spec:
+      serviceAccountName: {{ include "token-optimizer.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "token-optimizer.selectorLabels" . | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "token-optimizer.selectorLabels" . | nindent 14 }}
+      containers:
+        - name: token-optimizer
+          image: "{{ .Values.image.repository }}@{{ required "image.digest is required" .Values.image.digest }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.service.grpcPort }}
+              protocol: TCP
+            - name: http
+              containerPort: {{ .Values.service.httpPort }}
+              protocol: TCP
+          env:
+            - name: TOKEN_OPTIMIZER_ENABLED_CAPABILITIES
+              value: {{ .Values.optimizer.enabledCapabilities | quote }}
+            - name: TOKEN_OPTIMIZER_SOFT_TOKEN_LIMIT
+              value: {{ .Values.optimizer.softTokenLimit | quote }}
+            - name: TOKEN_OPTIMIZER_HARD_TOKEN_LIMIT
+              value: {{ .Values.optimizer.hardTokenLimit | quote }}
+            - name: TOKEN_OPTIMIZER_TARGET_RATE
+              value: {{ .Values.optimizer.targetRate | quote }}
+            - name: TOKEN_OPTIMIZER_MINIMUM_SAVINGS
+              value: {{ .Values.optimizer.minimumSavings | quote }}
+            - name: TOKEN_OPTIMIZER_KEEP_RECENT_MESSAGES
+              value: {{ .Values.optimizer.keepRecentMessages | quote }}
+            - name: TOKEN_OPTIMIZER_MAX_REQUEST_BYTES
+              value: {{ .Values.optimizer.maxRequestBytes | quote }}
+            - name: TOKEN_OPTIMIZER_COMPRESSION_TIMEOUT_SECONDS
+              value: {{ .Values.optimizer.compressionTimeoutSeconds | quote }}
+            - name: TOKEN_OPTIMIZER_MAX_CONCURRENT_COMPRESSIONS
+              value: {{ .Values.optimizer.maxConcurrentCompressions | quote }}
+            - name: TOKEN_OPTIMIZER_OTLP_ENDPOINT
+              value: {{ .Values.optimizer.otlpEndpoint | quote }}
+            - name: TOKEN_OPTIMIZER_OTLP_INSECURE
+              value: {{ .Values.optimizer.otlpInsecure | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          startupProbe:
+            httpGet:
+              path: /healthz/ready
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz/ready
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: http
+            periodSeconds: 30
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+

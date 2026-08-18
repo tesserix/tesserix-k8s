@@ -60,6 +60,20 @@ spec:
   hosts:
     - aregistry.tesserix.app
   http:
+    # CI publishers bypass the browser BFF only for the idempotent apply
+    # endpoint. The registry validates a tenant-scoped deploy key and runs with
+    # anonymous=read, so the route alone grants no write capability.
+    - match:
+        - uri:
+            exact: /v0/apply
+          method:
+            exact: POST
+      route:
+        - destination:
+            host: agentregistry.agentregistry-system.svc.cluster.local
+            port:
+              number: 12121
+      timeout: 30s
     - match:
         - uri:
             prefix: /

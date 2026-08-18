@@ -102,6 +102,12 @@ resource "google_service_account_iam_member" "agentgateway_wi" {
   member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.agentgateway_ksa}]"
 }
 
+resource "google_service_account_iam_member" "kora_agentgateway_wi" {
+  service_account_id = google_service_account.agentgateway_llm.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.kora_agentgateway_ksa}]"
+}
+
 # Transition-period direct grant for the DevAI workload SA (created outside
 # Terraform by 07-app-secrets-era manual work; referenced by email only).
 resource "google_project_iam_member" "devai_workload_aiplatform" {

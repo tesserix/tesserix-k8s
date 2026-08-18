@@ -4,41 +4,55 @@ metadata:
   name: agentgateway
   annotations:
     kargo.akuity.io/authorized-stage: "kargo-infra:platform-tools-prod"
+    # Lands after aregistry (-5) so the gateway's first catalog poll
+    # finds a healthy backend.
+    argocd.argoproj.io/sync-wave: "-4"
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
   labels:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: agent-data-plane
-  annotations:
-    # Lands after aregistry (-5) so the gateway's first catalog poll
-    # finds a healthy backend.
-    argocd.argoproj.io/sync-wave: "-4"
 spec:
   project: default
   source:
-    # Upstream OCI Helm chart. Track the latest STABLE tag (not
-    # *-alpha / *-beta) — alphas land breaking xDS schema changes and
-    # we want a predictable rolling-deploy story.
-    # NOTE: v1.2.1 was never published to this OCI registry — the only stable
-    # tag is v1.0.1 (everything else is 0.0.0-alpha.*). Pinning to the
-    # non-existent v1.2.1 left this Application stuck in Unknown/ComparisonError
-    # with the data plane frozen. Verify before bumping:
-    #   helm show chart oci://ghcr.io/agentgateway/agentgateway/charts/agentgateway --version <tag>
-    # https://github.com/agentgateway/agentgateway/releases
-    repoURL: ghcr.io/agentgateway/agentgateway/charts
+    # Stable v1.4.1 chart published by the Agent Gateway project. The registry
+    # moved from GHCR to cr.agentgateway.dev after v1.0.1.
+    repoURL: cr.agentgateway.dev/charts
     chart: agentgateway
-    targetRevision: 1.0.1
+    targetRevision: 1.4.1
     helm:
       releaseName: agentgateway
       values: |
-        namespaceOverride: agentgateway-system
-        replicaCount: 1
-        # DevAI dispatches LLM calls through its own adapter family
-        # (src/devai/adapters/llm/), so provider backend routing is
-        # off here. Leave the gateway running for MCP / A2A; enable
-        # provider backends via upstream values later if we want them
-        # on the path.
+        resources:
+          requests:
+            # The upstream chart renders null as an invalid resource quantity;
+            # zero clears its 100m default without imposing a CPU request.
+            cpu: 0
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+        podSecurityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        controller:
+          replicaCount: 2
+          # v1.4 defaults to TLS-only xDS. Existing v1.0.1 data planes may
+          # still reconnect over plaintext during the rolling transition.
+          xds:
+            mode: either
+          podDisruptionBudget:
+            minAvailable: 1
+        monitoring:
+          enabled: true
   destination:
     server: https://kubernetes.default.svc
     namespace: agentgateway-system
