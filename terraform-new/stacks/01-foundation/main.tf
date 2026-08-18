@@ -16,6 +16,12 @@ resource "google_project_service" "apis" {
   }
 }
 
+resource "google_project_iam_member" "github_actions_compute_network_viewer" {
+  project = var.project_id
+  role    = "roles/compute.networkViewer"
+  member  = "serviceAccount:github-actions@${var.project_id}.iam.gserviceaccount.com"
+}
+
 # Create the state bucket if it doesn't exist
 # Note: This is bootstrapped manually or via a separate bootstrap script
 resource "google_storage_bucket" "terraform_state" {
