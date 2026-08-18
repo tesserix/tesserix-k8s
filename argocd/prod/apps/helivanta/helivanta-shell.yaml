@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: helivanta-shell
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: helivanta
+    app.kubernetes.io/component: shell
+    environment: prod
+  annotations:
+    # After helivanta-api (-1). Not because the shell needs the API to boot —
+    # it does not; its API calls happen in the browser — but because the first
+    # page a signed-out clinician loads immediately calls /api/v1/auth/login,
+    # and a namespace brought up cold in the other order serves a shell whose
+    # every request fails for as long as the API takes to arrive.
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: helivanta
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/helivanta-shell
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: helivanta
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
