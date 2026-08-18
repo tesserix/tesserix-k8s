@@ -178,7 +178,32 @@ zitadel:
   # is the path helivanta-api uses, not a public HTTPS hop through the
   # gateway" — the same in-cluster host zitadel-bootstrap's own values.yaml
   # uses for its API calls.
-  issuerUrl: http://zitadel.zitadel.svc.cluster.local:8080
+  # The PUBLIC issuer, not the in-cluster Service DNS. An earlier revision
+  # used http://zitadel.zitadel.svc.cluster.local:8080 on the reasoning that
+  # Zitadel's NetworkPolicy admits every mesh namespace on 8080, "not a
+  # public HTTPS hop through the gateway". That verified reachability and
+  # nothing else, and the first pod to try it failed:
+  #
+  #   authn: zitadel discovery at http://zitadel.zitadel.svc.cluster.local:8080:
+  #   404 Not Found: unable to set instance using origin
+  #   &{zitadel.zitadel.svc.cluster.local:8080  https}
+  #   (ExternalDomain is auth.tesserix.app): Instance not found.
+  #
+  # Zitadel is multi-tenant and resolves the INSTANCE from the Host header,
+  # so a request arriving as zitadel.zitadel.svc.cluster.local matches no
+  # instance however routable it is. Reaching the port was never the
+  # question.
+  #
+  # Even if discovery were bypassed, this has to be the public value: it is
+  # the `iss` Zitadel stamps on the tokens this API verifies, so anything
+  # else fails issuer validation on every request.
+  #
+  # helivanta-network-policies' externalEgress already allows 443 out for
+  # exactly this class of dependency ("token exchange, JWKS..."). The
+  # in-cluster 8080 allow is now unused by this chart; left in place rather
+  # than removed here, since narrowing another chart's policy is its own
+  # change with its own blast radius.
+  issuerUrl: https://auth.tesserix.app
   # BLOCKED, same prerequisite that blocks Dockerfile.shell (Task 4's
   # report): no Helivanta org/project/app has been provisioned in production
   # Zitadel yet, so there is no real client id to put here. Left empty
