@@ -1,0 +1,69 @@
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: devai-ai-traffic
+  labels:
+    {{- include "devai-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: devai-ai
+  traffic:
+    rateLimit:
+      local:
+        - requests: {{ .Values.limits.requestsPerMinute }}
+          unit: Minutes
+          burst: {{ .Values.limits.requestBurst }}
+        - tokens: {{ printf "%.0f" .Values.limits.tokensPerHour }}
+          unit: Hours
+    timeouts:
+      request: {{ .Values.limits.requestTimeout }}
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: devai-ai-routes
+  labels:
+    {{- include "devai-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: devai-ai
+  backend:
+    ai:
+      routes:
+        /v1/chat/completions: Completions
+        /v1/embeddings: Embeddings
+        /v1/messages: Messages
+        /v1/messages/count_tokens: AnthropicTokenCount
+        /v1/models: Models
+        /v1/responses: Responses
+        "*": Detect
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: devai-ai-observability
+  labels:
+    {{- include "devai-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gateway.name }}
+  frontend:
+    accessLog:
+      attributes:
+        add:
+          - name: devai.tenant_id
+            expression: request.headers["x-devai-tenant-id"]
+          - name: devai.user_id
+            expression: request.headers["x-devai-user-id"]
+          - name: devai.run_id
+            expression: request.headers["x-devai-run-id"]
+          - name: devai.agent
+            expression: request.headers["x-devai-agent"]
+          - name: devai.provider
+            expression: request.headers["x-devai-provider"]

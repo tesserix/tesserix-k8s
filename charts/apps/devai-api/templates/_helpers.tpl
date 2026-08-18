@@ -166,6 +166,18 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.settings.secretsProvider | default "noop" | quote }}
 - name: DEVAI_SECRETS_GCP_PROJECT
   value: {{ .Values.settings.secretsGcpProject | default .Values.gcp.projectId | default "" | quote }}
+- name: DEVAI_SECRETS_OPENBAO_ADDR
+  value: {{ .Values.settings.openbaoAddress | default "" | quote }}
+- name: DEVAI_SECRETS_OPENBAO_MOUNT
+  value: {{ .Values.settings.openbaoMount | default "kv" | quote }}
+- name: DEVAI_SECRETS_OPENBAO_ROLE
+  value: {{ .Values.settings.openbaoRole | default "read-devai-api" | quote }}
+- name: DEVAI_SECRETS_OPENBAO_AUTH_MOUNT
+  value: {{ .Values.settings.openbaoAuthMount | default "kubernetes" | quote }}
+- name: DEVAI_SECRETS_BROKER_URL
+  value: {{ .Values.settings.brokerUrl | default "" | quote }}
+- name: DEVAI_SECRETS_BROKER_TOKEN_FILE
+  value: {{ .Values.settings.brokerTokenFile | default "/var/run/secrets/devai/secret-service/token" | quote }}
 {{- end }}
 # ─── K8s Job runtime (SDD blueprint runner) ──────────
 {{- if .Values.k8sRuntime }}
@@ -278,6 +290,10 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.llm.anthropicBaseUrl | default "" | quote }}
 - name: DEVAI_OPENAI_BASE_URL
   value: {{ .Values.llm.openaiBaseUrl | default "" | quote }}
+- name: DEVAI_LLM_GATEWAY_BASE_URL
+  value: {{ .Values.llm.gatewayBaseUrl | default "" | quote }}
+- name: DEVAI_LLM_GATEWAY_REQUIRED
+  value: {{ .Values.llm.gatewayRequired | default false | quote }}
 {{- if .Values.llm.vertexEnabled }}
 # Vertex AI — keyless (Workload Identity ADC) + VPC-private (PSC-pinned
 # aiplatform DNS zone, terraform-new/stacks/12-vertex). Selectable as
