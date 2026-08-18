@@ -1,0 +1,86 @@
+{{/*
+Network policy for the platform API in the tesserix namespace.
+
+SCOPED WITH A podSelector, for the same reason charts/apps/console's policies
+are: NetworkPolicies in a namespace are additive, so a namespace-wide policy
+here would silently widen what the console and the web app may do as well.
+
+NOTE, as in the console chart: charts/apps/company's policies ARE
+namespace-wide, so these pods already inherit that broader allow-set today.
+This is the platform API's own floor, not its ceiling.
+
+`default-deny-ingress` is intentionally NOT declared — it is owned
+platform-wide by the istio-config chart, and declaring it in an app chart
+creates a SharedResourceWarning that pins the ArgoCD app OutOfSync (which is
+what stalled Kargo promotions for `company`).
+
+NO INGRESS FROM istio-ingress. This is the difference from the console: the
+platform API has no public path and no VirtualService. Its only caller is the
+console, in this namespace, over the ClusterIP. When ADR-003 D8's service
+principal lands (tesserix-home#278) and products need to reach it, that grant
+is an explicit change here rather than something already open.
+*/}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-platform-api-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform-api.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "platform-api.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # In-namespace callers only — the console's server components today.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+    # kubelet probes arrive from the node, which no namespaceSelector matches.
+    # Without this the readiness probe fails once a deny policy is in force and
+    # the pod never becomes ready — a failure that looks like a broken service.
+    - from:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-platform-api-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "platform-api.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "platform-api.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    # tesserix-postgres, in this namespace.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.database.tesserix.port }}
+    # DNS. Without it the Postgres hostname does not resolve and the service
+    # fails at startup, which is a confusing way to discover a missing rule.
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

@@ -1,0 +1,175 @@
+# Default values for platform-api (Tesserix Platform API).
+#
+# The Go service decided in ADR-003 D2 — one deployable, internally modularised
+# by domain. Scaffolded by tesserix-home#277: today it serves /health and /ready
+# and composes no domain modules. This chart exists so the delivery path is
+# proven while the only thing at risk is a health check.
+#
+# Smaller than charts/apps/console, which is itself smaller than company. No
+# HPA, no VPA, no KEDA, no CronJob — absent rather than present-and-disabled, so
+# anything in this file reads as something the service actually needs.
+replicaCount: 1
+
+image:
+  # Pulled via the in-region Artifact Registry mirror of ghcr.io — see
+  # docs/artifact-registry-mirror.md. Built and pushed by tesserix-home CI
+  # (.github/workflows/platform-api.yml, IMAGE_NAME: tesserix-platform-api) as a
+  # single-arch linux/amd64 image tagged `main-<sha7>` and `latest`.
+  #
+  # The effective tag in prod is the `image.tag` Helm parameter on the ArgoCD
+  # Application, which Kargo (kargo-tesserix-home:prod) rewrites. The value
+  # here is only the chart default.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/tesserix-platform-api
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+# The image is distroless:nonroot, whose baked-in user is 65532. These values
+# must agree with it: a runAsUser that does not match means the binary is owned
+# by someone the process is not, and the container fails to exec.
+podSecurityContext:
+  fsGroup: 65532
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  capabilities:
+    drop:
+      - ALL
+  # Unlike the console's Next.js image, this one is a single static binary that
+  # writes nothing to disk, so the root filesystem can genuinely be read-only.
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# NO INGRESS, NO VIRTUALSERVICE — deliberately.
+#
+# The platform API is cluster-internal only. Its first consumer is the console's
+# server-side route handlers over the in-namespace ClusterIP, exactly as they
+# call the web app's admin API today (WEB_INTERNAL_ORIGIN).
+#
+# Products calling it directly — the service principal in ADR-003 D8 — will need
+# a public path, but not before that authentication exists (tesserix-home#278).
+# Exposing an unauthenticated API to the internet in the meantime is the kind of
+# thing that is easy to add and awkward to discover you have added.
+ingress:
+  enabled: false
+
+# Memory only — no CPU requests/limits, per project convention. A Go service at
+# rest holds far less than the Node surfaces: this is sized for the scaffold and
+# should be revisited when the first module lands.
+resources:
+  requests:
+    memory: 64Mi
+  limits:
+    memory: 128Mi
+
+# Both probes are real HTTP endpoints here, which is the difference from the
+# console — it has no health route, so its readiness falls back to tcpSocket.
+#
+# LIVENESS hits /health, which deliberately does NOT touch the database. That is
+# the whole reason the service has two endpoints: a liveness probe that fails
+# during a database outage asks Kubernetes to restart a working process, which
+# cannot bring the database back and adds restart churn to an incident.
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+  initialDelaySeconds: 5
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+# READINESS hits /ready, which DOES check the database. A pod that cannot reach
+# Postgres should leave the rotation without being killed.
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /ready
+  initialDelaySeconds: 3
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+env:
+  APP_ENV: production
+  PORT: "8080"
+
+# No ExternalSecret. The service's only credential is the tesserix-postgres
+# Secret below, which CNPG generates in-cluster — nothing here comes from GCP
+# Secret Manager yet. That changes with tesserix-home#278 (Zitadel), and the
+# ExternalSecret should be added then rather than pre-created empty.
+externalSecrets:
+  enabled: false
+
+gcp:
+  projectId: ""
+  namespace: "tesserix"
+  # The service makes no GCP API calls. Blanked deliberately so the KSA is not
+  # annotated to impersonate global-config-prod.yaml's shared
+  # app-secrets-marketplace-prod account — see the long note in
+  # charts/apps/console/values-prod.yaml for how that bit the company chart.
+  workloadIdentity:
+    gcpServiceAccount: ""
+  secretManager:
+    secretPrefix: "devtest"
+
+configMap:
+  enabled: false
+  data: {}
+
+# No minAvailable: with a single replica, minAvailable: 1 pins
+# disruptionsAllowed at 0 and blocks every node drain. The template falls back
+# to maxUnavailable: 1.
+pdb:
+  enabled: true
+
+# tesserix-postgres — the SAME database, with the SAME Secret, that the console
+# and the web app already read. apps/console/lib/db/tesserix.ts says so in its
+# own header.
+#
+# Nothing new is provisioned. ADR-003 D7 makes this service the eventual sole
+# writer for the domains it absorbs; today it only proves it can connect.
+database:
+  tesserix:
+    enabled: true
+    host: tesserix-postgres-rw.tesserix.svc.cluster.local
+    port: 5432
+    name: tesserix_admin
+    secretName: tesserix-postgres-tesserix-admin
+    # `require` = encrypt, do not verify. It matches what the console already
+    # negotiates: `ssl: { rejectUnauthorized: false }`, because CNPG self-signs
+    # and rotates internally, so pinning a CA would break on every rotation.
+    #
+    # Do NOT "improve" this to verify-full without also solving CA distribution.
+    sslMode: require
+    # ADR-003 D2a treats the pool constraint as measured, not theoretical: ~30
+    # services share a small Postgres and the console's own pool is max 2,
+    # written into its code as the reason a check shares its caller's
+    # transaction rather than opening a second connection.
+    #
+    # Starting at 2 makes the migration net-neutral: this rises as modules land
+    # while the console's falls as its data layer retires under D7.
+    maxConns: 2
