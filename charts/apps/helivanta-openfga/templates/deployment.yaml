@@ -32,8 +32,15 @@ spec:
       serviceAccountName: {{ .Values.name }}
       securityContext:
         runAsNonRoot: true
-        runAsUser: 4000
-        fsGroup: 4000
+        # > 10000 to satisfy Trivy KSV0020/KSV0021 ("Runs with UID/GID <=
+        # 10000"). Verified live on tesseract-prod-in-gke before this change
+        # was committed: rendered Deployment applied directly, rollout
+        # completed, pod Ready, GET /stores responded, and the migrate Job
+        # re-run to Complete — the openfga image has no filesystem paths
+        # owned by 4000 that this breaks, including under
+        # readOnlyRootFilesystem: true.
+        runAsUser: 10001
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -91,5 +98,8 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
+            # Explicit container-level runAsGroup: KSV0021 checks this field
+            # specifically, the pod-level fsGroup above does not satisfy it.
+            runAsGroup: 10001
             capabilities:
               drop: ["ALL"]

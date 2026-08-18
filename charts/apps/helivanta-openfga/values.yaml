@@ -45,9 +45,24 @@ database:
 latency:
   p99Seconds: 0.1
 
-# Memory only — the platform sets no CPU requests or limits.
+# NOTE: this diverges from the platform's usual "memory only, no CPU
+# requests or limits" convention (see charts/apps/dwellm8-postgres/values.yaml
+# for that convention's canonical statement). CPU requests/limits are set
+# here specifically to clear Trivy KSV0015 ("CPU requests not specified")
+# and KSV0011 ("CPU not limited") on this chart, at the product owner's
+# explicit request to drive Trivy alerts to zero — not because the platform
+# has adopted CPU-limiting as a general policy elsewhere.
+#
+# The tradeoff: a CPU limit enables CFS throttling. OpenFGA is a
+# latency-sensitive authorization service on the request hot path (every
+# guarded call blocks on it), and CFS throttling under load adds tail
+# latency that a request-only (unlimited) container would not see. The
+# limit below is set generously — well above steady-state usage — to keep
+# that risk low while still satisfying the checks.
 resources:
   requests:
     memory: 128Mi
+    cpu: 100m
   limits:
     memory: 512Mi
+    cpu: 1000m

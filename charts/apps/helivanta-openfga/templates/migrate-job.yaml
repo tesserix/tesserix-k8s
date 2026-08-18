@@ -26,8 +26,12 @@ spec:
       serviceAccountName: {{ .Values.name }}
       securityContext:
         runAsNonRoot: true
-        runAsUser: 4000
-        fsGroup: 4000
+        # > 10000 to satisfy Trivy KSV0020/KSV0021. Verified live on
+        # tesseract-prod-in-gke before this change was committed: the Job
+        # was re-run with this UID/GID (including the initContainer below,
+        # which uses a different image) and reached Complete.
+        runAsUser: 10001
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       # The sync-wave ordering (db-schema-bootstrap at -3, this Job at -2) is
@@ -74,14 +78,23 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 999
+            # postgres:16-alpine's own "postgres" user is 999 — irrelevant
+            # here since this container only runs the `psql` client (no
+            # server process, no on-disk data it needs to own), so it can
+            # run as any UID. Bumped to > 10000 to satisfy Trivy
+            # KSV0020/KSV0021, verified live before this was committed (see
+            # the pod-level securityContext comment above).
+            runAsUser: 10001
+            runAsGroup: 10001
             capabilities:
               drop: ["ALL"]
           resources:
             requests:
               memory: 32Mi
+              cpu: 25m
             limits:
               memory: 64Mi
+              cpu: 100m
       containers:
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -90,6 +103,9 @@ spec:
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
+            # Explicit container-level runAsGroup: KSV0021 checks this field
+            # specifically, the pod-level fsGroup above does not satisfy it.
+            runAsGroup: 10001
             capabilities:
               drop: ["ALL"]
           env:
@@ -107,8 +123,16 @@ spec:
                   key: password
             - name: OPENFGA_DATASTORE_URI
               value: "postgres://$(DB_USER):$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode=require"
+          # CPU requests/limits diverge from the platform's memory-only
+          # convention (see values.yaml resources block for the full
+          # rationale). Added here to clear Trivy KSV0011/KSV0015; this is a
+          # short-lived batch Job, not the latency-sensitive Deployment, so
+          # CFS throttling risk is low, but the limit is still set
+          # generously to avoid it slowing down migrations.
           resources:
             requests:
               memory: 64Mi
+              cpu: 50m
             limits:
               memory: 128Mi
+              cpu: 250m
