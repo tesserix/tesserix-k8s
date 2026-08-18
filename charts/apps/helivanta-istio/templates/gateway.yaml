@@ -1,0 +1,43 @@
+{{- /*
+NO GATEWAY IS RENDERED, AND THAT IS THE DECISION THIS FILE EXISTS TO RECORD.
+
+The plan (Task 6) names a `gateway.yaml` in this chart, which reads as an
+instruction to create a Gateway for helivanta.app. Checked against the live
+cluster on 2026-08-18 rather than inferred, that turns out to be the wrong
+move, so the file states the finding instead of the object:
+
+  1. istio-ingress/tesseract-gateway's port-80 server is `hosts: ["*"]`.
+     helivanta.app is already admitted by it — there is nothing for a new
+     Gateway to enable. Its OTHER servers are per-host HTTPS with per-host
+     certificates (admin/store/api/apex/... .mark8ly.com, analytics.tesserix
+     .app, *.mark8ly.com), and none of them is what carries an app like this
+     one.
+
+  2. Nothing needs TLS here. Cloudflare terminates TLS at the edge and the
+     tunnel originates plaintext to istio-ingressgateway:80. That is why
+     dwellm8-api serves api.dwellm8.com — a domain with no certificate
+     anywhere in this cluster — through tesseract-gateway alone, and it is
+     the closest analogue to helivanta.app: an apex domain of its own,
+     fronted by the shared tunnel, with no dedicated ingress.
+
+  3. A new Gateway would be a FLEET-WIDE change, not a Helivanta one. To
+     receive the tunnel's traffic it would have to select
+     `istio: ingressgateway` — the same workload tesseract-gateway binds — and
+     declare a server on port 80. Istio merges servers across Gateways bound
+     to the same workload and port; an overlapping `helivanta.app` server
+     against an existing `*` server on port 80 is precisely the "conflicting
+     gateways" case, resolved by Istio's own precedence rather than by
+     anything written here. The blast radius of getting that wrong is every
+     host on the shared ingress, which is most of the platform.
+
+The one shape that WOULD justify a Gateway in this chart is homechef's:
+a dedicated ingress deployment (`istio: homechef-ingressgateway`, its own
+cloudflared) with its own Gateway selecting it. Helivanta has no such
+deployment, and adding one is a separate decision with its own cost.
+
+`gateway.enabled` is therefore absent from values.yaml on purpose — there is
+no toggle to flip, because a Gateway here would need a selector, a port and a
+server that this chart cannot choose responsibly on its own. If Helivanta
+later gets a dedicated ingress workload, this file is where its Gateway
+belongs and the reasoning above is what has to be revisited first.
+*/ -}}

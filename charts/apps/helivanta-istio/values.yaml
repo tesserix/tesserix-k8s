@@ -1,0 +1,94 @@
+# Edge routing for helivanta.app (#824 slice 1b, Task 6).
+#
+# One VirtualService, and — as shipped — no Gateway. See templates/gateway.yaml
+# for why, at length; the short version is that the shared gateway already
+# admits this host and adding a second Gateway on the same port of the same
+# shared ingress workload is a fleet-wide change, not a Helivanta one.
+#
+# Closest live reference: charts/apps/secret-service/templates/
+# virtualservice.yaml — the same "/api to the API, everything else to the web
+# UI, same origin so the session cookie is first-party and CORS never arises"
+# shape. This chart differs from it in one important way: it REWRITES the
+# prefix, because Helivanta's backend serves /v1/* and the browser calls
+# /api/v1/*. secret-service's backend serves /api/* itself and needs no
+# rewrite.
+
+# The public host. Cloudflare terminates TLS at the edge and the tunnel
+# originates plaintext to istio-ingressgateway:80, which is why no
+# certificate, and no HTTPS server on any Gateway, appears anywhere in this
+# chart. Task 7 adds this hostname to the tunnel and to DNS; until it does,
+# this VirtualService is correct and simply unreachable.
+host: helivanta.app
+
+istio:
+  # istio-ingress/tesseract-gateway ALREADY admits this host: its port-80
+  # server is `hosts: ["*"]`, verified live on 2026-08-18. The precedent is
+  # dwellm8-api, whose VirtualService serves api.dwellm8.com — a domain with
+  # no certificate and no dedicated server on that Gateway — through exactly
+  # this binding.
+  #
+  # NOT also istio-ingress/custom-domain-gateway, which secret-service and
+  # planning-poker attach to as a second binding. That Gateway sits on a
+  # DIFFERENT ingress workload (selector istio: custom-ingressgateway, its own
+  # LoadBalancer at 34.14.139.74) and terminates TLS itself with
+  # custom-domain-default-tls — a certificate that does not cover
+  # helivanta.app. Binding it would publish a second path to this app whose
+  # only distinguishing behaviour is a certificate error.
+  gateways:
+    - istio-ingress/tesseract-gateway
+
+# ---------------------------------------------------------------------------
+# THE ROUTE TABLE. Order is significant: Istio takes the first `http` entry
+# whose match succeeds, so the rules below are written narrowest-first and
+# must stay in that order.
+# ---------------------------------------------------------------------------
+
+shell:
+  service: helivanta-shell.helivanta.svc.cluster.local
+  port: 4301
+  timeout: 15s
+  # Paths that LOOK like API paths and are not. /api/auth/callback and
+  # /api/auth/silent-renew are Next PAGES inside the shell
+  # (apps/shell/app/api/auth/{callback,silent-renew}/page.tsx), and the first
+  # is the redirect_uri registered with Zitadel for the helivanta-web app.
+  #
+  # They reach the shell today only because `api.matchPrefix` below is
+  # /api/v1/ and they fall through to the default route. This rule states the
+  # requirement instead of relying on that: a future widening of
+  # api.matchPrefix to /api/ would otherwise send Zitadel's callback to the Go
+  # backend, which would 404 it, and sign-in — the entire point of slice 1b —
+  # would break with nothing in the routing config to explain why.
+  #
+  # Next serves these as full page routes plus their .rsc data routes under
+  # the same prefix, so a prefix match is what is wanted here, not exact.
+  reservedPrefixes:
+    - /api/auth
+
+api:
+  service: helivanta-api.helivanta.svc.cluster.local
+  port: 8080
+  timeout: 30s
+  # THE PREFIX STRIP. The browser calls /api/v1/foo; the backend mounts
+  # everything under /v1 (backend/internal/httpserver + platform.NewRouter on
+  # e.Group("/v1")) and knows nothing about /api. Istio's rewrite.uri replaces
+  # the MATCHED prefix, so /api/v1/foo arrives at the pod as /v1/foo.
+  #
+  # These two values are a pair and only make sense together: matchPrefix is
+  # what the browser sends, rewritePrefix is what the backend must receive.
+  # Changing one without the other silently 404s every API call.
+  matchPrefix: /api/v1/
+  rewritePrefix: /v1/
+  #
+  # Why /api/v1/ and not the broader /api/ the plan's Task 6 wording suggests:
+  # a /api/ -> / rewrite publishes EVERY root-mounted handler on the backend
+  # to the public internet, not just the application's. Checked against the
+  # running pod rather than assumed — /healthz and /readyz both answer 200 at
+  # the root of port 8080, so /api/healthz and /api/readyz would become public
+  # liveness endpoints naming this deployment's dependencies. (/metrics does
+  # NOT answer there, contrary to what helivanta-api's own prometheus.io/path
+  # pod annotation claims; that is a separate defect, noted, not fixed here.)
+  #
+  # /v1 is the whole application surface the shell calls: apps/shell and
+  # packages/api reference only /api/v1/* and /api/auth/*. The narrower prefix
+  # costs nothing and closes the rest. Stated as a deviation from the plan's
+  # wording rather than done quietly.

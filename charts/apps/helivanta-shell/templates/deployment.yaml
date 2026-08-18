@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "helivanta-shell.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "helivanta-shell.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "helivanta-shell.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "helivanta-shell.selectorLabels" . | nindent 8 }}
+        {{- include "helivanta-shell.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "helivanta-shell.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      containers:
+        - name: shell
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            # The ONLY variable this image reads at runtime. Everything else
+            # the shell needs — the Zitadel issuer and client id, the zone
+            # URLs, the rewrite table — was inlined by Next at BUILD time and
+            # cannot be changed from here. See values.yaml's header; adding
+            # NEXT_PUBLIC_* or MEDICORE_URL/PHARMACY_URL/LAB_URL below would
+            # be configuration that reads as effective and is not.
+            #
+            # apps/shell/app/logout/route.ts resolves this per request, and
+            # its built-in fallback is http://localhost:8080 — i.e. the pod
+            # itself. Unset, sign-out fails silently against a port nothing
+            # in this container serves.
+            - name: API_URL
+              value: {{ .Values.apiUrl | quote }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            # readOnlyRootFilesystem is on, so every path the process writes
+            # needs a mount. TWO are needed here, not one:
+            - name: tmp
+              mountPath: /tmp
+            # Next's server writes its incremental/fetch cache under the
+            # build output directory, which lives inside the read-only image
+            # layer. Without this the first cached response fails with EROFS
+            # at request time — a runtime 500 on a pod that started clean and
+            # passed both probes, which is the worst shape this failure can
+            # take. The path is WORKDIR-relative to /app and mirrors the
+            # standalone bundle's workspace shape (Dockerfile.shell copies to
+            # ./apps/shell/.next/...), so it is not interchangeable with a
+            # plain /app/.next/cache.
+            - name: next-cache
+              mountPath: /app/apps/shell/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
