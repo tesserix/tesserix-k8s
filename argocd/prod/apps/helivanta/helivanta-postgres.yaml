@@ -1,0 +1,43 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: helivanta-postgres
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: helivanta
+    app.kubernetes.io/component: database
+    environment: prod
+  annotations:
+    # The database exists before anything that needs it.
+    argocd.argoproj.io/sync-wave: "-5"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: helivanta
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/helivanta-postgres
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: helivanta
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      # RespectIgnoreDifferences is deliberately absent. Combined with SSA and
+      # the argocd-cm jq ignores into spec.managed.roles[], it normalised the
+      # roles list out of every apply: sync reported Succeeded while the
+      # Cluster's generation never moved, and the openfga role could not land.
+      # The ignore rules still quiet the diff; the apply sends the full render.
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

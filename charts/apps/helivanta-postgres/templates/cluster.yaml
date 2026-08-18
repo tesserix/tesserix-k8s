@@ -1,0 +1,211 @@
+{{- if not .Values.hibernate }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: helivanta
+    app.kubernetes.io/component: database
+  annotations:
+    # The helivanta-postgres Application carries
+    # resources-finalizer.argocd.argoproj.io, so deleting or renaming that
+    # Application cascade-deletes every resource it manages — including this
+    # Cluster, whose ownerReferences in turn take the data and WAL PVCs with
+    # it. Delete=false turns that cascade into an orphan (Cluster released,
+    # recoverable by hand) instead of an unrecoverable deletion. A hospital
+    # database must not be deleted as a side effect of an Application rename.
+    argocd.argoproj.io/sync-options: Delete=false
+spec:
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.imageName }}
+
+  # =========================================================================
+  # Bootstrap — first-time cluster initialization
+  # =========================================================================
+  bootstrap:
+    initdb:
+      database: {{ .Values.bootstrap.database }}
+      owner: {{ .Values.bootstrap.owner }}
+      encoding: UTF8
+      localeCType: C
+      localeCollate: C
+      secret:
+        name: {{ .Values.bootstrap.secret }}
+      {{- if .Values.bootstrap.postInitSQL }}
+      postInitSQL:
+        {{- range .Values.bootstrap.postInitSQL }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- end }}
+
+  # =========================================================================
+  # Storage — separate data and WAL volumes for I/O isolation
+  # =========================================================================
+  storage:
+    size: {{ .Values.storageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  walStorage:
+    size: {{ .Values.walStorageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  # =========================================================================
+  # Resources
+  # =========================================================================
+  resources:
+{{ toYaml .Values.resources | indent 4 }}
+
+  # =========================================================================
+  # PostgreSQL configuration
+  # =========================================================================
+  postgresql:
+    parameters:
+      {{- range $key, $value := .Values.postgresql }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+
+  # =========================================================================
+  # Replication — synchronous for zero-data-loss
+  # =========================================================================
+  minSyncReplicas: {{ .Values.replication.minSyncReplicas }}
+  maxSyncReplicas: {{ .Values.replication.maxSyncReplicas }}
+
+  # =========================================================================
+  # HA Replication Slots — survive failover without WAL accumulation
+  # =========================================================================
+  replicationSlots:
+    highAvailability:
+      enabled: true
+      slotPrefix: "_cnpg_"
+    updateInterval: 30
+
+  # =========================================================================
+  # TLS — auto-managed by CNPG (self-signed CA, auto-rotation)
+  # No manual cert management needed. CNPG generates:
+  #   - Server TLS cert (auto-rotated before expiry)
+  #   - Client CA for mTLS (optional, for future app cert auth)
+  #   - Replication TLS between primary and replicas
+  # =========================================================================
+  enableSuperuserAccess: false
+
+  # =========================================================================
+  # Continuous backup to GCS via Barman Cloud
+  # =========================================================================
+  {{- if .Values.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.backup.destinationPath | quote }}
+      googleCredentials:
+        gkeEnvironment: true
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        immediateCheckpoint: true
+        jobs: 2
+    retentionPolicy: {{ .Values.backup.retentionPolicy | quote }}
+    target: prefer-standby
+  {{- end }}
+
+  # =========================================================================
+  # Workload Identity — GCS backup permissions
+  # =========================================================================
+  {{- if .Values.backup.enabled }}
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: {{ .Values.backup.serviceAccount }}
+  {{- end }}
+
+  # =========================================================================
+  # Managed roles — the owner's password is reconciled from the secret.
+  #
+  # bootstrap.secret only applies at initdb. Without this block, rotating the
+  # secret (or creating it after the cluster already exists) leaves the role
+  # with a password nobody holds, and every client fails to authenticate with
+  # no obvious cause.
+  #
+  # createrole on the owner is what lets the schema bootstrap create any
+  # further roles Helivanta's migrations need, in prod the same way CI does.
+  # Without it every CREATE ROLE in the schema fails as "permission denied to
+  # create role" — a failure mode observed on dwellm8, where the migration
+  # job's error grep never matched psql's file-mode prefix and still reported
+  # SUCCESS. hms_app and openfga are login roles managed here, so their
+  # passwords are reconciled from OpenBao (via the ExternalSecrets in this
+  # chart) like the owner's; their privileges stay in the schema/migration
+  # files, where a reviewer can see them.
+  # =========================================================================
+  # A false boolean cannot be written here. CNPG's role type marks superuser,
+  # createdb, createrole and bypassrls `omitempty`, so the API server stores a
+  # `false` by dropping the field — and ArgoCD then compares a manifest that has
+  # it against a live object that never will. The app is permanently OutOfSync,
+  # the sync reports Succeeded every time, and nothing is wrong except the
+  # signal. Measured on dwellm8-postgres and dwellm8-temporal-postgres, the
+  # only two OutOfSync CNPG clusters on the fleet and the only two charts
+  # emitting `superuser: false` at the time.
+  #
+  # Omitting them changes nothing about the role: an absent boolean unmarshals
+  # to false, which is what these must be. The CRD sets no default for any of
+  # the four, so this is not relying on one either.
+  managed:
+    roles:
+      - name: {{ .Values.bootstrap.owner }}
+        ensure: present
+        login: true
+        # NOSUPERUSER, by omission. Only createdb and createrole are true here,
+        # and they are true because the schema bootstrap connects as this role.
+        createdb: true
+        createrole: true
+        passwordSecret:
+          name: {{ .Values.bootstrap.secret }}
+      {{- range .Values.applicationRoles }}
+      # A login role and nothing more: no superuser, no createdb, no createrole,
+      # no bypassrls. Every one of those is false by omission, and the last is
+      # the one that matters — hms_app runs every request, and RLS policies
+      # only isolate tenants if the role enforcing them cannot bypass RLS.
+      - name: {{ .name }}
+        ensure: present
+        login: true
+        inherit: true
+        passwordSecret:
+          name: {{ .secret }}
+      {{- end }}
+
+  # =========================================================================
+  # Monitoring — built-in Prometheus exporter
+  # =========================================================================
+  monitoring:
+    enablePodMonitor: {{ .Values.monitoring.enablePodMonitor }}
+    disableDefaultQueries: false
+
+  # =========================================================================
+  # Inherited metadata — propagated to all pods and PVCs
+  # =========================================================================
+  inheritedMetadata:
+    annotations:
+      cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+      traffic.sidecar.istio.io/excludeInboundPorts: "5432,8000"
+      traffic.istio.io/excludeInboundPorts: "5432,8000"
+
+  # =========================================================================
+  # Affinity — spread replicas across different nodes
+  # =========================================================================
+  affinity:
+    podAntiAffinityType: {{ .Values.affinity.podAntiAffinityType | default "preferred" }}
+
+  # =========================================================================
+  # Failover
+  # =========================================================================
+  primaryUpdateStrategy: unsupervised
+  failoverDelay: 0
+  switchoverDelay: 3600
+
+  # =========================================================================
+  # PDB — maintain quorum during node drains
+  # =========================================================================
+  enablePDB: true
+{{- end }}

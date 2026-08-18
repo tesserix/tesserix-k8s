@@ -1,0 +1,61 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: helivanta-db-schema-bootstrap
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: helivanta
+    app.kubernetes.io/component: database
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: helivanta
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    path: charts/apps/db-schema-bootstrap
+    targetRevision: HEAD
+    helm:
+      releaseName: helivanta-db-schema-bootstrap
+      values: |
+        app: helivanta
+
+        # This target's file is grants only (see schemas/helivanta/helivanta/
+        # helivanta.sql) — idempotent GRANT/ALTER DEFAULT PRIVILEGES
+        # statements, not a frozen pg_dump, and nothing here fights an ORM at
+        # runtime. The `helivanta` database already exists (CNPG Cluster
+        # bootstrap), so without this flag the DDL would never run at all.
+        applySchemaToExistingDatabases: true
+
+        targets:
+          - name: helivanta
+            host: helivanta-postgres-rw.helivanta.svc.cluster.local
+            port: 5432
+            user: helivanta
+            secretName: helivanta-postgres-app-credentials
+            secretKey: password
+          # OpenFGA's datastore. The bootstrap creates the database and hands
+          # the openfga role its grants; the schema inside is OpenFGA's own,
+          # applied by the openfga migrate Job in Task 6.
+          - name: openfga
+            host: helivanta-postgres-rw.helivanta.svc.cluster.local
+            port: 5432
+            user: helivanta
+            secretName: helivanta-postgres-app-credentials
+            secretKey: password
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: helivanta
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
