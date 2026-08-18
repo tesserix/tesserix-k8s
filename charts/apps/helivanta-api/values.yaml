@@ -12,13 +12,18 @@
 #   - Migrations run as a Helm pre-install/pre-upgrade hook Job
 #     (templates/migrate-job.yaml), not folded into the API's own boot path.
 #
-# This chart's ArgoCD Application is authored (argocd/prod/apps/helivanta/
-# helivanta-api.yaml) but DELIBERATELY NOT wired into
-# argocd/prod/apps/helivanta/kustomization.yaml yet — see that file's own
-# comment. The two boot secrets below (SESSION_SIGNING_KEY,
-# ZITADEL_LOGIN_CLIENT_TOKEN) do not exist in OpenBao yet; wiring this in
-# before they do would sync a pod that refuses to boot by design
-# (helivanta#875) straight into production.
+# ACTIVATED 2026-08-18. This chart's ArgoCD Application
+# (argocd/prod/apps/helivanta/helivanta-api.yaml) is now wired into
+# argocd/prod/apps/helivanta/kustomization.yaml. The precondition it waited
+# on is met: both boot secrets exist in OpenBao at
+# kv/data/helivanta/helivanta-api/{session-signing-key,zitadel-login-client-token}
+# with field names session_signing_key and zitadel_login_client_token, and
+# both were read back under the pod's own grant (app-helivanta_helivanta-api)
+# rather than assumed present.
+#
+# Still known-incomplete, and neither blocks boot: zitadel.clientId is empty
+# until a Helivanta project exists in production Zitadel (token verification
+# fails until then), and trustedProxyCIDRs is an inference Task 9 confirms.
 
 replicaCount: 2
 
@@ -27,15 +32,19 @@ image:
   # this fleet uses (never ghcr.io directly — see devai-auth-bff's values.yaml
   # for why). Image name matches .github/workflows/images.yml's IMAGE_NAME.
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/helivanta/helivanta-api
-  # Task 4's images.yml has never actually run (this repo's Actions fail
-  # instantly on a billing/spending-limit error — see that task's report),
-  # so no real `main-<sha7>` tag has been published yet. This is the floor,
-  # matching dwellm8-api's own convention ("a real tag, because 'latest' is
-  # not a version") — kargo/a future promotion updates it once CI publishes
-  # a real image. Deploying against this exact tag will ImagePullBackOff
-  # until then, which is expected and orthogonal to this task's scope
-  # (chart authoring + dry-run validation only).
-  tag: "main-149ca6a"
+  # A REAL, published tag. The CI billing block that stopped images.yml ever
+  # running was lifted on 2026-08-18; the workflow now builds, scans, signs
+  # and publishes on every push to main. main-7789671 is the tip of main at
+  # the time this chart was activated, verified present in the registry
+  # alongside main-1ab4986 and main-2dfd63e.
+  #
+  # The previous value, main-149ca6a, was a placeholder chosen when NO tag
+  # had ever been published. It does not exist and would ImagePullBackOff.
+  # Kargo promotion (Task 8) takes over updating this.
+  #
+  # This image carries BOTH binaries — /app/api and /app/migrate (#876) —
+  # which is why migrate below has no image of its own.
+  tag: "main-7789671"
   pullPolicy: IfNotPresent
 
 imagePullSecrets:
@@ -235,22 +244,17 @@ affinity: {}
 # APP_DATABASE_URL here would fail every migrate run, not just misconfigure
 # it.
 migrate:
-  # DISCOVERED GAP, not yet resolvable from this chart alone: Dockerfile.api
-  # (helivanta repo, Task 2) deliberately builds ONLY cmd/api —
-  # "backend/cmd/migrate ... deliberately NOT part of this image — migrate
-  # runs separately as a Helm hook (a later task)". No Dockerfile.migrate
-  # and no CI job for it exist yet (Task 4's images.yml builds
-  # helivanta-api only), so the repository/tag below names an image that
-  # has never been built or pushed. templates/migrate-job.yaml is authored
-  # and dry-run-validates correctly, but will ImagePullBackOff if actually
-  # synced, independent of the two OpenBao secrets blocker. A follow-up
-  # task must add a Dockerfile.migrate (or extend Dockerfile.api to a
-  # multi-binary build) in the helivanta repo plus a matching CI job — out
-  # of scope here, since this task must not touch that repo.
-  image:
-    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/helivanta/helivanta-migrate
-    tag: "main-149ca6a"
-    pullPolicy: IfNotPresent
+  # NO image key, deliberately. The gap this block used to describe — that
+  # Dockerfile.api built only cmd/api, so a separate helivanta-migrate image
+  # would be needed — was closed by helivanta#876, which ships /app/migrate
+  # inside the API image "so migrations cannot skew from the app".
+  #
+  # templates/migrate-job.yaml therefore runs .Values.image with
+  # command: ["/app/migrate"]. One digest carries both binaries, so the
+  # schema a release expects and the code expecting it are promoted together
+  # and cannot end up at different versions. Reintroducing a separate
+  # repository/tag here would reopen that gap silently — the Job would still
+  # run, just possibly against a different build than the pods.
   activeDeadlineSeconds: 900
   backoffLimit: 3
   resources:

@@ -66,17 +66,28 @@ spec:
         - name: migrate
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          # A SEPARATE image from the API's — see values.yaml's migrate.image
-          # comment: Dockerfile.api deliberately builds only cmd/api, and no
-          # Dockerfile.migrate / CI job exists yet to produce this one. This
-          # Job dry-run-validates but will ImagePullBackOff if actually
-          # synced, until that follow-up task lands.
-          image: "{{ .Values.migrate.image.repository }}:{{ .Values.migrate.image.tag }}"
-          imagePullPolicy: {{ .Values.migrate.image.pullPolicy }}
-          # backend/cmd/migrate/main.go's own header comment explains why it
-          # is a distinct binary from cmd/api (so seeding/CI/first clone
-          # don't need to boot NATS/OpenFGA just to create tables).
-          command: ["/migrate"]
+          # THE SAME image as the API, deliberately. helivanta#876 moved
+          # cmd/migrate into Dockerfile.api precisely so migrations cannot
+          # skew from the app they migrate for: one digest carries both
+          # binaries, so the schema a release expects and the code that
+          # expects it are promoted together and cannot be at different
+          # versions. Naming a separate repository/tag here would reopen
+          # exactly that gap.
+          #
+          # (An earlier revision of this chart pointed at a `helivanta-migrate`
+          # image. That image was never built and never will be —
+          # .github/workflows/images.yml builds helivanta-api only.)
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # /app/migrate, not /migrate — Dockerfile.api's final stage does
+          # `COPY --from=builder /out/migrate /app/migrate` under WORKDIR /app.
+          # The image is distroless with no shell, so a wrong path fails as an
+          # exec error the Job surfaces, not a resolvable PATH lookup.
+          #
+          # It stays a distinct BINARY from cmd/api (see cmd/migrate/main.go's
+          # header: seeding, CI and a first clone must not boot NATS/OpenFGA
+          # just to create tables) while sharing the image.
+          command: ["/app/migrate"]
           env:
             - name: HELIVANTA_ENV
               value: {{ .Values.env.HELIVANTA_ENV | quote }}
