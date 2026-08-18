@@ -16,6 +16,12 @@ def application(path: str) -> dict:
 
 
 class SubstrateGKEOIDCTests(unittest.TestCase):
+    def test_kyverno_admission_invalidates_discovery_for_new_crds(self):
+        kyverno = application("argocd/prod/infrastructure/kyverno.yaml")
+        values = yaml.safe_load(kyverno["spec"]["source"]["helm"]["values"])
+
+        self.assertTrue(values["admissionController"]["crdWatcher"])
+
     def test_kagent_metadata_preserves_promotion_and_sync_annotations(self):
         kagent = application("argocd/prod/infrastructure/kagent.yaml")
 
