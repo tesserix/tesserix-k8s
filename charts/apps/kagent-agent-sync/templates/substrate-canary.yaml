@@ -1,0 +1,20 @@
+{{- if .Values.substrateCanary.enabled }}
+apiVersion: kagent.dev/v1alpha2
+kind: SandboxAgent
+metadata:
+  name: {{ .Values.substrateCanary.name }}
+  namespace: {{ .Values.registry.targetNamespace }}
+  labels:
+    {{- include "kagent-agent-sync.labels" . | nindent 4 }}
+    devai.io/purpose: substrate-canary
+spec:
+  type: Declarative
+  platform: substrate
+  substrate:
+    workerPoolRef:
+      name: {{ .Values.substrateCanary.workerPool }}
+  declarative:
+    runtime: go
+    modelConfig: {{ .Values.substrateCanary.modelConfig }}
+    systemMessage: Verify the isolated Substrate runtime is ready. Do not call tools or models.
+{{- end }}
