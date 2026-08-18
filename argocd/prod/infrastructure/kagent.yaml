@@ -2,8 +2,6 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: kagent
-  annotations:
-    kargo.akuity.io/authorized-stage: "kargo-infra:platform-tools-prod"
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -11,6 +9,7 @@ metadata:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: agent-controller
   annotations:
+    kargo.akuity.io/authorized-stage: "kargo-infra:platform-tools-prod"
     # Lands after aregistry (-5) and agentgateway (-4) — kagent reconciles
     # Agent CRs via the catalog and dispatches via the gateway.
     argocd.argoproj.io/sync-wave: "-3"
@@ -63,7 +62,7 @@ spec:
           create: true
           name: kagent-default
           replicas: 1
-          ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.6
+          ateomImage: ghcr.io/kagent-dev/substrate/ateom-gvisor:v0.0.8@sha256:8462988e405a2e2323716751b1c12da808e084e7911a1c34cde710a23e0a5090
         # The bundled Postgres provisions a PVC for the vector store.
         # standard-rwo is the default storage class on this GKE cluster.
         postgresql:
