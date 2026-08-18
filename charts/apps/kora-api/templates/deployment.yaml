@@ -183,6 +183,18 @@ spec:
             # match the container/Service port unambiguously.
             - name: PORT
               value: {{ .Values.service.targetPort | default 8080 | quote }}
+            - name: AI_GATEWAY_ENABLED
+              value: {{ .Values.aiGateway.enabled | quote }}
+            - name: AI_GATEWAY_BASE_URL
+              value: {{ .Values.aiGateway.baseURL | quote }}
+            - name: AI_GATEWAY_MODEL
+              value: {{ .Values.aiGateway.model | quote }}
+            - name: AI_GATEWAY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.aiGateway.clientSecret.name }}
+                  key: {{ .Values.aiGateway.clientSecret.key }}
+                  optional: true
             # Plain (non-secret) env from values.yaml :: env
             {{- range $key, $value := .Values.env }}
             - name: {{ $key }}

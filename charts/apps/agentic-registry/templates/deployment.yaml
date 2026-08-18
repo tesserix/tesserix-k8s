@@ -74,6 +74,20 @@ spec:
                   name: {{ include "agentic-registry.fullname" . }}-secrets
                   key: SIGNING_PRIVATE_KEY
             {{- end }}
+            {{- if and .Values.externalSecret.enabled .Values.externalSecret.deployKeysEnabled }}
+            - name: KORA_DEPLOY_KEY_SHA256
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentic-registry.fullname" . }}-secrets
+                  key: KORA_DEPLOY_KEY_SHA256
+            - name: DEVAI_DEPLOY_KEY_SHA256
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "agentic-registry.fullname" . }}-secrets
+                  key: DEVAI_DEPLOY_KEY_SHA256
+            - name: AUTH_DEPLOY_KEYS
+              value: "kora=$(KORA_DEPLOY_KEY_SHA256),devai=$(DEVAI_DEPLOY_KEY_SHA256)"
+            {{- end }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 3

@@ -1,0 +1,34 @@
+{{- if .Values.authorizationPolicy.enabled }}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ .Values.gateway.name }}
+  labels:
+    {{- include "kora-ai-gateway.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: {{ .Values.gateway.name }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - {{ .Values.authorizationPolicy.koraPrincipal | quote }}
+      to:
+        - operation:
+            ports:
+              - {{ .Values.authorizationPolicy.gatewayPort | quote }}
+    - from:
+        - source:
+            principals:
+              - {{ .Values.authorizationPolicy.agentPrincipal | quote }}
+      to:
+        - operation:
+            ports:
+              - {{ .Values.authorizationPolicy.gatewayPort | quote }}
+    - to:
+        - operation:
+            notPorts:
+              - {{ .Values.authorizationPolicy.gatewayPort | quote }}
+{{- end }}

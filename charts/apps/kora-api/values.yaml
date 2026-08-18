@@ -51,6 +51,25 @@ service:
   # homechef-api-direct — the working ambient-mesh reference in this repo.
   nameOverride: kora-api-direct
 
+aiGateway:
+  # Rollout stays disabled until the gateway, optimizer, and evaluation gates pass.
+  enabled: false
+  baseURL: http://kora-ai.agentgateway-system.svc.cluster.local:8080/v1
+  model: kora-auto
+  clientSecret:
+    create: true
+    name: kora-ai-gateway-client-credentials
+    key: kora-api
+    refreshInterval: 1h
+    store:
+      name: gcp-secret-store
+      kind: ClusterSecretStore
+    remoteRef: prod-kora-ai-gateway-api-key
+  networkPolicy:
+    enabled: true
+    namespace: agentgateway-system
+    gatewayName: kora-ai
+    port: 8080
 
 resources:
   limits:

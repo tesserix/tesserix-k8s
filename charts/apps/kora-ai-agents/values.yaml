@@ -1,0 +1,41 @@
+replicaCount: 2
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/ai-agents
+  tag: main
+  digest: sha256:502072b07df52bf48bd1f339629bfd1dc19af120ea8d0603036253d3cfe94bed
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8080
+
+serviceAccount:
+  name: kora-ai-agents
+
+config:
+  tenantId: kora
+  gatewayBaseUrl: http://kora-ai.agentgateway-system.svc.cluster.local:8080/v1
+  gatewayModel: kora-auto
+  maxPromptChars: "12000"
+  requestTimeoutSeconds: "20"
+
+externalSecret:
+  storeName: gcp-secret-store
+  refreshInterval: 1h
+  serviceApiKey: prod-kora-ai-agents-api-key
+  gatewayApiKey: prod-kora-ai-gateway-api-key
+
+resources:
+  requests:
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+networkPolicy:
+  gatewayNamespace: agentgateway-system
+  gatewayName: kora-ai
+  clientPodSelector:
+    app.kubernetes.io/name: kora-api
+
+authorizationPolicy:
+  clientPrincipal: cluster.local/ns/kora/sa/kora-kora-api

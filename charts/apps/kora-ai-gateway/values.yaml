@@ -1,0 +1,59 @@
+gateway:
+  name: kora-ai
+  className: agentgateway
+  port: 8080
+  replicas: 2
+  serviceAccount:
+    gcpServiceAccount: agentgateway-llm@tesseracthub-480811.iam.gserviceaccount.com
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+providers:
+  vertex:
+    projectId: tesseracthub-480811
+    region: asia-south1
+    model: gemini-2.5-pro
+  anthropic:
+    model: claude-sonnet-4-5
+  xai:
+    # Enable only after a real credential exists in Secret Manager.
+    enabled: false
+    host: api.x.ai
+    model: grok-4
+
+externalSecrets:
+  storeName: gcp-secret-store
+  refreshInterval: 1h
+  clientSecretName: kora-ai-gateway-client-credentials
+  providerSecretName: kora-ai-gateway-provider-credentials
+  remoteRefs:
+    clientApiKey: prod-kora-ai-gateway-api-key
+    anthropicApiKey: prod-devai-anthropic-api-key
+    xaiApiKey: prod-kora-xai-api-key
+
+optimizer:
+  serviceName: token-optimizer
+  grpcPort: 18080
+
+limits:
+  requestsPerMinute: 120
+  requestBurst: 20
+  tokensPerHour: 1000000
+
+networkPolicy:
+  enabled: true
+  koraNamespace: kora
+  koraPodSelector:
+    app.kubernetes.io/name: kora-api
+  agentPodSelector:
+    app.kubernetes.io/name: kora-ai-agents
+  monitoringNamespace: monitoring
+
+authorizationPolicy:
+  enabled: true
+  koraPrincipal: cluster.local/ns/kora/sa/kora-kora-api
+  agentPrincipal: cluster.local/ns/kora/sa/kora-ai-agents
+  gatewayPort: "8080"

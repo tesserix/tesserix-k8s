@@ -1,0 +1,24 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: kora-ai-agents
+  labels:
+    {{- include "kora-ai-agents.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "kora-ai-agents.selectorLabels" . | nindent 6 }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - {{ .Values.authorizationPolicy.clientPrincipal | quote }}
+      to:
+        - operation:
+            ports: ["8080"]
+    - to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/healthz", "/readyz"]
+
