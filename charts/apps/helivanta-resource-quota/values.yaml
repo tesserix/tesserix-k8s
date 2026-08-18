@@ -59,8 +59,24 @@ limitRange:
   max:
     cpu: 4000m
     memory: 4Gi
+  # NO default CPU limit, deliberately.
+  #
+  # A LimitRange `default` is injected into every container that does not set
+  # its own limit — which includes helivanta-postgres and helivanta-nats, both
+  # of which set memory but no CPU. A 500m default therefore hard-capped a
+  # production Postgres at half a core on its NEXT restart (node drain,
+  # failover, minor upgrade), and CFS throttling on a database shows up as
+  # latency spikes and failovers, not as an obvious misconfiguration.
+  #
+  # This is why the platform convention is memory-only (see
+  # charts/apps/dwellm8-postgres/values.yaml: "the platform sets no CPU
+  # requests or limits"). A memory default is safe — exceeding it OOM-kills a
+  # container that was already misbehaving. A CPU default is not: it silently
+  # degrades a well-behaved one.
+  #
+  # defaultRequest keeps CPU requests, which only affect scheduling and are
+  # unambiguously good.
   default:
-    cpu: 500m
     memory: 512Mi
   defaultRequest:
     cpu: 100m
