@@ -69,6 +69,22 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             "charts/apps/devai-ai-gateway", "devai-ai-gateway", "agentgateway-system"
         )
         route = resource(documents, "HTTPRoute", "devai-ai")
+        self.assertEqual(
+            {
+                "group": "gateway.networking.k8s.io",
+                "kind": "Gateway",
+                "name": "ai-gateway",
+                "sectionName": "http",
+            },
+            route["spec"]["parentRefs"][0],
+        )
+        self.assertTrue(
+            all(
+                ref.get("weight") == 1
+                for rule in route["spec"]["rules"]
+                for ref in rule["backendRefs"]
+            )
+        )
         backends = {
             ref["name"]
             for rule in route["spec"]["rules"]
