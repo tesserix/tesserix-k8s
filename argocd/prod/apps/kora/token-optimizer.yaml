@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kora-token-optimizer
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: kora
+    app.kubernetes.io/component: ai-optimization
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/token-optimizer
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentgateway-system
+  # Automated sync is intentionally absent. Before the first manual sync,
+  # replace the placeholder image digest and pass the quality/latency gate.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

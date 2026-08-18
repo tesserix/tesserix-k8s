@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kora-ai-agents
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: kora
+    app.kubernetes.io/component: ai-agents
+    environment: prod
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: main
+    path: charts/apps/kora-ai-agents
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kora
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

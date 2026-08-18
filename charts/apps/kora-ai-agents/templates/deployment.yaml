@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kora-ai-agents
+  labels:
+    {{- include "kora-ai-agents.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "kora-ai-agents.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kora-ai-agents.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "kora-ai-agents.selectorLabels" . | nindent 14 }}
+      containers:
+        - name: agents
+          image: {{ include "kora-ai-agents.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          env:
+            - name: KORA_AGENTS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kora-ai-agents
+                  key: API_KEY
+            - name: KORA_AGENTS_GATEWAY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: kora-ai-agents
+                  key: GATEWAY_API_KEY
+            - name: KORA_AGENTS_TENANT_ID
+              value: {{ .Values.config.tenantId | quote }}
+            - name: KORA_AGENTS_GATEWAY_BASE_URL
+              value: {{ .Values.config.gatewayBaseUrl | quote }}
+            - name: KORA_AGENTS_GATEWAY_MODEL
+              value: {{ .Values.config.gatewayModel | quote }}
+            - name: KORA_AGENTS_MAX_PROMPT_CHARS
+              value: {{ .Values.config.maxPromptChars | quote }}
+            - name: KORA_AGENTS_REQUEST_TIMEOUT_SECONDS
+              value: {{ .Values.config.requestTimeoutSeconds | quote }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 2
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 12
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+

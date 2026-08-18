@@ -1,0 +1,102 @@
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: kora-ai-traffic
+  labels:
+    {{- include "kora-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kora-ai
+  traffic:
+    apiKeyAuthentication:
+      mode: Strict
+      secretRef:
+        name: {{ .Values.externalSecrets.clientSecretName }}
+    rateLimit:
+      local:
+        - requests: {{ .Values.limits.requestsPerMinute }}
+          unit: Minutes
+          burst: {{ .Values.limits.requestBurst }}
+        - tokens: {{ printf "%.0f" .Values.limits.tokensPerHour }}
+          unit: Hours
+    timeouts:
+      request: 120s
+    extProc:
+      backendRef:
+        name: {{ .Values.optimizer.serviceName }}
+        port: {{ .Values.optimizer.grpcPort }}
+      failureMode: FailOpen
+      requestAttributes:
+        token_optimizer.capability: request.headers["x-kora-ai-capability"]
+        token_optimizer.context_kind: request.headers["x-kora-ai-context-kind"]
+        token_optimizer.rtk_applied: request.headers["x-kora-rtk-applied"] == "true"
+      processingOptions:
+        requestBodyMode: Buffered
+        responseBodyMode: None
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: kora-ai-guardrails
+  labels:
+    {{- include "kora-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kora-ai
+  backend:
+    ai:
+      promptGuard:
+        request:
+          - regex:
+              action: Reject
+              builtins:
+                - CreditCard
+                - Ssn
+            response:
+              message: Request rejected by the Kora AI data policy
+              statusCode: 400
+          - regex:
+              action: Mask
+              builtins:
+                - Email
+                - PhoneNumber
+          - regex:
+              action: Reject
+              matches:
+                - '(?i)\b(ignore|disregard)\s+(all\s+)?(previous|prior|system|developer)\s+instructions?\b'
+                - '(?i)\b(reveal|print|show)\s+(the\s+)?(system|developer)\s+prompt\b'
+            response:
+              message: Request rejected by the Kora AI instruction policy
+              statusCode: 400
+        response:
+          - regex:
+              action: Mask
+              builtins:
+                - CreditCard
+                - Email
+                - PhoneNumber
+                - Ssn
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: kora-ai-observability
+  labels:
+    {{- include "kora-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gateway.name }}
+  frontend:
+    metrics:
+      attributes:
+        add:
+          - name: kora.ai.capability
+            expression: request.headers["x-kora-ai-capability"]
+          - name: kora.ai.context_kind
+            expression: request.headers["x-kora-ai-context-kind"]

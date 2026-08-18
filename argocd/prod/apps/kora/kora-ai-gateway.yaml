@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kora-ai-gateway
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: kora
+    app.kubernetes.io/component: ai-gateway
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/kora-ai-gateway
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: agentgateway-system
+  # Automated sync is intentionally absent. The provider secrets, Workload
+  # Identity binding, optimizer image digest, and evaluation gates must exist
+  # before the first manual sync.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
