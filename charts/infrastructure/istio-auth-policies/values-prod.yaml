@@ -197,6 +197,8 @@ frontendApps:
     hosts:
       - "astronomy.tesserix.app"
 
+  # DEAD ENTRY — kept only as a signpost. See the warning below.
+  #
   # Helivanta (#824 slice 1b). The ingress gateway default-denies, so a host
   # absent from this list gets Envoy's "RBAC: access denied" — a 403 with no
   # hint that an allowlist is the reason. helivanta.app reached exactly that
@@ -211,6 +213,23 @@ frontendApps:
     label: helivanta
     hosts:
       - "helivanta.app"
+
+# ============================================================================
+# WARNING: the frontendApps list ABOVE HAS NO EFFECT in production.
+#
+# argocd/prod/infrastructure/istio-auth-policies.yaml passes BOTH an inline
+# `helm.values` block and `valueFiles: [values.yaml, values-prod.yaml]`, and
+# inline values take precedence — so the inline frontendApps replaces this one
+# wholesale rather than merging with it.
+#
+# Adding a host here therefore renders correctly with `helm template` locally,
+# merges, syncs green, and changes nothing in the cluster. That happened: #423
+# added helivanta.app here, ArgoCD reported Synced at that exact commit, and
+# the live policy never gained the host. #424 fixed it by editing the inline
+# list instead.
+#
+# Add hosts to the INLINE list in the Application, not here.
+# ============================================================================
 
 # =============================================================================
 # Production Google Identity Platform Configuration
