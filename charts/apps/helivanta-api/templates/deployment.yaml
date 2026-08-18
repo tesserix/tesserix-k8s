@@ -97,6 +97,14 @@ spec:
               value: {{ .Values.zitadel.hostedLoginUrl | quote }}
             - name: HELIVANTA_WEB_ORIGIN
               value: {{ .Values.webOrigin | quote }}
+            # The `iss` claim Helivanta stamps on its OWN session tokens and
+            # the Verifier checks back (config.go's SessionIssuer). Unset, it
+            # defaults to https://helivanta.local — which the first production
+            # pod duly logged. Harmless as a label, wrong as a fact, and
+            # changing it later invalidates every session already minted
+            # under the old value.
+            - name: SESSION_ISSUER
+              value: {{ .Values.sessionIssuer | quote }}
             # THE PLACEHOLDER GUESS — see values.yaml's trustedProxyCIDRs
             # comment. Not yet confirmed against a live request; Task 9
             # confirms or corrects it.
