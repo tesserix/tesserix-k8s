@@ -31,6 +31,14 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ . | quote }}
 {{- end }}
+{{- range .Values.allowedPodSources }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .namespace | quote }}
+          podSelector:
+            matchLabels:
+{{ toYaml .podLabels | indent 14 }}
+{{- end }}
       ports:
         - protocol: TCP
           port: 8200

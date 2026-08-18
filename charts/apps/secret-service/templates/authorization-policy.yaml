@@ -16,7 +16,13 @@ spec:
       {{- include "secret-service.selectorLabels" (dict "component" "secret-service-api" "release" .Release.Name) | nindent 6 }}
   action: ALLOW
   rules:
-    - {}
+    - from:
+        - source:
+            namespaces: ["istio-ingress", "istio-system", "secret-service", "monitoring"]
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/devai/sa/devai-api
 ---
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
