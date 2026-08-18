@@ -33,5 +33,19 @@ data:
       - hostname: "*.mark8ly.com"
         service: http://istio-ingressgateway.istio-system.svc.cluster.local:80
 
+      # Helivanta (tesserix/helivanta#824). Purely additive: no existing rule
+      # is edited, and these sit above the catch-all so unmatched hosts still
+      # get the 404 they got before.
+      #
+      # Until #824 slice 1b adds a VirtualService, helivanta.app reaches the
+      # Istio gateway and returns 404 rather than the tunnel's own 404. That
+      # is intended — landing the shared-configmap change on its own means a
+      # regression to tesserix.app or mark8ly.com can only have come from
+      # here, instead of being tangled up with an application rollout.
+      - hostname: helivanta.app
+        service: http://istio-ingressgateway.istio-system.svc.cluster.local:80
+      - hostname: "*.helivanta.app"
+        service: http://istio-ingressgateway.istio-system.svc.cluster.local:80
+
       # Catch-all
       - service: http_status:404
