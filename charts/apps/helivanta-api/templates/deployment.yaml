@@ -1,0 +1,172 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "helivanta-api.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "helivanta-api.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "helivanta-api.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      annotations:
+        {{- toYaml .Values.podAnnotations | nindent 8 }}
+      labels:
+        {{- include "helivanta-api.selectorLabels" . | nindent 8 }}
+        {{- include "helivanta-api.labels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "helivanta-api.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # Long enough for the process to stop being ready, let one readiness
+      # probe interval pass, finish requests already accepted, and exceed
+      # cmd/api's own hard 10s Shutdown timeout — see values.yaml's comment
+      # on this key for the exact arithmetic.
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      containers:
+        - name: api
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            # hms_app — the application role. See values.yaml's
+            # database.appSecretName comment on why getting this and
+            # ADMIN_DATABASE_URL below backwards is a silent privilege error,
+            # not just a wrong string.
+            - name: APP_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.appSecretName }}
+                  key: username
+            - name: APP_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.appSecretName }}
+                  key: password
+            - name: APP_DATABASE_URL
+              value: "postgres://$(APP_DB_USER):$(APP_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
+            # helivanta — the owner role. tenantdb.Open's admin pool; the API
+            # itself uses this for RLS-lint-adjacent boot operations, never
+            # for serving a request (see values.yaml).
+            - name: ADMIN_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.adminSecretName }}
+                  key: username
+            - name: ADMIN_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.adminSecretName }}
+                  key: password
+            - name: ADMIN_DATABASE_URL
+              value: "postgres://$(ADMIN_DB_USER):$(ADMIN_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
+            - name: NATS_URL
+              value: {{ .Values.nats.url | quote }}
+            - name: OPENFGA_URL
+              value: {{ .Values.openfga.url | quote }}
+            - name: OPENFGA_STORE
+              value: {{ .Values.openfga.store | quote }}
+            - name: ZITADEL_ISSUER_URL
+              value: {{ .Values.zitadel.issuerUrl | quote }}
+            - name: ZITADEL_CLIENT_ID
+              value: {{ .Values.zitadel.clientId | quote }}
+            - name: ZITADEL_HOSTED_LOGIN_URL
+              value: {{ .Values.zitadel.hostedLoginUrl | quote }}
+            - name: HELIVANTA_WEB_ORIGIN
+              value: {{ .Values.webOrigin | quote }}
+            # THE PLACEHOLDER GUESS — see values.yaml's trustedProxyCIDRs
+            # comment. Not yet confirmed against a live request; Task 9
+            # confirms or corrects it.
+            - name: TRUSTED_PROXY_CIDRS
+              value: {{ .Values.trustedProxyCIDRs | quote }}
+            # The two boot secrets templates/externalsecret.yaml projects.
+            # Neither exists in OpenBao yet (human prerequisite) — until it
+            # does, these keys are absent from the Secret entirely (ESO only
+            # writes what it successfully synced), so this pod refuses to
+            # boot (RequireSessionSigningKeySeed /
+            # RequireZitadelLoginClientToken) rather than starting with an
+            # empty credential. That is deliberate; do not add a fallback
+            # default here.
+            #
+            # `optional: true` on both refs below is load-bearing, not
+            # decorative: with `creationPolicy: Owner`, ESO never creates the
+            # target Secret object at all until its first successful sync,
+            # so without `optional: true` kubelet fails the pod at
+            # CreateContainerConfigError — the container never starts, and
+            # the Go boot-refusal message (naming SESSION_SIGNING_KEY /
+            # ZITADEL_LOGIN_CLIENT_TOKEN) never gets a chance to print. With
+            # it, the env var is simply absent, the container starts, and
+            # config.RequireSessionSigningKeySeed /
+            # RequireZitadelLoginClientToken produce the intended,
+            # diagnosable refusal.
+            - name: SESSION_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: helivanta-api-session-signing-key
+                  key: SESSION_SIGNING_KEY
+                  optional: true
+            - name: ZITADEL_LOGIN_CLIENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: helivanta-api-zitadel-login-client-token
+                  key: ZITADEL_LOGIN_CLIENT_TOKEN
+                  optional: true
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            # readOnlyRootFilesystem is on, so anything that writes needs a
+            # mount.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
