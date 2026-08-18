@@ -1,0 +1,22 @@
+# Helivanta Cloudflared Tunnel - helivanta.app
+# Connector for the dashboard-managed tunnel PROD_HELIVANTA
+# (47fbec60-50b8-474e-b490-f9e467b9cda8). The tunnel's public hostname route
+# already points at istio-ingressgateway; this chart only supplies the
+# in-cluster connector that the tunnel was missing (Cloudflare error 1033).
+fullnameOverride: "cloudflared-helivanta"
+
+replicaCount: 2
+
+tunnel:
+  existingSecret: "cloudflare-helivanta-tunnel-token"
+  existingSecretKey: "token"
+
+externalSecrets:
+  enabled: true
+  refreshInterval: "1h"
+  # Namespaced store rendered by the openbao chart from its namespaceWhitelist;
+  # ESO authenticates as the cloudflared-helivanta SA.
+  secretStore: "openbao-cloudflared-helivanta"
+  secretStoreKind: SecretStore
+  remoteKey: "cloudflared/cloudflared-helivanta/tunnel"
+  remoteProperty: "token"
