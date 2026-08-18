@@ -51,6 +51,9 @@ CREATE INDEX IF NOT EXISTS idx_runs_trigger ON pipeline_runs(trigger_type, trigg
 CREATE TABLE IF NOT EXISTS agent_executions (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     run_id          TEXT NOT NULL,
+    tenant_id       TEXT NOT NULL DEFAULT '',
+    user_id         TEXT NOT NULL DEFAULT '',
+    triggered_by    TEXT NOT NULL DEFAULT '',
     agent_name      TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'pending',
     started_at      TIMESTAMPTZ,
@@ -69,9 +72,18 @@ CREATE TABLE IF NOT EXISTS agent_executions (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE agent_executions
+    ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS triggered_by TEXT NOT NULL DEFAULT '';
+
 CREATE INDEX IF NOT EXISTS idx_agent_exec_run ON agent_executions(run_id);
 CREATE INDEX IF NOT EXISTS idx_agent_exec_agent ON agent_executions(agent_name);
 CREATE INDEX IF NOT EXISTS idx_agent_exec_status ON agent_executions(status);
+CREATE INDEX IF NOT EXISTS idx_agent_exec_tenant_started
+    ON agent_executions(tenant_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_exec_tenant_user_started
+    ON agent_executions(tenant_id, user_id, started_at DESC);
 
 -- ============================================================================
 -- ALM: A2A MESSAGES
