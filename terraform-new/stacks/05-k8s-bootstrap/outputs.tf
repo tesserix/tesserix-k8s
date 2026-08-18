@@ -36,11 +36,13 @@ output "cert_manager_namespace" {
 output "letsencrypt_staging_issuer" {
   description = "Let's Encrypt staging issuer name"
   value       = var.install_cert_manager && var.cloudflare_api_token != "" ? "letsencrypt-staging" : null
+  sensitive   = true
 }
 
 output "letsencrypt_prod_issuer" {
   description = "Let's Encrypt production issuer name"
   value       = var.install_cert_manager && var.cloudflare_api_token != "" ? "letsencrypt-prod" : null
+  sensitive   = true
 }
 
 # =============================================================================
