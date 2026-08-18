@@ -169,6 +169,27 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         )
         self.assertEqual("openbao", env["DEVAI_SECRETS_PROVIDER"])
 
+    def test_devai_registry_writes_use_tenant_scoped_deploy_key(self):
+        documents = render_chart(
+            "charts/apps/devai-api",
+            "devai-api",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        deployment = resource(documents, "Deployment", "devai-api")
+        env = {
+            item["name"]: item
+            for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+
+        self.assertEqual(
+            {
+                "name": "agentic-registry-deploy-key",
+                "key": "API_KEY",
+            },
+            env["DEVAI_REGISTRY_TOKEN"]["valueFrom"]["secretKeyRef"],
+        )
+
     def test_devai_sre_agentgateway_url_targets_mcp_data_plane(self):
         documents = render_chart(
             "charts/apps/devai-sre",
