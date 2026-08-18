@@ -1,0 +1,260 @@
+# Helivanta's API (#824 slice 1b, Task 5).
+#
+# Modeled on charts/apps/dwellm8-api — the closest live reference: a
+# standalone Go modular-monolith API with no CRD-chart dependency, its own
+# ServiceAccount, an ExternalSecret-backed credential set, a PDB, and probes
+# that match liveness-ignores-dependencies / readiness-does-not. Diverges
+# from dwellm8-api's shape in two structural ways, both explained where they
+# matter:
+#   - Secrets come from OpenBao via the namespaced SecretStore
+#     (openbao-helivanta-api, Task 2/#864), not GCP Secret Manager — no
+#     gcpSecretName-equivalent key exists anywhere in this chart.
+#   - Migrations run as a Helm pre-install/pre-upgrade hook Job
+#     (templates/migrate-job.yaml), not folded into the API's own boot path.
+#
+# This chart's ArgoCD Application is authored (argocd/prod/apps/helivanta/
+# helivanta-api.yaml) but DELIBERATELY NOT wired into
+# argocd/prod/apps/helivanta/kustomization.yaml yet — see that file's own
+# comment. The two boot secrets below (SESSION_SIGNING_KEY,
+# ZITADEL_LOGIN_CLIENT_TOKEN) do not exist in OpenBao yet; wiring this in
+# before they do would sync a pod that refuses to boot by design
+# (helivanta#875) straight into production.
+
+replicaCount: 2
+
+image:
+  # Same in-region GAR pull-through mirror of ghcr.io every other chart in
+  # this fleet uses (never ghcr.io directly — see devai-auth-bff's values.yaml
+  # for why). Image name matches .github/workflows/images.yml's IMAGE_NAME.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/helivanta/helivanta-api
+  # Task 4's images.yml has never actually run (this repo's Actions fail
+  # instantly on a billing/spending-limit error — see that task's report),
+  # so no real `main-<sha7>` tag has been published yet. This is the floor,
+  # matching dwellm8-api's own convention ("a real tag, because 'latest' is
+  # not a version") — kargo/a future promotion updates it once CI publishes
+  # a real image. Deploying against this exact tag will ImagePullBackOff
+  # until then, which is expected and orthogonal to this task's scope
+  # (chart authoring + dry-run validation only).
+  tag: "main-149ca6a"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # helivanta-api already exists, chart-managed by helivanta-postgres
+  # (charts/apps/helivanta-postgres/templates/serviceaccount.yaml) — every
+  # ExternalSecret in this namespace authenticates to OpenBao as it. This
+  # chart must NOT create a second one: `create: false` plus the name below
+  # references it rather than duplicating it.
+  create: false
+  automount: true
+  name: helivanta-api
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Memory-only, matching the platform's convention (dwellm8-postgres's
+# values.yaml states it canonically: "the platform sets no CPU requests or
+# limits"). The namespace LimitRange (charts/apps/helivanta-resource-quota)
+# still injects a CPU request (100m, defaultRequest) and a derived CPU limit
+# (4, from limitRange.max.cpu) onto every container that omits one — see
+# that chart's values.yaml "CORRECTION" note. Sized well inside the
+# namespace ResourceQuota's 6x/8x headroom reserved for slice 1b.
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# Application config — see backend/internal/config/config.go for the
+# authoritative variable list. Every DSN below is built in the Deployment
+# template from the live Service DNS names (verified against slice 1a,
+# Global Constraints) plus a secretKeyRef into the credentials slice 1a's
+# helivanta-postgres chart already projects — never a fresh username/password
+# pair invented here.
+# ---------------------------------------------------------------------------
+
+env:
+  HELIVANTA_ENV: production
+  PORT: "8080"
+  LOG_LEVEL: info
+
+database:
+  host: helivanta-postgres-rw.helivanta.svc.cluster.local
+  port: 5432
+  name: helivanta
+  sslMode: require
+  # hms_app — the application role. tenantdb.Open asserts this pool cannot
+  # bypass RLS (assertNoRLSBypass); pointing this at the owner role instead
+  # fails that assertion loudly at boot, but getting the two secret names
+  # backwards here would still be a privilege error worth being careful
+  # about — see migrate.secretName below for the OWNER counterpart.
+  appSecretName: helivanta-postgres-api-credentials
+  # helivanta — the owner role. cmd/api reads this ONLY as
+  # tenantdb.Open's second (admin) pool, used for Migrate/LintRLS-adjacent
+  # operations the running API itself performs at boot, e.g. RLS lint — not
+  # for serving requests. The actual schema migration Job
+  # (templates/migrate-job.yaml) also connects as this role, via the same
+  # secret.
+  adminSecretName: helivanta-postgres-app-credentials
+
+nats:
+  url: nats://helivanta-nats.helivanta.svc.cluster.local:4222
+
+openfga:
+  url: http://helivanta-openfga.helivanta.svc.cluster.local:8080
+  # authz.NewClient resolves this by NAME at runtime (ensureStore) — not a
+  # store ID that needs provisioning out of band, unlike OPENFGA_CLIENT_ID
+  # below.
+  store: helivanta
+
+zitadel:
+  # In-cluster address, not the public https://auth.tesserix.app. Verified
+  # against helivanta-network-policies' egress rule (values.yaml `zitadel:`
+  # block): "Zitadel's own NetworkPolicy admits every namespace in the mesh
+  # on 8080 for exactly this: exchanging codes and validating tokens. That
+  # is the path helivanta-api uses, not a public HTTPS hop through the
+  # gateway" — the same in-cluster host zitadel-bootstrap's own values.yaml
+  # uses for its API calls.
+  issuerUrl: http://zitadel.zitadel.svc.cluster.local:8080
+  # BLOCKED, same prerequisite that blocks Dockerfile.shell (Task 4's
+  # report): no Helivanta org/project/app has been provisioned in production
+  # Zitadel yet, so there is no real client id to put here. Left empty
+  # deliberately rather than a made-up value — config.go's getenv default is
+  # also "", so this changes nothing observable; it exists so a future task
+  # has exactly one place to fill in once the app exists. NOT a boot-time
+  # guard: the pod will start (RequireDistinctHostedLoginOrigin only checks
+  # hostedLoginUrl against HELIVANTA_WEB_ORIGIN, not this), but every token
+  # verification will fail until this is set.
+  clientId: ""
+  # Public hosted-login origin, mirroring production Zitadel's own public
+  # host (https://auth.tesserix.app, see argocd/prod/infrastructure/
+  # zitadel-ingress-gateway.yaml) with Zitadel's v2 login path appended — the
+  # same shape as the local dev default
+  # (http://localhost:20080/ui/v2/login). Zitadel appends its own "/login"
+  # segment, so this carries no query string of its own (config.go's
+  # HelivantaWebOrigin comment).
+  hostedLoginUrl: https://auth.tesserix.app/ui/v2/login
+
+# The origin Helivanta's OWN frontend is served from (spec D1) — compared at
+# boot against zitadel.hostedLoginUrl by RequireDistinctHostedLoginOrigin so
+# the two can never collide.
+webOrigin: https://helivanta.app
+
+# TRUSTED_PROXY_CIDRS — the pod CIDR the Istio ingress gateway runs in.
+#
+# THIS IS AN INFERENCE, NOT A VERIFIED FACT. Task 9 confirms or corrects it
+# against a live request through the real ingress path; until then, treat it
+# as a best guess, not established fact. It is copied from
+# helivanta-network-policies' own `podCIDR` value (10.20.0.0/16 —
+# "tesseract-prod-in-gke uses the default GKE pod CIDR for asia-south1"),
+# which is a reasonable starting point precisely because the Istio ingress
+# gateway's pod IP falls in the same cluster-wide pod CIDR every other pod
+# does — but no request has actually been traced through it yet to confirm
+# gin's ClientIP() resolves correctly with this value.
+#
+# The API refuses to boot outside dev if this is unset (RequireTrustedProxyCIDRs,
+# helivanta#875) — deliberate, see that function's doc comment. Do not "fix"
+# a boot failure here by deleting this value; set it to "none" only if this
+# deployment is confirmed to have no proxy in front of it, which is false for
+# this one (Istio ingress gateway is exactly such a proxy).
+trustedProxyCIDRs: "10.20.0.0/16"
+
+# Probes match the process: liveness ignores dependencies, readiness does
+# not — /readyz iterates postgres/nats/openfga and 503s naming the first
+# failure (internal/httpserver/server.go:75-84). Do not replace readiness
+# with a TCP check; that would route traffic into a pod whose NATS or
+# OpenFGA connection is down.
+probes:
+  liveness:
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /readyz
+    initialDelaySeconds: 3
+    periodSeconds: 3
+    failureThreshold: 2
+
+# cmd/api's own shutdown budget is a hard 10s
+# (context.WithTimeout(context.Background(), 10*time.Second) around
+# httpSrv.Shutdown, backend/cmd/api/main.go). This must EXCEED that, plus
+# room for the pod to leave Service endpoints and let one readiness probe
+# interval pass before SIGTERM lands — 30s clears the 10s drain with margin
+# without being needlessly long.
+terminationGracePeriodSeconds: 30
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# The schema migration, run as a Helm pre-install/pre-upgrade hook Job
+# (templates/migrate-job.yaml) — NOT an initContainer. A failed migration
+# then fails the Helm release before the Deployment's new spec is ever
+# applied, so the previous ReplicaSet keeps serving; an initContainer would
+# instead leave a NEW crash-looping pod with the migration error visible
+# only in `kubectl logs`, no release-level signal at all.
+#
+# Runs backend/cmd/migrate — connects as the OWNER role (database.adminSecretName
+# above, helivanta-postgres-app-credentials) for the actual DDL, but ALSO
+# opens the application (hms_app) pool via database.appSecretName:
+# tenantdb.Open requires both DSNs and asserts the app pool cannot bypass
+# RLS even when only the admin pool is used for migration statements
+# (backend/pkg/tenantdb/db.go: Open, assertNoRLSBypass). Omitting
+# APP_DATABASE_URL here would fail every migrate run, not just misconfigure
+# it.
+migrate:
+  # DISCOVERED GAP, not yet resolvable from this chart alone: Dockerfile.api
+  # (helivanta repo, Task 2) deliberately builds ONLY cmd/api —
+  # "backend/cmd/migrate ... deliberately NOT part of this image — migrate
+  # runs separately as a Helm hook (a later task)". No Dockerfile.migrate
+  # and no CI job for it exist yet (Task 4's images.yml builds
+  # helivanta-api only), so the repository/tag below names an image that
+  # has never been built or pushed. templates/migrate-job.yaml is authored
+  # and dry-run-validates correctly, but will ImagePullBackOff if actually
+  # synced, independent of the two OpenBao secrets blocker. A follow-up
+  # task must add a Dockerfile.migrate (or extend Dockerfile.api to a
+  # multi-binary build) in the helivanta repo plus a matching CI job — out
+  # of scope here, since this task must not touch that repo.
+  image:
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/helivanta/helivanta-migrate
+    tag: "main-149ca6a"
+    pullPolicy: IfNotPresent
+  activeDeadlineSeconds: 900
+  backoffLimit: 3
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 512Mi

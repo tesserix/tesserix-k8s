@@ -1,0 +1,116 @@
+{{- /*
+Schema migration as a Helm pre-install/pre-upgrade hook Job, per this
+task's brief — NOT an initContainer. Helm runs hooks BEFORE it applies the
+rest of the release's manifests, so a failed migration here fails the
+`helm upgrade`/`helm install` outright and the Deployment's new spec is
+never applied at all: the previous ReplicaSet keeps serving, and the
+failure is a release-level signal (`helm status` / ArgoCD OutOfSync +
+SyncFailed), not just a crash-looping new pod with the error visible only
+in `kubectl logs`.
+
+Both `helm.sh/hook` (drives Helm's own hook ordering — what a raw
+`helm install`/`helm upgrade` obeys) and `argocd.argoproj.io/hook` (drives
+ArgoCD's sync-wave-independent PreSync ordering — what actually matters
+here, since every Application in this namespace syncs through ArgoCD, never
+raw Helm) are set, mirroring charts/thirdparty/openpanel's migrate-job.yaml,
+the one other pre-install/pre-upgrade hook Job in this repo.
+`hook-delete-policy: before-hook-creation` (both flavors) means the PREVIOUS
+run's Job is deleted right before this one is created — Job.spec.template
+is immutable, so without this an image bump would otherwise fail to apply
+at all.
+
+NO `ttlSecondsAfterFinished` — same reasoning as
+homechef-api/temporal-namespace-job.yaml and openpanel/migrate-job.yaml: a
+TTL that deletes a PreSync hook Job out from under ArgoCD wedges the whole
+app sync.
+
+Connects as the OWNER role (database.adminSecretName,
+helivanta-postgres-app-credentials) to run the actual DDL, but also opens
+the hms_app pool via database.appSecretName — tenantdb.Open (which
+cmd/migrate calls identically to cmd/api) requires BOTH DSNs and asserts the
+app pool cannot bypass RLS even though only the admin pool executes
+migration statements. Omitting APP_DATABASE_URL here fails every migrate
+run, not just misconfigures it — see backend/pkg/tenantdb/db.go's Open and
+assertNoRLSBypass.
+*/ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "helivanta-api.fullname" . }}-migrate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "helivanta-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: {{ .Values.migrate.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrate.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "helivanta-api.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "helivanta-api.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          # A SEPARATE image from the API's — see values.yaml's migrate.image
+          # comment: Dockerfile.api deliberately builds only cmd/api, and no
+          # Dockerfile.migrate / CI job exists yet to produce this one. This
+          # Job dry-run-validates but will ImagePullBackOff if actually
+          # synced, until that follow-up task lands.
+          image: "{{ .Values.migrate.image.repository }}:{{ .Values.migrate.image.tag }}"
+          imagePullPolicy: {{ .Values.migrate.image.pullPolicy }}
+          # backend/cmd/migrate/main.go's own header comment explains why it
+          # is a distinct binary from cmd/api (so seeding/CI/first clone
+          # don't need to boot NATS/OpenFGA just to create tables).
+          command: ["/migrate"]
+          env:
+            - name: HELIVANTA_ENV
+              value: {{ .Values.env.HELIVANTA_ENV | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.env.LOG_LEVEL | quote }}
+            - name: APP_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.appSecretName }}
+                  key: username
+            - name: APP_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.appSecretName }}
+                  key: password
+            - name: APP_DATABASE_URL
+              value: "postgres://$(APP_DB_USER):$(APP_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
+            - name: ADMIN_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.adminSecretName }}
+                  key: username
+            - name: ADMIN_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.adminSecretName }}
+                  key: password
+            - name: ADMIN_DATABASE_URL
+              value: "postgres://$(ADMIN_DB_USER):$(ADMIN_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
+          resources:
+            {{- toYaml .Values.migrate.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
