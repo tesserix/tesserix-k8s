@@ -28,6 +28,12 @@ resource "google_project_iam_member" "github_actions_dns_reader" {
   member  = "serviceAccount:github-actions@${var.project_id}.iam.gserviceaccount.com"
 }
 
+resource "google_project_iam_member" "github_actions_role_viewer" {
+  project = var.project_id
+  role    = "roles/iam.roleViewer"
+  member  = "serviceAccount:github-actions@${var.project_id}.iam.gserviceaccount.com"
+}
+
 # Create the state bucket if it doesn't exist
 # Note: This is bootstrapped manually or via a separate bootstrap script
 resource "google_storage_bucket" "terraform_state" {
