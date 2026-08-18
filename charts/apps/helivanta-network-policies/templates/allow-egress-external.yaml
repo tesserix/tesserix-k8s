@@ -1,0 +1,53 @@
+{{- /*
+External calls, plus the one in-cluster call that is not same-namespace:
+Zitadel.
+
+The 443/TCP rule below is dwellm8's egress shape narrowed to a single port —
+dwellm8 opens 0.0.0.0/0 on every port because it has no namespace-scoped
+in-cluster dependency; helivanta's only such dependency is Zitadel, which
+this chart names explicitly instead of widening the CIDR rule to cover it.
+
+Zitadel's own NetworkPolicy (charts/thirdparty/zitadel/templates/
+networkpolicy.yaml) already admits every mesh namespace on 8080 for token
+exchange and validation — the same in-cluster path vehicle-rental-network-
+policies uses — so this chart adds the matching egress allow rather than
+routing that traffic back out through the public gateway.
+
+OpenBao is deliberately absent here — this is not a gap to fill in. OpenBao's
+own NetworkPolicy admits only `external-secrets` and `secret-service` as
+callers on 8200; helivanta is not and should not be on that list. ESO already
+reads OpenBao on this namespace's behalf via the existing SecretStore
+(openbao-helivanta-api) and writes plain Kubernetes Secrets here — no
+secret-store code runs in Helivanta, by design. An egress allow from this
+namespace to OpenBao would be traffic OpenBao's own ingress policy rejects on
+arrival: dead configuration, and worse, it would read as an invitation for a
+future change to route around ESO. See values.yaml for the fuller version of
+this note.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-external
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- range .Values.externalEgress.excludeCIDRs }}
+              - {{ . }}
+              {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.externalEgress.port }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.zitadel.namespace }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.zitadel.port }}

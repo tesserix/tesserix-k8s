@@ -1,0 +1,138 @@
+# OpenFGA ships schema migrations as a subcommand on the same image; migrate
+# is idempotent (current version is a no-op), so the Deployment only ever runs
+# against a schema matching the image version.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name }}-migrate
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+    # Job spec.template is immutable — an image bump needs delete + create,
+    # which is what Replace=true,Force=true makes ArgoCD do.
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}
+    app.kubernetes.io/component: migrate
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.name }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ .Values.name }}
+      securityContext:
+        runAsNonRoot: true
+        # > 10000 to satisfy Trivy KSV0020/KSV0021. Verified live on
+        # tesseract-prod-in-gke before this change was committed: the Job
+        # was re-run with this UID/GID (including the initContainer below,
+        # which uses a different image) and reached Complete.
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      # The sync-wave ordering (db-schema-bootstrap at -3, this Job at -2) is
+      # nominal, not real: db-schema-bootstrap ships a CronJob, which is
+      # Healthy the instant it's created, up to `schedule` (default every 30m)
+      # before it runs a single statement. On a rebuild or DR restore, this
+      # Job can therefore start before the `openfga` database exists, fail
+      # with "database does not exist", and exhaust backoffLimit long before
+      # the CronJob's first tick. This initContainer makes the dependency
+      # real: it blocks until the database is actually there, so the -3/-2
+      # wave edge holds regardless of when the CronJob happens to fire.
+      # What this does NOT guarantee: that the CronJob's bootstrap script
+      # ever succeeds. If it fails permanently (e.g. a bad schema file), this
+      # initContainer polls forever — it has no deadline of its own and does
+      # not itself alert. That failure mode is the CronJob's own Job history
+      # to surface, not this one's.
+      initContainers:
+        - name: wait-for-openfga-database
+          image: postgres:16-alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "[wait-for-openfga-database] waiting for the {{ .Values.database.name }} database to exist ..."
+              until PGPASSWORD="$DB_PASSWORD" psql -h "{{ .Values.database.host }}" -p "{{ .Values.database.port }}" \
+                  -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -tAc \
+                  "SELECT 1 FROM pg_database WHERE datname = '{{ .Values.database.name }}'" 2>/dev/null | grep -q 1; do
+                echo "  {{ .Values.database.name }} database not yet created by db-schema-bootstrap; waiting 10s ..."
+                sleep 10
+              done
+              echo "[wait-for-openfga-database] database exists, proceeding."
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            # postgres:16-alpine's own "postgres" user is 999 — irrelevant
+            # here since this container only runs the `psql` client (no
+            # server process, no on-disk data it needs to own), so it can
+            # run as any UID. Bumped to > 10000 to satisfy Trivy
+            # KSV0020/KSV0021, verified live before this was committed (see
+            # the pod-level securityContext comment above).
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              memory: 32Mi
+              cpu: 25m
+            limits:
+              memory: 64Mi
+              cpu: 100m
+      containers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          args:
+            - migrate
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            # Explicit container-level runAsGroup: KSV0021 checks this field
+            # specifically, the pod-level fsGroup above does not satisfy it.
+            runAsGroup: 10001
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: OPENFGA_DATASTORE_ENGINE
+              value: postgres
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.secretName }}
+                  key: password
+            - name: OPENFGA_DATASTORE_URI
+              value: "postgres://$(DB_USER):$(DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode=require"
+          # CPU requests/limits diverge from the platform's memory-only
+          # convention (see values.yaml resources block for the full
+          # rationale). Added here to clear Trivy KSV0011/KSV0015; this is a
+          # short-lived batch Job, not the latency-sensitive Deployment, so
+          # CFS throttling risk is low, but the limit is still set
+          # generously to avoid it slowing down migrations.
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 50m
+            limits:
+              memory: 128Mi
+              cpu: 250m

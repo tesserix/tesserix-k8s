@@ -1,0 +1,27 @@
+{{- /*
+The CNPG operator, running in cnpg-system, probes every instance in every
+Postgres Cluster it manages on 8000. Task 4 creates the CNPG Cluster in this
+namespace; without this rule the operator cannot reach that probe port,
+reports the cluster unhealthy, and starts failing over a primary that was
+fine — the same failure dwellm8 guards against in
+charts/apps/dwellm8-network-policies/templates/ingress.yaml:44-49. The
+symptom on the ground is "the database is broken," not "a network policy is
+missing," which is why this ships now rather than being deferred to Task 4.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cnpg-operator-probe
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.cnpg.namespace }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.cnpg.probePort }}

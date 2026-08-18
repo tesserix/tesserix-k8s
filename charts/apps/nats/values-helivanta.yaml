@@ -1,0 +1,33 @@
+# NATS for Helivanta.
+#
+# The event backbone the rebranded API publishes to — the local dev stack
+# runs `nats:2.10-alpine` with `-js -sd /data` (docker-compose.dev.yml), and
+# the stream the API writes to is named HELIVANTA. A stream is a JetStream
+# object, so JetStream must be enabled here, not left at a connectable-but-
+# inert default.
+#
+# One replica. JetStream clustering needs three for quorum, and a single node
+# with a file store loses nothing on a restart; it is unavailable during one,
+# which is an acceptable posture at this stage of the product.
+namespace: helivanta
+fullnameOverride: helivanta-nats
+
+replicaCount: 1
+
+jetstream:
+  enabled: true
+  storage:
+    size: 5Gi
+    storageClass: standard-rwo-retain
+  # Raw bytes, not Kubernetes quantities. This block is rendered into
+  # nats.conf, where `256Mi` is a parse error and NATS exits on boot — the PVC
+  # size above IS a Kubernetes quantity, and having both units in one file is
+  # exactly how that gets mixed up.
+  maxMemory: 268435456   # 256 MiB
+  maxFile: 4294967296    # 4 GiB, under the 5Gi volume so the disk never fills
+
+resources:
+  requests:
+    memory: 192Mi
+  limits:
+    memory: 512Mi

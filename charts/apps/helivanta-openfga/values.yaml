@@ -1,0 +1,68 @@
+# OpenFGA for Helivanta — one of the three dependencies the rebranded API
+# requires at boot (alongside Postgres and NATS).
+#
+# The datastore is `postgres`, deliberately not `memory`. The local dev stack
+# (docker-compose.dev.yml) runs OPENFGA_DATASTORE_ENGINE: memory for
+# convenience; in this deployment that would silently discard every
+# authorisation tuple on the first pod restart, which is invisible until it
+# happens and expensive when it does. The datastore is a database on the
+# existing helivanta-postgres cluster — not a new cluster — created by Task 5's
+# schema bootstrap and owned by the `openfga` role that Task 3 provisioned.
+namespace: helivanta
+name: helivanta-openfga
+
+image:
+  # In-region Artifact Registry mirror of Docker Hub — same repository as the
+  # dwellm8 deployment of this chart, and not the ghcr-remote mirror: this
+  # image is upstream OpenFGA, published to Docker Hub, not to GHCR.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/openfga/openfga
+  tag: v1.18.1
+  pullPolicy: IfNotPresent
+
+# One replica while no traffic exists.
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  httpPort: 8080
+  grpcPort: 8081
+  metricsPort: 2112
+
+database:
+  # The -rw service, never a pooler: OpenFGA holds a connection pool and runs
+  # its own migrations, and the combination poolers multiplex badly.
+  host: helivanta-postgres-rw.helivanta.svc.cluster.local
+  port: 5432
+  name: openfga
+  # Basic-auth secret reconciled by the helivanta-postgres chart's
+  # applicationRoles ExternalSecret from OpenBao (kv/helivanta/helivanta-api/
+  # postgres-openfga) — already live from Task 3, not recreated here.
+  secretName: helivanta-postgres-openfga-credentials
+
+# The check latency budget: p50 <= 20ms, p99 <= 100ms in-cluster. Alerts fire
+# on the p99 and on the deployment being unreachable, because unreachable
+# means every guarded write on the platform is refused.
+latency:
+  p99Seconds: 0.1
+
+# NOTE: this diverges from the platform's usual "memory only, no CPU
+# requests or limits" convention (see charts/apps/dwellm8-postgres/values.yaml
+# for that convention's canonical statement). CPU requests/limits are set
+# here specifically to clear Trivy KSV0015 ("CPU requests not specified")
+# and KSV0011 ("CPU not limited") on this chart, at the product owner's
+# explicit request to drive Trivy alerts to zero — not because the platform
+# has adopted CPU-limiting as a general policy elsewhere.
+#
+# The tradeoff: a CPU limit enables CFS throttling. OpenFGA is a
+# latency-sensitive authorization service on the request hot path (every
+# guarded call blocks on it), and CFS throttling under load adds tail
+# latency that a request-only (unlimited) container would not see. The
+# limit below is set generously — well above steady-state usage — to keep
+# that risk low while still satisfying the checks.
+resources:
+  requests:
+    memory: 128Mi
+    cpu: 100m
+  limits:
+    memory: 512Mi
+    cpu: 1000m

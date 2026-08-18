@@ -1,0 +1,133 @@
+# Helivanta's database.
+#
+# This chart ships the ExternalSecrets that project the three CNPG role
+# passwords out of OpenBao — app (owner), api (hms_app) and openfga — plus
+# the CNPG Cluster and ScheduledBackup that consume them (Task 4).
+#
+# Unlike dwellm8-postgres, secrets here come from OpenBao via the
+# `openbao-helivanta-api` SecretStore that already exists in this namespace
+# (Task 2/#864), not from GCP Secret Manager — so there is no
+# gcpSecretName-equivalent key left dangling anywhere in this file.
+
+hibernate: false
+
+namespace: helivanta
+clusterName: helivanta-postgres
+
+# One instance to start, matching dwellm8's posture at this stage.
+instances: 1
+imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+storageSize: 10Gi
+storageClass: standard-rwo-retain
+walStorageSize: 5Gi
+
+# Memory only — the platform sets no CPU requests or limits.
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 2Gi
+
+openbao:
+  # KV v2 path prefix (relative to the `kv` mount the SecretStore already
+  # points at — spec: path: kv, version: v2), shared by every secret in this
+  # chart: kv/{namespace}/{app}/{name}. Each role's `openbaoName` below is
+  # appended to it, so the app segment is expressed once here instead of
+  # being repeated per role.
+  #
+  # `app` is fixed at "helivanta-api" and is NOT a free choice — do not
+  # "tidy" it to "postgres". The generated OpenBao policy
+  # (charts/thirdparty/openbao/templates/bootstrap-configmap.yaml,
+  # policy-app-helivanta_helivanta-api) grants read only on
+  # kv/data/helivanta/helivanta-api/* — that's the one app the `helivanta`
+  # namespace is whitelisted for
+  # (charts/thirdparty/openbao/values.yaml: namespaceWhitelist → helivanta →
+  # apps → name: helivanta-api), and the SecretStore authenticates as
+  # exactly that role (`role: app-helivanta_helivanta-api`). Any other app
+  # segment is unreadable by the ServiceAccount this chart's ExternalSecrets
+  # use, no matter how it renders.
+  app: helivanta-api
+
+bootstrap:
+  # Database and owner role. The owner role is deliberately not the
+  # application role — the application connects as hms_app (see
+  # applicationRoles below), named by existing migrations and RLS policies
+  # that were not renamed in the rebrand.
+  database: helivanta
+  owner: helivanta
+  # Basic-auth secret (username, password), created by the ExternalSecret in
+  # templates/externalsecret.yaml. Task 4 wires this into
+  # `Cluster.spec.bootstrap.initdb.secret`.
+  secret: helivanta-postgres-app-credentials
+  # Combined with .Values.openbao.app in the template to read
+  # kv/data/helivanta/helivanta-api/postgres-app — the raw path a human
+  # operator sees with `bao kv get`, ESO having inserted the `data/` segment
+  # itself for the KV v2 mount.
+  openbaoName: postgres-app
+  # No postInitSQL here. `row_security = on` is Postgres's default and does
+  # not govern owner bypass regardless — a table's owner bypasses that
+  # table's RLS policies no matter what `row_security` is set to, unless the
+  # table itself carries `FORCE ROW LEVEL SECURITY`. That is a per-table
+  # property that belongs in the application's migrations (slice 1b), not a
+  # role GUC set here. It's also moot on this list specifically:
+  # `bootstrap.postInitSQL` runs only once, during `initdb` — which already
+  # happened on this cluster — so anything added to this key now would never
+  # execute. The real, load-bearing control is that hms_app (applicationRoles
+  # below) is NOBYPASSRLS by omission and is the role every request runs as.
+
+# The two login roles CNPG creates and reconciles passwords for via
+# `Cluster.spec.managed.roles` (added in Task 4). Every privilege they hold
+# is granted in the schema/migration files, which is where a reviewer looks
+# for who can reach what — this file only names them and where their
+# password comes from.
+#
+#   hms_app — what the application runs as. Kept as hms_app (not renamed to
+#             helivanta_app) because migrations and RLS policies already
+#             reference it by that name.
+#   openfga — OpenFGA's datastore role. Its schema is OpenFGA's own; the
+#             bootstrap database above only hands it a role and a database
+#             to connect to.
+applicationRoles:
+  - name: hms_app
+    secret: helivanta-postgres-api-credentials
+    openbaoName: postgres-api
+  - name: openfga
+    secret: helivanta-postgres-openfga-credentials
+    openbaoName: postgres-openfga
+
+postgresql:
+  max_connections: "200"
+  shared_buffers: "256MB"
+  effective_cache_size: "1536MB"
+  work_mem: "4MB"
+  maintenance_work_mem: "128MB"
+  wal_level: "logical"
+  max_replication_slots: "10"
+
+replication:
+  minSyncReplicas: 0
+  maxSyncReplicas: 0
+
+affinity:
+  podAntiAffinityType: preferred
+
+monitoring:
+  # Decorative on this cluster: this produces a `monitoring.coreos.com/v1
+  # PodMonitor`, but this cluster runs GCP Managed Prometheus, which is
+  # driven by `monitoring.googleapis.com/v1 PodMonitoring` objects, not the
+  # prometheus-operator CRDs (only the CRDs are installed here, no operator,
+  # no server — see helivanta-openfga/templates/prometheusrule.yaml for the
+  # full picture). No `PodMonitoring` exists for the `helivanta` namespace,
+  # so nothing currently reads this PodMonitor. Left on rather than removed
+  # because it costs nothing and the fix — a `PodMonitoring` for this
+  # namespace — makes it real rather than deleting the intent.
+  enablePodMonitor: true
+
+# Continuous backup to GCS. Off until the bucket and workload identity exist —
+# turning it on is a values change, not a chart change.
+backup:
+  enabled: false
+  destinationPath: "gs://tesseract-prod-backups-in/helivanta-postgres"
+  retentionPolicy: "3d"
+  serviceAccount: "app-secrets-infra-prod@tesseracthub-480811.iam.gserviceaccount.com"

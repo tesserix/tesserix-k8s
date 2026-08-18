@@ -1,0 +1,68 @@
+namespace: helivanta
+
+# The namespace that fronts the Istio gateway. helivanta.app and its
+# subdomains land here before reaching any pod in the helivanta namespace.
+istioIngressNamespace: istio-ingress
+
+# kube-dns service IP. NodeLocal DNSCache answers from the node, not from a
+# kube-system pod, so a namespaceSelector alone never matches the reply path
+# — the ClusterIP needs its own allow. Same value used by openbao,
+# onboarding-service and vehicle-rental-network-policies on
+# tesseract-prod-in-gke.
+dnsServiceIP: 10.30.0.10
+
+# External HTTPS egress. Reaches Zitadel's and OpenBao's public endpoints
+# (token exchange, JWKS, Secret Manager fallbacks) and any other external
+# HTTPS dependency the API adds later. The metadata server is excluded:
+# helivanta pods have no Workload Identity binding — their credentials
+# arrive as Secrets that ESO already wrote — so a pod that can reach
+# 169.254.169.254 is a pod that can go looking for a token it was never
+# given (same exclusion as dwellm8's egress rule).
+externalEgress:
+  port: 443
+  excludeCIDRs:
+    - 169.254.169.254/32
+
+# In-cluster Zitadel. Zitadel's own NetworkPolicy
+# (charts/thirdparty/zitadel/templates/networkpolicy.yaml) admits every
+# namespace in the mesh on 8080 for exactly this: exchanging codes and
+# validating tokens. That is the path helivanta-api uses, not a public HTTPS
+# hop through the gateway, so it needs its own allow alongside the 443 rule
+# above.
+zitadel:
+  namespace: zitadel
+  port: 8080
+
+# OpenBao is deliberately NOT in this file's egress rules, and this is not an
+# oversight — do not "fix" it by adding one. OpenBao's own NetworkPolicy
+# (charts/apps/openbao-namespace/templates/network-policies.yaml) admits only
+# `external-secrets` and `secret-service` as callers on 8200; no other
+# namespace, helivanta included, is on that list. Helivanta reads OpenBao
+# exclusively through ESO, via the SecretStore already in this namespace
+# (openbao-helivanta-api) — the design explicitly keeps secret-store code out
+# of Helivanta. An egress allow from here to OpenBao would be traffic
+# OpenBao's own ingress policy drops on arrival: dead configuration that
+# invites a future reader to believe helivanta pods talk to OpenBao directly,
+# when they never do and never should.
+
+# CNPG operator probe. The operator in cnpg-system polls every managed
+# instance directly on 8000, cluster health depends on it, and Task 4 stands
+# up the CNPG Cluster this rule exists for.
+cnpg:
+  namespace: cnpg-system
+  probePort: 8000
+
+# Cluster pod CIDR for the ambient HBONE NetworkPolicy. tesseract-prod-in-gke
+# uses the default GKE pod CIDR for asia-south1 — same value dwellm8,
+# vehicle-rental-network-policies and openbao-namespace use. If this is wrong
+# the namespace silently loses east-west connectivity the day it goes
+# ambient.
+podCIDR: 10.20.0.0/16
+
+# helivanta is not ambient-meshed today (the namespace carries no
+# istio.io/dataplane-mode label). The 15008 rule ships anyway: it costs
+# nothing while unmeshed, and it is the rule whose absence is invisible until
+# every call in the namespace times out at once — the same reasoning
+# dwellm8's values.yaml records for its own hbone.enabled.
+hbone:
+  enabled: true

@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: helivanta-app-of-apps
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesseract-platform
+    app.kubernetes.io/component: helivanta-services
+    environment: prod
+spec:
+  project: helivanta
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: argocd/prod/apps/helivanta
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  # Unlike dwellm8, Helivanta gets this ignoreDifferences from the start:
+  # slice 1b introduces a Kargo Warehouse for Helivanta, which writes
+  # spec.source.helm.parameters (image.tag) out-of-band from git. dwellm8's
+  # own comment records that omitting this exception made a stale image.tag
+  # unremovable by git once Kargo started writing to it — don't repeat that.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /spec/source/helm/parameters
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

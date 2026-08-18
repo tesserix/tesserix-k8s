@@ -1,0 +1,67 @@
+namespace: helivanta
+
+# Sizing rationale (recorded 2026-08-18, tesseract-prod-in-gke, namespace
+# helivanta — `kubectl top pods -n helivanta` and the running pods' own
+# requests/limits):
+#
+#   pod                         cpu(top)  mem(top)  mem request  mem limit
+#   helivanta-postgres-1        11m       81Mi      512Mi        2Gi
+#   helivanta-openfga (main)    1m        15Mi      128Mi        512Mi
+#   helivanta-nats-0            1m        8Mi       192Mi        512Mi
+#   helivanta-openfga-migrate   (transient Job)      64Mi         128Mi
+#
+# None of those pods set a CPU request/limit at the time of this snapshot
+# (the platform's memory-only convention — see
+# charts/apps/dwellm8-postgres/values.yaml). The helivanta-openfga chart now
+# sets explicit CPU (100m request / 1000m limit on the Deployment, smaller on
+# the migrate Job) to clear Trivy KSV0011/KSV0015 there; everything else in
+# this namespace picks up defaultRequest/default from the LimitRange below.
+#
+# Current steady-state totals, call it ~1Gi memory request / ~3.5Gi memory
+# limit once the transient migrate Job and the db-schema-bootstrap CronJob
+# (128Mi request / 256Mi limit, no CPU) are added in. CPU stays under 500m
+# even with every container's LimitRange default applied at once.
+#
+# The quota below is sized to comfortably clear that with room to spare for
+# slice 1b (the helivanta API and shell, not yet deployed): roughly 6x
+# headroom on memory requests and 8x on CPU requests over current usage.
+# Nodes in this cluster have 4-8 full cores and 13-29Gi allocatable each, so
+# this quota is the constraint, not the node.
+#
+# A tighter quota was deliberately rejected: blocking a future pod from
+# scheduling because the quota was sized too aggressively is worse than the
+# Trivy finding this exists to clear.
+resourceQuota:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 6Gi
+    limits.cpu: "8"
+    limits.memory: 12Gi
+
+# Applies only to containers that don't already set the resource explicitly
+# — it never overrides an existing request/limit (postgres, nats and
+# openfga's own memory values are untouched). Its job is to give every other
+# container (the db-schema-bootstrap CronJob today, anything added later
+# that forgets) a CPU request/limit, because a namespace with a ResourceQuota
+# tracking requests.cpu/limits.cpu will otherwise refuse to admit any Pod
+# whose containers don't specify one.
+#
+# min/max are required for Trivy KSV0039 (a LimitRange without them still
+# fails the check) and are set wide enough not to constrain anything already
+# running: min is below the smallest existing container request (the
+# migrate Job's wait-for-openfga-database init container: 25m cpu / 32Mi
+# memory) and max is above the largest existing container limit
+# (helivanta-postgres: 2Gi memory) with headroom for slice 1b.
+limitRange:
+  min:
+    cpu: 10m
+    memory: 16Mi
+  max:
+    cpu: 4000m
+    memory: 4Gi
+  default:
+    cpu: 500m
+    memory: 512Mi
+  defaultRequest:
+    cpu: 100m
+    memory: 128Mi
