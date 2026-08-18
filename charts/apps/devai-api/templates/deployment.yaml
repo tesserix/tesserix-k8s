@@ -126,6 +126,12 @@ spec:
               protocol: TCP
           env:
             {{- include "devai-api.containerEnv" . | trimPrefix "\n" | nindent 12 }}
+          {{- if and .Values.settings .Values.settings.brokerTokenFile }}
+          volumeMounts:
+            - name: secret-service-token
+              mountPath: /var/run/secrets/devai/secret-service
+              readOnly: true
+          {{- end }}
           startupProbe:
             httpGet:
               path: /healthz
@@ -151,7 +157,7 @@ spec:
             timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      {{- if or .Values.schemaBootstrap.enabled .Values.localAuth.enabled }}
+      {{- if or .Values.schemaBootstrap.enabled .Values.localAuth.enabled (and .Values.settings .Values.settings.brokerTokenFile) }}
       volumes:
         {{- if .Values.schemaBootstrap.enabled }}
         - name: schema-sql
@@ -162,5 +168,15 @@ spec:
         - name: auth-seed
           configMap:
             name: {{ include "devai-api.fullname" . }}-auth-seed
+        {{- end }}
+        {{- if and .Values.settings .Values.settings.brokerTokenFile }}
+        - name: secret-service-token
+          projected:
+            defaultMode: 0400
+            sources:
+              - serviceAccountToken:
+                  audience: {{ .Values.settings.brokerAudience | default "secret-service" | quote }}
+                  expirationSeconds: 600
+                  path: token
         {{- end }}
       {{- end }}

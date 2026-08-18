@@ -1,30 +1,60 @@
-# devai-ai-gateway — defaults
 namespace: agentgateway-system
 
-# Rootless nginx — the unprivileged image runs as uid 101, listens on 8080,
-# and writes its pid/temp under /tmp + /var/cache, so the pod can run
-# non-root with a read-only root fs (see deployment securityContext). Drop-in
-# config-compatible with stock nginx:alpine (same envsubst + gettext).
-image:
-  repository: nginxinc/nginx-unprivileged
-  tag: "1.27-alpine"
-  pullPolicy: IfNotPresent
-
-service:
-  type: ClusterIP
+gateway:
+  name: ai-gateway
   port: 8080
+  replicas: 2
+  serviceAccount:
+    gcpServiceAccount: agentgateway-llm@tesseracthub-480811.iam.gserviceaccount.com
+  resources:
+    requests:
+      memory: 256Mi
+    limits:
+      memory: 1Gi
 
-replicaCount: 1
+providers:
+  vertex:
+    projectId: tesseracthub-480811
+    region: global
+  groq:
+    host: api.groq.com
+  openrouter:
+    host: openrouter.ai
+  nemoclaw:
+    host: nemoclaw-inference.devai.svc.cluster.local
+    port: 8000
 
-resources:
-  requests:
-    memory: 32Mi
-  limits:
-    memory: 128Mi
+routes:
+  - prefix: /anthropic
+    backend: devai-anthropic
+  - prefix: /openai
+    backend: devai-openai
+  - prefix: /vertex
+    backend: devai-vertex
+  - prefix: /gemini
+    backend: devai-gemini
+  - prefix: /groq
+    backend: devai-groq
+  - prefix: /openrouter
+    backend: devai-openrouter
+  - prefix: /nemoclaw
+    backend: devai-nemoclaw
 
-# ExternalSecret pulls both LLM keys (Anthropic + OpenAI) from GCP SM.
-# PROD default: enabled. Local/kind overlays (values-local.yaml /
-# values-sandbox.yaml) flip this to false — see localSecret below.
+limits:
+  requestsPerMinute: 600
+  requestBurst: 100
+  tokensPerHour: 10000000
+  requestTimeout: 15m
+
+authorizationPolicy:
+  # API/worker share devai-api; dispatched Jobs use devai-runner.
+  allowedPrincipals:
+    - cluster.local/ns/devai/sa/devai-api
+    - cluster.local/ns/devai/sa/devai-runner
+
+# Kept during the replacement rollout so the existing mirrored Secret is not
+# deleted. Native backends use caller credential passthrough or GCP workload
+# identity and do not read these values.
 externalSecrets:
   enabled: true
   secretStoreRef: gcp-secret-store
@@ -32,19 +62,7 @@ externalSecrets:
   openaiKey: prod-devai-openai-api-key
   vertexKey: prod-devai-vertex-api-key
 
-# LOCAL ONLY — when externalSecrets.enabled=false (kind/sandbox, no External
-# Secrets Operator) the chart renders a plain devai-ai-gateway-secrets Secret
-# from these values instead of an ExternalSecret (templates/secret.yaml).
-# Keys stay empty in git; inject real values at deploy time via --set (see
-# values-local.yaml). In prod this stays create=false and the ExternalSecret
-# is authoritative, so prod rendering is unchanged.
 localSecret:
   create: false
   anthropicApiKey: ""
   openaiApiKey: ""
-
-# Service account — no special IAM today; future SPIFFE identity will
-# pin the gateway as the only egress channel from devai → external LLMs.
-serviceAccount:
-  create: true
-  name: devai-ai-gateway
