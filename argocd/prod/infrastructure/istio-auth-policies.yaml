@@ -325,6 +325,26 @@ spec:
             namespace: vehicle-rental
             hosts:
               - "rentme.tesserix.app"
+          # Helivanta (#824 slice 1b). The gateway default-denies, so a host
+          # absent from this list gets Envoy's bare "RBAC: access denied" — a
+          # 403 naming no host, no policy and no allowlist. helivanta.app hit
+          # exactly that with its tunnel, VirtualService, Service and pods all
+          # already correct.
+          #
+          # THIS list is the one that takes effect, not the identical
+          # frontendApps in charts/.../values-prod.yaml. Argo passes both an
+          # inline `helm.values` and `valueFiles`, and inline wins — so a
+          # frontendApps entry added to values-prod.yaml is silently dropped,
+          # which is how the first attempt at this change (#423) came to merge,
+          # sync green, and change nothing. Add hosts HERE.
+          #
+          # Apex only. *.helivanta.app is deliberately absent: nothing serves a
+          # subdomain and the per-zone subdomain decision is still open (#890).
+          - name: helivanta-shell
+            label: helivanta-shell
+            namespace: helivanta
+            hosts:
+              - "helivanta.app"
 
   destination:
     server: https://kubernetes.default.svc
