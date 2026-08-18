@@ -215,6 +215,15 @@ identical environment — defined once here so the two never drift.
 # still read DEVAI_AREGISTRY_URL; the two stay in sync.)
 - name: DEVAI_REGISTRY_URL
   value: {{ .Values.agenticControlPlane.aregistryUrl | default "" | quote }}
+{{- with .Values.agenticControlPlane.registryDeployKeySecret }}
+# Platform-owned tenant writer key. Agentic Registry stores only its SHA-256
+# digest and limits this credential to registry:read/write in the devai tenant.
+- name: DEVAI_REGISTRY_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ .name | quote }}
+      key: {{ .key | quote }}
+{{- end }}
 # Publish-on-author — when an operator composes an agent / skill / tool /
 # blueprint in the dashboard, devai-api publishes it to the shared
 # registry (writes are mesh-gated to the devai-api SA; see the agentic
