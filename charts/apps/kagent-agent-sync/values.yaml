@@ -22,6 +22,21 @@ registry:
   # agentgateway base URL the rendered ToolServers reach MCP tools through.
   # Empty → ToolServers use each MCP server's own remote URL.
   gatewayUrl: ""
+  # Render SandboxAgent resources pinned to the production gVisor WorkerPool.
+  # Empty keeps the classic Agent renderer for clusters without Substrate.
+  workerPool: kagent-default
+
+# All kagent LLM calls use the same AgentGateway data plane as DevAI Jobs.
+# ModelConfigs retain apiKeyPassthrough so no user key is stored in-cluster.
+llmGatewayBaseUrl: http://ai-gateway.agentgateway-system.svc.cluster.local:8080
+
+# A keyless, GitOps-owned canary proves SandboxAgent -> ActorTemplate -> gVisor
+# reconciliation without enabling user traffic or invoking an LLM.
+substrateCanary:
+  enabled: true
+  name: devai-substrate-canary
+  workerPool: kagent-default
+  modelConfig: kagent-mc-openai
 
 # DevAI — source of truth for WHICH variants to provision (dynamic, UI-driven).
 # The render step curls DevAI for the union of every user's Settings-enabled
