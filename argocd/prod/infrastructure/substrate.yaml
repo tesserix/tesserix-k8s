@@ -18,7 +18,10 @@ spec:
   source:
     repoURL: ghcr.io/kagent-dev/substrate/helm
     chart: substrate
-    targetRevision: 0.0.6
+    # 0.0.8 uses system roots for external OIDC issuers. This is required on
+    # GKE because its public container.googleapis.com issuer is not signed by
+    # the in-cluster Kubernetes service-account CA.
+    targetRevision: 0.0.8
     helm:
       releaseName: substrate
       values: |
@@ -34,6 +37,34 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: ate-system
+  # Helm generates these values on first install. Preserve the live TLS and
+  # actor/session signing material across chart upgrades rather than rotating
+  # credentials when Argo renders the new chart version.
+  ignoreDifferences:
+    - group: ""
+      kind: ConfigMap
+      name: ateapi-ca
+      namespace: ate-system
+      jsonPointers:
+        - /data
+    - group: ""
+      kind: Secret
+      name: ateapi-tls
+      namespace: ate-system
+      jsonPointers:
+        - /data
+    - group: ""
+      kind: Secret
+      name: session-id-ca-pool
+      namespace: ate-system
+      jsonPointers:
+        - /data
+    - group: ""
+      kind: Secret
+      name: session-id-jwt-pool
+      namespace: ate-system
+      jsonPointers:
+        - /data
   syncPolicy:
     automated:
       prune: true
@@ -41,6 +72,7 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 5
       backoff:
