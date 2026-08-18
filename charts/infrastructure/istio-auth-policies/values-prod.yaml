@@ -197,6 +197,21 @@ frontendApps:
     hosts:
       - "astronomy.tesserix.app"
 
+  # Helivanta (#824 slice 1b). The ingress gateway default-denies, so a host
+  # absent from this list gets Envoy's "RBAC: access denied" — a 403 with no
+  # hint that an allowlist is the reason. helivanta.app reached exactly that
+  # state once its tunnel connector came up: routing, VirtualService and pods
+  # all correct, and still 403.
+  #
+  # Only the apex. *.helivanta.app is deliberately NOT added: nothing serves a
+  # subdomain yet, and the per-zone subdomain decision is still open (#890).
+  # Widening an ingress allowlist ahead of a use is how a host becomes
+  # reachable before anyone has decided it should be.
+  - name: helivanta
+    label: helivanta
+    hosts:
+      - "helivanta.app"
+
 # =============================================================================
 # Production Google Identity Platform Configuration
 #
