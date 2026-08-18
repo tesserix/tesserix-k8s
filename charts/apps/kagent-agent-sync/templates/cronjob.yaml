@@ -79,6 +79,9 @@ spec:
                   URL="${URL}?namespace={{ .Values.registry.sourceNamespace }}"
                   URL="${URL}&targetNamespace={{ .Values.registry.targetNamespace }}"
                   URL="${URL}&variants=${VARIANTS}"
+                  {{- if .Values.registry.workerPool }}
+                  URL="${URL}&workerPool={{ .Values.registry.workerPool | urlquery }}"
+                  {{- end }}
                   {{- if .Values.registry.gatewayUrl }}
                   URL="${URL}&gatewayUrl={{ .Values.registry.gatewayUrl | urlquery }}"
                   {{- end }}
@@ -132,7 +135,7 @@ spec:
                     # Agent variant (and its ToolServers). The ModelConfigs are owned
                     # by ArgoCD/Helm, not this job, so they stay.
                     echo "reaping all registry-managed Agent variants (none enabled)"
-                    kubectl delete agents.kagent.dev,toolservers.kagent.dev \
+                    kubectl delete agents.kagent.dev,sandboxagents.kagent.dev,toolservers.kagent.dev \
                       -n {{ .Values.registry.targetNamespace }} \
                       -l app.kubernetes.io/managed-by=agentic-registry \
                       --ignore-not-found
@@ -155,6 +158,7 @@ spec:
                     # empty export never prunes everything.
                     kubectl apply --validate=false --prune \
                       --prune-allowlist=kagent.dev/v1alpha2/Agent \
+                      --prune-allowlist=kagent.dev/v1alpha2/SandboxAgent \
                       --prune-allowlist=kagent.dev/v1alpha1/ToolServer \
                       -l app.kubernetes.io/managed-by=agentic-registry \
                       -f /work/agents.yaml
