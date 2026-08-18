@@ -159,18 +159,18 @@ memory:
   qdrantUrl: "http://qdrant.ai-database.svc.cluster.local:6333"
   qdrantCollection: "devai_memories"
 
-# Settings capability — per-user/per-tenant connectors + secrets.
-# secretsProvider stays "noop" until the devai SA
-# (app-secrets-devai-prod@…) is granted Secret Manager write IAM
-# (roles/secretmanager.admin). Flip to "gcp_sm" in the SAME commit that
-# grants the IAM so secret provisioning lights up; the user_settings
-# table is created by the db-schema-bootstrap CronJob. Until then the
-# Settings UI serves the catalog + non-secret prefs and secret writes
-# return a clear 409. See devai/docs/SETTINGS_CAPABILITY.md.
+# Settings capability — per-user/per-tenant connector values are read from
+# OpenBao by DevAI and written blindly through the secret-service broker.
 settings:
   enabled: true
-  secretsProvider: "gcp_sm"  # per-user connector secrets provisioned to GCP SM
-  secretsGcpProject: "tesseracthub-480811"
+  secretsProvider: "openbao"
+  openbaoAddress: "http://openbao.openbao.svc.cluster.local:8200"
+  openbaoMount: "kv"
+  openbaoRole: "read-devai-api"
+  openbaoAuthMount: "kubernetes"
+  brokerUrl: "http://secret-service-api.secret-service.svc.cluster.local:8080"
+  brokerAudience: "secret-service"
+  brokerTokenFile: "/var/run/secrets/devai/secret-service/token"
 
 # Agentic control planes — these URLs become valid once the
 # infrastructure/agentregistry, agentgateway, kagent ArgoCD apps sync.
@@ -208,7 +208,7 @@ agenticControlPlane:
   # When the data plane is added (future PR in tesserix-k8s), flip
   # this to the proxy's Service URL — devai-runner picks it up on the
   # next Job dispatch with no code change.
-  agentgatewayUrl: ""
+  agentgatewayUrl: "http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080"
   # Platform default: kagent A2A dispatch is OFF — every agent runs as a K8s
   # Job. Turn it on platform-wide here, or let a user/team/org/tenant enable it
   # for themselves via the Settings "kagent" connector (resolved per run).
@@ -267,6 +267,8 @@ agenticControlPlane:
 # (devai-ai-gateway in agentgateway-system) injects the auth headers
 # itself so devai-api pods don't need to read the secret directly.
 llm:
+  gatewayBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080"
+  gatewayRequired: true
   anthropicBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/anthropic"
   openaiBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/openai"
   # Vertex AI (Gemini) — keyless via the pod's Workload Identity GSA
@@ -292,13 +294,7 @@ llm:
   fallbackProvider: "groq,openrouter,anthropic"
   vertexLocation: "global"
   vertexGeminiModel: "gemini-2.5-flash"
-  # Vertex goes DIRECT from the pod (Workload Identity ADC over the PSC
-  # endpoint) — verified end to end in-cluster 2026-06-12. The gateway
-  # /vertex route exists and injects the API key, but agentgateway-system
-  # pod egress re-frames POST bodies as chunked (istio ambient L7), which
-  # Google's PSC frontend rejects with 411 — Anthropic/OpenAI tolerate it,
-  # GFE doesn't. Re-point at the gateway only after that's resolved:
-  # vertexBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/vertex"
+  vertexBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/vertex"
   # Cost tiers — "provider:model". light/standard ride Vertex Gemini;
   # heavy/frontier stay on Claude/o3 via the same gateway. Only
   # gemini-2.5-flash is model-enabled in the project today; after enabling

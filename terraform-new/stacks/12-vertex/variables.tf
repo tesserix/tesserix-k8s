@@ -93,6 +93,12 @@ variable "kora_agentgateway_ksa" {
   default     = "agentgateway-system/kora-ai"
 }
 
+variable "devai_agentgateway_ksa" {
+  description = "Kubernetes SA (namespace/name) of the native DevAI LLM gateway data plane"
+  type        = string
+  default     = "agentgateway-system/ai-gateway"
+}
+
 variable "devai_runner_ksa" {
   description = "Kubernetes SA (namespace/name) of the DevAI ADK runner Jobs, bound to the DevAI workload GSA so dispatched agents reach Vertex via ADC"
   type        = string

@@ -108,20 +108,19 @@ resource "google_service_account_iam_member" "kora_agentgateway_wi" {
   member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.kora_agentgateway_ksa}]"
 }
 
+# Native DevAI LLM data plane. This is distinct from the controller/MCP KSA:
+# the Gateway API controller creates a ServiceAccount named after the Gateway.
+resource "google_service_account_iam_member" "devai_agentgateway_wi" {
+  service_account_id = google_service_account.agentgateway_llm.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.devai_agentgateway_ksa}]"
+}
+
 # Transition-period direct grant for the DevAI workload SA (created outside
 # Terraform by 07-app-secrets-era manual work; referenced by email only).
 resource "google_project_iam_member" "devai_workload_aiplatform" {
   project = var.project_id
   role    = "roles/aiplatform.user"
-  member  = "serviceAccount:${var.devai_workload_sa_email}"
-}
-
-# Settings capability: devai provisions per-user connector secrets into
-# Secret Manager (create/version/delete on devai-* secrets), so the workload
-# GSA needs SM write — not just the accessor role ESO uses.
-resource "google_project_iam_member" "devai_workload_secretmanager_admin" {
-  project = var.project_id
-  role    = "roles/secretmanager.admin"
   member  = "serviceAccount:${var.devai_workload_sa_email}"
 }
 
