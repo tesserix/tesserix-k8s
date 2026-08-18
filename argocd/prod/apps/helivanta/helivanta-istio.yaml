@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: helivanta-istio
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: helivanta
+    app.kubernetes.io/component: routing
+    environment: prod
+  annotations:
+    # Last. A VirtualService whose destinations do not resolve is accepted by
+    # Istio and returns 503 for the routes it names, so publishing the route
+    # table before the workloads exist would put helivanta.app into a state
+    # that looks live and is not. Nothing here is a dependency of anything
+    # else, so it costs nothing to be last.
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: helivanta
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/helivanta-istio
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: helivanta
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,78 @@
+{{- /*
+Path routing for helivanta.app, done AT THE INGRESS and not in the shell.
+
+Dockerfile.shell bakes a rewrite table into the Next build (next.config.ts):
+/api/:path* -> API_URL/:path*, plus /medicore, /pharmacy and /lab to their
+zone services. Those rewrites exist for `next dev`, where one process fronts
+everything. Production deliberately bypasses them, and this VirtualService is
+how.
+
+Two reasons, both from the design spec's D3:
+  - A zone request routed through the shell takes a Next.js hop it does not
+    need, on every request.
+  - It couples availability: a shell rollout would take pharmacy and lab down
+    with it, because their traffic flows through the shell's process.
+
+So: ZONE ROUTING BELONGS HERE, NOT IN THE SHELL'S REWRITES. No zone routes are
+added yet — apps/medicore, apps/pharmacy and apps/lab are not deployed until
+slice 2. When they are, they get their own `match`/`route` entries in this
+file ahead of the catch-all below, and the shell's baked rewrites stay unused
+in production exactly as they are now.
+*/ -}}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: helivanta
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "helivanta-istio.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.host | quote }}
+  gateways:
+    {{- toYaml .Values.istio.gateways | nindent 4 }}
+  http:
+    {{- /* Narrowest first: Istio takes the first matching entry. */}}
+    {{- with .Values.shell.reservedPrefixes }}
+    # Next PAGES that live under /api and must never reach the Go backend —
+    # /api/auth/callback is Zitadel's registered redirect_uri. See
+    # values.yaml's shell.reservedPrefixes.
+    - match:
+        {{- range . }}
+        - uri:
+            prefix: {{ . | quote }}
+        {{- end }}
+      route:
+        - destination:
+            host: {{ $.Values.shell.service }}
+            port:
+              number: {{ $.Values.shell.port }}
+      timeout: {{ $.Values.shell.timeout }}
+    {{- end }}
+    # THE PREFIX STRIP. {{ .Values.api.matchPrefix }} on the wire becomes
+    # {{ .Values.api.rewritePrefix }} at the pod: rewrite.uri replaces the
+    # matched prefix, so /api/v1/foo reaches the backend as /v1/foo, which is
+    # where it mounts its routes. Without the rewrite the backend 404s every
+    # call while the route itself looks correct.
+    - match:
+        - uri:
+            prefix: {{ .Values.api.matchPrefix | quote }}
+      rewrite:
+        uri: {{ .Values.api.rewritePrefix | quote }}
+      route:
+        - destination:
+            host: {{ .Values.api.service }}
+            port:
+              number: {{ .Values.api.port }}
+      timeout: {{ .Values.api.timeout }}
+    # Everything else is the shell's: pages, /_next/* assets, /login, /logout.
+    # Same origin as the API above, which is the point — the session cookie is
+    # first-party and CORS never enters the picture.
+    - route:
+        - destination:
+            host: {{ .Values.shell.service }}
+            port:
+              number: {{ .Values.shell.port }}
+      timeout: {{ .Values.shell.timeout }}
+  exportTo:
+    - "*"

@@ -24,3 +24,15 @@ resources:
   # entry would have synced a pod that refuses to boot by design
   # (helivanta#875).
   - helivanta-api.yaml
+  # Slice 1b's frontend, on sync-wave 0 — after the API (-1). The shell does
+  # not need the API to boot, but the first page a signed-out clinician loads
+  # calls /api/v1/auth/login straight away, so a cold namespace brought up in
+  # the other order serves a shell whose every request fails.
+  - helivanta-shell.yaml
+  # The edge route table, last (sync-wave 1). Istio accepts a VirtualService
+  # whose destinations do not resolve and 503s them, so publishing the routes
+  # before the workloads exist would make helivanta.app look live while it is
+  # not. Deliberately contains no Gateway — the shared
+  # istio-ingress/tesseract-gateway already admits this host on port 80; see
+  # charts/apps/helivanta-istio/templates/gateway.yaml.
+  - helivanta-istio.yaml

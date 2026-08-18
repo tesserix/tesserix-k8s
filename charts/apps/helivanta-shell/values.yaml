@@ -1,0 +1,170 @@
+# Helivanta's shell frontend (#824 slice 1b, Task 6).
+#
+# Modeled on charts/apps/helivanta-api — the sibling in this namespace,
+# written and debugged the same day, and the only live reference that already
+# encodes this namespace's quota arithmetic and its GHCR pull path. Diverges
+# from it in three ways, each explained where it matters:
+#   - Its own ServiceAccount, created here (serviceAccount below).
+#   - No ExternalSecret of any kind. The shell holds no credential: every
+#     value it needs is either baked into the image at build time or public.
+#   - readOnlyRootFilesystem needs TWO writable mounts, not one, because
+#     Next writes a cache under its own build output.
+#
+# THE SINGLE MOST IMPORTANT FACT ABOUT THIS IMAGE: almost nothing here is
+# configurable. Dockerfile.shell bakes NEXT_PUBLIC_ZITADEL_ISSUER_URL,
+# NEXT_PUBLIC_ZITADEL_CLIENT_ID, MEDICORE_URL, PHARMACY_URL and LAB_URL into
+# the build output, and Next freezes next.config.ts's rewrite table at build
+# time. Setting any of them in `env:` below would do nothing at all and would
+# read as configuration that works. They are deliberately absent. Changing
+# any of them means rebuilding the image (helivanta:.github/workflows/
+# images.yml, the SHELL_* env block), not redeploying this chart.
+#
+# API_URL is the one exception, and only partly: the rewrite table's copy is
+# frozen, but apps/shell/app/logout/route.ts reads process.env.API_URL at
+# REQUEST time. It is set below for that route alone.
+
+replicaCount: 2
+
+image:
+  # Same in-region GAR pull-through mirror of ghcr.io as helivanta-api and
+  # every other chart in this fleet (never ghcr.io directly). Image name
+  # matches helivanta:.github/workflows/images.yml's shell IMAGE_NAME.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/helivanta/helivanta-shell
+  # A REAL, published tag — verified, not assumed. `main-d37246c` is the
+  # newest main build of helivanta-shell on ghcr
+  # (2026-08-18T09:26:32Z, also tagged `main`), and the GAR mirror resolves
+  # it through this exact repository path to the identical digest,
+  # sha256:66fa9d92d7cddc8698db7a49845db3efcfb144787ab03800097592267eafe28d.
+  #
+  # helivanta-api shipped with `main-149ca6a` — a tag invented while CI was
+  # billing-blocked and NOTHING had ever been published — and
+  # ImagePullBackOff'd. Do not repeat that: check the registry, do not infer
+  # a tag from a commit sha you happen to have.
+  #
+  # Kargo promotion (Task 8) takes over updating this.
+  tag: "main-d37246c"
+  pullPolicy: IfNotPresent
+
+# Referenced, NOT recreated. `ghcr-secret` is an ExternalSecret owned by
+# charts/apps/helivanta-api/templates/ghcr-externalsecret.yaml, which added it
+# when helivanta-api became the first private image pulled into this
+# namespace. Declaring a second ExternalSecret with the same target here
+# would give two ArgoCD Applications the same object to own, and they would
+# fight over it on every sync. One owner, many referrers.
+imagePullSecrets:
+  - name: ghcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Created here, unlike helivanta-api's. That chart sets `create: false` and
+  # borrows the `helivanta-api` ServiceAccount because its ExternalSecrets
+  # authenticate to OpenBao AS that identity — the SA is the credential, so a
+  # second one would be a second, ungranted identity.
+  #
+  # The shell has no such tie: it reads no secret from OpenBao, mounts no
+  # projected token, and calls no cloud API. Reusing `helivanta-api` would
+  # hand the shell's pods the identity that CAN read the API's session
+  # signing key, for no reason at all. Its own SA, with no grant anywhere, is
+  # both the least-privilege choice and the one that keeps ownership of each
+  # object with exactly one chart.
+  create: true
+  automount: true
+  name: helivanta-shell
+
+podAnnotations: {}
+
+podSecurityContext:
+  # uid/gid 1000 — the `node` user the image runs as (Dockerfile.shell's
+  # `USER node`), and the owner of the copied bundle (--chown=node:node).
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  # 4301, and this is not a free choice: Dockerfile.shell sets ENV PORT=4301
+  # and Next's standalone server binds whatever PORT says. The Deployment
+  # does not re-set it, so changing this number here without changing the
+  # image gives a Service pointing at a port nothing listens on.
+  port: 4301
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    # AN EXPLICIT CPU LIMIT IS REQUIRED, for exactly the reason
+    # charts/apps/helivanta-api/values.yaml sets one out at length: this
+    # namespace's LimitRange has max.cpu 4 and the API server DERIVES
+    # default.cpu from it, so a container that omits a CPU limit is admitted
+    # at limits.cpu=4 — and helivanta-compute caps the namespace at 8.
+    # Omitting this would try to claim 8 CPU of limit for two replicas and be
+    # refused by the quota, which for a hook is worse than a failed workload:
+    # it wedges the whole sync.
+    #
+    # The arithmetic, checked live on 2026-08-18 rather than assumed:
+    # limits.cpu used 6 of 8 (nats 4, openfga 1, helivanta-api 2x500m). Two
+    # shell replicas at 500m take that to 7, leaving 1 CPU — which still
+    # covers helivanta-api's 500m migrate hook and openfga's 250m migrate
+    # hook running at the same time. There is no room for a third
+    # 500m-limited workload in this namespace without revisiting nats's
+    # unbounded 4.
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+
+# The one runtime-readable variable this image has. next.config.ts's rewrite
+# table froze its own copy of API_URL at build time, but
+# apps/shell/app/logout/route.ts reads process.env.API_URL per request and
+# the built chunk still carries `process.env.API_URL??"http://localhost:8080"`
+# as its fallback. Unset here, sign-out would POST to localhost INSIDE the
+# pod: a 200-shaped local failure, not a visible one.
+#
+# Must match the value baked at build time (images.yml's SHELL_API_URL).
+apiUrl: http://helivanta-api.helivanta.svc.cluster.local:8080
+
+# The shell has no /healthz. Probing "/" would follow middleware.ts into a
+# 307 to /login on every probe — which httpGet counts as success
+# anyway, but only by accident. "/login" is in that middleware's PUBLIC_PATHS, is
+# statically prerendered, and answers 200 without a session, so it is the
+# honest "the server is up and serving this app's pages" check.
+#
+# Both probes hit the same path deliberately: unlike helivanta-api, this
+# process has no dependency it can be alive-but-not-ready on. Its API calls
+# happen in the browser, not here.
+probes:
+  liveness:
+    path: /login
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /login
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    failureThreshold: 3
+
+# Next's standalone server has no drain of its own to speak of; 30s matches
+# helivanta-api's so a rollout of either behaves the same way, and leaves
+# room for in-flight SSR responses to finish after the pod leaves the
+# Service endpoints.
+terminationGracePeriodSeconds: 30
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
