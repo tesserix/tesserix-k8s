@@ -76,6 +76,24 @@ limitRange:
   #
   # defaultRequest keeps CPU requests, which only affect scheduling and are
   # unambiguously good.
+  #
+  # CORRECTION, observed 2026-08-18 against the live object. Omitting
+  # `default.cpu` does NOT mean no CPU limit is injected. When `max.cpu` is
+  # set, the API server DERIVES `default.cpu` from it, so the stored object
+  # reads `default: {cpu: "4", memory: 512Mi}` even though this file specifies
+  # only memory. Verified by comparing `helm template` output against
+  # `kubectl get limitrange -o jsonpath='{.spec.limits[0]}'`.
+  #
+  # This is accepted rather than worked around. The derived cap equals the
+  # namespace ceiling, so it forbids nothing `max` already allowed, and 4 cores
+  # will not throttle a single-instance Postgres. The alternative — dropping
+  # `max.cpu` so nothing is derived — would remove the only bound on a runaway
+  # container, which is a worse trade.
+  #
+  # What the change from 500m to 4 actually bought: a restarted Postgres is
+  # capped at the namespace maximum instead of half a core. That was the real
+  # hazard. Recorded precisely because the first version of this comment
+  # implied no cap at all, which was false.
   default:
     memory: 512Mi
   defaultRequest:
