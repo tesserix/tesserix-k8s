@@ -93,8 +93,35 @@ service:
 # namespace ResourceQuota's 6x/8x headroom reserved for slice 1b.
 resources:
   requests:
+    cpu: 100m
     memory: 128Mi
   limits:
+    # AN EXPLICIT CPU LIMIT IS REQUIRED HERE, and this chart deliberately
+    # departs from the platform's memory-only convention because of it.
+    #
+    # Omitting it does not mean "no CPU limit". helivanta-resource-quota's
+    # LimitRange sets max.cpu: 4, and the API server DERIVES default.cpu from
+    # max.cpu — so every container without its own limit is admitted with
+    # limits.cpu=4. That was known and accepted in that chart's values.yaml,
+    # on the reasoning that the derived cap "forbids nothing max already
+    # allowed".
+    #
+    # That reasoning considered the LimitRange alone and missed the
+    # ResourceQuota. helivanta-compute caps limits.cpu at 8 for the whole
+    # namespace, so a 4-CPU default means the namespace holds exactly TWO
+    # such containers. Proven live on 2026-08-18: the migrate hook Job could
+    # not schedule —
+    #   exceeded quota: helivanta-compute, requested: limits.cpu=4,
+    #   used: limits.cpu=5, limited: limits.cpu=8
+    # — which wedged the ArgoCD sync in "waiting for completion of hook
+    # batch/Job/helivanta-api-migrate" with no pod ever created.
+    #
+    # Fixed here rather than by lowering the namespace default: that default
+    # exists so a restarted Postgres gets the namespace ceiling instead of
+    # half a core, and lowering it would reintroduce exactly the hazard
+    # helivanta-resource-quota set out to remove. A well-behaved application
+    # declaring its own modest limit costs that nothing.
+    cpu: 500m
     memory: 512Mi
 
 autoscaling:
@@ -280,6 +307,12 @@ migrate:
   backoffLimit: 3
   resources:
     requests:
+      cpu: 100m
       memory: 128Mi
     limits:
+      # Same reason as the API's above: without an explicit CPU limit this
+      # Job's pod is admitted at limits.cpu=4 and the namespace quota refuses
+      # it. As a PreSync hook that failure is worse than an ordinary one — it
+      # wedges the whole sync rather than failing a single workload.
+      cpu: 500m
       memory: 512Mi
