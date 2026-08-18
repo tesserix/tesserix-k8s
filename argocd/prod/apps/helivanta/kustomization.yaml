@@ -14,3 +14,13 @@ resources:
   # which fails closed without either.
   - helivanta-nats.yaml
   - helivanta-openfga.yaml
+  # Slice 1b's API. Last, and on sync-wave -1, so it lands after the broker
+  # (-6) and the authorization engine (-2): /readyz checks postgres, nats and
+  # openfga at request time, so on a cold bring-up this pod would otherwise
+  # boot straight into a permanently-unready state.
+  #
+  # Held back until 2026-08-18, when its two OpenBao boot secrets were
+  # provisioned and read back under the pod's own grant. Before that this
+  # entry would have synced a pod that refuses to boot by design
+  # (helivanta#875).
+  - helivanta-api.yaml
