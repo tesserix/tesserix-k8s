@@ -147,7 +147,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
 
         client_rule = policy["spec"]["rules"][0]
         self.assertEqual(
-            ["cluster.local/ns/kora/sa/kora-kora-api"],
+            ["cluster.local/ns/kora/sa/kora-api"],
             client_rule["from"][0]["source"]["principals"],
         )
         self.assertEqual(["8080"], client_rule["to"][0]["operation"]["ports"])
