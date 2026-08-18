@@ -161,7 +161,20 @@ zitadel:
   # guard: the pod will start (RequireDistinctHostedLoginOrigin only checks
   # hostedLoginUrl against HELIVANTA_WEB_ORIGIN, not this), but every token
   # verification will fail until this is set.
-  clientId: ""
+  # Provisioned 2026-08-18 on production Zitadel (project "Helivanta", app
+  # "helivanta-web"). Public by design — it appears in every browser address
+  # bar during the redirect — so it belongs here and NOT in OpenBao.
+  #
+  # This is NOT the soft gap an earlier revision of this file described. It
+  # claimed "the pod will start ... but every token verification will fail
+  # until this is set". The first real deployment disproved that: cmd/api
+  # exits at boot with `authn: zitadel client ID is required`
+  # (backend/pkg/authn/zitadel.go:46). It is a hard boot requirement.
+  #
+  # Task 3's shell image needs the SAME value as NEXT_PUBLIC_ZITADEL_CLIENT_ID,
+  # which Next inlines at BUILD time — so changing this means rebuilding that
+  # image, not just redeploying it.
+  clientId: "386782591925092979"
   # Public hosted-login origin, mirroring production Zitadel's own public
   # host (https://auth.tesserix.app, see argocd/prod/infrastructure/
   # zitadel-ingress-gateway.yaml) with Zitadel's v2 login path appended — the
@@ -175,6 +188,14 @@ zitadel:
 # boot against zitadel.hostedLoginUrl by RequireDistinctHostedLoginOrigin so
 # the two can never collide.
 webOrigin: https://helivanta.app
+
+# SESSION_ISSUER — the `iss` claim on Helivanta's own session tokens, checked
+# by its own Verifier. config.go calls it "a label, not a secret", and
+# defaults it to https://helivanta.local; the first production pod logged
+# exactly that default, which is untrue of this deployment. Set now, while no
+# session has ever been minted: changing it later rejects every token issued
+# under the previous value.
+sessionIssuer: https://helivanta.app
 
 # TRUSTED_PROXY_CIDRS — the pod CIDR the Istio ingress gateway runs in.
 #
