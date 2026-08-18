@@ -212,6 +212,29 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         gateway_egress = network_policy["spec"]["egress"][1]
         self.assertEqual(8080, gateway_egress["ports"][0]["port"])
 
+    def test_token_optimizer_pulls_large_private_image_without_remote_cache(self):
+        documents = render_chart(
+            "charts/apps/token-optimizer",
+            "token-optimizer",
+            "agentgateway-system",
+        )
+        deployment = resource(documents, "Deployment", "token-optimizer")
+        pull_secret = resource(documents, "ExternalSecret", "token-optimizer-ghcr")
+        pod = deployment["spec"]["template"]["spec"]
+
+        self.assertEqual(
+            "ghcr.io/tesserix/token-optimizer",
+            pod["containers"][0]["image"].split("@")[0],
+        )
+        self.assertEqual(
+            [{"name": "token-optimizer-ghcr"}],
+            pod["imagePullSecrets"],
+        )
+        self.assertEqual(
+            {"prod-ghcr-username", "prod-ghcr-token"},
+            {entry["remoteRef"]["key"] for entry in pull_secret["spec"]["data"]},
+        )
+
     def test_registry_publish_path_is_credential_gated(self):
         registry = render_chart(
             "charts/apps/agentic-registry",
