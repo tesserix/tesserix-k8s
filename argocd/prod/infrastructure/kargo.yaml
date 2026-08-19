@@ -58,6 +58,11 @@ spec:
             limits:
               memory: 512Mi
 
+          # Restart when cert-manager renews the Dex serving cert; the API
+          # trusts it as a self-signed root, so a stale pod 500s on /projects.
+          annotations:
+            secret.reloader.stakater.com/reload: kargo-dex-server-cert
+
           podAnnotations:
             # Allow the Cloudflare Tunnel + Istio mesh to reach the API
             # without sidecar wonkiness on the OIDC discovery endpoint.
@@ -100,9 +105,13 @@ spec:
               claims:
                 email:
                   - samyak.rout@gmail.com
-                  - mayu.b14@gmail.com
+                  - mahesh.sangawar@gmail.com
             dex:
               enabled: true
+              # Dex loads its serving cert once at startup; without this it
+              # keeps serving the pre-renewal cert after cert-manager rotates.
+              annotations:
+                secret.reloader.stakater.com/reload: kargo-dex-server-cert
               image:
                 repository: ghcr.io/dexidp/dex
                 tag: v2.44.0
