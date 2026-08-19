@@ -16,23 +16,9 @@ podAnnotations:
   proxy.istio.io/holdApplicationUntilProxyStarts: "true"
 
 aiGateway:
-  # Production cutover is explicit here; set false for the one-step rollback.
+  # Production is Gateway-only. Setting false disables model-backed behavior;
+  # the chart does not mount direct provider models or credentials.
   enabled: true
 
 env:
   GIN_MODE: "release"
-  # VERTEX_* is deliberately UNSET — see kora#202.
-  #
-  # Vertex was enabled on 2026-08-16 and rolled back within minutes: every
-  # /v1/resolve/text 500'd after 28.8s. The Vertex primary missed IdentifyText's
-  # 1500ms textBudget (most likely acquiring a metadata-server token on the
-  # first call, where an API key is just a header), fell through to the NVIDIA
-  # fallback, and that ran until the request was cancelled. No ai_usage_events
-  # row was written at all, which is consistent with the primary dying before it
-  # recorded anything.
-  #
-  # Setting VERTEX_PROJECT is ALL it takes to switch the engine over — cmd/api
-  # prefers it to GEMINI_API_KEY — so leaving it here would re-break production
-  # the moment any newer image is deployed. The IAM grant
-  # (kora-api-prod@ -> roles/aiplatform.user) and the provider code stay in
-  # place; only this switch is off.

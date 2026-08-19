@@ -183,8 +183,9 @@ spec:
             # match the container/Service port unambiguously.
             - name: PORT
               value: {{ .Values.service.targetPort | default 8080 | quote }}
+            {{- if .Values.aiGateway.enabled }}
             - name: AI_GATEWAY_ENABLED
-              value: {{ .Values.aiGateway.enabled | quote }}
+              value: "true"
             - name: AI_GATEWAY_BASE_URL
               value: {{ .Values.aiGateway.baseURL | quote }}
             - name: AI_GATEWAY_MODEL
@@ -195,23 +196,31 @@ spec:
                   name: {{ .Values.aiGateway.clientSecret.name }}
                   key: {{ .Values.aiGateway.clientSecret.key }}
                   optional: true
+            {{- end }}
             # Plain (non-secret) env from values.yaml :: env
+            {{- $directProviderEnv := dict "VERTEX_PROJECT" true "VERTEX_LOCATION" true "OPENAI_BASE_URL" true "OPENAI_MODEL" true "OPENAI_JSON_OBJECT" true }}
+            {{- $directProvidersEnabled := and (not .Values.aiGateway.enabled) .Values.legacyDirectAI.enabled }}
             {{- range $key, $value := .Values.env }}
+            {{- if or $directProvidersEnabled (not (hasKey $directProviderEnv $key)) }}
             - name: {{ $key }}
               value: {{ $value | quote }}
+            {{- end }}
             {{- end }}
             # Secret env from values.yaml :: secretEnv — each maps an env var
             # name to a key in the <fullname>-secrets Secret created by the
             # ExternalSecret. `optional: true` lets pods boot before a value is
             # populated.
             {{- $secretName := printf "%s-secrets" (include "kora-api.fullname" .) -}}
+            {{- $directProviderSecrets := dict "GEMINI_API_KEY" true "OPENAI_API_KEY" true }}
             {{- range $envName, $secretKey := .Values.secretEnv }}
+            {{- if or $directProvidersEnabled (not (hasKey $directProviderSecrets $envName)) }}
             - name: {{ $envName }}
               valueFrom:
                 secretKeyRef:
                   name: {{ $secretName }}
                   key: {{ $secretKey }}
                   optional: true
+            {{- end }}
             {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

@@ -2,13 +2,15 @@
 
 ## Decision
 
-Kora text generation uses a private Agent Gateway v1.4.1 data plane in the
-`agentgateway-system` namespace. Embeddings, image identification, and
-transcription remain direct Vertex/Gemini calls. Agent Gateway authenticates
-Kora, applies request limits and prompt guards, invokes the private token
-optimizer over Envoy ExtProc, and then routes to Vertex, Anthropic, or xAI. Kora's
-`ai_usage_events` remains the billing and budget reconciliation authority;
-gateway and optimizer telemetry is operational evidence, not a second ledger.
+Every Kora model capability uses a private Agent Gateway v1.4.1 data plane in
+the `agentgateway-system` namespace: structured text, conversation, image
+identification, audio transcription, and embeddings. Kora sends only the
+logical model `kora-auto` plus capability/context classification headers. The
+gateway owns concrete provider models, locations, credentials, ordering, and
+fallbacks. It also applies request limits and prompt guards and invokes the
+private token optimizer over Envoy ExtProc. Kora's `ai_usage_events` remains the
+billing and budget reconciliation authority; gateway and optimizer telemetry is
+operational evidence, not a second ledger.
 
 ```text
 Kora API
@@ -17,8 +19,9 @@ Kora API
             -> RTK proof: pass through
             -> JSON/MCP/RAG/conversation: Headroom
             -> older plain text: LLMLingua-2
-       -> structured JSON: Vertex -> Anthropic -> xAI
-       -> conversation: Anthropic -> Vertex -> xAI
+       -> embedding capability: Vertex embedding backend
+       -> structured/default: Vertex -> Anthropic -> xAI
+       -> conversation: Vertex -> Anthropic -> xAI
 ```
 
 RTK is a producer-side CLI wrapper. The gateway never reconstructs or reruns a
@@ -55,8 +58,8 @@ compromised dependency, and an operator with excess secret access.
   `cluster.local/ns/kora/sa/kora-kora-api` workload identity on port 8080.
 - Strict API-key authentication reads a platform key from GCP Secret Manager
   through two namespace-local ExternalSecrets. Kora receives only the client
-  key; Anthropic and xAI credentials exist only in `agentgateway-system` and
-  cannot authenticate as clients.
+  key; every provider credential exists only in `agentgateway-system` and
+  cannot authenticate as a client.
 - Vertex uses ambient Google credentials through Workload Identity; no service
   account JSON is stored in Git or Kubernetes. The restricted Agent Platform
   API key is loaded from Secret Manager and added as `x-goog-api-key`, without
@@ -77,7 +80,8 @@ compromised dependency, and an operator with excess secret access.
 | --- | --- |
 | Optimizer unavailable, times out, or rejects an unsafe mutation | ExtProc fails open and sends the original prompt |
 | Eligible prompt remains over the hard budget | Optimizer returns stable HTTP 422; callers must not retry |
-| Primary provider is unhealthy | Agent Gateway advances to the next priority group |
+| Primary generation provider is unhealthy | Agent Gateway advances to the next priority group |
+| Embedding provider is unavailable | The embedding call fails; Kora never mixes vector spaces or bypasses the gateway |
 | All providers are unavailable | Kora receives the gateway error; application deadlines bound the call |
 | Client API key is absent or invalid | Gateway rejects before provider routing |
 | Provider secret is absent | That backend is not usable; do not enable Kora cutover |
@@ -85,9 +89,9 @@ compromised dependency, and an operator with excess secret access.
 
 ## Release gates
 
-The two Kora AI child Applications deliberately have no automated sync. Do not
-manually sync them, and do not set `AI_GATEWAY_ENABLED=true`, until all of the
-following are true:
+The two Kora AI child Applications deliberately have no automated sync. Any
+new Gateway model or routing release must satisfy all of the following before
+manual sync:
 
 1. Verify the pinned token-optimizer digest
    `sha256:8991783841b991c6cd09537009dd10849f1ed87dc844b1b9caed92f72d6bda6d`
@@ -111,11 +115,11 @@ following are true:
 6. Canary by enabling the Kora feature flag for a controlled deployment and
    compare token counts, cost, latency, 4xx/5xx rates, and fallback rates.
 
-Rollback is a single Kora values change: set `aiGateway.enabled` to false. That
-restores the existing Gemini/OpenAI-compatible routing while leaving the
-gateway available for diagnosis. Do not delete CRDs during rollback. Keep
-Agent Gateway xDS mode `either` during the v1.0.1-to-v1.4.1 transition; move to
-TLS-only only after every data plane is confirmed on v1.4.1.
+Setting `aiGateway.enabled` to false disables Kora's model-backed behavior; it
+does not restore a direct provider bypass. Reverting a Gateway model or route is
+a GitOps change in this chart. Do not delete CRDs during rollback. Keep Agent
+Gateway xDS mode `either` during the v1.0.1-to-v1.4.1 transition; move to TLS-only
+only after every data plane is confirmed on v1.4.1.
 
 ## Cost envelope
 

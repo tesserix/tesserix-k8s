@@ -10,15 +10,15 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 - providers:
     - name: vertex
       vertexai:
-        projectId: {{ .Values.providers.vertex.projectId }}
-        region: {{ .Values.providers.vertex.region }}
-        model: {{ .Values.providers.vertex.model }}
+        projectId: {{ .root.Values.providers.vertex.projectId }}
+        region: {{ .root.Values.providers.vertex.region }}
+        model: {{ .model }}
       policies:
         auth:
           gcp: {}
           credentials:
             - secretRef:
-                name: {{ .Values.externalSecrets.providerSecretName }}
+                name: {{ .root.Values.externalSecrets.providerSecretName }}
                 key: vertex-api-key
               location:
                 header:

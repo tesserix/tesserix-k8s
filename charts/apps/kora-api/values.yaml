@@ -52,7 +52,8 @@ service:
   nameOverride: kora-api-direct
 
 aiGateway:
-  # Rollout stays disabled until the gateway, optimizer, and evaluation gates pass.
+  # Production enables this in values-prod.yaml. Kora sends only this logical
+  # model; Agent Gateway owns every concrete provider model and location.
   enabled: false
   baseURL: http://kora-ai.agentgateway-system.svc.cluster.local:8080/v1
   model: kora-auto
@@ -70,6 +71,11 @@ aiGateway:
     namespace: agentgateway-system
     gatewayName: kora-ai
     port: 8080
+
+# Emergency/local compatibility only. GitOps environments keep this disabled:
+# disabling Agent Gateway must not silently bypass it with provider credentials.
+legacyDirectAI:
+  enabled: false
 
 resources:
   limits:
@@ -110,14 +116,6 @@ env:
   # a token it would accept, so every authenticated request 401'd and the prod
   # users table sat at 0 rows.
   FIREBASE_PROJECT_ID: "kora-app-e6d38"
-  # OpenAI-compatible chat/parse model. Per docs/superpowers/HANDOFF-phase3.md
-  # the free-tier fallback used in dev is NVIDIA's OpenAI-compatible
-  # endpoint — carried forward here as the prod default until a paid
-  # OpenAI key + model is decided. Gemini (secretEnv: GEMINI_API_KEY)
-  # remains the primary provider for embeddings regardless of this value.
-  OPENAI_BASE_URL: "https://integrate.api.nvidia.com/v1"
-  OPENAI_MODEL: "meta/llama-3.3-70b-instruct"
-  OPENAI_JSON_OBJECT: "true"
   # Inert-by-default (see docs/superpowers/plans/2026-07-27-kora-push-notifications.md):
   # OS push go-live is a user-owned step (eas init, APNs creds, physical
   # device test). Flip to "true" only after that's done.
@@ -128,51 +126,11 @@ env:
   # chart said Redis was expected, so its absence flagged nothing and every
   # resolve silently cost a Gemini call. Points at the sidecar below.
   REDIS_URL: "redis://localhost:6379/0"
-  # Vertex AI for the RESOLVE ENGINE, closing out kora#209.
-  #
-  # cmd/api picks the provider with a switch, not a layering: VERTEX_PROJECT
-  # set means Vertex IS the primary and GEMINI_API_KEY is not used for resolve
-  # at all. That is the point — it takes a PERSONAL Gemini key belonging to
-  # kora-app-e6d38 (billing disabled, free tier) off the production critical
-  # path and authenticates with the pod's own workload identity instead.
-  #
-  # This reverses the "VERTEX_* must NOT go into .Values.env" instruction that
-  # seed-job.yaml carried, which was based on kora#202 being caused by Vertex
-  # missing IdentifyText's 1500ms textBudget. Measured from the running kora-api
-  # pod on 2026-08-17, against gemini-3.5-flash-lite at location "global":
-  #
-  #   warm, connection reused (n=14):  p50 0.98s  p90 1.24s  max 1.25s  0 over budget
-  #   fresh connection each time (n=20): p50 1.14s  p90 1.57s  max 1.69s  3 over budget
-  #   TLS handshake to the PSC endpoint: 44ms
-  #
-  # So Vertex fits 1.5s comfortably on a pooled connection, which is what the
-  # Go client uses. kora#202's total failure is far better explained by the
-  # egress bug fixed in #378 — every call was dropped by a NetworkPolicy and
-  # hung until timeout, so every /v1/resolve/text 500'd regardless of budget.
-  #
-  # NOT measured, and worth knowing before reading too much into the above: a
-  # head-to-head against the current GEMINI_API_KEY path. Doing it would have
-  # meant handing the API key to a debug container, and a latency delta is not
-  # worth exposing a secret for. Both paths call the same model, and Vertex is
-  # on a paid project rather than the free tier's shared demand pool.
-  #
-  # Rollback is deleting these two lines. On a budget miss the request falls to
-  # the OpenAI-compatible NVIDIA fallback on a 90s budget — a pre-existing risk
-  # that applies identically to the Gemini primary today, not something Vertex
-  # introduces.
-  #
-  # Location "global" for the reason kora#202 recorded: asia-south1 serves
-  # gemini-embedding-001 but 404s on gemini-3.5-flash-lite, so "global" is the
-  # one location serving every model this image uses.
-  VERTEX_PROJECT: "tesseracthub-480811"
-  VERTEX_LOCATION: "global"
 
 # Each entry maps an env var name to a key in the k8s Secret created by
 # the ExternalSecret. Keep this in sync with externalsecret.yaml.
 secretEnv:
   DATABASE_URL: database_url
-  GEMINI_API_KEY: gemini_api_key
-  OPENAI_API_KEY: openai_api_key
   EXPO_ACCESS_TOKEN: expo_access_token
   # Task 3 (kora repo, api/internal/config) reads this directly via
   # os.Getenv("KORA_BFF_HMAC_KEY") — gates whether /v1/admin/* mounts at all.
@@ -241,8 +199,6 @@ externalSecret:
     kind: ClusterSecretStore
   remoteRefs:
     database_url: prod-kora-database-url
-    gemini_api_key: prod-kora-gemini-api-key
-    openai_api_key: prod-kora-openai-api-key
     expo_access_token: prod-kora-expo-access-token
     KORA_BFF_HMAC_KEY: prod-kora-bff-internal-hmac-key
     # Sign in with Apple. Required for account deletion (#106): Apple has
@@ -290,10 +246,8 @@ migrate:
 # embed runs LAST, after the index is fully populated, and backfills
 # food_items.embedding — the ONLY source of sub-0.70 resolver match scores.
 # Without it the embedding tier is dead: everything scores 0.70-0.99 via
-# full-text, so `follow_up` is unreachable. It uses Vertex via workload
-# identity where available, falling back to GEMINI_API_KEY (both wired in
-# templates/seed-job.yaml); with neither it logs and exits 0, so a missing
-# secret degrades to "no embeddings" rather than a crashlooping Job.
+# full-text, so `follow_up` is unreachable. It uses Agent Gateway with the same
+# logical `kora-auto` model and client credential as the API.
 #
 # Note it now exits NON-ZERO when it gives up with rows outstanding (kora#97) —
 # a run that embedded some rows and then hit a fully-failed batch used to exit
@@ -306,28 +260,6 @@ migrate:
 # image is promoted the Job exec-fails loudly, matching the migrate Job's
 # convention of a visible failure over a silent skip.
 seed:
-  # Vertex for the embed step.
-  #
-  # This was OFF because Vertex looked unreachable from the pod network. The
-  # actual cause was a NetworkPolicy gap, not the PSC endpoint: the private DNS
-  # zone points aiplatform.googleapis.com at 10.255.0.2, and allow-kora-egress
-  # only permitted 0.0.0.0/0 `except: 10.0.0.0/8` on 443 — which excludes it.
-  # Calico dropped ztunnel's upstream dial; the pod's own `nc -z` still
-  # succeeded against ztunnel's local redirect socket, so it read as "the PSC
-  # endpoint resets pod TLS". It does not — proved by pods in namespaces with
-  # no egress policy reaching it fine from the same nodes. Fixed by
-  # privateServiceConnectCIDRs in the istio-config chart (kora#209).
-  #
-  # Keep in mind for the same class of bug: ip-masq-agent SNAT
-  # (k8s/cluster/ip-masq-agent.yaml) and hostNetwork were both tried and are
-  # NOT the fix — hostNetwork in particular bypasses the Workload Identity
-  # metadata server, so every call 403s on scopes.
-  #
-  # Enabled 2026-08-17, after the egress fix synced and TLS to Vertex was
-  # confirmed three times from the running kora-api pod. With this true,
-  # cmd/embed uses Vertex via Workload Identity instead of falling back to
-  # GEMINI_API_KEY and its 1,000/day free-tier cap.
-  useVertex: true
   enabled: true
   # -food-dir is the ONLY path this command needs. Adding a food source to
   # cmd/ingest requires NO change here.
