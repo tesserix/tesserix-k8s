@@ -80,6 +80,13 @@ emits the side-by-side markup regardless of viewport. That markup is therefore
 responsive on its own (stacked below `md`) — a phone must not have to wait for
 hydration to get a usable page.
 
+Login v2 is selected per OIDC application. `zitadel-bootstrap` reconciles each
+declared `loginBaseUri` through the Application V2 API while leaving client
+secrets and callback URIs untouched. The MCP and AgentGateway browser clients
+both use `https://auth.tesserix.app/ui/v2/login`; this makes an external Google
+login return through `https://auth.tesserix.app/idps/callback`, which is the
+callback registered on the shared Google OAuth client.
+
 ## Three things that will bite you
 
 **The masterkey is immutable.** Every encryption key in the eventstore is
@@ -194,7 +201,9 @@ Notable choices:
 - `LoginPolicy.AllowDomainDiscovery: true` — routes a user to their
   organization's IdP by email domain. This is what makes one hostname serve
   every tenant's SSO.
-- `Features.LoginV2.Required: true` — login v1 is deprecated upstream.
+- `Features.LoginV2.Required: false` — applications opt into login v2 with
+  their own `loginVersion`; forcing it instance-wide overrides per-app base
+  URIs in the deployed Zitadel version.
 - `LockoutPolicy` 10 attempts — upstream ships `0`, meaning no lockout at all.
 - `PasswordComplexityPolicy.MinLength: 12`.
 
