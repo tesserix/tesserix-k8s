@@ -1480,6 +1480,68 @@ buckets = [
   },
 
   # ===========================================================================
+  # DEVAI - Immutable Evaluation Datasets
+  # ===========================================================================
+  # User-owned dataset blobs are retained until a reference-aware cleanup job
+  # can enforce the three-year policy without deleting shared content hashes.
+  {
+    name                        = "devai-prod-evaluations-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    labels = {
+      purpose   = "evaluation-datasets"
+      product   = "devai"
+      region    = "in"
+      retention = "three-year-minimum"
+      sensitive = "true"
+      managed   = "terraform"
+    }
+    lifecycle_rules = [
+      {
+        action = {
+          type          = "SetStorageClass"
+          storage_class = "NEARLINE"
+        }
+        condition = {
+          age                   = 90
+          matches_storage_class = ["STANDARD"]
+        }
+      },
+      {
+        action = {
+          type          = "SetStorageClass"
+          storage_class = "COLDLINE"
+        }
+        condition = {
+          age                   = 365
+          matches_storage_class = ["NEARLINE"]
+        }
+      },
+      {
+        action = {
+          type          = "SetStorageClass"
+          storage_class = "ARCHIVE"
+        }
+        condition = {
+          age                   = 730
+          matches_storage_class = ["COLDLINE"]
+        }
+      }
+    ]
+    cors = []
+    iam_bindings = [
+      {
+        role   = "roles/storage.objectUser"
+        member = "serviceAccount:app-secrets-devai-prod@tesseracthub-480811.iam.gserviceaccount.com"
+      }
+    ]
+  },
+
+  # ===========================================================================
   # BLOG - Engineering Blog Assets (public read, upload-only for blog SA)
   # Long-term retention 10yr+, lifecycle: Standard → Nearline → Coldline
   # ===========================================================================

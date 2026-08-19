@@ -153,6 +153,14 @@ identical environment — defined once here so the two never drift.
       key: DEVAI_QDRANT_API_KEY
       optional: true
 {{- end }}
+{{- if .Values.objectStore }}
+- name: DEVAI_OBJECT_STORE_PROVIDER
+  value: {{ .Values.objectStore.provider | default "noop" | quote }}
+- name: DEVAI_OBJECT_STORE_BUCKET
+  value: {{ .Values.objectStore.bucket | default "" | quote }}
+- name: DEVAI_OBJECT_STORE_PREFIX
+  value: {{ .Values.objectStore.prefix | default "devai" | quote }}
+{{- end }}
 # ─── Settings capability (per-user/per-tenant connectors + secrets) ──
 # Connectors are persisted in the user_settings table; secret VALUES are
 # auto-provisioned into GCP Secret Manager via the secrets adapter (the

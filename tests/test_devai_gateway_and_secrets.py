@@ -172,6 +172,23 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         )
         self.assertEqual("openbao", env["DEVAI_SECRETS_PROVIDER"])
 
+    def test_devai_production_uses_durable_evaluation_object_storage(self):
+        documents = render_chart(
+            "charts/apps/devai-api",
+            "devai-api",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        deployment = resource(documents, "Deployment", "devai-api")
+        env = {
+            item["name"]: item.get("value")
+            for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+
+        self.assertEqual("gcs", env["DEVAI_OBJECT_STORE_PROVIDER"])
+        self.assertEqual("devai-prod-evaluations-in", env["DEVAI_OBJECT_STORE_BUCKET"])
+        self.assertEqual("devai", env["DEVAI_OBJECT_STORE_PREFIX"])
+
     def test_devai_registry_writes_use_tenant_scoped_deploy_key(self):
         documents = render_chart(
             "charts/apps/devai-api",
