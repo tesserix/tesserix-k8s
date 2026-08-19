@@ -60,17 +60,54 @@ phone masked in both directions), the `token-optimizer:18080` extProc in
 `failOpen` buffered mode, 120 req/min and 1M tokens/hour local limits, and a
 120s timeout.
 
+## Onboarding a product
+
+In-cluster callers use the mesh listener; no API key or JWT, identity comes from
+the Istio mTLS certificate. Add one entry to `consumers` in the chart values —
+it drives both the AuthorizationPolicy principals and the NetworkPolicy:
+
+```yaml
+consumers:
+  - namespace: mark8ly
+    serviceAccounts:
+      - otto
+```
+
+Then point the client at the base URL and keep its own provider key in the
+`Authorization` header, since every provider route uses passthrough auth:
+
+```
+http://agentgateway-console.agentgateway-system.svc.cluster.local:8080/<provider>
+```
+
+`<provider>` is one of `anthropic`, `openai`, `gemini`, `vertex`, `groq`,
+`openrouter`, `nemoclaw`. Paths below the prefix are the provider's own, so
+`/openai/v1/chat/completions` works unchanged. `vertex` needs no key: the
+gateway signs with its own Workload Identity, so the caller's KSA needs no GCP
+binding of its own.
+
+Per-request attribution flows through headers the access log records:
+`x-devai-tenant-id`, `x-devai-user-id`, `x-devai-run-id`, `x-devai-agent`,
+`x-kora-ai-capability`.
+
+External callers use the same paths on `agentgateway.tesserix.app`, which
+additionally requires a Zitadel JWT carrying the `agentgateway.models` role.
+
 ## Prerequisites
 
-1. GCP Secret Manager key `prod-agentgateway-postgresql-password`.
+1. GCP Secret Manager keys `prod-agentgateway-postgresql-password` and
+   `prod-agentgateway-oidc-cookie-secret` (32 bytes, hex).
 2. Zitadel: add `https://agentgateway.tesserix.app/oauth/callback` to the
-   existing agentgateway admin UI application's redirect URIs.
-3. `agentgateway_config` and `agentgateway_logs` on `global-postgres` — declared
-   in that chart's `postInitSQL` and created by the db-schema-bootstrap CronJob.
+   agentgateway admin UI application's redirect URIs, and grant the
+   `agentgateway.models` role to anyone who should reach the console.
+3. `agentgateway_config` and `agentgateway_logs` on `global-postgres`, owned by
+   the `agentgateway` role — both reconciled by CNPG `Database` CRs.
+4. The console KSA bound to `agentgateway-llm@` for Workload Identity, and
+   NetworkPolicy egress to `169.254.169.254:80` so the token fetch succeeds.
 
 ## Cutover
 
-This chart is additive: nothing routes to it until devai and kora are repointed
-and `agentgateway.tesserix.app` is moved off the oauth2-proxy upstreams. Those
-are separate changes, along with retiring the xDS path for `ai-gateway` and
-`agentgateway-route-sync`.
+Browser traffic on `agentgateway.tesserix.app` is served by this gateway. The
+provider prefixes on that host still route to the xDS `ai-gateway`; moving them,
+retiring that gateway and unwiring `agentgateway-route-sync` are separate
+changes.

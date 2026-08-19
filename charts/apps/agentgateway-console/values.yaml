@@ -36,11 +36,17 @@ externalSecret:
   oidcClientSecret: prod-agentgateway-admin-ui-client-secret
   oidcCookieSecret: prod-agentgateway-oidc-cookie-secret
 
-# Istio principals allowed onto the mesh listener.
+# Products allowed onto the mesh listener. One entry onboards a product to both
+# the Istio authorization policy and the NetworkPolicy.
+consumers:
+  - namespace: devai
+    serviceAccounts:
+      - devai-api
+      - devai-runner
+  - namespace: kora
+    serviceAccounts:
+      - kora-api
+      - kora-ai-agents
+
 authorizationPolicy:
-  meshPrincipals:
-    - cluster.local/ns/devai/sa/devai-api
-    - cluster.local/ns/devai/sa/devai-runner
-    - cluster.local/ns/kora/sa/kora-api
-    - cluster.local/ns/kora/sa/kora-ai-agents
   publicPrincipal: cluster.local/ns/istio-ingress/sa/istio-ingressgateway
