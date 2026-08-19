@@ -39,4 +39,21 @@ def test_eval_owner_scope_indexes_and_chart_release_are_present() -> None:
     assert "idx_eval_datasets_owner" in SQL
     assert "idx_eval_suites_owner" in SQL
     assert "idx_eval_runs_owner_sandbox" in SQL
-    assert "version: 0.3.34" in CHART
+    assert "version: 0.3.35" in CHART
+
+
+def test_eval_comparisons_pin_configuration_and_owned_run_pairs() -> None:
+    eval_runs_sql = SQL[
+        SQL.index("CREATE TABLE IF NOT EXISTS eval_runs") :
+        SQL.index("CREATE TABLE IF NOT EXISTS eval_case_results")
+    ]
+    assert re.search(r"configuration\s+JSONB NOT NULL DEFAULT '\{\}'::jsonb", eval_runs_sql)
+    assert re.search(r"dataset_ref\s+JSONB", eval_runs_sql)
+    assert re.search(r"suite_ref\s+JSONB", eval_runs_sql)
+    assert "CREATE TABLE IF NOT EXISTS eval_comparisons" in SQL
+    comparisons_sql = SQL[SQL.index("CREATE TABLE IF NOT EXISTS eval_comparisons") :]
+    assert re.search(r"owner_scope\s+TEXT NOT NULL", comparisons_sql)
+    assert re.search(r"baseline_run_id\s+TEXT NOT NULL REFERENCES eval_runs\(id\)", comparisons_sql)
+    assert re.search(r"candidate_run_id\s+TEXT NOT NULL REFERENCES eval_runs\(id\)", comparisons_sql)
+    assert "ON DELETE CASCADE" not in comparisons_sql.split("CREATE INDEX", maxsplit=1)[0]
+    assert "idx_eval_comparisons_owner" in SQL
