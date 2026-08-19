@@ -71,6 +71,28 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         )
         self.assertEqual("agentgateway", gateway["spec"]["gatewayClassName"])
 
+    def test_gateway_route_declares_kubernetes_default_values(self):
+        documents = render_chart(
+            "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
+        )
+        route = resource(documents, "HTTPRoute", "kora-ai")
+
+        self.assertEqual(
+            {
+                "group": "gateway.networking.k8s.io",
+                "kind": "Gateway",
+                "name": "kora-ai",
+                "sectionName": "http",
+            },
+            route["spec"]["parentRefs"][0],
+        )
+        for rule in route["spec"]["rules"]:
+            self.assertEqual(1, rule["backendRefs"][0]["weight"])
+            for match in rule["matches"]:
+                self.assertEqual(
+                    {"type": "PathPrefix", "value": "/"}, match["path"]
+                )
+
     def test_vertex_terraform_binds_the_kora_gateway_identity(self):
         main = (ROOT / "terraform-new/stacks/12-vertex/main.tf").read_text()
         variables = (ROOT / "terraform-new/stacks/12-vertex/variables.tf").read_text()
