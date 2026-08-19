@@ -50,8 +50,26 @@ spec:
                   URL="${URL}&gateway={{ .Values.gateway.name }}"
                   URL="${URL}&sandboxNamespace={{ .Values.registry.sandboxNamespace }}"
                   echo "GET ${URL}"
-                  curl -sS --fail-with-body --max-time 30 "${URL}" -o /work/routes.yaml
-                  echo "rendered $(grep -c '^kind:' /work/routes.yaml || echo 0) object(s)"
+                  curl -sS --fail-with-body --max-time 30 \
+                    --header "Authorization: Bearer ${REGISTRY_DEPLOY_KEY}" \
+                    --dump-header /work/export.headers \
+                    "${URL}" -o /work/routes.yaml
+                  expected_count="$(awk -F ': ' 'tolower($1) == "x-agentgateway-resource-count" {gsub("\\r", "", $2); print $2}' /work/export.headers)"
+                  expected_digest="$(awk -F ': ' 'tolower($1) == "x-agentgateway-resource-digest" {gsub("\\r", "", $2); print $2}' /work/export.headers)"
+                  actual_count="$(grep -c '^kind:' /work/routes.yaml || true)"
+                  actual_digest="sha256:$(sha256sum /work/routes.yaml | awk '{print $1}')"
+                  test -n "${expected_count}"
+                  test -n "${expected_digest}"
+                  test "${actual_count}" = "${expected_count}"
+                  test "${actual_digest}" = "${expected_digest}"
+                  touch /work/export.verified
+                  echo "verified ${actual_count} desired AgentGateway resources"
+              env:
+                - name: REGISTRY_DEPLOY_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.registry.authSecret.name }}
+                      key: {{ .Values.registry.authSecret.key }}
               volumeMounts:
                 - name: work
                   mountPath: /work
@@ -74,11 +92,33 @@ spec:
               args:
                 - |
                   set -eu
+                  test -f /work/export.verified
                   if [ -s /work/routes.yaml ] && grep -q '^kind:' /work/routes.yaml; then
                     kubectl apply --server-side --force-conflicts -f /work/routes.yaml
                   else
-                    echo "no MCP servers to route — nothing to apply"
+                    echo "desired AgentGateway state is empty"
                   fi
+                  {{- if .Values.registry.prune }}
+                  awk '
+                    /^kind: / { kind=$2; metadata=0 }
+                    /^metadata:$/ { metadata=1; next }
+                    metadata && /^  name: / { print kind "/" $2; metadata=0 }
+                  ' /work/routes.yaml > /tmp/desired-resources
+                  for entry in \
+                    "AgentgatewayBackend agentgatewaybackends.agentgateway.dev" \
+                    "HTTPRoute httproutes.gateway.networking.k8s.io" \
+                    "AgentgatewayPolicy agentgatewaypolicies.agentgateway.dev"; do
+                    kind="${entry%% *}"
+                    resource="${entry#* }"
+                    kubectl get "${resource}" \
+                      --selector app.kubernetes.io/managed-by=agentic-registry \
+                      --output custom-columns=NAME:.metadata.name --no-headers | while read -r name; do
+                        if ! grep -Fxq "${kind}/${name}" /tmp/desired-resources; then
+                          kubectl delete "${resource}" "${name}" --wait=false
+                        fi
+                      done
+                  done
+                  {{- end }}
               volumeMounts:
                 - name: work
                   mountPath: /work
