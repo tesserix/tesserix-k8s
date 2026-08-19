@@ -329,7 +329,51 @@ def reconcile_platform_project(desired):
                     f"platform OIDC application {wanted['name']!r} configuration drifted; "
                     "reconcile it through the identity onboarding runbook"
                 )
-            log(f"platform OIDC application {wanted['name']}: in sync")
+            login_base_uri = wanted.get("loginBaseUri")
+            if not login_base_uri:
+                log(f"platform OIDC application {wanted['name']}: in sync")
+                continue
+            connect_headers = {**scope, "Connect-Protocol-Version": "1"}
+            status, payload = request(
+                "POST",
+                "/zitadel.application.v2.ApplicationService/GetApplication",
+                {"applicationId": matches[0]["id"]},
+                headers=connect_headers,
+            )
+            if status != 200:
+                raise SystemExit(
+                    f"platform OIDC application {wanted['name']!r} login version read "
+                    f"failed: {status} {payload!r}"
+                )
+            login_version = (
+                json.loads(payload)["application"]
+                .get("oidcConfiguration", {})
+                .get("loginVersion", {})
+            )
+            actual_base_uri = login_version.get("loginV2", {}).get("baseUri")
+            if actual_base_uri == login_base_uri:
+                log(f"platform OIDC application {wanted['name']}: in sync")
+                continue
+            status, payload = request(
+                "POST",
+                "/zitadel.application.v2.ApplicationService/UpdateApplication",
+                {
+                    "applicationId": matches[0]["id"],
+                    "projectId": project_id,
+                    "oidcConfiguration": {
+                        "loginVersion": {
+                            "loginV2": {"baseUri": login_base_uri}
+                        }
+                    },
+                },
+                headers=connect_headers,
+            )
+            if status != 200:
+                raise SystemExit(
+                    f"platform OIDC application {wanted['name']!r} login version update "
+                    f"failed: {status} {payload!r}"
+                )
+            log(f"platform OIDC application {wanted['name']}: enabled Login V2")
 
     roles_path = f"/management/v1/projects/{project_id}/roles/_search"
     status, payload = request("POST", roles_path, {"query": {"limit": 100}}, headers=scope)

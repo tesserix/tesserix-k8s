@@ -374,6 +374,7 @@ class PlatformProjectTest(unittest.TestCase):
                 "name": "agentgateway-mcp-ui",
                 "redirectUris": ["https://mcp.tesserix.app/oauth2/callback"],
                 "postLogoutRedirectUris": ["https://mcp.tesserix.app"],
+                "loginBaseUri": "https://auth.tesserix.app/ui/v2/login",
             }
         ],
     }
@@ -420,6 +421,23 @@ class PlatformProjectTest(unittest.TestCase):
                     }
                 }).encode(),
             ),
+            (
+                "POST",
+                "/zitadel.application.v2.ApplicationService/GetApplication",
+            ): (
+                200,
+                json.dumps({
+                    "application": {
+                        "oidcConfiguration": {
+                            "loginVersion": {
+                                "loginV2": {
+                                    "baseUri": "https://auth.tesserix.app/ui/v2/login"
+                                }
+                            }
+                        }
+                    }
+                }).encode(),
+            ),
             ("POST", "/v2/users"): (
                 200,
                 json.dumps(users if users is not None else AdminTest.USERS).encode(),
@@ -432,7 +450,12 @@ class PlatformProjectTest(unittest.TestCase):
             bootstrap.reconcile_platform_project(dict(self.PROJECT))
         state_writes = [
             write for write in recorder.writes
-            if not write[1].endswith("_search") and write[1] != "/v2/users"
+            if not write[1].endswith("_search")
+            and write[1]
+            not in (
+                "/v2/users",
+                "/zitadel.application.v2.ApplicationService/GetApplication",
+            )
         ]
         self.assertEqual([], state_writes)
 
@@ -502,6 +525,69 @@ class PlatformProjectTest(unittest.TestCase):
                 bootstrap.reconcile_platform_project(dict(self.PROJECT))
         self.assertEqual([], [call for call in recorder.calls if call[0] in ("PUT", "DELETE")])
 
+    def test_missing_login_v2_is_reconciled_without_changing_client_config(self):
+        recorder = self._recorder()
+        recorder.responses[
+            ("POST", "/zitadel.application.v2.ApplicationService/GetApplication")
+        ] = (
+            200,
+            json.dumps({"application": {"oidcConfiguration": {}}}).encode(),
+        )
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(dict(self.PROJECT))
+        updates = [
+            call
+            for call in recorder.calls
+            if call[:2]
+            == (
+                "POST",
+                "/zitadel.application.v2.ApplicationService/UpdateApplication",
+            )
+        ]
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(
+            updates[0][2],
+            {
+                "applicationId": "app-mcp",
+                "projectId": "p-agentgateway",
+                "oidcConfiguration": {
+                    "loginVersion": {
+                        "loginV2": {
+                            "baseUri": "https://auth.tesserix.app/ui/v2/login"
+                        }
+                    }
+                },
+            },
+        )
+        update_headers = [
+            headers
+            for path, headers in recorder.headers
+            if path
+            == "/zitadel.application.v2.ApplicationService/UpdateApplication"
+        ][0]
+        self.assertEqual(update_headers["Connect-Protocol-Version"], "1")
+        self.assertEqual(update_headers["x-zitadel-orgid"], "org-zitadel")
+
+    def test_login_v2_update_failure_stops_reconciliation(self):
+        recorder = self._recorder()
+        recorder.responses[
+            ("POST", "/zitadel.application.v2.ApplicationService/GetApplication")
+        ] = (
+            200,
+            json.dumps({"application": {"oidcConfiguration": {}}}).encode(),
+        )
+        recorder.responses[
+            ("POST", "/zitadel.application.v2.ApplicationService/UpdateApplication")
+        ] = (500, b"update failed")
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.reconcile_platform_project(dict(self.PROJECT))
+        self.assertIn("login version update failed", str(caught.exception))
+        self.assertNotIn(
+            ("POST", "/management/v1/projects/p-agentgateway/roles"),
+            recorder.writes,
+        )
+
 
 class ReservedOrgTest(unittest.TestCase):
     """The ZITADEL org holds the console and the break-glass admin, nothing else."""
@@ -566,7 +652,19 @@ class MainTest(unittest.TestCase):
         recorder = Recorder(self._responses())
         with mock.patch.object(bootstrap, "request", recorder), mock.patch.object(bootstrap, "CONFIG_PATH", config):
             bootstrap.main()
-        self.assertEqual([w for w in recorder.writes if w[1] != "/v2/users" and not w[1].endswith("_search")], [])
+        self.assertEqual(
+            [
+                write
+                for write in recorder.writes
+                if not write[1].endswith("_search")
+                and write[1]
+                not in (
+                    "/v2/users",
+                    "/zitadel.application.v2.ApplicationService/GetApplication",
+                )
+            ],
+            [],
+        )
 
     def test_activation_runs_only_when_branding_changed(self):
         config = os.path.join(WORKDIR, "desired.json")
