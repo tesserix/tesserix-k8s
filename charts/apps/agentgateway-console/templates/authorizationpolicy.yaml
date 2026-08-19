@@ -14,8 +14,11 @@ spec:
     - from:
         - source:
             principals:
-              {{- range .Values.authorizationPolicy.meshPrincipals }}
-              - {{ . | quote }}
+              {{- range .Values.consumers }}
+              {{- $ns := .namespace }}
+              {{- range .serviceAccounts }}
+              - {{ printf "cluster.local/ns/%s/sa/%s" $ns . | quote }}
+              {{- end }}
               {{- end }}
       to:
         - operation:
