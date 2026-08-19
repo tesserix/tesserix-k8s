@@ -30,7 +30,7 @@ def test_publisher_route_is_dns_only_tls_and_exact_path():
     assert gateway["spec"]["selector"] == {"istio": "custom-ingressgateway"}
     assert gateway["spec"]["servers"] == [
         {
-            "hosts": ["publish.aregistry.tesserix.app"],
+            "hosts": ["publish-aregistry.tesserix.app"],
             "port": {
                 "name": "https-agentregistry-publisher",
                 "number": 443,
@@ -45,7 +45,7 @@ def test_publisher_route_is_dns_only_tls_and_exact_path():
     ]
 
     certificate = resource("Certificate", "agentregistry-publisher")
-    assert certificate["spec"]["dnsNames"] == ["publish.aregistry.tesserix.app"]
+    assert certificate["spec"]["dnsNames"] == ["publish-aregistry.tesserix.app"]
     assert certificate["spec"]["issuerRef"] == {
         "kind": "ClusterIssuer",
         "name": "letsencrypt-custom-domain",
@@ -56,7 +56,7 @@ def test_publisher_route_is_dns_only_tls_and_exact_path():
     assert virtual_service["spec"]["gateways"] == [
         "istio-ingress/agentregistry-publisher"
     ]
-    assert virtual_service["spec"]["hosts"] == ["publish.aregistry.tesserix.app"]
+    assert virtual_service["spec"]["hosts"] == ["publish-aregistry.tesserix.app"]
     assert virtual_service["spec"]["http"] == [
         {
             "match": [
@@ -103,7 +103,7 @@ def test_publisher_route_requires_exact_github_identity():
             "to": [
                 {
                     "operation": {
-                        "hosts": ["publish.aregistry.tesserix.app"]
+                        "hosts": ["publish-aregistry.tesserix.app"]
                     }
                 }
             ],
@@ -112,7 +112,7 @@ def test_publisher_route_requires_exact_github_identity():
             "to": [
                 {
                     "operation": {
-                        "hosts": ["publish.aregistry.tesserix.app"]
+                        "hosts": ["publish-aregistry.tesserix.app"]
                     }
                 }
             ],
@@ -127,7 +127,7 @@ def test_publisher_route_requires_exact_github_identity():
             "to": [
                 {
                     "operation": {
-                        "hosts": ["publish.aregistry.tesserix.app"]
+                        "hosts": ["publish-aregistry.tesserix.app"]
                     }
                 }
             ],
@@ -142,7 +142,7 @@ def test_publisher_route_requires_exact_github_identity():
             "to": [
                 {
                     "operation": {
-                        "hosts": ["publish.aregistry.tesserix.app"]
+                        "hosts": ["publish-aregistry.tesserix.app"]
                     }
                 }
             ],
@@ -157,7 +157,7 @@ def test_publisher_route_requires_exact_github_identity():
             "to": [
                 {
                     "operation": {
-                        "hosts": ["publish.aregistry.tesserix.app"]
+                        "hosts": ["publish-aregistry.tesserix.app"]
                     }
                 }
             ],
@@ -172,7 +172,7 @@ def test_publisher_route_requires_exact_github_identity():
             "to": [
                 {
                     "operation": {
-                        "hosts": ["publish.aregistry.tesserix.app"]
+                        "hosts": ["publish-aregistry.tesserix.app"]
                     }
                 }
             ],
@@ -190,7 +190,7 @@ def test_publisher_route_requires_exact_github_identity():
             "to": [
                 {
                     "operation": {
-                        "hosts": ["publish.aregistry.tesserix.app"],
+                        "hosts": ["publish-aregistry.tesserix.app"],
                         "notMethods": ["POST"],
                     }
                 }
@@ -200,7 +200,7 @@ def test_publisher_route_requires_exact_github_identity():
             "to": [
                 {
                     "operation": {
-                        "hosts": ["publish.aregistry.tesserix.app"],
+                        "hosts": ["publish-aregistry.tesserix.app"],
                         "notPaths": ["/v0/apply"],
                     }
                 }

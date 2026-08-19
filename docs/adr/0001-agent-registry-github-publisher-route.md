@@ -24,7 +24,7 @@ external Istio gateway and the Registry application.
 
 ## Decision
 
-Serve `publish.aregistry.tesserix.app` as a DNS-only A record on the reserved
+Serve `publish-aregistry.tesserix.app` as a DNS-only A record on the reserved
 external Istio load balancer. The hostname accepts only exact `POST /v0/apply`
 requests and is not routed through Cloudflare, so Bot Fight Mode remains enabled
 for the public Registry host.
