@@ -13,6 +13,35 @@ gateway:
     limits:
       memory: 1Gi
 
+admin:
+  address: 0.0.0.0:15000
+  port: 15000
+  oauth2Proxy:
+    name: agentgateway-admin-ui-oauth2-proxy
+    principal: cluster.local/ns/agentgateway-system/sa/agentgateway-admin-ui-oauth2-proxy
+    replicas: 2
+    image:
+      repository: quay.io/oauth2-proxy/oauth2-proxy
+      digest: sha256:f6a4aa83a27e316114bf79664302b1ffb2cc8ce697fb479273af4feb3fb16fe3
+    issuerUrl: https://auth.tesserix.app
+    redirectUrl: https://agentgateway.tesserix.app/oauth2/callback
+    upstream: http://ai-gateway-admin.agentgateway-system.svc.cluster.local:15000
+    cookieName: _tesserix_agentgateway_admin
+    allowedEmails:
+      - samyak.rout@gmail.com
+      - mahesh.sangawar@gmail.com
+    resources:
+      requests:
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+    externalSecret:
+      secretStore: gcp-secret-store
+      refreshInterval: 1h
+      clientId: prod-agentgateway-admin-ui-client-id
+      clientSecret: prod-agentgateway-admin-ui-client-secret
+      cookieSecret: prod-agentgateway-admin-ui-cookie-secret
+
 providers:
   vertex:
     projectId: tesseracthub-480811

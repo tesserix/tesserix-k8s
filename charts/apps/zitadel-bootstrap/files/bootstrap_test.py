@@ -369,6 +369,13 @@ class PlatformProjectTest(unittest.TestCase):
                 "roles": ["agentgateway.mcp", "agentgateway.models"],
             }
         ],
+        "oidcApps": [
+            {
+                "name": "agentgateway-mcp-ui",
+                "redirectUris": ["https://mcp.tesserix.app/oauth2/callback"],
+                "postLogoutRedirectUris": ["https://mcp.tesserix.app"],
+            }
+        ],
     }
 
     def _recorder(self, roles=None, grants=None, users=None):
@@ -395,6 +402,23 @@ class PlatformProjectTest(unittest.TestCase):
                         "roleKeys": ["agentgateway.mcp", "agentgateway.models"],
                     }
                 ]}).encode(),
+            ),
+            ("POST", "/management/v1/projects/p-agentgateway/apps/_search"): (
+                200,
+                json.dumps({"result": [{"id": "app-mcp", "name": "agentgateway-mcp-ui"}]}).encode(),
+            ),
+            ("GET", "/management/v1/projects/p-agentgateway/apps/app-mcp"): (
+                200,
+                json.dumps({
+                    "app": {
+                        "id": "app-mcp",
+                        "name": "agentgateway-mcp-ui",
+                        "oidcConfig": {
+                            "redirectUris": ["https://mcp.tesserix.app/oauth2/callback"],
+                            "postLogoutRedirectUris": ["https://mcp.tesserix.app"],
+                        },
+                    }
+                }).encode(),
             ),
             ("POST", "/v2/users"): (
                 200,
@@ -447,6 +471,36 @@ class PlatformProjectTest(unittest.TestCase):
         with mock.patch.object(bootstrap, "request", recorder):
             with self.assertRaises(SystemExit):
                 bootstrap.reconcile_platform_project(project)
+
+    def test_missing_oidc_application_fails_closed(self):
+        recorder = self._recorder()
+        recorder.responses[("POST", "/management/v1/projects/p-agentgateway/apps/_search")] = (
+            200,
+            json.dumps({"result": []}).encode(),
+        )
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.reconcile_platform_project(dict(self.PROJECT))
+        self.assertIn("agentgateway-mcp-ui", str(caught.exception))
+
+    def test_drifted_oidc_redirect_fails_closed_without_writing(self):
+        recorder = self._recorder()
+        recorder.responses[("GET", "/management/v1/projects/p-agentgateway/apps/app-mcp")] = (
+            200,
+            json.dumps({
+                "app": {
+                    "name": "agentgateway-mcp-ui",
+                    "oidcConfig": {
+                        "redirectUris": ["https://attacker.example/callback"],
+                        "postLogoutRedirectUris": ["https://mcp.tesserix.app"],
+                    },
+                }
+            }).encode(),
+        )
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_platform_project(dict(self.PROJECT))
+        self.assertEqual([], [call for call in recorder.calls if call[0] in ("PUT", "DELETE")])
 
 
 class ReservedOrgTest(unittest.TestCase):

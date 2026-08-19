@@ -100,6 +100,15 @@ spec:
     - from:
         - source:
             principals: ["cluster.local/ns/devai/sa/devai-auth-bff"]
+    # The dedicated mcp.tesserix.app Zitadel proxy may render the UI and read
+    # its catalog. Registry mutations remain denied below.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/agentgateway-system/sa/mcp-gateway-ui-oauth2-proxy"
+      to:
+        - operation:
+            methods: ["GET"]
     # Catalog READS — any agentic-stack consumer may GET /v0/* and /v0.1/*
     # (the v0.1 MCP-interop read surface mirrors v0).
     - from:
@@ -178,6 +187,13 @@ spec:
       to:
         - operation:
             ports: ["8081"]
+    # Browser requests terminate at one of the isolated OAuth proxies.
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-ingress/sa/istio-ingressgateway"]
+      to:
+        - operation:
+            ports: ["4180"]
     # The agentgateway DATA PLANE (Gateway "agentgateway-mcp", SA
     # agentgateway-mcp in this namespace) dials the controller's xDS on
     # :9978 for its routing config. Without this the waypoint returns
@@ -246,6 +262,14 @@ spec:
               - "/groq/*"
               - "/openrouter/*"
               - "/nemoclaw/*"
+    # Solo's native admin server is private to its Zitadel session proxy.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/agentgateway-system/sa/agentgateway-admin-ui-oauth2-proxy"
+      to:
+        - operation:
+            ports: ["15000"]
     # Probes
     - to:
         - operation:

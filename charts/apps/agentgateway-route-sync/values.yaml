@@ -41,6 +41,32 @@ oauth:
   roleClaim: "urn:zitadel:iam:org:project:386889024519799084:roles"
   machineRole: agentgateway.mcp
 
+ui:
+  upstream: http://agentregistry.agentregistry-system.svc.cluster.local:12121
+  oauth2Proxy:
+    name: mcp-gateway-ui-oauth2-proxy
+    replicas: 2
+    image:
+      repository: quay.io/oauth2-proxy/oauth2-proxy
+      digest: sha256:f6a4aa83a27e316114bf79664302b1ffb2cc8ce697fb479273af4feb3fb16fe3
+    issuerUrl: https://auth.tesserix.app
+    redirectUrl: https://mcp.tesserix.app/oauth2/callback
+    cookieName: _tesserix_mcp_gateway
+    allowedEmails:
+      - samyak.rout@gmail.com
+      - mahesh.sangawar@gmail.com
+    resources:
+      requests:
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+    externalSecret:
+      secretStore: gcp-secret-store
+      refreshInterval: 1h
+      clientId: prod-agentgateway-mcp-ui-client-id
+      clientSecret: prod-agentgateway-mcp-ui-client-secret
+      cookieSecret: prod-agentgateway-mcp-ui-cookie-secret
+
 rateLimit:
   backend: agentgateway-ratelimit
   port: 8081

@@ -1,0 +1,234 @@
+{{- $oauth := .Values.ui.oauth2Proxy -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $oauth.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $oauth.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $oauth.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $oauth.name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $oauth.name }}
+        app.kubernetes.io/part-of: agentic-platform
+        app.kubernetes.io/component: mcp-ui-auth
+      annotations:
+        secret.reloader.stakater.com/reload: {{ $oauth.name }}
+    spec:
+      serviceAccountName: {{ $oauth.name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: oauth2-proxy
+          image: {{ printf "%s@%s" $oauth.image.repository $oauth.image.digest | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 4180
+              protocol: TCP
+          args:
+            - --provider=oidc
+            - --http-address=0.0.0.0:4180
+            - --oidc-issuer-url={{ $oauth.issuerUrl }}
+            - --scope=openid profile email
+            - --code-challenge-method=S256
+            - --upstream={{ .Values.ui.upstream }}
+            - --redirect-url={{ $oauth.redirectUrl }}
+            - --cookie-name={{ $oauth.cookieName }}
+            - --cookie-secure=true
+            - --cookie-httponly=true
+            - --cookie-samesite=lax
+            - --cookie-expire=8h
+            - --cookie-refresh=1h
+            - --reverse-proxy=true
+            - --set-xauthrequest=true
+            - --skip-provider-button=true
+            - --email-domain=*
+            - --authenticated-emails-file=/etc/oauth2-proxy/authenticated-emails.txt
+            - --pass-access-token=false
+            - --set-authorization-header=false
+          env:
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $oauth.name }}
+                  key: client-id
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $oauth.name }}
+                  key: client-secret
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $oauth.name }}
+                  key: cookie-secret
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            {{- toYaml $oauth.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: authenticated-emails
+              mountPath: /etc/oauth2-proxy
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: authenticated-emails
+          configMap:
+            name: {{ $oauth.name }}-emails
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $oauth.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ $oauth.name }}
+  ports:
+    - name: http
+      port: 4180
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $oauth.name }}-emails
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+data:
+  authenticated-emails.txt: |
+    {{- range $oauth.allowedEmails }}
+    {{ . }}
+    {{- end }}
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: {{ $oauth.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  refreshInterval: {{ $oauth.externalSecret.refreshInterval }}
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: {{ $oauth.externalSecret.secretStore }}
+  target:
+    name: {{ $oauth.name }}
+    creationPolicy: Owner
+  data:
+    - secretKey: client-id
+      remoteRef:
+        key: {{ $oauth.externalSecret.clientId }}
+    - secretKey: client-secret
+      remoteRef:
+        key: {{ $oauth.externalSecret.clientSecret }}
+    - secretKey: cookie-secret
+      remoteRef:
+        key: {{ $oauth.externalSecret.cookieSecret }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $oauth.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $oauth.name }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $oauth.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $oauth.name }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - port: 4180
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: agentregistry-system
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - port: 443
+          protocol: TCP

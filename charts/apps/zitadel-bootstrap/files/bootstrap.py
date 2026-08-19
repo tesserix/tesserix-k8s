@@ -273,6 +273,64 @@ def reconcile_platform_project(desired):
         )
     project_id = project["id"]
 
+    wanted_apps = desired.get("oidcApps", [])
+    if wanted_apps:
+        status, payload = request(
+            "POST",
+            f"/management/v1/projects/{project_id}/apps/_search",
+            {"query": {"limit": 100}},
+            headers=scope,
+        )
+        if status != 200:
+            raise SystemExit(
+                f"platform project application search failed: {status} {payload!r}"
+            )
+        live_apps = json.loads(payload).get("result", [])
+        for wanted in wanted_apps:
+            matches = [item for item in live_apps if item["name"] == wanted["name"]]
+            if len(matches) != 1:
+                raise SystemExit(
+                    f"platform OIDC application {wanted['name']!r} must exist exactly once; "
+                    "create it through the identity onboarding runbook"
+                )
+            status, payload = request(
+                "GET",
+                f"/management/v1/projects/{project_id}/apps/{matches[0]['id']}",
+                headers=scope,
+            )
+            if status != 200:
+                raise SystemExit(
+                    f"platform OIDC application {wanted['name']!r} read failed: "
+                    f"{status} {payload!r}"
+                )
+            live = json.loads(payload)["app"].get("oidcConfig", {})
+            actual = {
+                "redirectUris": sorted(live.get("redirectUris", [])),
+                "postLogoutRedirectUris": sorted(
+                    live.get("postLogoutRedirectUris", [])
+                ),
+                "appType": live.get("appType", "OIDC_APP_TYPE_WEB"),
+                "authMethodType": live.get(
+                    "authMethodType", "OIDC_AUTH_METHOD_TYPE_BASIC"
+                ),
+            }
+            expected = {
+                "redirectUris": sorted(wanted["redirectUris"]),
+                "postLogoutRedirectUris": sorted(
+                    wanted["postLogoutRedirectUris"]
+                ),
+                "appType": wanted.get("appType", "OIDC_APP_TYPE_WEB"),
+                "authMethodType": wanted.get(
+                    "authMethodType", "OIDC_AUTH_METHOD_TYPE_BASIC"
+                ),
+            }
+            if actual != expected:
+                raise SystemExit(
+                    f"platform OIDC application {wanted['name']!r} configuration drifted; "
+                    "reconcile it through the identity onboarding runbook"
+                )
+            log(f"platform OIDC application {wanted['name']}: in sync")
+
     roles_path = f"/management/v1/projects/{project_id}/roles/_search"
     status, payload = request("POST", roles_path, {"query": {"limit": 100}}, headers=scope)
     if status != 200:

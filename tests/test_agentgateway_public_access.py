@@ -85,33 +85,60 @@ def public_policy(documents, name):
 
 
 class AgentGatewayPublicAccessTests(unittest.TestCase):
-    def test_exact_hosts_route_to_distinct_data_planes(self):
+    def test_exact_hosts_split_machine_apis_from_browser_uis(self):
         documents = render_agentic_istio()
         expected = {
             "mcp-agentgateway": (
                 "mcp.tesserix.app",
+                "/mcp",
                 "agentgateway-mcp.agentgateway-system.svc.cluster.local",
+                "mcp-gateway-ui-oauth2-proxy.agentgateway-system.svc.cluster.local",
             ),
             "solo-agentgateway": (
                 "agentgateway.tesserix.app",
+                "/openai",
                 "ai-gateway.agentgateway-system.svc.cluster.local",
+                "agentgateway-admin-ui-oauth2-proxy.agentgateway-system.svc.cluster.local",
             ),
         }
 
-        for name, (host, backend) in expected.items():
+        for name, (host, api_prefix, backend, ui_backend) in expected.items():
             virtual_service = resource(documents, "VirtualService", name)
             self.assertEqual([host], virtual_service["spec"]["hosts"])
             self.assertEqual(
                 ["istio-ingress/tesseract-gateway"],
                 virtual_service["spec"]["gateways"],
             )
-            route = virtual_service["spec"]["http"][0]["route"][0]["destination"]
-            self.assertEqual(backend, route["host"])
-            self.assertEqual(8081, route["port"]["number"])
+            api_route = next(
+                route
+                for route in virtual_service["spec"]["http"]
+                if any(
+                    match.get("uri", {}).get("exact") == api_prefix
+                    or match.get("uri", {}).get("prefix") == f"{api_prefix}/"
+                    for match in route.get("match", [])
+                )
+            )["route"][0]["destination"]
+            self.assertEqual(backend, api_route["host"])
+            self.assertEqual(8081, api_route["port"]["number"])
             self.assertNotEqual(
                 "agentgateway.agentgateway-system.svc.cluster.local",
-                route["host"],
+                api_route["host"],
             )
+            browser_route = virtual_service["spec"]["http"][-1]["route"][0][
+                "destination"
+            ]
+            self.assertEqual(ui_backend, browser_route["host"])
+            self.assertEqual(4180, browser_route["port"]["number"])
+            if name == "solo-agentgateway":
+                root_redirect = next(
+                    route
+                    for route in virtual_service["spec"]["http"]
+                    if any(
+                        match.get("uri", {}).get("exact") == "/"
+                        for match in route.get("match", [])
+                    )
+                )
+                self.assertEqual("/ui/", root_redirect["redirect"]["uri"])
 
     def test_mcp_gateway_is_private_hardened_and_disruption_safe(self):
         documents = render_chart("charts/apps/agentgateway-route-sync")
@@ -163,11 +190,11 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
 
         expressions = authorization["policy"]["matchExpressions"]
         self.assertEqual(1, len(expressions))
-        self.assertTrue(expressions[0].startswith('"agentgateway.mcp" in jwt['))
+        self.assertEqual(
+            '"agentgateway.mcp" in jwt["urn:zitadel:iam:org:project:386889024519799084:roles"]',
+            expressions[0],
+        )
         self.assertEqual("Allow", authorization["action"])
-        for email in HUMAN_EMAILS:
-            self.assertIn(email, expressions[0])
-        self.assertGreaterEqual(expressions[0].count(" || "), 2)
 
         self.assertEqual("agentgateway-ratelimit", rate_limit["backendRef"]["name"])
         self.assertEqual("FailClosed", rate_limit["failureMode"])
@@ -200,10 +227,10 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
         )
         expressions = authorization["policy"]["matchExpressions"]
         self.assertEqual(1, len(expressions))
-        self.assertTrue(expressions[0].startswith('"agentgateway.models" in jwt['))
-        for email in HUMAN_EMAILS:
-            self.assertIn(email, expressions[0])
-        self.assertGreaterEqual(expressions[0].count(" || "), 2)
+        self.assertEqual(
+            '"agentgateway.models" in jwt["urn:zitadel:iam:org:project:386889024519799084:roles"]',
+            expressions[0],
+        )
         self.assertEqual("agentgateway-ratelimit", rate_limit["backendRef"]["name"])
         self.assertEqual("FailClosed", rate_limit["failureMode"])
         subject = next(
@@ -242,11 +269,134 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
             for rule in istio_policy["spec"]["rules"]
             if rule.get("to", [{}])[0]
             .get("operation", {})
-            .get("notPorts") == ["8080", "8081"]
+            .get("notPorts") == ["8080", "8081", "15000"]
         )
         self.assertEqual(
-            {"notPorts": ["8080", "8081"]},
+            {"notPorts": ["8080", "8081", "15000"]},
             non_data_plane_rule["to"][0]["operation"],
+        )
+
+    def test_mcp_browser_ui_uses_isolated_zitadel_oauth_proxy(self):
+        documents = render_chart("charts/apps/agentgateway-route-sync")
+        name = "mcp-gateway-ui-oauth2-proxy"
+        deployment = resource(documents, "Deployment", name)
+        service = resource(documents, "Service", name)
+        external_secret = resource(documents, "ExternalSecret", name)
+        emails = resource(documents, "ConfigMap", f"{name}-emails")
+        pdb = resource(documents, "PodDisruptionBudget", name)
+        network_policy = resource(documents, "NetworkPolicy", name)
+
+        self.assertEqual(2, deployment["spec"]["replicas"])
+        self.assertEqual(1, pdb["spec"]["minAvailable"])
+        self.assertEqual("ClusterIP", service["spec"]["type"])
+        self.assertEqual(4180, service["spec"]["ports"][0]["port"])
+        container = deployment["spec"]["template"]["spec"]["containers"][0]
+        self.assertIn("@sha256:", container["image"])
+        self.assertIn("--provider=oidc", container["args"])
+        self.assertIn(f"--oidc-issuer-url={ISSUER}", container["args"])
+        self.assertIn(
+            "--redirect-url=https://mcp.tesserix.app/oauth2/callback",
+            container["args"],
+        )
+        self.assertIn(
+            "--upstream=http://agentregistry.agentregistry-system.svc.cluster.local:12121",
+            container["args"],
+        )
+        self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
+        self.assertEqual(
+            HUMAN_EMAILS,
+            set(emails["data"]["authenticated-emails.txt"].splitlines()),
+        )
+        remote_keys = {
+            item["remoteRef"]["key"] for item in external_secret["spec"]["data"]
+        }
+        self.assertEqual(
+            {
+                "prod-agentgateway-mcp-ui-client-id",
+                "prod-agentgateway-mcp-ui-client-secret",
+                "prod-agentgateway-mcp-ui-cookie-secret",
+            },
+            remote_keys,
+        )
+        self.assertEqual(["Ingress", "Egress"], network_policy["spec"]["policyTypes"])
+
+    def test_mcp_ui_seeds_the_released_registry_image(self):
+        application = yaml.safe_load(
+            (ROOT / "argocd/prod/apps/ai-apps/agentic-registry.yaml").read_text()
+        )
+        parameters = {
+            item["name"]: item["value"]
+            for item in application["spec"]["source"]["helm"]["parameters"]
+        }
+        self.assertEqual("v0.1.0", parameters["image.tag"])
+
+    def test_solo_admin_ui_is_private_and_uses_isolated_zitadel_oauth_proxy(self):
+        documents = render_chart("charts/apps/devai-ai-gateway")
+        name = "agentgateway-admin-ui-oauth2-proxy"
+        parameters = resource(documents, "AgentgatewayParameters", "ai-gateway")
+        admin_service = resource(documents, "Service", "ai-gateway-admin")
+        deployment = resource(documents, "Deployment", name)
+        service = resource(documents, "Service", name)
+        external_secret = resource(documents, "ExternalSecret", name)
+
+        generated_container = parameters["spec"]["deployment"]["spec"]["template"][
+            "spec"
+        ]["containers"][0]
+        self.assertEqual("agentgateway", generated_container["name"])
+        generated_env = {
+            item["name"]: item["value"] for item in generated_container["env"]
+        }
+        self.assertEqual("0.0.0.0:15000", generated_env["ADMIN_ADDR"])
+
+        self.assertEqual("ClusterIP", admin_service["spec"]["type"])
+        self.assertEqual(
+            {"port": 15000, "targetPort": 15000},
+            {
+                "port": admin_service["spec"]["ports"][0]["port"],
+                "targetPort": admin_service["spec"]["ports"][0]["targetPort"],
+            },
+        )
+        self.assertEqual(
+            {"gateway.networking.k8s.io/gateway-name": "ai-gateway"},
+            admin_service["spec"]["selector"],
+        )
+
+        self.assertEqual(2, deployment["spec"]["replicas"])
+        self.assertEqual("ClusterIP", service["spec"]["type"])
+        args = deployment["spec"]["template"]["spec"]["containers"][0]["args"]
+        self.assertIn(f"--oidc-issuer-url={ISSUER}", args)
+        self.assertIn(
+            "--redirect-url=https://agentgateway.tesserix.app/oauth2/callback",
+            args,
+        )
+        self.assertIn(
+            "--upstream=http://ai-gateway-admin.agentgateway-system.svc.cluster.local:15000",
+            args,
+        )
+        remote_keys = {
+            item["remoteRef"]["key"] for item in external_secret["spec"]["data"]
+        }
+        self.assertEqual(
+            {
+                "prod-agentgateway-admin-ui-client-id",
+                "prod-agentgateway-admin-ui-client-secret",
+                "prod-agentgateway-admin-ui-cookie-secret",
+            },
+            remote_keys,
+        )
+
+        istio_policy = resource(documents, "AuthorizationPolicy", "ai-gateway")
+        admin_rule = next(
+            rule
+            for rule in istio_policy["spec"]["rules"]
+            if rule.get("to", [{}])[0].get("operation", {}).get("ports")
+            == ["15000"]
+        )
+        self.assertEqual(
+            [
+                "cluster.local/ns/agentgateway-system/sa/agentgateway-admin-ui-oauth2-proxy"
+            ],
+            admin_rule["from"][0]["source"]["principals"],
         )
 
     def test_public_gateway_access_logs_verified_subject_without_tokens(self):

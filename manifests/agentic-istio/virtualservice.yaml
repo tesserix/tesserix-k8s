@@ -45,8 +45,9 @@ spec:
         perTryTimeout: 30s
         retryOn: reset,connect-failure,refused-stream,5xx
 ---
-# MCP data plane. Exact ownership prevents the vehicle-rental wildcard route
-# from capturing this host. Authentication is enforced by AgentgatewayPolicy.
+# Tesserix MCP Gateway. Machine MCP calls go to AgentGateway's authenticated
+# public listener; every browser path goes through the isolated Zitadel proxy
+# to the Tesserix-owned registry UI.
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -63,7 +64,9 @@ spec:
   http:
     - match:
         - uri:
-            prefix: /
+            exact: /mcp
+        - uri:
+            prefix: /mcp/
       headers:
         request:
           set:
@@ -74,9 +77,25 @@ spec:
             host: agentgateway-mcp.agentgateway-system.svc.cluster.local
             port:
               number: 8081
+      timeout: 15m
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            x-forwarded-host: mcp.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: mcp-gateway-ui-oauth2-proxy.agentgateway-system.svc.cluster.local
+            port:
+              number: 4180
+      timeout: 120s
 ---
-# Solo AgentGateway model data plane. The controller/xDS Service on 9978 is
-# deliberately not referenced by any public route.
+# Solo AgentGateway model calls go to the authenticated data plane. Browser
+# paths go through a separate Zitadel proxy to the private native admin UI.
+# The controller/xDS Service on 9978 is never referenced by a public route.
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -93,7 +112,33 @@ spec:
   http:
     - match:
         - uri:
-            prefix: /
+            exact: /anthropic
+        - uri:
+            prefix: /anthropic/
+        - uri:
+            exact: /openai
+        - uri:
+            prefix: /openai/
+        - uri:
+            exact: /vertex
+        - uri:
+            prefix: /vertex/
+        - uri:
+            exact: /gemini
+        - uri:
+            prefix: /gemini/
+        - uri:
+            exact: /groq
+        - uri:
+            prefix: /groq/
+        - uri:
+            exact: /openrouter
+        - uri:
+            prefix: /openrouter/
+        - uri:
+            exact: /nemoclaw
+        - uri:
+            prefix: /nemoclaw/
       headers:
         request:
           set:
@@ -104,6 +149,27 @@ spec:
             host: ai-gateway.agentgateway-system.svc.cluster.local
             port:
               number: 8081
+      timeout: 15m
+    - match:
+        - uri:
+            exact: /
+      redirect:
+        uri: /ui/
+        redirectCode: 302
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            x-forwarded-host: agentgateway.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: agentgateway-admin-ui-oauth2-proxy.agentgateway-system.svc.cluster.local
+            port:
+              number: 4180
+      timeout: 120s
 ---
 # Agent Registry UI
 apiVersion: networking.istio.io/v1beta1
