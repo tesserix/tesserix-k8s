@@ -724,6 +724,96 @@ CREATE INDEX IF NOT EXISTS idx_sandboxes_owner ON sandboxes(owner, created_at DE
 CREATE INDEX IF NOT EXISTS idx_sandboxes_reap ON sandboxes(expires_at) WHERE status <> 'destroyed';
 CREATE INDEX IF NOT EXISTS idx_sandboxes_agent ON sandboxes((spec->'agent'->>'name'), created_at DESC);
 
+-- ============================================================================
+-- VERSIONED EVALUATION DATASETS AND DURABLE RESULTS
+-- Dataset case payloads are immutable content-addressed object-store blobs.
+-- These tables hold the user-scoped metadata and durable result history; eval
+-- runs deliberately have no sandbox foreign key so sandbox cleanup cannot
+-- remove evidence used for comparison, audit, or cost reporting.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS eval_datasets (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    owner_scope    TEXT NOT NULL,
+    tenant_id      TEXT NOT NULL DEFAULT '',
+    user_id        TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    description    TEXT NOT NULL DEFAULT '',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (owner_scope, name)
+);
+
+CREATE TABLE IF NOT EXISTS eval_dataset_versions (
+    id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    dataset_id     UUID NOT NULL REFERENCES eval_datasets(id),
+    version        TEXT NOT NULL,
+    description    TEXT NOT NULL DEFAULT '',
+    case_count     INTEGER NOT NULL CHECK (case_count > 0 AND case_count <= 50),
+    content_hash   TEXT NOT NULL,
+    blob_key       TEXT NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (dataset_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS eval_suites (
+    id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    owner_scope        TEXT NOT NULL,
+    tenant_id          TEXT NOT NULL DEFAULT '',
+    user_id            TEXT NOT NULL,
+    name               TEXT NOT NULL,
+    version            TEXT NOT NULL,
+    description        TEXT NOT NULL DEFAULT '',
+    dataset_version_id UUID NOT NULL REFERENCES eval_dataset_versions(id),
+    scorers            TEXT[] NOT NULL,
+    thresholds         JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (owner_scope, name, version)
+);
+
+CREATE TABLE IF NOT EXISTS eval_runs (
+    id                 TEXT PRIMARY KEY,
+    owner_scope        TEXT NOT NULL,
+    tenant_id          TEXT NOT NULL DEFAULT '',
+    user_id            TEXT NOT NULL,
+    sandbox_id         TEXT NOT NULL,
+    agent              TEXT NOT NULL DEFAULT '',
+    dataset_version_id UUID REFERENCES eval_dataset_versions(id),
+    suite_id           UUID REFERENCES eval_suites(id),
+    summary            JSONB NOT NULL,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS eval_case_results (
+    id             BIGSERIAL PRIMARY KEY,
+    eval_run_id    TEXT NOT NULL REFERENCES eval_runs(id) ON DELETE CASCADE,
+    case_index     INTEGER NOT NULL CHECK (case_index >= 0),
+    case_id        TEXT NOT NULL,
+    passed         BOOLEAN NOT NULL,
+    result         JSONB NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (eval_run_id, case_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_eval_datasets_owner
+    ON eval_datasets(owner_scope, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_eval_dataset_versions_dataset
+    ON eval_dataset_versions(dataset_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_eval_dataset_versions_content_hash
+    ON eval_dataset_versions(content_hash);
+CREATE INDEX IF NOT EXISTS idx_eval_suites_owner
+    ON eval_suites(owner_scope, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_eval_suites_dataset_version
+    ON eval_suites(dataset_version_id);
+CREATE INDEX IF NOT EXISTS idx_eval_runs_owner_sandbox
+    ON eval_runs(owner_scope, sandbox_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_eval_runs_dataset_version
+    ON eval_runs(dataset_version_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_eval_runs_suite
+    ON eval_runs(suite_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_eval_case_results_run
+    ON eval_case_results(eval_run_id, case_index);
+
 -- ============================================================
 -- Ownership / grants — the bootstrap connects as the postgres
 -- superuser (CREATE EXTENSION vector requires it; pgvector is not a
