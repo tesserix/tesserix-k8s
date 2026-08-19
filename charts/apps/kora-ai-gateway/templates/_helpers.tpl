@@ -18,13 +18,6 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
       policies:
         auth:
           gcp: {}
-          credentials:
-            - secretRef:
-                name: {{ .root.Values.externalSecrets.providerSecretName }}
-                key: vertex-api-key
-              location:
-                header:
-                  name: x-goog-api-key
         tls: {}
 {{- end -}}
 
