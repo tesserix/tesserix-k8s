@@ -777,12 +777,22 @@ CREATE TABLE IF NOT EXISTS eval_runs (
     user_id            TEXT NOT NULL,
     sandbox_id         TEXT NOT NULL,
     agent              TEXT NOT NULL DEFAULT '',
+    configuration      JSONB NOT NULL DEFAULT '{}'::jsonb,
     dataset_version_id UUID REFERENCES eval_dataset_versions(id),
     suite_id           UUID REFERENCES eval_suites(id),
+    dataset_ref        JSONB,
+    suite_ref          JSONB,
     summary            JSONB NOT NULL,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE eval_runs
+    ADD COLUMN IF NOT EXISTS configuration JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE eval_runs
+    ADD COLUMN IF NOT EXISTS dataset_ref JSONB;
+ALTER TABLE eval_runs
+    ADD COLUMN IF NOT EXISTS suite_ref JSONB;
 
 CREATE TABLE IF NOT EXISTS eval_case_results (
     id             BIGSERIAL PRIMARY KEY,
@@ -793,6 +803,19 @@ CREATE TABLE IF NOT EXISTS eval_case_results (
     result         JSONB NOT NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (eval_run_id, case_index)
+);
+
+CREATE TABLE IF NOT EXISTS eval_comparisons (
+    id               TEXT PRIMARY KEY,
+    owner_scope      TEXT NOT NULL,
+    tenant_id        TEXT NOT NULL DEFAULT '',
+    user_id          TEXT NOT NULL,
+    baseline_run_id  TEXT NOT NULL REFERENCES eval_runs(id),
+    candidate_run_id TEXT NOT NULL REFERENCES eval_runs(id),
+    axes             JSONB NOT NULL DEFAULT '[]'::jsonb,
+    result           JSONB NOT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (baseline_run_id <> candidate_run_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_eval_datasets_owner
@@ -813,6 +836,12 @@ CREATE INDEX IF NOT EXISTS idx_eval_runs_suite
     ON eval_runs(suite_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_eval_case_results_run
     ON eval_case_results(eval_run_id, case_index);
+CREATE INDEX IF NOT EXISTS idx_eval_comparisons_owner
+    ON eval_comparisons(owner_scope, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_eval_comparisons_baseline
+    ON eval_comparisons(baseline_run_id);
+CREATE INDEX IF NOT EXISTS idx_eval_comparisons_candidate
+    ON eval_comparisons(candidate_run_id);
 
 -- ============================================================
 -- Ownership / grants — the bootstrap connects as the postgres
