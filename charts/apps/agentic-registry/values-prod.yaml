@@ -28,19 +28,19 @@ service:
 config:
   storeBackend: postgres
   autoMigrate: "false"        # schema owned by db-schema-bootstrap (app agentic-registry-db-schema-bootstrap)
+  # Zitadel access tokens carried by the Registry and AgentGateway OAuth
+  # proxies share the AgentGateway project audience and administration role.
+  # Machine publication/reconciliation keeps using independent tenant-scoped
+  # deploy keys. Public reads remain anonymous; every write fails closed
+  # without a verified human token or deploy key.
   authMode: jwks
-  authJwksUrl: https://auth.tesserix.app/oauth/v2/keys
-  authIssuer: https://auth.tesserix.app
-  authGroupsClaim: "urn:zitadel:iam:org:project:386930054896026901:roles"
-  authAdminRole: agentregistry.admin
+  authJwksUrl: "https://auth.tesserix.app/oauth/v2/keys"
+  authIssuer: "https://auth.tesserix.app"
+  authAudience: "386889024519799084"
+  authGroupsClaim: "urn:zitadel:iam:org:project:386889024519799084:roles"
   authAdminEmails: "samyak.rout@gmail.com,mahesh.sangawar@gmail.com"
-  # Public artifacts remain anonymously readable. Human writes require both
-  # the exact email allowlist and the Zitadel project role; CI writes continue
-  # to use tenant-scoped deploy keys.
+  authAdminRole: "agentgateway.models"
   authAnonymousRole: read
-  # AUTH_AUDIENCE is injected from the OIDC client-id Secret so it cannot drift
-  # from the Zitadel application configured at the browser edge.
-  authAudience: ""
   publicBaseUrl: "https://aregistry.tesserix.app"
   # Lock CORS to the registry's own public origin (the UI is served same-origin
   # behind the OAuth proxy, so no other browser origin legitimately calls /v0). The base
@@ -87,7 +87,9 @@ keda:
 
 oauth2Proxy:
   enabled: true
-  projectId: "386930054896026901"
+  # Request the shared AgentGateway audience/role even though this browser
+  # client has its own redirect URI and credentials.
+  projectId: "386889024519799084"
   allowedEmails:
     - samyak.rout@gmail.com
     - mahesh.sangawar@gmail.com

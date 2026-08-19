@@ -101,7 +101,7 @@ spec:
       to:
         - operation:
             ports: ["4180"]
-    # The proxy forwards the verified Zitadel ID token. Registry performs the
+    # The proxy forwards the verified Zitadel access token. Registry performs the
     # final email + project-role authorization for every mutation.
     - from:
         - source:
@@ -119,6 +119,33 @@ spec:
       to:
         - operation:
             methods: ["GET"]
+    # agentgateway.tesserix.app serves the Registry control-plane UI as its
+    # default upstream. oauth2-proxy admits only the two approved emails and
+    # forwards the verified Zitadel access token for Registry authorization.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/agentgateway-system/sa/agentgateway-admin-ui-oauth2-proxy"
+      to:
+        - operation:
+            methods: ["GET"]
+        - operation:
+            methods: ["PUT", "DELETE"]
+            paths: ["/v0/agentgateway/*"]
+    # The ownership handoff and steady-state reconciler can import once and
+    # read the desired export. Its deploy key is independently verified by the
+    # Registry; no other Registry mutation is admitted for this identity.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/agentgateway-system/sa/agentgateway-route-sync"
+      to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/v0/export/agentgateway"]
+        - operation:
+            methods: ["POST"]
+            paths: ["/v0/agentgateway/import"]
     # Catalog READS — any agentic-stack consumer may GET /v0/* and /v0.1/*
     # (the v0.1 MCP-interop read surface mirrors v0).
     - from:
@@ -310,9 +337,10 @@ spec:
 # rule overrides it.
 ##############################################################################
 
-# Catalog WRITE protection — only machine publishers and the dedicated Zitadel
-# proxy may reach the write surface. Registry still authorizes the human token
-# and tenant deploy key at the application boundary.
+# Catalog WRITE protection — only explicitly named workload identities may
+# mutate their narrowly assigned surfaces. The extra identity-specific rules
+# below close paths and methods that the cluster-wide allow-mesh-internal
+# baseline would otherwise admit after the principal exception.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -337,10 +365,36 @@ spec:
               - "cluster.local/ns/devai/sa/devai-registry-bootstrap"
               - "cluster.local/ns/devai/sa/devai-api"
               - "cluster.local/ns/agentregistry-system/sa/agentregistry-ui-oauth2-proxy"
+              - "cluster.local/ns/agentgateway-system/sa/agentgateway-admin-ui-oauth2-proxy"
+              - "cluster.local/ns/agentgateway-system/sa/agentgateway-route-sync"
       to:
         - operation:
             methods: ["POST", "PUT", "PATCH", "DELETE"]
             paths: ["/v0/*", "/v0.1/*", "/mcp", "/mcp/*"]
+    # Human AgentGateway admins may write only the CRUD endpoints exposed by
+    # the dedicated UI. POST/PATCH are not part of that contract.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/agentgateway-system/sa/agentgateway-admin-ui-oauth2-proxy"
+      to:
+        - operation:
+            methods: ["POST", "PATCH"]
+            paths: ["/v0/*", "/v0.1/*", "/mcp", "/mcp/*"]
+        - operation:
+            methods: ["PUT", "DELETE"]
+            notPaths: ["/v0/agentgateway/*"]
+    # Route-sync may POST only the one-time/import reconciliation endpoint.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/agentgateway-system/sa/agentgateway-route-sync"
+      to:
+        - operation:
+            methods: ["PUT", "PATCH", "DELETE"]
+        - operation:
+            methods: ["POST"]
+            notPaths: ["/v0/agentgateway/import"]
 ---
 # ai-gateway DENY — close provider routes to DevAI's two workload identities.
 # allow-mesh-internal would let intra-cluster pods (including pods in

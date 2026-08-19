@@ -1,0 +1,84 @@
+{{- if .Values.migrationImport.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agentgateway-registry-import-v1
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 5
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        {{- include "agentgateway-route-sync.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: capture-live-specs
+          image: "{{ .Values.images.kubectl.repository }}:{{ .Values.images.kubectl.tag }}"
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              kubectl get \
+                agentgatewaybackends.agentgateway.dev,httproutes.gateway.networking.k8s.io,agentgatewaypolicies.agentgateway.dev \
+                --namespace {{ .Values.namespace }} \
+                --selector app.kubernetes.io/managed-by=Helm \
+                --output json > /work/import.json
+              count="$(grep -Ec '\"kind\": \"(AgentgatewayBackend|HTTPRoute|AgentgatewayPolicy)\"' /work/import.json || true)"
+              test "${count}" -gt 0
+              echo "captured ${count} Helm-owned AgentGateway resources"
+          volumeMounts:
+            - name: work
+              mountPath: /work
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      containers:
+        - name: import
+          image: "{{ .Values.images.curl.repository }}:{{ .Values.images.curl.tag }}"
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              curl --silent --show-error --fail-with-body --max-time 30 \
+                --request POST \
+                --header "Authorization: Bearer ${REGISTRY_DEPLOY_KEY}" \
+                --header "Content-Type: application/json" \
+                --data-binary @/work/import.json \
+                "{{ .Values.registry.endpoint }}/v0/agentgateway/import"
+          env:
+            - name: REGISTRY_DEPLOY_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.registry.authSecret.name }}
+                  key: {{ .Values.registry.authSecret.key }}
+          volumeMounts:
+            - name: work
+              mountPath: /work
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: work
+          emptyDir: {}
+{{- end }}

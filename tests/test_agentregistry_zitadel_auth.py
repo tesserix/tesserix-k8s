@@ -7,7 +7,7 @@ import yaml
 
 ROOT = pathlib.Path(__file__).parents[1]
 ISSUER = "https://auth.tesserix.app"
-PROJECT_ID = "386930054896026901"
+PROJECT_ID = "386889024519799084"
 ADMIN_EMAILS = {"samyak.rout@gmail.com", "mahesh.sangawar@gmail.com"}
 
 
@@ -69,7 +69,8 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             f"urn:zitadel:iam:org:project:{PROJECT_ID}:roles",
             config["data"]["AUTH_GROUPS_CLAIM"],
         )
-        self.assertEqual("agentregistry.admin", config["data"]["AUTH_ADMIN_ROLE"])
+        self.assertEqual("agentgateway.models", config["data"]["AUTH_ADMIN_ROLE"])
+        self.assertEqual(PROJECT_ID, config["data"]["AUTH_AUDIENCE"])
         self.assertEqual(
             "samyak.rout@gmail.com,mahesh.sangawar@gmail.com",
             config["data"]["AUTH_ADMIN_EMAILS"],
@@ -79,10 +80,7 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             item["name"]: item
             for item in registry["spec"]["template"]["spec"]["containers"][0]["env"]
         }
-        self.assertEqual(
-            {"name": name, "key": "client-id"},
-            registry_env["AUTH_AUDIENCE"]["valueFrom"]["secretKeyRef"],
-        )
+        self.assertNotIn("AUTH_AUDIENCE", registry_env)
 
         self.assertEqual(2, proxy["spec"]["replicas"])
         self.assertEqual(1, pdb["spec"]["minAvailable"])
@@ -99,7 +97,8 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             "--upstream=http://agentregistry.agentregistry-system.svc.cluster.local:12121",
             container["args"],
         )
-        self.assertIn("--pass-authorization-header=true", container["args"])
+        self.assertIn("--pass-access-token=true", container["args"])
+        self.assertIn("--pass-authorization-header=false", container["args"])
         self.assertIn("--cookie-secure=true", container["args"])
         self.assertIn("--cookie-httponly=true", container["args"])
         self.assertIn("--cookie-samesite=lax", container["args"])
@@ -145,6 +144,12 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
         proxy_principal = (
             "cluster.local/ns/agentregistry-system/sa/agentregistry-ui-oauth2-proxy"
         )
+        agentgateway_proxy_principal = (
+            "cluster.local/ns/agentgateway-system/sa/agentgateway-admin-ui-oauth2-proxy"
+        )
+        route_sync_principal = (
+            "cluster.local/ns/agentgateway-system/sa/agentgateway-route-sync"
+        )
         ingress_principal = (
             "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
         )
@@ -166,6 +171,26 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
                 for rule in allow["spec"]["rules"]
             )
         )
+        agentgateway_rule = next(
+            rule
+            for rule in allow["spec"]["rules"]
+            if rule.get("from", [{}])[0].get("source", {}).get("principals")
+            == [agentgateway_proxy_principal]
+        )
+        self.assertIn(
+            {"methods": ["PUT", "DELETE"], "paths": ["/v0/agentgateway/*"]},
+            [target["operation"] for target in agentgateway_rule["to"]],
+        )
+        route_sync_rule = next(
+            rule
+            for rule in allow["spec"]["rules"]
+            if rule.get("from", [{}])[0].get("source", {}).get("principals")
+            == [route_sync_principal]
+        )
+        self.assertIn(
+            {"methods": ["POST"], "paths": ["/v0/agentgateway/import"]},
+            [target["operation"] for target in route_sync_rule["to"]],
+        )
 
         deny = resource(
             documents,
@@ -176,9 +201,21 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             "notPrincipals"
         ]
         self.assertIn(proxy_principal, allowed_writers)
+        self.assertIn(agentgateway_proxy_principal, allowed_writers)
+        self.assertIn(route_sync_principal, allowed_writers)
         self.assertNotIn("cluster.local/ns/devai/sa/devai-auth-bff", allowed_writers)
         self.assertIn("cluster.local/ns/devai/sa/devai-registry-bootstrap", allowed_writers)
         self.assertIn("cluster.local/ns/devai/sa/devai-api", allowed_writers)
+        route_sync_deny = next(
+            rule
+            for rule in deny["spec"]["rules"]
+            if rule.get("from", [{}])[0].get("source", {}).get("principals")
+            == [route_sync_principal]
+        )
+        self.assertIn(
+            {"methods": ["POST"], "notPaths": ["/v0/agentgateway/import"]},
+            [target["operation"] for target in route_sync_deny["to"]],
+        )
 
         ingress_app = yaml.safe_load(
             (ROOT / "argocd/prod/infrastructure/istio-auth-policies.yaml").read_text()
