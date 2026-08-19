@@ -210,6 +210,24 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             env["DEVAI_AGENTGATEWAY_URL"],
         )
 
+    def test_devai_sre_production_requires_the_provider_ai_gateway(self):
+        documents = render_chart(
+            "charts/apps/devai-sre",
+            "devai-sre",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        deployment = resource(documents, "Deployment", "devai-sre")
+        env = {
+            item["name"]: item.get("value")
+            for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        self.assertEqual("true", env["DEVAI_LLM_GATEWAY_REQUIRED"])
+        self.assertEqual(
+            "http://ai-gateway.agentgateway-system.svc.cluster.local:8080",
+            env["DEVAI_LLM_GATEWAY_BASE_URL"],
+        )
+
     def test_secret_service_broker_uses_tokenreview_and_fixed_openbao_scope(self):
         documents = render_chart("charts/apps/secret-service", "secret-service", "secret-service")
         deployment = resource(documents, "Deployment", "secret-service-api")
