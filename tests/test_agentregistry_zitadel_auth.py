@@ -98,7 +98,7 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             container["args"],
         )
         self.assertIn("--pass-access-token=true", container["args"])
-        self.assertIn("--pass-authorization-header=false", container["args"])
+        self.assertIn("--pass-authorization-header=true", container["args"])
         self.assertIn("--cookie-secure=true", container["args"])
         self.assertIn("--cookie-httponly=true", container["args"])
         self.assertIn("--cookie-samesite=lax", container["args"])

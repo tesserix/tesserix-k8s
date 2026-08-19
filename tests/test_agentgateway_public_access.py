@@ -382,6 +382,7 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
             {argument for argument in args if argument.startswith("--upstream=")},
         )
         self.assertIn("--pass-access-token=true", args)
+        self.assertIn("--pass-authorization-header=true", args)
         remote_keys = {
             item["remoteRef"]["key"] for item in external_secret["spec"]["data"]
         }
