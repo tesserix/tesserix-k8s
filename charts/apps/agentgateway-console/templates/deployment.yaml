@@ -24,6 +24,13 @@ spec:
         checksum/config: {{ .Files.Get "files/config.yaml" | sha256sum }}
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10101
+        runAsGroup: 10101
+        fsGroup: 10101
+        seccompProfile:
+          type: RuntimeDefault
       terminationGracePeriodSeconds: 30
       topologySpreadConstraints:
         - maxSkew: 1
@@ -71,6 +78,9 @@ spec:
             readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 10101
+            runAsGroup: 10101
+            seccompProfile:
+              type: RuntimeDefault
             capabilities:
               drop: ["ALL"]
           volumeMounts:
