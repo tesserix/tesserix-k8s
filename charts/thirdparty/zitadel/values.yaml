@@ -200,7 +200,30 @@ zitadel:
         Features:
           LoginDefaultOrg: true
           LoginV2:
-            Required: true
+            # `Required: true` is the instance-wide migration forcing-switch:
+            # it makes EVERY app on this instance render login at the BaseURI
+            # below and SILENTLY OVERRIDES any per-app
+            # `loginVersion.loginV2.baseUri` — the app-level PUT returns 200
+            # and reads back correctly, and the redirect never moves. That is
+            # upstream bug zitadel/zitadel#10722, not a misconfiguration.
+            #
+            # Observed on helivanta-web (helivanta#892): "Use new Login UI"
+            # ticked and a clean `https://helivanta.app` base URI saved, and
+            # /oauth/v2/authorize still redirected to
+            # auth.tesserix.app/ui/v2/login/login?authRequest=... — Zitadel's
+            # own UI, not Helivanta's themed one.
+            #
+            # `false` does NOT disable Login V2. It stops FORCING the instance
+            # default on every app, so each app's own `loginVersion` decides.
+            # BaseURI below stays set, so an app that has V2 enabled without a
+            # base URI of its own is unaffected.
+            #
+            # NOT A NO-OP, and the reason this is its own change: an app that
+            # never set `loginVersion` falls back to Login V1 the moment this
+            # goes false. That is a visible change for that product's users on
+            # shared production auth. Audit every app's "Use new Login UI"
+            # setting before rolling this out.
+            Required: false
             BaseURI: https://auth.tesserix.app/ui/v2/login
           PermissionCheckV2: true
           ConsoleUseV2UserApi: true
