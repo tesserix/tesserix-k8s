@@ -158,6 +158,9 @@ def test_route_is_reconciled_and_origin_principal_is_allowed():
             / "argocd/prod/infrastructure/external-dns-agentregistry-publisher.yaml"
         ).read_text()
     )
+    assert "argocd.argoproj.io/sync-wave" not in app["metadata"].get(
+        "annotations", {}
+    )
     values = yaml.safe_load(app["spec"]["source"]["helm"]["values"])
     assert values["domainFilters"] == ["tesserix.app"]
     assert values["labelFilter"] == (
