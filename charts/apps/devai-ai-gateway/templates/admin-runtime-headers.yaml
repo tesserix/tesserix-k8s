@@ -1,0 +1,24 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: ai-gateway-admin-sanitize-auth-headers
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "devai-ai-gateway.labels" . | nindent 4 }}
+spec:
+  exportTo: ["."]
+  gateways: ["mesh"]
+  hosts:
+    - ai-gateway-admin.{{ .Values.namespace }}.svc.cluster.local
+  http:
+    - headers:
+        request:
+          remove:
+            - authorization
+            - cookie
+            - x-forwarded-access-token
+      route:
+        - destination:
+            host: ai-gateway-admin.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.admin.port }}

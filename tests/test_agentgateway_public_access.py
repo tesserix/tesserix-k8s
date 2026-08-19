@@ -383,6 +383,10 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
         )
         self.assertIn("--pass-access-token=true", args)
         self.assertIn("--pass-authorization-header=true", args)
+        self.assertIn(
+            "--backend-logout-url=https://auth.tesserix.app/oidc/v1/end_session?id_token_hint={id_token}",
+            args,
+        )
         remote_keys = {
             item["remoteRef"]["key"] for item in external_secret["spec"]["data"]
         }
@@ -407,6 +411,19 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
                 "cluster.local/ns/agentgateway-system/sa/agentgateway-admin-ui-oauth2-proxy"
             ],
             admin_rule["from"][0]["source"]["principals"],
+        )
+
+        sanitizer = resource(
+            documents, "VirtualService", "ai-gateway-admin-sanitize-auth-headers"
+        )
+        self.assertEqual(
+            ["ai-gateway-admin.agentgateway-system.svc.cluster.local"],
+            sanitizer["spec"]["hosts"],
+        )
+        self.assertEqual(["mesh"], sanitizer["spec"]["gateways"])
+        self.assertEqual(
+            ["authorization", "cookie", "x-forwarded-access-token"],
+            sanitizer["spec"]["http"][0]["headers"]["request"]["remove"],
         )
 
     def test_public_gateway_access_logs_verified_subject_without_tokens(self):

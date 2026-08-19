@@ -8,7 +8,7 @@ validated by AgentGateway.
 | Host | Browser experience | Machine API |
 |---|---|---|
 | `https://mcp.tesserix.app` | Tesserix MCP catalog UI | `/mcp` and `/mcp/*`; role `agentgateway.mcp` |
-| `https://agentgateway.tesserix.app` | Solo AgentGateway native UI | provider prefixes; role `agentgateway.models` |
+| `https://agentgateway.tesserix.app` | Tesserix desired-state administration UI; Solo runtime view under `/ui/traffic/*` | provider prefixes; role `agentgateway.models` |
 
 The AgentGateway controller and xDS port `9978` remain cluster-private. Public
 traffic enters through Istio and reaches only the dedicated data-plane listener
@@ -16,6 +16,13 @@ on port `8081`. Existing in-cluster clients continue to use the mTLS listener on
 port `8080`. Solo's native admin listener `15000` is exposed only through a
 private ClusterIP Service and accepts traffic only from its dedicated OAuth2
 Proxy identity.
+
+The private runtime hop strips browser cookies and forwarded bearer-token
+headers after OAuth2 Proxy authorizes the request. Solo's native admin server
+has a smaller aggregate header limit than the Registry UI, and it does not use
+those credentials; retaining them caused authenticated `/ui/traffic/*`
+requests to fail with HTTP 431. Registry-bound requests keep the verified
+access token because Registry performs server-side authorization on writes.
 
 ## Browser access
 
@@ -32,10 +39,12 @@ Secret Manager through External Secrets:
 - `prod-agentgateway-mcp-ui-{client-id,client-secret,cookie-secret}`
 - `prod-agentgateway-admin-ui-{client-id,client-secret,cookie-secret}`
 
-Browser cookies are `Secure`, `HttpOnly`, and `SameSite=Lax`. The proxies do not
-pass access tokens to either UI, and neither UI stores a gateway bearer token.
-The MCP UI reads the existing Agentic Registry catalog; it is not a second
-registry and has no separate catalog state.
+Browser cookies are `Secure`, `HttpOnly`, and `SameSite=Lax`. The AgentGateway
+administration proxy forwards the verified access token only to the Registry
+upstream for server-side write authorization; the Solo runtime hop removes it.
+Neither UI stores a gateway bearer token. The MCP UI reads the existing Agentic
+Registry catalog; it is not a second registry and has no separate catalog
+state.
 
 ## Threat model and decision
 
