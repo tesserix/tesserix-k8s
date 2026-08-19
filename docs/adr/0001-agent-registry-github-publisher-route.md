@@ -33,8 +33,9 @@ Require two independent credentials:
 
 1. Istio validates a short-lived GitHub OIDC token from
    `https://token.actions.githubusercontent.com`, audience
-   `agentregistry-publisher.tesserix.app`, and exact subject
-   `repo:tesserix/ai-agents:ref:refs/heads/main`.
+   `agentregistry-publisher.tesserix.app`, repository `tesserix/ai-agents`, ref
+   `refs/heads/main`, event `workflow_dispatch`, and the exact `publish.yml`
+   workflow reference.
 2. Registry validates the existing `X-Agentic-Registry-Deploy-Key` and grants
    only `registry:read registry:write` within tenant `kora`.
 
