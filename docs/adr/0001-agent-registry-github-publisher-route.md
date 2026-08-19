@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-19
+- Runbook: [Agent Registry publishing](../agent-registry-publishing.md)
 
 ## Context
 

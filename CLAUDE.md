@@ -273,6 +273,7 @@ validation.
 | **Per-tenant secrets at runtime** — OpenBao namespaces, path standard, why not ESO | [`docs/tenant-secrets.md`](docs/tenant-secrets.md) |
 | **HomeChef platform topology** — services, domains, infra, E2E | [`docs/homechef-platform.md`](docs/homechef-platform.md) |
 | **Vector store / embeddings for AI agents** (Qdrant, `ai-database` namespace — and why there is no operator) | [`docs/qdrant-vector-db.md`](docs/qdrant-vector-db.md) |
+| **Publishing Agent manifests** — GitHub OIDC route, review/merge/dispatch flow, verification, onboarding | [`docs/agent-registry-publishing.md`](docs/agent-registry-publishing.md) |
 | **Secret storage** — OpenBao, `openbao` namespace: auth roles, policies, ESO wiring, unseal and recovery | [`docs/openbao-secrets.md`](docs/openbao-secrets.md) |
 | **Whether a new app should set `prune: true`** — and why `requiresPruning` lies | [`docs/argocd-prune-audit.md`](docs/argocd-prune-audit.md) |
 
