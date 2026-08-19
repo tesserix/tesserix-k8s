@@ -41,13 +41,22 @@ class KagentSubstrateGatewayTests(unittest.TestCase):
         apply_script = pod["containers"][0]["args"][0]
 
         self.assertIn("workerPool=kagent-default", render_script)
+        self.assertIn(
+            "gatewayUrl=http%3A%2F%2Fagentgateway-mcp.agentgateway-system.svc.cluster.local%3A8080",
+            render_script,
+        )
         self.assertIn("sandboxagents.kagent.dev", apply_script)
+        self.assertIn("remotemcpservers.kagent.dev", apply_script)
         self.assertIn(
             "--prune-allowlist=kagent.dev/v1alpha2/SandboxAgent", apply_script
+        )
+        self.assertIn(
+            "--prune-allowlist=kagent.dev/v1alpha2/RemoteMCPServer", apply_script
         )
 
         role = resource(self.documents, "Role", "kagent-agent-sync")
         self.assertIn("sandboxagents", role["rules"][0]["resources"])
+        self.assertIn("remotemcpservers", role["rules"][0]["resources"])
 
     def test_model_configs_send_anthropic_and_openai_through_agentgateway(self):
         configs = {
