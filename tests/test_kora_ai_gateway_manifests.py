@@ -257,6 +257,27 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             agent_client["podSelector"]["matchLabels"]["app.kubernetes.io/name"],
         )
 
+        waypoint_rule = next(
+            rule
+            for rule in policy["spec"]["ingress"]
+            if rule["from"][0]
+            .get("podSelector", {})
+            .get("matchLabels", {})
+            .get("gateway.networking.k8s.io/gateway-name")
+            == "waypoint"
+        )
+        waypoint = waypoint_rule["from"][0]
+        self.assertEqual(
+            "agentgateway-system",
+            waypoint["namespaceSelector"]["matchLabels"][
+                "kubernetes.io/metadata.name"
+            ],
+        )
+        self.assertEqual(
+            {8080, 15008},
+            {port["port"] for port in waypoint_rule["ports"]},
+        )
+
     def test_gateway_listener_requires_the_kora_workload_identity(self):
         documents = render_chart(
             "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
