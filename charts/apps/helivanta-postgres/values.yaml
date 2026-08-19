@@ -120,6 +120,35 @@ applicationRoles:
     secret: helivanta-postgres-openfga-credentials
     openbaoName: postgres-openfga
 
+# Roles that MAY bypass row-level security. Kept as a separate list from
+# applicationRoles above, deliberately, rather than a `bypassrls: true` flag
+# on a shared one (#894).
+#
+# The reason is structural. applicationRoles' template block sets no
+# bypassrls at all, so "no application role can bypass RLS" is a property of
+# the template rather than of the data — nobody can grant it by editing a
+# values file. A boolean flag on a shared list would move that guarantee
+# into whichever entry a future reader copy-pastes. Two lists means the
+# privilege is visible in the diff, in the template, and in `helm template`
+# output.
+#
+#   helivanta_system — the ONLY role permitted to cross tenant boundaries.
+#     Used by exactly three callers: the authorization reconciler, the
+#     outbox dispatcher and the retention pruner, each of which enumerates
+#     every tenant in one pass and so has no single tenant to scope by.
+#     backend/internal/archtest's TestWithAllTenantsIsOnlyCalledFromThe-
+#     Allowlist keeps that set closed.
+#
+# It is NOT the owner and holds no DDL. The alternative considered was
+# granting BYPASSRLS to `helivanta` itself — one line, no code change — but
+# that removes FORCE ROW LEVEL SECURITY's binding on the owner across all 9
+# forced tables for every admin-pool connection, migrations included, to fix
+# three reads. FORCE was chosen over ENABLE precisely so the owner is bound.
+systemRoles:
+  - name: helivanta_system
+    secret: helivanta-postgres-system-credentials
+    openbaoName: postgres-system
+
 postgresql:
   max_connections: "200"
   shared_buffers: "256MB"
