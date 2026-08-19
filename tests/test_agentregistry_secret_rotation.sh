@@ -24,6 +24,6 @@ external_secret = next(
 )
 
 assert deployment["metadata"]["annotations"]["secret.reloader.stakater.com/reload"] == "agentregistry-secrets"
-assert external_secret["metadata"]["annotations"]["force-sync"] == "kora-deploy-key-v2"
+assert external_secret["metadata"]["annotations"]["force-sync"] == "kora-deploy-key-v3"
 print("PASS Agent Registry reconciles and reloads rotated secrets")
 '
