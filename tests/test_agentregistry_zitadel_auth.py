@@ -193,6 +193,60 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
         )
         self.assertEqual("agentregistry-ui-oauth2-proxy", registry_frontend["label"])
 
+    def test_public_discovery_bypasses_the_human_session_proxy(self):
+        documents = render_agentic_istio()
+        virtual_service = resource(documents, "VirtualService", "aregistry-ui")
+        public_route = virtual_service["spec"]["http"][1]
+
+        self.assertEqual(
+            "agentregistry.agentregistry-system.svc.cluster.local",
+            public_route["route"][0]["destination"]["host"],
+        )
+        self.assertEqual(12121, public_route["route"][0]["destination"]["port"]["number"])
+        matches = public_route["match"]
+        exact_paths = {
+            match["uri"]["exact"]
+            for match in matches
+            if "exact" in match["uri"]
+        }
+        regex_paths = {
+            match["uri"]["regex"]
+            for match in matches
+            if "regex" in match["uri"]
+        }
+        self.assertEqual({"/healthz", "/v0/health", "/v0/signing-key"}, exact_paths)
+        self.assertEqual(
+            {
+                r"^/v0/agents/[^/]+/(card|\.well-known/agent-card\.json)$",
+                r"^/v0/agents/[^/]+/[^/]+/card$",
+            },
+            regex_paths,
+        )
+        self.assertTrue(all(match["method"]["exact"] == "GET" for match in matches))
+
+        allow = resource(documents, "AuthorizationPolicy", "agentregistry-authz")
+        ingress_principal = (
+            "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
+        )
+        public_paths = {
+            "/healthz",
+            "/v0/health",
+            "/v0/signing-key",
+            "/v0/agents/{*}/card",
+            "/v0/agents/{*}/.well-known/agent-card.json",
+            "/v0/agents/{*}/{*}/card",
+        }
+        self.assertTrue(
+            any(
+                rule.get("from", [{}])[0].get("source", {}).get("principals")
+                == [ingress_principal]
+                and rule.get("to", [{}])[0].get("operation", {}).get("methods")
+                == ["GET"]
+                and set(rule["to"][0]["operation"]["paths"]) == public_paths
+                for rule in allow["spec"]["rules"]
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

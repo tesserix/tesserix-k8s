@@ -195,6 +195,35 @@ spec:
             port:
               number: 12121
       timeout: 30s
+    # Public runtime discovery is intentionally independent from human SSO.
+    # Registry still filters Agent Cards by artifact visibility.
+    - match:
+        - uri:
+            exact: /healthz
+          method:
+            exact: GET
+        - uri:
+            exact: /v0/health
+          method:
+            exact: GET
+        - uri:
+            exact: /v0/signing-key
+          method:
+            exact: GET
+        - uri:
+            regex: '^/v0/agents/[^/]+/(card|\.well-known/agent-card\.json)$'
+          method:
+            exact: GET
+        - uri:
+            regex: '^/v0/agents/[^/]+/[^/]+/card$'
+          method:
+            exact: GET
+      route:
+        - destination:
+            host: agentregistry.agentregistry-system.svc.cluster.local
+            port:
+              number: 12121
+      timeout: 30s
     - match:
         - uri:
             prefix: /
