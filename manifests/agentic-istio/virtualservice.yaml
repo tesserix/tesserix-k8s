@@ -1,14 +1,9 @@
 ##############################################################################
 # Agentic UIs — Istio VirtualService configuration
 #
-# Both hostnames route through devai-auth-bff (cross-namespace destination
-# in `devai`). The BFF inspects the devai_session cookie:
-#   * present + valid + email allow-listed → reverse-proxy to the upstream
-#   * missing/invalid → 302 to https://devai.tesserix.app/login?return_to=…
-#
-# That's a single SSO for all four DevAI hostnames (devai, sre, kagent,
-# aregistry), all backed by the same GIP project (tesseracthub-480811)
-# and ALM-tenant pool.
+# Human Registry traffic uses its dedicated Zitadel OAuth proxy. Machine APIs
+# retain independent routes and credentials so an identity outage cannot block
+# GitHub publication or catalog export.
 ##############################################################################
 
 # kagent UI
@@ -186,7 +181,7 @@ spec:
   hosts:
     - aregistry.tesserix.app
   http:
-    # CI publishers bypass the browser BFF only for the idempotent apply
+    # CI publishers bypass the browser session proxy only for the idempotent apply
     # endpoint. The registry validates a tenant-scoped deploy key and runs with
     # anonymous=read, so the route alone grants no write capability.
     - match:
@@ -210,11 +205,7 @@ spec:
             x-forwarded-proto: https
       route:
         - destination:
-            host: devai-auth-bff.devai.svc.cluster.local
+            host: agentregistry-ui-oauth2-proxy.agentregistry-system.svc.cluster.local
             port:
-              number: 8090
+              number: 4180
       timeout: 120s
-      retries:
-        attempts: 2
-        perTryTimeout: 30s
-        retryOn: reset,connect-failure,refused-stream,5xx

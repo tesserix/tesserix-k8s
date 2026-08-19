@@ -54,6 +54,13 @@ spec:
             - configMapRef:
                 name: {{ include "agentic-registry.fullname" . }}-config
           env:
+            {{- if .Values.oauth2Proxy.enabled }}
+            - name: AUTH_AUDIENCE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.oauth2Proxy.name }}
+                  key: client-id
+            {{- end }}
             {{- if eq .Values.database.mode "externalSecret" }}
             - name: DATABASE_URL
               valueFrom:
