@@ -167,10 +167,38 @@ spec:
       # no bypassrls. Every one of those is false by omission, and the last is
       # the one that matters — hms_app runs every request, and RLS policies
       # only isolate tenants if the role enforcing them cannot bypass RLS.
+      #
+      # There is deliberately no `bypassrls` key in this block, not even set
+      # to false: a role needing it goes in systemRoles below, where the
+      # grant is visible rather than one edited character away from here.
       - name: {{ .name }}
         ensure: present
         login: true
         inherit: true
+        passwordSecret:
+          name: {{ .secret }}
+      {{- end }}
+      {{- range .Values.systemRoles }}
+      # BYPASSRLS, and nothing else. No superuser, no createdb, no createrole.
+      #
+      # This is the only role in the cluster that can see across tenants, and
+      # it exists because the role that was assumed to — the schema owner —
+      # never could: iam_members and outbox_events are FORCE ROW LEVEL
+      # SECURITY, and FORCE binds the owner. Three whole-system operations
+      # (authorization reconcile, outbox dispatch, retention prune) each read
+      # zero rows in production and reported success for as long as anyone
+      # looked (#894).
+      #
+      # The application never connects as this role: only cmd/api's
+      # SYSTEM_DATABASE_URL does, and tenantdb.OpenWithSystem refuses to boot
+      # if this role turns out NOT to hold bypassrls — so a silent regression
+      # here becomes a failed rollout rather than a silent authorization
+      # outage.
+      - name: {{ .name }}
+        ensure: present
+        login: true
+        inherit: true
+        bypassrls: true
         passwordSecret:
           name: {{ .secret }}
       {{- end }}
