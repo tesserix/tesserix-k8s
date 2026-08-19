@@ -117,6 +117,34 @@ env:
   APP_ENV: production
   PORT: "8080"
 
+  # ---------------------------------------------------------------------
+  # Zitadel — how this API authenticates its callers (ADR-003 D8).
+  #
+  # Landed BEFORE the first module rather than with it. The service refuses to
+  # register a domain module while authentication is off
+  # (`httpx.RegisterModule` panics), so without these variables in place the
+  # tickets module (tesserix-home#269) could not deploy at all — and
+  # discovering that at merge time is the ordering mistake this estate has
+  # already made three times over: the Kargo warehouse, the RBAC grants, and
+  # the GAR mirror.
+  #
+  # Enabling it today changes nothing observable. The service composes no
+  # modules, and /health and /ready are deliberately NOT authenticated — the
+  # kubelet has no token, and a probe that needed one would fail the pod.
+  # ---------------------------------------------------------------------
+  PLATFORM_API_AUTH_ENABLED: "true"
+
+  ZITADEL_ISSUER: "https://auth.tesserix.app"
+
+  # The Platform Console project — the SAME id the console uses. It is both the
+  # audience this API requires and the project whose roles it reads.
+  #
+  # No separate Zitadel application: the console already requests
+  # `urn:zitadel:iam:org:project:id:{projectId}:aud`, so its tokens already
+  # carry this audience. A second application would mean a second client id and
+  # secret to manage for no gain.
+  ZITADEL_PROJECT_ID: "386377618200461939"
+
 # No ExternalSecret. The service's only credential is the tesserix-postgres
 # Secret below, which CNPG generates in-cluster — nothing here comes from GCP
 # Secret Manager yet. That changes with tesserix-home#278 (Zitadel), and the
