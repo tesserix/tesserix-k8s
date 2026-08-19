@@ -231,6 +231,10 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             image.split("@")[1],
         )
         self.assertNotIn("imagePullSecrets", pod)
+        self.assertEqual(
+            {"maxSurge": 0, "maxUnavailable": 1},
+            deployment["spec"]["strategy"]["rollingUpdate"],
+        )
 
     def test_registry_publish_path_is_credential_gated(self):
         registry = render_chart(
