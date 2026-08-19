@@ -1,0 +1,42 @@
+import re
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+SQL = (
+    ROOT / "charts/apps/db-schema-bootstrap/schemas/devai/devai-db/devai_db.sql"
+).read_text()
+CHART = (ROOT / "charts/apps/db-schema-bootstrap/Chart.yaml").read_text()
+
+
+def test_eval_schema_has_immutable_user_scoped_dataset_versions_and_suites() -> None:
+    assert "CREATE TABLE IF NOT EXISTS eval_datasets" in SQL
+    assert "UNIQUE (owner_scope, name)" in SQL
+    assert "CREATE TABLE IF NOT EXISTS eval_dataset_versions" in SQL
+    assert "UNIQUE (dataset_id, version)" in SQL
+    version_sql = SQL[
+        SQL.index("CREATE TABLE IF NOT EXISTS eval_dataset_versions") :
+        SQL.index("CREATE TABLE IF NOT EXISTS eval_suites")
+    ]
+    assert re.search(r"description\s+TEXT NOT NULL DEFAULT ''", version_sql)
+    assert "UNIQUE (content_hash)" not in SQL
+    assert "CREATE TABLE IF NOT EXISTS eval_suites" in SQL
+    assert "UNIQUE (owner_scope, name, version)" in SQL
+    assert re.search(r"dataset_version_id\s+UUID NOT NULL REFERENCES eval_dataset_versions\(id\)", SQL)
+
+
+def test_eval_history_is_durable_and_not_cascaded_from_sandbox_lifecycle() -> None:
+    assert "CREATE TABLE IF NOT EXISTS eval_runs" in SQL
+    assert "CREATE TABLE IF NOT EXISTS eval_case_results" in SQL
+    eval_sql = SQL[SQL.index("CREATE TABLE IF NOT EXISTS eval_runs") :]
+    assert "sandbox_id" in eval_sql
+    assert "REFERENCES sandboxes" not in eval_sql
+    assert re.search(r"dataset_version_id\s+UUID REFERENCES eval_dataset_versions\(id\)", eval_sql)
+    assert re.search(r"suite_id\s+UUID REFERENCES eval_suites\(id\)", eval_sql)
+
+
+def test_eval_owner_scope_indexes_and_chart_release_are_present() -> None:
+    assert "idx_eval_datasets_owner" in SQL
+    assert "idx_eval_suites_owner" in SQL
+    assert "idx_eval_runs_owner_sandbox" in SQL
+    assert "version: 0.3.34" in CHART
