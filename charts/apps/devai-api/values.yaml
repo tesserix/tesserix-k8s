@@ -61,11 +61,15 @@ env:
   # views are unreachable.
   DEVAI_ADMIN_EMAILS: "samyak.rout@gmail.com,mahesh.sangawar@gmail.com"
   # OpenTelemetry — export traces + metrics (HTTP requests, pipeline stages,
-  # LLM calls) to the in-cluster collector over OTLP/HTTP. The telemetry adapter
-  # degrades to noop if the collector is unreachable, so this is safe to leave
-  # on. Metrics land in Prometheus (when re-enabled) via the collector's
-  # scrape endpoint; the dashboard /analytics page reads collector health.
-  DEVAI_TELEMETRY_PROVIDER: "otel"
+  # LLM calls) to the in-cluster collector over OTLP/HTTP. Metrics land in
+  # Prometheus (when re-enabled) via the collector's scrape endpoint; the
+  # dashboard /analytics page reads collector health.
+  # Parked as "noop" while otel-gateway/otel-cluster sit at replicaCount: 0 —
+  # the adapter only degrades on a build failure, not on a dead endpoint, so
+  # "otel" here means every batch retries and floods the logs with
+  # "Failed to export span batch / Connection reset by peer".
+  # Flip back to "otel" in the same commit that scales the collectors up.
+  DEVAI_TELEMETRY_PROVIDER: "noop"
   DEVAI_OTEL_ENDPOINT: "http://otel-gateway.observability.svc.cluster.local:4318"
   DEVAI_OTEL_SERVICE_NAME: "devai-api"
   # Browser-facing Grafana base — powers the analytics "Open agent traces in
