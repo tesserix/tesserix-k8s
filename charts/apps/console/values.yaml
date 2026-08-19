@@ -184,21 +184,24 @@ env:
   # application bug rather than a configuration gap.
   ZITADEL_PROJECT_ID: "386377618200461939"
 
-  # The organization the operators live in, scoped at login.
+  # ZITADEL_ORG_ID is DELIBERATELY UNSET.
   #
-  # WITHOUT THIS, Zitadel resolves the login name in the INSTANCE DEFAULT org.
-  # That worked only while a duplicate of each operator existed there; once the
-  # duplicates were removed (2026-08-19) every login failed with
-  # `Username or Password is invalid` — the same message a wrong password gives,
-  # which is what made it expensive to diagnose.
+  # It was set on 2026-08-19 to pin login to the operators' org, because an
+  # unscoped login resolves in the instance default org and the operators had
+  # just been consolidated out of it. That reasoning was sound and the result
+  # was worse: with the scope, login accepted the password and then silently
+  # returned to the password screen, because Zitadel enforces org membership at
+  # that step and the check did not pass.
   #
-  # DISTINCT from ZITADEL_INTERNAL_ORG_ID above, which stays unset. That one is
-  # a check applied to the token on the way back; this one says where to
-  # authenticate. Conflating them is how the first cutover attempt failed.
+  # The deciding evidence was a working reference on the SAME Zitadel instance:
+  # helivanta's shell (apps/shell/lib/oidc.ts) requests `openid profile email`
+  # and no org scope, and the same operator logs in successfully. Matching that
+  # is what works today.
   #
-  # Pinning it here also makes the console independent of the instance-wide
-  # default organization, which anything else on the instance could change.
-  ZITADEL_ORG_ID: "386377229942128837"
+  # The cost is a dependency on the instance default organization, which must
+  # remain the operators' org. That is a real fragility — anything else on this
+  # Zitadel could change it — and #290 tracks pinning the org properly once the
+  # membership check is understood.
 
   # THE SWITCH — now on. Comment out to revert; reverting takes effect on the
   # next pod restart and needs no code rollback.
