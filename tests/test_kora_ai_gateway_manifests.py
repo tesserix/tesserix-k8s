@@ -174,15 +174,19 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             self.assertEqual("gemini-3.5-flash", vertex["vertexai"]["model"])
             self.assertEqual("global", vertex["vertexai"]["region"])
 
+        expected_routes = {
+            "/v1/chat/completions": "Completions",
+            "/v1/embeddings": "Embeddings",
+            "*": "Detect",
+        }
+        for backend in (embedding, structured, conversation):
+            self.assertEqual(
+                expected_routes,
+                backend["spec"]["policies"]["ai"]["routes"],
+            )
+
         traffic = resource(documents, "AgentgatewayPolicy", "kora-ai-guardrails")
-        self.assertEqual(
-            "Embeddings",
-            traffic["spec"]["backend"]["ai"]["routes"]["/v1/embeddings"],
-        )
-        self.assertEqual(
-            "Completions",
-            traffic["spec"]["backend"]["ai"]["routes"]["/v1/chat/completions"],
-        )
+        self.assertNotIn("routes", traffic["spec"]["backend"]["ai"])
 
     def test_vertex_terraform_binds_the_kora_gateway_identity(self):
         main = (ROOT / "terraform-new/stacks/12-vertex/main.tf").read_text()
