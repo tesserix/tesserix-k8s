@@ -82,10 +82,12 @@ hydration to get a usable page.
 
 Login v2 is selected per OIDC application. `zitadel-bootstrap` reconciles each
 declared `loginBaseUri` through the Application V2 API while leaving client
-secrets and callback URIs untouched. The MCP and AgentGateway browser clients
-both use `https://auth.tesserix.app/ui/v2/login`; this makes an external Google
-login return through `https://auth.tesserix.app/idps/callback`, which is the
-callback registered on the shared Google OAuth client.
+secrets and callback URIs untouched. The Registry, MCP, and AgentGateway browser
+clients all use `https://auth.tesserix.app/ui/v2/login`; this makes an external
+Google login return through `https://auth.tesserix.app/idps/callback`, which is
+the callback registered on the shared Google OAuth client. A client that falls
+back to legacy `/ui/login/login` instead uses a different Google callback and
+fails with `redirect_uri_mismatch`.
 
 ## Three things that will bite you
 
