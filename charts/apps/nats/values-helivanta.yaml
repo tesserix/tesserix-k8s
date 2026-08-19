@@ -26,8 +26,25 @@ jetstream:
   maxMemory: 268435456   # 256 MiB
   maxFile: 4294967296    # 4 GiB, under the 5Gi volume so the disk never fills
 
+# CPU declared explicitly, and set here rather than in the chart's own
+# values.yaml because this chart is shared — dwellm8-nats and
+# planning-poker-nats render from the same templates and their namespaces
+# have different quota shapes. Only Helivanta's needs constraining.
+#
+# Without this, the helivanta LimitRange's derived `default.cpu` assigns this
+# broker 4 cores — half the namespace's `limits.cpu: 8` ceiling — for a
+# process measured at 3m (`kubectl top pod`, 2026-08-19). That single
+# allocation is the root cause of #891: it is what left no room to re-admit
+# Postgres, which was merely the pod that would have noticed first.
+#
+# 500m is ~166x the measured steady state, with room for a JetStream replay
+# or a publish burst. If this broker ever legitimately needs more than half a
+# core, that is a capacity finding worth surfacing rather than absorbing
+# silently into an unbounded limit.
 resources:
   requests:
+    cpu: 50m
     memory: 192Mi
   limits:
+    cpu: 500m
     memory: 512Mi
