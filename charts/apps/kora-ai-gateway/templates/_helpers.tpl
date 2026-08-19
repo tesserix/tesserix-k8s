@@ -15,8 +15,6 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- define "kora-ai-gateway.vertexGroup" -}}
 - providers:
     - name: vertex
-      host: aiplatform.googleapis.com
-      port: 443
       vertexai:
         projectId: {{ .root.Values.providers.vertex.projectId }}
         region: {{ .root.Values.providers.vertex.region }}
