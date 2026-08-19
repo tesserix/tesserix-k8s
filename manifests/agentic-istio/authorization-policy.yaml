@@ -20,8 +20,8 @@
 # accepted by ztunnel with status "ZtunnelAccepted: HTTP attributes
 # stripped", and ends up wide-open at L7.
 #
-# Traversal for browser traffic:
-#   istio-ingressgateway → devai-auth-bff (devai ns) → kagent-ui / agentregistry
+# Registry browser traversal:
+#   istio-ingressgateway → agentregistry-ui-oauth2-proxy → agentregistry
 ##############################################################################
 
 # --- kagent (UI + controller, single policy on the waypoint) ---
@@ -75,7 +75,7 @@ spec:
             paths: ["/healthz", "/livez", "/readyz", "/api/health", "/api/ready", "/version"]
             methods: ["GET"]
 ---
-# --- agentregistry — devai-auth-bff (UI path) + catalog-API readers ---
+# --- agentregistry — Zitadel UI proxy + catalog-API readers ---
 #
 # READ vs WRITE split — GETs allowed from any agentic-stack consumer;
 # POST / PUT / PATCH / DELETE locked to the bootstrap Job's SA. The
@@ -94,12 +94,22 @@ spec:
       name: waypoint
   action: ALLOW
   rules:
-    # UI traffic comes via devai-auth-bff — full HTTP surface (Next.js
-    # UI and /v0/* live on the same port; the bff is the only caller
-    # and is already gated by GIP auth, so it gets the wide pass).
+    # Public browser traffic terminates only at the Zitadel session proxy.
     - from:
         - source:
-            principals: ["cluster.local/ns/devai/sa/devai-auth-bff"]
+            principals: ["cluster.local/ns/istio-ingress/sa/istio-ingressgateway"]
+      to:
+        - operation:
+            ports: ["4180"]
+    # The proxy forwards the verified Zitadel ID token. Registry performs the
+    # final email + project-role authorization for every mutation.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/agentregistry-system/sa/agentregistry-ui-oauth2-proxy"
+      to:
+        - operation:
+            ports: ["12121"]
     # The dedicated mcp.tesserix.app Zitadel proxy may render the UI and read
     # its catalog. Registry mutations remain denied below.
     - from:
@@ -284,10 +294,9 @@ spec:
 # rule overrides it.
 ##############################################################################
 
-# Catalog WRITE protection — only devai-registry-bootstrap (seed
-# reconcile), devai-api (publish-on-author) and devai-auth-bff (the UI
-# proxy for authenticated human edits) may mutate the catalog. Everything
-# else is denied even though allow-mesh-internal would otherwise pass it.
+# Catalog WRITE protection — only machine publishers and the dedicated Zitadel
+# proxy may reach the write surface. Registry still authorizes the human token
+# and tenant deploy key at the application boundary.
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -311,7 +320,7 @@ spec:
             notPrincipals:
               - "cluster.local/ns/devai/sa/devai-registry-bootstrap"
               - "cluster.local/ns/devai/sa/devai-api"
-              - "cluster.local/ns/devai/sa/devai-auth-bff"
+              - "cluster.local/ns/agentregistry-system/sa/agentregistry-ui-oauth2-proxy"
       to:
         - operation:
             methods: ["POST", "PUT", "PATCH", "DELETE"]
