@@ -75,6 +75,12 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         env = {entry["name"]: entry["value"] for entry in container["env"]}
         self.assertEqual("agentgateway", container["name"])
         self.assertEqual("169.254.169.254", env["GCE_METADATA_HOST"])
+        self.assertEqual(
+            "none",
+            parameters["spec"]["service"]["metadata"]["labels"][
+                "istio.io/use-waypoint"
+            ],
+        )
         self.assertEqual("agentgateway", gateway["spec"]["gatewayClassName"])
 
     def test_vertex_api_key_is_synchronized_but_workload_identity_authenticates(self):
@@ -274,27 +280,6 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             ["cluster.local/ns/kora/sa/kora-ai-agents"],
             policy["spec"]["rules"][1]["from"][0]["source"]["principals"],
         )
-
-    def test_gateway_service_waypoint_requires_the_kora_workload_identity(self):
-        documents = render_chart(
-            "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
-        )
-        policy = resource(documents, "AuthorizationPolicy", "kora-ai-service")
-
-        self.assertEqual(
-            [{"group": "", "kind": "Service", "name": "kora-ai"}],
-            policy["spec"]["targetRefs"],
-        )
-        self.assertEqual(
-            ["cluster.local/ns/kora/sa/kora-api"],
-            policy["spec"]["rules"][0]["from"][0]["source"]["principals"],
-        )
-        self.assertEqual(
-            ["cluster.local/ns/kora/sa/kora-ai-agents"],
-            policy["spec"]["rules"][1]["from"][0]["source"]["principals"],
-        )
-        for rule in policy["spec"]["rules"]:
-            self.assertEqual(["8080"], rule["to"][0]["operation"]["ports"])
 
     def test_kora_gets_only_a_client_key_and_narrow_gateway_egress(self):
         documents = render_chart(
