@@ -29,6 +29,6 @@ on the data-plane proxy that only exists after the Gateway is reconciled):
     here; the rendered Backend already targets <name>.{{ .Values.registry.sandboxNamespace }}.svc.
   • proxy -> MCP-backend NetworkPolicy (full-ns egress per the ambient/HBONE
     learning), once the proxy workload's labels/SA are known.
-  • Prune-on-delete: the CronJob create/updates only today; removing an MCP
-    server leaves a stale Backend/HTTPRoute (both carry
-    app.kubernetes.io/managed-by=agentic-registry for a future prune pass).
+  • Prune-on-delete: after validating the Registry export count and digest, the
+    CronJob removes only Registry-labelled resources absent from the desired
+    export. It refuses to prune below the configured platform-resource floor.

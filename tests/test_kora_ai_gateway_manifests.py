@@ -21,6 +21,8 @@ def render_chart(chart, release, namespace, values=None):
         "--namespace",
         namespace,
     ]
+    if chart == "charts/apps/kora-ai-gateway":
+        command.extend(["--set", "registryOwnership.enabled=false"])
     if values:
         command.extend(["--values", str(ROOT / chart / values)])
     result = subprocess.run(

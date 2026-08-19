@@ -29,13 +29,17 @@ spec:
           args:
             - |
               set -eu
+              count="$(kubectl get \
+                agentgatewaybackends.agentgateway.dev,httproutes.gateway.networking.k8s.io,agentgatewaypolicies.agentgateway.dev \
+                --namespace {{ .Values.namespace }} \
+                --selector app.kubernetes.io/managed-by=Helm \
+                --output name | wc -l | tr -d '[:space:]')"
+              test "${count}" = "{{ .Values.migrationImport.expectedCount }}"
               kubectl get \
                 agentgatewaybackends.agentgateway.dev,httproutes.gateway.networking.k8s.io,agentgatewaypolicies.agentgateway.dev \
                 --namespace {{ .Values.namespace }} \
                 --selector app.kubernetes.io/managed-by=Helm \
                 --output json > /work/import.json
-              count="$(grep -Ec '\"kind\": \"(AgentgatewayBackend|HTTPRoute|AgentgatewayPolicy)\"' /work/import.json || true)"
-              test "${count}" -gt 0
               echo "captured ${count} Helm-owned AgentGateway resources"
           volumeMounts:
             - name: work
