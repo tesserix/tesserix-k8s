@@ -99,6 +99,12 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         render_script = pod_spec["initContainers"][0]["args"][0]
         self.assertIn('test "${expected_count}" -ge "24"', render_script)
         apply_container = pod_spec["containers"][0]
+        apply_script = apply_container["args"][0]
+        self.assertIn(
+            "kubectl apply --dry-run=client -f /work/routes.yaml -o name",
+            apply_script,
+        )
+        self.assertNotIn("awk '", apply_script)
         self.assertIn(
             {"name": "tmp", "mountPath": "/tmp"}, apply_container["volumeMounts"]
         )
