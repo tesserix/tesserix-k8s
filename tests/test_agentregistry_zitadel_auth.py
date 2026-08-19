@@ -1,3 +1,4 @@
+import json
 import pathlib
 import subprocess
 import unittest
@@ -33,6 +34,23 @@ def render_registry():
 def render_agentic_istio():
     result = subprocess.run(
         ["kubectl", "kustomize", str(ROOT / "manifests/agentic-istio")],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [document for document in yaml.safe_load_all(result.stdout) if document]
+
+
+def render_zitadel_bootstrap():
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "zitadel-bootstrap",
+            str(ROOT / "charts/apps/zitadel-bootstrap"),
+            "--namespace",
+            "zitadel",
+        ],
         check=True,
         capture_output=True,
         text=True,
@@ -99,6 +117,10 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
         )
         self.assertIn("--pass-access-token=true", container["args"])
         self.assertIn("--pass-authorization-header=true", container["args"])
+        self.assertIn(
+            "--backend-logout-url=https://auth.tesserix.app/oidc/v1/end_session?id_token_hint={id_token}",
+            container["args"],
+        )
         self.assertIn("--cookie-secure=true", container["args"])
         self.assertIn("--cookie-httponly=true", container["args"])
         self.assertIn("--cookie-samesite=lax", container["args"])
@@ -119,6 +141,36 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             },
         )
         self.assertEqual(["Ingress", "Egress"], network_policy["spec"]["policyTypes"])
+
+    def test_registry_oidc_application_uses_login_v2(self):
+        documents = render_zitadel_bootstrap()
+        config = resource(
+            documents, "ConfigMap", "zitadel-bootstrap-config"
+        )
+        desired = json.loads(config["data"]["desired.json"])
+        project = next(
+            item
+            for item in desired["platformProjects"]
+            if item["name"] == "AgentRegistry"
+        )
+
+        self.assertEqual("TESSERIX", project["org"])
+        self.assertEqual("386930054896026901", project["expectedId"])
+        self.assertEqual(
+            {
+                "name": "agentregistry-ui",
+                "appType": "OIDC_APP_TYPE_WEB",
+                "authMethodType": "OIDC_AUTH_METHOD_TYPE_BASIC",
+                "loginBaseUri": "https://auth.tesserix.app/ui/v2/login",
+                "redirectUris": [
+                    "https://aregistry.tesserix.app/oauth2/callback"
+                ],
+                "postLogoutRedirectUris": [
+                    "https://aregistry.tesserix.app/"
+                ],
+            },
+            project["oidcApps"][0],
+        )
 
     def test_browser_and_machine_routes_have_separate_auth_boundaries(self):
         documents = render_agentic_istio()
