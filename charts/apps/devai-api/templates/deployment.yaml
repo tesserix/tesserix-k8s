@@ -126,20 +126,24 @@ spec:
               protocol: TCP
           env:
             {{- include "devai-api.containerEnv" . | trimPrefix "\n" | nindent 12 }}
-          {{- if and .Values.settings .Values.settings.brokerTokenFile }}
-          volumeMounts:
-            - name: secret-service-token
-              mountPath: /var/run/secrets/devai/secret-service
-              readOnly: true
-          {{- end }}
             {{- if .Values.nats.auth.enabled }}
-            # NATS account credentials (Home-Chef-App#758). Only set when the
-            # cluster enforces operator/JWT auth; the app connects anonymously
-            # while empty, so this stays inert until the global cutover. Uses the
-            # DEVAI_ prefix so pydantic Settings (env_prefix=DEVAI_) picks it up.
+            {{- /* DEVAI_ prefix so pydantic Settings (env_prefix=DEVAI_) picks it up. */}}
             - name: DEVAI_NATS_CREDS
               value: /etc/nats-creds/nats.creds
             {{- end }}
+          {{- if or (and .Values.settings .Values.settings.brokerTokenFile) .Values.nats.auth.enabled }}
+          volumeMounts:
+            {{- if and .Values.settings .Values.settings.brokerTokenFile }}
+            - name: secret-service-token
+              mountPath: /var/run/secrets/devai/secret-service
+              readOnly: true
+            {{- end }}
+            {{- if .Values.nats.auth.enabled }}
+            - name: nats-creds
+              mountPath: /etc/nats-creds
+              readOnly: true
+            {{- end }}
+          {{- end }}
           startupProbe:
             httpGet:
               path: /healthz
@@ -165,14 +169,7 @@ spec:
             timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-      {{- if or .Values.schemaBootstrap.enabled .Values.localAuth.enabled (and .Values.settings .Values.settings.brokerTokenFile) }}
-          {{- if .Values.nats.auth.enabled }}
-          volumeMounts:
-            - name: nats-creds
-              mountPath: /etc/nats-creds
-              readOnly: true
-          {{- end }}
-      {{- if or .Values.schemaBootstrap.enabled .Values.localAuth.enabled .Values.nats.auth.enabled }}
+      {{- if or .Values.schemaBootstrap.enabled .Values.localAuth.enabled (and .Values.settings .Values.settings.brokerTokenFile) .Values.nats.auth.enabled }}
       volumes:
         {{- if .Values.schemaBootstrap.enabled }}
         - name: schema-sql
@@ -193,8 +190,8 @@ spec:
                   audience: {{ .Values.settings.brokerAudience | default "secret-service" | quote }}
                   expirationSeconds: 600
                   path: token
+        {{- end }}
         {{- if .Values.nats.auth.enabled }}
-        # Projects the NATS_CREDS_FILE key from the ESO-synced secret as a file.
         - name: nats-creds
           secret:
             secretName: {{ include "devai-api.fullname" . }}-nats-creds
