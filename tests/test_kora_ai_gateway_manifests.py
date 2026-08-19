@@ -166,13 +166,13 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
 
         embedding_vertex = embedding["spec"]["ai"]["groups"][0]["providers"][0]
         self.assertEqual("gemini-embedding-001", embedding_vertex["vertexai"]["model"])
-        self.assertEqual("us-central1", embedding_vertex["vertexai"]["region"])
+        self.assertEqual("global", embedding_vertex["vertexai"]["region"])
 
         for backend in (structured, conversation):
             vertex = backend["spec"]["ai"]["groups"][0]["providers"][0]
             self.assertEqual("vertex", vertex["name"])
             self.assertEqual("gemini-3.5-flash", vertex["vertexai"]["model"])
-            self.assertEqual("us-central1", vertex["vertexai"]["region"])
+            self.assertEqual("global", vertex["vertexai"]["region"])
 
         traffic = resource(documents, "AgentgatewayPolicy", "kora-ai-guardrails")
         self.assertEqual(
