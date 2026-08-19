@@ -181,6 +181,16 @@ spec:
         - operation:
             methods: ["POST"]
             paths: ["/v0/apply"]
+    # The DNS-only publisher gateway is independently authenticated with an
+    # exact GitHub OIDC repository/ref before Registry deploy-key validation.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-ingress/sa/custom-ingressgateway"
+      to:
+        - operation:
+            methods: ["POST"]
+            paths: ["/v0/apply"]
     # Public health, signing key, and A2A Agent Cards are runtime discovery,
     # not human administration. Application visibility checks still apply.
     - from:
@@ -368,6 +378,7 @@ spec:
               - "cluster.local/ns/agentgateway-system/sa/agentgateway-admin-ui-oauth2-proxy"
               - "cluster.local/ns/agentgateway-system/sa/agentgateway-route-sync"
               - "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
+              - "cluster.local/ns/istio-ingress/sa/custom-ingressgateway"
       to:
         - operation:
             methods: ["POST", "PUT", "PATCH", "DELETE"]
@@ -391,6 +402,18 @@ spec:
         - source:
             principals:
               - "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
+      to:
+        - operation:
+            methods: ["PUT", "PATCH", "DELETE"]
+        - operation:
+            methods: ["POST"]
+            notPaths: ["/v0/apply"]
+    # The external publisher gateway has the same destination restriction as
+    # the public ingress, enforced independently for policy auditability.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-ingress/sa/custom-ingressgateway"
       to:
         - operation:
             methods: ["PUT", "PATCH", "DELETE"]
