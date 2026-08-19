@@ -107,7 +107,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         )
 
         handoff = resource(
-            documents, "Job", "agentgateway-registry-ownership-handoff-v1"
+            documents, "Job", "agentgateway-registry-ownership-handoff-v2"
         )
         script = handoff["spec"]["template"]["spec"]["containers"][0]["args"][0]
         resource_names = {
@@ -119,6 +119,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
             self.assertEqual(2, script.count(f"{resource_names[kind]} {name}\n"))
         self.assertIn("managed-by", script)
         self.assertIn("argocd.argoproj.io/tracking-id-", script)
+        self.assertIn("2>/dev/null || true", script)
 
     def test_import_guard_counts_objects_and_requires_exact_scope(self):
         documents = render_chart(
