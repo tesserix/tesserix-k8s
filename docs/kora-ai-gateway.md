@@ -58,8 +58,10 @@ compromised dependency, and an operator with excess secret access.
   key; Anthropic and xAI credentials exist only in `agentgateway-system` and
   cannot authenticate as clients.
 - Vertex uses ambient Google credentials through Workload Identity; no service
-  account JSON is stored in Git or Kubernetes. The data-plane KSA is `kora-ai`
-  and impersonates the existing `agentgateway-llm` GSA only after an explicit
+  account JSON is stored in Git or Kubernetes. The restricted Agent Platform
+  API key is loaded from Secret Manager and added as `x-goog-api-key`, without
+  replacing Workload Identity. The data-plane KSA is `kora-ai` and
+  impersonates the existing `agentgateway-llm` GSA only after an explicit
   Workload Identity binding is approved.
 - ExtProc receives typed attributes created by Agent Gateway. Client headers
   are not read directly by the optimizer.
@@ -90,8 +92,8 @@ following are true:
 1. Verify the pinned token-optimizer digest
    `sha256:8991783841b991c6cd09537009dd10849f1ed87dc844b1b9caed92f72d6bda6d`
    matches the successful release workflow and retain its SBOM/provenance.
-2. Confirm `prod-kora-ai-gateway-api-key` and the existing
-   `prod-devai-anthropic-api-key` remain available through Secret Manager.
+2. Confirm `prod-kora-ai-gateway-api-key`, `prod-kora-vertex-api-key`, and the
+   existing `prod-devai-anthropic-api-key` remain available through Secret Manager.
    xAI stays disabled until a real `prod-kora-xai-api-key` credential exists;
    never create or substitute a placeholder credential.
 3. Apply the Terraform-managed Workload Identity user binding for
