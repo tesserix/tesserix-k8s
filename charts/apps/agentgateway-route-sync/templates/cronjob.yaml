@@ -100,22 +100,17 @@ spec:
                     echo "desired AgentGateway state is empty"
                   fi
                   {{- if .Values.registry.prune }}
-                  awk '
-                    /^kind: / { kind=$2; metadata=0 }
-                    /^metadata:$/ { metadata=1; next }
-                    metadata && /^  name: / { print kind "/" $2; metadata=0 }
-                  ' /work/routes.yaml > /tmp/desired-resources
-                  for entry in \
-                    "AgentgatewayBackend agentgatewaybackends.agentgateway.dev" \
-                    "HTTPRoute httproutes.gateway.networking.k8s.io" \
-                    "AgentgatewayPolicy agentgatewaypolicies.agentgateway.dev"; do
-                    kind="${entry%% *}"
-                    resource="${entry#* }"
+                  kubectl apply --dry-run=client -f /work/routes.yaml -o name \
+                    | sort -u > /tmp/desired-resources
+                  for resource in \
+                    agentgatewaybackends.agentgateway.dev \
+                    httproutes.gateway.networking.k8s.io \
+                    agentgatewaypolicies.agentgateway.dev; do
                     kubectl get "${resource}" \
                       --selector app.kubernetes.io/managed-by=agentic-registry \
-                      --output custom-columns=NAME:.metadata.name --no-headers | while read -r name; do
-                        if ! grep -Fxq "${kind}/${name}" /tmp/desired-resources; then
-                          kubectl delete "${resource}" "${name}" --wait=false
+                      --output name | while read -r object; do
+                        if ! grep -Fxq "${object}" /tmp/desired-resources; then
+                          kubectl delete "${object}" --wait=false
                         fi
                       done
                   done
