@@ -83,6 +83,27 @@ spec:
                   key: password
             - name: ADMIN_DATABASE_URL
               value: "postgres://$(ADMIN_DB_USER):$(ADMIN_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
+            # helivanta_system — the ONLY role that may cross tenants (#894).
+            #
+            # This is a third DSN differing from the two above only by
+            # username, which makes mixing them up easy and the consequences
+            # asymmetric: SYSTEM_DATABASE_URL in APP_DATABASE_URL's place
+            # disables tenant isolation for every request. tenantdb refuses
+            # both directions at boot — assertNoRLSBypass rejects an app pool
+            # that CAN bypass, assertRLSBypass rejects a system pool that
+            # CANNOT — so a swap is a failed rollout, not a data leak.
+            - name: SYSTEM_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.systemSecretName }}
+                  key: username
+            - name: SYSTEM_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.systemSecretName }}
+                  key: password
+            - name: SYSTEM_DATABASE_URL
+              value: "postgres://$(SYSTEM_DB_USER):$(SYSTEM_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
             - name: NATS_URL
               value: {{ .Values.nats.url | quote }}
             - name: OPENFGA_URL

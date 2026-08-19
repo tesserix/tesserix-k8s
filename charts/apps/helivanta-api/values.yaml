@@ -159,6 +159,17 @@ database:
   # (templates/migrate-job.yaml) also connects as this role, via the same
   # secret.
   adminSecretName: helivanta-postgres-app-credentials
+  # helivanta_system — BYPASSRLS, and the only role that may read or write
+  # across every tenant (#894). Created by helivanta-postgres's
+  # `systemRoles`, which is a separate list from its application roles
+  # precisely so this privilege cannot be granted by editing the wrong line.
+  #
+  # cmd/api is the only consumer: it reconciles authorization, drains the
+  # outbox and prunes retention, and each of those enumerates every tenant
+  # in one pass. cmd/migrate does not get this secret — DDL needs to own the
+  # tables, not to see other tenants' rows, and those are different
+  # privileges however often they travel together.
+  systemSecretName: helivanta-postgres-system-credentials
 
 nats:
   url: nats://helivanta-nats.helivanta.svc.cluster.local:4222
