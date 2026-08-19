@@ -367,6 +367,7 @@ spec:
               - "cluster.local/ns/agentregistry-system/sa/agentregistry-ui-oauth2-proxy"
               - "cluster.local/ns/agentgateway-system/sa/agentgateway-admin-ui-oauth2-proxy"
               - "cluster.local/ns/agentgateway-system/sa/agentgateway-route-sync"
+              - "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
       to:
         - operation:
             methods: ["POST", "PUT", "PATCH", "DELETE"]
@@ -384,6 +385,18 @@ spec:
         - operation:
             methods: ["PUT", "DELETE"]
             notPaths: ["/v0/agentgateway/*"]
+    # CI publishers enter through the public ingress and may only call the
+    # deploy-key-authenticated, idempotent apply endpoint.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
+      to:
+        - operation:
+            methods: ["PUT", "PATCH", "DELETE"]
+        - operation:
+            methods: ["POST"]
+            notPaths: ["/v0/apply"]
     # Route-sync may POST only the one-time/import reconciliation endpoint.
     - from:
         - source:

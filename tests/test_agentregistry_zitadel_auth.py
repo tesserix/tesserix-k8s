@@ -98,7 +98,7 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             container["args"],
         )
         self.assertIn("--pass-access-token=true", container["args"])
-        self.assertIn("--pass-authorization-header=false", container["args"])
+        self.assertIn("--pass-authorization-header=true", container["args"])
         self.assertIn("--cookie-secure=true", container["args"])
         self.assertIn("--cookie-httponly=true", container["args"])
         self.assertIn("--cookie-samesite=lax", container["args"])
@@ -203,9 +203,24 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
         self.assertIn(proxy_principal, allowed_writers)
         self.assertIn(agentgateway_proxy_principal, allowed_writers)
         self.assertIn(route_sync_principal, allowed_writers)
+        self.assertIn(ingress_principal, allowed_writers)
         self.assertNotIn("cluster.local/ns/devai/sa/devai-auth-bff", allowed_writers)
         self.assertIn("cluster.local/ns/devai/sa/devai-registry-bootstrap", allowed_writers)
         self.assertIn("cluster.local/ns/devai/sa/devai-api", allowed_writers)
+        ingress_deny = next(
+            rule
+            for rule in deny["spec"]["rules"]
+            if rule.get("from", [{}])[0].get("source", {}).get("principals")
+            == [ingress_principal]
+        )
+        self.assertIn(
+            {"methods": ["POST"], "notPaths": ["/v0/apply"]},
+            [target["operation"] for target in ingress_deny["to"]],
+        )
+        self.assertIn(
+            {"methods": ["PUT", "PATCH", "DELETE"]},
+            [target["operation"] for target in ingress_deny["to"]],
+        )
         route_sync_deny = next(
             rule
             for rule in deny["spec"]["rules"]
