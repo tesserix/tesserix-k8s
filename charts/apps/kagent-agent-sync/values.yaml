@@ -1,9 +1,9 @@
 # kagent-agent-sync — defaults
 #
 # A CronJob that curls the registry's server-side kagent export and applies the
-# rendered kagent.dev Agent + ToolServer CRs. Only agents carrying the
+# rendered kagent.dev Agent + RemoteMCPServer CRs. Only agents carrying the
 # long-lived label (registry.labelSelector) are synced — ephemeral agents stay
-# Job-dispatched. Idempotent server-side apply.
+# Job-dispatched. The reconcile is idempotent and prunes stale managed objects.
 
 namespace: kagent-system
 
@@ -19,9 +19,9 @@ registry:
   # The agents now render one variant per entry in `kagentModels` (below); the
   # export `variants` param is derived from it, so there's no single modelConfig
   # here anymore.
-  # agentgateway base URL the rendered ToolServers reach MCP tools through.
-  # Empty → ToolServers use each MCP server's own remote URL.
-  gatewayUrl: ""
+  # Private AgentGateway base URL every rendered RemoteMCPServer uses. Direct
+  # provider/MCP egress is not allowed for user-authored Substrate agents.
+  gatewayUrl: http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080
   # Render SandboxAgent resources pinned to the production gVisor WorkerPool.
   # Empty keeps the classic Agent renderer for clusters without Substrate.
   workerPool: kagent-default

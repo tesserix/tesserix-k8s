@@ -1,5 +1,5 @@
 # Agent-sync: pull long-lived (labelled) agents from the registry as ready-to-
-# apply kagent.dev Agent + ToolServer YAML (rendered server-side by
+# apply kagent.dev Agent + RemoteMCPServer YAML (rendered server-side by
 # /v0/export/kagent, reusing the registry's tested adapter), then apply them so
 # the kagent controller reconciles managed Deployments. Idempotent. Runs in
 # kagent-system, whose SA the registry authz already allows to GET /v0/*; the
@@ -132,10 +132,10 @@ spec:
                   MODE=$(cat /work/mode 2>/dev/null || echo "")
                   if [ "${MODE}" = "reap" ]; then
                     # No user has any model enabled — delete every registry-managed
-                    # Agent variant (and its ToolServers). The ModelConfigs are owned
+                    # Agent variant and MCP resources. The ModelConfigs are owned
                     # by ArgoCD/Helm, not this job, so they stay.
                     echo "reaping all registry-managed Agent variants (none enabled)"
-                    kubectl delete agents.kagent.dev,sandboxagents.kagent.dev,toolservers.kagent.dev \
+                    kubectl delete agents.kagent.dev,sandboxagents.kagent.dev,remotemcpservers.kagent.dev,toolservers.kagent.dev \
                       -n {{ .Values.registry.targetNamespace }} \
                       -l app.kubernetes.io/managed-by=agentic-registry \
                       --ignore-not-found
@@ -151,14 +151,17 @@ spec:
                     # validates the object on apply).
                     #
                     # --prune (scoped to the registry-managed label) self-heals:
-                    # any Agent/ToolServer the registry no longer renders — an
+                    # any Agent/MCP server the registry no longer renders — an
                     # unlabelled/removed agent, a stale provider/model variant —
                     # is deleted, instead of orphaning. Safe because the guard
                     # above only runs apply on a non-empty render, so a transient
                     # empty export never prunes everything.
+                    # Keep the legacy ToolServer allowlist until resources from
+                    # the pre-v1alpha2 exporter have been pruned once.
                     kubectl apply --validate=false --prune \
                       --prune-allowlist=kagent.dev/v1alpha2/Agent \
                       --prune-allowlist=kagent.dev/v1alpha2/SandboxAgent \
+                      --prune-allowlist=kagent.dev/v1alpha2/RemoteMCPServer \
                       --prune-allowlist=kagent.dev/v1alpha1/ToolServer \
                       -l app.kubernetes.io/managed-by=agentic-registry \
                       -f /work/agents.yaml
