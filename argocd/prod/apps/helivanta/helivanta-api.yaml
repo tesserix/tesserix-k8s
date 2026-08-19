@@ -8,6 +8,18 @@ metadata:
     app.kubernetes.io/component: api
     environment: prod
   annotations:
+    # Kargo writes image.tag onto this Application's helm parameters when the
+    # kargo-helivanta:prod Stage promotes (#824 Task 8). Without this
+    # annotation Kargo refuses to touch it — the authorization is on the
+    # Application, not on the Stage.
+    #
+    # The app-of-apps already carries the matching
+    # ignoreDifferences on /spec/source/helm/parameters, added in slice 1a in
+    # anticipation of exactly this. Both halves are required: the annotation
+    # lets Kargo write, ignoreDifferences stops git and Kargo fighting over
+    # what it wrote. dwellm8's own comment records what omitting the second
+    # costs — a stale image.tag that git can no longer remove.
+    kargo.akuity.io/authorized-stage: kargo-helivanta:prod
     # After the broker (-6) and the authorization engine (-2) — both are
     # dependencies /readyz checks at request time (postgres, nats, openfga),
     # so this pod would otherwise boot straight into a permanently-unready
