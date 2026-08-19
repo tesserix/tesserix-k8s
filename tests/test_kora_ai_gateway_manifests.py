@@ -211,6 +211,20 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         )
         self.assertEqual(8080, egress["ports"][0]["port"])
 
+    def test_production_kora_api_enables_the_ai_gateway(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        env = {
+            entry["name"]: entry
+            for entry in deployment["spec"]["template"]["spec"]["containers"][0][
+                "env"
+            ]
+        }
+
+        self.assertEqual("true", env["AI_GATEWAY_ENABLED"]["value"])
+
     def test_ai_agents_are_non_root_bounded_and_gateway_only(self):
         documents = render_chart("charts/apps/kora-ai-agents", "kora-ai-agents", "kora")
         deployment = resource(documents, "Deployment", "kora-ai-agents")
