@@ -13,15 +13,21 @@ HUMAN_EMAILS = {"samyak.rout@gmail.com", "mahesh.sangawar@gmail.com"}
 
 
 def render_chart(chart):
+    command = [
+        "helm",
+        "template",
+        "test",
+        str(ROOT / chart),
+        "--namespace",
+        "agentgateway-system",
+    ]
+    if chart in {
+        "charts/apps/agentgateway-route-sync",
+        "charts/apps/devai-ai-gateway",
+    }:
+        command.extend(["--set", "registryOwnership.enabled=false"])
     result = subprocess.run(
-        [
-            "helm",
-            "template",
-            "test",
-            str(ROOT / chart),
-            "--namespace",
-            "agentgateway-system",
-        ],
+        command,
         check=True,
         capture_output=True,
         text=True,
@@ -130,15 +136,12 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
             self.assertEqual(ui_backend, browser_route["host"])
             self.assertEqual(4180, browser_route["port"]["number"])
             if name == "solo-agentgateway":
-                root_redirect = next(
-                    route
-                    for route in virtual_service["spec"]["http"]
-                    if any(
-                        match.get("uri", {}).get("exact") == "/"
-                        for match in route.get("match", [])
+                self.assertFalse(
+                    any(
+                        "redirect" in route
+                        for route in virtual_service["spec"]["http"]
                     )
                 )
-                self.assertEqual("/ui/", root_redirect["redirect"]["uri"])
 
     def test_mcp_gateway_is_private_hardened_and_disruption_safe(self):
         documents = render_chart("charts/apps/agentgateway-route-sync")
@@ -369,10 +372,16 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
             "--redirect-url=https://agentgateway.tesserix.app/oauth2/callback",
             args,
         )
-        self.assertIn(
-            "--upstream=http://ai-gateway-admin.agentgateway-system.svc.cluster.local:15000",
-            args,
+        self.assertEqual(
+            {
+                "--upstream=http://agentregistry.agentregistry-system.svc.cluster.local:12121/",
+                "--upstream=http://ai-gateway-admin.agentgateway-system.svc.cluster.local:15000/ui/",
+                "--upstream=http://ai-gateway-admin.agentgateway-system.svc.cluster.local:15000/api/",
+                "--upstream=http://ai-gateway-admin.agentgateway-system.svc.cluster.local:15000/config_dump",
+            },
+            {argument for argument in args if argument.startswith("--upstream=")},
         )
+        self.assertIn("--pass-access-token=true", args)
         remote_keys = {
             item["remoteRef"]["key"] for item in external_secret["spec"]["data"]
         }

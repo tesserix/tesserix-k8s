@@ -17,6 +17,8 @@ def render_chart(chart, release, namespace, values=()):
         text=True,
     )
     command = ["helm", "template", release, str(chart_path), "--namespace", namespace]
+    if chart == "charts/apps/devai-ai-gateway":
+        command.extend(["--set", "registryOwnership.enabled=false"])
     for value in values:
         command.extend(["--values", str(ROOT / chart / value)])
     result = subprocess.run(command, check=True, capture_output=True, text=True)

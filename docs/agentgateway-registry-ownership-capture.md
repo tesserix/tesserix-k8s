@@ -43,3 +43,34 @@ No Secret values, tokens, status, or managed fields are captured.
 Registry-generated MCP backends and routes are intentionally excluded because
 they already carry `app.kubernetes.io/managed-by=agentic-registry` and do not
 participate in the ownership transfer.
+
+## Verified handoff
+
+Phase one completed on 2026-08-19:
+
+- the import API returned `count: 24`;
+- route-sync verified the Registry export count and SHA-256 digest before apply;
+- the first combined export contained 124 resources: the 24 platform resources
+  above plus the existing Registry-generated MCP backends and routes;
+- the `agentgateway-mcp`, `ai-gateway`, and `kora-ai` Gateways remained Accepted
+  and Programmed.
+
+Phase two makes Registry ownership the chart default. A one-time handoff Job
+waits for both former Helm applications to publish their ownership markers and
+for all 24 resources to carry the Registry owner label. It then removes only
+stale Argo/Helm tracking annotations. Registry pruning refuses any export below
+the permanent 24-resource platform floor.
+
+## Rollback
+
+Set `registryOwnership.enabled=false` in each of these charts to restore the
+tested Helm renderings without reconstructing resource definitions:
+
+- `charts/apps/devai-ai-gateway`
+- `charts/apps/kora-ai-gateway`
+- `charts/apps/agentgateway-route-sync`
+
+Also set `registry.prune=false` in `agentgateway-route-sync` before rolling back
+ownership. The original source remains available at the rollback commit named
+above, and the exact canonical hashes in this document remain the comparison
+baseline.

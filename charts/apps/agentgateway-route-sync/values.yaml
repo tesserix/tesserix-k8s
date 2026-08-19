@@ -11,6 +11,11 @@
 
 namespace: agentgateway-system
 
+# Registry owns the three platform security CRs after the production handoff.
+# Set false only for the rollback path that restores Helm rendering.
+registryOwnership:
+  enabled: true
+
 # The data-plane Gateway the HTTPRoutes attach to.
 gateway:
   name: agentgateway-mcp
@@ -86,12 +91,22 @@ registry:
   # Namespace image/package MCP servers run in (sandbox). The rendered Backend
   # targets <name>.<sandboxNamespace>.svc.cluster.local for non-remote servers.
   sandboxNamespace: agentgateway-sandbox
-  prune: false
+  prune: true
+  # Never prune if a valid, digest-verified export drops below the permanent
+  # 24-resource platform baseline imported during the ownership handoff.
+  minDesiredResourceCount: 24
 
-# Phase-one ownership handoff. This Job imports the live Helm-owned specs once,
-# then remains Completed until phase two removes it.
+# The phase-one import is complete. Keep the exact-count guard for a tested
+# rollback/replay path, but do not render the importer in steady state.
 migrationImport:
+  enabled: false
+  expectedCount: 24
+
+# One-time phase-two metadata handoff. The Job waits until every migrated
+# object is Registry-managed, then removes only stale Argo/Helm tracking data.
+ownershipHandoff:
   enabled: true
+  expectedCount: 24
 
 externalSecret:
   secretStore: gcp-secret-store
