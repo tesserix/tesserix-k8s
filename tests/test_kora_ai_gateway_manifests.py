@@ -137,6 +137,55 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
                     {"type": "PathPrefix", "value": "/"}, match["path"]
                 )
 
+    def test_gateway_owns_vertex_models_and_routes_by_capability(self):
+        documents = render_chart(
+            "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
+        )
+        route = resource(documents, "HTTPRoute", "kora-ai")
+        embedding = resource(
+            documents, "AgentgatewayBackend", "kora-embedding-providers"
+        )
+        structured = resource(
+            documents, "AgentgatewayBackend", "kora-structured-providers"
+        )
+        conversation = resource(
+            documents, "AgentgatewayBackend", "kora-conversation-providers"
+        )
+
+        embedding_rule = route["spec"]["rules"][0]
+        self.assertEqual(
+            {
+                "name": "x-kora-ai-capability",
+                "type": "Exact",
+                "value": "embedding",
+            },
+            embedding_rule["matches"][0]["headers"][0],
+        )
+        self.assertEqual(
+            "kora-embedding-providers",
+            embedding_rule["backendRefs"][0]["name"],
+        )
+
+        embedding_vertex = embedding["spec"]["ai"]["groups"][0]["providers"][0]
+        self.assertEqual("gemini-embedding-001", embedding_vertex["vertexai"]["model"])
+        self.assertEqual("us-central1", embedding_vertex["vertexai"]["region"])
+
+        for backend in (structured, conversation):
+            vertex = backend["spec"]["ai"]["groups"][0]["providers"][0]
+            self.assertEqual("vertex", vertex["name"])
+            self.assertEqual("gemini-3.5-flash", vertex["vertexai"]["model"])
+            self.assertEqual("us-central1", vertex["vertexai"]["region"])
+
+        traffic = resource(documents, "AgentgatewayPolicy", "kora-ai-guardrails")
+        self.assertEqual(
+            "Embeddings",
+            traffic["spec"]["backend"]["ai"]["routes"]["/v1/embeddings"],
+        )
+        self.assertEqual(
+            "Completions",
+            traffic["spec"]["backend"]["ai"]["routes"]["/v1/chat/completions"],
+        )
+
     def test_vertex_terraform_binds_the_kora_gateway_identity(self):
         main = (ROOT / "terraform-new/stacks/12-vertex/main.tf").read_text()
         variables = (ROOT / "terraform-new/stacks/12-vertex/variables.tf").read_text()
@@ -225,7 +274,9 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         )
 
     def test_kora_gets_only_a_client_key_and_narrow_gateway_egress(self):
-        documents = render_chart("charts/apps/kora-api", "kora", "kora")
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
         deployment = resource(documents, "Deployment", "kora-kora-api")
         external_secret = resource(
             documents, "ExternalSecret", "kora-ai-gateway-client-credentials"
@@ -261,14 +312,80 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
         )
         deployment = resource(documents, "Deployment", "kora-kora-api")
+        seed_job = resource(documents, "Job", "kora-kora-api-seed")
+        workload_secret = resource(documents, "ExternalSecret", "kora-kora-api-secrets")
         env = {
             entry["name"]: entry
             for entry in deployment["spec"]["template"]["spec"]["containers"][0][
                 "env"
             ]
         }
+        seed_env = {
+            entry["name"]: entry
+            for entry in seed_job["spec"]["template"]["spec"]["containers"][0][
+                "env"
+            ]
+        }
 
         self.assertEqual("true", env["AI_GATEWAY_ENABLED"]["value"])
+        self.assertEqual("kora-auto", env["AI_GATEWAY_MODEL"]["value"])
+        self.assertEqual("true", seed_env["AI_GATEWAY_ENABLED"]["value"])
+        self.assertEqual("kora-auto", seed_env["AI_GATEWAY_MODEL"]["value"])
+
+        direct_provider_env = {
+            "VERTEX_PROJECT",
+            "VERTEX_LOCATION",
+            "GEMINI_API_KEY",
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+            "OPENAI_MODEL",
+            "OPENAI_JSON_OBJECT",
+        }
+        self.assertTrue(direct_provider_env.isdisjoint(env))
+        self.assertTrue(direct_provider_env.isdisjoint(seed_env))
+
+        remote_refs = {
+            entry["remoteRef"]["key"] for entry in workload_secret["spec"]["data"]
+        }
+        self.assertNotIn("prod-kora-gemini-api-key", remote_refs)
+        self.assertNotIn("prod-kora-openai-api-key", remote_refs)
+
+    def test_gateway_disabled_does_not_enable_a_direct_provider_bypass(self):
+        documents = render_chart("charts/apps/kora-api", "kora", "kora")
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        seed_job = resource(documents, "Job", "kora-kora-api-seed")
+        workload_secret = resource(documents, "ExternalSecret", "kora-kora-api-secrets")
+
+        api_env = {
+            entry["name"]
+            for entry in deployment["spec"]["template"]["spec"]["containers"][0][
+                "env"
+            ]
+        }
+        seed_env = {
+            entry["name"]
+            for entry in seed_job["spec"]["template"]["spec"]["containers"][0][
+                "env"
+            ]
+        }
+        remote_refs = {
+            entry["remoteRef"]["key"] for entry in workload_secret["spec"]["data"]
+        }
+
+        provider_env = {
+            "AI_GATEWAY_ENABLED",
+            "VERTEX_PROJECT",
+            "VERTEX_LOCATION",
+            "GEMINI_API_KEY",
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+            "OPENAI_MODEL",
+            "OPENAI_JSON_OBJECT",
+        }
+        self.assertTrue(provider_env.isdisjoint(api_env))
+        self.assertTrue(provider_env.isdisjoint(seed_env))
+        self.assertNotIn("prod-kora-gemini-api-key", remote_refs)
+        self.assertNotIn("prod-kora-openai-api-key", remote_refs)
 
     def test_ai_agents_are_non_root_bounded_and_gateway_only(self):
         documents = render_chart("charts/apps/kora-ai-agents", "kora-ai-agents", "kora")
