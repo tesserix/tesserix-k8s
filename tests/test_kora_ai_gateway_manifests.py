@@ -77,7 +77,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         self.assertEqual("169.254.169.254", env["GCE_METADATA_HOST"])
         self.assertEqual("agentgateway", gateway["spec"]["gatewayClassName"])
 
-    def test_vertex_api_key_is_read_from_the_provider_secret(self):
+    def test_vertex_api_key_is_synchronized_but_workload_identity_authenticates(self):
         documents = render_chart(
             "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
         )
@@ -111,18 +111,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             self.assertEqual(443, vertex["port"])
             self.assertEqual({}, vertex["policies"]["tls"])
             self.assertEqual({}, auth["gcp"])
-            self.assertEqual(
-                [
-                    {
-                        "secretRef": {
-                            "name": "kora-ai-gateway-provider-credentials",
-                            "key": "vertex-api-key",
-                        },
-                        "location": {"header": {"name": "x-goog-api-key"}},
-                    }
-                ],
-                auth["credentials"],
-            )
+            self.assertNotIn("credentials", auth)
 
     def test_gateway_route_declares_kubernetes_default_values(self):
         documents = render_chart(
