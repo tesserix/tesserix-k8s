@@ -1,0 +1,40 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-console.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              {{- range .Values.authorizationPolicy.meshPrincipals }}
+              - {{ . | quote }}
+              {{- end }}
+      to:
+        - operation:
+            ports:
+              - {{ .Values.ports.mesh | quote }}
+    - from:
+        - source:
+            principals:
+              - {{ .Values.authorizationPolicy.publicPrincipal | quote }}
+      to:
+        - operation:
+            ports:
+              - {{ .Values.ports.public | quote }}
+              - {{ .Values.ports.console | quote }}
+    {{- /* Probes and metrics scrapes reach ports nobody else is allowed on */}}
+    - to:
+        - operation:
+            notPorts:
+              - {{ .Values.ports.mesh | quote }}
+              - {{ .Values.ports.public | quote }}
+              - {{ .Values.ports.console | quote }}
+              - {{ .Values.ports.admin | quote }}

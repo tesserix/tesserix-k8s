@@ -1,0 +1,573 @@
+config:
+  logging:
+    format: json
+    level: info
+    fields:
+      add:
+        auth.subject: jwt.sub
+        auth.client_id: jwt.client_id
+        api_key.product: 'has(api_key.metadata.product) ? api_key.metadata.product : ""'
+        devai.tenant_id: 'request.headers["x-devai-tenant-id"]'
+        devai.user_id: 'request.headers["x-devai-user-id"]'
+        devai.run_id: 'request.headers["x-devai-run-id"]'
+        devai.agent: 'request.headers["x-devai-agent"]'
+        kora.capability: 'request.headers["x-kora-ai-capability"]'
+    database:
+      url: postgres://agentgateway:{{ .pgPassword }}@global-postgres-rw.global.svc.cluster.local:5432/agentgateway_logs
+  database:
+    url: postgres://agentgateway:{{ .pgPassword }}@global-postgres-rw.global.svc.cluster.local:5432/agentgateway_config
+  storage:
+    mode: hybrid
+
+gateways:
+  mesh:
+    port: 8080
+  public:
+    port: 8081
+    jwtAuth:
+      mode: strict
+      providers:
+        - issuer: https://auth.tesserix.app
+          audiences: ["386889024519799084"]
+          jwks:
+            url: https://auth.tesserix.app/oauth/v2/keys
+    authorization:
+      rules:
+        - require: '"agentgateway.models" in jwt["urn:zitadel:iam:org:project:386889024519799084:roles"]'
+  console:
+    port: 8082
+
+ui:
+  gateways: [console]
+  policies:
+    oidc:
+      issuer: https://auth.tesserix.app
+      clientId: {{ .oidcClientId }}
+      clientSecret: {{ .oidcClientSecret }}
+      redirectURI: https://agentgateway.tesserix.app/oauth/callback
+      scopes:
+        - profile
+        - email
+        - urn:zitadel:iam:org:project:id:386889024519799084:aud
+        - urn:zitadel:iam:org:projects:roles
+    authorization:
+      rules:
+        - require: '"agentgateway.models" in jwt["urn:zitadel:iam:org:project:386889024519799084:roles"]'
+
+llm:
+  gateways: [mesh, public]
+  policies:
+    apiKey:
+      mode: optional
+      keys: []
+    localRateLimit:
+      - fillInterval: 60s
+        maxTokens: 100
+        tokensPerFill: 600
+        type: requests
+      - fillInterval: 3600s
+        maxTokens: 10000000
+        tokensPerFill: 10000000
+        type: tokens
+  providers:
+    - name: anthropic
+      provider: anthropic
+    - name: openai
+      provider: openai
+    - name: gemini
+      provider: gemini
+    - name: vertex
+      provider: vertex
+  models:
+    - name: '*'
+      provider:
+        reference: anthropic
+
+routes:
+  - name: devai-anthropic-mesh
+    gateways: [mesh]
+    matches:
+      - path:
+          pathPrefix: /anthropic
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+    backends:
+      - ai:
+          name: anthropic
+          provider:
+            anthropic: {}
+          policies:
+            backendAuth:
+              passthrough: {}
+            backendTLS: {}
+  - name: devai-anthropic-public
+    gateways: [public]
+    matches:
+      - path:
+          pathPrefix: /anthropic
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+      remoteRateLimit:
+        service:
+          name: agentgateway-system/agentgateway-ratelimit.agentgateway-system.svc.cluster.local
+          port: 8081
+        domain: agentgateway-public
+        failureMode: failClosed
+        descriptors:
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: requests
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: tokens
+    backends:
+      - ai:
+          name: anthropic
+          provider:
+            anthropic: {}
+          policies:
+            backendAuth:
+              passthrough: {}
+            backendTLS: {}
+  - name: devai-openai-mesh
+    gateways: [mesh]
+    matches:
+      - path:
+          pathPrefix: /openai
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+    backends:
+      - ai:
+          name: openai
+          provider:
+            openAI: {}
+          policies:
+            backendAuth:
+              passthrough: {}
+            backendTLS: {}
+  - name: devai-openai-public
+    gateways: [public]
+    matches:
+      - path:
+          pathPrefix: /openai
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+      remoteRateLimit:
+        service:
+          name: agentgateway-system/agentgateway-ratelimit.agentgateway-system.svc.cluster.local
+          port: 8081
+        domain: agentgateway-public
+        failureMode: failClosed
+        descriptors:
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: requests
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: tokens
+    backends:
+      - ai:
+          name: openai
+          provider:
+            openAI: {}
+          policies:
+            backendAuth:
+              passthrough: {}
+            backendTLS: {}
+  - name: devai-gemini-mesh
+    gateways: [mesh]
+    matches:
+      - path:
+          pathPrefix: /gemini
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+    backends:
+      - ai:
+          name: gemini
+          provider:
+            gemini: {}
+          policies:
+            backendAuth:
+              passthrough: {}
+            backendTLS: {}
+  - name: devai-gemini-public
+    gateways: [public]
+    matches:
+      - path:
+          pathPrefix: /gemini
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+      remoteRateLimit:
+        service:
+          name: agentgateway-system/agentgateway-ratelimit.agentgateway-system.svc.cluster.local
+          port: 8081
+        domain: agentgateway-public
+        failureMode: failClosed
+        descriptors:
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: requests
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: tokens
+    backends:
+      - ai:
+          name: gemini
+          provider:
+            gemini: {}
+          policies:
+            backendAuth:
+              passthrough: {}
+            backendTLS: {}
+  - name: devai-vertex-mesh
+    gateways: [mesh]
+    matches:
+      - path:
+          pathPrefix: /vertex
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+    backends:
+      - ai:
+          name: vertex
+          provider:
+            vertex:
+              projectId: tesseracthub-480811
+              region: global
+          policies:
+            backendAuth:
+              gcp: {}
+            backendTLS: {}
+  - name: devai-vertex-public
+    gateways: [public]
+    matches:
+      - path:
+          pathPrefix: /vertex
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+      remoteRateLimit:
+        service:
+          name: agentgateway-system/agentgateway-ratelimit.agentgateway-system.svc.cluster.local
+          port: 8081
+        domain: agentgateway-public
+        failureMode: failClosed
+        descriptors:
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: requests
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: tokens
+    backends:
+      - ai:
+          name: vertex
+          provider:
+            vertex:
+              projectId: tesseracthub-480811
+              region: global
+          policies:
+            backendAuth:
+              gcp: {}
+            backendTLS: {}
+  - name: devai-groq-mesh
+    gateways: [mesh]
+    matches:
+      - path:
+          pathPrefix: /groq
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+    backends:
+      - ai:
+          name: groq
+          provider:
+            custom:
+              providerOverride: groq
+              formats:
+                - type: completions
+          hostOverride: api.groq.com:443
+          policies:
+            backendAuth:
+              passthrough: {}
+            backendTLS: {}
+  - name: devai-groq-public
+    gateways: [public]
+    matches:
+      - path:
+          pathPrefix: /groq
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+      remoteRateLimit:
+        service:
+          name: agentgateway-system/agentgateway-ratelimit.agentgateway-system.svc.cluster.local
+          port: 8081
+        domain: agentgateway-public
+        failureMode: failClosed
+        descriptors:
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: requests
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: tokens
+    backends:
+      - ai:
+          name: groq
+          provider:
+            custom:
+              providerOverride: groq
+              formats:
+                - type: completions
+          hostOverride: api.groq.com:443
+          policies:
+            backendAuth:
+              passthrough: {}
+            backendTLS: {}
+  - name: devai-openrouter-mesh
+    gateways: [mesh]
+    matches:
+      - path:
+          pathPrefix: /openrouter
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+    backends:
+      - ai:
+          name: openrouter
+          provider:
+            custom:
+              providerOverride: openrouter
+              formats:
+                - type: completions
+          hostOverride: openrouter.ai:443
+          policies:
+            backendAuth:
+              passthrough: {}
+            backendTLS: {}
+  - name: devai-openrouter-public
+    gateways: [public]
+    matches:
+      - path:
+          pathPrefix: /openrouter
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+      remoteRateLimit:
+        service:
+          name: agentgateway-system/agentgateway-ratelimit.agentgateway-system.svc.cluster.local
+          port: 8081
+        domain: agentgateway-public
+        failureMode: failClosed
+        descriptors:
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: requests
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: tokens
+    backends:
+      - ai:
+          name: openrouter
+          provider:
+            custom:
+              providerOverride: openrouter
+              formats:
+                - type: completions
+          hostOverride: openrouter.ai:443
+          policies:
+            backendAuth:
+              passthrough: {}
+            backendTLS: {}
+  - name: devai-nemoclaw-mesh
+    gateways: [mesh]
+    matches:
+      - path:
+          pathPrefix: /nemoclaw
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+    backends:
+      - ai:
+          name: nemoclaw
+          provider:
+            custom:
+              providerOverride: nemoclaw
+              formats:
+                - type: completions
+          hostOverride: nemoclaw-inference.devai.svc.cluster.local:8000
+          policies:
+            backendAuth:
+              passthrough: {}
+  - name: devai-nemoclaw-public
+    gateways: [public]
+    matches:
+      - path:
+          pathPrefix: /nemoclaw
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 15m
+      ai: {}
+      remoteRateLimit:
+        service:
+          name: agentgateway-system/agentgateway-ratelimit.agentgateway-system.svc.cluster.local
+          port: 8081
+        domain: agentgateway-public
+        failureMode: failClosed
+        descriptors:
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: requests
+          - entries:
+              - key: subject
+                value: jwt.sub
+            type: tokens
+    backends:
+      - ai:
+          name: nemoclaw
+          provider:
+            custom:
+              providerOverride: nemoclaw
+              formats:
+                - type: completions
+          hostOverride: nemoclaw-inference.devai.svc.cluster.local:8000
+          policies:
+            backendAuth:
+              passthrough: {}
+  - name: kora-ai
+    gateways: [mesh]
+    matches:
+      - path:
+          pathPrefix: /kora
+    policies:
+      urlRewrite:
+        path:
+          prefix: /
+      timeout:
+        requestTimeout: 120s
+      localRateLimit:
+        - fillInterval: 60s
+          maxTokens: 20
+          tokensPerFill: 120
+          type: requests
+        - fillInterval: 3600s
+          maxTokens: 1000000
+          tokensPerFill: 1000000
+          type: tokens
+      extProc:
+        host: token-optimizer.agentgateway-system.svc.cluster.local:18080
+        failureMode: failOpen
+        processingOptions:
+          requestBodyMode: buffered
+          responseBodyMode: none
+        requestAttributes:
+          token_optimizer.capability: 'request.headers["x-kora-ai-capability"]'
+          token_optimizer.context_kind: 'request.headers["x-kora-context-kind"]'
+      ai:
+        promptGuard:
+          request:
+            - regex:
+                action: reject
+                rules:
+                  - builtin: creditCard
+                  - builtin: ssn
+              rejection:
+                status: 400
+                body: request rejected by guardrails
+            - regex:
+                action: mask
+                rules:
+                  - builtin: email
+                  - builtin: phoneNumber
+          response:
+            - regex:
+                action: mask
+                rules:
+                  - builtin: email
+                  - builtin: phoneNumber
+    backends:
+      - ai:
+          name: kora-vertex
+          provider:
+            vertex:
+              projectId: tesseracthub-480811
+              region: global
+          policies:
+            backendAuth:
+              gcp: {}
+            backendTLS: {}

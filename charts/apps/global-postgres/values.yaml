@@ -59,6 +59,12 @@ bootstrap:
     # DELETE the schema revokes. See docs/onboarding-api.md § 5.
     - "CREATE ROLE onboarding LOGIN"
     - "CREATE DATABASE onboarding_db OWNER global"
+    # agentgateway_config / agentgateway_logs (agentgateway console). The
+    # gateway migrates its own tables; it needs only the databases and an
+    # owning role.
+    - "CREATE ROLE agentgateway LOGIN"
+    - "CREATE DATABASE agentgateway_config OWNER agentgateway"
+    - "CREATE DATABASE agentgateway_logs OWNER agentgateway"
   # Runs once against template1 at cluster creation; every database
   # subsequently CREATEd (including from postInitSQL above) inherits
   # whatever is installed here via Postgres's normal template-copy
@@ -98,6 +104,8 @@ managedRoles:
     # This password MUST match whatever is embedded in the
     # prod-kora-database-url secret kora-api reads its DATABASE_URL from —
     # a human coordination point, not something GitOps can enforce.
+  - name: agentgateway
+    passwordSecret: global-postgres-agentgateway
 
 # PostgreSQL tuning
 postgresql:
