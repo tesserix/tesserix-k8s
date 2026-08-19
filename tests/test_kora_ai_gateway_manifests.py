@@ -71,6 +71,50 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         )
         self.assertEqual("agentgateway", gateway["spec"]["gatewayClassName"])
 
+    def test_vertex_api_key_is_read_from_the_provider_secret(self):
+        documents = render_chart(
+            "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
+        )
+        provider_secret = resource(
+            documents,
+            "ExternalSecret",
+            "kora-ai-gateway-provider-credentials",
+        )
+        secret_data = {
+            entry["secretKey"]: entry["remoteRef"]["key"]
+            for entry in provider_secret["spec"]["data"]
+        }
+        self.assertEqual(
+            "prod-kora-vertex-api-key", secret_data["vertex-api-key"]
+        )
+
+        backends = [
+            document
+            for document in documents
+            if document.get("kind") == "AgentgatewayBackend"
+        ]
+        for backend in backends:
+            vertex = next(
+                provider
+                for group in backend["spec"]["ai"]["groups"]
+                for provider in group["providers"]
+                if provider["name"] == "vertex"
+            )
+            auth = vertex["policies"]["auth"]
+            self.assertEqual({}, auth["gcp"])
+            self.assertEqual(
+                [
+                    {
+                        "secretRef": {
+                            "name": "kora-ai-gateway-provider-credentials",
+                            "key": "vertex-api-key",
+                        },
+                        "location": {"header": {"name": "x-goog-api-key"}},
+                    }
+                ],
+                auth["credentials"],
+            )
+
     def test_gateway_route_declares_kubernetes_default_values(self):
         documents = render_chart(
             "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
@@ -122,7 +166,8 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         remote_refs = {
             entry["remoteRef"]["key"] for entry in provider_secret["spec"]["data"]
         }
-        self.assertEqual({"prod-devai-anthropic-api-key"}, remote_refs)
+        self.assertIn("prod-devai-anthropic-api-key", remote_refs)
+        self.assertNotIn("prod-kora-xai-api-key", remote_refs)
 
         backends = [
             document

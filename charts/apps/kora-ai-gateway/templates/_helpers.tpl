@@ -16,6 +16,13 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
       policies:
         auth:
           gcp: {}
+          credentials:
+            - secretRef:
+                name: {{ .Values.externalSecrets.providerSecretName }}
+                key: vertex-api-key
+              location:
+                header:
+                  name: x-goog-api-key
 {{- end -}}
 
 {{- define "kora-ai-gateway.anthropicGroup" -}}
@@ -45,4 +52,3 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
             key: xai
         tls: {}
 {{- end -}}
-
