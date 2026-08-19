@@ -104,7 +104,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             self.assertEqual("aiplatform.googleapis.com", vertex["host"])
             self.assertEqual(443, vertex["port"])
             self.assertEqual({}, vertex["policies"]["tls"])
-            self.assertEqual({}, auth["gcp"])
+            self.assertNotIn("gcp", auth)
             self.assertEqual(
                 [
                     {
