@@ -106,6 +106,7 @@ managedRoles:
     # a human coordination point, not something GitOps can enforce.
   - name: agentgateway
     passwordSecret: global-postgres-agentgateway
+    comment: agentgateway console config and log stores
 
 # PostgreSQL tuning
 postgresql:
@@ -179,3 +180,12 @@ affinity:
 replication:
   minSyncReplicas: 0
   maxSyncReplicas: 0
+
+# Databases managed by CNPG Database CRs. postInitSQL only fires on a fresh
+# bootstrap and db-schema-bootstrap applies DDL only on the run that creates the
+# database, so neither can fix ownership for a role created afterwards.
+databases:
+  - name: agentgateway_config
+    owner: agentgateway
+  - name: agentgateway_logs
+    owner: agentgateway
