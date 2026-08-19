@@ -6,6 +6,12 @@ app.kubernetes.io/part-of: kora-ai
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- end -}}
 
+{{- define "kora-ai-gateway.aiRoutes" -}}
+/v1/chat/completions: Completions
+/v1/embeddings: Embeddings
+'*': Detect
+{{- end -}}
+
 {{- define "kora-ai-gateway.vertexGroup" -}}
 - providers:
     - name: vertex
