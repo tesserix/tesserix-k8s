@@ -29,6 +29,7 @@ spec:
         app.kubernetes.io/name: nats
         app.kubernetes.io/instance: {{ .Release.Name }}
     spec:
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 60 }}
       securityContext:
         runAsNonRoot: {{ .Values.securityContext.runAsNonRoot }}
         runAsUser: {{ .Values.securityContext.runAsUser }}
@@ -55,14 +56,30 @@ spec:
             - name: monitor
               containerPort: 8222
               protocol: TCP
+          {{- if .Values.startupProbe.enabled }}
+          # Startup gate: server is up and listening. Until this passes the
+          # liveness/readiness probes are suppressed, so a long JetStream store
+          # recovery on boot cannot trigger a liveness kill.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: monitor
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
+            timeoutSeconds: 5
+          {{- end }}
+          # Liveness uses the basic health check (process alive) so a node that
+          # is temporarily catching up on JetStream is not restarted.
           livenessProbe:
             httpGet:
-              path: /healthz?js-enabled-only=true
+              path: /healthz
               port: monitor
             initialDelaySeconds: 10
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 6
+          # Readiness requires JetStream to be enabled before the pod receives
+          # client traffic (keeps it out of the Service until it can serve JS).
           readinessProbe:
             httpGet:
               path: /healthz?js-enabled-only=true
@@ -81,6 +98,22 @@ spec:
             - name: data
               mountPath: /data
             {{- end }}
+        {{- if .Values.metrics.enabled }}
+        # Prometheus exporter sidecar — scrapes the local monitor endpoint
+        # (varz/connz/jsz) and re-exposes it as Prometheus metrics.
+        - name: metrics
+          image: "{{ .Values.metrics.image.repository }}:{{ .Values.metrics.image.tag }}"
+          args:
+            - "-port={{ .Values.metrics.port }}"
+            - "-varz"
+            - "-connz"
+            - "-jsz=all"
+            - "http://localhost:8222"
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+        {{- end }}
       volumes:
         - name: config
           configMap:

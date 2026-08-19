@@ -1,28 +1,124 @@
-# Production overrides for nats
-# Use with: helm upgrade --values values.yaml --values values-prod.yaml
+# =============================================================================
+# Production overrides for the shared NATS / JetStream cluster.
+#
+# This file is the SINGLE SOURCE OF TRUTH for prod — the ArgoCD Application
+# (argocd/prod/infrastructure/nats.yaml) references it via helm.valueFiles.
+# Helm loads values.yaml first, then merges these overrides on top.
+#
+# Topology: one HA JetStream cluster (single GKE region). Gateways/superclusters
+# are NOT used and are only relevant if a second region is ever added. See
+# docs/nats-prod-hardening.md.
+# =============================================================================
 
-# Internal Load Balancer for Cloud Run access
-ilb:
-  enabled: false
+# Pinned to the 2.14 line (what prod already runs) so a pod restart can never
+# silently jump a major/minor on a stateful Raft/JetStream node, and can never
+# downgrade below the file-store format on disk. IfNotPresent avoids a
+# surprise re-pull mid-life.
+image:
+  repository: nats
+  tag: "2.14-alpine"
+  pullPolicy: IfNotPresent
 
-# Production cluster configuration
+# 3-node StatefulSet → JetStream Raft quorum survives one node loss (R3 streams).
+replicaCount: 3
+
 cluster:
   enabled: true
-  replicas: 3
 
-# Production resource allocation
-resources:
-  limits:
-    memory: 256Mi
-  requests:
-    memory: 64Mi
-
-# JetStream for persistence
 jetstream:
   enabled: true
-  storage: 20Gi
+  memoryStore:
+    enabled: true
+    maxSize: 1Gi
+  fileStore:
+    enabled: true
+    # Feeds both the JetStream max_file_store accounting limit AND the PVC size;
+    # the two MUST stay equal (a larger max_file_store than the disk lets JS
+    # fill the volume). Held at the live 12Gi because volumeClaimTemplates are
+    # immutable; growing it needs the expand + orphan-recreate run-book in
+    # docs/nats-prod-hardening.md.
+    size: 12Gi
+    storageClassName: standard-rwo-retain
 
-# High availability settings
+persistence:
+  enabled: true
+  size: 12Gi
+  storageClassName: standard-rwo-retain
+  accessModes:
+    - ReadWriteOnce
+
+# Memory only (platform rule: no CPU requests/limits in tesserix-k8s charts).
+# Headroom for the 1Gi memory store + Raft/JetStream buffers + connection fan-out.
+resources:
+  requests:
+    memory: 1Gi
+  limits:
+    memory: 4Gi
+
+service:
+  type: ClusterIP
+  port: 4222
+  clusterPort: 6222
+  monitorPort: 8222
+
+config:
+  # Many products (homechef, fanzone, devai, ...) fan in here; 1000 was far too
+  # low for a shared bus at scale.
+  maxConnections: 65536
+  maxPayload: 1048576
+  httpMonitor: true
+  debug: false
+  trace: false
+  writeDeadline: "10s"
+  lameDuckGracePeriod: "10s"
+  lameDuckDuration: "30s"
+  clusterConnectRetries: 120
+
+# Must exceed lameDuckGracePeriod + lameDuckDuration.
+terminationGracePeriodSeconds: 60
+
+# Real PDB now that the chart renders one (previously this flag was a no-op).
 podDisruptionBudget:
   enabled: true
   minAvailable: 2
+
+startupProbe:
+  enabled: true
+  periodSeconds: 10
+  failureThreshold: 30
+
+# Metrics: mechanism is wired but OFF until the exporter tag is confirmed for
+# this cluster (a crash-looping sidecar would drop the pod from the Service).
+# To enable: verify natsio/prometheus-nats-exporter:<tag>, then set enabled:true
+# and serviceMonitor.enabled:true.
+metrics:
+  enabled: false
+  image:
+    repository: natsio/prometheus-nats-exporter
+    tag: "0.14.0"
+  port: 7777
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+
+ilb:
+  enabled: false
+
+# HA scheduling: never two NATS pods on one node (required), and spread across
+# zones when possible (preferred). Node-level anti-affinity is always
+# satisfiable with >=3 nodes; zone spread stays best-effort so a zone-capacity
+# blip cannot leave a pod Pending.
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: nats
+        topologyKey: kubernetes.io/hostname
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: nats
+          topologyKey: topology.kubernetes.io/zone
