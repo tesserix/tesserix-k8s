@@ -60,6 +60,7 @@ spec:
                   actual_digest="sha256:$(sha256sum /work/routes.yaml | awk '{print $1}')"
                   test -n "${expected_count}"
                   test -n "${expected_digest}"
+                  test "${expected_count}" -ge "{{ .Values.registry.minDesiredResourceCount }}"
                   test "${actual_count}" = "${expected_count}"
                   test "${actual_digest}" = "${expected_digest}"
                   touch /work/export.verified
@@ -81,10 +82,10 @@ spec:
               resources:
                 {{- toYaml .Values.resources | nindent 16 }}
           containers:
-            # Apply: server-side apply the rendered routes. Empty render (no MCP
-            # servers) is a no-op. NOTE: this create/updates only — pruning the
-            # routes of a deleted MCP server is a follow-up (objects carry the
-            # app.kubernetes.io/managed-by=agentic-registry label for that).
+            # Apply the digest-verified desired state, then prune only objects
+            # bearing the Registry ownership label and absent from that export.
+            # The minimum-count guard above prevents an empty/partial export
+            # from becoming a broad deletion event.
             - name: apply
               image: "{{ .Values.images.kubectl.repository }}:{{ .Values.images.kubectl.tag }}"
               imagePullPolicy: {{ .Values.images.pullPolicy }}
@@ -123,6 +124,8 @@ spec:
                 - name: work
                   mountPath: /work
                   readOnly: true
+                - name: tmp
+                  mountPath: /tmp
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
@@ -132,4 +135,6 @@ spec:
                 {{- toYaml .Values.resources | nindent 16 }}
           volumes:
             - name: work
+              emptyDir: {}
+            - name: tmp
               emptyDir: {}

@@ -1,0 +1,127 @@
+{{- if .Values.ownershipHandoff.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agentgateway-registry-ownership-handoff-v1
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        {{- include "agentgateway-route-sync.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: handoff
+          image: "{{ .Values.images.kubectl.repository }}:{{ .Values.images.kubectl.tag }}"
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              for marker in \
+                devai-ai-gateway-registry-ownership \
+                kora-ai-gateway-registry-ownership; do
+                owner="$(kubectl get configmap "${marker}" --output jsonpath='{.data.owner}')"
+                test "${owner}" = "agentic-registry"
+              done
+
+              attempt=0
+              while [ "${attempt}" -lt 60 ]; do
+                verified=0
+                not_ready=0
+                while read -r resource name; do
+                  owner="$(kubectl get "${resource}" "${name}" --output jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')"
+                  if [ "${owner}" = "agentic-registry" ]; then
+                    verified=$((verified + 1))
+                  else
+                    not_ready=$((not_ready + 1))
+                    echo "waiting for Registry ownership: ${resource}/${name} has ${owner}"
+                  fi
+                done <<'TARGETS'
+              agentgatewaybackends.agentgateway.dev ai-zitadel-jwks
+              agentgatewaybackends.agentgateway.dev devai-anthropic
+              agentgatewaybackends.agentgateway.dev devai-gemini
+              agentgatewaybackends.agentgateway.dev devai-groq
+              agentgatewaybackends.agentgateway.dev devai-nemoclaw
+              agentgatewaybackends.agentgateway.dev devai-openai
+              agentgatewaybackends.agentgateway.dev devai-openrouter
+              agentgatewaybackends.agentgateway.dev devai-vertex
+              agentgatewaybackends.agentgateway.dev kora-conversation-providers
+              agentgatewaybackends.agentgateway.dev kora-embedding-providers
+              agentgatewaybackends.agentgateway.dev kora-structured-providers
+              agentgatewaybackends.agentgateway.dev mcp-zitadel-jwks
+              httproutes.gateway.networking.k8s.io devai-ai
+              httproutes.gateway.networking.k8s.io kora-ai
+              agentgatewaypolicies.agentgateway.dev ai-public-oauth
+              agentgatewaypolicies.agentgateway.dev ai-public-observability
+              agentgatewaypolicies.agentgateway.dev devai-ai-observability
+              agentgatewaypolicies.agentgateway.dev devai-ai-routes
+              agentgatewaypolicies.agentgateway.dev devai-ai-traffic
+              agentgatewaypolicies.agentgateway.dev kora-ai-guardrails
+              agentgatewaypolicies.agentgateway.dev kora-ai-observability
+              agentgatewaypolicies.agentgateway.dev kora-ai-traffic
+              agentgatewaypolicies.agentgateway.dev mcp-public-oauth
+              agentgatewaypolicies.agentgateway.dev mcp-public-observability
+              TARGETS
+                if [ "${not_ready}" -eq 0 ]; then
+                  break
+                fi
+                attempt=$((attempt + 1))
+                sleep 10
+              done
+              test "${verified}" = "{{ .Values.ownershipHandoff.expectedCount }}"
+
+              while read -r resource name; do
+                kubectl annotate "${resource}" "${name}" --overwrite \
+                  argocd.argoproj.io/tracking-id- \
+                  meta.helm.sh/release-name- \
+                  meta.helm.sh/release-namespace- \
+                  kubectl.kubernetes.io/last-applied-configuration-
+              done <<'TARGETS'
+              agentgatewaybackends.agentgateway.dev ai-zitadel-jwks
+              agentgatewaybackends.agentgateway.dev devai-anthropic
+              agentgatewaybackends.agentgateway.dev devai-gemini
+              agentgatewaybackends.agentgateway.dev devai-groq
+              agentgatewaybackends.agentgateway.dev devai-nemoclaw
+              agentgatewaybackends.agentgateway.dev devai-openai
+              agentgatewaybackends.agentgateway.dev devai-openrouter
+              agentgatewaybackends.agentgateway.dev devai-vertex
+              agentgatewaybackends.agentgateway.dev kora-conversation-providers
+              agentgatewaybackends.agentgateway.dev kora-embedding-providers
+              agentgatewaybackends.agentgateway.dev kora-structured-providers
+              agentgatewaybackends.agentgateway.dev mcp-zitadel-jwks
+              httproutes.gateway.networking.k8s.io devai-ai
+              httproutes.gateway.networking.k8s.io kora-ai
+              agentgatewaypolicies.agentgateway.dev ai-public-oauth
+              agentgatewaypolicies.agentgateway.dev ai-public-observability
+              agentgatewaypolicies.agentgateway.dev devai-ai-observability
+              agentgatewaypolicies.agentgateway.dev devai-ai-routes
+              agentgatewaypolicies.agentgateway.dev devai-ai-traffic
+              agentgatewaypolicies.agentgateway.dev kora-ai-guardrails
+              agentgatewaypolicies.agentgateway.dev kora-ai-observability
+              agentgatewaypolicies.agentgateway.dev kora-ai-traffic
+              agentgatewaypolicies.agentgateway.dev mcp-public-oauth
+              agentgatewaypolicies.agentgateway.dev mcp-public-observability
+              TARGETS
+              echo "removed stale Argo/Helm tracking metadata from ${verified} Registry-owned resources"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+{{- end }}
