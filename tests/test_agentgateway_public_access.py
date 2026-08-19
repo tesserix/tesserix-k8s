@@ -99,16 +99,18 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
                 "/mcp",
                 "agentgateway-mcp.agentgateway-system.svc.cluster.local",
                 "mcp-gateway-ui-oauth2-proxy.agentgateway-system.svc.cluster.local",
+                4180,
             ),
             "solo-agentgateway": (
                 "agentgateway.tesserix.app",
                 "/openai",
                 "ai-gateway.agentgateway-system.svc.cluster.local",
-                "agentgateway-admin-ui-oauth2-proxy.agentgateway-system.svc.cluster.local",
+                "agentgateway-console.agentgateway-system.svc.cluster.local",
+                8082,
             ),
         }
 
-        for name, (host, api_prefix, backend, ui_backend) in expected.items():
+        for name, (host, api_prefix, backend, ui_backend, ui_port) in expected.items():
             virtual_service = resource(documents, "VirtualService", name)
             self.assertEqual([host], virtual_service["spec"]["hosts"])
             self.assertEqual(
@@ -134,7 +136,7 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
                 "destination"
             ]
             self.assertEqual(ui_backend, browser_route["host"])
-            self.assertEqual(4180, browser_route["port"]["number"])
+            self.assertEqual(ui_port, browser_route["port"]["number"])
             if name == "solo-agentgateway":
                 self.assertFalse(
                     any(
