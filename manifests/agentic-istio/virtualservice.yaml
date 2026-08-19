@@ -45,6 +45,66 @@ spec:
         perTryTimeout: 30s
         retryOn: reset,connect-failure,refused-stream,5xx
 ---
+# MCP data plane. Exact ownership prevents the vehicle-rental wildcard route
+# from capturing this host. Authentication is enforced by AgentgatewayPolicy.
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: mcp-agentgateway
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: agentic-routing
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - mcp.tesserix.app
+  http:
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            x-forwarded-host: mcp.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: agentgateway-mcp.agentgateway-system.svc.cluster.local
+            port:
+              number: 8081
+---
+# Solo AgentGateway model data plane. The controller/xDS Service on 9978 is
+# deliberately not referenced by any public route.
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: solo-agentgateway
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: agentic-routing
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - agentgateway.tesserix.app
+  http:
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            x-forwarded-host: agentgateway.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: ai-gateway.agentgateway-system.svc.cluster.local
+            port:
+              number: 8081
+---
 # Agent Registry UI
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService

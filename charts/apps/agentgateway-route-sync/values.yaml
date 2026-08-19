@@ -17,9 +17,34 @@ gateway:
   className: agentgateway
   # HTTP listener the proxy serves /mcp/<name> on.
   port: 8080
+  publicPort: 8081
   # Which namespaces' HTTPRoutes may attach. The route-sync writes routes into
   # this same namespace, so "Same" is sufficient and tightest.
   allowedRoutesFrom: Same
+  replicas: 2
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+oauth:
+  issuer: https://auth.tesserix.app
+  audience: "386889024519799084"
+  jwks:
+    host: auth.tesserix.app
+    path: /oauth/v2/keys
+    cacheDuration: 15m
+  humanEmails:
+    - samyak.rout@gmail.com
+    - mahesh.sangawar@gmail.com
+  roleClaim: "urn:zitadel:iam:org:project:386889024519799084:roles"
+  machineRole: agentgateway.mcp
+
+rateLimit:
+  backend: agentgateway-ratelimit
+  port: 8081
+  domain: agentgateway-public
 
 # Registry connection — the export endpoint returns ready-to-apply YAML. Reads
 # are anonymous + mesh-gated (the agentgateway-system SA is allowed GET /v0/*),

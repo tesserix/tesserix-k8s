@@ -56,6 +56,7 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             "devai-groq",
             "devai-openrouter",
             "devai-nemoclaw",
+            "ai-zitadel-jwks",
         }
         actual = {
             document["metadata"]["name"]

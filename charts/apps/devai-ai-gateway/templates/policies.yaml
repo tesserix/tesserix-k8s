@@ -1,6 +1,59 @@
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
+  name: ai-public-oauth
+  labels:
+    {{- include "devai-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gateway.name }}
+      sectionName: public
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: {{ .Values.oauth.issuer }}
+          audiences:
+            - {{ .Values.oauth.audience | quote }}
+          jwks:
+            remote:
+              jwksPath: {{ .Values.oauth.jwks.path }}
+              cacheDuration: {{ .Values.oauth.jwks.cacheDuration }}
+              backendRef:
+                group: agentgateway.dev
+                kind: AgentgatewayBackend
+                name: ai-zitadel-jwks
+                port: 443
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          - >-
+            {{ printf "%q in jwt[%q]" .Values.oauth.machineRole .Values.oauth.roleClaim }}{{ range $email := .Values.oauth.humanEmails }} || jwt.email == {{ $email | quote }}{{ end }}
+    rateLimit:
+      global:
+        backendRef:
+          name: {{ .Values.publicRateLimit.backend }}
+          port: {{ .Values.publicRateLimit.port }}
+        domain: {{ .Values.publicRateLimit.domain }}
+        failureMode: FailClosed
+        descriptors:
+          - entries:
+              - name: gateway
+                expression: '"models"'
+              - name: oauth_subject
+                expression: jwt.sub
+            unit: Requests
+          - entries:
+              - name: oauth_subject_tokens
+                expression: jwt.sub
+            unit: Tokens
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
   name: devai-ai-traffic
   labels:
     {{- include "devai-ai-gateway.labels" . | nindent 4 }}
@@ -41,6 +94,27 @@ spec:
         /v1/models: Models
         /v1/responses: Responses
         "*": Detect
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: ai-public-observability
+  labels:
+    {{- include "devai-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gateway.name }}
+      sectionName: public
+  frontend:
+    accessLog:
+      attributes:
+        add:
+          - name: auth.subject
+            expression: jwt.sub
+          - name: auth.client_id
+            expression: jwt.client_id
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy

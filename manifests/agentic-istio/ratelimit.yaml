@@ -1,0 +1,245 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentgateway-ratelimit
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/name: agentgateway-ratelimit
+    app.kubernetes.io/part-of: tesserix
+data:
+  config.yaml: |
+    domain: agentgateway-public
+    descriptors:
+      - key: gateway
+        value: mcp
+        descriptors:
+          - key: oauth_subject
+            rate_limit:
+              unit: minute
+              requests_per_unit: 120
+      - key: gateway
+        value: models
+        descriptors:
+          - key: oauth_subject
+            rate_limit:
+              unit: minute
+              requests_per_unit: 60
+      - key: oauth_subject_tokens
+        rate_limit:
+          unit: hour
+          requests_per_unit: 200000
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentgateway-ratelimit
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/name: agentgateway-ratelimit
+    app.kubernetes.io/part-of: tesserix
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agentgateway-ratelimit
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/name: agentgateway-ratelimit
+    app.kubernetes.io/part-of: tesserix
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentgateway-ratelimit
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentgateway-ratelimit
+        app.kubernetes.io/part-of: tesserix
+    spec:
+      serviceAccountName: agentgateway-ratelimit
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: agentgateway-ratelimit
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: agentgateway-ratelimit
+      containers:
+        - name: ratelimit
+          image: docker.io/envoyproxy/ratelimit:17b1956c@sha256:871098f54d99ad612abdd455e39632be6d990937be2e46eecf4e39f65d948a94
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: USE_STATSD
+              value: "false"
+            - name: LOG_LEVEL
+              value: info
+            - name: LOG_FORMAT
+              value: json
+            - name: RUNTIME_ROOT
+              value: /data
+            - name: RUNTIME_SUBDIRECTORY
+              value: ratelimit
+            - name: RUNTIME_APPDIRECTORY
+              value: config
+            - name: REDIS_SOCKET_TYPE
+              value: tcp
+            - name: REDIS_TYPE
+              value: single
+            - name: REDIS_URL
+              value: global-valkey-cache.global.svc.cluster.local:6379
+            - name: REDIS_AUTH
+              value: agentgateway:nopass
+            - name: CACHE_KEY_PREFIX
+              value: "agentgateway:"
+            - name: REDIS_HEALTH_CHECK_ACTIVE_CONNECTION
+              value: "true"
+            - name: REDIS_CLOSE_CONNECTION_ON_READONLY_ERROR
+              value: "true"
+            - name: HEALTHY_WITH_AT_LEAST_ONE_CONFIG_LOADED
+              value: "true"
+          ports:
+            - name: http-health
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 8081
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: http-health
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: http-health
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /data/ratelimit/config
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: agentgateway-ratelimit
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agentgateway-ratelimit
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/name: agentgateway-ratelimit
+    app.kubernetes.io/part-of: tesserix
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: agentgateway-ratelimit
+  ports:
+    - name: grpc
+      port: 8081
+      targetPort: grpc
+      protocol: TCP
+      appProtocol: kubernetes.io/h2c
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agentgateway-ratelimit
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/name: agentgateway-ratelimit
+    app.kubernetes.io/part-of: tesserix
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentgateway-ratelimit
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: agentgateway-ratelimit
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/name: agentgateway-ratelimit
+    app.kubernetes.io/part-of: tesserix
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentgateway-ratelimit
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: gateway.networking.k8s.io/gateway-name
+                operator: In
+                values: [agentgateway-mcp, ai-gateway]
+      ports:
+        - port: 8081
+          protocol: TCP
+        - port: 15008
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: global
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: global-valkey-cache
+      ports:
+        - port: 6379
+          protocol: TCP
+        - port: 15008
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

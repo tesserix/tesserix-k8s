@@ -159,11 +159,25 @@ spec:
     - from:
         - source:
             namespaces: ["devai"]
+      to:
+        - operation:
+            ports: ["8080"]
     # kagent reads from agentgateway when dispatching agents to its
     # MCP backends.
     - from:
         - source:
             namespaces: ["kagent-system"]
+      to:
+        - operation:
+            ports: ["8080"]
+    # Public MCP traffic is admitted only from the shared ingress. The data
+    # plane then performs strict Zitadel JWT authentication and authorization.
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-ingress/sa/istio-ingressgateway"]
+      to:
+        - operation:
+            ports: ["8081"]
     # The agentgateway DATA PLANE (Gateway "agentgateway-mcp", SA
     # agentgateway-mcp in this namespace) dials the controller's xDS on
     # :9978 for its routing config. Without this the waypoint returns
@@ -217,6 +231,21 @@ spec:
               - "/groq/*"
               - "/openrouter/*"
               - "/nemoclaw/*"
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
+      to:
+        - operation:
+            ports: ["8081"]
+            paths:
+              - "/anthropic/*"
+              - "/openai/*"
+              - "/vertex/*"
+              - "/gemini/*"
+              - "/groq/*"
+              - "/openrouter/*"
+              - "/nemoclaw/*"
     # Probes
     - to:
         - operation:
@@ -259,7 +288,6 @@ spec:
               - "cluster.local/ns/devai/sa/devai-registry-bootstrap"
               - "cluster.local/ns/devai/sa/devai-api"
               - "cluster.local/ns/devai/sa/devai-auth-bff"
-              - "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
       to:
         - operation:
             methods: ["POST", "PUT", "PATCH", "DELETE"]
