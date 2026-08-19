@@ -437,6 +437,13 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
             "global-valkey-cache.global.svc.cluster.local:6379",
             env["REDIS_URL"],
         )
+        config_mount = next(
+            mount for mount in container["volumeMounts"] if mount["name"] == "config"
+        )
+        self.assertEqual(
+            "/data/ratelimit/config/config.yaml", config_mount["mountPath"]
+        )
+        self.assertEqual("config.yaml", config_mount["subPath"])
         self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
         self.assertEqual(["Ingress", "Egress"], network_policy["spec"]["policyTypes"])
         self.assertIn("key: oauth_subject", config["data"]["config.yaml"])
