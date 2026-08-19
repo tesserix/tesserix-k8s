@@ -1,0 +1,84 @@
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: mcp-zitadel-jwks
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  policies:
+    tls: {}
+  static:
+    host: {{ .Values.oauth.jwks.host }}
+    port: 443
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: mcp-public-oauth
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gateway.name }}
+      sectionName: public
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: {{ .Values.oauth.issuer }}
+          audiences:
+            - {{ .Values.oauth.audience | quote }}
+          jwks:
+            remote:
+              jwksPath: {{ .Values.oauth.jwks.path }}
+              cacheDuration: {{ .Values.oauth.jwks.cacheDuration }}
+              backendRef:
+                group: agentgateway.dev
+                kind: AgentgatewayBackend
+                name: mcp-zitadel-jwks
+                port: 443
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          - {{ printf "%q in jwt[%q]" .Values.oauth.machineRole .Values.oauth.roleClaim | quote }}
+    rateLimit:
+      global:
+        backendRef:
+          name: {{ .Values.rateLimit.backend }}
+          port: {{ .Values.rateLimit.port }}
+        domain: {{ .Values.rateLimit.domain }}
+        failureMode: FailClosed
+        descriptors:
+          - entries:
+              - name: gateway
+                expression: '"mcp"'
+              - name: oauth_subject
+                expression: jwt.sub
+            unit: Requests
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: mcp-public-observability
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gateway.name }}
+      sectionName: public
+  frontend:
+    accessLog:
+      attributes:
+        add:
+          - name: auth.subject
+            expression: jwt.sub
+          - name: auth.client_id
+            expression: jwt.client_id
