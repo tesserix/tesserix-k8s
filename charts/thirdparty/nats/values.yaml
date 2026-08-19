@@ -75,6 +75,25 @@ persistence:
   accessModes:
     - ReadWriteOnce
 
+# Operator/JWT authentication + multi-tenant account isolation.
+# DISABLED by default. Enabling is an all-or-nothing global cutover (operator
+# mode rejects anonymous connections) and requires:
+#   1. The nsc bootstrap (real operator + per-account JWTs) — non-secret JWTs go
+#      into values-prod.yaml below; signing seeds + user creds go to GCP SM.
+#   2. Every consumer mounting its account creds via ESO (auth.enabled inert
+#      until then).
+# See docs/nats-auth-rollout.md. The chart FAILS to render if enabled without
+# operatorJWT, so a half-configured enable can't reach the cluster.
+auth:
+  enabled: false
+  # `nsc describe operator --raw` output (a JWT string). Non-secret.
+  operatorJWT: ""
+  # Public key (starts with "A") of the SYS account. Non-secret.
+  systemAccountId: ""
+  # Map of account public key -> account JWT (from nsc). Non-secret.
+  # e.g. { "ABC...": "eyJ0eXAi...", ... }
+  accountJWTs: {}
+
 # Internal Load Balancer for Cloud Run VPC access
 ilb:
   enabled: false
