@@ -71,6 +71,28 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         )
         self.assertEqual("agentgateway", gateway["spec"]["gatewayClassName"])
 
+    def test_gateway_route_declares_kubernetes_default_values(self):
+        documents = render_chart(
+            "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
+        )
+        route = resource(documents, "HTTPRoute", "kora-ai")
+
+        self.assertEqual(
+            {
+                "group": "gateway.networking.k8s.io",
+                "kind": "Gateway",
+                "name": "kora-ai",
+                "sectionName": "http",
+            },
+            route["spec"]["parentRefs"][0],
+        )
+        for rule in route["spec"]["rules"]:
+            self.assertEqual(1, rule["backendRefs"][0]["weight"])
+            for match in rule["matches"]:
+                self.assertEqual(
+                    {"type": "PathPrefix", "value": "/"}, match["path"]
+                )
+
     def test_vertex_terraform_binds_the_kora_gateway_identity(self):
         main = (ROOT / "terraform-new/stacks/12-vertex/main.tf").read_text()
         variables = (ROOT / "terraform-new/stacks/12-vertex/variables.tf").read_text()
@@ -188,6 +210,20 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             ["kubernetes.io/metadata.name"],
         )
         self.assertEqual(8080, egress["ports"][0]["port"])
+
+    def test_production_kora_api_enables_the_ai_gateway(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        env = {
+            entry["name"]: entry
+            for entry in deployment["spec"]["template"]["spec"]["containers"][0][
+                "env"
+            ]
+        }
+
+        self.assertEqual("true", env["AI_GATEWAY_ENABLED"]["value"])
 
     def test_ai_agents_are_non_root_bounded_and_gateway_only(self):
         documents = render_chart("charts/apps/kora-ai-agents", "kora-ai-agents", "kora")
