@@ -91,10 +91,6 @@ def test_publisher_route_requires_exact_github_identity():
     ]
 
     policy = resource("AuthorizationPolicy", "agentregistry-publisher")
-    required_principal = (
-        "https://token.actions.githubusercontent.com/"
-        "repo:tesserix/ai-agents:ref:refs/heads/main"
-    )
     assert policy["spec"]["action"] == "DENY"
     assert policy["spec"]["selector"] == {
         "matchLabels": {"istio": "custom-ingressgateway"}
@@ -102,13 +98,91 @@ def test_publisher_route_requires_exact_github_identity():
     assert policy["spec"]["rules"] == [
         {
             "from": [
-                {"source": {"notRequestPrincipals": [required_principal]}}
+                {"source": {"notRequestPrincipals": ["*"]}}
             ],
             "to": [
                 {
                     "operation": {
                         "hosts": ["publish.aregistry.tesserix.app"]
                     }
+                }
+            ],
+        },
+        {
+            "to": [
+                {
+                    "operation": {
+                        "hosts": ["publish.aregistry.tesserix.app"]
+                    }
+                }
+            ],
+            "when": [
+                {
+                    "key": "request.auth.claims[iss]",
+                    "notValues": ["https://token.actions.githubusercontent.com"],
+                }
+            ],
+        },
+        {
+            "to": [
+                {
+                    "operation": {
+                        "hosts": ["publish.aregistry.tesserix.app"]
+                    }
+                }
+            ],
+            "when": [
+                {
+                    "key": "request.auth.claims[repository]",
+                    "notValues": ["tesserix/ai-agents"],
+                }
+            ],
+        },
+        {
+            "to": [
+                {
+                    "operation": {
+                        "hosts": ["publish.aregistry.tesserix.app"]
+                    }
+                }
+            ],
+            "when": [
+                {
+                    "key": "request.auth.claims[ref]",
+                    "notValues": ["refs/heads/main"],
+                }
+            ],
+        },
+        {
+            "to": [
+                {
+                    "operation": {
+                        "hosts": ["publish.aregistry.tesserix.app"]
+                    }
+                }
+            ],
+            "when": [
+                {
+                    "key": "request.auth.claims[event_name]",
+                    "notValues": ["workflow_dispatch"],
+                }
+            ],
+        },
+        {
+            "to": [
+                {
+                    "operation": {
+                        "hosts": ["publish.aregistry.tesserix.app"]
+                    }
+                }
+            ],
+            "when": [
+                {
+                    "key": "request.auth.claims[workflow_ref]",
+                    "notValues": [
+                        "tesserix/ai-agents/.github/workflows/"
+                        "publish.yml@refs/heads/main"
+                    ],
                 }
             ],
         },
