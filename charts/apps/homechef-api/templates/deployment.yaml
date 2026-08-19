@@ -68,6 +68,11 @@ spec:
               have broken auth, payments, chat and DB access on cutover.
             */}}
             {{- include "homechef-api.containerEnv" . | nindent 12 }}
+            {{- if .Values.nats.auth.enabled }}
+            {{- /* Inert until the cluster enforces operator/JWT auth. */}}
+            - name: NATS_CREDS
+              value: /etc/nats-creds/nats.creds
+            {{- end }}
           {{- if .Values.startupProbe }}
           {{- if .Values.startupProbe.enabled }}
           startupProbe:
@@ -105,22 +110,39 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if .Values.local.enabled }}
-          # readOnlyRootFilesystem ⇒ writable scratch via emptyDir locally
-          # (kind has no provisioner for the prod uploads PVC). Prod path is
-          # unchanged (local.enabled defaults to false).
+          {{- if or .Values.local.enabled .Values.nats.auth.enabled }}
           volumeMounts:
+            {{- if .Values.local.enabled }}
+            # readOnlyRootFilesystem ⇒ writable scratch via emptyDir locally
+            # (kind has no provisioner for the prod uploads PVC). Prod path is
+            # unchanged (local.enabled defaults to false).
             - name: tmp
               mountPath: /tmp
             - name: uploads
               mountPath: {{ (index .Values.env "UPLOAD_DIR") | default "/app/uploads" | quote }}
+            {{- end }}
+            {{- if .Values.nats.auth.enabled }}
+            - name: nats-creds
+              mountPath: /etc/nats-creds
+              readOnly: true
+            {{- end }}
           {{- end }}
-      {{- if .Values.local.enabled }}
+      {{- if or .Values.local.enabled .Values.nats.auth.enabled }}
       volumes:
+        {{- if .Values.local.enabled }}
         - name: tmp
           emptyDir: {}
         - name: uploads
           emptyDir: {}
+        {{- end }}
+        {{- if .Values.nats.auth.enabled }}
+        - name: nats-creds
+          secret:
+            secretName: {{ include "homechef-api.fullname" . }}-secrets
+            items:
+              - key: NATS_CREDS_FILE
+                path: nats.creds
+        {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
