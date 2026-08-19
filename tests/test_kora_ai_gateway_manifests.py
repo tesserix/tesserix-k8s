@@ -101,6 +101,9 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
                 if provider["name"] == "vertex"
             )
             auth = vertex["policies"]["auth"]
+            self.assertEqual("aiplatform.googleapis.com", vertex["host"])
+            self.assertEqual(443, vertex["port"])
+            self.assertEqual({}, vertex["policies"]["tls"])
             self.assertEqual({}, auth["gcp"])
             self.assertEqual(
                 [
