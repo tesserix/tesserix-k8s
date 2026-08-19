@@ -55,6 +55,17 @@ config:
   # Debug logging (disable in production)
   debug: false
   trace: false
+  # Drop slow consumers whose write buffer stays full past this deadline.
+  # Protects the server from back-pressure under high fan-out load.
+  writeDeadline: "10s"
+  # Graceful shutdown: on SIGTERM the server enters "lame duck" mode, stops
+  # accepting new connections, then slowly closes existing ones so clients
+  # reconnect to healthy peers. Key to zero-downtime rolling updates.
+  # terminationGracePeriodSeconds MUST exceed grace period + duration.
+  lameDuckGracePeriod: "10s"
+  lameDuckDuration: "30s"
+  # How many times a route reconnects before giving up (resilient rejoin).
+  clusterConnectRetries: 120
 
 # Persistence for JetStream
 persistence:
@@ -67,6 +78,36 @@ persistence:
 # Internal Load Balancer for Cloud Run VPC access
 ilb:
   enabled: false
+
+# Graceful pod shutdown. Must be > config.lameDuckGracePeriod + lameDuckDuration
+# so the server can drain client connections before the kubelet SIGKILLs it.
+terminationGracePeriodSeconds: 60
+
+# Pod Disruption Budget — keep quorum during voluntary disruptions (drains,
+# node upgrades). Rendered only when replicaCount > 1.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 2
+
+# Startup probe — gives JetStream time to recover its file store on boot
+# without the liveness probe killing a healthy-but-recovering pod.
+startupProbe:
+  enabled: true
+  periodSeconds: 10
+  failureThreshold: 30  # up to 5m for store recovery on large volumes
+
+# Prometheus metrics via the sidecar exporter (scrapes the /varz|/jsz monitor
+# endpoints). Disabled by default; enable per-environment.
+metrics:
+  enabled: false
+  image:
+    repository: natsio/prometheus-nats-exporter
+    tag: "0.14.0"
+  port: 7777
+  # ServiceMonitor for the Prometheus Operator (CRD must be installed).
+  serviceMonitor:
+    enabled: false
+    interval: 30s
 
 # Node selector, tolerations, affinity
 nodeSelector: {}
