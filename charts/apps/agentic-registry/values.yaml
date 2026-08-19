@@ -35,11 +35,13 @@ config:
   authIssuer: ""
   authAudience: agentic-registry
   authGroupsClaim: groups
+  authAdminRole: ""
+  authAdminEmails: ""
   authTrustedProxy: "false"
   authAnonymousRole: admin
   publicBaseUrl: https://registry.tesserix.app
   # CHART-14: default CORS closed (no wildcard origin reflection). The UI is
-  # served same-origin behind the BFF, so no other browser origin legitimately
+  # served same-origin behind the identity proxy, so no other browser origin legitimately
   # calls the API. prod overrides to its own public origin; local overlays can
   # set an explicit list (e.g. http://localhost:5173) when needed.
   corsOrigins: ""
@@ -122,6 +124,31 @@ istio:
   enabled: true
   gateway: istio-ingress/custom-domain-gateway
   host: registry.tesserix.app
+
+oauth2Proxy:
+  enabled: false
+  name: agentregistry-ui-oauth2-proxy
+  replicas: 2
+  image:
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    digest: sha256:f6a4aa83a27e316114bf79664302b1ffb2cc8ce697fb479273af4feb3fb16fe3
+  issuerUrl: https://auth.tesserix.app
+  projectId: ""
+  redirectUrl: https://aregistry.tesserix.app/oauth2/callback
+  upstream: http://agentregistry.agentregistry-system.svc.cluster.local:12121
+  cookieName: _tesserix_agentregistry
+  allowedEmails: []
+  resources:
+    requests:
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  externalSecret:
+    secretStore: gcp-secret-store
+    refreshInterval: 1h
+    clientId: prod-agentregistry-ui-client-id
+    clientSecret: prod-agentregistry-ui-client-secret
+    cookieSecret: prod-agentregistry-ui-cookie-secret
 
 podAnnotations: {}
 nodeSelector: {}
