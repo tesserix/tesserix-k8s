@@ -84,17 +84,34 @@ limitRange:
   # only memory. Verified by comparing `helm template` output against
   # `kubectl get limitrange -o jsonpath='{.spec.limits[0]}'`.
   #
-  # This is accepted rather than worked around. The derived cap equals the
-  # namespace ceiling, so it forbids nothing `max` already allowed, and 4 cores
-  # will not throttle a single-instance Postgres. The alternative — dropping
-  # `max.cpu` so nothing is derived — would remove the only bound on a runaway
-  # container, which is a worse trade.
+  # SECOND CORRECTION, 2026-08-19 (#891). The paragraph that stood here
+  # accepted the derived 4 on the grounds that it "forbids nothing `max`
+  # already allowed". That is true of the LimitRange in isolation and false
+  # in this namespace, because it reasoned about the LimitRange without the
+  # ResourceQuota. `max.cpu` bounds ONE container; `limits.cpu: 8` bounds the
+  # SUM. A derived default of 4 means any container admitted without its own
+  # limit claims half the namespace, and a pod running without one contributes
+  # 0 until it is rescheduled — so the namespace can be over-committed against
+  # a future admission with nothing reporting it. That is exactly how
+  # helivanta-postgres became unrestartable at 7/8 used.
   #
-  # What the change from 500m to 4 actually bought: a restarted Postgres is
-  # capped at the namespace maximum instead of half a core. That was the real
-  # hazard. Recorded precisely because the first version of this comment
-  # implied no cap at all, which was false.
+  # `default.cpu` is therefore explicit now, and modest. The original argument
+  # for the derived value — that a restarted Postgres would otherwise be
+  # capped at half a core — no longer applies to anything: Postgres and NATS
+  # both declare their own CPU limits as of #891, and a `default` never
+  # overrides a container that sets its own. What remains under this default
+  # is the class it was always meant for, the container that FORGOT to set a
+  # limit (today: the db-schema-bootstrap CronJob, memory-only, which runs
+  # psql). For that class 500m is ample, and the failure mode of getting it
+  # wrong is a slow job — recoverable, and visible — rather than a namespace
+  # that silently cannot re-admit its database.
+  #
+  # The general rule this encodes: in a namespace with a ResourceQuota on
+  # `limits.cpu`, a LimitRange default must be sized against the QUOTA, not
+  # against `max`. Sizing it at `max` guarantees the sum overruns as soon as
+  # more than one container relies on it.
   default:
+    cpu: 500m
     memory: 512Mi
   defaultRequest:
     cpu: 100m

@@ -22,11 +22,35 @@ storageSize: 10Gi
 storageClass: standard-rwo-retain
 walStorageSize: 5Gi
 
-# Memory only — the platform sets no CPU requests or limits.
+# CPU is declared explicitly here, departing from the platform's memory-only
+# convention, because in a namespace with a ResourceQuota that convention is
+# what makes this database unrestartable (#891).
+#
+# Omitting `limits.cpu` does not mean "no limit". The namespace LimitRange
+# sets `max.cpu: 4`, and the API server DERIVES `default.cpu` from it, so a
+# container admitted without its own limit is assigned 4 — half the
+# namespace's `limits.cpu: 8` ceiling. A pod already running without a limit
+# (this one, admitted before the LimitRange existed) contributes 0 to the
+# quota, so the shortfall is invisible until the pod is rescheduled: a drain,
+# an eviction or a CNPG failover would request 4 against a quota with less
+# than that free, admission would fail, and the database would not come back.
+# It would fail at exactly the moment someone is already handling an incident.
+#
+# 1 core against a measured 13m steady-state (`kubectl top pod`, 2026-08-19)
+# is ~77x headroom. That margin is the answer to the CFS-throttling objection
+# the LimitRange chart records: a CPU limit does silently degrade a
+# well-behaved database, but only one sized near its working set. This is not,
+# and the alternative — remaining unrestartable — is not a safer failure mode.
+#
+# requests.cpu is what the scheduler reserves and is deliberately small: this
+# database idles, and a large request would waste namespace quota that only
+# affects placement.
 resources:
   requests:
+    cpu: 100m
     memory: 512Mi
   limits:
+    cpu: "1"
     memory: 2Gi
 
 openbao:
