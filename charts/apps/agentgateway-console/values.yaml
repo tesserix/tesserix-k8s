@@ -1,0 +1,45 @@
+# Standalone agentgateway: no XDS_ADDRESS, so the binary runs in Standalone mode
+# and the console exposes the full LLM and MCP surface. Config lives in
+# files/config.yaml and is rendered into a Secret by the ExternalSecret below.
+namespace: agentgateway-system
+name: agentgateway-console
+
+image:
+  repository: cr.agentgateway.dev/agentgateway
+  tag: v1.4.1
+
+replicas: 2
+
+resources:
+  requests:
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+
+ports:
+  mesh: 8080
+  public: 8081
+  console: 8082
+  admin: 15000
+  readiness: 15021
+
+serviceAccount:
+  name: agentgateway-console
+  # Vertex backends authenticate with GCP ADC through Workload Identity.
+  gcpServiceAccount: agentgateway-llm@tesseracthub-480811.iam.gserviceaccount.com
+
+externalSecret:
+  secretStoreRef: gcp-secret-store
+  refreshInterval: 1h
+  pgPassword: prod-agentgateway-postgresql-password
+  oidcClientId: prod-agentgateway-admin-ui-client-id
+  oidcClientSecret: prod-agentgateway-admin-ui-client-secret
+
+# Istio principals allowed onto the mesh listener.
+authorizationPolicy:
+  meshPrincipals:
+    - cluster.local/ns/devai/sa/devai-api
+    - cluster.local/ns/devai/sa/devai-runner
+    - cluster.local/ns/kora/sa/kora-api
+    - cluster.local/ns/kora/sa/kora-ai-agents
+  publicPrincipal: cluster.local/ns/istio-ingress/sa/istio-ingressgateway
