@@ -107,6 +107,18 @@ DO $$ BEGIN
         ALTER TABLE catalog.vehicle ADD CONSTRAINT vehicle_verification_source_check
             CHECK (verification_source IN ('manual','vahan'));
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vehicle_seats_check') THEN
+        ALTER TABLE catalog.vehicle ADD CONSTRAINT vehicle_seats_check
+            CHECK (seats BETWEEN 1 AND 60);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vehicle_fuel_capacity_check') THEN
+        ALTER TABLE catalog.vehicle ADD CONSTRAINT vehicle_fuel_capacity_check
+            CHECK (fuel_capacity_l > 0);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'vehicle_mileage_check') THEN
+        ALTER TABLE catalog.vehicle ADD CONSTRAINT vehicle_mileage_check
+            CHECK (mileage_kmpl > 0);
+    END IF;
 END $$;
 
 CREATE TABLE IF NOT EXISTS catalog.tenant_spec_override (
@@ -120,6 +132,7 @@ CREATE TABLE IF NOT EXISTS catalog.tenant_spec_override (
     updated_at             timestamptz NOT NULL DEFAULT now(),
     UNIQUE (tenant_id, spec_model_id)
 );
+
 -- Redundant against the primary key, and load-bearing anyway: it is the target
 -- other modules point a composite (tenant_id, vehicle_id) FK at. A foreign key
 -- check runs with RLS bypassed, so a plain FK to id lets one tenant reference
