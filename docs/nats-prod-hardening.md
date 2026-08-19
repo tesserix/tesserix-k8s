@@ -14,7 +14,7 @@ instead of an inline block that had drifted).
 
 | Area | Before | After | Why |
 |------|--------|-------|-----|
-| Image | `nats:alpine`, `pullPolicy: Always` | `nats:2.10-alpine`, `IfNotPresent` | A pod restart can no longer silently jump NATS major/minor on a stateful Raft node. |
+| Image | `nats:alpine`, `pullPolicy: Always` | `nats:2.14-alpine`, `IfNotPresent` | A pod restart can no longer silently jump NATS major/minor on a stateful Raft node. |
 | PodDisruptionBudget | flag set but **no template** (no-op) | real `PDB minAvailable: 2` | Preserves Raft majority during node drains/upgrades. |
 | Anti-affinity | zone spread *preferred* only | *required* one-pod-per-node + *preferred* zone spread | A single node loss can take down at most one replica. |
 | Liveness probe | `/healthz?js-enabled-only=true` | `/healthz` (basic) | A node catching up on JetStream is no longer restarted mid-recovery. |
@@ -22,7 +22,7 @@ instead of an inline block that had drifted).
 | Graceful shutdown | none | `lame_duck_*` + `terminationGracePeriodSeconds: 60` | Clients drain/reconnect on rolling restarts. |
 | Slow consumers | none | `write_deadline: 10s` | Server sheds a stuck consumer instead of back-pressuring. |
 | Capacity | `max_connections: 1000`, mem 512Mi/2Gi | `65536`, mem 1Gi/4Gi | Headroom for many products fanning in at scale. |
-| JetStream disk | 12Gi | 20Gi (`max_file_store` + PVC) | More retention/headroom for the shared bus. |
+| JetStream disk | 12Gi | 12Gi (unchanged) | Growing it is a separate manual run-book, see below. |
 | Cluster rejoin | default | `connect_retries: 120` | Resilient route re-establishment after a blip. |
 | Metrics | none | Prometheus exporter sidecar + ServiceMonitor (wired, **off** by default) | Observability; enable after confirming the exporter tag. |
 
@@ -30,50 +30,37 @@ Memory-only resources (platform rule: no CPU requests/limits in these charts).
 
 ## Deploy
 
-GitOps only — do not `kubectl apply`. **This change bumps JetStream disk 12Gi →
-20Gi.** StatefulSet `volumeClaimTemplates` are immutable, so the size can't be
-updated in place — every other change (image, probes, affinity, grace period) is
-a template mutation that would apply via a normal rolling update, but the disk
-bump needs the expand + orphan-recreate below. Doing them together lands the
-whole PR in one clean pass with **no downtime** (pods keep serving throughout).
+GitOps only — do not `kubectl apply`. Every change here (image pin, probes,
+affinity, grace period, PDB, config) is a template mutation that ArgoCD applies
+as a normal rolling update with no downtime, so merging to `main` is the whole
+deployment. The PVC size is deliberately left at the live 12Gi so the
+StatefulSet's immutable `volumeClaimTemplates` do not block the sync.
 
-1. Merge this branch to `main` (or sync from the branch in a maintenance window).
-2. Confirm the storage class allows online expansion:
-   ```bash
-   kubectl get storageclass standard-rwo-retain -o jsonpath='{.allowVolumeExpansion}'   # true
-   ```
-3. Expand the three PVCs to 20Gi (online; data preserved):
-   ```bash
-   for i in 0 1 2; do
-     kubectl -n nats patch pvc data-nats-$i --type merge \
-       -p '{"spec":{"resources":{"requests":{"storage":"20Gi"}}}}'
-   done
-   kubectl -n nats get pvc     # wait for each to reach 20Gi / FileSystemResizePending to clear
-   ```
-4. Orphan-delete the StatefulSet so ArgoCD can recreate it at the new size
-   (the pods keep running — only the STS object is removed):
-   ```bash
-   kubectl -n nats delete statefulset nats --cascade=orphan
-   ```
-5. Sync the `nats` ArgoCD app. It **creates** the STS fresh (no immutable-field
-   conflict) at 20Gi with all the hardening, adopts the running pods, then rolls
-   them one at a time. The PDB (`minAvailable: 2`) holds quorum throughout.
-6. Verify:
-   ```bash
-   kubectl -n nats get pods -w
-   kubectl -n nats exec -it nats-0 -- nats server list       # 3 servers, JS healthy
-   kubectl -n nats exec -it nats-0 -- nats stream report      # streams R3, no "no quorum"
-   kubectl -n nats exec -it nats-0 -- nats server report jetstream   # per-server store 20Gi
-   ```
+Verify after the sync:
 
-> If step 4 is skipped, ArgoCD sync will fail on the STS (immutable
-> volumeClaimTemplates) and **none** of the STS changes apply until the STS is
-> orphan-deleted. Steps 3–4 are the required unlock for the disk bump.
+```bash
+kubectl -n nats rollout status sts/nats
+kubectl -n nats exec -it nats-0 -- nats server list        # 3 servers, JS healthy
+kubectl -n nats exec -it nats-0 -- nats stream report      # streams R3, no "no quorum"
+```
 
 ## Future storage changes
 
-Same procedure as above (expand PVCs → orphan-delete STS → sync), substituting
-the target size. `fileStore.size` and `persistence.size` must always move
+Growing the JetStream disk needs three manual steps, because
+`volumeClaimTemplates` is immutable — expand the PVCs online, orphan-delete the
+StatefulSet so ArgoCD can recreate it, then sync:
+
+```bash
+kubectl get storageclass standard-rwo-retain -o jsonpath='{.allowVolumeExpansion}'
+for i in 0 1 2; do
+  kubectl -n nats patch pvc data-nats-$i --type merge \
+    -p '{"spec":{"resources":{"requests":{"storage":"<size>"}}}}'
+done
+kubectl -n nats delete sts nats --cascade=orphan   # pods keep serving
+```
+
+Then raise the size in `values-prod.yaml` and let ArgoCD recreate the
+StatefulSet; it adopts the running pods and rolls them one at a time. `fileStore.size` and `persistence.size` must always move
 together — a `max_file_store` larger than the disk lets JetStream fill the
 volume. Capacity = event rate × retention, and the app streams are bounded
 (`max-age`/`max-bytes`), so raise this only for longer retention or more headroom.
