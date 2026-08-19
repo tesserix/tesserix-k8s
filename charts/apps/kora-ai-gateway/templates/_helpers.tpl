@@ -17,6 +17,7 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
         model: {{ .model }}
       policies:
         auth:
+          gcp: {}
           credentials:
             - secretRef:
                 name: {{ .root.Values.externalSecrets.providerSecretName }}
