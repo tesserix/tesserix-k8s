@@ -1,0 +1,19 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: {{ .Values.registry.authSecret.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  refreshInterval: {{ .Values.externalSecret.refreshInterval }}
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: {{ .Values.externalSecret.secretStore }}
+  target:
+    name: {{ .Values.registry.authSecret.name }}
+    creationPolicy: Owner
+  data:
+    - secretKey: {{ .Values.registry.authSecret.key }}
+      remoteRef:
+        key: {{ .Values.externalSecret.registryDeployKey }}
