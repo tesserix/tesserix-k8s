@@ -354,6 +354,155 @@ class OrgBrandingTest(unittest.TestCase):
         self.assertEqual(sorted(set(scoped)), ["org-tesserix", "org-zitadel"])
 
 
+class PlatformProjectTest(unittest.TestCase):
+    PROJECT = {
+        "org": "ZITADEL",
+        "name": "AgentGateway",
+        "expectedId": "p-agentgateway",
+        "roles": [
+            {"key": "agentgateway.mcp", "displayName": "MCP", "group": "gateway-access"},
+            {"key": "agentgateway.models", "displayName": "Models", "group": "gateway-access"},
+        ],
+        "humanGrants": [
+            {
+                "login": "samyak.rout@gmail.com",
+                "roles": ["agentgateway.mcp", "agentgateway.models"],
+            }
+        ],
+        "oidcApps": [
+            {
+                "name": "agentgateway-mcp-ui",
+                "redirectUris": ["https://mcp.tesserix.app/oauth2/callback"],
+                "postLogoutRedirectUris": ["https://mcp.tesserix.app"],
+            }
+        ],
+    }
+
+    def _recorder(self, roles=None, grants=None, users=None):
+        return Recorder({
+            ("POST", "/admin/v1/orgs/_search"): (200, json.dumps(ORGS).encode()),
+            ("POST", "/management/v1/projects/_search"): (
+                200,
+                json.dumps({"result": [{"id": "p-agentgateway", "name": "AgentGateway"}]}).encode(),
+            ),
+            ("POST", "/management/v1/projects/p-agentgateway/roles/_search"): (
+                200,
+                json.dumps({"result": roles if roles is not None else [
+                    {"key": "agentgateway.mcp", "displayName": "MCP", "group": "gateway-access"},
+                    {"key": "agentgateway.models", "displayName": "Models", "group": "gateway-access"},
+                ]}).encode(),
+            ),
+            ("POST", "/management/v1/users/grants/_search"): (
+                200,
+                json.dumps({"result": grants if grants is not None else [
+                    {
+                        "id": "grant-1",
+                        "userId": "u-1",
+                        "projectId": "p-agentgateway",
+                        "roleKeys": ["agentgateway.mcp", "agentgateway.models"],
+                    }
+                ]}).encode(),
+            ),
+            ("POST", "/management/v1/projects/p-agentgateway/apps/_search"): (
+                200,
+                json.dumps({"result": [{"id": "app-mcp", "name": "agentgateway-mcp-ui"}]}).encode(),
+            ),
+            ("GET", "/management/v1/projects/p-agentgateway/apps/app-mcp"): (
+                200,
+                json.dumps({
+                    "app": {
+                        "id": "app-mcp",
+                        "name": "agentgateway-mcp-ui",
+                        "oidcConfig": {
+                            "redirectUris": ["https://mcp.tesserix.app/oauth2/callback"],
+                            "postLogoutRedirectUris": ["https://mcp.tesserix.app"],
+                        },
+                    }
+                }).encode(),
+            ),
+            ("POST", "/v2/users"): (
+                200,
+                json.dumps(users if users is not None else AdminTest.USERS).encode(),
+            ),
+        })
+
+    def test_in_sync_project_performs_no_state_writes(self):
+        recorder = self._recorder()
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(dict(self.PROJECT))
+        state_writes = [
+            write for write in recorder.writes
+            if not write[1].endswith("_search") and write[1] != "/v2/users"
+        ]
+        self.assertEqual([], state_writes)
+
+    def test_adds_missing_role(self):
+        recorder = self._recorder(roles=[])
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(dict(self.PROJECT))
+        self.assertIn(
+            ("POST", "/management/v1/projects/p-agentgateway/roles"),
+            recorder.writes,
+        )
+
+    def test_adds_missing_human_grant(self):
+        recorder = self._recorder(grants=[])
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(dict(self.PROJECT))
+        self.assertIn(("POST", "/management/v1/users/u-1/grants"), recorder.writes)
+
+    def test_updates_drifted_human_roles(self):
+        recorder = self._recorder(grants=[{
+            "id": "grant-1",
+            "userId": "u-1",
+            "projectId": "p-agentgateway",
+            "roleKeys": ["agentgateway.mcp"],
+        }])
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(dict(self.PROJECT))
+        self.assertIn(
+            ("PUT", "/management/v1/users/u-1/grants/grant-1"),
+            recorder.writes,
+        )
+
+    def test_project_id_mismatch_fails_closed(self):
+        project = dict(self.PROJECT, expectedId="different-project")
+        recorder = self._recorder()
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_platform_project(project)
+
+    def test_missing_oidc_application_fails_closed(self):
+        recorder = self._recorder()
+        recorder.responses[("POST", "/management/v1/projects/p-agentgateway/apps/_search")] = (
+            200,
+            json.dumps({"result": []}).encode(),
+        )
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.reconcile_platform_project(dict(self.PROJECT))
+        self.assertIn("agentgateway-mcp-ui", str(caught.exception))
+
+    def test_drifted_oidc_redirect_fails_closed_without_writing(self):
+        recorder = self._recorder()
+        recorder.responses[("GET", "/management/v1/projects/p-agentgateway/apps/app-mcp")] = (
+            200,
+            json.dumps({
+                "app": {
+                    "name": "agentgateway-mcp-ui",
+                    "oidcConfig": {
+                        "redirectUris": ["https://attacker.example/callback"],
+                        "postLogoutRedirectUris": ["https://mcp.tesserix.app"],
+                    },
+                }
+            }).encode(),
+        )
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_platform_project(dict(self.PROJECT))
+        self.assertEqual([], [call for call in recorder.calls if call[0] in ("PUT", "DELETE")])
+
+
 class ReservedOrgTest(unittest.TestCase):
     """The ZITADEL org holds the console and the break-glass admin, nothing else."""
 
@@ -407,6 +556,7 @@ class MainTest(unittest.TestCase):
                 "admins": ["samyak.rout@gmail.com"],
                 "defaultOrg": "TESSERIX",
                 "selfBrandedOrgs": [],
+                "platformProjects": [],
                 "reservedOrg": {"name": "ZITADEL", "allowedProjects": ["ZITADEL"]},
             }, fh)
 

@@ -3,6 +3,7 @@ namespace: agentgateway-system
 gateway:
   name: ai-gateway
   port: 8080
+  publicPort: 8081
   replicas: 2
   serviceAccount:
     gcpServiceAccount: agentgateway-llm@tesseracthub-480811.iam.gserviceaccount.com
@@ -11,6 +12,35 @@ gateway:
       memory: 256Mi
     limits:
       memory: 1Gi
+
+admin:
+  address: 0.0.0.0:15000
+  port: 15000
+  oauth2Proxy:
+    name: agentgateway-admin-ui-oauth2-proxy
+    principal: cluster.local/ns/agentgateway-system/sa/agentgateway-admin-ui-oauth2-proxy
+    replicas: 2
+    image:
+      repository: quay.io/oauth2-proxy/oauth2-proxy
+      digest: sha256:f6a4aa83a27e316114bf79664302b1ffb2cc8ce697fb479273af4feb3fb16fe3
+    issuerUrl: https://auth.tesserix.app
+    redirectUrl: https://agentgateway.tesserix.app/oauth2/callback
+    upstream: http://ai-gateway-admin.agentgateway-system.svc.cluster.local:15000
+    cookieName: _tesserix_agentgateway_admin
+    allowedEmails:
+      - samyak.rout@gmail.com
+      - mahesh.sangawar@gmail.com
+    resources:
+      requests:
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+    externalSecret:
+      secretStore: gcp-secret-store
+      refreshInterval: 1h
+      clientId: prod-agentgateway-admin-ui-client-id
+      clientSecret: prod-agentgateway-admin-ui-client-secret
+      cookieSecret: prod-agentgateway-admin-ui-cookie-secret
 
 providers:
   vertex:
@@ -51,6 +81,25 @@ authorizationPolicy:
   allowedPrincipals:
     - cluster.local/ns/devai/sa/devai-api
     - cluster.local/ns/devai/sa/devai-runner
+  publicPrincipal: cluster.local/ns/istio-ingress/sa/istio-ingressgateway
+
+oauth:
+  issuer: https://auth.tesserix.app
+  audience: "386889024519799084"
+  jwks:
+    host: auth.tesserix.app
+    path: /oauth/v2/keys
+    cacheDuration: 15m
+  humanEmails:
+    - samyak.rout@gmail.com
+    - mahesh.sangawar@gmail.com
+  roleClaim: "urn:zitadel:iam:org:project:386889024519799084:roles"
+  machineRole: agentgateway.models
+
+publicRateLimit:
+  backend: agentgateway-ratelimit
+  port: 8081
+  domain: agentgateway-public
 
 # Kept during the replacement rollout so the existing mirrored Secret is not
 # deleted. Native backends use caller credential passthrough or GCP workload

@@ -25,6 +25,11 @@ spec:
           maxSurge: 1
       template:
         spec:
+          containers:
+            - name: agentgateway
+              env:
+                - name: ADMIN_ADDR
+                  value: {{ .Values.admin.address | quote }}
           securityContext:
             runAsNonRoot: true
             seccompProfile:
@@ -70,6 +75,12 @@ spec:
     - name: http
       protocol: HTTP
       port: {{ .Values.gateway.port }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: public
+      protocol: HTTP
+      port: {{ .Values.gateway.publicPort }}
       allowedRoutes:
         namespaces:
           from: Same

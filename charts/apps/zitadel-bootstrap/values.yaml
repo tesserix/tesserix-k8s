@@ -76,14 +76,50 @@ desired:
   # instance skin, so a stray console edit cannot fork the platform look.
   selfBrandedOrgs: []
 
+  platformProjects:
+    - org: ZITADEL
+      name: AgentGateway
+      expectedId: "386889024519799084"
+      roles:
+        - key: agentgateway.mcp
+          displayName: MCP
+          group: gateway-access
+        - key: agentgateway.models
+          displayName: Models
+          group: gateway-access
+      # These confidential clients were created once so their one-time secrets
+      # could be written directly to GCP Secret Manager. The reconciler asserts
+      # their non-secret configuration and fails closed on drift.
+      oidcApps:
+        - name: agentgateway-mcp-ui
+          appType: OIDC_APP_TYPE_WEB
+          authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
+          redirectUris:
+            - https://mcp.tesserix.app/oauth2/callback
+          postLogoutRedirectUris:
+            - https://mcp.tesserix.app
+        - name: agentgateway-admin-ui
+          appType: OIDC_APP_TYPE_WEB
+          authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
+          redirectUris:
+            - https://agentgateway.tesserix.app/oauth2/callback
+          postLogoutRedirectUris:
+            - https://agentgateway.tesserix.app
+      humanGrants:
+        - login: samyak.rout@gmail.com
+          roles: [agentgateway.mcp, agentgateway.models]
+        - login: mahesh.sangawar@gmail.com
+          roles: [agentgateway.mcp, agentgateway.models]
+
   # The instance's initial org. It cannot be deleted or deactivated: it owns the
-  # ZITADEL project (console, Admin/Management/Auth APIs), the iam-admin service
-  # user behind this job's PAT, and the break-glass password admin. Demoted from
-  # default instead, and held to the console project alone.
+  # ZITADEL project (console, Admin/Management/Auth APIs), platform control-plane
+  # projects, the iam-admin service user behind this job's PAT, and the
+  # break-glass password admin.
   reservedOrg:
     name: ZITADEL
     allowedProjects:
       - ZITADEL
+      - AgentGateway
 
 resources:
   requests:

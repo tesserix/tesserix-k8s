@@ -236,6 +236,168 @@ def reconcile_org_branding(self_branded):
         log(f"org branding {org['name']}: reset to the instance skin")
 
 
+def reconcile_platform_project(desired):
+    """Reconcile a platform resource-server project without managing secrets.
+
+    Project IDs are JWT audiences embedded in gateway policy. A different ID
+    must stop reconciliation rather than silently issuing tokens the gateway
+    will reject. Machine client secrets remain one-time credentials in Secret
+    Manager and are deliberately outside this periodic reconciler.
+    """
+    org = next((item for item in list_orgs() if item["name"] == desired["org"]), None)
+    if not org:
+        raise SystemExit(f"platform project org {desired['org']!r} does not exist")
+    scope = {"x-zitadel-orgid": org["id"]}
+
+    status, payload = request(
+        "POST",
+        "/management/v1/projects/_search",
+        {"query": {"limit": 100}},
+        headers=scope,
+    )
+    if status != 200:
+        raise SystemExit(f"platform project search failed: {status} {payload!r}")
+    project = next(
+        (item for item in json.loads(payload).get("result", []) if item["name"] == desired["name"]),
+        None,
+    )
+    if not project:
+        raise SystemExit(
+            f"platform project {desired['name']!r} is missing; create it once and "
+            "commit its ID as expectedId before enabling gateway audiences"
+        )
+    if project["id"] != desired["expectedId"]:
+        raise SystemExit(
+            f"platform project {desired['name']!r} ID {project['id']} does not match "
+            f"the committed JWT audience {desired['expectedId']}"
+        )
+    project_id = project["id"]
+
+    wanted_apps = desired.get("oidcApps", [])
+    if wanted_apps:
+        status, payload = request(
+            "POST",
+            f"/management/v1/projects/{project_id}/apps/_search",
+            {"query": {"limit": 100}},
+            headers=scope,
+        )
+        if status != 200:
+            raise SystemExit(
+                f"platform project application search failed: {status} {payload!r}"
+            )
+        live_apps = json.loads(payload).get("result", [])
+        for wanted in wanted_apps:
+            matches = [item for item in live_apps if item["name"] == wanted["name"]]
+            if len(matches) != 1:
+                raise SystemExit(
+                    f"platform OIDC application {wanted['name']!r} must exist exactly once; "
+                    "create it through the identity onboarding runbook"
+                )
+            status, payload = request(
+                "GET",
+                f"/management/v1/projects/{project_id}/apps/{matches[0]['id']}",
+                headers=scope,
+            )
+            if status != 200:
+                raise SystemExit(
+                    f"platform OIDC application {wanted['name']!r} read failed: "
+                    f"{status} {payload!r}"
+                )
+            live = json.loads(payload)["app"].get("oidcConfig", {})
+            actual = {
+                "redirectUris": sorted(live.get("redirectUris", [])),
+                "postLogoutRedirectUris": sorted(
+                    live.get("postLogoutRedirectUris", [])
+                ),
+                "appType": live.get("appType", "OIDC_APP_TYPE_WEB"),
+                "authMethodType": live.get(
+                    "authMethodType", "OIDC_AUTH_METHOD_TYPE_BASIC"
+                ),
+            }
+            expected = {
+                "redirectUris": sorted(wanted["redirectUris"]),
+                "postLogoutRedirectUris": sorted(
+                    wanted["postLogoutRedirectUris"]
+                ),
+                "appType": wanted.get("appType", "OIDC_APP_TYPE_WEB"),
+                "authMethodType": wanted.get(
+                    "authMethodType", "OIDC_AUTH_METHOD_TYPE_BASIC"
+                ),
+            }
+            if actual != expected:
+                raise SystemExit(
+                    f"platform OIDC application {wanted['name']!r} configuration drifted; "
+                    "reconcile it through the identity onboarding runbook"
+                )
+            log(f"platform OIDC application {wanted['name']}: in sync")
+
+    roles_path = f"/management/v1/projects/{project_id}/roles/_search"
+    status, payload = request("POST", roles_path, {"query": {"limit": 100}}, headers=scope)
+    if status != 200:
+        raise SystemExit(f"platform project role search failed: {status} {payload!r}")
+    live_roles = {item["key"]: item for item in json.loads(payload).get("result", [])}
+    for role in desired.get("roles", []):
+        if role["key"] in live_roles:
+            log(f"platform project {desired['name']} role {role['key']}: in sync")
+            continue
+        status, payload = request(
+            "POST",
+            f"/management/v1/projects/{project_id}/roles",
+            {
+                "roleKey": role["key"],
+                "displayName": role["displayName"],
+                "group": role.get("group", ""),
+            },
+            headers=scope,
+        )
+        if status != 200:
+            raise SystemExit(
+                f"platform project role {role['key']} create failed: {status} {payload!r}"
+            )
+        log(f"platform project {desired['name']} role {role['key']}: created")
+
+    status, payload = request(
+        "POST",
+        "/management/v1/users/grants/_search",
+        {"query": {"limit": 100}},
+        headers=scope,
+    )
+    if status != 200:
+        raise SystemExit(f"platform project grant search failed: {status} {payload!r}")
+    grants = json.loads(payload).get("result", [])
+    for grant in desired.get("humanGrants", []):
+        user_id = find_user(grant["login"])
+        if not user_id:
+            log(f"platform project user {grant['login']}: no such verified user, skipping")
+            continue
+        live = next(
+            (
+                item
+                for item in grants
+                if item.get("userId") == user_id and item.get("projectId") == project_id
+            ),
+            None,
+        )
+        wanted_roles = sorted(grant["roles"])
+        if live and sorted(live.get("roleKeys", [])) == wanted_roles:
+            log(f"platform project user {grant['login']}: in sync")
+            continue
+        if live:
+            method = "PUT"
+            path = f"/management/v1/users/{user_id}/grants/{live['id']}"
+            body = {"roleKeys": wanted_roles}
+        else:
+            method = "POST"
+            path = f"/management/v1/users/{user_id}/grants"
+            body = {"projectId": project_id, "roleKeys": wanted_roles}
+        status, payload = request(method, path, body, headers=scope)
+        if status != 200:
+            raise SystemExit(
+                f"platform project grant for {grant['login']} failed: {status} {payload!r}"
+            )
+        log(f"platform project user {grant['login']}: roles reconciled")
+
+
 def assert_reserved_org_clean(name, allowed):
     """Fail if a product project has been created in the reserved ZITADEL org.
 
@@ -274,6 +436,8 @@ def main():
     reconcile_admins(desired["admins"])
     reconcile_default_org(desired["defaultOrg"])
     reconcile_org_branding(desired["selfBrandedOrgs"])
+    for project in desired.get("platformProjects", []):
+        reconcile_platform_project(project)
     # Last: a stray project is a report, and must not stop branding converging.
     assert_reserved_org_clean(desired["reservedOrg"]["name"], desired["reservedOrg"]["allowedProjects"])
     log("bootstrap complete")
