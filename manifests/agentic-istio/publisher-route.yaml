@@ -1,0 +1,110 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: agentregistry-publisher
+  namespace: istio-ingress
+spec:
+  dnsNames:
+    - publish.aregistry.tesserix.app
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-custom-domain
+  secretName: agentregistry-publisher-tls
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: agentregistry-publisher
+  namespace: istio-ingress
+  annotations:
+    external-dns.alpha.kubernetes.io/target: "34.14.139.74"
+    external-dns.alpha.kubernetes.io/cloudflare-proxied: "false"
+  labels:
+    external-dns.tesserix.app/scope: agentregistry-publisher
+spec:
+  selector:
+    istio: custom-ingressgateway
+  servers:
+    - hosts:
+        - publish.aregistry.tesserix.app
+      port:
+        name: https-agentregistry-publisher
+        number: 443
+        protocol: HTTPS
+      tls:
+        credentialName: agentregistry-publisher-tls
+        minProtocolVersion: TLSV1_2
+        mode: SIMPLE
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: agentregistry-publisher
+  namespace: agentregistry-system
+spec:
+  gateways:
+    - istio-ingress/agentregistry-publisher
+  hosts:
+    - publish.aregistry.tesserix.app
+  http:
+    - match:
+        - method:
+            exact: POST
+          uri:
+            exact: /v0/apply
+      route:
+        - destination:
+            host: agentregistry.agentregistry-system.svc.cluster.local
+            port:
+              number: 12121
+      timeout: 30s
+---
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: agentregistry-publisher-github
+  namespace: istio-ingress
+spec:
+  selector:
+    matchLabels:
+      istio: custom-ingressgateway
+  jwtRules:
+    - audiences:
+        - agentregistry-publisher.tesserix.app
+      fromHeaders:
+        - name: X-GitHub-OIDC-Token
+          prefix: "Bearer "
+      issuer: https://token.actions.githubusercontent.com
+      jwksUri: https://token.actions.githubusercontent.com/.well-known/jwks
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: agentregistry-publisher
+  namespace: istio-ingress
+spec:
+  action: DENY
+  selector:
+    matchLabels:
+      istio: custom-ingressgateway
+  rules:
+    - from:
+        - source:
+            notRequestPrincipals:
+              - https://token.actions.githubusercontent.com/repo:tesserix/ai-agents:ref:refs/heads/main
+      to:
+        - operation:
+            hosts:
+              - publish.aregistry.tesserix.app
+    - to:
+        - operation:
+            hosts:
+              - publish.aregistry.tesserix.app
+            notMethods:
+              - POST
+    - to:
+        - operation:
+            hosts:
+              - publish.aregistry.tesserix.app
+            notPaths:
+              - /v0/apply

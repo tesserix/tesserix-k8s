@@ -1,0 +1,76 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-dns-agentregistry-publisher
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    app.kubernetes.io/component: networking
+    app.kubernetes.io/part-of: tesserix
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://kubernetes-sigs.github.io/external-dns
+    chart: external-dns
+    targetRevision: 1.21.1
+    helm:
+      releaseName: external-dns-agentregistry-publisher
+      values: |
+        provider: cloudflare
+        env:
+          - name: CF_API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: cloudflare-api-token
+                key: api-token
+        domainFilters:
+          - tesserix.app
+        labelFilter: external-dns.tesserix.app/scope=agentregistry-publisher
+        policy: sync
+        registry: txt
+        txtOwnerId: gke-prod-agentregistry-publisher
+        txtPrefix: "_externaldns-publisher."
+        sources:
+          - istio-gateway
+        resources:
+          requests:
+            memory: 32Mi
+          limits:
+            memory: 64Mi
+        serviceAccount:
+          create: true
+          name: external-dns-agentregistry-publisher
+        podSecurityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65534
+        extraArgs:
+          - --managed-record-types=A
+        logLevel: info
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-dns
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
