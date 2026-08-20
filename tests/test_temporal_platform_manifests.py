@@ -255,3 +255,66 @@ class TemporalPlatformManifestTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TemporalClientEgressTests(unittest.TestCase):
+    """The frontend ingress policy naming a namespace is only half the path:
+    that namespace's own egress policy has to allow temporal-system too, or the
+    worker's gRPC dial dies as a transport error with nothing in either log."""
+
+    def render_istio_config(self):
+        result = subprocess.run(
+            [
+                "helm",
+                "template",
+                "istio-config",
+                str(ROOT / "charts/thirdparty/istio-config"),
+                "--namespace",
+                "istio-system",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return [
+            document
+            for document in yaml.safe_load_all(result.stdout)
+            if document
+        ]
+
+    def egress_namespaces(self, documents, name, namespace):
+        policy = resource(documents, "NetworkPolicy", name, namespace)
+        return {
+            peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
+            for rule in policy["spec"].get("egress", [])
+            for peer in rule.get("to", [])
+            if "namespaceSelector" in peer
+        }
+
+    def test_every_temporal_client_namespace_may_egress_to_it(self):
+        istio = self.render_istio_config()
+        temporal = render_resources()
+        ingress = resource(
+            temporal,
+            "NetworkPolicy",
+            "temporal-platform-frontend-ingress",
+            "temporal-system",
+        )
+        clients = {
+            peer["namespaceSelector"]["matchLabels"][
+                "kubernetes.io/metadata.name"
+            ]
+            for rule in ingress["spec"]["ingress"]
+            for peer in rule["from"]
+            if "namespaceSelector" in peer
+        }
+
+        for client in sorted(clients):
+            with self.subTest(namespace=client):
+                try:
+                    allowed = self.egress_namespaces(
+                        istio, f"allow-{client}-egress", client
+                    )
+                except StopIteration:
+                    continue  # namespace has no restrictive egress policy
+                self.assertIn("temporal-system", allowed)
