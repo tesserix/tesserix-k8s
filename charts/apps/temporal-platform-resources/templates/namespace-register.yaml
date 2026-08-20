@@ -37,7 +37,9 @@ spec:
               set -eu
               export TEMPORAL_ADDRESS="{{ .Values.adminTools.frontendAddress }}"
 
-              until temporal operator cluster health; do
+              getent hosts "${TEMPORAL_ADDRESS%%:*}" || echo "no dns record"
+
+              until temporal --address "${TEMPORAL_ADDRESS}" operator cluster health; do
                 echo "waiting for ${TEMPORAL_ADDRESS}"
                 sleep 5
               done
@@ -45,11 +47,13 @@ spec:
               for entry in {{ range .Values.temporalNamespaces }}{{ .name }}:{{ .retention }} {{ end }}; do
                 name="${entry%%:*}"
                 retention="${entry##*:}"
-                if temporal operator namespace describe --namespace "${name}" >/dev/null 2>&1; then
+                if temporal --address "${TEMPORAL_ADDRESS}" \
+                  operator namespace describe --namespace "${name}" >/dev/null 2>&1; then
                   echo "${name} already exists"
                   continue
                 fi
-                temporal operator namespace create \
+                temporal --address "${TEMPORAL_ADDRESS}" \
+                  operator namespace create \
                   --namespace "${name}" \
                   --retention "${retention}"
                 echo "${name} registered with retention ${retention}"

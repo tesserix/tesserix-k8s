@@ -427,3 +427,14 @@ class TemporalNamespaceRegistrationTests(unittest.TestCase):
             if v["name"] == mount["name"]
         )
         self.assertIn("emptyDir", volume)
+
+    def test_every_command_targets_the_configured_frontend(self):
+        invocations = [
+            line.strip()
+            for line in self.script.splitlines()
+            if line.strip().startswith("temporal ")
+        ]
+        self.assertTrue(invocations)
+        for invocation in invocations:
+            with self.subTest(command=invocation):
+                self.assertIn('--address "${TEMPORAL_ADDRESS}"', invocation)
