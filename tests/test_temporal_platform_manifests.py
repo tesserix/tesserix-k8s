@@ -105,6 +105,24 @@ class TemporalPlatformManifestTests(unittest.TestCase):
             self.assertTrue(security["readOnlyRootFilesystem"])
             self.assertEqual(["ALL"], security["capabilities"]["drop"])
 
+    def test_grpc_clients_bypass_ambient_dns_srv_lookup(self):
+        expected = (
+            "passthrough:///"
+            "temporal-frontend.temporal-system.svc.cluster.local:7233"
+        )
+        application = load_yaml(
+            ROOT / "argocd/prod/infrastructure/temporal-platform.yaml"
+        )[0]
+        platform_values = yaml.safe_load(
+            application["spec"]["source"]["helm"]["values"]
+        )
+        resource_values = load_yaml(
+            ROOT / "charts/apps/temporal-platform-resources/values.yaml"
+        )[0]
+
+        self.assertEqual(expected, platform_values["server"]["publicClientHostPort"])
+        self.assertEqual(expected, resource_values["adminTools"]["frontendAddress"])
+
     def test_postgres_visibility_is_declarative_and_encrypted(self):
         application = load_yaml(
             ROOT / "argocd/prod/infrastructure/temporal-platform.yaml"
