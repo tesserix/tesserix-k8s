@@ -131,14 +131,10 @@ class TemporalPlatformManifestTests(unittest.TestCase):
             self.assertTrue(sql["tls"]["enabled"])
 
     def test_product_namespaces_are_explicit(self):
-        application = load_yaml(
-            ROOT / "argocd/prod/infrastructure/temporal-platform.yaml"
+        values = load_yaml(
+            ROOT / "charts/apps/temporal-platform-resources/values.yaml"
         )[0]
-        values = yaml.safe_load(application["spec"]["source"]["helm"]["values"])
-        namespaces = {
-            entry["name"]
-            for entry in values["server"]["config"]["namespaces"]["namespace"]
-        }
+        namespaces = {entry["name"] for entry in values["temporalNamespaces"]}
         self.assertEqual(
             {
                 "agentic-registry",
@@ -332,3 +328,57 @@ class TemporalClientEgressTests(unittest.TestCase):
                 except StopIteration:
                     continue  # namespace has no restrictive egress policy
                 self.assertIn("temporal-system", allowed)
+
+
+class TemporalNamespaceRegistrationTests(unittest.TestCase):
+    """The upstream chart registers namespaces with a one-shot Job that cannot
+    retry: when it raced the frontend's first start it exhausted its backoff and
+    left every namespace unregistered, which crashlooped both Temporal's own
+    worker and every client worker. Registration is a sync hook here instead, so
+    it re-runs until it succeeds."""
+
+    def setUp(self):
+        self.documents = render_resources()
+        self.job = resource(
+            self.documents, "Job", "temporal-namespace-register", "temporal-system"
+        )
+        self.script = self.job["spec"]["template"]["spec"]["containers"][0]["args"][0]
+
+    def test_registration_reruns_on_every_sync(self):
+        annotations = self.job["metadata"]["annotations"]
+        self.assertEqual("PostSync", annotations["argocd.argoproj.io/hook"])
+        self.assertEqual(
+            "BeforeHookCreation",
+            annotations["argocd.argoproj.io/hook-delete-policy"],
+        )
+
+    def test_every_declared_namespace_is_registered_with_its_retention(self):
+        values = load_yaml(
+            ROOT / "charts/apps/temporal-platform-resources/values.yaml"
+        )[0]
+        declared = values["temporalNamespaces"]
+        self.assertTrue(declared)
+        for entry in declared:
+            with self.subTest(namespace=entry["name"]):
+                self.assertIn(
+                    f"{entry['name']}:{entry['retention']}", self.script
+                )
+
+    def test_registering_an_existing_namespace_is_not_a_failure(self):
+        # The hook runs on every sync, so the second run always finds the
+        # namespaces already there.
+        self.assertIn("already exists", self.script)
+
+    def test_upstream_chart_no_longer_owns_registration(self):
+        application = load_yaml(
+            ROOT / "argocd/prod/infrastructure/temporal-platform.yaml"
+        )[0]
+        values = yaml.safe_load(application["spec"]["source"]["helm"]["values"])
+        self.assertFalse(values["server"]["config"]["namespaces"]["create"])
+
+    def test_the_namespace_list_lives_in_one_place(self):
+        application = load_yaml(
+            ROOT / "argocd/prod/infrastructure/temporal-platform.yaml"
+        )[0]
+        values = yaml.safe_load(application["spec"]["source"]["helm"]["values"])
+        self.assertNotIn("namespace", values["server"]["config"]["namespaces"])
