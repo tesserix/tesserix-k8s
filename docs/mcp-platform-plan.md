@@ -300,6 +300,12 @@ readiness for a server it never reached. Istio admits that principal to exactly
 one write path and denies every other registry mutation. The UI badge is the
 probe result — an unprobed server reads `Unprobed`, not `Active`.
 
+The CronJob ships with `probe.enabled=false`. Two things have to exist first:
+a registry image carrying `/app/agentic-probe`, and a Zitadel machine client
+whose credentials land in `prod-agentgateway-mcp-probe-client-id` and
+`prod-agentgateway-mcp-probe-client-secret`. Without either, every scheduled Job
+fails to start.
+
 Outstanding: alert on `Unreachable` for any server with traffic in the last 24h.
 
 ### 6.5 Phase 5 — multi-tenant export (shipped)

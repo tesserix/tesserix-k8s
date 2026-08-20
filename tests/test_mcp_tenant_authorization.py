@@ -108,7 +108,7 @@ class PerServerAuthorizationTests(unittest.TestCase):
 
 class CapabilityProbeTests(unittest.TestCase):
     def setUp(self):
-        self.documents = render_chart(CHART)
+        self.documents = render_chart(CHART, "probe.enabled=true")
         self.cronjob = resource(self.documents, "CronJob", "agentic-probe")
         self.pod = self.cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]
 
@@ -146,8 +146,8 @@ class CapabilityProbeTests(unittest.TestCase):
         self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
         self.assertEqual(["ALL"], container["securityContext"]["capabilities"]["drop"])
 
-    def test_probe_can_be_disabled(self):
-        documents = render_chart(CHART, "probe.enabled=false")
+    def test_probe_ships_disabled_until_its_image_and_client_exist(self):
+        documents = render_chart(CHART)
         names = {
             (document.get("kind"), document.get("metadata", {}).get("name"))
             for document in documents
