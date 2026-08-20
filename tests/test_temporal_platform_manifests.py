@@ -239,6 +239,26 @@ class TemporalPlatformManifestTests(unittest.TestCase):
         }
         self.assertIn("istio-system", ingress_namespaces)
 
+    def test_internal_temporal_components_are_authorized_by_namespace(self):
+        documents = render_resources()
+        policy = resource(
+            documents,
+            "AuthorizationPolicy",
+            "temporal-platform",
+            "temporal-system",
+        )
+
+        internal_rules = [
+            rule
+            for rule in policy["spec"]["rules"]
+            if rule.get("from", [{}])[0]
+            .get("source", {})
+            .get("namespaces")
+            == ["temporal-system"]
+        ]
+        self.assertEqual(1, len(internal_rules))
+        self.assertNotIn("to", internal_rules[0])
+
     def test_alerts_cover_availability_persistence_and_failures(self):
         documents = render_resources()
         rule = resource(
