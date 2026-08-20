@@ -54,6 +54,7 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             "devai-anthropic",
             "devai-openai",
             "devai-vertex",
+            "devai-vertex-api-key",
             "devai-gemini",
             "devai-groq",
             "devai-openrouter",
@@ -66,6 +67,30 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             if document.get("kind") == "AgentgatewayBackend"
         }
         self.assertEqual(expected, actual)
+
+    def test_vertex_api_key_backend_is_gitops_owned_and_secret_backed(self):
+        documents = render_chart(
+            "charts/apps/devai-ai-gateway", "devai-ai-gateway", "agentgateway-system"
+        )
+        backend = resource(documents, "AgentgatewayBackend", "devai-vertex-api-key")
+        provider = backend["spec"]["ai"]["groups"][0]["providers"][0]
+
+        self.assertEqual("vertex", provider["name"])
+        self.assertEqual("aiplatform.googleapis.com", provider["host"])
+        self.assertEqual(
+            {
+                "credentials": [
+                    {
+                        "secretRef": {
+                            "name": "devai-ai-gateway-secrets",
+                            "key": "VERTEX_API_KEY",
+                        },
+                        "location": {"header": {"name": "x-goog-api-key"}},
+                    }
+                ]
+            },
+            provider["policies"]["auth"],
+        )
 
     def test_gateway_routes_are_provider_specific_and_private(self):
         documents = render_chart(
@@ -97,7 +122,7 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             {
                 "devai-anthropic",
                 "devai-openai",
-                "devai-vertex",
+                "devai-vertex-api-key",
                 "devai-gemini",
                 "devai-groq",
                 "devai-openrouter",

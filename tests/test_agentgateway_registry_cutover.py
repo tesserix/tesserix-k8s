@@ -82,6 +82,12 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
 
         self.assertFalse(default_resources & MIGRATED)
         self.assertEqual(MIGRATED, rollback_resources & MIGRATED)
+        self.assertIn(
+            ("AgentgatewayBackend", "devai-vertex-api-key"), default_resources
+        )
+        self.assertIn(
+            ("AgentgatewayBackend", "devai-vertex-api-key"), rollback_resources
+        )
 
     def test_route_sync_pruning_and_handoff_fail_closed(self):
         documents = render_chart("charts/apps/agentgateway-route-sync")
