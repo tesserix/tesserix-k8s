@@ -264,23 +264,55 @@ separate go-ahead. Sequence, once approved:
 4. Delete `sample-mcp` too — its own description says it is a fixture, safe to
    remove once verified.
 
-### 6.3 Phase 3 — per-server authorization
+### 6.3 Phase 3 — per-server authorization (shipped, enable in two steps)
 
-Generate an `AgentgatewayPolicy` per route requiring scope
-`mcp:<tenant>:<server>`. Grant scopes per client in Zitadel at onboarding.
-Verify the deny case first: a HomeChef client must get 403 on `platform-mcp`.
+The export renders an `AgentgatewayPolicy` per route requiring scope
+`mcp:<tenant>:<server>`, read from the same Zitadel role claim the gateway's
+JWT policy authorizes on. It is **off by default** — rendering the policies
+before the roles exist would 403 every current client. Enablement order:
 
-### 6.4 Phase 4 — capability prober
+1. Grant `mcp:<tenant>:<server>` to each machine client in Zitadel.
+2. Set `registry.requireServerScope=true` in `agentgateway-route-sync`.
+3. Verify the deny case first: a HomeChef client gets 403 on `platform-mcp`.
 
-Ship §5. Add `Ready`, `Drifted` and `Unreachable` conditions to the UI, and
-alert on `Unreachable` for any server with traffic in the last 24h.
+Rolling back is step 2 in reverse; the roles can stay granted.
 
-### 6.5 Phase 5 — multi-tenant export
+### 6.3.1 Credential brokering (shipped)
 
-Today route-sync reads `namespace=devai` only, and
-`agentgatewayRegistryNamespace` is a hardcoded constant in
-`internal/api/agentgateway_admin.go`. Make the tenant list configurable, path
-namespaced (`/mcp/<tenant>/<server>`), and onboarding a one-line GitOps change.
+An MCP server declares `spec.credentialRef` — a Secret name, an optional key and
+an optional header/prefix. The export turns it into an `AgentgatewayPolicy`
+carrying `backend.auth.secretRef` on that server's own `AgentgatewayBackend`, so
+the gateway injects the upstream API key and the agent only ever presents its
+own identity token. The registry rejects credential material in a manifest at
+publish time (`/v0/apply`) and again at export, so a literal key cannot reach
+the catalog or the cluster. The Secret itself is GitOps-owned: platform
+credentials via ESO from Secret Manager, tenant credentials via OpenBao.
+
+### 6.4 Phase 4 — capability prober (shipped)
+
+`cmd/agentic-probe` runs as a CronJob in `agentgateway-system`, authenticates
+as an ordinary Zitadel machine client, and dials each server over the same
+gateway path an agent uses — it derives those paths from the export adapter, so
+probe and route cannot drift. It posts raw observations to
+`PUT /v0/mcpservers/<name>/status`; the registry derives `Ready`, `Drifted` and
+`Unreachable` from the declaration, so a compromised prober cannot assert
+readiness for a server it never reached. Istio admits that principal to exactly
+one write path and denies every other registry mutation. The UI badge is the
+probe result — an unprobed server reads `Unprobed`, not `Active`.
+
+Outstanding: alert on `Unreachable` for any server with traffic in the last 24h.
+
+### 6.5 Phase 5 — multi-tenant export (shipped)
+
+`registry.sourceNamespaces` is a list; each namespace is a tenant, and a server
+may also claim one with the `mcp.tesserix.app/tenant` label. Routes are served
+at `/mcp/<tenant>/<server>` and, while `registry.legacyFlatPath` is true, also
+at the pre-tenancy `/mcp/<server>` — dropped automatically where two tenants
+claim the same server name. Onboarding a tenant is one line in values.
+
+`agentgatewayRegistryNamespace` in `internal/api/agentgateway_admin.go` stays
+single-namespace deliberately: it stores the platform's *own* security CRs
+authored by administrators, not tenant content.
 
 ---
 
@@ -296,6 +328,7 @@ namespaced (`/mcp/<tenant>/<server>`), and onboarding a one-line GitOps change.
 | Tool added upstream | Prober detects drift, proposes a minor version, human tags. |
 | Breaking tool change | Prober flags major; publish a new tag; pinned callers stay on the old one until they move. |
 | Credential rotation | Rotate in Zitadel + Secret Manager; ESO refreshes; restart or reload the workload. Registry and gateway are untouched. |
+| Upstream API key for a routed server | `spec.credentialRef` names a Secret; the gateway injects it. A literal key in the manifest is rejected at publish. |
 | Token revocation | Delete the Zitadel client. Existing tokens die at expiry — keep TTL short. |
 | Registry outage | Existing routes keep serving. No new publishes, no route changes, no probes. |
 | Gateway outage | MCP traffic stops. There is deliberately no direct fallback — that would bypass auth, policy, quota and telemetry. |
@@ -315,3 +348,6 @@ Every one of these must be part of the platform test suite, deny cases first:
 6. A `class=platform` server without `remotes[]` is rejected at publish.
 7. Revoked deploy key → 401 at `/v0/apply`.
 8. Deleted registry row → route gone within two sync intervals.
+9. A manifest carrying credential material → rejected at `/v0/apply`.
+10. A server the prober cannot reach → `Unreachable` in the catalog, and the UI
+    never shows it as `Active`.
