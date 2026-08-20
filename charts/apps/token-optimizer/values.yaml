@@ -1,0 +1,34 @@
+replicaCount: 2
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/token-optimizer
+  digest: sha256:58958f8dc92ab4ab70183c203ab92cfac26d0d716482adfc6f7ebbd6a9bad41a
+  pullPolicy: IfNotPresent
+serviceAccount:
+  create: true
+  name: ""
+service:
+  grpcPort: 18080
+  httpPort: 8080
+optimizer:
+  enabledCapabilities: identify_text,decompose,coach
+  softTokenLimit: 1500
+  hardTokenLimit: 8000
+  targetRate: "0.65"
+  minimumSavings: 128
+  keepRecentMessages: 2
+  maxRequestBytes: "16777216"
+  compressionTimeoutSeconds: "0.75"
+  maxConcurrentCompressions: 1
+  otlpEndpoint: otel-gateway.observability.svc.cluster.local:4317
+  otlpInsecure: "true"
+resources:
+  requests:
+    memory: 2Gi
+  limits:
+    memory: 3Gi
+podDisruptionBudget:
+  minAvailable: 1
+networkPolicy:
+  enabled: true
+  gatewayName: kora-ai
+  observabilityNamespace: observability
