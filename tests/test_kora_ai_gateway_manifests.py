@@ -511,6 +511,27 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             ],
         )
 
+        native_gateway_ingress = network_policy["spec"]["ingress"][1]
+        self.assertEqual(
+            {
+                "namespaceSelector": {
+                    "matchLabels": {
+                        "kubernetes.io/metadata.name": "agentgateway-system"
+                    }
+                },
+                "podSelector": {
+                    "matchLabels": {
+                        "gateway.networking.k8s.io/gateway-name": "kora-ai"
+                    }
+                },
+            },
+            native_gateway_ingress["from"][0],
+        )
+        self.assertEqual(
+            [8080, 15008],
+            [entry["port"] for entry in native_gateway_ingress["ports"]],
+        )
+
         authorization = resource(documents, "AuthorizationPolicy", "kora-ai-agents")
         self.assertNotIn("selector", authorization["spec"])
         self.assertEqual(
