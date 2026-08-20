@@ -106,6 +106,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             document
             for document in documents
             if document.get("kind") == "AgentgatewayBackend"
+            and "ai" in document.get("spec", {})
         ]
         for backend in backends:
             vertex = next(
@@ -232,6 +233,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             document
             for document in documents
             if document.get("kind") == "AgentgatewayBackend"
+            and "ai" in document.get("spec", {})
         ]
         provider_names = {
             provider["name"]
@@ -282,6 +284,66 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             ["cluster.local/ns/kora/sa/kora-ai-agents"],
             policy["spec"]["rules"][1]["from"][0]["source"]["principals"],
         )
+
+    def test_gateway_routes_a2a_and_owns_upstream_authentication(self):
+        documents = render_chart(
+            "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
+        )
+        backend = resource(documents, "AgentgatewayBackend", "kora-a2a-agents")
+        route = resource(documents, "HTTPRoute", "kora-a2a")
+        policy = resource(documents, "AgentgatewayPolicy", "kora-a2a-traffic")
+        secret = resource(
+            documents,
+            "ExternalSecret",
+            "kora-ai-gateway-agent-credentials",
+        )
+
+        self.assertEqual(
+            {
+                "host": "kora-ai-agents.kora.svc.cluster.local",
+                "port": 8080,
+            },
+            backend["spec"]["a2a"],
+        )
+        self.assertEqual("/a2a/v1/", route["spec"]["rules"][0]["matches"][0]["path"]["value"])
+        self.assertEqual("kora-ai", route["spec"]["parentRefs"][0]["name"])
+        self.assertEqual(
+            "kora-a2a-agents",
+            route["spec"]["rules"][0]["backendRefs"][0]["name"],
+        )
+
+        traffic = policy["spec"]["traffic"]
+        self.assertEqual("Strict", traffic["apiKeyAuthentication"]["mode"])
+        self.assertEqual({"request": "23s"}, traffic["timeouts"])
+        self.assertEqual(
+            "kora-ai-gateway-client-credentials",
+            traffic["apiKeyAuthentication"]["secretRef"]["name"],
+        )
+        backend_auth = policy["spec"]["backend"]["auth"]
+        self.assertEqual(
+            {"name": "kora-ai-gateway-agent-credentials", "key": "API_KEY"},
+            backend_auth["secretRef"],
+        )
+        self.assertEqual(
+            {"name": "Authorization", "prefix": "Bearer "},
+            backend_auth["location"]["header"],
+        )
+        self.assertEqual(
+            "prod-kora-ai-agents-api-key",
+            secret["spec"]["data"][0]["remoteRef"]["key"],
+        )
+
+        gateway_network = resource(documents, "NetworkPolicy", "kora-ai")
+        agent_egress = next(
+            rule
+            for rule in gateway_network["spec"]["egress"]
+            if rule.get("to", [{}])[0]
+            .get("namespaceSelector", {})
+            .get("matchLabels", {})
+            .get("kubernetes.io/metadata.name")
+            == "kora"
+        )
+        self.assertEqual(8080, agent_egress["ports"][0]["port"])
 
     def test_kora_gets_only_a_client_key_and_narrow_gateway_egress(self):
         documents = render_chart(
@@ -339,6 +401,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
 
         self.assertEqual("true", env["AI_GATEWAY_ENABLED"]["value"])
         self.assertEqual("kora-auto", env["AI_GATEWAY_MODEL"]["value"])
+        self.assertEqual("24s", env["AI_AGENT_TIMEOUT"]["value"])
         self.assertEqual("true", seed_env["AI_GATEWAY_ENABLED"]["value"])
         self.assertEqual("kora-auto", seed_env["AI_GATEWAY_MODEL"]["value"])
 
@@ -419,6 +482,34 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         )
         gateway_egress = network_policy["spec"]["egress"][1]
         self.assertEqual(8080, gateway_egress["ports"][0]["port"])
+
+        gateway_ingress = network_policy["spec"]["ingress"][0]["from"][0]
+        self.assertEqual(
+            "kora",
+            gateway_ingress["namespaceSelector"]["matchLabels"][
+                "kubernetes.io/metadata.name"
+            ],
+        )
+        self.assertEqual(
+            "waypoint",
+            gateway_ingress["podSelector"]["matchLabels"][
+                "gateway.networking.k8s.io/gateway-name"
+            ],
+        )
+
+        authorization = resource(documents, "AuthorizationPolicy", "kora-ai-agents")
+        self.assertNotIn("selector", authorization["spec"])
+        self.assertEqual(
+            [{"group": "", "kind": "Service", "name": "kora-ai-agents"}],
+            authorization["spec"]["targetRefs"],
+        )
+        self.assertEqual(
+            ["cluster.local/ns/agentgateway-system/sa/kora-ai"],
+            authorization["spec"]["rules"][0]["from"][0]["source"]["principals"],
+        )
+        operation = authorization["spec"]["rules"][0]["to"][0]["operation"]
+        self.assertEqual(["POST"], operation["methods"])
+        self.assertEqual(["/a2a/v1/*"], operation["paths"])
 
     def test_token_optimizer_pulls_cpu_image_from_first_party_registry(self):
         documents = render_chart(

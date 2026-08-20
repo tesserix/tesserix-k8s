@@ -15,6 +15,9 @@ operational evidence, not a second ledger.
 ```text
 Kora API
   -> private ClusterIP Agent Gateway
+       -> /a2a/v1/*: authenticated Kora A2A agent backend
+            -> reviewed nutrition-coach or meal-planner
+                 -> this Agent Gateway for kora-auto model traffic
        -> ExtProc token-optimizer
             -> RTK proof: pass through
             -> JSON/MCP/RAG/conversation: Headroom
@@ -55,7 +58,14 @@ compromised dependency, and an operator with excess secret access.
   Kora API pods in the `kora` namespace. Kora egress is limited to the
   `kora-ai` gateway on its application and ambient-mesh ports. Istio
   authorization additionally requires the exact
-  `cluster.local/ns/kora/sa/kora-kora-api` workload identity on port 8080.
+  `cluster.local/ns/kora/sa/kora-api` workload identity on port 8080.
+- Otto's A2A route is hosted on the same private Gateway. Kora authenticates to
+  the frontend with its Gateway client credential. A backend policy replaces
+  that credential with the agent-service credential sourced independently from
+  `prod-kora-ai-agents-api-key`; the Firebase login token is never forwarded.
+- The agent Service admits port 8080 only from
+  `cluster.local/ns/agentgateway-system/sa/kora-ai` and its matching Gateway
+  pod selector. Kora API has no direct agent-Service ingress path.
 - Strict API-key authentication reads a platform key from GCP Secret Manager
   through two namespace-local ExternalSecrets. Kora receives only the client
   key; every provider credential exists only in `agentgateway-system` and
@@ -83,6 +93,7 @@ compromised dependency, and an operator with excess secret access.
 | Primary generation provider is unhealthy | Agent Gateway advances to the next priority group |
 | Embedding provider is unavailable | The embedding call fails; Kora never mixes vector spaces or bypasses the gateway |
 | All providers are unavailable | Kora receives the gateway error; application deadlines bound the call |
+| A2A agent is unavailable, times out, or returns invalid JSON-RPC | Otto fails safely and does not bypass the agent with a direct model call |
 | Client API key is absent or invalid | Gateway rejects before provider routing |
 | Provider secret is absent | That backend is not usable; do not enable Kora cutover |
 | OTLP is unavailable | AI traffic continues; telemetry export degrades |
