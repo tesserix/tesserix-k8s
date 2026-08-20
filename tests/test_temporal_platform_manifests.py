@@ -105,6 +105,14 @@ class TemporalPlatformManifestTests(unittest.TestCase):
             self.assertTrue(security["readOnlyRootFilesystem"])
             self.assertEqual(["ALL"], security["capabilities"]["drop"])
 
+        self.assertEqual(
+            {
+                "type": "RollingUpdate",
+                "rollingUpdate": {"maxUnavailable": 1, "maxSurge": 0},
+            },
+            server["worker"]["deploymentStrategy"],
+        )
+
     def test_grpc_clients_bypass_ambient_dns_srv_lookup(self):
         expected = (
             "passthrough:///"
