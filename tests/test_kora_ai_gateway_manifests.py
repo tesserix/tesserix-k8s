@@ -525,6 +525,31 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         self.assertEqual(["POST"], operation["methods"])
         self.assertEqual(["/a2a/v1/*"], operation["paths"])
 
+    def test_ai_agents_admit_gateway_hbone_to_the_kora_waypoint(self):
+        documents = render_chart("charts/apps/kora-ai-agents", "kora-ai-agents", "kora")
+        policy = resource(
+            documents,
+            "NetworkPolicy",
+            "kora-ai-agents-waypoint-ingress",
+        )
+
+        self.assertEqual(
+            {"gateway.networking.k8s.io/gateway-name": "waypoint"},
+            policy["spec"]["podSelector"]["matchLabels"],
+        )
+        ingress = policy["spec"]["ingress"][0]
+        self.assertEqual(
+            {
+                "namespaceSelector": {
+                    "matchLabels": {
+                        "kubernetes.io/metadata.name": "agentgateway-system"
+                    }
+                }
+            },
+            ingress["from"][0],
+        )
+        self.assertNotIn("ports", ingress)
+
     def test_token_optimizer_pulls_cpu_image_from_first_party_registry(self):
         documents = render_chart(
             "charts/apps/token-optimizer",

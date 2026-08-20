@@ -47,3 +47,22 @@ spec:
           protocol: TCP
         - port: 15008
           protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kora-ai-agents-waypoint-ingress
+  labels:
+    {{- include "kora-ai-agents.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: {{ .Values.networkPolicy.waypointName }}
+  policyTypes: [Ingress]
+  ingress:
+    # Ambient evaluates the gateway-to-waypoint HBONE flow before L7 policy;
+    # mTLS and the service AuthorizationPolicy restrict identity and paths.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.gatewayNamespace }}
