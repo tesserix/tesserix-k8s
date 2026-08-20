@@ -382,3 +382,28 @@ class TemporalNamespaceRegistrationTests(unittest.TestCase):
         )[0]
         values = yaml.safe_load(application["spec"]["source"]["helm"]["values"])
         self.assertNotIn("namespace", values["server"]["config"]["namespaces"])
+
+    def test_registration_runs_as_the_authorized_identity(self):
+        # The frontend's AuthorizationPolicy admits the temporal-platform
+        # principal only; the default service account is denied at ztunnel.
+        self.assertEqual(
+            "temporal-platform",
+            self.job["spec"]["template"]["spec"]["serviceAccountName"],
+        )
+
+    def test_the_cli_has_a_writable_home(self):
+        # The temporal CLI writes its config on startup, so a read-only root
+        # filesystem makes it exit before it ever dials the frontend.
+        container = self.job["spec"]["template"]["spec"]["containers"][0]
+        home = next(
+            env["value"] for env in container["env"] if env["name"] == "HOME"
+        )
+        mount = next(
+            m for m in container["volumeMounts"] if m["mountPath"] == home
+        )
+        volume = next(
+            v
+            for v in self.job["spec"]["template"]["spec"]["volumes"]
+            if v["name"] == mount["name"]
+        )
+        self.assertIn("emptyDir", volume)

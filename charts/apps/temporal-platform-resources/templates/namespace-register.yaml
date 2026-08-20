@@ -18,6 +18,7 @@ spec:
         app.kubernetes.io/part-of: temporal-platform
     spec:
       restartPolicy: Never
+      serviceAccountName: temporal-platform
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -27,13 +28,16 @@ spec:
       containers:
         - name: register
           image: {{ .Values.adminTools.image }}
+          env:
+            - name: HOME
+              value: /home/temporal
           command: ["sh", "-c"]
           args:
             - |
               set -eu
               export TEMPORAL_ADDRESS="{{ .Values.adminTools.frontendAddress }}"
 
-              until temporal operator cluster health >/dev/null 2>&1; do
+              until temporal operator cluster health; do
                 echo "waiting for ${TEMPORAL_ADDRESS}"
                 sleep 5
               done
@@ -55,8 +59,14 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
+          volumeMounts:
+            - name: home
+              mountPath: /home/temporal
           resources:
             requests:
               memory: 128Mi
             limits:
               memory: 512Mi
+      volumes:
+        - name: home
+          emptyDir: {}
