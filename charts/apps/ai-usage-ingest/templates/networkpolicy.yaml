@@ -1,0 +1,75 @@
+{{/*
+Defence in depth beside the ReferenceGrant: that one governs which policy may
+NAME this Service, this one governs which pods may REACH it.
+
+`default-deny-ingress` is owned platform-wide by the istio-config chart and is
+deliberately not declared here — see charts/apps/console/templates/network-policy.yaml.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ai-usage-ingest-otlp
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "ai-usage-ingest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- range .Values.gateways }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .namespace }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.service.port }}
+    {{- end }}
+---
+{{/*
+Scoped to this chart's pods, because `allow-company-egress` in this namespace
+uses `podSelector: {}` and so already governs them — and it does not name the
+NATS namespace. Policies are additive, so this adds the one hop it is missing
+rather than widening the namespace-wide rule for every pod in `tesserix`.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ai-usage-ingest-egress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "ai-usage-ingest.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.nats.namespace }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.nats.port }}
+    # tesserix-postgres, in this namespace.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.namespace }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.database.port }}

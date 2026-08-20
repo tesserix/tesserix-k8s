@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "ai-usage-ingest.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ .Values.name }}
+  ports:
+    - name: otlp
+      port: {{ .Values.service.port }}
+      targetPort: otlp
+      protocol: TCP

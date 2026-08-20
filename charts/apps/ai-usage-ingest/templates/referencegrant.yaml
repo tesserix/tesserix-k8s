@@ -1,0 +1,26 @@
+{{/*
+The gateways export from their own namespaces, so each needs a ReferenceGrant
+before its AgentgatewayPolicy may name this Service as its OTLP backend.
+
+Scoped `to` this one Service by name: a grant for the whole namespace would let
+any future policy in the gateway namespace address anything here.
+*/}}
+{{- range .Values.gateways }}
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-{{ .namespace }}-ai-usage-otlp
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "ai-usage-ingest.labels" $ | nindent 4 }}
+spec:
+  from:
+    - group: agentgateway.dev
+      kind: AgentgatewayPolicy
+      namespace: {{ .namespace }}
+  to:
+    - group: ""
+      kind: Service
+      name: {{ $.Values.name }}
+{{- end }}

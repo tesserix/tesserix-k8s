@@ -1,0 +1,54 @@
+namespace: tesserix
+name: ai-usage-ingest
+
+image:
+  # Same image as the platform API — the ingest is a second binary in it, with
+  # the entrypoint overridden here. One image so the two cannot drift apart in
+  # the ledger's shape.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/tesserix-platform-api
+  tag: "latest"
+  pullPolicy: Always
+  command: ["/app/ai-usage-ingest"]
+imagePullSecrets:
+  - name: ghcr-secret
+
+# The OTLP port. 4318 is the OTLP/HTTP convention; the gateway exports here.
+service:
+  type: ClusterIP
+  port: 4318
+
+# Two replicas. The receiver is stateless and the writer is a durable pull
+# consumer, so a second replica shares the same consumer rather than doubling
+# the writes — and the export path survives a node drain.
+replicas: 2
+
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 384Mi
+
+pdb:
+  enabled: true
+  maxUnavailable: 1
+
+# tesserix-postgres, the same database and the same credentials the console and
+# the platform API read. The ledger is one table set with one owner.
+database:
+  host: tesserix-postgres-rw.tesserix.svc.cluster.local
+  port: 5432
+  name: tesserix_admin
+  sslmode: require
+  secretName: tesserix-postgres-tesserix-admin
+
+nats:
+  url: nats://nats.nats.svc.cluster.local:4222
+  # Named separately for the egress NetworkPolicy, which cannot parse a URL.
+  namespace: nats
+  port: 4222
+
+# The gateways allowed to export here. Each entry becomes a ReferenceGrant
+# permitting that namespace's AgentgatewayPolicy to name this Service, and a
+# NetworkPolicy ingress rule permitting the traffic itself.
+gateways:
+  - namespace: agentgateway-system
