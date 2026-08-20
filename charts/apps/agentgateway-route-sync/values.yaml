@@ -86,8 +86,23 @@ registry:
   authSecret:
     name: agentgateway-route-sync-registry-key
     key: API_KEY
-  # Registry namespace to pull MCP servers from (where authored tools land).
-  sourceNamespace: devai
+  # Registry namespaces to pull MCP servers from. Each namespace is a tenant:
+  # its servers are exported at /mcp/<tenant>/<server> and require the scope
+  # mcp:<tenant>:<server>. The first entry owns servers that declare no tenant.
+  # Add a namespace here when a tenant publishes its own MCP servers; a server
+  # may also claim a tenant with the mcp.tesserix.app/tenant label instead.
+  sourceNamespaces:
+    - devai
+  # Also serve the pre-tenancy /mcp/<server> path so already-configured agents
+  # keep working. Retire this only once every client uses the tenant path.
+  legacyFlatPath: true
+  # Render an AgentgatewayPolicy per route demanding mcp:<tenant>:<server>.
+  # Two-step enablement: grant the roles in Zitadel FIRST, then flip this — the
+  # gateway denies any caller that has not been granted its server's scope.
+  requireServerScope: false
+  # The JWT claim the per-server scope is read from. Must match the claim the
+  # gateway's JWT policy authorizes on.
+  scopeClaim: "urn:zitadel:iam:org:project:386889024519799084:roles"
   prune: true
   # Never prune if a valid, digest-verified export drops below the permanent
   # 24-resource platform baseline imported during the ownership handoff.
@@ -104,6 +119,38 @@ migrationImport:
 ownershipHandoff:
   enabled: true
   expectedCount: 24
+
+# Capability prober: observes what each routed MCP server actually serves and
+# records it on the registry artifact's status. Reachability in the catalog is
+# what the probe measured, never what a row asserts.
+probe:
+  # Enable once the registry image carries /app/agentic-probe and the Zitadel
+  # machine client behind prod-agentgateway-mcp-probe-client-id exists; without
+  # both, every scheduled Job fails to start.
+  enabled: false
+  name: agentic-probe
+  gatewayUrl: http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080
+  timeout: 30s
+  image:
+    repository: ghcr.io/tesserix/agentic-registry
+    tag: latest
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 120
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  activeDeadlineSeconds: 600
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  # The prober authenticates to the gateway as a machine client, exactly like
+  # any other agent — it holds no privileged bypass.
+  oauth:
+    tokenUrl: https://auth.tesserix.app/oauth/v2/token
+    scope: "openid urn:zitadel:iam:org:project:id:386889024519799084:aud urn:zitadel:iam:org:projects:roles"
+  externalSecret:
+    name: agentic-probe-oauth
+    clientId: prod-agentgateway-mcp-probe-client-id
+    clientSecret: prod-agentgateway-mcp-probe-client-secret
 
 externalSecret:
   secretStore: gcp-secret-store
