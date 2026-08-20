@@ -468,6 +468,12 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
 
         pod = deployment["spec"]["template"]["spec"]
         container = pod["containers"][0]
+        self.assertEqual(
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/"
+            "tesserix/ai-agents@"
+            "sha256:e1cbce842b435ec9260628d532f2f3b23cfe32e5ad7399f1ec00476275beda4f",
+            container["image"],
+        )
         self.assertTrue(pod["securityContext"]["runAsNonRoot"])
         self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
         self.assertEqual({"memory": "256Mi"}, container["resources"]["requests"])
