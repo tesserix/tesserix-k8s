@@ -1,3 +1,30 @@
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: devai-vertex-api-key
+  labels:
+    {{- include "devai-ai-gateway.labels" . | nindent 4 }}
+spec:
+  ai:
+    groups:
+      - providers:
+          - name: vertex
+            host: aiplatform.googleapis.com
+            port: 443
+            vertexai:
+              projectId: {{ .Values.providers.vertex.projectId }}
+              region: {{ .Values.providers.vertex.region }}
+            policies:
+              auth:
+                credentials:
+                  - secretRef:
+                      name: devai-ai-gateway-secrets
+                      key: VERTEX_API_KEY
+                    location:
+                      header:
+                        name: x-goog-api-key
+              tls: {}
+---
 {{- if not .Values.registryOwnership.enabled }}
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
