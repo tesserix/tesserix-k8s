@@ -5,8 +5,38 @@ Kubernetes/ArgoCD conventions for this repo.
 Rules that apply more broadly live one level up and are **not** repeated here:
 
 - **Git identity, commit messages, no-AI-references** → `~/.claude/CLAUDE.md`
-- **Build/deploy boundary, CI public→private cycle, SQL schema location,
-  `@tesserix/web` token, GCP constants, repo map** → workspace `CLAUDE.md`
+- **Build/deploy boundary, SQL schema location, `@tesserix/web` token, GCP
+  constants, repo map** → workspace `CLAUDE.md`. Its public→private CI cycle is
+  the one rule that does **not** apply here — see below.
+
+## This repo stays PUBLIC. Always.
+
+`tesserix/tesserix-k8s` is permanently public and must never be flipped back to
+private — not even for the "public → green → private" cycle the workspace
+`CLAUDE.md` describes for other repos. That cycle does not apply here.
+
+```bash
+gh repo view tesserix/tesserix-k8s --json visibility -q .visibility   # must be PUBLIC
+```
+
+**Why:** private-repo Actions minutes cannot carry this repo's CI, and the org's
+billing has already failed once because of it. On 2026-08-20 the repo was found
+private and every job on PR #541 refused to start with *"the job was not started
+because recent account payments have failed or your spending limit needs to be
+increased"* — chart lint, ArgoCD validation and the security scans all reported
+FAILURE without running a single step. A public repo has unlimited minutes, so
+this is also the cheaper state.
+
+If you find it private, make it public and leave it that way:
+
+```bash
+gh repo edit tesserix/tesserix-k8s --visibility public --accept-visibility-change-consequences
+```
+
+`main` is protected by the `main-protection` ruleset, so public does not mean
+writable by strangers.
+
+---
 
 ## Cluster Access
 

@@ -123,6 +123,16 @@ class AIUsageIngestManifestTests(unittest.TestCase):
             env["TESSERIX_DB_PASSWORD"]["valueFrom"]["secretKeyRef"]["name"],
         )
 
+    def test_the_ingest_runs_as_a_numeric_non_root_uid(self):
+        # The platform-api image is distroless: its USER is the *name* `nonroot`,
+        # which the kubelet cannot verify against runAsNonRoot, so a pod without
+        # an explicit uid never starts (CreateContainerConfigError).
+        pod = resource(self.ingest, "Deployment", "ai-usage-ingest")[
+            "spec"]["template"]["spec"]
+        self.assertEqual(65532, pod["securityContext"]["runAsUser"])
+        self.assertEqual(65532, pod["securityContext"]["runAsGroup"])
+        self.assertEqual(65532, pod["securityContext"]["fsGroup"])
+
     def test_the_ingest_has_no_readiness_gate_on_the_stream(self):
         # A NATS blip must not take the export endpoint out of the Service, or
         # the gateway loses the spend that blip caused.
