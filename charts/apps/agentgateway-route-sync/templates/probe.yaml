@@ -1,0 +1,108 @@
+{{- if .Values.probe.enabled }}
+# Capability prober — dials every routed MCP server through the public gateway
+# path and records what it actually served on the registry artifact's status.
+# It runs as an ordinary machine client: same Zitadel token, same route, same
+# authorization as any agent, so "reachable" means reachable for callers too.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.probe.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: {{ .Values.probe.externalSecret.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  refreshInterval: {{ .Values.externalSecret.refreshInterval }}
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: {{ .Values.externalSecret.secretStore }}
+  target:
+    name: {{ .Values.probe.externalSecret.name }}
+    creationPolicy: Owner
+  data:
+    - secretKey: CLIENT_ID
+      remoteRef:
+        key: {{ .Values.probe.externalSecret.clientId }}
+    - secretKey: CLIENT_SECRET
+      remoteRef:
+        key: {{ .Values.probe.externalSecret.clientSecret }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.probe.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.probe.schedule | quote }}
+  concurrencyPolicy: {{ .Values.probe.concurrencyPolicy }}
+  startingDeadlineSeconds: {{ .Values.probe.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ .Values.probe.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.probe.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: {{ .Values.probe.activeDeadlineSeconds }}
+      backoffLimit: {{ .Values.probe.backoffLimit }}
+      ttlSecondsAfterFinished: {{ .Values.probe.ttlSecondsAfterFinished }}
+      template:
+        metadata:
+          labels:
+            {{- include "agentgateway-route-sync.labels" . | nindent 12 }}
+        spec:
+          serviceAccountName: {{ .Values.probe.name }}
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: probe
+              image: "{{ .Values.probe.image.repository }}:{{ .Values.probe.image.tag }}"
+              imagePullPolicy: {{ .Values.images.pullPolicy }}
+              command: ["/app/agentic-probe"]
+              env:
+                - name: REGISTRY_ENDPOINT
+                  value: {{ .Values.registry.endpoint | quote }}
+                - name: GATEWAY_URL
+                  value: {{ .Values.probe.gatewayUrl | quote }}
+                - name: TENANT_NAMESPACES
+                  value: {{ join "," .Values.registry.sourceNamespaces | quote }}
+                - name: PROBE_TIMEOUT
+                  value: {{ .Values.probe.timeout | quote }}
+                - name: MCP_TOKEN_URL
+                  value: {{ .Values.probe.oauth.tokenUrl | quote }}
+                - name: MCP_SCOPE
+                  value: {{ .Values.probe.oauth.scope | quote }}
+                - name: REGISTRY_DEPLOY_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.registry.authSecret.name }}
+                      key: {{ .Values.registry.authSecret.key }}
+                - name: MCP_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.probe.externalSecret.name }}
+                      key: CLIENT_ID
+                - name: MCP_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.probe.externalSecret.name }}
+                      key: CLIENT_SECRET
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+{{- end }}

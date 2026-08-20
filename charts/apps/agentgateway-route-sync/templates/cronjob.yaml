@@ -45,9 +45,12 @@ spec:
                 - |
                   set -eu
                   URL="{{ .Values.registry.endpoint }}/v0/export/agentgateway"
-                  URL="${URL}?namespace={{ .Values.registry.sourceNamespace }}"
+                  URL="${URL}?namespace={{ join "," .Values.registry.sourceNamespaces }}"
                   URL="${URL}&targetNamespace={{ .Values.namespace }}"
                   URL="${URL}&gateway={{ .Values.gateway.name }}"
+                  URL="${URL}&legacyFlatPath={{ .Values.registry.legacyFlatPath }}"
+                  URL="${URL}&requireServerScope={{ .Values.registry.requireServerScope }}"
+                  URL="${URL}&scopeClaim={{ urlquery .Values.registry.scopeClaim }}"
                   echo "GET ${URL}"
                   curl -sS --fail-with-body --max-time 30 \
                     --header "Authorization: Bearer ${REGISTRY_DEPLOY_KEY}" \

@@ -146,6 +146,21 @@ spec:
         - operation:
             methods: ["POST"]
             paths: ["/v0/agentgateway/import"]
+    # The capability prober reads the catalog to learn which servers exist and
+    # writes back only what it observed. Status is derived server-side from the
+    # raw observation, so a compromised prober cannot assert readiness for a
+    # server it never reached.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/agentgateway-system/sa/agentic-probe"
+      to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/v0/mcpservers", "/v0/mcpservers/*"]
+        - operation:
+            methods: ["PUT"]
+            paths: ["/v0/mcpservers/*/status"]
     # Catalog READS — any agentic-stack consumer may GET /v0/* and /v0.1/*
     # (the v0.1 MCP-interop read surface mirrors v0).
     - from:
@@ -239,6 +254,14 @@ spec:
     - from:
         - source:
             namespaces: ["kagent-system"]
+      to:
+        - operation:
+            ports: ["8080"]
+    # The capability prober dials the same mesh data-plane port the platform's
+    # own callers use, so it measures the path agents actually take.
+    - from:
+        - source:
+            principals: ["cluster.local/ns/agentgateway-system/sa/agentic-probe"]
       to:
         - operation:
             ports: ["8080"]
@@ -377,6 +400,7 @@ spec:
               - "cluster.local/ns/agentregistry-system/sa/agentregistry-ui-oauth2-proxy"
               - "cluster.local/ns/agentgateway-system/sa/agentgateway-admin-ui-oauth2-proxy"
               - "cluster.local/ns/agentgateway-system/sa/agentgateway-route-sync"
+              - "cluster.local/ns/agentgateway-system/sa/agentic-probe"
               - "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
               - "cluster.local/ns/istio-ingress/sa/custom-ingressgateway"
       to:
@@ -420,6 +444,18 @@ spec:
         - operation:
             methods: ["POST"]
             notPaths: ["/v0/apply"]
+    # The prober's write surface is one path. Everything else it could reach
+    # through the baseline exception above is closed here.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/agentgateway-system/sa/agentic-probe"
+      to:
+        - operation:
+            methods: ["PUT"]
+            notPaths: ["/v0/mcpservers/*/status"]
+        - operation:
+            methods: ["POST", "PATCH", "DELETE"]
     # Route-sync may POST only the one-time/import reconciliation endpoint.
     - from:
         - source:
