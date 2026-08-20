@@ -164,6 +164,23 @@ env:
   # the callback surfaces in its error log rather than as a blank page.
   ZITADEL_REDIRECT_URI: "https://console.tesserix.app/auth/callback"
 
+  # Ends the ZITADEL session at sign-out, not just ours.
+  #
+  # `app/auth/logout/route.ts` builds an `end_session` redirect only when this
+  # is set; unset, it clears `tx_session` and redirects to `/auth/login`, which
+  # immediately starts a fresh authorization request against an IdP session
+  # that is STILL ALIVE. Sign-out then appears to work while leaving the
+  # operator authenticated at Zitadel — and on a shared machine the next person
+  # to click sign-in lands as the previous operator, holding their
+  # capabilities. Observed on the live console: a sign-out followed by a
+  # `session minted` with no interaction in between.
+  #
+  # Must match a `postLogoutRedirectUris` entry on the application VERBATIM,
+  # trailing slash included — Zitadel validates it and refuses anything else.
+  # Confirmed against the live instance: this value answers 302 to itself,
+  # while an unregistered URI answers 400 `post_logout_redirect_uri invalid`.
+  ZITADEL_POST_LOGOUT_REDIRECT_URI: "https://console.tesserix.app/"
+
   # Organization check — DELIBERATELY UNSET.
   #
   # The callback compares the token's `urn:zitadel:iam:org:id` claim against
