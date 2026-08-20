@@ -65,17 +65,11 @@ spec:
         - port: {{ .Values.optimizer.grpcPort }}
           protocol: TCP
     - to:
+        # Ambient rewrites mesh egress to HBONE before NetworkPolicy evaluation;
+        # mTLS and waypoint L7 authorization still restrict the A2A request.
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Values.networkPolicy.koraNamespace }}
-          podSelector:
-            matchLabels:
-              gateway.networking.k8s.io/gateway-name: {{ .Values.networkPolicy.waypointName }}
-      ports:
-        - port: {{ .Values.a2a.port }}
-          protocol: TCP
-        - port: 15008
-          protocol: TCP
     - to:
         - ipBlock:
             cidr: 169.254.169.254/32
