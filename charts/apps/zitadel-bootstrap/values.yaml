@@ -60,6 +60,49 @@ desired:
     allowDomainDiscovery: true
     passwordlessType: PASSWORDLESS_TYPE_ALLOWED
 
+    # HOW LONG A COMPLETED CHECK STAYS VALID. Declared because every one of
+    # these was 0s on this instance, and 0s means "expired the instant it is
+    # made".
+    #
+    # That single fact is why the console could not be logged into. The V1
+    # login checks the password, writes user.human.password.check.succeeded,
+    # then re-evaluates what the auth request still needs — and with
+    # passwordCheckLifetime at 0s the check it just completed is already
+    # expired, so the next required step is the password again. The browser
+    # goes back to the password screen with no error, forever. It is not a
+    # failure path: it is the policy working exactly as configured.
+    #
+    # helivanta was unaffected and that is what made this so hard to see. Its
+    # application is on Login V2, which authenticates through the session API
+    # and does not consult these V1 lifetimes at all. Same instance, same org,
+    # same user, same password — one works and one loops.
+    #
+    # Why they were 0s: drift_between's own docstring explains it. Zitadel
+    # serialises protobuf defaults by omission, so a zero duration comes back
+    # ABSENT from the live policy; strip_readonly(live) therefore carries
+    # nothing for it, and the PUT that follows re-asserts zero. Undeclared, it
+    # can never climb out of that state on its own. Declaring them is what
+    # breaks the cycle.
+    #
+    # The values are Zitadel's own defaults, restated rather than inherited so
+    # that this file is the answer to "how long is a check good for".
+    #
+    # Unquoted deliberately, and it is not a style preference. These are plain
+    # YAML scalars — 864000s is not a number, so it parses as the string the
+    # API wants either way — but wrapping the first one in quotes makes the
+    # line match GitGuardian's generic-password heuristic, which reads a
+    # key ending in "password" assigned a quoted string as a hardcoded
+    # credential and fails the pull request.
+    #
+    # Leaving them bare keeps secret scanning strict on this chart rather than
+    # teaching it to skip a file that also configures an admin bootstrap. Do
+    # not add quotes back.
+    passwordCheckLifetime: 864000s         # 240h
+    externalLoginCheckLifetime: 864000s    # 240h
+    mfaInitSkipLifetime: 2592000s          # 720h
+    secondFactorCheckLifetime: 64800s      # 18h
+    multiFactorCheckLifetime: 43200s       # 12h
+
   # Granted IAM_OWNER if they exist. A federated admin only exists after their
   # first sign-in, so a missing user is skipped, not an error.
   admins:
