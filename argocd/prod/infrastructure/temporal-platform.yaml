@@ -1,37 +1,10 @@
-# Temporal — latest official SERVER chart (server 1.31.0), for DevAI going forward.
-# Datastores are EXTERNAL (this chart bundles none): default store = PostgreSQL
-# on a dedicated CNPG cluster; visibility store = Elasticsearch.
-#
-# ── STAGED / NOT LIVE ────────────────────────────────────────────────────────
-# Intentionally NOT referenced from argocd/prod/infrastructure/kustomization.yaml,
-# so ArgoCD does not manage it yet and nothing deploys to tesseract-prod-in-gke.
-# Prod twin of the local-root `60-temporal` addon. Distinct from the scrapper
-# single-node Temporal (argocd/prod/apps/ai-apps/temporal.yaml), left untouched.
-#
-# ── GO-LIVE PREREQUISITES (do all, then add to kustomization) ─────────────────
-#  1. Project `infrastructure` (argocd/prod/projects/infrastructure.yaml):
-#       - add sourceRepo:  https://github.com/temporalio/helm-charts
-#       - add destination namespace: temporal-system
-#  2. Default store — dedicated CNPG cluster `temporal-postgres` in
-#     temporal-system (follow charts/apps/*-postgres + cnpg-migration-guide.md),
-#     database `temporal`, role `temporal`. ArgoCD app under
-#     argocd/prod/apps/... Endpoint assumed below: temporal-postgres-rw:5432.
-#  3. Visibility store — Elasticsearch in temporal-system (elastic helm chart,
-#     see the decommissioned argocd/prod/infrastructure/elasticsearch.yaml for
-#     the resource shape). Endpoint assumed below.
-#  4. Secrets in GCP Secret Manager (project tesseracthub-480811) + ExternalSecrets
-#     under external-secrets/prod/temporal-system/: `temporal-db-credentials`
-#     (key password) and `temporal-es-credentials` (key password).
-#  5. Public Web UI: manifests/agentic-istio/temporal-virtualservice.yaml
-#     (temporal.tesserix.app -> devai-auth-bff) + DEVAI_BFF_TEMPORAL_* env in
-#     charts/apps/devai-auth-bff/values.yaml + the devai auth-bff Go change.
-#  6. Register the `devai` Temporal namespace (admintools `tctl namespace register`).
-#  7. Add `- temporal-platform.yaml` to argocd/prod/infrastructure/kustomization.yaml.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: temporal-platform
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
   labels:
@@ -40,67 +13,229 @@ metadata:
 spec:
   project: infrastructure
   source:
-    # Official server chart (subdir). Pinned commit (reproducible) — chart 1.2.0 / server 1.31.0.
-    # https://github.com/temporalio/helm-charts/tree/main/charts/temporal
     repoURL: https://github.com/temporalio/helm-charts
-    targetRevision: 1ad0a8045e1032588234f41d631e5a78370ba014
+    targetRevision: 9f4d328c31c77c323d272d0c5f615cf02bd46dab
     path: charts/temporal
     helm:
       releaseName: temporal
-      # MEMORY-ONLY everywhere (no cpu requests/limits — platform policy).
       values: |
+        serviceAccount:
+          create: false
+          name: temporal-platform
+
         server:
-          replicaCount: 2
+          replicaCount: 3
+          image:
+            repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/temporal-server
+            tag: "1.31.2"
+            pullPolicy: IfNotPresent
           resources:
-            requests: { memory: 512Mi }
-            limits: { memory: 2Gi }
+            requests:
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          terminationGracePeriodSeconds: 90
+          additionalVolumes:
+            - name: tmp
+              emptyDir: {}
+          additionalVolumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          metrics:
+            annotations:
+              enabled: true
+            serviceMonitor:
+              enabled: true
+              interval: 30s
+              additionalLabels:
+                release: kube-prometheus-stack
           config:
+            numHistoryShards: 512
             persistence:
               defaultStore: default
               visibilityStore: visibility
-              numHistoryShards: 512
               datastores:
                 default:
                   sql:
                     pluginName: postgres12
                     driverName: postgres12
-                    databaseName: temporal
-                    connectAddr: "temporal-postgres-rw.temporal-system.svc.cluster.local:5432"
+                    databaseName: temporal_platform
+                    connectAddr: infra-postgres-rw.infra.svc.cluster.local:5432
                     connectProtocol: tcp
                     user: temporal
-                    existingSecret: temporal-db-credentials   # go-live: ExternalSecret from GCP SM
+                    existingSecret: temporal-db-credentials
                     secretKey: password
                     createDatabase: false
                     manageSchema: true
                     maxConns: 30
-                    # TODO go-live: CNPG enforces TLS — add sql.tls with the cluster CA.
+                    maxIdleConns: 5
+                    tls:
+                      enabled: true
+                      enableHostVerification: false
                 visibility:
-                  elasticsearch:
-                    version: v7
-                    url:
-                      scheme: https
-                      host: "temporal-es-http.temporal-system.svc.cluster.local:9200"
-                    username: elastic
-                    existingSecret: temporal-es-credentials
+                  sql:
+                    pluginName: postgres12
+                    driverName: postgres12
+                    databaseName: temporal_platform_visibility
+                    connectAddr: infra-postgres-rw.infra.svc.cluster.local:5432
+                    connectProtocol: tcp
+                    user: temporal
+                    existingSecret: temporal-db-credentials
                     secretKey: password
-                    indices:
-                      visibility: temporal_visibility_v1
+                    createDatabase: false
+                    manageSchema: true
+                    maxConns: 15
+                    maxIdleConns: 3
+                    tls:
+                      enabled: true
+                      enableHostVerification: false
+            namespaces:
+              create: true
+              namespace:
+                - name: devai
+                  retention: 7d
+                - name: mark8ly
+                  retention: 7d
+                - name: homechef
+                  retention: 7d
+                - name: dwellm8
+                  retention: 30d
+                - name: postiz
+                  retention: 7d
+                - name: kora
+                  retention: 7d
+                - name: agentic-registry
+                  retention: 7d
+          frontend:
+            replicaCount: 3
+            service:
+              annotations:
+                istio.io/use-waypoint: none
+              type: ClusterIP
+              port: 7233
+              appProtocol: grpc
+            containerSecurityContext: &serverSecurityContext
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              capabilities:
+                drop: ["ALL"]
+            podDisruptionBudget: &serverPdb
+              minAvailable: 2
+            topologySpreadConstraints: &serverTopology
+              - maxSkew: 1
+                topologyKey: topology.kubernetes.io/zone
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: temporal
+                    app.kubernetes.io/instance: temporal
+                    app.kubernetes.io/component: frontend
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: temporal
+                    app.kubernetes.io/instance: temporal
+                    app.kubernetes.io/component: frontend
+          history:
+            replicaCount: 3
+            containerSecurityContext: *serverSecurityContext
+            podDisruptionBudget: *serverPdb
+            topologySpreadConstraints:
+              - maxSkew: 1
+                topologyKey: topology.kubernetes.io/zone
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: temporal
+                    app.kubernetes.io/instance: temporal
+                    app.kubernetes.io/component: history
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: temporal
+                    app.kubernetes.io/instance: temporal
+                    app.kubernetes.io/component: history
+          matching:
+            replicaCount: 3
+            containerSecurityContext: *serverSecurityContext
+            podDisruptionBudget: *serverPdb
+            topologySpreadConstraints:
+              - maxSkew: 1
+                topologyKey: topology.kubernetes.io/zone
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: temporal
+                    app.kubernetes.io/instance: temporal
+                    app.kubernetes.io/component: matching
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: temporal
+                    app.kubernetes.io/instance: temporal
+                    app.kubernetes.io/component: matching
+          worker:
+            replicaCount: 3
+            containerSecurityContext: *serverSecurityContext
+            podDisruptionBudget: *serverPdb
+            topologySpreadConstraints:
+              - maxSkew: 1
+                topologyKey: topology.kubernetes.io/zone
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: temporal
+                    app.kubernetes.io/instance: temporal
+                    app.kubernetes.io/component: worker
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: temporal
+                    app.kubernetes.io/instance: temporal
+                    app.kubernetes.io/component: worker
+
+        admintools:
+          enabled: false
+          image:
+            repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/temporal-admin-tools
+            tag: "1.31.2"
+            pullPolicy: IfNotPresent
+
         web:
-          enabled: true                  # exposed via devai-auth-bff at go-live
-          resources:
-            requests: { memory: 128Mi }
-            limits: { memory: 512Mi }
+          enabled: false
+
         schema:
-          useHelmHooks: true             # Argo maps helm hooks to sync hooks
+          useHelmHooks: true
+          backoffLimit: 15
+          activeDeadlineSeconds: 900
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+
+        shims:
+          dockerize: false
+          elasticsearchTool: false
   destination:
     server: https://kubernetes.default.svc
     namespace: temporal-system
   syncPolicy:
     automated:
-      # prune intentionally OMITTED (it defaults to false) — cautious first rollout.
-      # Declaring `prune: false` explicitly makes the app permanently
-      # OutOfSync: false is the zero value, so the API server drops the
-      # key and the app-of-apps diffs git (present) vs live (absent).
       selfHeal: true
     syncOptions:
       - CreateNamespace=true

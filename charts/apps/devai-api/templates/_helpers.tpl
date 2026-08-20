@@ -458,9 +458,30 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.temporal.taskQueue | default "devai" | quote }}
 - name: DEVAI_TEMPORAL_TLS_ENABLED
   value: {{ .Values.temporal.tlsEnabled | default false | quote }}
+- name: DEVAI_TEMPORAL_FAIL_CLOSED
+  value: {{ .Values.temporal.failClosed | default false | quote }}
+- name: DEVAI_TEMPORAL_PAYLOAD_ENCRYPTION_REQUIRED
+  value: {{ .Values.temporal.payloadEncryptionRequired | default false | quote }}
+{{- with .Values.temporal.payloadEncryptionSecret }}
+- name: DEVAI_TEMPORAL_PAYLOAD_ENCRYPTION_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .name | quote }}
+      key: {{ .key | quote }}
+{{- end }}
 - name: DEVAI_TEMPORAL_MAX_CONCURRENT_ACTIVITIES
   value: {{ .Values.temporal.maxConcurrentActivities | default 50 | quote }}
 - name: DEVAI_TEMPORAL_MAX_STAGE_ATTEMPTS
   value: {{ .Values.temporal.maxStageAttempts | default 3 | quote }}
+- name: DEVAI_TEMPORAL_WORKER_DEPENDENCIES_REQUIRED
+  value: {{ .Values.temporal.workerDependenciesRequired | default false | quote }}
+- name: DEVAI_TEMPORAL_WORKER_VERSIONING_ENABLED
+  value: {{ .Values.temporal.workerVersioningEnabled | default false | quote }}
+- name: DEVAI_TEMPORAL_WORKER_DEPLOYMENT_NAME
+  value: {{ .Values.temporal.workerDeploymentName | default "devai" | quote }}
+- name: DEVAI_TEMPORAL_WORKER_BUILD_ID
+  value: {{ .Values.temporal.workerBuildId | default .Values.image.tag | quote }}
+- name: DEVAI_TEMPORAL_WORKER_GRACEFUL_SHUTDOWN_SECONDS
+  value: {{ .Values.temporal.workerGracefulShutdownSeconds | default 60 | quote }}
 {{- end }}
 {{- end }}

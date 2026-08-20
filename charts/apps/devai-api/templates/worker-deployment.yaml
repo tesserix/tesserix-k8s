@@ -21,6 +21,11 @@ metadata:
     app.kubernetes.io/component: temporal-worker
 spec:
   replicas: {{ .Values.worker.replicaCount | default 1 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "devai-api.name" . }}-worker
@@ -42,6 +47,22 @@ spec:
       # See devai-api deployment: avoid K8s service-link env (DEVAI_MCP_HUB_PORT
       # =tcp://...) crashing the typed pydantic Settings on startup.
       enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds | default 90 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "devai-api.name" . }}-worker
+              app.kubernetes.io/instance: {{ .Release.Name }}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "devai-api.name" . }}-worker
+              app.kubernetes.io/instance: {{ .Release.Name }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -58,6 +79,7 @@ spec:
           # RuntimeDefault seccomp. Mirrors the API container.
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
@@ -73,8 +95,12 @@ spec:
             - name: DEVAI_NATS_CREDS
               value: /etc/nats-creds/nats.creds
             {{- end }}
-          {{- if or (and .Values.settings .Values.settings.brokerTokenFile) .Values.nats.auth.enabled }}
+            - name: HOME
+              value: /tmp
           volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          {{- if or (and .Values.settings .Values.settings.brokerTokenFile) .Values.nats.auth.enabled }}
             {{- if and .Values.settings .Values.settings.brokerTokenFile }}
             - name: secret-service-token
               mountPath: /var/run/secrets/devai/secret-service
@@ -86,15 +112,24 @@ spec:
               readOnly: true
             {{- end }}
           {{- end }}
-          # No HTTP server, so no readiness/liveness HTTP probe. A crashed worker
-          # exits non-zero and is restarted by the kubelet; a poll stall is caught
-          # by Temporal's own worker heartbeat on the server side.
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "kill -0 1"]
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "kill -0 1"]
+            periodSeconds: 30
+            failureThreshold: 3
           {{- with .Values.worker.resources | default .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-      {{- if or (and .Values.settings .Values.settings.brokerTokenFile) .Values.nats.auth.enabled }}
       volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- if or (and .Values.settings .Values.settings.brokerTokenFile) .Values.nats.auth.enabled }}
         {{- if and .Values.settings .Values.settings.brokerTokenFile }}
         - name: secret-service-token
           projected:
