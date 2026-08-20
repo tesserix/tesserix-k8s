@@ -22,6 +22,20 @@ spec:
           protocol: TCP
         - port: 15008
           protocol: TCP
+    # AgentGateway owns its Istio certificate and originates HBONE directly;
+    # its generated data-plane pods are intentionally not ztunnel-captured.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.gatewayNamespace }}
+          podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: {{ .Values.networkPolicy.gatewayName }}
+      ports:
+        - port: {{ .Values.service.port }}
+          protocol: TCP
+        - port: 15008
+          protocol: TCP
   egress:
     - to:
         - namespaceSelector:
