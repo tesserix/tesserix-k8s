@@ -12,6 +12,31 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: temporal-platform-hbone
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: {{ .Values.podCIDR }}
+      ports:
+        - protocol: TCP
+          port: 15008
+  egress:
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.podCIDR }}
+      ports:
+        - protocol: TCP
+          port: 15008
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: temporal-platform-frontend-ingress
   namespace: {{ .Values.namespace }}
 spec:
@@ -45,6 +70,9 @@ spec:
   ingress:
     - from:
         - podSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
   egress:
     - to:
         - podSelector: {}
