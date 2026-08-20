@@ -1,0 +1,34 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: temporal-platform
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: temporal-platform
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: temporal
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/{{ .Values.namespace }}/sa/temporal-platform"
+    {{- range .Values.clients }}
+    {{- if .serviceAccount }}
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/{{ .namespace }}/sa/{{ .serviceAccount }}"
+      to:
+        - operation:
+            ports: ["7233"]
+    {{- end }}
+    {{- end }}
+    - from:
+        - source:
+            namespaces: ["monitoring"]
+      to:
+        - operation:
+            ports: ["9090"]
