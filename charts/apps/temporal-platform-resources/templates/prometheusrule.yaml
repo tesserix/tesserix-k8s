@@ -1,0 +1,44 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: temporal-platform
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: temporal-platform
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: temporal-platform.availability
+      rules:
+        - alert: TemporalDeploymentUnavailable
+          expr: kube_deployment_status_replicas_unavailable{namespace="temporal-system",deployment=~"temporal-(frontend|history|matching|worker)"} > 0
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: Temporal server component has unavailable replicas
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/temporal-platform.md
+        - alert: TemporalServiceErrorRateHigh
+          expr: sum(rate(service_errors[5m])) / clamp_min(sum(rate(service_requests[5m])), 1) > 0.05
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: Temporal service error rate is above five percent
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/temporal-platform.md
+        - alert: TemporalPersistenceErrors
+          expr: sum(rate(persistence_errors[5m])) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Temporal persistence operations are failing
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/temporal-platform.md
+        - alert: TemporalWorkflowFailures
+          expr: sum by (namespace) (increase(workflow_failed[15m])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Temporal workflows are reaching terminal failure
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/temporal-platform.md

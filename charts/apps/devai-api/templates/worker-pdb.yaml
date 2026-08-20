@@ -1,0 +1,15 @@
+{{- if .Values.worker.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "devai-api.fullname" . }}-worker
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal-worker
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "devai-api.name" . }}-worker
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

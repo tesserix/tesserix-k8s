@@ -189,6 +189,121 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         self.assertEqual("devai-prod-evaluations-in", env["DEVAI_OBJECT_STORE_BUCKET"])
         self.assertEqual("devai", env["DEVAI_OBJECT_STORE_PREFIX"])
 
+    def test_devai_production_temporal_is_tenant_safe_and_fail_closed(self):
+        documents = render_chart(
+            "charts/apps/devai-api",
+            "devai-api",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        api = resource(documents, "Deployment", "devai-api")
+        worker = resource(documents, "Deployment", "devai-api-worker")
+
+        for deployment in (api, worker):
+            env = {
+                item["name"]: item
+                for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+            }
+            self.assertEqual("temporal", env["DEVAI_WORKFLOW_PROVIDER"]["value"])
+            self.assertEqual(
+                "temporal-frontend.temporal-system.svc.cluster.local:7233",
+                env["DEVAI_TEMPORAL_HOST"]["value"],
+            )
+            self.assertEqual("devai", env["DEVAI_TEMPORAL_NAMESPACE"]["value"])
+            self.assertEqual("true", env["DEVAI_TEMPORAL_FAIL_CLOSED"]["value"])
+            self.assertEqual(
+                "true",
+                env["DEVAI_TEMPORAL_PAYLOAD_ENCRYPTION_REQUIRED"]["value"],
+            )
+            self.assertEqual(
+                {
+                    "name": "devai-api-secrets",
+                    "key": "DEVAI_TEMPORAL_PAYLOAD_ENCRYPTION_KEY",
+                },
+                env["DEVAI_TEMPORAL_PAYLOAD_ENCRYPTION_KEY"]["valueFrom"][
+                    "secretKeyRef"
+                ],
+            )
+
+        worker_env = {
+            item["name"]: item.get("value")
+            for item in worker["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        self.assertEqual("true", worker_env["DEVAI_TEMPORAL_WORKER_DEPENDENCIES_REQUIRED"])
+        self.assertEqual("true", worker_env["DEVAI_TEMPORAL_WORKER_VERSIONING_ENABLED"])
+        self.assertEqual("devai", worker_env["DEVAI_TEMPORAL_WORKER_DEPLOYMENT_NAME"])
+        self.assertEqual("main-922249b", worker_env["DEVAI_TEMPORAL_WORKER_BUILD_ID"])
+
+    def test_devai_temporal_workers_are_ha_hardened_and_promoted(self):
+        documents = render_chart(
+            "charts/apps/devai-api",
+            "devai-api",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        worker = resource(documents, "Deployment", "devai-api-worker")
+        spec = worker["spec"]
+        pod = spec["template"]["spec"]
+        container = pod["containers"][0]
+
+        self.assertEqual(2, spec["replicas"])
+        self.assertGreaterEqual(pod["terminationGracePeriodSeconds"], 90)
+        self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
+        self.assertIn("livenessProbe", container)
+        self.assertIn("startupProbe", container)
+        self.assertEqual(
+            {"kubernetes.io/hostname", "topology.kubernetes.io/zone"},
+            {item["topologyKey"] for item in spec["template"]["spec"]["topologySpreadConstraints"]},
+        )
+
+        pdb = resource(documents, "PodDisruptionBudget", "devai-api-worker")
+        self.assertEqual(1, pdb["spec"]["minAvailable"])
+
+        promotion = resource(documents, "Job", "devai-api-worker-version")
+        command = " ".join(promotion["spec"]["template"]["spec"]["containers"][0]["args"])
+        self.assertIn("worker deployment set-current-version", command)
+        self.assertIn("--deployment-name", command)
+        self.assertIn("--build-id", command)
+
+    def test_devai_temporal_egress_is_frontend_only(self):
+        documents = render_chart(
+            "charts/apps/devai-api",
+            "devai-api",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        policy = resource(documents, "NetworkPolicy", "devai-temporal-egress")
+        rule = policy["spec"]["egress"][0]
+        self.assertEqual([{"protocol": "TCP", "port": 7233}], rule["ports"])
+        self.assertEqual(
+            "temporal-system",
+            rule["to"][0]["namespaceSelector"]["matchLabels"][
+                "kubernetes.io/metadata.name"
+            ],
+        )
+        self.assertEqual(
+            "frontend",
+            rule["to"][0]["podSelector"]["matchLabels"][
+                "app.kubernetes.io/component"
+            ],
+        )
+
+    def test_devai_temporal_payload_key_is_sourced_from_secret_manager(self):
+        documents = list(
+            yaml.safe_load_all(
+                (ROOT / "external-secrets/prod/devai/externalsecret.yaml").read_text()
+            )
+        )
+        secret = resource(documents, "ExternalSecret", "devai-api-secrets")
+        mappings = {
+            item["secretKey"]: item["remoteRef"]["key"]
+            for item in secret["spec"]["data"]
+        }
+        self.assertEqual(
+            "prod-devai-temporal-payload-key",
+            mappings["DEVAI_TEMPORAL_PAYLOAD_ENCRYPTION_KEY"],
+        )
+
     def test_devai_registry_writes_use_tenant_scoped_deploy_key(self):
         documents = render_chart(
             "charts/apps/devai-api",

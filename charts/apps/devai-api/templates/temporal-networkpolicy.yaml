@@ -1,0 +1,30 @@
+{{- if .Values.temporal }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: devai-temporal-egress
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - {{ include "devai-api.name" . }}
+          - {{ include "devai-api.name" . }}-worker
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: temporal-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: temporal
+              app.kubernetes.io/component: frontend
+      ports:
+        - protocol: TCP
+          port: 7233
+{{- end }}

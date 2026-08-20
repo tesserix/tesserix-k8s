@@ -315,22 +315,29 @@ llm:
   tierHeavy: "anthropic:claude-sonnet-4-20250514"
   tierFrontier: "openai:o3"
 
-# ─── Durable orchestration (Temporal) — READY TO ENABLE ─────────────────────
-# Uncomment BOTH blocks to route prod blueprint runs through the Temporal cluster
-# (ArgoCD app `temporal`, namespace `scrapper`, frontend service `temporal:7233`).
-# PREREQUISITE: the devai image must ship the temporalio SDK. It is now a hard
-# dependency in pyproject.toml, so just rebuild/push the devai image, then enable.
-# devai-api degrades to in-process if temporalio is missing or the cluster is
-# unreachable; the worker pod imports temporalio at startup, so only enable
-# `worker` once the rebuilt image is rolled out (else it crashloops).
-# temporal:
-#   provider: temporal
-#   host: temporal.scrapper.svc.cluster.local:7233
-#   namespace: default
-#   taskQueue: devai
-#   tlsEnabled: false
-#   maxConcurrentActivities: 50
-#   maxStageAttempts: 3
-# worker:
-#   enabled: true
-#   replicaCount: 1
+# ─── Durable orchestration (Temporal) ───────────────────────────────────────
+temporal:
+  provider: temporal
+  host: temporal-frontend.temporal-system.svc.cluster.local:7233
+  namespace: devai
+  taskQueue: devai
+  tlsEnabled: false
+  failClosed: true
+  payloadEncryptionRequired: true
+  payloadEncryptionSecret:
+    name: devai-api-secrets
+    key: DEVAI_TEMPORAL_PAYLOAD_ENCRYPTION_KEY
+  maxConcurrentActivities: 50
+  maxStageAttempts: 3
+  workerDependenciesRequired: true
+  workerVersioningEnabled: true
+  workerDeploymentName: devai
+  workerGracefulShutdownSeconds: 60
+  adminToolsImage: "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/temporal-admin-tools:1.31.2"
+  versionPromotion:
+    enabled: true
+
+worker:
+  enabled: true
+  replicaCount: 2
+  terminationGracePeriodSeconds: 90
