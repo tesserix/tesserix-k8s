@@ -61,6 +61,20 @@ class TemporalPlatformManifestTests(unittest.TestCase):
         self.assertFalse(values["web"]["enabled"])
         self.assertFalse(values["admintools"]["enabled"])
 
+    def test_namespace_bootstrap_is_a_rerunnable_presync_hook(self):
+        application = load_yaml(
+            ROOT / "argocd/prod/infrastructure/temporal-platform.yaml"
+        )[0]
+        values = yaml.safe_load(application["spec"]["source"]["helm"]["values"])
+
+        self.assertEqual(
+            {
+                "argocd.argoproj.io/hook": "PreSync",
+                "argocd.argoproj.io/hook-delete-policy": "BeforeHookCreation",
+            },
+            values["schema"]["jobAnnotations"],
+        )
+
     def test_server_is_ha_observable_and_hardened(self):
         application = load_yaml(
             ROOT / "argocd/prod/infrastructure/temporal-platform.yaml"
