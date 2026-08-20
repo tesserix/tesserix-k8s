@@ -464,3 +464,9 @@ class TemporalNamespaceRegistrationTests(unittest.TestCase):
         for invocation in invocations:
             with self.subTest(command=invocation):
                 self.assertIn('--address "${TEMPORAL_ADDRESS}"', invocation)
+
+    def test_the_dns_probe_strips_the_grpc_scheme(self):
+        # TEMPORAL_ADDRESS carries a passthrough:/// prefix, so a naive
+        # ${VAR%%:*} probes the scheme and always reports no record.
+        self.assertNotIn('getent hosts "${TEMPORAL_ADDRESS%%:*}"', self.script)
+        self.assertIn('${TEMPORAL_ADDRESS##*/}', self.script)
