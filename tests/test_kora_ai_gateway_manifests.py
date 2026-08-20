@@ -343,11 +343,15 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             .get("kubernetes.io/metadata.name")
             == "kora"
         )
-        self.assertEqual(8080, agent_egress["ports"][0]["port"])
         self.assertEqual(
-            {"gateway.networking.k8s.io/gateway-name": "waypoint"},
-            agent_egress["to"][0]["podSelector"]["matchLabels"],
+            {
+                "namespaceSelector": {
+                    "matchLabels": {"kubernetes.io/metadata.name": "kora"}
+                }
+            },
+            agent_egress["to"][0],
         )
+        self.assertNotIn("ports", agent_egress)
 
     def test_kora_gets_only_a_client_key_and_narrow_gateway_egress(self):
         documents = render_chart(
