@@ -344,6 +344,10 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             == "kora"
         )
         self.assertEqual(8080, agent_egress["ports"][0]["port"])
+        self.assertEqual(
+            {"gateway.networking.k8s.io/gateway-name": "waypoint"},
+            agent_egress["to"][0]["podSelector"]["matchLabels"],
+        )
 
     def test_kora_gets_only_a_client_key_and_narrow_gateway_egress(self):
         documents = render_chart(
