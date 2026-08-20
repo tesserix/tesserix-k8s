@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: temporal-namespace-register
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels:
+    app.kubernetes.io/part-of: temporal-platform
+spec:
+  backoffLimit: 10
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: temporal-platform
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: register
+          image: {{ .Values.adminTools.image }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              export TEMPORAL_ADDRESS="{{ .Values.adminTools.frontendAddress }}"
+
+              until temporal operator cluster health >/dev/null 2>&1; do
+                echo "waiting for ${TEMPORAL_ADDRESS}"
+                sleep 5
+              done
+
+              for entry in {{ range .Values.temporalNamespaces }}{{ .name }}:{{ .retention }} {{ end }}; do
+                name="${entry%%:*}"
+                retention="${entry##*:}"
+                if temporal operator namespace describe --namespace "${name}" >/dev/null 2>&1; then
+                  echo "${name} already exists"
+                  continue
+                fi
+                temporal operator namespace create \
+                  --namespace "${name}" \
+                  --retention "${retention}"
+                echo "${name} registered with retention ${retention}"
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 512Mi
