@@ -265,7 +265,7 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         self.assertIn("--deployment-name", command)
         self.assertIn("--build-id", command)
 
-    def test_devai_temporal_egress_is_frontend_only(self):
+    def test_devai_temporal_egress_allows_frontend_and_hbone(self):
         documents = render_chart(
             "charts/apps/devai-api",
             "devai-api",
@@ -286,6 +286,13 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             rule["to"][0]["podSelector"]["matchLabels"][
                 "app.kubernetes.io/component"
             ],
+        )
+
+        hbone_rule = policy["spec"]["egress"][1]
+        self.assertEqual([{"protocol": "TCP", "port": 15008}], hbone_rule["ports"])
+        self.assertEqual(
+            "10.20.0.0/16",
+            hbone_rule["to"][0]["ipBlock"]["cidr"],
         )
 
     def test_devai_temporal_payload_key_is_sourced_from_secret_manager(self):
