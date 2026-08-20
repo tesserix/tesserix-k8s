@@ -11,9 +11,12 @@ spec:
   policyTypes: [Ingress, Egress]
   ingress:
     - from:
-        - podSelector:
+        - namespaceSelector:
             matchLabels:
-              {{- toYaml .Values.networkPolicy.clientPodSelector | nindent 14 }}
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.workloadNamespace }}
+          podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: {{ .Values.networkPolicy.waypointName }}
       ports:
         - port: {{ .Values.service.port }}
           protocol: TCP
@@ -44,4 +47,3 @@ spec:
           protocol: TCP
         - port: 15008
           protocol: TCP
-

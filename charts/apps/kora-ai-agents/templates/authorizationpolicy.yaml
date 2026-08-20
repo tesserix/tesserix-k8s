@@ -5,9 +5,10 @@ metadata:
   labels:
     {{- include "kora-ai-agents.labels" . | nindent 4 }}
 spec:
-  selector:
-    matchLabels:
-      {{- include "kora-ai-agents.selectorLabels" . | nindent 6 }}
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: kora-ai-agents
   action: ALLOW
   rules:
     - from:
@@ -16,9 +17,5 @@ spec:
               - {{ .Values.authorizationPolicy.clientPrincipal | quote }}
       to:
         - operation:
-            ports: ["8080"]
-    - to:
-        - operation:
-            methods: ["GET"]
-            paths: ["/healthz", "/readyz"]
-
+            methods: ["POST"]
+            paths: ["/a2a/v1/*"]
