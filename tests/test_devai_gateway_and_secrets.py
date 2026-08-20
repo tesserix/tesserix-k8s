@@ -260,6 +260,10 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         self.assertEqual(1, pdb["spec"]["minAvailable"])
 
         promotion = resource(documents, "Job", "devai-api-worker-version")
+        self.assertEqual(
+            "devai-api",
+            promotion["spec"]["template"]["spec"]["serviceAccountName"],
+        )
         command = " ".join(promotion["spec"]["template"]["spec"]["containers"][0]["args"])
         self.assertIn("worker deployment set-current-version", command)
         self.assertIn("--deployment-name", command)
