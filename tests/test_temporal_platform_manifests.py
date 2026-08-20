@@ -186,6 +186,49 @@ class TemporalPlatformManifestTests(unittest.TestCase):
             [port["port"] for port in ingress["spec"]["ingress"][0]["ports"]],
         )
 
+    def test_ambient_hbone_network_path_is_allowed(self):
+        documents = render_resources()
+        hbone = resource(
+            documents,
+            "NetworkPolicy",
+            "temporal-platform-hbone",
+            "temporal-system",
+        )
+
+        self.assertEqual(["Ingress", "Egress"], hbone["spec"]["policyTypes"])
+        self.assertEqual(
+            "10.20.0.0/16",
+            hbone["spec"]["ingress"][0]["from"][0]["ipBlock"]["cidr"],
+        )
+        self.assertEqual(
+            [15008],
+            [port["port"] for port in hbone["spec"]["ingress"][0]["ports"]],
+        )
+        self.assertEqual(
+            "10.20.0.0/16",
+            hbone["spec"]["egress"][0]["to"][0]["ipBlock"]["cidr"],
+        )
+        self.assertEqual(
+            [15008],
+            [port["port"] for port in hbone["spec"]["egress"][0]["ports"]],
+        )
+
+        internal = resource(
+            documents,
+            "NetworkPolicy",
+            "temporal-platform-internal",
+            "temporal-system",
+        )
+        ingress_namespaces = {
+            peer["namespaceSelector"]["matchLabels"][
+                "kubernetes.io/metadata.name"
+            ]
+            for rule in internal["spec"]["ingress"]
+            for peer in rule["from"]
+            if "namespaceSelector" in peer
+        }
+        self.assertIn("istio-system", ingress_namespaces)
+
     def test_alerts_cover_availability_persistence_and_failures(self):
         documents = render_resources()
         rule = resource(
