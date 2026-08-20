@@ -1,0 +1,64 @@
+{{- if and .Values.worker.enabled .Values.temporal .Values.temporal.workerVersioningEnabled .Values.temporal.versionPromotion.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "devai-api.fullname" . }}-worker-version
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: temporal-version-promoter
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "devai-api.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: temporal-version-promoter
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: promote
+          image: {{ required "temporal.adminToolsImage is required for worker version promotion" .Values.temporal.adminToolsImage | quote }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: {{ .Values.temporal.host | quote }}
+            - name: TEMPORAL_NAMESPACE
+              value: {{ .Values.temporal.namespace | quote }}
+            - name: DEPLOYMENT_NAME
+              value: {{ .Values.temporal.workerDeploymentName | quote }}
+            - name: BUILD_ID
+              value: {{ .Values.temporal.workerBuildId | default .Values.image.tag | quote }}
+          command: ["sh", "-ec"]
+          args:
+            - |
+              until temporal worker deployment set-current-version \
+                --address "${TEMPORAL_ADDRESS}" \
+                --namespace "${TEMPORAL_NAMESPACE}" \
+                --deployment-name "${DEPLOYMENT_NAME}" \
+                --build-id "${BUILD_ID}" \
+                --yes; do
+                sleep 10
+              done
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}
