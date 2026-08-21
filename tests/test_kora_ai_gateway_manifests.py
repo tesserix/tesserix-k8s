@@ -447,9 +447,31 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             "https://aregistry.tesserix.app", env["AI_REGISTRY_BASE_URL"]["value"]
         )
         self.assertEqual("5m", env["AI_REGISTRY_TTL"]["value"])
-        # The registry deploy key is the gateway key; a separate secret here
-        # would be a second credential to rotate for no extra isolation.
-        self.assertNotIn("AI_REGISTRY_API_KEY", env)
+
+    def test_production_kora_api_carries_its_own_registry_deploy_key(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        env = {
+            entry["name"]: entry
+            for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        deploy_key = resource(
+            documents, "ExternalSecret", "kora-agentic-registry-deploy-key"
+        )
+
+        # The registry compares sha256(bearer) against its `kora=` entry, so the
+        # gateway key authenticates as nobody. This chart shipped once without
+        # the secret and every lookup 401'd behind a silent keyword fallback.
+        source = env["AI_REGISTRY_API_KEY"]["valueFrom"]["secretKeyRef"]
+        self.assertEqual("kora-agentic-registry-deploy-key", source["name"])
+        self.assertEqual("api_key", source["key"])
+        self.assertEqual(
+            "prod-agentic-registry-kora-deploy-key",
+            deploy_key["spec"]["data"][0]["remoteRef"]["key"],
+        )
+        self.assertEqual("api_key", deploy_key["spec"]["data"][0]["secretKey"])
 
     def test_gateway_disabled_leaves_the_agent_registry_unconfigured(self):
         documents = render_chart("charts/apps/kora-api", "kora", "kora")
@@ -460,8 +482,21 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         }
 
         # No gateway means no A2A transport, so a resolved card would be
-        # unusable — the coach must fall through to the model provider.
+        # unusable — the coach must fall through to the model provider. The
+        # deploy key goes with it: an unused credential should not be synced.
         self.assertNotIn("AI_REGISTRY_BASE_URL", env)
+        self.assertNotIn("AI_REGISTRY_API_KEY", env)
+        self.assertIsNone(
+            next(
+                (
+                    doc
+                    for doc in documents
+                    if doc.get("kind") == "ExternalSecret"
+                    and doc["metadata"]["name"] == "kora-agentic-registry-deploy-key"
+                ),
+                None,
+            )
+        )
 
     def test_gateway_disabled_does_not_enable_a_direct_provider_bypass(self):
         documents = render_chart("charts/apps/kora-api", "kora", "kora")
