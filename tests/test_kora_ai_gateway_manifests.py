@@ -730,6 +730,31 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             upsert["env"][0]["valueFrom"]["secretKeyRef"]["name"],
         )
 
+    def test_the_registry_accepts_ingress_from_kora(self):
+        # Egress from kora is only half the path. Without kora in the control
+        # plane's own ingress allowlist the packets are dropped there, and a
+        # drop is indistinguishable from an unreachable registry.
+        mesh = render_chart(
+            "charts/thirdparty/istio-config",
+            "istio-config",
+            "istio-system",
+            "values-prod.yaml",
+        )
+        for name in (
+            "allow-agentregistry-ingress",
+            "allow-agentgateway-ingress",
+            "allow-kagent-ingress",
+        ):
+            policy = resource(mesh, "NetworkPolicy", name)
+            sources = {
+                rule["from"][0]["namespaceSelector"]["matchLabels"][
+                    "kubernetes.io/metadata.name"
+                ]
+                for rule in policy["spec"]["ingress"]
+            }
+            self.assertIn("kora", sources, name)
+            self.assertIn("devai", sources, name)
+
 
 if __name__ == "__main__":
     unittest.main()
