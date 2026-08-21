@@ -52,25 +52,6 @@ service:
   nameOverride: kora-api-direct
 
 aiGateway:
-  enabled: true
-  baseURL: http://kora-ai.agentgateway-system.svc.cluster.local:8080/v1
-  model: kora-auto
-  clientSecret:
-    create: true
-    name: kora-ai-gateway-client-credentials
-    key: kora-api
-    refreshInterval: 1h
-    store:
-      name: gcp-secret-store
-      kind: ClusterSecretStore
-    remoteRef: prod-kora-ai-gateway-api-key
-  networkPolicy:
-    enabled: true
-    namespace: agentgateway-system
-    gatewayName: kora-ai
-    port: 8080
-
-aiGateway:
   # Production enables this in values-prod.yaml. Kora sends only this logical
   # model; Agent Gateway owns every concrete provider model and location.
   enabled: false
@@ -91,6 +72,14 @@ aiGateway:
     namespace: agentgateway-system
     gatewayName: kora-ai
     port: 8080
+
+# Kora resolves agents, skills and tools from the agentic registry at request
+# time. No key here: config.Load falls back to AI_GATEWAY_API_KEY, which the
+# registry accepts as Kora's deploy key. An empty baseURL leaves the agent
+# path off entirely and the coach talks to the model provider directly.
+aiRegistry:
+  baseURL: https://aregistry.tesserix.app
+  ttl: 5m
 
 # Emergency/local compatibility only. GitOps environments keep this disabled:
 # disabling Agent Gateway must not silently bypass it with provider credentials.
