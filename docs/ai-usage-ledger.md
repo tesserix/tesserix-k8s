@@ -67,6 +67,20 @@ With no catalog on either gateway and no rows in `ai_model_prices`, every row is
 `unpriced`. Tokens will be right and spend will be zero until one of the two is
 filled in.
 
+## CEL attributes and absent headers
+
+`request.headers["x-foo"]` throws `No such key` when the header is not set, and
+the attribute's evaluation fails with it. This is not theoretical: the kora
+gateway's ext_proc `token_optimizer.*` attributes raise it on roughly a third of
+live requests today. Tracing attributes derived from a header must be guarded:
+
+```yaml
+expression: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
+```
+
+The `tesserix.product` and `tesserix.gateway` attributes are constants and cannot
+fail, so the product filter on the console keeps working regardless.
+
 ## Checking the pipeline
 
 ```bash
