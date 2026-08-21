@@ -21,7 +21,9 @@ def render_chart(chart, release, namespace, values=None):
         "--namespace",
         namespace,
     ]
-    if chart == "charts/apps/kora-ai-gateway":
+    # Registry owns these CRs in production; the Helm rendering is the tested
+    # rollback path, so it is what these assertions have to read.
+    if chart in ("charts/apps/kora-ai-gateway", "charts/apps/devai-ai-gateway"):
         command.extend(["--set", "registryOwnership.enabled=false"])
     if values:
         command.extend(["--values", str(ROOT / chart / values)])

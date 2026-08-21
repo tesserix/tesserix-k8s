@@ -92,6 +92,18 @@ spec:
           protocol: TCP
         - port: 15008
           protocol: TCP
+    # The AI usage ingest. Without this the OTLP export is dropped silently and
+    # the console's cost ledger simply stops filling.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.tracing.namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .Values.tracing.serviceName }}
+      ports:
+        - port: {{ .Values.tracing.port }}
+          protocol: TCP
     - to:
         - ipBlock:
             cidr: 169.254.169.254/32

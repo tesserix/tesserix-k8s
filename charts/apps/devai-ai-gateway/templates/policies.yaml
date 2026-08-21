@@ -141,4 +141,28 @@ spec:
             expression: request.headers["x-devai-agent"]
           - name: devai.provider
             expression: request.headers["x-devai-provider"]
+    # Spans go to the AI usage ingest, which writes the console's cost ledger.
+    # Not to the observability estate: that is parked at zero pods, and a cost
+    # figure sourced from a stack nobody runs is a figure nobody can check.
+    tracing:
+      backendRef:
+        kind: Service
+        name: {{ .Values.tracing.serviceName }}
+        namespace: {{ .Values.tracing.namespace }}
+        port: {{ .Values.tracing.port }}
+      protocol: HTTP
+      path: /v1/traces
+      # Every request, both listeners. A sampled ledger is not a bill.
+      clientSampling: "1.0"
+      randomSampling: "1.0"
+      attributes:
+        add:
+          # The gateway cannot learn the product from the request, and a
+          # client-supplied header cannot be trusted with the answer.
+          - name: tesserix.product
+            expression: "'devai'"
+          - name: tesserix.gateway
+            expression: "'{{ .Values.gateway.name }}'"
+          - name: tesserix.capability
+            expression: request.headers["x-devai-agent"]
 {{- end }}
