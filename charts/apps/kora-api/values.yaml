@@ -85,8 +85,19 @@ aiGateway:
 # keyword routing by design. kora_agent_registry_resolves_total{result} is the
 # only thing that says which one you are getting.
 aiRegistry:
-  baseURL: https://aregistry.tesserix.app
+  # The CLUSTER-LOCAL service, not aregistry.tesserix.app. The public host is
+  # fronted by agentregistry-ui-oauth2-proxy, which 401s a Bearer deploy key
+  # before the registry ever sees it -- devai's known-good key and no key at all
+  # fail there identically. Every devai workload points here for the same reason.
+  baseURL: http://agentregistry.agentregistry-system.svc.cluster.local:12121
   ttl: 5m
+  # allow-kora-egress permits 0.0.0.0/0:443 except RFC1918, so the in-cluster
+  # service is unreachable without this: the roster fetch times out and routing
+  # silently falls back to the keyword table.
+  networkPolicy:
+    enabled: true
+    namespace: agentregistry-system
+    port: 12121
   deployKey:
     create: true
     name: kora-agentic-registry-deploy-key

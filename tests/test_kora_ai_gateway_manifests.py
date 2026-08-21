@@ -443,10 +443,35 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
         }
 
+        # The cluster-local service, never the public host: aregistry.tesserix.app
+        # is fronted by oauth2-proxy, which 401s a deploy key before the registry
+        # sees it. Pinned because that misconfiguration is invisible at runtime --
+        # routing just falls back to the keyword table.
         self.assertEqual(
-            "https://aregistry.tesserix.app", env["AI_REGISTRY_BASE_URL"]["value"]
+            "http://agentregistry.agentregistry-system.svc.cluster.local:12121",
+            env["AI_REGISTRY_BASE_URL"]["value"],
         )
+        self.assertNotIn("aregistry.tesserix.app", env["AI_REGISTRY_BASE_URL"]["value"])
         self.assertEqual("5m", env["AI_REGISTRY_TTL"]["value"])
+
+    def test_production_kora_api_may_egress_to_the_registry(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        policy = resource(documents, "NetworkPolicy", "kora-ai-registry-egress")
+        rule = policy["spec"]["egress"][0]
+
+        # allow-kora-egress permits 0.0.0.0/0:443 except RFC1918, so without this
+        # the roster fetch to a 10.x service just times out.
+        self.assertEqual(
+            "agentregistry-system",
+            rule["to"][0]["namespaceSelector"]["matchLabels"][
+                "kubernetes.io/metadata.name"
+            ],
+        )
+        ports = {entry["port"] for entry in rule["ports"]}
+        # 15008 is the ambient HBONE tunnel; without it ztunnel drops the hop.
+        self.assertEqual({12121, 15008}, ports)
 
     def test_production_kora_api_carries_its_own_registry_deploy_key(self):
         documents = render_chart(
@@ -486,6 +511,17 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         # deploy key goes with it: an unused credential should not be synced.
         self.assertNotIn("AI_REGISTRY_BASE_URL", env)
         self.assertNotIn("AI_REGISTRY_API_KEY", env)
+        self.assertIsNone(
+            next(
+                (
+                    doc
+                    for doc in documents
+                    if doc.get("kind") == "NetworkPolicy"
+                    and doc["metadata"]["name"] == "kora-ai-registry-egress"
+                ),
+                None,
+            )
+        )
         self.assertIsNone(
             next(
                 (
