@@ -29,7 +29,8 @@ def resource(documents, kind, name):
     return next(
         document
         for document in documents
-        if document.get("kind") == kind and document.get("metadata", {}).get("name") == name
+        if document.get("kind") == kind
+        and document.get("metadata", {}).get("name") == name
     )
 
 
@@ -144,13 +145,15 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             tuple(sorted(source.get("podSelector", {}).get("matchLabels", {}).items()))
             for rule in network_policy["spec"]["ingress"]
             for source in rule.get("from", [])
-            if source.get("namespaceSelector", {}).get("matchLabels", {}).get(
-                "kubernetes.io/metadata.name"
-            )
+            if source.get("namespaceSelector", {})
+            .get("matchLabels", {})
+            .get("kubernetes.io/metadata.name")
             == "devai"
         }
         self.assertIn((("app.kubernetes.io/name", "devai-api"),), ingress_selectors)
-        self.assertIn((("app.kubernetes.io/name", "devai-api-worker"),), ingress_selectors)
+        self.assertIn(
+            (("app.kubernetes.io/name", "devai-api-worker"),), ingress_selectors
+        )
         self.assertIn((("devai.tesserix.app/role", "runner"),), ingress_selectors)
 
     def test_gateway_vertex_identity_is_terraform_bound(self):
@@ -165,10 +168,17 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         )
         main = (ROOT / "terraform-new/stacks/12-vertex/main.tf").read_text()
         variables = (ROOT / "terraform-new/stacks/12-vertex/variables.tf").read_text()
-        production = (ROOT / "terraform-new/environments/prod/terraform.tfvars").read_text()
-        self.assertIn('resource "google_service_account_iam_member" "devai_agentgateway_wi"', main)
+        production = (
+            ROOT / "terraform-new/environments/prod/terraform.tfvars"
+        ).read_text()
+        self.assertIn(
+            'resource "google_service_account_iam_member" "devai_agentgateway_wi"', main
+        )
         self.assertIn('variable "devai_agentgateway_ksa"', variables)
-        self.assertNotIn('resource "google_project_iam_member" "devai_workload_secretmanager_admin"', main)
+        self.assertNotIn(
+            'resource "google_project_iam_member" "devai_workload_secretmanager_admin"',
+            main,
+        )
         self.assertRegex(
             production,
             r'devai_agentgateway_ksa\s*=\s*"agentgateway-system/ai-gateway"',
@@ -227,7 +237,9 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         for deployment in (api, worker):
             env = {
                 item["name"]: item
-                for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+                for item in deployment["spec"]["template"]["spec"]["containers"][0][
+                    "env"
+                ]
             }
             self.assertEqual("temporal", env["DEVAI_WORKFLOW_PROVIDER"]["value"])
             self.assertEqual(
@@ -254,10 +266,160 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             item["name"]: item.get("value")
             for item in worker["spec"]["template"]["spec"]["containers"][0]["env"]
         }
-        self.assertEqual("true", worker_env["DEVAI_TEMPORAL_WORKER_DEPENDENCIES_REQUIRED"])
+        self.assertEqual(
+            "true", worker_env["DEVAI_TEMPORAL_WORKER_DEPENDENCIES_REQUIRED"]
+        )
         self.assertEqual("true", worker_env["DEVAI_TEMPORAL_WORKER_VERSIONING_ENABLED"])
         self.assertEqual("devai", worker_env["DEVAI_TEMPORAL_WORKER_DEPLOYMENT_NAME"])
-        self.assertEqual("main-922249b", worker_env["DEVAI_TEMPORAL_WORKER_BUILD_ID"])
+        self.assertEqual(
+            "fix-multi-provider-user-routing-c5d89ea",
+            worker_env["DEVAI_TEMPORAL_WORKER_BUILD_ID"],
+        )
+
+    def test_devai_adk_workloads_run_as_the_image_user(self):
+        api_documents = render_chart(
+            "charts/apps/devai-api",
+            "devai-api",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        sre_documents = render_chart(
+            "charts/apps/devai-sre",
+            "devai-sre",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+
+        for deployment in (
+            resource(api_documents, "Deployment", "devai-api"),
+            resource(api_documents, "Deployment", "devai-api-worker"),
+            resource(sre_documents, "Deployment", "devai-sre"),
+        ):
+            pod_security = deployment["spec"]["template"]["spec"]["securityContext"]
+            self.assertEqual(10001, pod_security["runAsUser"])
+            self.assertTrue(pod_security["runAsNonRoot"])
+
+    def test_devai_cluster_reader_has_distinct_istio_and_knative_rules(self):
+        documents = render_chart(
+            "charts/apps/devai-api",
+            "devai-api",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        cluster_role = resource(documents, "ClusterRole", "devai-api-cluster-reader")
+        rules = {
+            tuple(rule["apiGroups"]): rule
+            for rule in cluster_role["rules"]
+            if "apiGroups" in rule
+        }
+
+        self.assertEqual(
+            ["virtualservices", "destinationrules", "gateways"],
+            rules[("networking.istio.io",)]["resources"],
+        )
+        self.assertEqual(
+            ["services", "revisions", "routes"],
+            rules[("serving.knative.dev",)]["resources"],
+        )
+
+    def test_devai_sre_cluster_reader_has_distinct_istio_and_knative_rules(self):
+        documents = render_chart(
+            "charts/apps/devai-sre",
+            "devai-sre",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        cluster_role = resource(documents, "ClusterRole", "devai-sre-cluster-reader")
+        rules = {
+            tuple(rule["apiGroups"]): rule
+            for rule in cluster_role["rules"]
+            if "apiGroups" in rule
+        }
+
+        self.assertEqual(
+            [
+                "peerauthentications",
+                "authorizationpolicies",
+                "requestauthentications",
+            ],
+            rules[("security.istio.io",)]["resources"],
+        )
+        self.assertEqual(
+            ["services", "revisions", "routes", "configurations"],
+            rules[("serving.knative.dev",)]["resources"],
+        )
+
+    def test_devai_production_pins_adk_images_by_digest(self):
+        release_tag = "fix-multi-provider-user-routing-c5d89ea"
+        api_tag = (
+            f"{release_tag}@"
+            "sha256:b7c12bce32ce5ed8712034f73bf2688ba26ce1a963a430c1e689777e2704772e"
+        )
+        sre_tag = (
+            f"{release_tag}@"
+            "sha256:23feec0dc1c04f25cfdc79864edbe45accd8aab6cc308a5b9f5b7dfc53516f6a"
+        )
+        runner_image = (
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/"
+            f"tesserix/devai/devai-runner:{release_tag}@"
+            "sha256:2d0298a342c01e76b59482e3e4276b7c08c597070ebd7de757d845c15f672625"
+        )
+        api_documents = render_chart(
+            "charts/apps/devai-api",
+            "devai-api",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        sre_documents = render_chart(
+            "charts/apps/devai-sre",
+            "devai-sre",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+
+        api = resource(api_documents, "Deployment", "devai-api")
+        worker = resource(api_documents, "Deployment", "devai-api-worker")
+        sre = resource(sre_documents, "Deployment", "devai-sre")
+        api_repository = (
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/"
+            "tesserix/devai/devai"
+        )
+        sre_repository = f"{api_repository}-sre"
+        self.assertEqual(
+            f"{api_repository}:{api_tag}",
+            api["spec"]["template"]["spec"]["containers"][0]["image"],
+        )
+        self.assertEqual(
+            f"{api_repository}:{api_tag}",
+            worker["spec"]["template"]["spec"]["containers"][0]["image"],
+        )
+        self.assertEqual(
+            f"{sre_repository}:{sre_tag}",
+            sre["spec"]["template"]["spec"]["containers"][0]["image"],
+        )
+
+        api_env = {
+            item["name"]: item.get("value")
+            for item in api["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        self.assertEqual(runner_image, api_env["DEVAI_RUNNER_IMAGE"])
+
+        expected_parameters = {
+            "argocd/prod/apps/ai-apps/devai-api.yaml": {
+                "image.tag": api_tag,
+                "k8sRuntime.runnerImage": runner_image,
+            },
+            "argocd/prod/apps/ai-apps/devai-sre.yaml": {"image.tag": sre_tag},
+        }
+        for relative_path, expected in expected_parameters.items():
+            application = yaml.safe_load(
+                (ROOT / relative_path).read_text(encoding="utf-8")
+            )
+            parameters = {
+                item["name"]: item["value"]
+                for item in application["spec"]["source"]["helm"]["parameters"]
+            }
+            self.assertEqual(expected, parameters)
 
     def test_devai_temporal_workers_are_ha_hardened_and_promoted(self):
         documents = render_chart(
@@ -278,7 +440,10 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         self.assertIn("startupProbe", container)
         self.assertEqual(
             {"kubernetes.io/hostname", "topology.kubernetes.io/zone"},
-            {item["topologyKey"] for item in spec["template"]["spec"]["topologySpreadConstraints"]},
+            {
+                item["topologyKey"]
+                for item in spec["template"]["spec"]["topologySpreadConstraints"]
+            },
         )
 
         pdb = resource(documents, "PodDisruptionBudget", "devai-api-worker")
@@ -289,7 +454,9 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             "devai-api",
             promotion["spec"]["template"]["spec"]["serviceAccountName"],
         )
-        command = " ".join(promotion["spec"]["template"]["spec"]["containers"][0]["args"])
+        command = " ".join(
+            promotion["spec"]["template"]["spec"]["containers"][0]["args"]
+        )
         self.assertIn("worker deployment set-current-version", command)
         self.assertIn("--deployment-name", command)
         self.assertIn("--build-id", command)
@@ -312,9 +479,7 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         )
         self.assertEqual(
             "frontend",
-            rule["to"][0]["podSelector"]["matchLabels"][
-                "app.kubernetes.io/component"
-            ],
+            rule["to"][0]["podSelector"]["matchLabels"]["app.kubernetes.io/component"],
         )
 
         hbone_rule = policy["spec"]["egress"][1]
@@ -397,13 +562,12 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         )
 
     def test_secret_service_broker_uses_tokenreview_and_fixed_openbao_scope(self):
-        documents = render_chart("charts/apps/secret-service", "secret-service", "secret-service")
+        documents = render_chart(
+            "charts/apps/secret-service", "secret-service", "secret-service"
+        )
         deployment = resource(documents, "Deployment", "secret-service-api")
         pod = deployment["spec"]["template"]["spec"]
-        env = {
-            item["name"]: item.get("value")
-            for item in pod["containers"][0]["env"]
-        }
+        env = {item["name"]: item.get("value") for item in pod["containers"][0]["env"]}
         self.assertEqual("true", env["WORKLOAD_SECRET_BROKER_ENABLED"])
         self.assertEqual("devai", env["WORKLOAD_SECRET_NAMESPACE"])
         self.assertEqual("devai-api", env["WORKLOAD_SECRET_APP"])
@@ -417,29 +581,41 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             )
         )
 
-        openbao_values = yaml.safe_load((ROOT / "charts/thirdparty/openbao/values.yaml").read_text())
-        policies = {item["name"]: item["hcl"] for item in openbao_values["bootstrap"]["policies"]}
+        openbao_values = yaml.safe_load(
+            (ROOT / "charts/thirdparty/openbao/values.yaml").read_text()
+        )
+        policies = {
+            item["name"]: item["hcl"]
+            for item in openbao_values["bootstrap"]["policies"]
+        }
         self.assertIn('path "kv/data/devai/devai-api/*"', policies["read-devai-api"])
         self.assertNotIn('capabilities = ["create"', policies["read-devai-api"])
-        roles = {item["name"]: item for item in openbao_values["bootstrap"]["kubernetesRoles"]}
+        roles = {
+            item["name"]: item
+            for item in openbao_values["bootstrap"]["kubernetesRoles"]
+        }
         self.assertEqual(["devai-api"], roles["read-devai-api"]["serviceAccounts"])
         self.assertEqual(["devai"], roles["read-devai-api"]["namespaces"])
 
         openbao_namespace = render_chart(
             "charts/apps/openbao-namespace", "openbao-namespace", "openbao"
         )
-        policy = resource(openbao_namespace, "NetworkPolicy", "allow-clients-to-openbao")
+        policy = resource(
+            openbao_namespace, "NetworkPolicy", "allow-clients-to-openbao"
+        )
         devai_selectors = {
             tuple(sorted(source.get("podSelector", {}).get("matchLabels", {}).items()))
             for rule in policy["spec"]["ingress"]
             for source in rule.get("from", [])
-            if source.get("namespaceSelector", {}).get("matchLabels", {}).get(
-                "kubernetes.io/metadata.name"
-            )
+            if source.get("namespaceSelector", {})
+            .get("matchLabels", {})
+            .get("kubernetes.io/metadata.name")
             == "devai"
         }
         self.assertIn((("app.kubernetes.io/name", "devai-api"),), devai_selectors)
-        self.assertIn((("app.kubernetes.io/name", "devai-api-worker"),), devai_selectors)
+        self.assertIn(
+            (("app.kubernetes.io/name", "devai-api-worker"),), devai_selectors
+        )
 
         devai = render_chart(
             "charts/apps/devai-api",
@@ -448,7 +624,11 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             ("values.yaml", "values-prod.yaml"),
         )
         pod = resource(devai, "Deployment", "devai-api")["spec"]["template"]["spec"]
-        projected = next(volume for volume in pod["volumes"] if volume["name"] == "secret-service-token")
+        projected = next(
+            volume
+            for volume in pod["volumes"]
+            if volume["name"] == "secret-service-token"
+        )
         token = projected["projected"]["sources"][0]["serviceAccountToken"]
         self.assertEqual("secret-service", token["audience"])
         mount = next(
