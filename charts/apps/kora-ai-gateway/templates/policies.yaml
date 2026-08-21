@@ -123,6 +123,8 @@ spec:
             expression: "'kora'"
           - name: tesserix.gateway
             expression: "'{{ .Values.gateway.name }}'"
+          # Guarded: bare map access throws "No such key" when the header is
+          # absent, and an unset capability must not cost us the whole span.
           - name: tesserix.capability
-            expression: request.headers["x-kora-ai-capability"]
+            expression: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
 {{- end }}

@@ -47,6 +47,15 @@ class AIUsageIngestManifestTests(unittest.TestCase):
         self.assertEqual("'kora-ai'", added["tesserix.gateway"])
         self.assertIn("x-kora-ai-capability", added["tesserix.capability"])
 
+    def test_an_absent_capability_header_does_not_cost_us_the_span(self):
+        # Bare map access throws "No such key" when the header is absent; the
+        # estate's ext_proc attributes already fail this way on live traffic.
+        added = {a["name"]: a["expression"] for a in self.tracing["attributes"]["add"]}
+        self.assertEqual(
+            '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""',
+            added["tesserix.capability"],
+        )
+
     def test_the_cross_namespace_reference_is_granted(self):
         grant = resource(
             self.ingest, "ReferenceGrant", "allow-agentgateway-system-ai-usage-otlp"
@@ -189,6 +198,15 @@ class DevAIGatewayExportTests(unittest.TestCase):
         self.assertEqual("'devai'", added["tesserix.product"])
         self.assertEqual("'ai-gateway'", added["tesserix.gateway"])
         self.assertIn("x-devai-agent", added["tesserix.capability"])
+
+    def test_an_absent_capability_header_does_not_cost_us_the_span(self):
+        # Bare map access throws "No such key" when the header is absent; the
+        # estate's ext_proc attributes already fail this way on live traffic.
+        added = {a["name"]: a["expression"] for a in self.tracing["attributes"]["add"]}
+        self.assertEqual(
+            '"x-devai-agent" in request.headers ? request.headers["x-devai-agent"] : ""',
+            added["tesserix.capability"],
+        )
 
     def test_the_policy_covers_the_public_listener_too(self):
         # No sectionName: the public listener's traffic reaches a provider and
