@@ -29,10 +29,11 @@ spec:
         name: {{ .Values.optimizer.serviceName }}
         port: {{ .Values.optimizer.grpcPort }}
       failureMode: FailOpen
+      # Guarded: bare map access throws "No such key" when the header is absent.
       requestAttributes:
-        token_optimizer.capability: request.headers["x-kora-ai-capability"]
-        token_optimizer.context_kind: request.headers["x-kora-ai-context-kind"]
-        token_optimizer.rtk_applied: request.headers["x-kora-rtk-applied"] == "true"
+        token_optimizer.capability: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
+        token_optimizer.context_kind: '"x-kora-ai-context-kind" in request.headers ? request.headers["x-kora-ai-context-kind"] : ""'
+        token_optimizer.rtk_applied: '"x-kora-rtk-applied" in request.headers && request.headers["x-kora-rtk-applied"] == "true"'
       processingOptions:
         requestBodyMode: Buffered
         responseBodyMode: None
@@ -94,13 +95,15 @@ spec:
       kind: Gateway
       name: {{ .Values.gateway.name }}
   frontend:
+    http:
+      maxBufferSize: {{ .Values.limits.maxBufferSize }}
     metrics:
       attributes:
         add:
           - name: kora.ai.capability
-            expression: request.headers["x-kora-ai-capability"]
+            expression: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
           - name: kora.ai.context_kind
-            expression: request.headers["x-kora-ai-context-kind"]
+            expression: '"x-kora-ai-context-kind" in request.headers ? request.headers["x-kora-ai-context-kind"] : ""'
     # Spans go to the AI usage ingest, which writes the console's cost ledger.
     # Not to the observability estate: that is parked at zero pods, and a cost
     # figure sourced from a stack nobody runs is a figure nobody can check.
