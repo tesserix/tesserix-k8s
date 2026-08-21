@@ -21,7 +21,7 @@ registry export. Nothing is `kubectl apply`-ed by a human.
 | Seeds | `tesserix/devai` → `architecture/registry-seeds/mcp-servers/` | Git source of truth, POSTed by `devai-registry-bootstrap`. |
 
 Identity is Zitadel: issuer `https://auth.tesserix.app`, project/audience
-`386889024519799084`, MCP role `agentgateway.mcp`.
+`387190457387450503`, MCP role `agentgateway.mcp`.
 
 ### 1.1 Three defects to fix before anything else
 
@@ -104,7 +104,7 @@ exchanges them for a short-lived bearer at startup and on expiry:
 ```bash
 curl --fail-with-body --user "${TESSERIX_MCP_CLIENT_ID}:${TESSERIX_MCP_CLIENT_SECRET}" \
   --data-urlencode grant_type=client_credentials \
-  --data-urlencode "scope=openid urn:zitadel:iam:org:project:id:386889024519799084:aud urn:zitadel:iam:org:projects:roles" \
+  --data-urlencode "scope=openid urn:zitadel:iam:org:project:id:387190457387450503:aud urn:zitadel:iam:org:projects:roles" \
   https://auth.tesserix.app/oauth/v2/token
 ```
 
