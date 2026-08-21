@@ -28,7 +28,7 @@ spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       restartPolicy: OnFailure
       initContainers:
-        # Step 1: shallow-clone the DevAI repo to /workspace.
+        # Step 1: shallow-fetch the pinned DevAI ref to /workspace.
         #
         # The repo is private. We mount the .gitconfig from a Secret
         # (synced from prod-devai-github-pat in GCP SM) at /etc/gitconfig
@@ -53,16 +53,22 @@ spec:
               set -e
               REPO="{{ .Values.seedSource.repoUrl }}"
               REF="{{ .Values.seedSource.ref }}"
-              if GIT_CONFIG_GLOBAL=/workspace/.gitconfig \
-                   git clone --depth=1 --branch="$REF" "$REPO" /workspace/devai 2>/tmp/clone.err; then
-                echo "fetch-seeds: cloned (authenticated)"
-              else
-                echo "fetch-seeds: authenticated clone failed — falling back to anonymous (public repo)"
-                sed 's/x-access-token:[^@]*@/x-access-token:***@/g' /tmp/clone.err || true
+              fetch_ref() {
+                git_config="$1"
                 rm -rf /workspace/devai
-                GIT_CONFIG_GLOBAL=/dev/null \
-                  git clone --depth=1 --branch="$REF" "$REPO" /workspace/devai
-                echo "fetch-seeds: cloned (anonymous)"
+                git -c init.defaultBranch=main init /workspace/devai >/dev/null
+                git -C /workspace/devai remote add origin "$REPO"
+                GIT_CONFIG_GLOBAL="$git_config" \
+                  git -C /workspace/devai fetch --depth=1 origin "$REF"
+                git -C /workspace/devai checkout --detach FETCH_HEAD >/dev/null
+              }
+              if fetch_ref /workspace/.gitconfig 2>/tmp/clone.err; then
+                echo "fetch-seeds: fetched pinned ref (authenticated)"
+              else
+                echo "fetch-seeds: authenticated fetch failed — falling back to anonymous (public repo)"
+                sed 's/x-access-token:[^@]*@/x-access-token:***@/g' /tmp/clone.err || true
+                fetch_ref /dev/null
+                echo "fetch-seeds: fetched pinned ref (anonymous)"
               fi
           volumeMounts:
             - name: workspace
@@ -135,7 +141,7 @@ spec:
                       print(f"  ok {label}"); ok += 1
                   elif r.status_code == 207:
                       # MultiStatus — at least one object in the doc had an issue.
-                      print(f"  partial (207) {label}: {r.text[:200]}"); errors += 1
+                      print(f"  partial (207) {label}: {r.text[:200]}"); err += 1
                   else:
                       print(f"  FAIL ({r.status_code}) {label}: {r.text[:200]}"); err += 1
 

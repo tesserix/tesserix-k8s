@@ -2,12 +2,12 @@
 
 replicaCount: 1
 
-# CHART-7: prod must never resolve to a floating :latest. Concrete main-<sha>
+# CHART-7: prod must never resolve to a floating :latest. Immutable release
 # seed; the ArgoCD app's helm parameter (also pinned) is what Kargo overwrites
 # per promotion, and ignoreDifferences on /spec/source/helm/parameters keeps
 # selfHeal from reverting it.
 image:
-  tag: "main-922249b"
+  tag: "fix-multi-provider-user-routing-c5d89ea@sha256:b7c12bce32ce5ed8712034f73bf2688ba26ce1a963a430c1e689777e2704772e"
 
 # ─── Auth gate (DELIBERATE FLIP — sequence AFTER new images ship) ────────────
 # Turns the in-app auth check from advisory into blocking so anonymous mutating
@@ -135,7 +135,7 @@ k8sRuntime:
   # promotion. MUST be the asia-south1 GAR mirror, never ghcr.io — runner Job
   # pods pull via the node GCP SA (no ghcr pull secret), so a ghcr image
   # ImagePullBackOffs and the stage times out.
-  runnerImage: "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:latest"
+  runnerImage: "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/devai/devai-runner:fix-multi-provider-user-routing-c5d89ea@sha256:2d0298a342c01e76b59482e3e4276b7c08c597070ebd7de757d845c15f672625"
   # Empty so the runner resolves to the single (Kargo-managed) runnerImage above
   # for every stack. Populate only if per-stack runner variants ship; until then
   # a non-empty map here would shadow the dynamic runnerImage.
@@ -333,6 +333,7 @@ temporal:
   workerDependenciesRequired: true
   workerVersioningEnabled: true
   workerDeploymentName: devai
+  workerBuildId: "fix-multi-provider-user-routing-c5d89ea"
   workerGracefulShutdownSeconds: 60
   adminToolsImage: "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/temporal-admin-tools:1.31.2"
   versionPromotion:
