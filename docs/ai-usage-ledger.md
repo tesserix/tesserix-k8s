@@ -81,6 +81,16 @@ expression: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora
 The `tesserix.product` and `tesserix.gateway` attributes are constants and cannot
 fail, so the product filter on the console keeps working regardless.
 
+Every header expression in both gateway charts now carries the guard, including
+the ext_proc `token_optimizer.*` attributes and the metrics attributes.
+
+## Request body buffering
+
+`spec.frontend.http.maxBufferSize` defaults to `2mb`. ext_proc buffers the whole
+request body, so a large context is rejected outright with
+`ExtProc: body exceeded max buffer size` and a 500 — 6 of kora's requests in 24h.
+Only kora buffers (it is the one running ext_proc); it now sets `16Mi`.
+
 ## Checking the pipeline
 
 ```bash

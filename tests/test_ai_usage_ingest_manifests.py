@@ -160,6 +160,52 @@ class AIUsageIngestManifestTests(unittest.TestCase):
         self.assertIn("ai-usage-ingest.yaml", kustomization["resources"])
 
 
+def header_expressions(docs):
+    """Every rendered CEL expression that reads a request header."""
+    found = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+        elif isinstance(node, str) and "request.headers[" in node:
+            found.append(node)
+
+    walk(docs)
+    return found
+
+
+class GatewayCELGuardTests(unittest.TestCase):
+    """A bare request.headers[...] throws "No such key" when the header is
+    absent, which is how the estate's ext_proc attributes fail on live traffic.
+    """
+
+    def test_no_kora_header_expression_is_left_unguarded(self):
+        rendered = render_chart(GATEWAY_CHART, "kora-ai-gateway", "agentgateway-system")
+        expressions = header_expressions(rendered)
+        self.assertTrue(expressions)
+        for expression in expressions:
+            self.assertIn("in request.headers", expression)
+
+    def test_no_devai_header_expression_is_left_unguarded(self):
+        rendered = render_chart(
+            DEVAI_GATEWAY_CHART, "devai-ai-gateway", "agentgateway-system"
+        )
+        expressions = header_expressions(rendered)
+        self.assertTrue(expressions)
+        for expression in expressions:
+            self.assertIn("in request.headers", expression)
+
+    def test_the_buffer_is_large_enough_for_a_real_request(self):
+        # The 2mb default rejected live requests with ExtProc buffer errors.
+        rendered = render_chart(GATEWAY_CHART, "kora-ai-gateway", "agentgateway-system")
+        policy = resource(rendered, "AgentgatewayPolicy", "kora-ai-observability")
+        self.assertEqual("16Mi", policy["spec"]["frontend"]["http"]["maxBufferSize"])
+
+
 class DevAIGatewayExportTests(unittest.TestCase):
     """The second half of the estate's AI traffic.
 
