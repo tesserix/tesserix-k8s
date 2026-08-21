@@ -74,12 +74,28 @@ aiGateway:
     port: 8080
 
 # Kora resolves agents, skills and tools from the agentic registry at request
-# time. No key here: config.Load falls back to AI_GATEWAY_API_KEY, which the
-# registry accepts as Kora's deploy key. An empty baseURL leaves the agent
-# path off entirely and the coach talks to the model provider directly.
+# time. An empty baseURL leaves the agent path off entirely and the coach talks
+# to the model provider directly.
+#
+# deployKey is a DEDICATED credential, mirroring devai's. The registry holds
+# only sha256(key) in its `kora=` AUTH_DEPLOY_KEYS entry and compares it against
+# the Bearer token, so no other credential can stand in for it — this chart
+# shipped once claiming AI_GATEWAY_API_KEY would do, and every roster lookup
+# 401'd while the pod stayed green, because a registry outage degrades to
+# keyword routing by design. kora_agent_registry_resolves_total{result} is the
+# only thing that says which one you are getting.
 aiRegistry:
   baseURL: https://aregistry.tesserix.app
   ttl: 5m
+  deployKey:
+    create: true
+    name: kora-agentic-registry-deploy-key
+    key: api_key
+    refreshInterval: 1h
+    store:
+      name: gcp-secret-store
+      kind: ClusterSecretStore
+    remoteRef: prod-agentic-registry-kora-deploy-key
 
 # Emergency/local compatibility only. GitOps environments keep this disabled:
 # disabling Agent Gateway must not silently bypass it with provider credentials.
