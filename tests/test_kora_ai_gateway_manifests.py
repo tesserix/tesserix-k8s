@@ -755,6 +755,19 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             self.assertIn("kora", sources, name)
             self.assertIn("devai", sources, name)
 
+    def test_the_mesh_app_applies_before_it_prunes(self):
+        # Namespaces prune ahead of NetworkPolicies, and a decommissioned
+        # namespace still carrying tesserix.io/protected cannot be dropped, so
+        # without PruneLast that one refusal blocks the ingress rules above
+        # from ever reaching the cluster.
+        application = load_yaml(
+            ROOT / "argocd/prod/infrastructure/istio-config.yaml"
+        )[0]
+        self.assertIn(
+            "PruneLast=true",
+            application["spec"]["syncPolicy"]["syncOptions"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
