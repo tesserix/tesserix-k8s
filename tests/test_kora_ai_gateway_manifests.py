@@ -433,6 +433,36 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         self.assertNotIn("prod-kora-gemini-api-key", remote_refs)
         self.assertNotIn("prod-kora-openai-api-key", remote_refs)
 
+    def test_production_kora_api_resolves_agents_from_the_registry(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        env = {
+            entry["name"]: entry
+            for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+
+        self.assertEqual(
+            "https://aregistry.tesserix.app", env["AI_REGISTRY_BASE_URL"]["value"]
+        )
+        self.assertEqual("5m", env["AI_REGISTRY_TTL"]["value"])
+        # The registry deploy key is the gateway key; a separate secret here
+        # would be a second credential to rotate for no extra isolation.
+        self.assertNotIn("AI_REGISTRY_API_KEY", env)
+
+    def test_gateway_disabled_leaves_the_agent_registry_unconfigured(self):
+        documents = render_chart("charts/apps/kora-api", "kora", "kora")
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        env = {
+            entry["name"]: entry
+            for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+
+        # No gateway means no A2A transport, so a resolved card would be
+        # unusable — the coach must fall through to the model provider.
+        self.assertNotIn("AI_REGISTRY_BASE_URL", env)
+
     def test_gateway_disabled_does_not_enable_a_direct_provider_bypass(self):
         documents = render_chart("charts/apps/kora-api", "kora", "kora")
         deployment = resource(documents, "Deployment", "kora-kora-api")
