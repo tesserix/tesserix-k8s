@@ -78,7 +78,7 @@ Required scopes:
 
 ```text
 openid
-urn:zitadel:iam:org:project:id:386889024519799084:aud
+urn:zitadel:iam:org:project:id:387190457387450503:aud
 urn:zitadel:iam:org:projects:roles
 ```
 
@@ -89,17 +89,17 @@ curl --fail-with-body \
   --request POST \
   --user "${AGENTGATEWAY_CLIENT_ID}:${AGENTGATEWAY_CLIENT_SECRET}" \
   --data-urlencode 'grant_type=client_credentials' \
-  --data-urlencode 'scope=openid urn:zitadel:iam:org:project:id:386889024519799084:aud urn:zitadel:iam:org:projects:roles' \
+  --data-urlencode 'scope=openid urn:zitadel:iam:org:project:id:387190457387450503:aud urn:zitadel:iam:org:projects:roles' \
   https://auth.tesserix.app/oauth/v2/token
 ```
 
 The returned token must contain:
 
 - issuer `https://auth.tesserix.app`
-- audience `386889024519799084`
+- audience `387190457387450503`
 - a stable, unique `sub`
 - the appropriate role in
-  `urn:zitadel:iam:org:project:386889024519799084:roles`
+  `urn:zitadel:iam:org:project:387190457387450503:roles`
 
 AgentGateway validates the signature, issuer, audience, expiry, and role before
 routing. Rate limits are keyed by the verified `sub`, so one client cannot use
