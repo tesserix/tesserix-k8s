@@ -755,6 +755,34 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             self.assertIn("kora", sources, name)
             self.assertIn("devai", sources, name)
 
+    def test_the_waypoint_authorizes_kora_to_read_the_catalog(self):
+        # The NetworkPolicy above only gets the packet to the waypoint. This
+        # ALLOW policy denies everything it does not name, and a denial here
+        # looks exactly like the drop it replaced: no response, no refusal.
+        policies = load_yaml(
+            ROOT / "manifests/agentic-istio/authorization-policy.yaml"
+        )
+        registry = next(
+            document
+            for document in policies
+            if document
+            and document.get("kind") == "AuthorizationPolicy"
+            and document["metadata"]["name"] == "agentregistry-authz"
+        )
+        readers = {
+            namespace
+            for rule in registry["spec"]["rules"]
+            for source in rule.get("from", [])
+            for namespace in source["source"].get("namespaces", [])
+            if any(
+                "GET" in target["operation"].get("methods", [])
+                and "/v0/*" in target["operation"].get("paths", [])
+                for target in rule.get("to", [])
+            )
+        }
+        self.assertIn("kora", readers)
+        self.assertIn("devai", readers)
+
     def test_the_mesh_app_applies_before_it_prunes(self):
         # Namespaces prune ahead of NetworkPolicies, and a decommissioned
         # namespace still carrying tesserix.io/protected cannot be dropped, so
