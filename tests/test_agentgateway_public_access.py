@@ -105,8 +105,9 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
                 "agentgateway.tesserix.app",
                 "/openai",
                 "ai-gateway.agentgateway-system.svc.cluster.local",
-                "agentgateway-console.agentgateway-system.svc.cluster.local",
-                8082,
+                "agentgateway-admin-ui-oauth2-proxy."
+                "agentgateway-system.svc.cluster.local",
+                4180,
             ),
         }
 
