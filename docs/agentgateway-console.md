@@ -107,7 +107,13 @@ additionally requires a Zitadel JWT carrying the `agentgateway.models` role.
 
 ## Cutover
 
-Browser traffic on `agentgateway.tesserix.app` is served by this gateway. The
-provider prefixes on that host still route to the xDS `ai-gateway`; moving them,
-retiring that gateway and unwiring `agentgateway-route-sync` are separate
-changes.
+Browser traffic on `agentgateway.tesserix.app` is served directly by this
+gateway's console listener on port 8082. Its built-in OIDC policy owns
+`/oauth/callback`; do not put the browser fallback behind the legacy xDS admin
+OAuth proxy. The provider prefixes on that host still route to the xDS
+`ai-gateway`; moving them, retiring that gateway and unwiring
+`agentgateway-route-sync` are separate changes.
+
+The deployment suppresses the AgentGateway startup scope that prints the fully
+rendered configuration. Secret-backed PostgreSQL URLs must never appear in pod
+logs; all other AgentGateway info-level telemetry remains enabled.

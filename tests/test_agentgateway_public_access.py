@@ -105,9 +105,8 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
                 "agentgateway.tesserix.app",
                 "/openai",
                 "ai-gateway.agentgateway-system.svc.cluster.local",
-                "agentgateway-admin-ui-oauth2-proxy."
-                "agentgateway-system.svc.cluster.local",
-                4180,
+                "agentgateway-console.agentgateway-system.svc.cluster.local",
+                8082,
             ),
         }
 
@@ -145,6 +144,47 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
                         for route in virtual_service["spec"]["http"]
                     )
                 )
+
+    def test_standalone_console_suppresses_rendered_secret_config_logs(self):
+        documents = render_chart("charts/apps/agentgateway-console")
+        deployment = resource(documents, "Deployment", "agentgateway-console")
+        container = deployment["spec"]["template"]["spec"]["containers"][0]
+        env = {entry["name"]: entry.get("value") for entry in container["env"]}
+
+        self.assertEqual(
+            "info,agentgateway_app::commands::run=warn",
+            env["RUST_LOG"],
+        )
+        config = (
+            ROOT / "charts/apps/agentgateway-console/files/config.yaml"
+        ).read_text()
+        self.assertIn(
+            "filter: info,agentgateway_app::commands::run=warn",
+            config,
+        )
+
+    def test_zitadel_client_allows_standalone_and_legacy_admin_callbacks(self):
+        values = yaml.safe_load(
+            (ROOT / "charts/apps/zitadel-bootstrap/values.yaml").read_text()
+        )
+        project = next(
+            item
+            for item in values["desired"]["platformProjects"]
+            if item["name"] == "AgentGateway"
+        )
+        application = next(
+            item
+            for item in project["oidcApps"]
+            if item["name"] == "agentgateway-admin-ui"
+        )
+
+        self.assertEqual(
+            {
+                "https://agentgateway.tesserix.app/oauth/callback",
+                "https://agentgateway.tesserix.app/oauth2/callback",
+            },
+            set(application["redirectUris"]),
+        )
 
     def test_mcp_gateway_is_private_hardened_and_disruption_safe(self):
         documents = render_chart("charts/apps/agentgateway-route-sync")

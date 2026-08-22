@@ -47,7 +47,10 @@ spec:
             - name: ADMIN_ADDR
               value: "0.0.0.0:{{ .Values.ports.admin }}"
             - name: RUST_LOG
-              value: info
+              # The startup command logs the fully rendered config at info,
+              # including Secret-backed PostgreSQL URLs. Keep normal info
+              # telemetry while suppressing only that config-dump scope.
+              value: info,agentgateway_app::commands::run=warn
             - name: OIDC_COOKIE_SECRET
               valueFrom:
                 secretKeyRef:
