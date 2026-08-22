@@ -8,7 +8,7 @@ import yaml
 ROOT = pathlib.Path(__file__).parents[1]
 ISSUER = "https://auth.tesserix.app"
 JWKS_PATH = "/oauth/v2/keys"
-PROJECT_AUDIENCE = "386889024519799084"
+PROJECT_AUDIENCE = "387190457387450503"
 HUMAN_EMAILS = {"samyak.rout@gmail.com", "mahesh.sangawar@gmail.com"}
 
 
@@ -197,7 +197,7 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
         expressions = authorization["policy"]["matchExpressions"]
         self.assertEqual(1, len(expressions))
         self.assertEqual(
-            '"agentgateway.mcp" in jwt["urn:zitadel:iam:org:project:386889024519799084:roles"]',
+            '"agentgateway.mcp" in jwt["urn:zitadel:iam:org:project:387190457387450503:roles"]',
             expressions[0],
         )
         self.assertEqual("Allow", authorization["action"])
@@ -234,7 +234,7 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
         expressions = authorization["policy"]["matchExpressions"]
         self.assertEqual(1, len(expressions))
         self.assertEqual(
-            '"agentgateway.models" in jwt["urn:zitadel:iam:org:project:386889024519799084:roles"]',
+            '"agentgateway.models" in jwt["urn:zitadel:iam:org:project:387190457387450503:roles"]',
             expressions[0],
         )
         self.assertEqual("agentgateway-ratelimit", rate_limit["backendRef"]["name"])
