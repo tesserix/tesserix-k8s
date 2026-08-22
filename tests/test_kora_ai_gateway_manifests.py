@@ -21,7 +21,9 @@ def render_chart(chart, release, namespace, values=None):
         "--namespace",
         namespace,
     ]
-    if chart == "charts/apps/kora-ai-gateway":
+    # Registry owns these CRs in production; the Helm rendering is the tested
+    # rollback path, so it is what these assertions have to read.
+    if chart in ("charts/apps/kora-ai-gateway", "charts/apps/devai-ai-gateway"):
         command.extend(["--set", "registryOwnership.enabled=false"])
     if values:
         command.extend(["--values", str(ROOT / chart / values)])
@@ -267,16 +269,33 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             agent_client["podSelector"]["matchLabels"]["app.kubernetes.io/name"],
         )
 
-    def test_gateway_listener_requires_the_kora_workload_identity(self):
+    def test_gateway_listener_requires_workload_and_verified_app_user_identity(self):
         documents = render_chart(
             "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
         )
         policy = resource(documents, "AuthorizationPolicy", "kora-ai")
+        authentication = resource(documents, "RequestAuthentication", "kora-ai-user")
+
+        rule = authentication["spec"]["jwtRules"][0]
+        self.assertEqual(
+            "https://securetoken.google.com/kora-app-e6d38",
+            rule["issuer"],
+        )
+        self.assertEqual(["kora-app-e6d38"], rule["audiences"])
+        self.assertEqual(
+            [{"name": "X-Kora-End-User-Token", "prefix": "Bearer "}],
+            rule["fromHeaders"],
+        )
+        self.assertTrue(rule["forwardOriginalToken"])
 
         client_rule = policy["spec"]["rules"][0]
         self.assertEqual(
             ["cluster.local/ns/kora/sa/kora-api"],
             client_rule["from"][0]["source"]["principals"],
+        )
+        self.assertEqual(
+            ["https://securetoken.google.com/kora-app-e6d38/*"],
+            client_rule["from"][0]["source"]["requestPrincipals"],
         )
         self.assertEqual(["8080"], client_rule["to"][0]["operation"]["ports"])
 
@@ -284,6 +303,44 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             ["cluster.local/ns/kora/sa/kora-ai-agents"],
             policy["spec"]["rules"][1]["from"][0]["source"]["principals"],
         )
+        self.assertEqual(
+            ["https://securetoken.google.com/kora-app-e6d38/*"],
+            policy["spec"]["rules"][1]["from"][0]["source"]["requestPrincipals"],
+        )
+
+        embedding_rule = policy["spec"]["rules"][2]
+        self.assertEqual(
+            ["cluster.local/ns/kora/sa/kora-api"],
+            embedding_rule["from"][0]["source"]["principals"],
+        )
+        self.assertEqual(
+            ["POST"], embedding_rule["to"][0]["operation"]["methods"]
+        )
+        self.assertEqual(
+            ["/v1/embeddings"], embedding_rule["to"][0]["operation"]["paths"]
+        )
+
+    def test_model_routes_strip_the_delegated_identity_before_provider_egress(self):
+        documents = render_chart(
+            "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
+        )
+        model_route = resource(documents, "HTTPRoute", "kora-ai")
+
+        for rule in model_route["spec"]["rules"]:
+            self.assertEqual(
+                [
+                    {
+                        "type": "RequestHeaderModifier",
+                        "requestHeaderModifier": {
+                            "remove": ["X-Kora-End-User-Token"]
+                        },
+                    }
+                ],
+                rule.get("filters"),
+            )
+
+        a2a_route = resource(documents, "HTTPRoute", "kora-a2a")
+        self.assertNotIn("filters", a2a_route["spec"]["rules"][0])
 
     def test_gateway_routes_a2a_and_owns_upstream_authentication(self):
         documents = render_chart(
@@ -314,7 +371,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
 
         traffic = policy["spec"]["traffic"]
         self.assertEqual("Strict", traffic["apiKeyAuthentication"]["mode"])
-        self.assertEqual({"request": "23s"}, traffic["timeouts"])
+        self.assertEqual({"request": "70s"}, traffic["timeouts"])
         self.assertEqual(
             "kora-ai-gateway-client-credentials",
             traffic["apiKeyAuthentication"]["secretRef"]["name"],
@@ -352,6 +409,21 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             agent_egress["to"][0],
         )
         self.assertNotIn("ports", agent_egress)
+
+    def test_optimizer_rtk_attribute_is_safe_when_the_optional_header_is_absent(self):
+        documents = render_chart(
+            "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
+        )
+        policy = resource(documents, "AgentgatewayPolicy", "kora-ai-traffic")
+
+        expression = policy["spec"]["traffic"]["extProc"]["requestAttributes"][
+            "token_optimizer.rtk_applied"
+        ]
+        self.assertEqual(
+            '"x-kora-rtk-applied" in request.headers ? '
+            'request.headers["x-kora-rtk-applied"] == "true" : false',
+            expression,
+        )
 
     def test_kora_gets_only_a_client_key_and_narrow_gateway_egress(self):
         documents = render_chart(
@@ -409,7 +481,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
 
         self.assertEqual("true", env["AI_GATEWAY_ENABLED"]["value"])
         self.assertEqual("kora-auto", env["AI_GATEWAY_MODEL"]["value"])
-        self.assertEqual("24s", env["AI_AGENT_TIMEOUT"]["value"])
+        self.assertEqual("60s", env["AI_AGENT_TIMEOUT"]["value"])
         self.assertEqual("true", seed_env["AI_GATEWAY_ENABLED"]["value"])
         self.assertEqual("kora-auto", seed_env["AI_GATEWAY_MODEL"]["value"])
 
@@ -430,6 +502,107 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         }
         self.assertNotIn("prod-kora-gemini-api-key", remote_refs)
         self.assertNotIn("prod-kora-openai-api-key", remote_refs)
+
+    def test_production_kora_api_resolves_agents_from_the_registry(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        env = {
+            entry["name"]: entry
+            for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+
+        # The cluster-local service, never the public host: aregistry.tesserix.app
+        # is fronted by oauth2-proxy, which 401s a deploy key before the registry
+        # sees it. Pinned because that misconfiguration is invisible at runtime --
+        # routing just falls back to the keyword table.
+        self.assertEqual(
+            "http://agentregistry.agentregistry-system.svc.cluster.local:12121",
+            env["AI_REGISTRY_BASE_URL"]["value"],
+        )
+        self.assertNotIn("aregistry.tesserix.app", env["AI_REGISTRY_BASE_URL"]["value"])
+        self.assertEqual("5m", env["AI_REGISTRY_TTL"]["value"])
+
+    def test_production_kora_api_may_egress_to_the_registry(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        policy = resource(documents, "NetworkPolicy", "kora-ai-registry-egress")
+        rule = policy["spec"]["egress"][0]
+
+        # allow-kora-egress permits 0.0.0.0/0:443 except RFC1918, so without this
+        # the roster fetch to a 10.x service just times out.
+        self.assertEqual(
+            "agentregistry-system",
+            rule["to"][0]["namespaceSelector"]["matchLabels"][
+                "kubernetes.io/metadata.name"
+            ],
+        )
+        ports = {entry["port"] for entry in rule["ports"]}
+        # 15008 is the ambient HBONE tunnel; without it ztunnel drops the hop.
+        self.assertEqual({12121, 15008}, ports)
+
+    def test_production_kora_api_carries_its_own_registry_deploy_key(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        env = {
+            entry["name"]: entry
+            for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        deploy_key = resource(
+            documents, "ExternalSecret", "kora-agentic-registry-deploy-key"
+        )
+
+        # The registry compares sha256(bearer) against its `kora=` entry, so the
+        # gateway key authenticates as nobody. This chart shipped once without
+        # the secret and every lookup 401'd behind a silent keyword fallback.
+        source = env["AI_REGISTRY_API_KEY"]["valueFrom"]["secretKeyRef"]
+        self.assertEqual("kora-agentic-registry-deploy-key", source["name"])
+        self.assertEqual("api_key", source["key"])
+        self.assertEqual(
+            "prod-agentic-registry-kora-deploy-key",
+            deploy_key["spec"]["data"][0]["remoteRef"]["key"],
+        )
+        self.assertEqual("api_key", deploy_key["spec"]["data"][0]["secretKey"])
+
+    def test_gateway_disabled_leaves_the_agent_registry_unconfigured(self):
+        documents = render_chart("charts/apps/kora-api", "kora", "kora")
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        env = {
+            entry["name"]: entry
+            for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+
+        # No gateway means no A2A transport, so a resolved card would be
+        # unusable — the coach must fall through to the model provider. The
+        # deploy key goes with it: an unused credential should not be synced.
+        self.assertNotIn("AI_REGISTRY_BASE_URL", env)
+        self.assertNotIn("AI_REGISTRY_API_KEY", env)
+        self.assertIsNone(
+            next(
+                (
+                    doc
+                    for doc in documents
+                    if doc.get("kind") == "NetworkPolicy"
+                    and doc["metadata"]["name"] == "kora-ai-registry-egress"
+                ),
+                None,
+            )
+        )
+        self.assertIsNone(
+            next(
+                (
+                    doc
+                    for doc in documents
+                    if doc.get("kind") == "ExternalSecret"
+                    and doc["metadata"]["name"] == "kora-agentic-registry-deploy-key"
+                ),
+                None,
+            )
+        )
 
     def test_gateway_disabled_does_not_enable_a_direct_provider_bypass(self):
         documents = render_chart("charts/apps/kora-api", "kora", "kora")
@@ -536,6 +709,17 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         )
 
         authorization = resource(documents, "AuthorizationPolicy", "kora-ai-agents")
+        authentication = resource(
+            documents, "RequestAuthentication", "kora-ai-agents-user"
+        )
+        self.assertEqual(
+            [{"group": "", "kind": "Service", "name": "kora-ai-agents"}],
+            authentication["spec"]["targetRefs"],
+        )
+        self.assertEqual(
+            [{"name": "X-Kora-End-User-Token", "prefix": "Bearer "}],
+            authentication["spec"]["jwtRules"][0]["fromHeaders"],
+        )
         self.assertNotIn("selector", authorization["spec"])
         self.assertEqual(
             [{"group": "", "kind": "Service", "name": "kora-ai-agents"}],
@@ -544,6 +728,12 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         self.assertEqual(
             ["cluster.local/ns/agentgateway-system/sa/kora-ai"],
             authorization["spec"]["rules"][0]["from"][0]["source"]["principals"],
+        )
+        self.assertEqual(
+            ["https://securetoken.google.com/kora-app-e6d38/*"],
+            authorization["spec"]["rules"][0]["from"][0]["source"][
+                "requestPrincipals"
+            ],
         )
         operation = authorization["spec"]["rules"][0]["to"][0]["operation"]
         self.assertEqual(["POST"], operation["methods"])
@@ -625,6 +815,72 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         self.assertEqual(
             "agentic-registry-deploy-key",
             upsert["env"][0]["valueFrom"]["secretKeyRef"]["name"],
+        )
+
+    def test_the_registry_accepts_ingress_from_kora(self):
+        # Egress from kora is only half the path. Without kora in the control
+        # plane's own ingress allowlist the packets are dropped there, and a
+        # drop is indistinguishable from an unreachable registry.
+        mesh = render_chart(
+            "charts/thirdparty/istio-config",
+            "istio-config",
+            "istio-system",
+            "values-prod.yaml",
+        )
+        for name in (
+            "allow-agentregistry-ingress",
+            "allow-agentgateway-ingress",
+            "allow-kagent-ingress",
+        ):
+            policy = resource(mesh, "NetworkPolicy", name)
+            sources = {
+                rule["from"][0]["namespaceSelector"]["matchLabels"][
+                    "kubernetes.io/metadata.name"
+                ]
+                for rule in policy["spec"]["ingress"]
+            }
+            self.assertIn("kora", sources, name)
+            self.assertIn("devai", sources, name)
+
+    def test_the_waypoint_authorizes_kora_to_read_the_catalog(self):
+        # The NetworkPolicy above only gets the packet to the waypoint. This
+        # ALLOW policy denies everything it does not name, and a denial here
+        # looks exactly like the drop it replaced: no response, no refusal.
+        policies = load_yaml(
+            ROOT / "manifests/agentic-istio/authorization-policy.yaml"
+        )
+        registry = next(
+            document
+            for document in policies
+            if document
+            and document.get("kind") == "AuthorizationPolicy"
+            and document["metadata"]["name"] == "agentregistry-authz"
+        )
+        readers = {
+            namespace
+            for rule in registry["spec"]["rules"]
+            for source in rule.get("from", [])
+            for namespace in source["source"].get("namespaces", [])
+            if any(
+                "GET" in target["operation"].get("methods", [])
+                and "/v0/*" in target["operation"].get("paths", [])
+                for target in rule.get("to", [])
+            )
+        }
+        self.assertIn("kora", readers)
+        self.assertIn("devai", readers)
+
+    def test_the_mesh_app_applies_before_it_prunes(self):
+        # Namespaces prune ahead of NetworkPolicies, and a decommissioned
+        # namespace still carrying tesserix.io/protected cannot be dropped, so
+        # without PruneLast that one refusal blocks the ingress rules above
+        # from ever reaching the cluster.
+        application = load_yaml(
+            ROOT / "argocd/prod/infrastructure/istio-config.yaml"
+        )[0]
+        self.assertIn(
+            "PruneLast=true",
+            application["spec"]["syncPolicy"]["syncOptions"],
         )
 
 

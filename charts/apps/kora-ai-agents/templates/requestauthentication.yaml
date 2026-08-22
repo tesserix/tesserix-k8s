@@ -1,0 +1,20 @@
+apiVersion: security.istio.io/v1
+kind: RequestAuthentication
+metadata:
+  name: kora-ai-agents-user
+  labels:
+    {{- include "kora-ai-agents.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: kora-ai-agents
+  jwtRules:
+    - issuer: {{ .Values.endUserAuthentication.issuer | quote }}
+      audiences:
+        - {{ .Values.endUserAuthentication.audience | quote }}
+      jwksUri: {{ .Values.endUserAuthentication.jwksUri | quote }}
+      forwardOriginalToken: true
+      fromHeaders:
+        - name: {{ .Values.endUserAuthentication.header | quote }}
+          prefix: "Bearer "

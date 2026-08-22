@@ -1,0 +1,29 @@
+{{- if and .Values.aiGateway.enabled .Values.aiRegistry.baseURL .Values.aiRegistry.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kora-ai-registry-egress
+  labels:
+    {{- include "kora-api.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kora-api.selectorLabels" . | nindent 6 }}
+      kora.tesserix.app/stack: deployment
+  policyTypes:
+    - Egress
+  egress:
+    # Namespace-wide rather than pod-selected, unlike the gateway policy above:
+    # agentregistry-system carries istio.io/use-waypoint, so a roster fetch is
+    # brokered by the waypoint pod and never reaches the registry pod directly.
+    # A podSelector on the registry would allow a hop that does not happen.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.aiRegistry.networkPolicy.namespace }}
+      ports:
+        - port: {{ .Values.aiRegistry.networkPolicy.port }}
+          protocol: TCP
+        - port: 15008
+          protocol: TCP
+{{- end }}

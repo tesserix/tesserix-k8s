@@ -52,9 +52,12 @@ service:
   nameOverride: kora-api-direct
 
 aiGateway:
-  enabled: true
+  # Production enables this in values-prod.yaml. Kora sends only this logical
+  # model; Agent Gateway owns every concrete provider model and location.
+  enabled: false
   baseURL: http://kora-ai.agentgateway-system.svc.cluster.local:8080/v1
   model: kora-auto
+  agentTimeout: 60s
   clientSecret:
     create: true
     name: kora-ai-gateway-client-credentials
@@ -70,27 +73,40 @@ aiGateway:
     gatewayName: kora-ai
     port: 8080
 
-aiGateway:
-  # Production enables this in values-prod.yaml. Kora sends only this logical
-  # model; Agent Gateway owns every concrete provider model and location.
-  enabled: false
-  baseURL: http://kora-ai.agentgateway-system.svc.cluster.local:8080/v1
-  model: kora-auto
-  agentTimeout: 24s
-  clientSecret:
+# Kora resolves agents, skills and tools from the agentic registry at request
+# time. An empty baseURL leaves the agent path off entirely and the coach talks
+# to the model provider directly.
+#
+# deployKey is a DEDICATED credential, mirroring devai's. The registry holds
+# only sha256(key) in its `kora=` AUTH_DEPLOY_KEYS entry and compares it against
+# the Bearer token, so no other credential can stand in for it — this chart
+# shipped once claiming AI_GATEWAY_API_KEY would do, and every roster lookup
+# 401'd while the pod stayed green, because a registry outage degrades to
+# keyword routing by design. kora_agent_registry_resolves_total{result} is the
+# only thing that says which one you are getting.
+aiRegistry:
+  # The CLUSTER-LOCAL service, not aregistry.tesserix.app. The public host is
+  # fronted by agentregistry-ui-oauth2-proxy, which 401s a Bearer deploy key
+  # before the registry ever sees it -- devai's known-good key and no key at all
+  # fail there identically. Every devai workload points here for the same reason.
+  baseURL: http://agentregistry.agentregistry-system.svc.cluster.local:12121
+  ttl: 5m
+  # allow-kora-egress permits 0.0.0.0/0:443 except RFC1918, so the in-cluster
+  # service is unreachable without this: the roster fetch times out and routing
+  # silently falls back to the keyword table.
+  networkPolicy:
+    enabled: true
+    namespace: agentregistry-system
+    port: 12121
+  deployKey:
     create: true
-    name: kora-ai-gateway-client-credentials
-    key: kora-api
+    name: kora-agentic-registry-deploy-key
+    key: api_key
     refreshInterval: 1h
     store:
       name: gcp-secret-store
       kind: ClusterSecretStore
-    remoteRef: prod-kora-ai-gateway-api-key
-  networkPolicy:
-    enabled: true
-    namespace: agentgateway-system
-    gatewayName: kora-ai
-    port: 8080
+    remoteRef: prod-agentic-registry-kora-deploy-key
 
 # Emergency/local compatibility only. GitOps environments keep this disabled:
 # disabling Agent Gateway must not silently bypass it with provider credentials.

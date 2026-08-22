@@ -89,8 +89,9 @@ spec:
       timeout: 120s
 ---
 # Solo AgentGateway model calls go to the authenticated data plane. Browser
-# paths go through a separate Zitadel proxy to the private native admin UI.
-# The controller/xDS Service on 9978 is never referenced by a public route.
+# paths go through a separate Zitadel proxy to Registry desired-state admin;
+# the proxy keeps Solo's runtime UI on its explicit /ui and /api paths. The
+# controller/xDS Service on 9978 is never referenced by a public route.
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -155,9 +156,10 @@ spec:
             x-forwarded-proto: https
       route:
         - destination:
-            host: agentgateway-console.agentgateway-system.svc.cluster.local
+            host: "agentgateway-admin-ui-oauth2-proxy.\
+              agentgateway-system.svc.cluster.local"
             port:
-              number: 8082
+              number: 4180
       timeout: 120s
 ---
 # Agent Registry UI
