@@ -315,8 +315,8 @@ migrate:
 # 0, which is how the index sat at 42% embedded with this Job and ArgoCD both
 # green. Draining the queue, or having nothing to do, is still green.
 #
-# Requires the image to ship /usr/local/bin/{seed,ingest,embed} and the AFCD /
-# USDA / SR Legacy / curated JSON at /usr/local/share/kora/food (kora PR #67
+# Requires the image to ship /usr/local/bin/{seed,ingest,dietag,embed} and the
+# AFCD / USDA / SR Legacy / curated JSON at /usr/local/share/kora/food (kora #67
 # for seed+ingest, and the embed + SR Legacy + curated PR after it). Until that
 # image is promoted the Job exec-fails loudly, matching the migrate Job's
 # convention of a visible failure over a silent skip.
@@ -347,6 +347,14 @@ seed:
   # without it the load inserts 310 duplicate rows instead of recognising them.
   # That happened in prod on 2026-08-17 and had to be cleaned up by hand.
   # The flag is idempotent, so leaving it on every run costs nothing.
+  #
+  # dietag runs after the load and before embed: it backfills
+  # food_items.diet_tags, which the mentor's allergy rules exclude retrieval
+  # on. Write paths derive tags themselves, so this covers rows already in the
+  # index — untagged, they match no rule and a "no beef" allergy filters
+  # nothing. It is a plain UPDATE pass, so it must not wait behind embed's
+  # per-row Gemini calls. Idempotent, and it re-derives on every run, so a
+  # taxonomy change is picked up by the next sync.
   command:
     - /bin/sh
     - -c
@@ -355,6 +363,7 @@ seed:
       /usr/local/bin/ingest
       -backfill-usda-brands
       -food-dir /usr/local/share/kora/food &&
+      /usr/local/bin/dietag &&
       /usr/local/bin/embed
 
 # Resolve-cache Redis, as a SIDECAR in the kora-api pod (kora#105).
