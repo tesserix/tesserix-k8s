@@ -269,22 +269,55 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             agent_client["podSelector"]["matchLabels"]["app.kubernetes.io/name"],
         )
 
-    def test_gateway_listener_requires_the_kora_workload_identity(self):
+    def test_gateway_listener_requires_workload_and_verified_app_user_identity(self):
         documents = render_chart(
             "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
         )
         policy = resource(documents, "AuthorizationPolicy", "kora-ai")
+        authentication = resource(documents, "RequestAuthentication", "kora-ai-user")
+
+        rule = authentication["spec"]["jwtRules"][0]
+        self.assertEqual(
+            "https://securetoken.google.com/kora-app-e6d38",
+            rule["issuer"],
+        )
+        self.assertEqual(["kora-app-e6d38"], rule["audiences"])
+        self.assertEqual(
+            [{"name": "X-Kora-End-User-Token", "prefix": "Bearer "}],
+            rule["fromHeaders"],
+        )
+        self.assertTrue(rule["forwardOriginalToken"])
 
         client_rule = policy["spec"]["rules"][0]
         self.assertEqual(
             ["cluster.local/ns/kora/sa/kora-api"],
             client_rule["from"][0]["source"]["principals"],
         )
+        self.assertEqual(
+            ["https://securetoken.google.com/kora-app-e6d38/*"],
+            client_rule["from"][0]["source"]["requestPrincipals"],
+        )
         self.assertEqual(["8080"], client_rule["to"][0]["operation"]["ports"])
 
         self.assertEqual(
             ["cluster.local/ns/kora/sa/kora-ai-agents"],
             policy["spec"]["rules"][1]["from"][0]["source"]["principals"],
+        )
+        self.assertEqual(
+            ["https://securetoken.google.com/kora-app-e6d38/*"],
+            policy["spec"]["rules"][1]["from"][0]["source"]["requestPrincipals"],
+        )
+
+        embedding_rule = policy["spec"]["rules"][2]
+        self.assertEqual(
+            ["cluster.local/ns/kora/sa/kora-api"],
+            embedding_rule["from"][0]["source"]["principals"],
+        )
+        self.assertEqual(
+            ["POST"], embedding_rule["to"][0]["operation"]["methods"]
+        )
+        self.assertEqual(
+            ["/v1/embeddings"], embedding_rule["to"][0]["operation"]["paths"]
         )
 
     def test_gateway_routes_a2a_and_owns_upstream_authentication(self):
@@ -316,7 +349,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
 
         traffic = policy["spec"]["traffic"]
         self.assertEqual("Strict", traffic["apiKeyAuthentication"]["mode"])
-        self.assertEqual({"request": "23s"}, traffic["timeouts"])
+        self.assertEqual({"request": "70s"}, traffic["timeouts"])
         self.assertEqual(
             "kora-ai-gateway-client-credentials",
             traffic["apiKeyAuthentication"]["secretRef"]["name"],
@@ -354,6 +387,21 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             agent_egress["to"][0],
         )
         self.assertNotIn("ports", agent_egress)
+
+    def test_optimizer_rtk_attribute_is_safe_when_the_optional_header_is_absent(self):
+        documents = render_chart(
+            "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
+        )
+        policy = resource(documents, "AgentgatewayPolicy", "kora-ai-traffic")
+
+        expression = policy["spec"]["traffic"]["extProc"]["requestAttributes"][
+            "token_optimizer.rtk_applied"
+        ]
+        self.assertEqual(
+            '"x-kora-rtk-applied" in request.headers ? '
+            'request.headers["x-kora-rtk-applied"] == "true" : false',
+            expression,
+        )
 
     def test_kora_gets_only_a_client_key_and_narrow_gateway_egress(self):
         documents = render_chart(
@@ -411,7 +459,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
 
         self.assertEqual("true", env["AI_GATEWAY_ENABLED"]["value"])
         self.assertEqual("kora-auto", env["AI_GATEWAY_MODEL"]["value"])
-        self.assertEqual("24s", env["AI_AGENT_TIMEOUT"]["value"])
+        self.assertEqual("60s", env["AI_AGENT_TIMEOUT"]["value"])
         self.assertEqual("true", seed_env["AI_GATEWAY_ENABLED"]["value"])
         self.assertEqual("kora-auto", seed_env["AI_GATEWAY_MODEL"]["value"])
 
@@ -639,6 +687,17 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         )
 
         authorization = resource(documents, "AuthorizationPolicy", "kora-ai-agents")
+        authentication = resource(
+            documents, "RequestAuthentication", "kora-ai-agents-user"
+        )
+        self.assertEqual(
+            [{"group": "", "kind": "Service", "name": "kora-ai-agents"}],
+            authentication["spec"]["targetRefs"],
+        )
+        self.assertEqual(
+            [{"name": "X-Kora-End-User-Token", "prefix": "Bearer "}],
+            authentication["spec"]["jwtRules"][0]["fromHeaders"],
+        )
         self.assertNotIn("selector", authorization["spec"])
         self.assertEqual(
             [{"group": "", "kind": "Service", "name": "kora-ai-agents"}],
@@ -647,6 +706,12 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         self.assertEqual(
             ["cluster.local/ns/agentgateway-system/sa/kora-ai"],
             authorization["spec"]["rules"][0]["from"][0]["source"]["principals"],
+        )
+        self.assertEqual(
+            ["https://securetoken.google.com/kora-app-e6d38/*"],
+            authorization["spec"]["rules"][0]["from"][0]["source"][
+                "requestPrincipals"
+            ],
         )
         operation = authorization["spec"]["rules"][0]["to"][0]["operation"]
         self.assertEqual(["POST"], operation["methods"])
