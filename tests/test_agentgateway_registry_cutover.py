@@ -1,5 +1,6 @@
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import unittest
@@ -132,6 +133,18 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         script = container["args"][0]
         self.assertIn('/v0/agentgateway/import', script)
         self.assertIn('test "${count}" = "24"', script)
+        count_pattern = re.search(
+            r"grep -Ec '([^']+)' /seed/resources\.json", script
+        )
+        self.assertIsNotNone(count_pattern)
+        count = subprocess.run(
+            ["grep", "-Ec", count_pattern.group(1)],
+            input=seed["data"]["resources.json"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, count.returncode, count.stderr)
+        self.assertEqual("24", count.stdout.strip())
         self.assertTrue(
             any(
                 env.get("valueFrom", {}).get("secretKeyRef", {}).get("name")
