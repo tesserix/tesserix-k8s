@@ -1,11 +1,14 @@
+import json
 import pathlib
 import subprocess
+import sys
 import unittest
 
 import yaml
 
 
 ROOT = pathlib.Path(__file__).parents[1]
+PROJECT_AUDIENCE = "387190457387450503"
 MIGRATED = {
     ("AgentgatewayBackend", "ai-zitadel-jwks"),
     ("AgentgatewayBackend", "devai-anthropic"),
@@ -66,6 +69,77 @@ def resource(documents, kind, name):
 
 
 class AgentGatewayRegistryCutoverTests(unittest.TestCase):
+    def test_registry_platform_seed_tracks_the_approved_gateway_resources(self):
+        generated = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts/generate-agentgateway-platform-resources.py"),
+                "--check",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, generated.returncode, generated.stderr)
+
+        documents = render_chart("charts/apps/agentgateway-route-sync")
+        seed = resource(
+            documents, "ConfigMap", "agentgateway-registry-platform-resources"
+        )
+        desired = json.loads(seed["data"]["resources.json"])
+
+        self.assertEqual("List", desired["kind"])
+        self.assertEqual(
+            MIGRATED,
+            {
+                (item["kind"], item["metadata"]["name"])
+                for item in desired["items"]
+            },
+        )
+        self.assertTrue(
+            all(
+                item["metadata"]["namespace"] == "agentgateway-system"
+                for item in desired["items"]
+            )
+        )
+
+        policies = {
+            item["metadata"]["name"]: item
+            for item in desired["items"]
+            if item["kind"] == "AgentgatewayPolicy"
+        }
+        for name, role in (
+            ("mcp-public-oauth", "agentgateway.mcp"),
+            ("ai-public-oauth", "agentgateway.models"),
+        ):
+            traffic = policies[name]["spec"]["traffic"]
+            self.assertEqual(
+                [PROJECT_AUDIENCE],
+                traffic["jwtAuthentication"]["providers"][0]["audiences"],
+            )
+            self.assertEqual(
+                [
+                    f'"{role}" in jwt["urn:zitadel:iam:org:project:'
+                    f'{PROJECT_AUDIENCE}:roles"]'
+                ],
+                traffic["authorization"]["policy"]["matchExpressions"],
+            )
+
+        job = resource(documents, "Job", "agentgateway-registry-platform-seed")
+        pod_spec = job["spec"]["template"]["spec"]
+        self.assertFalse(pod_spec["automountServiceAccountToken"])
+        container = pod_spec["containers"][0]
+        self.assertRegex(container["image"], r"@sha256:[0-9a-f]{64}$")
+        script = container["args"][0]
+        self.assertIn('/v0/agentgateway/import', script)
+        self.assertIn('test "${count}" = "24"', script)
+        self.assertTrue(
+            any(
+                env.get("valueFrom", {}).get("secretKeyRef", {}).get("name")
+                == "agentgateway-route-sync-registry-key"
+                for env in container["env"]
+            )
+        )
+
     def test_registry_is_the_default_owner_and_helm_is_a_tested_rollback(self):
         charts = (
             "charts/apps/devai-ai-gateway",
