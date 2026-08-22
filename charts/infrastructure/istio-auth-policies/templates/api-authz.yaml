@@ -205,6 +205,23 @@ spec:
               - "DELETE"
               - "OPTIONS"
 
+    # Cashfree payment webhook. Deliberately OUTSIDE the /v1/* group above,
+    # because the caller is Cashfree and holds no Firebase token — the rule
+    # there would not have covered it, and the gateway's deny-all would have
+    # rejected every delivery as 403 before kora-api ever saw one, leaving
+    # paid orders ungranted. Authentication is the signature Cashfree puts in
+    # x-webhook-signature, verified in the handler over the raw body, so
+    # letting the request reach the app is the whole point. POST only, and
+    # host-scoped like every rule here.
+    - to:
+        - operation:
+            hosts:
+              - "kora-api.tesserix.app"
+            paths:
+              - "/webhooks/cashfree"
+            methods:
+              - "POST"
+
     # Staff invitation and activation endpoints (public - no JWT required)
     # Users need to access these before they have an account
     - to:

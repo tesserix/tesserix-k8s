@@ -162,6 +162,18 @@ env:
   # chart said Redis was expected, so its absence flagged nothing and every
   # resolve silently cost a Gemini call. Points at the sidecar below.
   REDIS_URL: "redis://localhost:6379/0"
+  # Paid AI top-ups (kora docs/adr/0003-ai-top-up-billing.md). SANDBOX because
+  # the only Cashfree PG credentials in Secret Manager are test ones — both
+  # prod-homechef-cashfree-app-id and its -test- twin carry the TEST prefix.
+  # Checkout is therefore fully exercisable end to end and no real money can
+  # move. Going live is: real secrets under prod-kora-cashfree-*, the two
+  # remoteRefs below repointed, and this flipped to "false".
+  CASHFREE_SANDBOX: "true"
+  # The deep link the hosted checkout returns to. The scheme is the MOBILE
+  # APP's (apps/mobile/app.json), not the product name: a scheme the app has
+  # not registered opens nothing and strands the user in a browser after they
+  # have paid. Nothing on this URL is trusted — the app re-asks the gateway.
+  CASHFREE_RETURN_URL: "mobile://billing/return"
 
 # Each entry maps an env var name to a key in the k8s Secret created by
 # the ExternalSecret. Keep this in sync with externalsecret.yaml.
@@ -187,6 +199,12 @@ secretEnv:
   APPLE_TEAM_ID: apple_team_id
   APPLE_KEY_ID: apple_key_id
   APPLE_PRIVATE_KEY: apple_private_key
+  # Same together-or-not-at-all rule as Apple above: kora-api refuses to start
+  # with one of these set and the other empty, and with BOTH empty the purchase
+  # routes and POST /webhooks/cashfree are simply not mounted (404), which is
+  # the intended safe state for an environment with no gateway.
+  CASHFREE_APP_ID: cashfree_app_id
+  CASHFREE_SECRET_KEY: cashfree_secret_key
 
 # GCP / Workload Identity — annotates the SA with the matching GSA email.
 #
@@ -249,6 +267,13 @@ externalSecret:
     apple_team_id: prod-kora-apple-team-id
     apple_key_id: prod-kora-apple-key-id
     apple_private_key: prod-kora-apple-private-key
+    # Cashfree PG. These are the shared Tesserix merchant account's TEST
+    # credentials, the same pair dwellm8-api borrows — verified TEST-prefixed,
+    # so they collect nothing. Cashfree signs webhooks with the merchant secret
+    # key, so cashfree_secret_key is both the API credential and the webhook
+    # verification key; kora-api reads it once for both.
+    cashfree_app_id: prod-homechef-cashfree-test-app-id
+    cashfree_secret_key: prod-homechef-cashfree-test-secret-key
 
 # Schema migration. Runs as the Deployment's `migrate` initContainer (same
 # image, command override), so the API container cannot start — and the pod
