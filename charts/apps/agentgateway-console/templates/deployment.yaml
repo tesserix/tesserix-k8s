@@ -3,6 +3,8 @@ kind: Deployment
 metadata:
   name: {{ .Values.name }}
   namespace: {{ .Values.namespace }}
+  annotations:
+    secret.reloader.stakater.com/reload: {{ .Values.name }}-config
   labels:
     {{- include "agentgateway-console.labels" . | nindent 4 }}
 spec:
@@ -56,6 +58,21 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.name }}-config
                   key: oidcCookieSecret
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.name }}-config
+                  key: anthropicApiKey
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.name }}-config
+                  key: openaiApiKey
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.name }}-config
+                  key: geminiApiKey
           ports:
             - name: http-mesh
               containerPort: {{ .Values.ports.mesh }}
