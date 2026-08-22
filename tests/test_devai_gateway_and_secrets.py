@@ -69,28 +69,25 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         }
         self.assertEqual(expected, actual)
 
-    def test_vertex_api_key_backend_is_gitops_owned_and_secret_backed(self):
+    def test_vertex_route_uses_workload_identity_and_retains_rollback_key(self):
         documents = render_chart(
             "charts/apps/devai-ai-gateway", "devai-ai-gateway", "agentgateway-system"
         )
         backend = resource(documents, "AgentgatewayBackend", "devai-vertex-api-key")
+        external_secret = resource(
+            documents, "ExternalSecret", "devai-ai-gateway-secrets"
+        )
         provider = backend["spec"]["ai"]["groups"][0]["providers"][0]
 
         self.assertEqual("vertex", provider["name"])
         self.assertEqual("aiplatform.googleapis.com", provider["host"])
-        self.assertEqual(
+        self.assertEqual({"gcp": {}}, provider["policies"]["auth"])
+        self.assertIn(
             {
-                "credentials": [
-                    {
-                        "secretRef": {
-                            "name": "devai-ai-gateway-secrets",
-                            "key": "VERTEX_API_KEY",
-                        },
-                        "location": {"header": {"name": "x-goog-api-key"}},
-                    }
-                ]
+                "secretKey": "VERTEX_API_KEY",
+                "remoteRef": {"key": "prod-devai-vertex-api-key"},
             },
-            provider["policies"]["auth"],
+            external_secret["spec"]["data"],
         )
 
     def test_gateway_routes_are_provider_specific_and_private(self):
