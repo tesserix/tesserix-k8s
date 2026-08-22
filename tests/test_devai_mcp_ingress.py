@@ -1,4 +1,5 @@
 import pathlib
+import subprocess
 import unittest
 
 import yaml
@@ -34,6 +35,23 @@ def resource(documents, kind, name):
         if document.get("kind") == kind
         and document.get("metadata", {}).get("name") == name
     )
+
+
+def render_chart(chart, release, namespace):
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            release,
+            str(ROOT / chart),
+            "--namespace",
+            namespace,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [document for document in yaml.safe_load_all(result.stdout) if document]
 
 
 class DevAIMCPIngressTests(unittest.TestCase):
@@ -157,6 +175,49 @@ class DevAIMCPIngressTests(unittest.TestCase):
             ],
             policy["spec"]["egress"],
         )
+
+    def test_devai_services_are_discoverable_as_identity_aware_mcp_targets(self):
+        cases = (
+            (
+                "charts/apps/devai-api",
+                {
+                    "analyst-mcp": "/mcp/analyst",
+                    "devai-mcp": "/mcp/devai",
+                    "gitops-mcp": "/mcp/gitops/",
+                    "sample-mcp": "/mcp/sample/",
+                    "scm-mcp": "/mcp/scm/",
+                },
+            ),
+            ("charts/apps/devai-sre", {"sre-mcp": "/mcp/sre"}),
+        )
+
+        for chart, services in cases:
+            documents = render_chart(chart, "devai-mcp", "devai")
+            for name, path in services.items():
+                with self.subTest(service=name):
+                    service = resource(documents, "Service", name)
+                    self.assertEqual(
+                        name,
+                        service["metadata"]["labels"][
+                            "mcp.tesserix.app/server"
+                        ],
+                    )
+                    self.assertEqual(
+                        path,
+                        service["metadata"]["annotations"][
+                            "agentgateway.dev/mcp-path"
+                        ],
+                    )
+                    self.assertEqual(
+                        name,
+                        service["metadata"]["annotations"][
+                            "agentgateway.dev/mcp-target-name"
+                        ],
+                    )
+                    self.assertEqual(
+                        "agentgateway.dev/mcp",
+                        service["spec"]["ports"][0]["appProtocol"],
+                    )
 
 
 if __name__ == "__main__":
