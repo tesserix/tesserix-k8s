@@ -2,6 +2,50 @@
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
+  name: kora-user-auth
+  labels:
+    {{- include "kora-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kora-ai
+      sectionName: conversation
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kora-ai
+      sectionName: structured
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kora-ai
+      sectionName: default
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kora-a2a
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      location:
+        header:
+          name: {{ .Values.endUserAuthentication.header }}
+          prefix: "Bearer "
+      providers:
+        - issuer: {{ .Values.endUserAuthentication.issuer }}
+          audiences:
+            - {{ .Values.endUserAuthentication.audience | quote }}
+          jwks:
+            remote:
+              jwksPath: {{ .Values.endUserAuthentication.jwksPath }}
+              cacheDuration: {{ .Values.endUserAuthentication.jwksCacheDuration }}
+              backendRef:
+                group: agentgateway.dev
+                kind: AgentgatewayBackend
+                name: kora-firebase-jwks
+                port: 443
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
   name: kora-ai-traffic
   labels:
     {{- include "kora-ai-gateway.labels" . | nindent 4 }}

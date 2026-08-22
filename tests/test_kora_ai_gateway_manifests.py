@@ -80,7 +80,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         self.assertEqual("agentgateway", container["name"])
         self.assertEqual("169.254.169.254", env["GCE_METADATA_HOST"])
         self.assertEqual(
-            "waypoint",
+            "none",
             parameters["spec"]["service"]["metadata"]["labels"][
                 "istio.io/use-waypoint"
             ],
@@ -245,24 +245,27 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         }
         self.assertNotIn("xai", provider_names)
 
-    def test_gateway_only_accepts_waypoint_ingress(self):
+    def test_gateway_only_accepts_kora_clients(self):
         documents = render_chart(
             "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
         )
         policy = resource(documents, "NetworkPolicy", "kora-ai")
-        waypoint = policy["spec"]["ingress"][0]["from"][0]
+        api_client = policy["spec"]["ingress"][0]["from"][0]
 
         self.assertEqual(
-            "agentgateway-system",
-            waypoint["namespaceSelector"]["matchLabels"][
+            "kora",
+            api_client["namespaceSelector"]["matchLabels"][
                 "kubernetes.io/metadata.name"
             ],
         )
         self.assertEqual(
-            "waypoint",
-            waypoint["podSelector"]["matchLabels"][
-                "gateway.networking.k8s.io/gateway-name"
-            ],
+            "kora-api",
+            api_client["podSelector"]["matchLabels"]["app.kubernetes.io/name"],
+        )
+        agent_client = policy["spec"]["ingress"][1]["from"][0]
+        self.assertEqual(
+            "kora-ai-agents",
+            agent_client["podSelector"]["matchLabels"]["app.kubernetes.io/name"],
         )
 
     def test_gateway_listener_requires_workload_and_verified_app_user_identity(self):
@@ -272,11 +275,15 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         policy = resource(documents, "AuthorizationPolicy", "kora-ai")
         authentication = resource(documents, "RequestAuthentication", "kora-ai-user")
 
-        target = [{"group": "", "kind": "Service", "name": "kora-ai"}]
-        self.assertEqual(target, policy["spec"]["targetRefs"])
-        self.assertEqual(target, authentication["spec"]["targetRefs"])
-        self.assertNotIn("selector", policy["spec"])
-        self.assertNotIn("selector", authentication["spec"])
+        selector = {
+            "matchLabels": {
+                "gateway.networking.k8s.io/gateway-name": "kora-ai"
+            }
+        }
+        self.assertEqual(selector, policy["spec"]["selector"])
+        self.assertEqual(selector, authentication["spec"]["selector"])
+        self.assertNotIn("targetRefs", policy["spec"])
+        self.assertNotIn("targetRefs", authentication["spec"])
 
         rule = authentication["spec"]["jwtRules"][0]
         self.assertEqual(
@@ -343,6 +350,77 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
 
         a2a_route = resource(documents, "HTTPRoute", "kora-a2a")
         self.assertNotIn("filters", a2a_route["spec"]["rules"][0])
+
+    def test_native_gateway_validates_user_jwt_on_user_scoped_routes(self):
+        documents = render_chart(
+            "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
+        )
+        route = resource(documents, "HTTPRoute", "kora-ai")
+        backend = resource(documents, "AgentgatewayBackend", "kora-firebase-jwks")
+        policy = resource(documents, "AgentgatewayPolicy", "kora-user-auth")
+
+        self.assertEqual(
+            ["embedding", "conversation", "structured", "default"],
+            [rule["name"] for rule in route["spec"]["rules"]],
+        )
+        self.assertEqual(
+            {"host": "www.googleapis.com", "port": 443},
+            backend["spec"]["static"],
+        )
+        self.assertEqual({}, backend["spec"]["policies"]["tls"])
+        self.assertEqual(
+            [
+                {
+                    "group": "gateway.networking.k8s.io",
+                    "kind": "HTTPRoute",
+                    "name": "kora-ai",
+                    "sectionName": "conversation",
+                },
+                {
+                    "group": "gateway.networking.k8s.io",
+                    "kind": "HTTPRoute",
+                    "name": "kora-ai",
+                    "sectionName": "structured",
+                },
+                {
+                    "group": "gateway.networking.k8s.io",
+                    "kind": "HTTPRoute",
+                    "name": "kora-ai",
+                    "sectionName": "default",
+                },
+                {
+                    "group": "gateway.networking.k8s.io",
+                    "kind": "HTTPRoute",
+                    "name": "kora-a2a",
+                },
+            ],
+            policy["spec"]["targetRefs"],
+        )
+        jwt = policy["spec"]["traffic"]["jwtAuthentication"]
+        self.assertEqual("Strict", jwt["mode"])
+        self.assertEqual(
+            {
+                "header": {
+                    "name": "X-Kora-End-User-Token",
+                    "prefix": "Bearer ",
+                }
+            },
+            jwt["location"],
+        )
+        provider = jwt["providers"][0]
+        self.assertEqual(
+            "https://securetoken.google.com/kora-app-e6d38",
+            provider["issuer"],
+        )
+        self.assertEqual(["kora-app-e6d38"], provider["audiences"])
+        self.assertEqual(
+            "/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com",
+            provider["jwks"]["remote"]["jwksPath"],
+        )
+        self.assertEqual(
+            "kora-firebase-jwks",
+            provider["jwks"]["remote"]["backendRef"]["name"],
+        )
 
     def test_gateway_routes_a2a_and_owns_upstream_authentication(self):
         documents = render_chart(
