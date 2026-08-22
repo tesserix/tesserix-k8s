@@ -6,10 +6,18 @@ metadata:
   labels:
     {{- include "kora-api.labels" . | nindent 4 }}
 spec:
+  # Both stacks dial the gateway: the API for captures, the seed Job for
+  # cmd/embed. allow-kora-egress (istio-config) selects every pod in the
+  # namespace and does not allowlist agentgateway-system, so a pod NOT matched
+  # here has no route to the gateway at all — the seed Job failed every embed
+  # call with "connection reset by peer" until it was added.
   podSelector:
     matchLabels:
       {{- include "kora-api.selectorLabels" . | nindent 6 }}
-      kora.tesserix.app/stack: deployment
+    matchExpressions:
+      - key: kora.tesserix.app/stack
+        operator: In
+        values: ["deployment", "seed"]
   policyTypes:
     - Egress
   egress:
