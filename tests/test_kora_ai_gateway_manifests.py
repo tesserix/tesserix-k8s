@@ -80,7 +80,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         self.assertEqual("agentgateway", container["name"])
         self.assertEqual("169.254.169.254", env["GCE_METADATA_HOST"])
         self.assertEqual(
-            "none",
+            "waypoint",
             parameters["spec"]["service"]["metadata"]["labels"][
                 "istio.io/use-waypoint"
             ],
@@ -245,28 +245,24 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         }
         self.assertNotIn("xai", provider_names)
 
-    def test_gateway_only_accepts_kora_api_clients(self):
+    def test_gateway_only_accepts_waypoint_ingress(self):
         documents = render_chart(
             "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
         )
         policy = resource(documents, "NetworkPolicy", "kora-ai")
-        client = policy["spec"]["ingress"][0]["from"][0]
+        waypoint = policy["spec"]["ingress"][0]["from"][0]
 
         self.assertEqual(
-            "kora",
-            client["namespaceSelector"]["matchLabels"][
+            "agentgateway-system",
+            waypoint["namespaceSelector"]["matchLabels"][
                 "kubernetes.io/metadata.name"
             ],
         )
         self.assertEqual(
-            "kora-api",
-            client["podSelector"]["matchLabels"]["app.kubernetes.io/name"],
-        )
-
-        agent_client = policy["spec"]["ingress"][1]["from"][0]
-        self.assertEqual(
-            "kora-ai-agents",
-            agent_client["podSelector"]["matchLabels"]["app.kubernetes.io/name"],
+            "waypoint",
+            waypoint["podSelector"]["matchLabels"][
+                "gateway.networking.k8s.io/gateway-name"
+            ],
         )
 
     def test_gateway_listener_requires_workload_and_verified_app_user_identity(self):
@@ -275,6 +271,12 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         )
         policy = resource(documents, "AuthorizationPolicy", "kora-ai")
         authentication = resource(documents, "RequestAuthentication", "kora-ai-user")
+
+        target = [{"group": "", "kind": "Service", "name": "kora-ai"}]
+        self.assertEqual(target, policy["spec"]["targetRefs"])
+        self.assertEqual(target, authentication["spec"]["targetRefs"])
+        self.assertNotIn("selector", policy["spec"])
+        self.assertNotIn("selector", authentication["spec"])
 
         rule = authentication["spec"]["jwtRules"][0]
         self.assertEqual(
