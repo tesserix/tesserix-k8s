@@ -320,6 +320,28 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             ["/v1/embeddings"], embedding_rule["to"][0]["operation"]["paths"]
         )
 
+    def test_model_routes_strip_the_delegated_identity_before_provider_egress(self):
+        documents = render_chart(
+            "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
+        )
+        model_route = resource(documents, "HTTPRoute", "kora-ai")
+
+        for rule in model_route["spec"]["rules"]:
+            self.assertEqual(
+                [
+                    {
+                        "type": "RequestHeaderModifier",
+                        "requestHeaderModifier": {
+                            "remove": ["X-Kora-End-User-Token"]
+                        },
+                    }
+                ],
+                rule.get("filters"),
+            )
+
+        a2a_route = resource(documents, "HTTPRoute", "kora-a2a")
+        self.assertNotIn("filters", a2a_route["spec"]["rules"][0])
+
     def test_gateway_routes_a2a_and_owns_upstream_authentication(self):
         documents = render_chart(
             "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
