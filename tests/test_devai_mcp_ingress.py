@@ -117,6 +117,47 @@ class DevAIMCPIngressTests(unittest.TestCase):
                     gateway_rule["to"],
                 )
 
+    def test_agentgateway_mcp_has_ambient_egress_to_devai(self):
+        policies = [
+            document
+            for document in yaml.safe_load_all(
+                (
+                    ROOT
+                    / "manifests/agentic-istio/networkpolicy-consumer-egress.yaml"
+                ).read_text()
+            )
+            if document
+        ]
+        policy = resource(
+            policies,
+            "NetworkPolicy",
+            "allow-agentgateway-mcp-to-devai-egress",
+        )
+
+        self.assertEqual(
+            {
+                "gateway.networking.k8s.io/gateway-name": "agentgateway-mcp",
+            },
+            policy["spec"]["podSelector"]["matchLabels"],
+        )
+        self.assertEqual(["Egress"], policy["spec"]["policyTypes"])
+        self.assertEqual(
+            [
+                {
+                    "to": [
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": "devai",
+                                }
+                            }
+                        }
+                    ]
+                }
+            ],
+            policy["spec"]["egress"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

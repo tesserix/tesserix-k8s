@@ -60,6 +60,32 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: agentregistry-system
 ---
+# The MCP data plane brokers calls to DevAI's API and SRE MCP endpoints. DevAI
+# is ambient-mesh enrolled, so the egress rule must admit the namespace rather
+# than only the application ports; ztunnel carries the connection over HBONE.
+# Restrict the source to the MCP Gateway pods. DevAI's destination-side
+# NetworkPolicies and AuthorizationPolicies still allow only the
+# agentgateway-mcp service account on /mcp/*.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-agentgateway-mcp-to-devai-egress
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: agentgateway-mcp
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: devai
+---
 # kagent-agent-sync also curls devai-api (devai namespace) for the active
 # variant set — the union of every user's Settings-enabled models — so it can
 # provision exactly those Agent pods on demand. Same additive, full-namespace
