@@ -158,7 +158,7 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
         config = (
             ROOT / "charts/apps/agentgateway-console/files/config.yaml"
         ).read_text()
-        self.assertIn(
+        self.assertNotIn(
             "filter: info,agentgateway_app::commands::run=warn",
             config,
         )
