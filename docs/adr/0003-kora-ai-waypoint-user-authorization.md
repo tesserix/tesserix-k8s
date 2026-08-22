@@ -1,70 +1,76 @@
-# ADR 0003: Enforce Kora user identity at the AI waypoint
+# ADR 0003: Validate Kora user identity at native AgentGateway
 
 ## Context
 
 Kora's user-facing AI path is limited to 120 requests per minute with a burst of
 20, buffers at most 16 MiB, has a 120-second request timeout, and runs two
-AgentGateway replicas. The existing latency SLO is not documented, so this
-change must not add a new workload or an external authorization hop.
+AgentGateway replicas. The existing latency SLO is not documented, so the
+identity boundary must not add a new workload or external authorization call.
 
 The Kora API verifies the app user's Firebase token and delegates it in
-`X-Kora-End-User-Token`. A2A calls must retain that token so the agent service
-and its subsequent model call remain user-scoped. Model routes must remove the
-header before Vertex or another provider receives the request.
+`X-Kora-End-User-Token`. A2A calls retain that token so downstream agent and
+model calls stay user-scoped. Model routes remove it before Vertex or another
+provider receives the request. Bulk food-index embeddings are machine work and
+do not require an app-user token.
 
-The generated `kora-ai` Service opted out of the namespace waypoint while its
-`RequestAuthentication` and `AuthorizationPolicy` selected the generated
-gateway pods. In ambient mode that path did not provide the L7 waypoint needed
-to validate the custom JWT header. A production probe showed that requests
-with a missing or malformed delegated token reached AgentGateway instead of
-being rejected at the identity boundary.
+AgentGateway owns its Istio certificate, originates HBONE, and deliberately
+sets its generated pods to `istio.io/dataplane-mode: none`. Enrolling its
+Service in an Istio destination waypoint caused the waypoint to attempt an
+inbound ambient hop the native data plane does not terminate. A production
+probe timed out. With the Service opted out, selector-based Istio JWT rules did
+not enforce the custom L7 header; a missing or malformed token reached
+AgentGateway before failing on the intentionally invalid model body.
 
 The protected assets are user health context, model access, provider
 credentials, and per-user authorization. Threats include an unauthenticated
-mesh caller, a compromised workload outside Kora, a forged Firebase token, and
-accidental forwarding of a real user token to a model provider.
+caller with a leaked client key, a compromised workload, a forged Firebase
+token, and accidental forwarding of a real user token to a model provider.
 
 ## Options considered
 
-1. Keep pod selectors on the waypoint-opted-out Service. Rejected because the
-   observed path did not enforce the L7 JWT predicates.
-2. Reimplement Firebase JWT authorization inside AgentGateway. Rejected because
-   it duplicates the mesh identity policy and does not combine workload SPIFFE
-   identity and the app-user principal at one existing trust boundary.
-3. Enrol the generated Service in the existing namespace waypoint and attach
-   both Istio policies to that Service. Chosen because it uses the established
-   ambient Service policy pattern and adds no deployment or external call.
+1. Put the native AgentGateway Service behind the namespace destination
+   waypoint. Rejected because the generated pods are intentionally outside the
+   ambient inbound data plane and the observed path timed out.
+2. Rely on selector-based Istio `RequestAuthentication` for the custom header.
+   Rejected as the primary identity control because the observed native path
+   did not enforce the L7 JWT predicate.
+3. Use AgentGateway's native JWT policy at named HTTPRoute rules. Chosen because
+   it validates the Firebase token where routing is actually performed, can
+   read the delegated custom header, and adds no proxy or external auth call.
 
 ## Decision
 
-- Label the generated `kora-ai` Service with
-  `istio.io/use-waypoint: waypoint`.
-- Attach `RequestAuthentication` and `AuthorizationPolicy` with a Service
-  `targetRef`, not a workload selector.
-- Require both the allowlisted Kora workload SPIFFE principal and a verified
-  Firebase request principal for generative and A2A traffic. Keep the existing
-  path-specific machine exception for bulk embeddings.
-- Admit only the namespace waypoint to the AgentGateway pods at the Kubernetes
-  NetworkPolicy boundary. The waypoint preserves the original workload
-  principal for L7 authorization.
-- Preserve `X-Kora-End-User-Token` on `kora-a2a` and remove it on every
-  provider-bound `kora-ai` rule.
+- Keep the generated Service on `istio.io/use-waypoint: none`, as required by
+  the native AgentGateway transport, and retain namespace/pod NetworkPolicy
+  allowlists plus strict AgentGateway API-key authentication.
+- Fetch Firebase JWKS over TLS through a dedicated `AgentgatewayBackend` and
+  cache it for five minutes.
+- Give every model rule a stable name. Attach strict native Firebase JWT
+  authentication to `conversation`, `structured`, and `default`, and to the
+  complete `kora-a2a` route. Leave only `embedding` machine-scoped.
+- Preserve `X-Kora-End-User-Token` on `kora-a2a`. The destination Kora waypoint
+  revalidates it before the agent Service. Remove it on all provider-bound
+  `kora-ai` rules.
+- Retain the existing Istio workload policy as defense in depth, but do not
+  treat it as the user-JWT enforcement point for the native gateway.
 
 ## Failure behavior
 
-If the waypoint or Firebase JWKS validation is unavailable, user-scoped AI
-requests fail closed before AgentGateway. Existing Registry or route-sync
-outages leave the last accepted gateway snapshot serving. Duplicate Registry
-reconciliation is idempotent. AgentGateway or Vertex failure remains a bounded
-request failure under the existing timeout and does not bypass authorization.
+Missing, malformed, expired, wrong-issuer, or wrong-audience tokens fail closed
+at AgentGateway on user-scoped rules. A JWKS refresh failure uses the cached key
+set; if no usable set exists, user traffic fails closed. Registry or route-sync
+outages leave the last accepted snapshot serving. The embedding exception
+still requires the private network path and gateway client credential.
 
 ## Rollout, rollback, and cost
 
-Roll out through the `kora-ai-gateway` Argo application. Verify that missing and
-malformed delegated tokens are denied, a short-lived signed-in user token can
-complete A2A and model calls, both HTTPRoutes remain Accepted, and the Gateway
-remains Programmed. Rollback is one Git revert, though it restores the known
-authorization gap and is therefore only a short-term availability measure.
+Publish the route names, JWKS backend, and JWT policy through Agentic Registry,
+then reconcile the direct-Service Helm settings through Argo CD. Verify 401 for
+a malformed token, rejection for a missing token on each user-scoped rule, a
+successful signed-in A2A/model journey, no token on provider routes, Accepted
+policies/routes, and a Programmed Gateway.
 
-The change adds no pods, datastore, secret, or external request. Its steady
-cost is one additional hop through the already-running namespace waypoint.
+Rollback is one Git revert plus the Registry's prior revision. It removes the
+user authorization boundary and is therefore only a short-term availability
+measure. The design adds no pod or datastore; the only steady cost is a cached
+JWKS HTTPS refresh per gateway replica.
