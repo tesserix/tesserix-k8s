@@ -110,6 +110,34 @@ spec:
             port:
               number: {{ .Values.apiHost.servicePort }}
       timeout: 30s
+    # Tesserix platform console admin surface (mark8ly#274/#275/#276).
+    # EXACT paths only, never a /api/v1/admin/ prefix: the merchant admin API
+    # also lives under that prefix on the same engine and is deliberately NOT
+    # internet-reachable today (the admin Next.js app proxies to it in-cluster;
+    # NEXT_PUBLIC_MARKETPLACE_API_URL is unset in prod). A prefix rule here
+    # would publish the whole merchant admin surface as a side effect.
+    #
+    # Add one entry per platform endpoint as the series lands (#277-#289).
+    # Before #287 (/admin/tenants/{id}/suspend) ships, note it collides with the
+    # merchant route /admin/tenants/:tenantId/sso — gin panics on two different
+    # wildcard names in the same position — so that one needs a distinct prefix
+    # rather than another exact rule.
+    #
+    # Safe to expose: the surface fails closed, answering 503 not_configured
+    # until MARKETPLACE_PLATFORM_ADMIN_SECRET is populated, and every request
+    # must carry a valid HMAC signature, a fresh nonce and a timestamp inside a
+    # 5-minute window.
+    - match:
+        - authority:
+            exact: "api.mark8ly.com"
+          uri:
+            exact: /api/v1/admin/audit-logs
+      route:
+        - destination:
+            host: {{ .Values.apiHost.adminServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.apiHost.servicePort }}
+      timeout: 30s
     - match:
         - authority:
             exact: "api.mark8ly.com"
