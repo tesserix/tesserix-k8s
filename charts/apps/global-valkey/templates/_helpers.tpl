@@ -29,13 +29,18 @@ global
 defaults
   mode tcp
   timeout connect 4s
-  timeout client 30s
-  timeout server 30s
+  timeout client {{ .Values.haproxy.timeouts.client }}
+  timeout server {{ .Values.haproxy.timeouts.server }}
   log global
 # Only the node reporting role:master passes this check, so a Sentinel
 # promotion moves traffic without the client knowing.
 listen valkey
   bind *:{{ .Values.haproxy.port }}
+  # Redis clients pool long-lived connections that sit idle between commands.
+  # Keepalive reaps genuinely dead peers so the long timeouts above cannot
+  # accumulate half-open sockets.
+  option clitcpka
+  option srvtcpka
   option tcp-check
 {{- if .Values.acl.enabled }}
   tcp-check send AUTH\ healthcheck\ x\r\n
