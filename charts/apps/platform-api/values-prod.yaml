@@ -57,3 +57,20 @@ gcp:
 
 pdb:
   enabled: true
+
+# Namespace-scoped read on Deployments and CNPG Clusters, for the console's
+# health module.
+#
+# It lives HERE and not as an `image.tag`-style Helm parameter on the ArgoCD
+# Application, even though that is where it reads most naturally. Every
+# app-of-apps in this repo sets
+#   ignoreDifferences: [{kind: Application, jsonPointers: [/spec/source/helm/parameters]}]
+# with RespectIgnoreDifferences=true, because Kargo owns that array and rewrites
+# it on every promotion. A parameter added to it in git is therefore never
+# reconciled and never applied — and the Application still reports Synced,
+# because the field is excluded from the comparison. Silent no-op.
+#
+# values-prod.yaml is applied LAST in the valueFiles chain, so it wins, and it
+# is outside the ignored path.
+clusterRead:
+  enabled: true
