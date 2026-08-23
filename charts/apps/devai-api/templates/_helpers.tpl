@@ -72,6 +72,21 @@ identical environment — defined once here so the two never drift.
       name: devai-auth-bff-secrets
       key: DEVAI_AUTH_BFF_SHARED_SECRET
       optional: true
+# The secret above is `optional`, so an ExternalSecret failure silently empties
+# it — and an empty secret means "trust X-Forwarded-* from anyone". false makes
+# that case fail closed instead (identity._forward_trusted). Unset here rather
+# than defaulted: `default true` would rewrite an explicit false back to true.
+{{- if hasKey .Values "trustForwardedWithoutSecret" }}
+- name: DEVAI_TRUST_FORWARDED_WITHOUT_SECRET
+  value: {{ .Values.trustForwardedWithoutSecret | quote }}
+{{- end }}
+# Confines the document-ingestion tools (doc_read_pdf / doc_read_markdown /
+# doc_parse_openapi) to one directory. Their file_path is regex-extracted from
+# issue text, so an unconfined pod reads whatever an issue author names.
+{{- with .Values.toolWorkspaceRoot }}
+- name: DEVAI_TOOL_WORKSPACE_ROOT
+  value: {{ . | quote }}
+{{- end }}
 # MCP Hub ↔ devai-api shared service bearer: the Hub presents it toward the
 # per-domain MCP servers (authMode=jwt) and devai-api verifies it
 # (identity._principal_from_service_bearer). Same key the devai-mcp-hub
@@ -277,6 +292,10 @@ identical environment — defined once here so the two never drift.
 # x-api-key header itself, so future rotations don't need
 # a devai-api restart. Empty value falls back to the SDK's
 # default (direct to public Anthropic API).
+- name: DEVAI_LLM_GATEWAY_BASE_URL
+  value: {{ .Values.llm.gatewayBaseUrl | default "" | quote }}
+- name: DEVAI_LLM_GATEWAY_REQUIRED
+  value: {{ .Values.llm.gatewayRequired | default false | quote }}
 - name: DEVAI_ANTHROPIC_BASE_URL
   value: {{ .Values.llm.anthropicBaseUrl | default "" | quote }}
 - name: DEVAI_OPENAI_BASE_URL

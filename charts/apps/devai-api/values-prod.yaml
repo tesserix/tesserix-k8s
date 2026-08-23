@@ -26,6 +26,17 @@ image:
 # authenticated dashboard users pass and anonymous mutating calls get 401.
 requireAuth: true
 
+# Never fall back to trusting X-Forwarded-* identity: the shared secret is
+# `optional` in the pod spec, so an ExternalSecret outage would otherwise
+# re-open header spoofing for anything that can reach the pod past the mesh.
+trustForwardedWithoutSecret: false
+
+# Document-ingestion tools may only read below this path. Nothing in prod feeds
+# them a legitimate local file — the paths come out of issue text — so this
+# closes the local-file-read half of prompt injection. Drop a file here to
+# ingest one deliberately.
+toolWorkspaceRoot: "/tmp/devai-docs"
+
 # Bumping this annotation rolls the deployment so :main gets re-pulled.
 # fee0326 = drawio fix; carries everything since e417d62 including:
 #   - c450608 feat(agentic): aregistry profile + agentgateway wiring
@@ -191,21 +202,10 @@ agenticControlPlane:
   registryPublishEnabled: true
   registryDefaultTenant: "devai"
   registryPublishOnBoot: true
-  # agentgateway in this cluster is CONTROL PLANE ONLY — the agentgateway
-  # Service exposes 9978 (xDS gRPC), 9093 (health), 9092 (metrics).
-  # There is NO HTTP data-plane port for /mcp/<name> traffic; solo.io
-  # agentgateway-1.x is an xDS server that configures an Envoy data
-  # plane separately, and we have not deployed that Envoy yet.
-  #
-  # Leaving this empty makes the runner fall back to dialing each MCP
-  # server's own Service directly (URL comes from aregistry's
-  # /v0/servers record). That's the correct degraded mode until the
-  # agentgateway-proxy data plane is rolled.
-  #
-  # When the data plane is added (future PR in tesserix-k8s), flip
-  # this to the proxy's Service URL — devai-runner picks it up on the
-  # next Job dispatch with no code change.
-  agentgatewayUrl: ""
+  # Solo agentgateway MCP data plane. Governed bundles that declare MCP
+  # servers fail closed when this URL is absent; they never dial the backing
+  # MCP Service directly.
+  agentgatewayUrl: "http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080"
   # Platform default: kagent A2A dispatch is OFF — every agent runs as a K8s
   # Job. Turn it on platform-wide here, or let a user/team/org/tenant enable it
   # for themselves via the Settings "kagent" connector (resolved per run).
@@ -264,6 +264,10 @@ agenticControlPlane:
 # (devai-ai-gateway in agentgateway-system) injects the auth headers
 # itself so devai-api pods don't need to read the secret directly.
 llm:
+  # Governed agent execution requires every provider route to traverse the
+  # Solo AI Gateway. A missing route fails closed instead of dialing a provider.
+  gatewayBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080"
+  gatewayRequired: true
   anthropicBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/anthropic"
   openaiBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/openai"
   # Vertex AI (Gemini) — keyless via the pod's Workload Identity GSA
@@ -289,13 +293,9 @@ llm:
   fallbackProvider: "groq,openrouter,anthropic"
   vertexLocation: "global"
   vertexGeminiModel: "gemini-2.5-flash"
-  # Vertex goes DIRECT from the pod (Workload Identity ADC over the PSC
-  # endpoint) — verified end to end in-cluster 2026-06-12. The gateway
-  # /vertex route exists and injects the API key, but agentgateway-system
-  # pod egress re-frames POST bodies as chunked (istio ambient L7), which
-  # Google's PSC frontend rejects with 411 — Anthropic/OpenAI tolerate it,
-  # GFE doesn't. Re-point at the gateway only after that's resolved:
-  # vertexBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/vertex"
+  # Mandatory gateway policy maps Vertex to the AI Gateway's /vertex route.
+  # A route or upstream failure now stops the run instead of retrying directly
+  # against aiplatform.googleapis.com.
   # Cost tiers — "provider:model". light/standard ride Vertex Gemini;
   # heavy/frontier stay on Claude/o3 via the same gateway. Only
   # gemini-2.5-flash is model-enabled in the project today; after enabling
