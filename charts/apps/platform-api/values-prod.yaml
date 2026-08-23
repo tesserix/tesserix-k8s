@@ -44,6 +44,17 @@ env:
   PLATFORM_API_AUTH_ENABLED: "true"
   ZITADEL_ISSUER: "https://auth.tesserix.app"
   ZITADEL_PROJECT_ID: "386377618200461939"
+  # Turns the health module's Kubernetes reads ON. Set only now that the
+  # Role/RoleBinding from #591/#592 are confirmed live in the cluster —
+  # `auth can-i list deployments --as=system:serviceaccount:tesserix:platform-api`
+  # answers yes. Set before the grant, this would have made the module log a
+  # warning and serve `unmeasured` to every operator, which from the console is
+  # indistinguishable from the failure it exists to report.
+  #
+  # Absent or any value other than exactly "true" leaves cluster reads off, and
+  # the service still boots: a health check that cannot read the cluster is a
+  # degraded signal, not an outage.
+  PLATFORM_API_CLUSTER_READ_ENABLED: "true"
 
 # The service makes no GCP API calls. Blanked deliberately so the KSA is not
 # annotated to impersonate global-config-prod.yaml's shared
