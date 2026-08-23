@@ -19,29 +19,27 @@ spec:
       kind: HTTPRoute
       name: kora-ai
       sectionName: default
+  traffic:
+    {{- include "kora-ai-gateway.userJwtAuthentication" . | nindent 4 }}
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: kora-a2a-user-auth
+  labels:
+    {{- include "kora-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       name: kora-a2a
   traffic:
-    jwtAuthentication:
-      mode: Strict
-      location:
-        header:
-          name: {{ .Values.endUserAuthentication.header }}
-          prefix: "Bearer "
-      providers:
-        - issuer: {{ .Values.endUserAuthentication.issuer }}
-          audiences:
-            - {{ .Values.endUserAuthentication.audience | quote }}
-          jwks:
-            remote:
-              jwksPath: {{ .Values.endUserAuthentication.jwksPath }}
-              cacheDuration: {{ .Values.endUserAuthentication.jwksCacheDuration }}
-              backendRef:
-                group: agentgateway.dev
-                kind: AgentgatewayBackend
-                name: kora-firebase-jwks
-                port: 443
+    {{- include "kora-ai-gateway.userJwtAuthentication" . | nindent 4 }}
+    transformation:
+      request:
+        set:
+          - name: {{ .Values.endUserAuthentication.delegatedHeader }}
+            value: '"x-kora-end-user-token" in request.headers ? request.headers["x-kora-end-user-token"] : ""'
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy

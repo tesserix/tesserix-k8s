@@ -341,7 +341,10 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
                     {
                         "type": "RequestHeaderModifier",
                         "requestHeaderModifier": {
-                            "remove": ["X-Kora-End-User-Token"]
+                            "remove": [
+                                "X-Kora-End-User-Token",
+                                "X-Kora-Delegated-End-User-Token",
+                            ]
                         },
                     }
                 ],
@@ -388,11 +391,6 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
                     "name": "kora-ai",
                     "sectionName": "default",
                 },
-                {
-                    "group": "gateway.networking.k8s.io",
-                    "kind": "HTTPRoute",
-                    "name": "kora-a2a",
-                },
             ],
             policy["spec"]["targetRefs"],
         )
@@ -420,6 +418,45 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         self.assertEqual(
             "kora-firebase-jwks",
             provider["jwks"]["remote"]["backendRef"]["name"],
+        )
+
+    def test_a2a_gateway_copies_only_validated_identity_into_internal_header(self):
+        documents = render_chart(
+            "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
+        )
+        policy = resource(documents, "AgentgatewayPolicy", "kora-a2a-user-auth")
+
+        self.assertEqual(
+            [
+                {
+                    "group": "gateway.networking.k8s.io",
+                    "kind": "HTTPRoute",
+                    "name": "kora-a2a",
+                }
+            ],
+            policy["spec"]["targetRefs"],
+        )
+        traffic = policy["spec"]["traffic"]
+        self.assertEqual(
+            {
+                "header": {
+                    "name": "X-Kora-End-User-Token",
+                    "prefix": "Bearer ",
+                }
+            },
+            traffic["jwtAuthentication"]["location"],
+        )
+        self.assertEqual(
+            [
+                {
+                    "name": "X-Kora-Delegated-End-User-Token",
+                    "value": (
+                        '"x-kora-end-user-token" in request.headers ? '
+                        'request.headers["x-kora-end-user-token"] : ""'
+                    ),
+                }
+            ],
+            traffic["transformation"]["request"]["set"],
         )
 
     def test_gateway_routes_a2a_and_owns_upstream_authentication(self):
@@ -797,7 +834,12 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             authentication["spec"]["targetRefs"],
         )
         self.assertEqual(
-            [{"name": "X-Kora-End-User-Token", "prefix": "Bearer "}],
+            [
+                {
+                    "name": "X-Kora-Delegated-End-User-Token",
+                    "prefix": "Bearer ",
+                }
+            ],
             authentication["spec"]["jwtRules"][0]["fromHeaders"],
         )
         self.assertNotIn("selector", authorization["spec"])
