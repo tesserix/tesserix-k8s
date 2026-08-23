@@ -179,6 +179,37 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
         )
         self.assertNotIn("mode: optional", config)
 
+    def test_llm_playground_stays_same_origin_without_cors(self):
+        config_text = (
+            ROOT / "charts/apps/agentgateway-console/files/config.yaml"
+        ).read_text()
+        for placeholder in (
+            "pgPassword",
+            "oidcClientId",
+            "oidcClientSecret",
+        ):
+            config_text = config_text.replace(f"{{{{ .{placeholder} }}}}", "test")
+        config = yaml.safe_load(config_text)
+
+        self.assertEqual(["console"], config["ui"]["gateways"])
+        self.assertIn("console", config["llm"]["gateways"])
+        self.assertNotIn("cors", config["llm"]["policies"])
+
+    def test_standalone_console_ui_allows_only_oidc_with_same_origin_csrf(self):
+        config_text = (
+            ROOT / "charts/apps/agentgateway-console/files/config.yaml"
+        ).read_text()
+        for placeholder in (
+            "pgPassword",
+            "oidcClientId",
+            "oidcClientSecret",
+        ):
+            config_text = config_text.replace(f"{{{{ .{placeholder} }}}}", "test")
+        policies = yaml.safe_load(config_text)["ui"]["policies"]
+
+        self.assertEqual({"oidc", "authorization", "csrf"}, set(policies))
+        self.assertEqual({}, policies["csrf"])
+
     def test_standalone_console_models_use_managed_provider_credentials(self):
         config_text = (
             ROOT / "charts/apps/agentgateway-console/files/config.yaml"
