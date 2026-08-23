@@ -37,6 +37,12 @@ MIGRATED = {
     ("HTTPRoute", "kora-ai"),
 }
 
+PLATFORM_SEEDED = MIGRATED | {
+    ("AgentgatewayBackend", "kora-firebase-jwks"),
+    ("AgentgatewayPolicy", "kora-a2a-user-auth"),
+    ("AgentgatewayPolicy", "kora-user-auth"),
+}
+
 
 def render_chart(chart, *set_values):
     command = [
@@ -90,7 +96,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
 
         self.assertEqual("List", desired["kind"])
         self.assertEqual(
-            MIGRATED,
+            PLATFORM_SEEDED,
             {
                 (item["kind"], item["metadata"]["name"])
                 for item in desired["items"]
@@ -132,7 +138,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         self.assertRegex(container["image"], r"@sha256:[0-9a-f]{64}$")
         script = container["args"][0]
         self.assertIn('/v0/agentgateway/import', script)
-        self.assertIn('test "${count}" = "24"', script)
+        self.assertIn('test "${count}" = "27"', script)
         count_pattern = re.search(
             r"grep -Ec '([^']+)' /seed/resources\.json", script
         )
@@ -144,7 +150,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(0, count.returncode, count.stderr)
-        self.assertEqual("24", count.stdout.strip())
+        self.assertEqual("27", count.stdout.strip())
         self.assertTrue(
             any(
                 env.get("valueFrom", {}).get("secretKeyRef", {}).get("name")
@@ -167,8 +173,11 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
                 render_chart(chart, "registryOwnership.enabled=false")
             )
 
-        self.assertFalse(default_resources & MIGRATED)
-        self.assertEqual(MIGRATED, rollback_resources & MIGRATED)
+        self.assertFalse(default_resources & PLATFORM_SEEDED)
+        self.assertEqual(
+            PLATFORM_SEEDED,
+            rollback_resources & PLATFORM_SEEDED,
+        )
         self.assertIn(
             ("AgentgatewayBackend", "devai-vertex-api-key"), default_resources
         )
@@ -183,14 +192,14 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         )
 
         self.assertTrue(values["registry"]["prune"])
-        self.assertEqual(24, values["registry"]["minDesiredResourceCount"])
+        self.assertEqual(27, values["registry"]["minDesiredResourceCount"])
         self.assertFalse(values["migrationImport"]["enabled"])
         self.assertTrue(values["ownershipHandoff"]["enabled"])
 
         cronjob = resource(documents, "CronJob", "agentgateway-route-sync")
         pod_spec = cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]
         render_script = pod_spec["initContainers"][0]["args"][0]
-        self.assertIn('test "${expected_count}" -ge "24"', render_script)
+        self.assertIn('test "${expected_count}" -ge "27"', render_script)
         apply_container = pod_spec["containers"][0]
         apply_script = apply_container["args"][0]
         self.assertIn(
