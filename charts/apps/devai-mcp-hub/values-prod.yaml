@@ -6,6 +6,15 @@ replicaCount: 1
 podAnnotations:
   deployedAt: "phase4"
 
+env:
+  # Registry records are authored through the API, so a downstream endpoint is
+  # attacker-reachable input to a server-side dial — this should be enforced,
+  # not audited. Held at false until an image carrying the guard fix is live:
+  # before it, enforcement rejected every private address, and every in-cluster
+  # MCP is a private ClusterIP, so flipping it would drop the whole federated
+  # surface. Flip to "true" once the running tag includes devai#284.
+  DEVAI_MCP_HUB_SSRF_ENFORCE: "false"
+
 resources:
   requests:
     memory: 128Mi
