@@ -329,27 +329,38 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             ["/v1/embeddings"], embedding_rule["to"][0]["operation"]["paths"]
         )
 
-    def test_model_routes_strip_the_delegated_identity_before_provider_egress(self):
+    def test_model_routes_validate_identity_before_stripping_provider_headers(self):
         documents = render_chart(
             "charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system"
         )
         model_route = resource(documents, "HTTPRoute", "kora-ai")
+        user_auth = resource(documents, "AgentgatewayPolicy", "kora-user-auth")
 
-        for rule in model_route["spec"]["rules"]:
-            self.assertEqual(
-                [
-                    {
-                        "type": "RequestHeaderModifier",
-                        "requestHeaderModifier": {
-                            "remove": [
-                                "X-Kora-End-User-Token",
-                                "X-Kora-Delegated-End-User-Token",
-                            ]
-                        },
-                    }
-                ],
-                rule.get("filters"),
-            )
+        rules = {rule["name"]: rule for rule in model_route["spec"]["rules"]}
+        self.assertEqual(
+            [
+                {
+                    "type": "RequestHeaderModifier",
+                    "requestHeaderModifier": {
+                        "remove": [
+                            "X-Kora-End-User-Token",
+                            "X-Kora-Delegated-End-User-Token",
+                        ]
+                    },
+                }
+            ],
+            rules["embedding"].get("filters"),
+        )
+        for name in ("conversation", "structured", "default"):
+            self.assertNotIn("filters", rules[name])
+
+        self.assertEqual(
+            [
+                "X-Kora-End-User-Token",
+                "X-Kora-Delegated-End-User-Token",
+            ],
+            user_auth["spec"]["traffic"]["transformation"]["request"]["remove"],
+        )
 
         a2a_route = resource(documents, "HTTPRoute", "kora-a2a")
         self.assertNotIn("filters", a2a_route["spec"]["rules"][0])
