@@ -40,6 +40,14 @@ spec:
       # bootstrap value for the very first sync, before any promotion has run.
       - name: image.tag
         value: "latest"
+      # Grants the ServiceAccount namespace-scoped read on Deployments and CNPG
+      # Clusters, for the console's health module (see charts/apps/platform-api
+      # /templates/rbac.yaml). Must be applied and confirmed BEFORE a
+      # platform-api build with PLATFORM_API_CLUSTER_READ_ENABLED=true is
+      # deployed — otherwise every operator reads `unmeasured`, which from the
+      # UI is indistinguishable from the failure it is meant to report.
+      - name: clusterRead.enabled
+        value: "true"
       # NO ingress.hosts / ingress.tls parameters, unlike console.yaml and
       # company.yaml. The platform API is cluster-internal: its only caller is
       # the console's server side over the in-namespace ClusterIP. A public
