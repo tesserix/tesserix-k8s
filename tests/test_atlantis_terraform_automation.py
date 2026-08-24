@@ -272,16 +272,11 @@ class AtlantisPlatformTests(unittest.TestCase):
 
     def test_external_secrets_supply_vcs_auth_ui_auth_and_tf_variables(self):
         vcs = resource(self.documents, "ExternalSecret", "atlantis-vcs")
-        basic_auth = resource(self.documents, "ExternalSecret", "atlantis-basic-auth")
         tf_vars = resource(self.documents, "ExternalSecret", "atlantis-terraform-vars")
 
         self.assertEqual(
             {"github_app_id", "github_app_installation_id", "key.pem", "github_secret"},
             {entry["secretKey"] for entry in vcs["spec"]["data"]},
-        )
-        self.assertEqual(
-            {"username", "password"},
-            {entry["secretKey"] for entry in basic_auth["spec"]["data"]},
         )
         self.assertEqual(
             {
@@ -295,6 +290,14 @@ class AtlantisPlatformTests(unittest.TestCase):
             {entry["secretKey"] for entry in tf_vars["spec"]["data"]},
         )
 
+    def test_basic_auth_is_gone_entirely(self):
+        """Zitadel is the only way in; no secret, no prompt, no rollback path."""
+        rendered = yaml.dump_all(self.documents)
+
+        self.assertNotIn("ATLANTIS_WEB_BASIC_AUTH", rendered)
+        self.assertNotIn("atlantis-basic-auth", rendered)
+        self.assertNotIn("prod-atlantis-basic-auth", rendered)
+
     def test_external_secrets_use_the_production_crd_version(self):
         external_secrets = [
             document
@@ -302,8 +305,8 @@ class AtlantisPlatformTests(unittest.TestCase):
             if document.get("kind") == "ExternalSecret"
         ]
 
-        # vcs, basic-auth (retained for rollback), terraform vars, oauth2-proxy.
-        self.assertEqual(4, len(external_secrets))
+        # vcs, terraform vars, oauth2-proxy. Basic auth is gone entirely.
+        self.assertEqual(3, len(external_secrets))
         self.assertEqual(
             {"external-secrets.io/v1beta1"},
             {document["apiVersion"] for document in external_secrets},
