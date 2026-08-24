@@ -1,5 +1,5 @@
 # Storage Stack - GCS Buckets, Secret Manager, KMS
-# State: stacks/{environment}/storage/default.tfstate
+# State: stacks/prod/storage/default.tfstate
 # Dependencies: 01-foundation
 
 # Reference foundation stack outputs
@@ -8,7 +8,7 @@ data "terraform_remote_state" "foundation" {
 
   config = {
     bucket = var.state_bucket
-    prefix = "stacks/${var.environment}/foundation"
+    prefix = "stacks/prod/foundation"
   }
 }
 

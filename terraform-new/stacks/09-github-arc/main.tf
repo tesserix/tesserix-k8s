@@ -1,12 +1,12 @@
 # GitHub ARC Stack - GitHub Actions Runner Controller
-# State: stacks/{environment}/github-arc/default.tfstate
+# State: stacks/prod/github-arc/default.tfstate
 # Dependencies: 05-k8s-bootstrap
 
 data "terraform_remote_state" "gke" {
   backend = "gcs"
   config = {
     bucket = var.state_bucket
-    prefix = "stacks/${var.environment}/gke"
+    prefix = "stacks/prod/gke"
   }
 }
 
@@ -14,7 +14,7 @@ data "terraform_remote_state" "k8s_bootstrap" {
   backend = "gcs"
   config = {
     bucket = var.state_bucket
-    prefix = "stacks/${var.environment}/k8s-bootstrap"
+    prefix = "stacks/prod/k8s-bootstrap"
   }
 }
 
