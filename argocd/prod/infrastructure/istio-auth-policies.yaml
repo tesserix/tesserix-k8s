@@ -79,7 +79,7 @@ spec:
             issuer: "https://auth.tesserix.app"
             jwksUri: "https://auth.tesserix.app/oauth/v2/keys"
             audiences:
-              - "386889024519799084"
+              - "387190457387450503"
             restrictToHosts:
               - "mcp.tesserix.app"
               - "agentgateway.tesserix.app"
@@ -350,6 +350,21 @@ spec:
             namespace: helivanta
             hosts:
               - "helivanta.app"
+          # atlantis — the Terraform PR automation console. The webhook rule in
+          # api-authz.yaml admits POST /events only, so every browser request to
+          # this host, the UI included, was getting "RBAC: access denied".
+          #
+          # Unauthenticated at the edge on purpose: Atlantis enforces its own
+          # basic auth (ATLANTIS_WEB_BASIC_AUTH, credentials from GCP SM) on
+          # every page, and the VirtualService direct-responds 404 for /api and
+          # /status. No `namespace:` — ns atlantis is unmeshed, so a per-pod
+          # ALLOW has no sidecar to enforce it and the upstream chart labels
+          # pods `app: atlantis` rather than `app.kubernetes.io/name`, so it
+          # would select nothing. NetworkPolicy guards the namespace instead.
+          - name: atlantis
+            label: atlantis
+            hosts:
+              - "atlantis.tesserix.app"
 
   destination:
     server: https://kubernetes.default.svc

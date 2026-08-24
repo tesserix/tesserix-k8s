@@ -12,7 +12,8 @@ spec:
       name: {{ .Values.gateway.name }}
       sectionName: http
   rules:
-    - matches:
+    - name: embedding
+      matches:
         - path:
             type: PathPrefix
             value: /
@@ -20,12 +21,19 @@ spec:
             - name: x-kora-ai-capability
               type: Exact
               value: embedding
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - {{ .Values.endUserAuthentication.header | quote }}
+              - {{ .Values.endUserAuthentication.delegatedHeader | quote }}
       backendRefs:
         - group: agentgateway.dev
           kind: AgentgatewayBackend
           name: kora-embedding-providers
           weight: 1
-    - matches:
+    - name: conversation
+      matches:
         - path:
             type: PathPrefix
             value: /
@@ -33,12 +41,19 @@ spec:
             - name: x-kora-ai-context-kind
               type: Exact
               value: conversation
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - {{ .Values.endUserAuthentication.header | quote }}
+              - {{ .Values.endUserAuthentication.delegatedHeader | quote }}
       backendRefs:
         - group: agentgateway.dev
           kind: AgentgatewayBackend
           name: kora-conversation-providers
           weight: 1
-    - matches:
+    - name: structured
+      matches:
         - path:
             type: PathPrefix
             value: /
@@ -46,15 +61,28 @@ spec:
             - name: x-kora-ai-context-kind
               type: Exact
               value: json_api
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - {{ .Values.endUserAuthentication.header | quote }}
+              - {{ .Values.endUserAuthentication.delegatedHeader | quote }}
       backendRefs:
         - group: agentgateway.dev
           kind: AgentgatewayBackend
           name: kora-structured-providers
           weight: 1
-    - matches:
+    - name: default
+      matches:
         - path:
             type: PathPrefix
             value: /
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - {{ .Values.endUserAuthentication.header | quote }}
+              - {{ .Values.endUserAuthentication.delegatedHeader | quote }}
       backendRefs:
         - group: agentgateway.dev
           kind: AgentgatewayBackend

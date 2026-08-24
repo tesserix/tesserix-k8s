@@ -1,8 +1,6 @@
-# Storage Stack - Backend Configuration
-
 terraform {
   backend "gcs" {
-    # bucket = "tesseract-terraform-states"
-    # prefix = "stacks/prod/storage"
+    bucket = "tesseract-terraform-states"
+    prefix = "stacks/prod/storage"
   }
 }

@@ -137,6 +137,18 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.internalAuthSecret.secretName }}
                   key: {{ .Values.internalAuthSecret.secretKey }}
+            # Platform console admin surface HMAC key (mark8ly#275).
+            # optional:true so the pod still starts before the
+            # ExternalSecret is provisioned — the surface then answers
+            # 503 not_configured rather than crashlooping.
+            {{- with .Values.platformAdminSecret }}
+            - name: MARKETPLACE_PLATFORM_ADMIN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .secretName }}
+                  key: {{ .secretKey }}
+                  optional: true
+            {{- end }}
             # Narrow secret gating ONLY /internal/audit-events. When the
             # ExternalSecret hasn't been provisioned (no GCP SM entry),
             # the secretKeyRef returns empty thanks to optional: true and

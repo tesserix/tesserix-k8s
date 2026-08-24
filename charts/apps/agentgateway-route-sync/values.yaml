@@ -35,7 +35,7 @@ gateway:
 
 oauth:
   issuer: https://auth.tesserix.app
-  audience: "386889024519799084"
+  audience: "387190457387450503"
   jwks:
     host: auth.tesserix.app
     path: /oauth/v2/keys
@@ -43,7 +43,7 @@ oauth:
   humanEmails:
     - samyak.rout@gmail.com
     - mahesh.sangawar@gmail.com
-  roleClaim: "urn:zitadel:iam:org:project:386889024519799084:roles"
+  roleClaim: "urn:zitadel:iam:org:project:387190457387450503:roles"
   machineRole: agentgateway.mcp
 
 ui:
@@ -55,7 +55,7 @@ ui:
       repository: quay.io/oauth2-proxy/oauth2-proxy
       digest: sha256:f6a4aa83a27e316114bf79664302b1ffb2cc8ce697fb479273af4feb3fb16fe3
     issuerUrl: https://auth.tesserix.app
-    scope: "openid profile email urn:zitadel:iam:org:project:id:386889024519799084:aud urn:zitadel:iam:org:projects:roles"
+    scope: "openid profile email urn:zitadel:iam:org:project:id:387190457387450503:aud urn:zitadel:iam:org:projects:roles"
     redirectUrl: https://mcp.tesserix.app/oauth2/callback
     cookieName: _tesserix_mcp_gateway
     allowedEmails:
@@ -102,11 +102,22 @@ registry:
   requireServerScope: false
   # The JWT claim the per-server scope is read from. Must match the claim the
   # gateway's JWT policy authorizes on.
-  scopeClaim: "urn:zitadel:iam:org:project:386889024519799084:roles"
+  scopeClaim: "urn:zitadel:iam:org:project:387190457387450503:roles"
   prune: true
   # Never prune if a valid, digest-verified export drops below the permanent
-  # 24-resource platform baseline imported during the ownership handoff.
-  minDesiredResourceCount: 24
+  # 27-resource platform baseline (24 handed off plus Kora's three user-auth
+  # resources).
+  minDesiredResourceCount: 27
+
+# Keep the Registry-owned platform providers, routes, and policies aligned
+# with the reviewed Helm rollback definitions. The import is idempotent and
+# updates the 24 handoff artifacts plus Kora's three user-auth resources.
+registryPlatformSeed:
+  enabled: true
+  expectedCount: 27
+  activeDeadlineSeconds: 180
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600
 
 # The phase-one import is complete. Keep the exact-count guard for a tested
 # rollback/replay path, but do not render the importer in steady state.
@@ -146,7 +157,7 @@ probe:
   # any other agent — it holds no privileged bypass.
   oauth:
     tokenUrl: https://auth.tesserix.app/oauth/v2/token
-    scope: "openid urn:zitadel:iam:org:project:id:386889024519799084:aud urn:zitadel:iam:org:projects:roles"
+    scope: "openid urn:zitadel:iam:org:project:id:387190457387450503:aud urn:zitadel:iam:org:projects:roles"
   externalSecret:
     name: agentic-probe-oauth
     clientId: prod-agentgateway-mcp-probe-client-id
@@ -172,6 +183,7 @@ images:
   curl:
     repository: curlimages/curl
     tag: "8.11.1"
+    digest: sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69
   kubectl:
     # DEP-5: docker.io/bitnami/kubectl:1.31 was removed in the Bitnami catalog
     # migration (ImagePullBackOff). Use bitnamilegacy/* — the published home for

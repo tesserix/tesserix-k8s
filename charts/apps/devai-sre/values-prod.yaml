@@ -2,6 +2,9 @@
 
 replicaCount: 1
 
+image:
+  tag: "fix-multi-provider-user-routing-c5d89ea@sha256:23feec0dc1c04f25cfdc79864edbe45accd8aab6cc308a5b9f5b7dfc53516f6a"
+
 # ─── Auth gate (DELIBERATE FLIP — sequence AFTER new images ship) ────────────
 # Blocks anonymous mutating / sensitive SRE reads (costs/incidents/topology)
 # instead of falling through with a synthetic principal. Chart half of CODE-1;
@@ -11,6 +14,11 @@ replicaCount: 1
 # WAVE-2 flip — keep FALSE until the auth-aware images are live (runbook §5).
 # WAVE-2 ENABLED 2026-06-08: the auth-aware image (CODE-1) is live.
 requireAuth: true
+
+# DEVAI_AUTH_BFF_SHARED_SECRET is an optional: secret key, so an ExternalSecret
+# outage empties it — and an empty shared secret means "trust X-Forwarded-* from
+# anyone". This makes that case fail closed. Inert while the secret is present.
+trustForwardedWithoutSecret: false
 
 # Bumping this annotation rolls the deployment so :latest gets re-pulled.
 podAnnotations:

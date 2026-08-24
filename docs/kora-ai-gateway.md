@@ -55,14 +55,17 @@ application pod, an authenticated user attempting prompt injection, a
 compromised dependency, and an operator with excess secret access.
 
 - The gateway is a ClusterIP and NetworkPolicy admits client traffic only from
-  Kora API pods in the `kora` namespace. Kora egress is limited to the
-  `kora-ai` gateway on its application and ambient-mesh ports. Istio
-  authorization additionally requires the exact
-  `cluster.local/ns/kora/sa/kora-api` workload identity on port 8080.
+  Kora API and agent pods in the `kora` namespace. Kora egress is limited to
+  the `kora-ai` gateway on its application and native-Istio transport ports.
+  Strict AgentGateway API-key authentication identifies the calling workload.
+  Native AgentGateway JWT policy validates the delegated Firebase token on
+  every user-scoped route before routing.
 - Otto's A2A route is hosted on the same private Gateway. Kora authenticates to
   the frontend with its Gateway client credential. A backend policy replaces
   that credential with the agent-service credential sourced independently from
-  `prod-kora-ai-agents-api-key`; the Firebase login token is never forwarded.
+  `prod-kora-ai-agents-api-key`. The verified Firebase token is preserved for
+  A2A and revalidated by the destination waypoint; all model rules remove it
+  before provider egress.
 - The agent Service admits port 8080 only from
   `cluster.local/ns/agentgateway-system/sa/kora-ai` and its matching Gateway
   pod selector. Kora API has no direct agent-Service ingress path.

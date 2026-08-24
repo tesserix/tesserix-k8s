@@ -24,18 +24,25 @@ provider "google" {
   region  = var.region
 }
 
-data "google_client_config" "default" {}
-
 provider "kubernetes" {
   host                   = "https://${data.terraform_remote_state.gke.outputs.cluster_endpoint}"
-  token                  = data.google_client_config.default.access_token
   cluster_ca_certificate = base64decode(data.terraform_remote_state.gke.outputs.cluster_ca_certificate)
+
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "/usr/bin/env"
+    args        = ["bash", "${path.module}/../../scripts/gke-auth.sh", "--exec-credential"]
+  }
 }
 
 provider "helm" {
   kubernetes = {
     host                   = "https://${data.terraform_remote_state.gke.outputs.cluster_endpoint}"
-    token                  = data.google_client_config.default.access_token
     cluster_ca_certificate = base64decode(data.terraform_remote_state.gke.outputs.cluster_ca_certificate)
+    exec = {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "/usr/bin/env"
+      args        = ["bash", "${path.module}/../../scripts/gke-auth.sh", "--exec-credential"]
+    }
   }
 }

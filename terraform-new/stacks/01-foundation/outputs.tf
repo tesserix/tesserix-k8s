@@ -38,11 +38,6 @@ output "apis_enabled" {
   depends_on = [google_project_service.apis]
 }
 
-output "state_bucket_name" {
-  description = "Name of the Terraform state bucket"
-  value       = var.state_bucket_name
-}
-
 output "common_labels" {
   description = "Common labels for resources"
   value       = var.common_labels

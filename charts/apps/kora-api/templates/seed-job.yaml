@@ -46,6 +46,9 @@ spec:
       labels:
         {{- include "kora-api.labels" . | nindent 8 }}
         app.kubernetes.io/component: seed
+        # Matched by kora-ai-gateway-egress, without which cmd/embed cannot
+        # reach the gateway — see that policy's podSelector.
+        kora.tesserix.app/stack: seed
       annotations:
         sidecar.istio.io/inject: "false"
     spec:
@@ -67,7 +70,7 @@ spec:
           command:
             {{- toYaml .Values.seed.command | nindent 12 }}
           env:
-            # DATABASE_URL is what seed/ingest/embed all need — sourced from the
+            # DATABASE_URL is what all four commands need — sourced from the
             # same ExternalSecret-backed Secret as the API and the migrate Job,
             # so prod credentials are never handled outside the cluster.
             {{- $secretName := printf "%s-secrets" (include "kora-api.fullname" .) }}

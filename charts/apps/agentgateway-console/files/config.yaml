@@ -28,12 +28,12 @@ gateways:
       mode: strict
       providers:
         - issuer: https://auth.tesserix.app
-          audiences: ["386889024519799084"]
+          audiences: ["387190457387450503"]
           jwks:
             url: https://auth.tesserix.app/oauth/v2/keys
     authorization:
       rules:
-        - require: '"agentgateway.models" in jwt["urn:zitadel:iam:org:project:386889024519799084:roles"]'
+        - require: '"agentgateway.models" in jwt["urn:zitadel:iam:org:project:387190457387450503:roles"]'
   console:
     port: 8082
 
@@ -48,18 +48,68 @@ ui:
       scopes:
         - profile
         - email
-        - urn:zitadel:iam:org:project:id:386889024519799084:aud
+        - urn:zitadel:iam:org:project:id:387190457387450503:aud
         - urn:zitadel:iam:org:projects:roles
     authorization:
       rules:
-        - require: '"agentgateway.models" in jwt["urn:zitadel:iam:org:project:386889024519799084:roles"]'
+        - require: '"agentgateway.models" in jwt["urn:zitadel:iam:org:project:387190457387450503:roles"]'
+    csrf: {}
 
 llm:
-  gateways: [mesh, public]
+  gateways: [console, mesh, public]
   policies:
+    jwtAuth:
+      mode: strict
+      location:
+        header:
+          name: authorization
+          prefix: "Bearer "
+      providers:
+        - issuer: https://auth.tesserix.app
+          audiences: ["387190457387450503"]
+          jwks:
+            url: https://auth.tesserix.app/oauth/v2/keys
+    authorization:
+      rules:
+        - require: '"agentgateway.models" in jwt["urn:zitadel:iam:org:project:387190457387450503:roles"]'
     apiKey:
-      mode: optional
+      mode: strict
+      location:
+        header:
+          name: x-tesserix-virtual-api-key
       keys: []
+    guardrails:
+      streaming: Enabled
+      request:
+        - regex:
+            action: reject
+            rules:
+              - builtin: creditCard
+              - builtin: ssn
+          rejection:
+            status: 400
+            body: request rejected by data guardrails
+        - regex:
+            action: mask
+            rules:
+              - builtin: email
+              - builtin: phoneNumber
+        - regex:
+            action: reject
+            rules:
+              - pattern: '(?i)\b(ignore|disregard)\s+(all\s+)?(previous|prior|system|developer)\s+instructions?\b'
+              - pattern: '(?i)\b(reveal|print|show)\s+(the\s+)?(system|developer)\s+prompt\b'
+          rejection:
+            status: 400
+            body: request rejected by instruction guardrails
+      response:
+        - regex:
+            action: mask
+            rules:
+              - builtin: creditCard
+              - builtin: email
+              - builtin: phoneNumber
+              - builtin: ssn
     localRateLimit:
       - fillInterval: 60s
         maxTokens: 600
@@ -72,16 +122,45 @@ llm:
   providers:
     - name: anthropic
       provider: anthropic
+      params:
+        apiKey: $ANTHROPIC_API_KEY
     - name: openai
       provider: openai
+      params:
+        apiKey: $OPENAI_API_KEY
     - name: gemini
       provider: gemini
+      params:
+        apiKey: $GEMINI_API_KEY
     - name: vertex
       provider: vertex
+      params:
+        vertexProject: tesseracthub-480811
+        vertexRegion: global
+      defaults:
+        auth:
+          gcp: {}
   models:
-    - name: '*'
+    - name: anthropic/*
       provider:
         reference: anthropic
+      transformation:
+        model: llmRequest.model.stripPrefix("anthropic/")
+    - name: openai/*
+      provider:
+        reference: openai
+      transformation:
+        model: llmRequest.model.stripPrefix("openai/")
+    - name: gemini/*
+      provider:
+        reference: gemini
+      transformation:
+        model: llmRequest.model.stripPrefix("gemini/")
+    - name: vertex/*
+      provider:
+        reference: vertex
+      transformation:
+        model: llmRequest.model.stripPrefix("vertex/")
 
 routes:
   - name: devai-anthropic-mesh

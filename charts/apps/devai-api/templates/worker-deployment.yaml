@@ -21,10 +21,12 @@ metadata:
     app.kubernetes.io/component: temporal-worker
 spec:
   replicas: {{ .Values.worker.replicaCount | default 1 }}
+  # maxUnavailable 1 so a rollout can free a pod's memory before it needs the
+  # replacement scheduled — surge-only deadlocks when the node pool is at max size.
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxUnavailable: 0
+      maxUnavailable: 1
       maxSurge: 1
   selector:
     matchLabels:
@@ -48,17 +50,20 @@ spec:
       # =tcp://...) crashing the typed pydantic Settings on startup.
       enableServiceLinks: false
       terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds | default 90 }}
+      # ScheduleAnyway, not DoNotSchedule: spread is a preference here. A hard
+      # constraint on a full, max-sized node pool leaves the worker unschedulable
+      # and blocks every image bump behind it.
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
-          whenUnsatisfiable: DoNotSchedule
+          whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: {{ include "devai-api.name" . }}-worker
               app.kubernetes.io/instance: {{ .Release.Name }}
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: DoNotSchedule
+          whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
               app.kubernetes.io/name: {{ include "devai-api.name" . }}-worker
@@ -69,7 +74,7 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "devai-api.serviceAccountName" . }}
       securityContext:
-        runAsUser: 1000
+        runAsUser: 10001
         runAsNonRoot: true
       containers:
         - name: worker

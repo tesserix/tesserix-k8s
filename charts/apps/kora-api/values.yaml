@@ -52,9 +52,12 @@ service:
   nameOverride: kora-api-direct
 
 aiGateway:
-  enabled: true
+  # Production enables this in values-prod.yaml. Kora sends only this logical
+  # model; Agent Gateway owns every concrete provider model and location.
+  enabled: false
   baseURL: http://kora-ai.agentgateway-system.svc.cluster.local:8080/v1
   model: kora-auto
+  agentTimeout: 60s
   clientSecret:
     create: true
     name: kora-ai-gateway-client-credentials
@@ -70,27 +73,40 @@ aiGateway:
     gatewayName: kora-ai
     port: 8080
 
-aiGateway:
-  # Production enables this in values-prod.yaml. Kora sends only this logical
-  # model; Agent Gateway owns every concrete provider model and location.
-  enabled: false
-  baseURL: http://kora-ai.agentgateway-system.svc.cluster.local:8080/v1
-  model: kora-auto
-  agentTimeout: 24s
-  clientSecret:
+# Kora resolves agents, skills and tools from the agentic registry at request
+# time. An empty baseURL leaves the agent path off entirely and the coach talks
+# to the model provider directly.
+#
+# deployKey is a DEDICATED credential, mirroring devai's. The registry holds
+# only sha256(key) in its `kora=` AUTH_DEPLOY_KEYS entry and compares it against
+# the Bearer token, so no other credential can stand in for it — this chart
+# shipped once claiming AI_GATEWAY_API_KEY would do, and every roster lookup
+# 401'd while the pod stayed green, because a registry outage degrades to
+# keyword routing by design. kora_agent_registry_resolves_total{result} is the
+# only thing that says which one you are getting.
+aiRegistry:
+  # The CLUSTER-LOCAL service, not aregistry.tesserix.app. The public host is
+  # fronted by agentregistry-ui-oauth2-proxy, which 401s a Bearer deploy key
+  # before the registry ever sees it -- devai's known-good key and no key at all
+  # fail there identically. Every devai workload points here for the same reason.
+  baseURL: http://agentregistry.agentregistry-system.svc.cluster.local:12121
+  ttl: 5m
+  # allow-kora-egress permits 0.0.0.0/0:443 except RFC1918, so the in-cluster
+  # service is unreachable without this: the roster fetch times out and routing
+  # silently falls back to the keyword table.
+  networkPolicy:
+    enabled: true
+    namespace: agentregistry-system
+    port: 12121
+  deployKey:
     create: true
-    name: kora-ai-gateway-client-credentials
-    key: kora-api
+    name: kora-agentic-registry-deploy-key
+    key: api_key
     refreshInterval: 1h
     store:
       name: gcp-secret-store
       kind: ClusterSecretStore
-    remoteRef: prod-kora-ai-gateway-api-key
-  networkPolicy:
-    enabled: true
-    namespace: agentgateway-system
-    gatewayName: kora-ai
-    port: 8080
+    remoteRef: prod-agentic-registry-kora-deploy-key
 
 # Emergency/local compatibility only. GitOps environments keep this disabled:
 # disabling Agent Gateway must not silently bypass it with provider credentials.
@@ -146,6 +162,18 @@ env:
   # chart said Redis was expected, so its absence flagged nothing and every
   # resolve silently cost a Gemini call. Points at the sidecar below.
   REDIS_URL: "redis://localhost:6379/0"
+  # Paid AI top-ups (kora docs/adr/0003-ai-top-up-billing.md). SANDBOX because
+  # the only Cashfree PG credentials in Secret Manager are test ones — both
+  # prod-homechef-cashfree-app-id and its -test- twin carry the TEST prefix.
+  # Checkout is therefore fully exercisable end to end and no real money can
+  # move. Going live is: real secrets under prod-kora-cashfree-*, the two
+  # remoteRefs below repointed, and this flipped to "false".
+  CASHFREE_SANDBOX: "true"
+  # The deep link the hosted checkout returns to. The scheme is the MOBILE
+  # APP's (apps/mobile/app.json), not the product name: a scheme the app has
+  # not registered opens nothing and strands the user in a browser after they
+  # have paid. Nothing on this URL is trusted — the app re-asks the gateway.
+  CASHFREE_RETURN_URL: "mobile://billing/return"
 
 # Each entry maps an env var name to a key in the k8s Secret created by
 # the ExternalSecret. Keep this in sync with externalsecret.yaml.
@@ -171,6 +199,12 @@ secretEnv:
   APPLE_TEAM_ID: apple_team_id
   APPLE_KEY_ID: apple_key_id
   APPLE_PRIVATE_KEY: apple_private_key
+  # Same together-or-not-at-all rule as Apple above: kora-api refuses to start
+  # with one of these set and the other empty, and with BOTH empty the purchase
+  # routes and POST /webhooks/cashfree are simply not mounted (404), which is
+  # the intended safe state for an environment with no gateway.
+  CASHFREE_APP_ID: cashfree_app_id
+  CASHFREE_SECRET_KEY: cashfree_secret_key
 
 # GCP / Workload Identity — annotates the SA with the matching GSA email.
 #
@@ -233,6 +267,13 @@ externalSecret:
     apple_team_id: prod-kora-apple-team-id
     apple_key_id: prod-kora-apple-key-id
     apple_private_key: prod-kora-apple-private-key
+    # Cashfree PG. These are the shared Tesserix merchant account's TEST
+    # credentials, the same pair dwellm8-api borrows — verified TEST-prefixed,
+    # so they collect nothing. Cashfree signs webhooks with the merchant secret
+    # key, so cashfree_secret_key is both the API credential and the webhook
+    # verification key; kora-api reads it once for both.
+    cashfree_app_id: prod-homechef-cashfree-test-app-id
+    cashfree_secret_key: prod-homechef-cashfree-test-secret-key
 
 # Schema migration. Runs as the Deployment's `migrate` initContainer (same
 # image, command override), so the API container cannot start — and the pod
@@ -274,8 +315,8 @@ migrate:
 # 0, which is how the index sat at 42% embedded with this Job and ArgoCD both
 # green. Draining the queue, or having nothing to do, is still green.
 #
-# Requires the image to ship /usr/local/bin/{seed,ingest,embed} and the AFCD /
-# USDA / SR Legacy / curated JSON at /usr/local/share/kora/food (kora PR #67
+# Requires the image to ship /usr/local/bin/{seed,ingest,dietag,embed} and the
+# AFCD / USDA / SR Legacy / curated JSON at /usr/local/share/kora/food (kora #67
 # for seed+ingest, and the embed + SR Legacy + curated PR after it). Until that
 # image is promoted the Job exec-fails loudly, matching the migrate Job's
 # convention of a visible failure over a silent skip.
@@ -306,6 +347,14 @@ seed:
   # without it the load inserts 310 duplicate rows instead of recognising them.
   # That happened in prod on 2026-08-17 and had to be cleaned up by hand.
   # The flag is idempotent, so leaving it on every run costs nothing.
+  #
+  # dietag runs after the load and before embed: it backfills
+  # food_items.diet_tags, which the mentor's allergy rules exclude retrieval
+  # on. Write paths derive tags themselves, so this covers rows already in the
+  # index — untagged, they match no rule and a "no beef" allergy filters
+  # nothing. It is a plain UPDATE pass, so it must not wait behind embed's
+  # per-row Gemini calls. Idempotent, and it re-derives on every run, so a
+  # taxonomy change is picked up by the next sync.
   command:
     - /bin/sh
     - -c
@@ -314,6 +363,7 @@ seed:
       /usr/local/bin/ingest
       -backfill-usda-brands
       -food-dir /usr/local/share/kora/food &&
+      /usr/local/bin/dietag &&
       /usr/local/bin/embed
 
 # Resolve-cache Redis, as a SIDECAR in the kora-api pod (kora#105).

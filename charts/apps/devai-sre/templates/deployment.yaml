@@ -30,7 +30,7 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "devai-sre.serviceAccountName" . }}
       securityContext:
-        runAsUser: 1000
+        runAsUser: 10001
         runAsNonRoot: true
       containers:
         - name: {{ .Chart.Name }}
@@ -89,6 +89,14 @@ spec:
                   name: devai-auth-bff-secrets
                   key: DEVAI_AUTH_BFF_SHARED_SECRET
                   optional: true
+            # The secret above is optional, so an ExternalSecret failure
+            # silently empties it — and an empty shared secret means "trust
+            # X-Forwarded-* from anyone". false makes that fail closed
+            # instead. Only rendered when set, so an explicit false survives.
+            {{- if hasKey .Values "trustForwardedWithoutSecret" }}
+            - name: DEVAI_TRUST_FORWARDED_WITHOUT_SECRET
+              value: {{ .Values.trustForwardedWithoutSecret | quote }}
+            {{- end }}
             # ─── Fiber-style blueprint runtime + adapters ─────────
             {{- if .Values.pipeline }}
             - name: DEVAI_PIPELINE_ENABLED

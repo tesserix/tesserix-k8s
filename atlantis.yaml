@@ -1,0 +1,114 @@
+version: 3
+automerge: true
+parallel_plan: true
+parallel_apply: true
+abort_on_execution_order_fail: true
+
+projects:
+  - name: 00-state-bootstrap
+    dir: terraform-new/stacks/00-state-bootstrap
+    execution_order_group: 1
+    autoplan:
+      when_modified: ["*.tf", "../../environments/prod/terraform.tfvars"]
+      enabled: true
+
+  - name: 01-foundation
+    dir: terraform-new/stacks/01-foundation
+    execution_order_group: 2
+    depends_on: [00-state-bootstrap]
+    autoplan:
+      when_modified: ["*.tf", "../../environments/prod/terraform.tfvars"]
+      enabled: true
+
+  - name: 02-network
+    dir: terraform-new/stacks/02-network
+    execution_order_group: 3
+    depends_on: [01-foundation]
+    autoplan:
+      when_modified: ["*.tf", "../../environments/prod/terraform.tfvars"]
+      enabled: true
+
+  - name: 03-storage
+    dir: terraform-new/stacks/03-storage
+    execution_order_group: 3
+    depends_on: [01-foundation]
+    autoplan:
+      when_modified: ["*.tf", "../../environments/prod/terraform.tfvars"]
+      enabled: true
+
+  - name: 08-communication-services
+    dir: terraform-new/stacks/08-communication-services
+    execution_order_group: 3
+    depends_on: [01-foundation]
+    autoplan:
+      when_modified: ["*.tf", "../../environments/prod/terraform.tfvars"]
+      enabled: true
+
+  - name: 11-identity-platform
+    dir: terraform-new/stacks/11-identity-platform
+    execution_order_group: 3
+    depends_on: [01-foundation]
+    autoplan:
+      when_modified: ["*.tf", "../../environments/prod/terraform.tfvars"]
+      enabled: true
+
+  - name: 04-gke
+    dir: terraform-new/stacks/04-gke
+    execution_order_group: 4
+    depends_on: [02-network]
+    autoplan:
+      when_modified: ["*.tf", "../../environments/prod/terraform.tfvars"]
+      enabled: true
+
+  - name: 12-vertex
+    dir: terraform-new/stacks/12-vertex
+    execution_order_group: 4
+    depends_on: [02-network]
+    autoplan:
+      when_modified: ["*.tf", "../../environments/prod/terraform.tfvars"]
+      enabled: true
+
+  - name: 05-k8s-bootstrap
+    dir: terraform-new/stacks/05-k8s-bootstrap
+    execution_order_group: 5
+    depends_on: [04-gke]
+    autoplan:
+      when_modified: ["*.tf", "../../environments/prod/terraform.tfvars"]
+      enabled: true
+
+  - name: 06-workload-identity
+    dir: terraform-new/stacks/06-workload-identity
+    execution_order_group: 5
+    depends_on: [03-storage, 04-gke]
+    autoplan:
+      when_modified:
+        - "*.tf"
+        - "../../modules/**/*.tf"
+        - "../../environments/prod/terraform.tfvars"
+      enabled: true
+
+  - name: 07-app-secrets
+    dir: terraform-new/stacks/07-app-secrets
+    execution_order_group: 6
+    depends_on: [04-gke, 06-workload-identity]
+    autoplan:
+      when_modified: ["*.tf", "../../environments/prod/terraform.tfvars"]
+      enabled: true
+
+  - name: 09-github-arc
+    dir: terraform-new/stacks/09-github-arc
+    execution_order_group: 7
+    depends_on: [05-k8s-bootstrap]
+    autoplan:
+      when_modified:
+        - "*.tf"
+        - "*.yaml"
+        - "*.yaml.tftpl"
+        - "../../environments/prod/terraform.tfvars"
+      enabled: true
+
+  - name: atlantis-failure-smoke
+    dir: terraform-new/tests/atlantis-failure
+    autoplan:
+      when_modified: ["*.tf"]
+      enabled: false

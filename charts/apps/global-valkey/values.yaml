@@ -44,6 +44,13 @@ haproxy:
     repository: haproxy
     tag: "3.0-alpine"
   port: 6379
+  # A Redis connection is idle between commands, not dead. HAProxy's 30s
+  # default closed pooled connections, and the next command on one failed with
+  # "Connection closed by server" — devai's queue worker hit this every few
+  # minutes. Long timeouts plus TCP keepalive is the standard Redis fronting.
+  timeouts:
+    client: 24h
+    server: 24h
   resources:
     requests:
       cpu: 25m

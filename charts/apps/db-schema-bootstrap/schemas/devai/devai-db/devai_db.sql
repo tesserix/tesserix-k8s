@@ -250,7 +250,7 @@ CREATE TABLE IF NOT EXISTS pipeline_config (
     repo            TEXT PRIMARY KEY,
     auto_mode       BOOLEAN NOT NULL DEFAULT FALSE,
     gates           JSONB NOT NULL DEFAULT '{}'::jsonb,
-    claude_model    TEXT DEFAULT 'claude-sonnet-4-20250514',
+    claude_model    TEXT DEFAULT 'claude-sonnet-5',
     openai_model    TEXT DEFAULT 'o3',
     groq_model      TEXT DEFAULT 'llama-3.3-70b-versatile',
     max_review_iterations INTEGER DEFAULT 3,

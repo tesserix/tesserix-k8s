@@ -61,6 +61,21 @@ for all 24 resources to carry the Registry owner label. It then removes only
 stale Argo/Helm tracking annotations. Registry pruning refuses any export below
 the permanent 24-resource platform floor.
 
+## Steady-state source
+
+The route-sync chart keeps those 24 platform resources in a deterministic
+Registry seed generated from the tested rollback templates. Its count-guarded
+Job upserts the seed through `/v0/agentgateway/import` before the reconciler
+exports desired state to AgentGateway. This keeps provider, route, OAuth, and
+guardrail changes versioned in Registry after Helm ownership has been removed.
+
+Regenerate and verify the seed after changing any rollback resource:
+
+```bash
+python3 scripts/generate-agentgateway-platform-resources.py
+python3 scripts/generate-agentgateway-platform-resources.py --check
+```
+
 ## Rollback
 
 Set `registryOwnership.enabled=false` in each of these charts to restore the

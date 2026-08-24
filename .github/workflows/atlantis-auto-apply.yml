@@ -1,0 +1,167 @@
+name: Atlantis Auto Apply
+
+'on':
+  pull_request_review:
+    types: [submitted, dismissed]
+  check_run:
+    types: [completed, rerequested]
+  status:
+  workflow_run:
+    workflows:
+      - Terraform Static Validation
+      - PR Validation
+      - Helm Lint
+    types: [completed]
+
+permissions:
+  contents: read
+  checks: read
+  statuses: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: >-
+    atlantis-auto-apply-${{
+      github.event.pull_request.head.sha ||
+      github.event.check_run.head_sha ||
+      github.event.workflow_run.head_sha ||
+      github.event.sha ||
+      github.sha
+    }}
+  cancel-in-progress: false
+
+jobs:
+  request-apply:
+    name: request-apply
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request Atlantis apply when every gate is satisfied
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+
+            async function candidatePullNumber() {
+              if (context.eventName === "pull_request_review") {
+                return context.payload.pull_request.number;
+              }
+              if (context.eventName === "check_run") {
+                return context.payload.check_run.pull_requests[0]?.number;
+              }
+              if (context.eventName === "workflow_run") {
+                return context.payload.workflow_run.pull_requests[0]?.number;
+              }
+              if (context.eventName === "status") {
+                const pulls = await github.paginate(
+                  github.rest.repos.listPullRequestsAssociatedWithCommit,
+                  { owner, repo, commit_sha: context.payload.sha, per_page: 100 },
+                );
+                return pulls.find((pull) => pull.state === "open")?.number;
+              }
+              return undefined;
+            }
+
+            const pullNumber = await candidatePullNumber();
+            if (!pullNumber) {
+              core.info("No open pull request is associated with this event.");
+              return;
+            }
+
+            const { data: pull } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pullNumber,
+            });
+            if (pull.state !== "open" || pull.draft || pull.head.repo.fork) {
+              core.info("Apply is disabled for closed, draft, or fork pull requests.");
+              return;
+            }
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner,
+              repo,
+              pull_number: pullNumber,
+              per_page: 100,
+            });
+            const latestReviewByUser = new Map();
+            for (const review of reviews) {
+              if (!review.user || review.state === "COMMENTED") continue;
+              const previous = latestReviewByUser.get(review.user.id);
+              if (!previous || review.id > previous.id) {
+                latestReviewByUser.set(review.user.id, review);
+              }
+            }
+            const approvals = [...latestReviewByUser.values()].filter(
+              (review) => review.state === "APPROVED" && review.commit_id === pull.head.sha,
+            );
+            if (approvals.length === 0) {
+              core.info("No APPROVED review exists for the current head commit.");
+              return;
+            }
+
+            const combined = await github.rest.repos.getCombinedStatusForRef({
+              owner,
+              repo,
+              ref: pull.head.sha,
+              per_page: 100,
+            });
+            const statuses = combined.data.statuses;
+            const planStatuses = statuses.filter((status) =>
+              status.context.startsWith("atlantis/plan"),
+            );
+            if (
+              planStatuses.length === 0 ||
+              planStatuses.some((status) => status.state !== "success")
+            ) {
+              core.info("The atlantis/plan status is missing or is not successful.");
+              return;
+            }
+            const blockingStatuses = statuses.filter(
+              (status) =>
+                !status.context.startsWith("atlantis/") && status.state !== "success",
+            );
+            if (blockingStatuses.length > 0) {
+              core.info(`Commit statuses are not ready: ${blockingStatuses.map((s) => s.context).join(", ")}`);
+              return;
+            }
+
+            const checkRuns = await github.paginate(github.rest.checks.listForRef, {
+              owner,
+              repo,
+              ref: pull.head.sha,
+              filter: "latest",
+              per_page: 100,
+            });
+            const acceptedConclusions = new Set(["success", "neutral", "skipped"]);
+            const blockingChecks = checkRuns.filter((check) => {
+              const ownCheck =
+                check.name === "request-apply" ||
+                check.name.startsWith("Atlantis Auto Apply");
+              return !ownCheck &&
+                (check.status !== "completed" || !acceptedConclusions.has(check.conclusion));
+            });
+            if (blockingChecks.length > 0) {
+              core.info(`Checks are not ready: ${blockingChecks.map((check) => check.name).join(", ")}`);
+              return;
+            }
+
+            const approvalToken = approvals.map((review) => review.id).sort().join("-");
+            const marker = `<!-- atlantis-auto-apply:${pull.head.sha}:${approvalToken} -->`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pullNumber,
+              per_page: 100,
+            });
+            if (comments.some((comment) => comment.body?.includes(marker))) {
+              core.info("An equivalent apply request already exists.");
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pullNumber,
+              body: `atlantis apply\n\n${marker}`,
+            });

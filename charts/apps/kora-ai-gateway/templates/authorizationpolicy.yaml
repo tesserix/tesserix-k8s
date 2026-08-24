@@ -15,6 +15,8 @@ spec:
         - source:
             principals:
               - {{ .Values.authorizationPolicy.koraPrincipal | quote }}
+            requestPrincipals:
+              - {{ printf "%s/*" .Values.endUserAuthentication.issuer | quote }}
       to:
         - operation:
             ports:
@@ -23,8 +25,23 @@ spec:
         - source:
             principals:
               - {{ .Values.authorizationPolicy.agentPrincipal | quote }}
+            requestPrincipals:
+              - {{ printf "%s/*" .Values.endUserAuthentication.issuer | quote }}
       to:
         - operation:
+            ports:
+              - {{ .Values.authorizationPolicy.gatewayPort | quote }}
+    # Bulk food-index embeddings are machine work rather than an app-user
+    # action. Keep this exception path-specific; every generative and A2A call
+    # above requires both the workload SPIFFE principal and a verified user.
+    - from:
+        - source:
+            principals:
+              - {{ .Values.authorizationPolicy.koraPrincipal | quote }}
+      to:
+        - operation:
+            methods: ["POST"]
+            paths: ["/v1/embeddings"]
             ports:
               - {{ .Values.authorizationPolicy.gatewayPort | quote }}
     - to:

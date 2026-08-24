@@ -2,6 +2,48 @@
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
+  name: kora-user-auth
+  labels:
+    {{- include "kora-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kora-ai
+      sectionName: conversation
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kora-ai
+      sectionName: structured
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kora-ai
+      sectionName: default
+  traffic:
+    {{- include "kora-ai-gateway.userJwtAuthentication" . | nindent 4 }}
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: kora-a2a-user-auth
+  labels:
+    {{- include "kora-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kora-a2a
+  traffic:
+    {{- include "kora-ai-gateway.userJwtAuthentication" . | nindent 4 }}
+    transformation:
+      request:
+        set:
+          - name: {{ .Values.endUserAuthentication.delegatedHeader }}
+            value: '"x-kora-end-user-token" in request.headers ? request.headers["x-kora-end-user-token"] : ""'
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
   name: kora-ai-traffic
   labels:
     {{- include "kora-ai-gateway.labels" . | nindent 4 }}
@@ -29,10 +71,11 @@ spec:
         name: {{ .Values.optimizer.serviceName }}
         port: {{ .Values.optimizer.grpcPort }}
       failureMode: FailOpen
+      # Guarded: bare map access throws "No such key" when the header is absent.
       requestAttributes:
-        token_optimizer.capability: request.headers["x-kora-ai-capability"]
-        token_optimizer.context_kind: request.headers["x-kora-ai-context-kind"]
-        token_optimizer.rtk_applied: request.headers["x-kora-rtk-applied"] == "true"
+        token_optimizer.capability: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
+        token_optimizer.context_kind: '"x-kora-ai-context-kind" in request.headers ? request.headers["x-kora-ai-context-kind"] : ""'
+        token_optimizer.rtk_applied: '"x-kora-rtk-applied" in request.headers ? request.headers["x-kora-rtk-applied"] == "true" : false'
       processingOptions:
         requestBodyMode: Buffered
         responseBodyMode: None
@@ -94,13 +137,15 @@ spec:
       kind: Gateway
       name: {{ .Values.gateway.name }}
   frontend:
+    http:
+      maxBufferSize: {{ .Values.limits.maxBufferSize }}
     metrics:
       attributes:
         add:
           - name: kora.ai.capability
-            expression: request.headers["x-kora-ai-capability"]
+            expression: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
           - name: kora.ai.context_kind
-            expression: request.headers["x-kora-ai-context-kind"]
+            expression: '"x-kora-ai-context-kind" in request.headers ? request.headers["x-kora-ai-context-kind"] : ""'
     # Spans go to the AI usage ingest, which writes the console's cost ledger.
     # Not to the observability estate: that is parked at zero pods, and a cost
     # figure sourced from a stack nobody runs is a figure nobody can check.
@@ -123,6 +168,8 @@ spec:
             expression: "'kora'"
           - name: tesserix.gateway
             expression: "'{{ .Values.gateway.name }}'"
+          # Guarded: bare map access throws "No such key" when the header is
+          # absent, and an unset capability must not cost us the whole span.
           - name: tesserix.capability
-            expression: request.headers["x-kora-ai-capability"]
+            expression: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
 {{- end }}

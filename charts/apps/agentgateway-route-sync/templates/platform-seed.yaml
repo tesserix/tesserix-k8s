@@ -1,0 +1,86 @@
+{{- if .Values.registryPlatformSeed.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentgateway-registry-platform-resources
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+data:
+  resources.json: |
+    {{- .Files.Get "files/platform-resources.json" | nindent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: agentgateway-registry-platform-seed
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
+    checksum/platform-resources: {{ .Files.Get "files/platform-resources.json" | sha256sum }}
+spec:
+  ttlSecondsAfterFinished: {{ .Values.registryPlatformSeed.ttlSecondsAfterFinished }}
+  backoffLimit: {{ .Values.registryPlatformSeed.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.registryPlatformSeed.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentgateway-route-sync.labels" . | nindent 8 }}
+      annotations:
+        checksum/platform-resources: {{ .Files.Get "files/platform-resources.json" | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seed
+          image: "{{ .Values.images.curl.repository }}@{{ .Values.images.curl.digest }}"
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              count="$(grep -Ec '^      "kind": "(AgentgatewayBackend|AgentgatewayPolicy|HTTPRoute)"' /seed/resources.json)"
+              echo "validated ${count} AgentGateway platform resources"
+              test "${count}" = "{{ .Values.registryPlatformSeed.expectedCount }}"
+              curl --silent --show-error --fail-with-body --max-time 30 \
+                --request POST \
+                --header "Authorization: Bearer ${REGISTRY_DEPLOY_KEY}" \
+                --header "Content-Type: application/json" \
+                --data-binary @/seed/resources.json \
+                "{{ .Values.registry.endpoint }}/v0/agentgateway/import"
+              echo "seeded ${count} approved AgentGateway platform resources"
+          env:
+            - name: REGISTRY_DEPLOY_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.registry.authSecret.name }}
+                  key: {{ .Values.registry.authSecret.key }}
+          volumeMounts:
+            - name: seed
+              mountPath: /seed
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: seed
+          configMap:
+            name: agentgateway-registry-platform-resources
+{{- end }}

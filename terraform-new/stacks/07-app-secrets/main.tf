@@ -1,5 +1,5 @@
 # App Secrets Stack - Application Secrets in Secret Manager
-# State: stacks/{environment}/app-secrets/default.tfstate
+# State: stacks/prod/app-secrets/default.tfstate
 # Dependencies: 04-gke, 06-workload-identity
 
 # Reference other stacks
@@ -7,7 +7,7 @@ data "terraform_remote_state" "gke" {
   backend = "gcs"
   config = {
     bucket = var.state_bucket
-    prefix = "stacks/${var.environment}/gke"
+    prefix = "stacks/prod/gke"
   }
 }
 
@@ -15,7 +15,7 @@ data "terraform_remote_state" "workload_identity" {
   backend = "gcs"
   config = {
     bucket = var.state_bucket
-    prefix = "stacks/${var.environment}/workload-identity"
+    prefix = "stacks/prod/workload-identity"
   }
 }
 

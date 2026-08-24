@@ -1,50 +1,46 @@
 # Public AgentGateway OAuth
 
-The production gateways use two exact Istio hosts and two separate trust
-boundaries: browser sessions use Zitadel authorization-code login through an
-isolated OAuth2 Proxy, while machine API paths require a Zitadel bearer token
-validated by AgentGateway.
+The production gateways use two exact Istio hosts and separate browser and
+machine trust boundaries. The MCP catalog uses an isolated OAuth2 Proxy. The
+standalone AgentGateway console uses AgentGateway's native Zitadel
+authorization-code flow. Machine API paths require a Zitadel bearer token
+validated by their AgentGateway listener.
 
 | Host | Browser experience | Machine API |
 |---|---|---|
 | `https://mcp.tesserix.app` | Tesserix MCP catalog UI | `/mcp` and `/mcp/*`; role `agentgateway.mcp` |
-| `https://agentgateway.tesserix.app` | Tesserix desired-state administration UI; Solo runtime view under `/ui/traffic/*` | provider prefixes; role `agentgateway.models` |
+| `https://agentgateway.tesserix.app` | Standalone writable AgentGateway LLM/MCP console | provider prefixes; role `agentgateway.models` |
 
 The AgentGateway controller and xDS port `9978` remain cluster-private. Public
-traffic enters through Istio and reaches only the dedicated data-plane listener
-on port `8081`. Existing in-cluster clients continue to use the mTLS listener on
-port `8080`. Solo's native admin listener `15000` is exposed only through a
-private ClusterIP Service and accepts traffic only from its dedicated OAuth2
-Proxy identity.
-
-The private runtime hop strips browser cookies and forwarded bearer-token
-headers after OAuth2 Proxy authorizes the request. Solo's native admin server
-has a smaller aggregate header limit than the Registry UI, and it does not use
-those credentials; retaining them caused authenticated `/ui/traffic/*`
-requests to fail with HTTP 431. Registry-bound requests keep the verified
-access token because Registry performs server-side authorization on writes.
+machine traffic enters through Istio and reaches only the xDS data-plane
+listener on port `8081`; existing in-cluster clients use port `8080`. Browser
+traffic reaches the standalone console listener on port `8082`. That process
+has no `XDS_ADDRESS`, stores its configuration in PostgreSQL, and validates the
+`agentgateway.models` role itself. The legacy xDS admin listener on `15000` and
+its OAuth2 Proxy remain private during the migration and are not selected by
+the public VirtualService.
 
 ## Browser access
 
 Browser requests that are not machine API paths are redirected to
-`https://auth.tesserix.app`. Only these verified emails are accepted:
+`https://auth.tesserix.app`. Access also requires the `agentgateway.models`
+role, which is currently granted only to these verified operators:
 
 - `samyak.rout@gmail.com`
 - `mahesh.sangawar@gmail.com`
 
-The two hosts use separate confidential clients, cookie keys, Deployments,
-Services, and Kubernetes service accounts. Their values are delivered from GCP
-Secret Manager through External Secrets:
+The two hosts use separate confidential clients and cookie keys. Their values
+are delivered from GCP Secret Manager through External Secrets:
 
 - `prod-agentgateway-mcp-ui-{client-id,client-secret,cookie-secret}`
 - `prod-agentgateway-admin-ui-{client-id,client-secret,cookie-secret}`
 
-Browser cookies are `Secure`, `HttpOnly`, and `SameSite=Lax`. The AgentGateway
-administration proxy forwards the verified access token only to the Registry
-upstream for server-side write authorization; the Solo runtime hop removes it.
-Neither UI stores a gateway bearer token. The MCP UI reads the existing Agentic
-Registry catalog; it is not a second registry and has no separate catalog
-state.
+Browser cookies are `Secure`, `HttpOnly`, and `SameSite=Lax`. Neither UI stores
+a gateway bearer token. The MCP UI reads the existing Agentic Registry catalog;
+it is not a second registry and has no separate catalog state. The
+`agentgateway-admin-ui` Zitadel client must allow both callbacks during the
+transition: `/oauth/callback` for the standalone console and
+`/oauth2/callback` for the private legacy proxy.
 
 ## Threat model and decision
 
@@ -78,7 +74,7 @@ Required scopes:
 
 ```text
 openid
-urn:zitadel:iam:org:project:id:386889024519799084:aud
+urn:zitadel:iam:org:project:id:387190457387450503:aud
 urn:zitadel:iam:org:projects:roles
 ```
 
@@ -89,17 +85,17 @@ curl --fail-with-body \
   --request POST \
   --user "${AGENTGATEWAY_CLIENT_ID}:${AGENTGATEWAY_CLIENT_SECRET}" \
   --data-urlencode 'grant_type=client_credentials' \
-  --data-urlencode 'scope=openid urn:zitadel:iam:org:project:id:386889024519799084:aud urn:zitadel:iam:org:projects:roles' \
+  --data-urlencode 'scope=openid urn:zitadel:iam:org:project:id:387190457387450503:aud urn:zitadel:iam:org:projects:roles' \
   https://auth.tesserix.app/oauth/v2/token
 ```
 
 The returned token must contain:
 
 - issuer `https://auth.tesserix.app`
-- audience `386889024519799084`
+- audience `387190457387450503`
 - a stable, unique `sub`
 - the appropriate role in
-  `urn:zitadel:iam:org:project:386889024519799084:roles`
+  `urn:zitadel:iam:org:project:387190457387450503:roles`
 
 AgentGateway validates the signature, issuer, audience, expiry, and role before
 routing. Rate limits are keyed by the verified `sub`, so one client cannot use
@@ -170,8 +166,8 @@ do not delete shared gateway or signing resources.
   cannot authorize the request.
 - If Agentic Registry is unavailable, the MCP UI is unavailable but `/mcp/*`
   routing remains independent.
-- If the private Solo admin listener or its OAuth proxy is unavailable, model
-  API prefixes remain independent.
+- If the standalone console is unavailable, model API prefixes remain
+  independent.
 - If Zitadel is unavailable, new browser logins and new machine tokens fail;
   existing browser cookies and cached JWKS continue only until their configured
   expiry.
@@ -179,10 +175,9 @@ do not delete shared gateway or signing resources.
 The design envelope is two human UI users with less than 5 browser requests per
 second per host; machine traffic is bounded by the subject limits above. The UI
 target is 99.9% monthly availability and p99 under 300 ms at the edge, excluding
-registry, MCP server, and model-provider time. Each OAuth proxy runs two small
-replicas with a PodDisruptionBudget. No new load balancer, database, or catalog
-is introduced; the marginal steady-state request is 128 MiB of cluster memory
-across four proxy pods.
+registry, MCP server, and model-provider time. Browser auth components run two
+replicas with PodDisruptionBudgets. No new load balancer or catalog is
+introduced.
 
 The exact-host VirtualServices prevent either hostname from falling through to
 the `vehicle-rental` wildcard route. Rolling back the Git commit restores the

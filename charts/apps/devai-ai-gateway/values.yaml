@@ -31,7 +31,7 @@ admin:
     issuerUrl: https://auth.tesserix.app
     redirectUrl: https://agentgateway.tesserix.app/oauth2/callback
     backendLogoutUrl: "https://auth.tesserix.app/oidc/v1/end_session?id_token_hint={id_token}"
-    scope: "openid profile email urn:zitadel:iam:org:project:id:386889024519799084:aud urn:zitadel:iam:org:projects:roles"
+    scope: "openid profile email urn:zitadel:iam:org:project:id:387190457387450503:aud urn:zitadel:iam:org:projects:roles"
     # oauth2-proxy routes by upstream path: Registry owns the default/admin UI,
     # while Solo keeps its native runtime UI and read-only XDS endpoints.
     upstreams:
@@ -73,7 +73,7 @@ routes:
   - prefix: /openai
     backend: devai-openai
   - prefix: /vertex
-    backend: devai-vertex
+    backend: devai-vertex-api-key
   - prefix: /gemini
     backend: devai-gemini
   - prefix: /groq
@@ -82,6 +82,14 @@ routes:
     backend: devai-openrouter
   - prefix: /nemoclaw
     backend: devai-nemoclaw
+
+# Where this gateway exports its LLM spans. The AI usage ingest turns them into
+# the console's cost and token ledger; a ReferenceGrant in that namespace is what
+# permits this cross-namespace reference.
+tracing:
+  serviceName: ai-usage-ingest
+  namespace: tesserix
+  port: 4318
 
 limits:
   requestsPerMinute: 600
@@ -98,7 +106,7 @@ authorizationPolicy:
 
 oauth:
   issuer: https://auth.tesserix.app
-  audience: "386889024519799084"
+  audience: "387190457387450503"
   jwks:
     host: auth.tesserix.app
     path: /oauth/v2/keys
@@ -106,7 +114,7 @@ oauth:
   humanEmails:
     - samyak.rout@gmail.com
     - mahesh.sangawar@gmail.com
-  roleClaim: "urn:zitadel:iam:org:project:386889024519799084:roles"
+  roleClaim: "urn:zitadel:iam:org:project:387190457387450503:roles"
   machineRole: agentgateway.models
 
 publicRateLimit:
@@ -114,9 +122,9 @@ publicRateLimit:
   port: 8081
   domain: agentgateway-public
 
-# Kept during the replacement rollout so the existing mirrored Secret is not
-# deleted. Native backends use caller credential passthrough or GCP workload
-# identity and do not read these values.
+# Retain mirrored platform keys for tested rollback paths. Native backends use
+# caller credential passthrough or GCP Workload Identity and do not read these
+# values in the active production route.
 externalSecrets:
   enabled: true
   secretStoreRef: gcp-secret-store
