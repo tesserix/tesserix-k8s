@@ -19,3 +19,8 @@ output "agentgateway_llm_sa_email" {
   description = "GSA the agentgateway uses (via Workload Identity) to call Vertex AI"
   value       = google_service_account.agentgateway_llm.email
 }
+
+output "atlantis_stack_scope_probe" {
+  description = "Disposable output used to verify stack-scoped Atlantis commands"
+  value       = "not-applied"
+}
