@@ -1,3 +1,4 @@
+import json
 import pathlib
 import re
 import subprocess
@@ -567,6 +568,68 @@ class AtlantisApprovalRelayTests(unittest.TestCase):
         graph = load_yaml(TERRAFORM_ROOT / "dependencies.yaml")
         matrix = workflow["jobs"]["validate"]["strategy"]["matrix"]["stack"]
         self.assertEqual(set(graph["stacks"]), set(matrix))
+
+
+class AtlantisZitadelProjectTests(unittest.TestCase):
+    """The console's OIDC client is reconciled, not left as a console artefact."""
+
+    @classmethod
+    def setUpClass(cls):
+        result = subprocess.run(
+            [
+                "helm",
+                "template",
+                "zitadel-bootstrap",
+                str(ROOT / "charts/apps/zitadel-bootstrap"),
+                "--namespace",
+                "zitadel",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        documents = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
+        config = resource(documents, "ConfigMap", "zitadel-bootstrap-config")
+        desired = json.loads(config["data"]["desired.json"])
+        cls.project = next(
+            item for item in desired["platformProjects"] if item["name"] == "Atlantis"
+        )
+
+    def test_project_is_pinned_to_the_tesserix_org_and_its_created_id(self):
+        self.assertEqual("TESSERIX", self.project["org"])
+        self.assertEqual("387690151817511174", self.project["expectedId"])
+
+    def test_oidc_client_matches_what_oauth2_proxy_sends(self):
+        self.assertEqual(
+            {
+                "name": "atlantis-ui",
+                "appType": "OIDC_APP_TYPE_WEB",
+                "authMethodType": "OIDC_AUTH_METHOD_TYPE_BASIC",
+                "loginBaseUri": "https://auth.tesserix.app/ui/v2/login",
+                "redirectUris": ["https://atlantis.tesserix.app/oauth2/callback"],
+                "postLogoutRedirectUris": ["https://atlantis.tesserix.app"],
+            },
+            self.project["oidcApps"][0],
+        )
+
+    def test_both_operators_are_granted_the_console_role(self):
+        self.assertEqual(
+            ["atlantis.admin"], [role["key"] for role in self.project["roles"]]
+        )
+        self.assertEqual(
+            {
+                "samyak.rout@gmail.com": ["atlantis.admin"],
+                "mahesh.sangawar@gmail.com": ["atlantis.admin"],
+            },
+            {grant["login"]: grant["roles"] for grant in self.project["humanGrants"]},
+        )
+
+    def test_grant_list_matches_the_proxy_email_allowlist(self):
+        chart = load_yaml(ROOT / "charts/thirdparty/atlantis/values.yaml")
+        self.assertEqual(
+            {grant["login"] for grant in self.project["humanGrants"]},
+            set(chart["oauth2Proxy"]["allowedEmails"]),
+        )
 
 
 if __name__ == "__main__":
