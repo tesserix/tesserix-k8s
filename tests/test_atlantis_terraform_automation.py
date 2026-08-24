@@ -247,6 +247,19 @@ class AtlantisPlatformTests(unittest.TestCase):
             {entry["secretKey"] for entry in tf_vars["spec"]["data"]},
         )
 
+    def test_external_secrets_use_the_production_crd_version(self):
+        external_secrets = [
+            document
+            for document in self.documents
+            if document.get("kind") == "ExternalSecret"
+        ]
+
+        self.assertEqual(3, len(external_secrets))
+        self.assertEqual(
+            {"external-secrets.io/v1beta1"},
+            {document["apiVersion"] for document in external_secrets},
+        )
+
     def test_public_route_uses_the_existing_gateway_and_webhook_path(self):
         virtual_service = resource(self.documents, "VirtualService", "atlantis")
         self.assertEqual(["atlantis.tesserix.app"], virtual_service["spec"]["hosts"])
