@@ -536,6 +536,21 @@ class AtlantisPlatformTests(unittest.TestCase):
         )
 
 
+    def test_proxy_may_resolve_dns_on_the_kube_dns_cluster_ip(self):
+        """A namespaceSelector alone does not match a Service ClusterIP.
+
+        ns atlantis has no namespace-wide egress allow to fall back on, so
+        without this the proxy cannot resolve the issuer and crashloops.
+        """
+        policy = resource(self.documents, "NetworkPolicy", "atlantis-ui-oauth2-proxy")
+        dns_rule = next(
+            rule
+            for rule in policy["spec"]["egress"]
+            if any(port["port"] == 53 for port in rule.get("ports", []))
+        )
+        self.assertIn({"ipBlock": {"cidr": "10.30.0.10/32"}}, dns_rule["to"])
+
+
 class AtlantisApprovalRelayTests(unittest.TestCase):
     def test_new_workflows_pin_every_action_to_a_commit(self):
         for filename in ("terraform.yml", "atlantis-auto-apply.yml"):
