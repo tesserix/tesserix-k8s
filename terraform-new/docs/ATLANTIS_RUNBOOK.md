@@ -148,6 +148,88 @@ override its workflow, fork and draft PRs are ignored, and apply/import require
 plan. `automerge: true` merges only after every affected project applies
 successfully.
 
+## Stack-scoped projects and commands
+
+Each key under `stacks` in `terraform-new/dependencies.yaml` is an Atlantis
+project name. A `*.tf` change inside one stack automatically plans only that
+project. `depends_on` and `execution_order_group` order the affected projects;
+they do not add unchanged dependency stacks to the plan.
+
+The deliberate shared-path exceptions are:
+
+- `terraform-new/environments/prod/terraform.tfvars` plans every project.
+- `terraform-new/modules/**/*.tf` plans `06-workload-identity`, the only stack
+  that consumes the shared modules directory.
+- YAML and YAML template changes directly under `09-github-arc` plan only
+  `09-github-arc`.
+
+Use the project name with `-p` to operate on one saved plan. For example:
+
+```shell
+# Replan only this project.
+atlantis plan -p 12-vertex
+
+# Apply only this project's saved plan after all apply requirements pass.
+atlantis apply -p 12-vertex
+
+# Plan every project Atlantis detects as modified in the PR.
+atlantis plan
+
+# Apply every saved plan in dependency and execution-group order.
+atlantis apply
+
+# Discard every saved plan and Atlantis lock for the PR.
+atlantis unlock
+```
+
+Atlantis v0.47.1 does not support `-p` for unlock. Use the lock link in the
+Atlantis plan comment for a project-specific unlock. Use `atlantis unlock`
+only when every PR plan and lock should be discarded, and only after confirming
+no plan or apply is running. If a plan includes an unexpected create, change,
+or destroy, do not apply it; unlock and investigate the state or source drift.
+
+### Pull request feedback
+
+Atlantis writes both project-specific and aggregate commit statuses to the
+pull request. Affected projects report `atlantis/plan: <project>` and
+`atlantis/apply: <project>`; the aggregate checks are `atlantis/plan` and
+`atlantis/apply`. The required `atlantis/apply` check blocks merging until all
+affected saved plans apply successfully. A failed or missing project status
+keeps the aggregate status from succeeding.
+
+A green `0/0 projects` aggregate status means Atlantis processed the pull
+request but no production Terraform project matched the changed paths. This is
+expected for documentation, repository configuration, and manual-only test
+project changes. It does not mean Terraform ran a plan. A production stack
+`*.tf` change must instead show its named project status and a nonzero project
+count; investigate the `when_modified` rules if it reports zero.
+
+Atlantis also adds detailed pull request comments for plan and apply commands.
+The plan comment includes the plan diff, the project name, usable targeted
+commands, and a project-specific lock link. These comments and statuses are the
+normal operator feedback path, so users do not need Kubernetes access or pod
+logs to understand a plan or apply result.
+
+### Intentional failure smoke test
+
+The manual-only `atlantis-failure-smoke` project exercises failed plan feedback
+without a backend, provider, resource, or production stack. Its autoplan is
+disabled, so normal pull requests never run it. Use it only on a disposable
+pull request by commenting:
+
+```shell
+atlantis plan -p atlantis-failure-smoke
+```
+
+The expected result is a failed `atlantis/plan: atlantis-failure-smoke`
+project status, a failed aggregate `atlantis/plan` status, and an Atlantis
+comment containing `Intentional Atlantis failure smoke test`. This failure
+occurs during input validation, before Terraform can contact any provider or
+backend. Do not merge and never apply the disposable pull request; close it
+after confirming the statuses and comment. If Atlantis retained a PR lock, use
+the project-specific lock link or the PR-wide `atlantis unlock` command as
+appropriate.
+
 ## Verification and failure handling
 
 For a harmless first test, change formatting or a description in one Terraform
