@@ -203,6 +203,10 @@ class DevAIMCPIngressTests(unittest.TestCase):
                         ],
                     )
                     self.assertEqual(
+                        "none",
+                        service["metadata"]["labels"]["istio.io/use-waypoint"],
+                    )
+                    self.assertEqual(
                         path,
                         service["metadata"]["annotations"][
                             "agentgateway.dev/mcp-path"
