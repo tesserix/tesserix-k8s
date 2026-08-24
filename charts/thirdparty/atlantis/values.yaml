@@ -20,7 +20,10 @@ atlantis:
   githubApp:
     slug: tesserix-atlantis
   vcsSecretName: atlantis-vcs
-  basicAuthSecretName: atlantis-basic-auth
+  # No basicAuthSecretName: the console is fronted by oauth2-proxy against
+  # Zitadel, and leaving it set would put a second, password prompt behind the
+  # SSO one. The atlantis-basic-auth ExternalSecret is deliberately retained so
+  # that re-adding this one line is a complete rollback.
 
   repoConfig: |
     ---
@@ -168,6 +171,32 @@ externalSecrets:
     TF_VAR_github_app_id: prod-terraform-arc-github-app-id
     TF_VAR_github_app_installation_id: prod-terraform-arc-github-app-installation-id
     TF_VAR_github_app_private_key: prod-terraform-arc-github-app-private-key
+
+oauth2Proxy:
+  enabled: true
+  name: atlantis-ui-oauth2-proxy
+  replicas: 2
+  image:
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    digest: sha256:f6a4aa83a27e316114bf79664302b1ffb2cc8ce697fb479273af4feb3fb16fe3
+  issuerUrl: https://auth.tesserix.app
+  redirectUrl: https://atlantis.tesserix.app/oauth2/callback
+  backendLogoutUrl: "https://auth.tesserix.app/oidc/v1/end_session?id_token_hint={id_token}"
+  upstream: http://atlantis.atlantis.svc.cluster.local:80
+  cookieName: _tesserix_atlantis
+  # The whole access list. Zitadel authenticates; this decides who gets in.
+  allowedEmails:
+    - samyak.rout@gmail.com
+    - mahesh.sangawar@gmail.com
+  resources:
+    requests:
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  externalSecret:
+    clientId: prod-atlantis-ui-client-id
+    clientSecret: prod-atlantis-ui-client-secret
+    cookieSecret: prod-atlantis-ui-cookie-secret
 
 virtualService:
   host: atlantis.tesserix.app
