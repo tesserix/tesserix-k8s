@@ -51,6 +51,33 @@ def render_atlantis_chart():
     return [document for document in yaml.safe_load_all(result.stdout) if document]
 
 
+def render_istio_auth_policies():
+    """Render the way ArgoCD does: the Application's inline block wins over values-prod."""
+    application = load_yaml(ROOT / "argocd/prod/infrastructure/istio-auth-policies.yaml")
+    chart = ROOT / "charts/infrastructure/istio-auth-policies"
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "istio-auth-policies",
+            str(chart),
+            "--namespace",
+            "istio-ingress",
+            "--values",
+            str(chart / "values.yaml"),
+            "--values",
+            str(chart / "values-prod.yaml"),
+            "--values",
+            "-",
+        ],
+        input=application["spec"]["source"]["helm"]["values"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [document for document in yaml.safe_load_all(result.stdout) if document]
+
+
 def resource(documents, kind, name):
     return next(
         document
@@ -281,30 +308,8 @@ class AtlantisPlatformTests(unittest.TestCase):
         )
         self.assertEqual(404, api_route["directResponse"]["status"])
 
-    def test_ingress_allows_only_the_atlantis_webhook_method_and_path(self):
-        chart = ROOT / "charts/infrastructure/istio-auth-policies"
-        result = subprocess.run(
-            [
-                "helm",
-                "template",
-                "istio-auth-policies",
-                str(chart),
-                "--namespace",
-                "istio-ingress",
-                "--values",
-                str(chart / "values.yaml"),
-                "--values",
-                str(chart / "values-prod.yaml"),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        documents = [
-            document
-            for document in yaml.safe_load_all(result.stdout)
-            if document
-        ]
+    def test_webhook_ingress_stays_scoped_to_the_signed_post_path(self):
+        documents = render_istio_auth_policies()
 
         for policy_name in (
             "allow-public-api-endpoints",
@@ -328,6 +333,27 @@ class AtlantisPlatformTests(unittest.TestCase):
                 ],
                 matching_operations,
             )
+
+    def test_web_ui_host_is_admitted_at_the_gateway(self):
+        documents = render_istio_auth_policies()
+
+        for suffix in ("", "-custom"):
+            policy = resource(
+                documents,
+                "AuthorizationPolicy",
+                f"allow-frontend-apps-public{suffix}",
+            )
+            hosts = [
+                host
+                for rule in policy["spec"]["rules"]
+                for target in rule.get("to", [])
+                for host in target["operation"].get("hosts", [])
+            ]
+            self.assertIn("atlantis.tesserix.app", hosts)
+
+        # The namespace is unmeshed, so a per-pod ALLOW would select nothing.
+        names = {document["metadata"]["name"] for document in documents}
+        self.assertNotIn("allow-atlantis-public", names)
 
     def test_network_policy_selects_the_rendered_atlantis_pod(self):
         stateful_set = resource(self.documents, "StatefulSet", "atlantis")
