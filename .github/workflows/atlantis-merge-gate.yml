@@ -1,0 +1,28 @@
+name: Atlantis Merge Gate
+
+'on':
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  classify:
+    name: classify-change
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the trusted base revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Satisfy the apply gate when Terraform is unaffected
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            const gate = require("./.github/scripts/atlantis-merge-gate.cjs");
+            await gate.run({ github, context, core });

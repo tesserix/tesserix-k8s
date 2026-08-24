@@ -444,9 +444,54 @@ class AtlantisPlatformTests(unittest.TestCase):
         )
 
 
+class AtlantisMergeGateTests(unittest.TestCase):
+    def test_gate_behavior(self):
+        result = subprocess.run(
+            [
+                "node",
+                "--test",
+                str(ROOT / ".github/scripts/atlantis-merge-gate.test.cjs"),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_gate_runs_trusted_base_code_with_minimal_permissions(self):
+        workflow_path = ROOT / ".github/workflows/atlantis-merge-gate.yml"
+        workflow = load_yaml(workflow_path)
+        workflow_text = workflow_path.read_text()
+
+        self.assertEqual(
+            {"opened", "reopened", "synchronize", "ready_for_review"},
+            set(workflow["on"]["pull_request_target"]["types"]),
+        )
+        self.assertNotIn("pull_request", workflow["on"])
+        self.assertEqual(
+            {
+                "contents": "read",
+                "pull-requests": "read",
+                "statuses": "write",
+            },
+            workflow["permissions"],
+        )
+        self.assertIn("github.event.pull_request.base.sha", workflow_text)
+        self.assertIn("persist-credentials: false", workflow_text)
+        self.assertIn("atlantis-merge-gate.cjs", workflow_text)
+
+    def test_runbook_requires_the_terminal_apply_status(self):
+        runbook = (TERRAFORM_ROOT / "docs/ATLANTIS_RUNBOOK.md").read_text()
+        self.assertIn("Require `atlantis/apply`", runbook)
+        self.assertIn("No Atlantis-managed Terraform paths", runbook)
+
+
 class AtlantisApprovalRelayTests(unittest.TestCase):
     def test_new_workflows_pin_every_action_to_a_commit(self):
-        for filename in ("terraform.yml", "atlantis-auto-apply.yml"):
+        for filename in (
+            "terraform.yml",
+            "atlantis-auto-apply.yml",
+            "atlantis-merge-gate.yml",
+        ):
             workflow = (ROOT / ".github/workflows" / filename).read_text()
             actions = re.findall(r"^\s*uses:\s*([^\s]+)$", workflow, re.MULTILINE)
             self.assertTrue(actions, filename)

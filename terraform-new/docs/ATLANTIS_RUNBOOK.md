@@ -142,6 +142,15 @@ validation checks appropriate to the changed paths. The relay independently
 requires an `APPROVED` review tied to the current head, a successful
 `atlantis/plan`, and all other checks to be complete without failure.
 
+Require `atlantis/apply` as a status check in the `main` ruleset. Atlantis
+publishes the real status for managed changes, so the pull request cannot merge
+until the saved plan applies successfully.
+The "No Atlantis-managed Terraform paths" outcome is the only case in which
+the trusted merge-gate workflow publishes the same successful status. This
+keeps Helm-only and documentation pull requests
+from waiting for a status Atlantis cannot produce. Fork pull requests never
+receive this bypass.
+
 Atlantis server-side configuration is authoritative: the repository cannot
 override its workflow, fork and draft PRs are ignored, and apply/import require
 `approved`, `mergeable`, and `undiverged`. The apply step consumes the saved
