@@ -1,6 +1,6 @@
 # Foundation Stack - Enable Required GCP APIs
-# State: stacks/{environment}/foundation/default.tfstate
-# Dependencies: None (this is the first stack)
+# State: stacks/prod/foundation/default.tfstate
+# Dependencies: 00-state-bootstrap
 
 # Enable required GCP APIs
 resource "google_project_service" "apis" {
@@ -44,27 +44,4 @@ resource "google_project_iam_member" "github_actions_identity_platform_viewer" {
   project = var.project_id
   role    = "roles/identityplatform.viewer"
   member  = "serviceAccount:github-actions@${var.project_id}.iam.gserviceaccount.com"
-}
-
-# Create the state bucket if it doesn't exist
-# Note: This is bootstrapped manually or via a separate bootstrap script
-resource "google_storage_bucket" "terraform_state" {
-  count = var.create_state_bucket ? 1 : 0
-
-  name          = var.state_bucket_name
-  project       = var.project_id
-  location      = var.region
-  storage_class = "STANDARD"
-
-  versioning {
-    enabled = true
-  }
-
-  uniform_bucket_level_access = true
-
-  labels = var.common_labels
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }

@@ -72,6 +72,21 @@ identical environment — defined once here so the two never drift.
       name: devai-auth-bff-secrets
       key: DEVAI_AUTH_BFF_SHARED_SECRET
       optional: true
+# The secret above is optional, so an ExternalSecret failure silently empties
+# it — and an empty shared secret means "trust X-Forwarded-* from anyone".
+# false makes that case fail closed instead (identity._forward_trusted).
+# Only rendered when set: a `default true` would rewrite an explicit false.
+{{- if hasKey .Values "trustForwardedWithoutSecret" }}
+- name: DEVAI_TRUST_FORWARDED_WITHOUT_SECRET
+  value: {{ .Values.trustForwardedWithoutSecret | quote }}
+{{- end }}
+# Confines the document-ingestion tools (doc_read_pdf / doc_read_markdown /
+# doc_parse_openapi) to one directory. Their file_path is regex-extracted from
+# issue text, so an unconfined pod reads whatever an issue author names.
+{{- with .Values.toolWorkspaceRoot }}
+- name: DEVAI_TOOL_WORKSPACE_ROOT
+  value: {{ . | quote }}
+{{- end }}
 # MCP Hub ↔ devai-api shared service bearer: the Hub presents it toward the
 # per-domain MCP servers (authMode=jwt) and devai-api verifies it
 # (identity._principal_from_service_bearer). Same key the devai-mcp-hub

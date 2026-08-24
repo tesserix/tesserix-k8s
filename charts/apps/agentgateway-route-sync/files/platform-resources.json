@@ -329,6 +329,23 @@
       "apiVersion": "agentgateway.dev/v1alpha1",
       "kind": "AgentgatewayBackend",
       "metadata": {
+        "name": "kora-firebase-jwks",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "policies": {
+          "tls": {}
+        },
+        "static": {
+          "host": "www.googleapis.com",
+          "port": 443
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayBackend",
+      "metadata": {
         "name": "kora-structured-providers",
         "namespace": "agentgateway-system"
       },
@@ -669,7 +686,8 @@
                 "type": "RequestHeaderModifier",
                 "requestHeaderModifier": {
                   "remove": [
-                    "X-Kora-End-User-Token"
+                    "X-Kora-End-User-Token",
+                    "X-Kora-Delegated-End-User-Token"
                   ]
                 }
               }
@@ -705,7 +723,8 @@
                 "type": "RequestHeaderModifier",
                 "requestHeaderModifier": {
                   "remove": [
-                    "X-Kora-End-User-Token"
+                    "X-Kora-End-User-Token",
+                    "X-Kora-Delegated-End-User-Token"
                   ]
                 }
               }
@@ -741,7 +760,8 @@
                 "type": "RequestHeaderModifier",
                 "requestHeaderModifier": {
                   "remove": [
-                    "X-Kora-End-User-Token"
+                    "X-Kora-End-User-Token",
+                    "X-Kora-Delegated-End-User-Token"
                   ]
                 }
               }
@@ -770,7 +790,8 @@
                 "type": "RequestHeaderModifier",
                 "requestHeaderModifier": {
                   "remove": [
-                    "X-Kora-End-User-Token"
+                    "X-Kora-End-User-Token",
+                    "X-Kora-Delegated-End-User-Token"
                   ]
                 }
               }
@@ -1048,6 +1069,64 @@
       "apiVersion": "agentgateway.dev/v1alpha1",
       "kind": "AgentgatewayPolicy",
       "metadata": {
+        "name": "kora-a2a-user-auth",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "targetRefs": [
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "kora-a2a"
+          }
+        ],
+        "traffic": {
+          "jwtAuthentication": {
+            "mode": "Strict",
+            "location": {
+              "header": {
+                "name": "X-Kora-End-User-Token",
+                "prefix": "Bearer "
+              }
+            },
+            "providers": [
+              {
+                "issuer": "https://securetoken.google.com/kora-app-e6d38",
+                "audiences": [
+                  "kora-app-e6d38"
+                ],
+                "jwks": {
+                  "remote": {
+                    "jwksPath": "/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com",
+                    "cacheDuration": "5m",
+                    "backendRef": {
+                      "group": "agentgateway.dev",
+                      "kind": "AgentgatewayBackend",
+                      "name": "kora-firebase-jwks",
+                      "port": 443
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "transformation": {
+            "request": {
+              "set": [
+                {
+                  "name": "X-Kora-Delegated-End-User-Token",
+                  "value": "\"x-kora-end-user-token\" in request.headers ? request.headers[\"x-kora-end-user-token\"] : \"\""
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayPolicy",
+      "metadata": {
         "name": "kora-ai-guardrails",
         "namespace": "agentgateway-system"
       },
@@ -1234,6 +1313,67 @@
               "requestBodyMode": "Buffered",
               "responseBodyMode": "None"
             }
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayPolicy",
+      "metadata": {
+        "name": "kora-user-auth",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "targetRefs": [
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "kora-ai",
+            "sectionName": "conversation"
+          },
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "kora-ai",
+            "sectionName": "structured"
+          },
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "kora-ai",
+            "sectionName": "default"
+          }
+        ],
+        "traffic": {
+          "jwtAuthentication": {
+            "mode": "Strict",
+            "location": {
+              "header": {
+                "name": "X-Kora-End-User-Token",
+                "prefix": "Bearer "
+              }
+            },
+            "providers": [
+              {
+                "issuer": "https://securetoken.google.com/kora-app-e6d38",
+                "audiences": [
+                  "kora-app-e6d38"
+                ],
+                "jwks": {
+                  "remote": {
+                    "jwksPath": "/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com",
+                    "cacheDuration": "5m",
+                    "backendRef": {
+                      "group": "agentgateway.dev",
+                      "kind": "AgentgatewayBackend",
+                      "name": "kora-firebase-jwks",
+                      "port": 443
+                    }
+                  }
+                }
+              }
+            ]
           }
         }
       }

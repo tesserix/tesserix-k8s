@@ -1,0 +1,39 @@
+{{- if .Values.clusterRead.enabled -}}
+# Read-only access to this namespace, for the health module.
+#
+# A Role, NOT a ClusterRole. Everything the module reads lives in this
+# namespace, and this cluster also hosts unrelated estates — a ClusterRole
+# would grant reads across all of them in exchange for nothing this needs.
+# Widening a Role later is a visible, reviewable change; starting wide means
+# nobody ever notices it was never narrowed.
+#
+# This is the first thing in the estate to hold cluster-read credentials.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "platform-api.fullname" . }}-cluster-read
+  labels:
+    {{- include "platform-api.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources: ["clusters"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "platform-api.fullname" . }}-cluster-read
+  labels:
+    {{- include "platform-api.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "platform-api.fullname" . }}-cluster-read
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "platform-api.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
