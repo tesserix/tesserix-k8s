@@ -119,8 +119,8 @@ output "security_config" {
     private_cluster_enabled      = var.enable_private_cluster
     network_policy_enabled       = var.enable_network_policy
     binary_authorization_enabled = var.enable_binary_authorization
-    workload_identity_enabled    = true  # Always enabled
-    shielded_nodes_enabled       = true  # Enabled in node pool config
+    workload_identity_enabled    = true # Always enabled
+    shielded_nodes_enabled       = true # Enabled in node pool config
   }
 }
 

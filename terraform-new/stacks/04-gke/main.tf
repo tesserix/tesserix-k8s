@@ -1,5 +1,5 @@
 # GKE Stack - Kubernetes Cluster and Node Pools
-# State: stacks/{environment}/gke/default.tfstate
+# State: stacks/prod/gke/default.tfstate
 # Dependencies: 02-network
 
 # Reference network stack outputs
@@ -8,7 +8,7 @@ data "terraform_remote_state" "network" {
 
   config = {
     bucket = var.state_bucket
-    prefix = "stacks/${var.environment}/network"
+    prefix = "stacks/prod/network"
   }
 }
 
@@ -212,8 +212,8 @@ resource "google_container_node_pool" "pools" {
     disk_size_gb = each.value.disk_size_gb
     disk_type    = each.value.disk_type
     # Use global spot toggle if set, otherwise fall back to per-pool setting
-    spot         = var.use_spot_instances != null ? var.use_spot_instances : each.value.spot
-    image_type   = each.value.image_type
+    spot       = var.use_spot_instances != null ? var.use_spot_instances : each.value.spot
+    image_type = each.value.image_type
 
     # Boot disk encryption with KMS (CMEK)
     # SECURITY: Encrypts node boot disks with customer-managed keys

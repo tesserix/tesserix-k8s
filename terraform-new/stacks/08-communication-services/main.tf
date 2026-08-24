@@ -1,12 +1,12 @@
 # Communication Services Stack - Email, SMS, Push Notifications
-# State: stacks/{environment}/communication-services/default.tfstate
+# State: stacks/prod/communication-services/default.tfstate
 # Dependencies: 01-foundation
 
 data "terraform_remote_state" "foundation" {
   backend = "gcs"
   config = {
     bucket = var.state_bucket
-    prefix = "stacks/${var.environment}/foundation"
+    prefix = "stacks/prod/foundation"
   }
 }
 

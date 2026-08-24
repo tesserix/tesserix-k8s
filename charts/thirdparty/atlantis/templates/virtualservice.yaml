@@ -1,0 +1,42 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: atlantis
+  namespace: {{ .Release.Namespace }}
+spec:
+  hosts:
+    - {{ .Values.virtualService.host }}
+  gateways:
+    - {{ .Values.virtualService.gateway }}
+  exportTo:
+    - "."
+    - istio-ingress
+  http:
+    - name: block-api
+      match:
+        - uri:
+            prefix: /api
+        - uri:
+            exact: /status
+      directResponse:
+        status: 404
+    - name: github-webhook
+      match:
+        - uri:
+            prefix: /events
+      route:
+        - destination:
+            host: atlantis.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: 80
+      timeout: 30s
+    - name: web-ui
+      match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: atlantis.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: 80
+      timeout: 30s
