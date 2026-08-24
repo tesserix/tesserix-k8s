@@ -182,14 +182,21 @@ spec:
   target:
     name: {{ $oauth.name }}
     creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        client-id: "{{ `{{ .clientId }}` }}"
+        client-secret: "{{ `{{ .clientSecret }}` }}"
+        # Keep 192 bits of printable entropy while meeting oauth2-proxy's 32-byte limit.
+        cookie-secret: "{{ `{{ .cookieSecret | trunc 32 }}` }}"
   data:
-    - secretKey: client-id
+    - secretKey: clientId
       remoteRef:
         key: {{ $oauth.externalSecret.clientId }}
-    - secretKey: client-secret
+    - secretKey: clientSecret
       remoteRef:
         key: {{ $oauth.externalSecret.clientSecret }}
-    - secretKey: cookie-secret
+    - secretKey: cookieSecret
       remoteRef:
         key: {{ $oauth.externalSecret.cookieSecret }}
 ---
