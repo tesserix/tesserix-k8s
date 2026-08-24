@@ -910,6 +910,25 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             deployment["spec"]["strategy"]["rollingUpdate"],
         )
 
+    def test_token_optimizer_accepts_bounded_multimodal_payloads(self):
+        documents = render_chart(
+            "charts/apps/token-optimizer",
+            "token-optimizer",
+            "agentgateway-system",
+        )
+        deployment = resource(documents, "Deployment", "token-optimizer")
+        env = {
+            entry["name"]: entry["value"]
+            for entry in deployment["spec"]["template"]["spec"]["containers"][0][
+                "env"
+            ]
+        }
+
+        self.assertEqual(
+            "16777216",
+            env["TOKEN_OPTIMIZER_MAX_REQUEST_BYTES"],
+        )
+
     def test_registry_publish_path_is_credential_gated(self):
         registry = render_chart(
             "charts/apps/agentic-registry",
