@@ -1,7 +1,11 @@
+import fnmatch
 import json
+import os
 import pathlib
+import posixpath
 import re
 import subprocess
+import tempfile
 import unittest
 
 import yaml
@@ -9,6 +13,7 @@ import yaml
 
 ROOT = pathlib.Path(__file__).parents[1]
 TERRAFORM_ROOT = ROOT / "terraform-new"
+ATLANTIS_FAILURE_PROJECT = "atlantis-failure-smoke"
 STATE_BUCKET = "tesseract-terraform-states"
 LIVE_STATE_PREFIXES = {
     "stacks/prod/foundation",
@@ -178,10 +183,21 @@ class AtlantisRepositoryConfigurationTests(unittest.TestCase):
         cls.atlantis = load_yaml(ROOT / "atlantis.yaml")
         cls.values = load_yaml(ROOT / "charts/thirdparty/atlantis/values.yaml")
 
+    def matching_projects(self, changed_path):
+        matches = set()
+        for project in self.atlantis["projects"]:
+            for pattern in project["autoplan"]["when_modified"]:
+                repository_pattern = posixpath.normpath(
+                    posixpath.join(project["dir"], pattern)
+                )
+                if fnmatch.fnmatchcase(changed_path, repository_pattern):
+                    matches.add(project["name"])
+        return matches
+
     def test_projects_exactly_mirror_the_stack_graph(self):
         graph_stacks = self.graph["stacks"]
         projects = {project["name"]: project for project in self.atlantis["projects"]}
-        self.assertEqual(set(graph_stacks), set(projects))
+        self.assertEqual(set(graph_stacks) | {ATLANTIS_FAILURE_PROJECT}, set(projects))
 
         stack_group = {
             stack: phase["phase"]
@@ -194,6 +210,101 @@ class AtlantisRepositoryConfigurationTests(unittest.TestCase):
             self.assertEqual(config["dependencies"], project.get("depends_on", []))
             self.assertEqual(stack_group[stack], project["execution_order_group"])
             self.assertTrue(project["autoplan"]["enabled"])
+
+    def test_stack_local_changes_only_autoplan_the_matching_project(self):
+        for stack, config in self.graph["stacks"].items():
+            changed_path = f"terraform-new/{config['path']}/main.tf"
+            self.assertEqual({stack}, self.matching_projects(changed_path))
+
+    def test_shared_paths_autoplan_only_their_intended_projects(self):
+        self.assertEqual(
+            set(self.graph["stacks"]),
+            self.matching_projects("terraform-new/environments/prod/terraform.tfvars"),
+        )
+        self.assertEqual(
+            {"06-workload-identity"},
+            self.matching_projects("terraform-new/modules/naming/main.tf"),
+        )
+        self.assertEqual(
+            {"09-github-arc"},
+            self.matching_projects(
+                "terraform-new/stacks/09-github-arc/runner-values.yaml.tftpl"
+            ),
+        )
+        self.assertEqual(
+            set(),
+            self.matching_projects("terraform-new/docs/ATLANTIS_RUNBOOK.md"),
+        )
+
+    def test_failure_smoke_project_is_manual_and_isolated(self):
+        projects = {project["name"]: project for project in self.atlantis["projects"]}
+        project = projects[ATLANTIS_FAILURE_PROJECT]
+
+        self.assertEqual("terraform-new/tests/atlantis-failure", project["dir"])
+        self.assertEqual(
+            {"when_modified": ["*.tf"], "enabled": False}, project["autoplan"]
+        )
+        self.assertNotIn("depends_on", project)
+        self.assertNotIn("execution_order_group", project)
+
+    def test_failure_smoke_stack_returns_an_intentional_plan_error(self):
+        fixture = TERRAFORM_ROOT / "tests/atlantis-failure"
+        self.assertTrue(fixture.is_dir())
+
+        with tempfile.TemporaryDirectory() as data_dir:
+            result = subprocess.run(
+                [
+                    "terraform",
+                    f"-chdir={fixture}",
+                    "plan",
+                    "-input=false",
+                    "-no-color",
+                    "-var-file=../../environments/prod/terraform.tfvars",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "TF_DATA_DIR": data_dir},
+            )
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Intentional Atlantis failure smoke test", result.stderr)
+
+    def test_runbook_documents_stack_scoped_commands_and_unlock_scope(self):
+        runbook = (TERRAFORM_ROOT / "docs/ATLANTIS_RUNBOOK.md").read_text()
+        for command in (
+            "atlantis plan -p 12-vertex",
+            "atlantis apply -p 12-vertex",
+            "atlantis plan",
+            "atlantis apply",
+            "atlantis unlock",
+        ):
+            self.assertIn(command, runbook)
+        self.assertIn("project-specific unlock", runbook)
+        self.assertNotIn("atlantis unlock -p", runbook)
+
+    def test_runbook_documents_pull_request_status_and_comment_feedback(self):
+        runbook = (TERRAFORM_ROOT / "docs/ATLANTIS_RUNBOOK.md").read_text()
+        self.assertIn("- Commit statuses: read and write", runbook)
+        for feedback in (
+            "`atlantis/plan: <project>`",
+            "`atlantis/plan`",
+            "`atlantis/apply: <project>`",
+            "required `atlantis/apply`",
+            "plan diff",
+            "project-specific lock link",
+        ):
+            self.assertIn(feedback, runbook)
+
+    def test_runbook_documents_the_manual_failure_smoke_test(self):
+        runbook = (TERRAFORM_ROOT / "docs/ATLANTIS_RUNBOOK.md").read_text()
+        for instruction in (
+            "atlantis plan -p atlantis-failure-smoke",
+            "`atlantis/plan: atlantis-failure-smoke`",
+            "Intentional Atlantis failure smoke test",
+            "never apply",
+        ):
+            self.assertIn(instruction, runbook)
 
     def test_repository_cannot_override_the_trusted_workflow(self):
         self.assertNotIn("workflows", self.atlantis)
