@@ -83,6 +83,14 @@ routes:
   - prefix: /nemoclaw
     backend: devai-nemoclaw
 
+# Where this gateway exports its LLM spans. The AI usage ingest turns them into
+# the console's cost and token ledger; a ReferenceGrant in that namespace is what
+# permits this cross-namespace reference.
+tracing:
+  serviceName: ai-usage-ingest
+  namespace: tesserix
+  port: 4318
+
 limits:
   requestsPerMinute: 600
   requestBurst: 100
@@ -114,9 +122,9 @@ publicRateLimit:
   port: 8081
   domain: agentgateway-public
 
-# Kept during the replacement rollout so the existing mirrored Secret is not
-# deleted. Native backends use caller credential passthrough or GCP workload
-# identity and do not read these values.
+# Retain mirrored platform keys for tested rollback paths. Native backends use
+# caller credential passthrough or GCP Workload Identity and do not read these
+# values in the active production route.
 externalSecrets:
   enabled: true
   secretStoreRef: gcp-secret-store

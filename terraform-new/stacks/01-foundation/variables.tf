@@ -38,7 +38,7 @@ variable "apis" {
     "iamcredentials.googleapis.com",
     "cloudresourcemanager.googleapis.com",
     "binaryauthorization.googleapis.com",
-    "sts.googleapis.com",  # Security Token Service (Workload Identity)
+    "sts.googleapis.com", # Security Token Service (Workload Identity)
 
     # Observability
     "logging.googleapis.com",
@@ -97,18 +97,6 @@ variable "disable_on_destroy" {
   description = "Whether to disable the API when the resource is destroyed"
   type        = bool
   default     = false
-}
-
-variable "create_state_bucket" {
-  description = "Whether to create the Terraform state bucket (usually done once)"
-  type        = bool
-  default     = false
-}
-
-variable "state_bucket_name" {
-  description = "Name of the Terraform state bucket"
-  type        = string
-  default     = "tesseract-terraform-states"
 }
 
 variable "common_labels" {

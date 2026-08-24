@@ -1,38 +1,51 @@
-name: Production Ready Terraform Infrastructure
+name: Terraform Static Validation
 
-on:
-  # Automatic plan on PR
+'on':
   pull_request:
-    branches:
-      - main
+    branches: [main]
     paths:
-      - 'terraform-new/**'
-      - '.github/workflows/terraform.yml'
-  # Plan-only on push to main for terraform changes (apply via workflow_dispatch)
+      - terraform-new/**
+      - atlantis.yaml
+      - .github/workflows/terraform.yml
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
-      - 'terraform-new/environments/*/terraform.tfvars'
-      - 'terraform-new/stacks/**'
-  # Manual trigger for all operations (plan/apply/destroy)
+      - terraform-new/**
+      - atlantis.yaml
+      - .github/workflows/terraform.yml
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to deploy'
-        required: true
-        default: 'prod'
-        type: choice
-        options:
-          - prod
-          - devtest
-      stack:
-        description: 'Stack to deploy (or "all")'
-        required: true
-        default: 'all'
-        type: choice
-        options:
-          - all
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  TF_IN_AUTOMATION: "true"
+  TF_VERSION: "1.15.8"
+
+jobs:
+  format:
+    name: terraform-fmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: Check formatting
+        run: terraform fmt -check -recursive terraform-new
+
+  validate:
+    name: terraform-validate (${{ matrix.stack }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stack:
+          - 00-state-bootstrap
           - 01-foundation
           - 02-network
           - 03-storage
@@ -44,344 +57,17 @@ on:
           - 09-github-arc
           - 11-identity-platform
           - 12-vertex
-      action:
-        description: 'Action to perform'
-        required: true
-        default: 'plan'
-        type: choice
-        options:
-          - plan
-          - apply
-          - destroy
-      use_spot_instances:
-        description: 'GKE Node Pool VM Type (Spot=70% cheaper, On-Demand=more stable)'
-        required: true
-        default: 'spot'
-        type: choice
-        options:
-          - spot
-          - on-demand
-
-# Queue subsequent runs - only one deployment at a time per environment
-concurrency:
-  group: terraform-${{ github.event.inputs.environment || 'prod' }}
-  cancel-in-progress: false  # Queue instead of cancel
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
-  TF_VERSION: '1.15.8'
-  TF_WORKING_DIR: 'terraform-new'
-
-jobs:
-  setup:
-    name: Setup Environment
-    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
-    outputs:
-      project_id: ${{ steps.config.outputs.project_id }}
-      wif_provider: ${{ steps.config.outputs.wif_provider }}
-      sa_email: ${{ steps.config.outputs.sa_email }}
-      state_bucket: ${{ steps.config.outputs.state_bucket }}
-      region: ${{ steps.config.outputs.region }}
-      environment: ${{ steps.config.outputs.environment }}
-      action: ${{ steps.config.outputs.action }}
-      stack: ${{ steps.config.outputs.stack }}
-      use_spot_instances: ${{ steps.config.outputs.use_spot_instances }}
-
     steps:
-      - name: Determine Configuration
-        id: config
-        run: |
-          # Determine environment and action based on trigger
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            # Manual dispatch - use input values
-            ENV="${{ github.event.inputs.environment }}"
-            ACTION="${{ github.event.inputs.action }}"
-            STACK="${{ github.event.inputs.stack }}"
-            SPOT_INPUT="${{ github.event.inputs.use_spot_instances }}"
-          elif [ "${{ github.event_name }}" == "pull_request" ]; then
-            # PR - always run plan only on prod (validation)
-            ENV="prod"
-            ACTION="plan"
-            STACK="all"
-            SPOT_INPUT="spot"  # Default to spot for PRs
-          elif [ "${{ github.event_name }}" == "push" ]; then
-            # Push to main - plan only (apply via workflow_dispatch for safety)
-            ENV="prod"
-            ACTION="plan"
-            STACK="all"
-            SPOT_INPUT="spot"
-          else
-            # Fallback (should not happen) - plan only
-            ENV="prod"
-            ACTION="plan"
-            STACK="all"
-            SPOT_INPUT="spot"  # Default to spot
-          fi
-
-          # Convert spot input to terraform boolean
-          if [ "$SPOT_INPUT" == "spot" ]; then
-            USE_SPOT="true"
-          else
-            USE_SPOT="false"
-          fi
-
-          # Set environment-specific configuration
-          # NOTE: All environments now use the same GCP project (tesseracthub-480811)
-          # Only region differs between prod (asia-south1) and devtest (australia-southeast1)
-          if [ "$ENV" == "prod" ]; then
-            echo "project_id=tesseracthub-480811" >> $GITHUB_OUTPUT
-            echo "wif_provider=projects/849928263410/locations/global/workloadIdentityPools/github-pool/providers/github-provider" >> $GITHUB_OUTPUT
-            echo "sa_email=github-actions@tesseracthub-480811.iam.gserviceaccount.com" >> $GITHUB_OUTPUT
-            echo "state_bucket=tesseract-terraform-states" >> $GITHUB_OUTPUT
-            echo "region=asia-south1" >> $GITHUB_OUTPUT
-          else
-            echo "project_id=tesseracthub-480811" >> $GITHUB_OUTPUT
-            echo "wif_provider=projects/849928263410/locations/global/workloadIdentityPools/github-pool/providers/github-provider" >> $GITHUB_OUTPUT
-            echo "sa_email=github-actions@tesseracthub-480811.iam.gserviceaccount.com" >> $GITHUB_OUTPUT
-            echo "state_bucket=tesseract-terraform-states" >> $GITHUB_OUTPUT
-            echo "region=australia-southeast1" >> $GITHUB_OUTPUT
-          fi
-
-          echo "environment=$ENV" >> $GITHUB_OUTPUT
-          echo "action=$ACTION" >> $GITHUB_OUTPUT
-          echo "stack=$STACK" >> $GITHUB_OUTPUT
-          echo "use_spot_instances=$USE_SPOT" >> $GITHUB_OUTPUT
-
-      - name: Display Configuration
-        run: |
-          echo "=========================================="
-          echo "Production Ready Terraform Infrastructure Deployment"
-          echo "=========================================="
-          echo "Environment:        ${{ steps.config.outputs.environment }}"
-          echo "Project ID:         ${{ steps.config.outputs.project_id }}"
-          echo "Region:             ${{ steps.config.outputs.region }}"
-          echo "Action:             ${{ steps.config.outputs.action }}"
-          echo "Stack:              ${{ steps.config.outputs.stack }}"
-          echo "Use Spot Instances: ${{ steps.config.outputs.use_spot_instances }}"
-          echo "=========================================="
-          if [ "${{ steps.config.outputs.use_spot_instances }}" == "true" ]; then
-            echo "💰 COST MODE: Spot VMs enabled (~70% savings)"
-          else
-            echo "🛡️ STABILITY MODE: On-Demand VMs enabled"
-          fi
-          echo "=========================================="
-
-  terraform:
-    name: Terraform ${{ needs.setup.outputs.action }} - ${{ needs.setup.outputs.stack }}
-    needs: setup
-    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
-    timeout-minutes: 120
-
-    permissions:
-      contents: read
-      pull-requests: write
-      id-token: write  # Required for Workload Identity Federation
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
         with:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
-
-      - name: Authenticate to Google Cloud (WIF)
-        id: auth
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ needs.setup.outputs.wif_provider }}
-          service_account: ${{ needs.setup.outputs.sa_email }}
-          project_id: ${{ needs.setup.outputs.project_id }}
-        continue-on-error: true
-
-      - name: Authenticate to Google Cloud (SA Key Fallback)
-        if: steps.auth.outcome == 'failure'
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ needs.setup.outputs.environment == 'prod' && secrets.GCP_PROD_SA_KEY || secrets.GCP_SA_KEY }}
-
-      - name: Setup gcloud CLI
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ needs.setup.outputs.project_id }}
-          install_components: 'gke-gcloud-auth-plugin'
-
-      - name: Configure kubectl (if GKE exists)
-        id: gke_check
-        run: |
-          # Check if GKE cluster exists
-          CLUSTER_NAME="${{ needs.setup.outputs.environment == 'prod' && 'tesseract-prod-in-gke' || 'tesseract-devtest-gke' }}"
-          REGION="${{ needs.setup.outputs.region }}"
-          PROJECT="${{ needs.setup.outputs.project_id }}"
-
-          echo "Checking for GKE cluster: ${CLUSTER_NAME}"
-
-          if gcloud container clusters describe "${CLUSTER_NAME}" \
-            --region "${REGION}" \
-            --project "${PROJECT}" &>/dev/null; then
-            echo "GKE cluster exists"
-            echo "cluster_exists=true" >> $GITHUB_OUTPUT
-
-            # Configure kubectl
-            gcloud container clusters get-credentials "${CLUSTER_NAME}" \
-              --region "${REGION}" \
-              --project "${PROJECT}"
-            kubectl cluster-info || true
-          else
-            echo "GKE cluster does not exist yet"
-            echo "cluster_exists=false" >> $GITHUB_OUTPUT
-          fi
-        continue-on-error: true
-
-      - name: Terraform Init (All Stacks)
-        if: needs.setup.outputs.stack == 'all'
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          make init \
-            ENVIRONMENT=${{ needs.setup.outputs.environment }} \
-            PROJECT_ID=${{ needs.setup.outputs.project_id }} \
-            STATE_BUCKET=${{ needs.setup.outputs.state_bucket }}
-
-      - name: Terraform Init (Single Stack)
-        if: needs.setup.outputs.stack != 'all'
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          make init-${{ needs.setup.outputs.stack }} \
-            ENVIRONMENT=${{ needs.setup.outputs.environment }} \
-            PROJECT_ID=${{ needs.setup.outputs.project_id }} \
-            STATE_BUCKET=${{ needs.setup.outputs.state_bucket }}
-
-      - name: Terraform Plan (All Stacks)
-        if: needs.setup.outputs.action == 'plan' && needs.setup.outputs.stack == 'all'
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          make plan \
-            ENVIRONMENT=${{ needs.setup.outputs.environment }} \
-            PROJECT_ID=${{ needs.setup.outputs.project_id }} \
-            STATE_BUCKET=${{ needs.setup.outputs.state_bucket }}
-        env:
-          TF_VAR_use_spot_instances: ${{ needs.setup.outputs.use_spot_instances }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CF_API_TOKEN }}
-          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          TF_VAR_letsencrypt_email: ${{ secrets.LETSENCRYPT_EMAIL }}
-          TF_VAR_google_oauth_client_id: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          TF_VAR_google_oauth_client_secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-          TF_VAR_argocd_github_app_id: ${{ secrets.ARGOCD_GITHUB_APP_ID }}
-          TF_VAR_argocd_github_app_installation_id: ${{ secrets.ARGOCD_GITHUB_APP_INSTALLATION_ID }}
-          TF_VAR_argocd_github_app_private_key: ${{ secrets.ARGOCD_GITHUB_APP_PRIVATE_KEY }}
-          TF_VAR_github_app_id: ${{ secrets.ARC_GITHUB_APP_ID }}
-          TF_VAR_github_app_installation_id: ${{ secrets.ARC_GITHUB_APP_INSTALLATION_ID }}
-          TF_VAR_github_app_private_key: ${{ secrets.ARC_GITHUB_APP_PRIVATE_KEY }}
-
-      - name: Terraform Plan (Single Stack)
-        if: needs.setup.outputs.action == 'plan' && needs.setup.outputs.stack != 'all'
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          make plan-${{ needs.setup.outputs.stack }} \
-            ENVIRONMENT=${{ needs.setup.outputs.environment }} \
-            PROJECT_ID=${{ needs.setup.outputs.project_id }} \
-            STATE_BUCKET=${{ needs.setup.outputs.state_bucket }}
-        env:
-          TF_VAR_use_spot_instances: ${{ needs.setup.outputs.use_spot_instances }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CF_API_TOKEN }}
-          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          TF_VAR_letsencrypt_email: ${{ secrets.LETSENCRYPT_EMAIL }}
-          TF_VAR_google_oauth_client_id: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          TF_VAR_google_oauth_client_secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-          TF_VAR_argocd_github_app_id: ${{ secrets.ARGOCD_GITHUB_APP_ID }}
-          TF_VAR_argocd_github_app_installation_id: ${{ secrets.ARGOCD_GITHUB_APP_INSTALLATION_ID }}
-          TF_VAR_argocd_github_app_private_key: ${{ secrets.ARGOCD_GITHUB_APP_PRIVATE_KEY }}
-          TF_VAR_github_app_id: ${{ secrets.ARC_GITHUB_APP_ID }}
-          TF_VAR_github_app_installation_id: ${{ secrets.ARC_GITHUB_APP_INSTALLATION_ID }}
-          TF_VAR_github_app_private_key: ${{ secrets.ARC_GITHUB_APP_PRIVATE_KEY }}
-
-      - name: Terraform Apply (All Stacks)
-        if: needs.setup.outputs.action == 'apply' && needs.setup.outputs.stack == 'all'
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          make apply \
-            ENVIRONMENT=${{ needs.setup.outputs.environment }} \
-            PROJECT_ID=${{ needs.setup.outputs.project_id }} \
-            STATE_BUCKET=${{ needs.setup.outputs.state_bucket }}
-        env:
-          TF_VAR_use_spot_instances: ${{ needs.setup.outputs.use_spot_instances }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CF_API_TOKEN }}
-          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          TF_VAR_letsencrypt_email: ${{ secrets.LETSENCRYPT_EMAIL }}
-          TF_VAR_google_oauth_client_id: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          TF_VAR_google_oauth_client_secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-          TF_VAR_argocd_github_app_id: ${{ secrets.ARGOCD_GITHUB_APP_ID }}
-          TF_VAR_argocd_github_app_installation_id: ${{ secrets.ARGOCD_GITHUB_APP_INSTALLATION_ID }}
-          TF_VAR_argocd_github_app_private_key: ${{ secrets.ARGOCD_GITHUB_APP_PRIVATE_KEY }}
-          TF_VAR_github_app_id: ${{ secrets.ARC_GITHUB_APP_ID }}
-          TF_VAR_github_app_installation_id: ${{ secrets.ARC_GITHUB_APP_INSTALLATION_ID }}
-          TF_VAR_github_app_private_key: ${{ secrets.ARC_GITHUB_APP_PRIVATE_KEY }}
-
-      - name: Terraform Apply (Single Stack)
-        if: needs.setup.outputs.action == 'apply' && needs.setup.outputs.stack != 'all'
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          make apply-${{ needs.setup.outputs.stack }} \
-            ENVIRONMENT=${{ needs.setup.outputs.environment }} \
-            PROJECT_ID=${{ needs.setup.outputs.project_id }} \
-            STATE_BUCKET=${{ needs.setup.outputs.state_bucket }}
-        env:
-          TF_VAR_use_spot_instances: ${{ needs.setup.outputs.use_spot_instances }}
-          TF_VAR_cloudflare_api_token: ${{ secrets.CF_API_TOKEN }}
-          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          TF_VAR_letsencrypt_email: ${{ secrets.LETSENCRYPT_EMAIL }}
-          TF_VAR_google_oauth_client_id: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          TF_VAR_google_oauth_client_secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-          TF_VAR_argocd_github_app_id: ${{ secrets.ARGOCD_GITHUB_APP_ID }}
-          TF_VAR_argocd_github_app_installation_id: ${{ secrets.ARGOCD_GITHUB_APP_INSTALLATION_ID }}
-          TF_VAR_argocd_github_app_private_key: ${{ secrets.ARGOCD_GITHUB_APP_PRIVATE_KEY }}
-          TF_VAR_github_app_id: ${{ secrets.ARC_GITHUB_APP_ID }}
-          TF_VAR_github_app_installation_id: ${{ secrets.ARC_GITHUB_APP_INSTALLATION_ID }}
-          TF_VAR_github_app_private_key: ${{ secrets.ARC_GITHUB_APP_PRIVATE_KEY }}
-
-      - name: Terraform Destroy (Single Stack)
-        if: needs.setup.outputs.action == 'destroy' && needs.setup.outputs.stack != 'all' && github.event_name == 'workflow_dispatch'
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          make destroy-${{ needs.setup.outputs.stack }} \
-            ENVIRONMENT=${{ needs.setup.outputs.environment }} \
-            PROJECT_ID=${{ needs.setup.outputs.project_id }} \
-            STATE_BUCKET=${{ needs.setup.outputs.state_bucket }}
-        env:
-          TF_VAR_cloudflare_api_token: ${{ secrets.CF_API_TOKEN }}
-          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          TF_VAR_letsencrypt_email: ${{ secrets.LETSENCRYPT_EMAIL }}
-
-      - name: Terraform Destroy (All Stacks)
-        if: needs.setup.outputs.action == 'destroy' && needs.setup.outputs.stack == 'all' && github.event_name == 'workflow_dispatch'
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          make destroy \
-            ENVIRONMENT=${{ needs.setup.outputs.environment }} \
-            PROJECT_ID=${{ needs.setup.outputs.project_id }} \
-            STATE_BUCKET=${{ needs.setup.outputs.state_bucket }}
-        env:
-          TF_VAR_cloudflare_api_token: ${{ secrets.CF_API_TOKEN }}
-          TF_VAR_cloudflare_zone_id: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          TF_VAR_letsencrypt_email: ${{ secrets.LETSENCRYPT_EMAIL }}
-
-      - name: Summary
-        if: always()
-        run: |
-          echo "### Terraform Operation Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Setting | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|---------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Environment | \`${{ needs.setup.outputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Project ID | \`${{ needs.setup.outputs.project_id }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Region | \`${{ needs.setup.outputs.region }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Action | \`${{ needs.setup.outputs.action }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Stack | \`${{ needs.setup.outputs.stack }}\` |" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ needs.setup.outputs.use_spot_instances }}" == "true" ]; then
-            echo "| GKE Node VMs | 💰 \`Spot\` (~70% cost savings) |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| GKE Node VMs | 🛡️ \`On-Demand\` (higher stability) |" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "| Triggered by | @${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
+      - name: Initialize without remote state
+        working-directory: terraform-new/stacks/${{ matrix.stack }}
+        run: terraform init -backend=false -input=false
+      - name: Validate
+        working-directory: terraform-new/stacks/${{ matrix.stack }}
+        run: terraform validate

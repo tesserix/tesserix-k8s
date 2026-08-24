@@ -12,6 +12,28 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 '*': Detect
 {{- end -}}
 
+{{- define "kora-ai-gateway.userJwtAuthentication" -}}
+jwtAuthentication:
+  mode: Strict
+  location:
+    header:
+      name: {{ .Values.endUserAuthentication.header }}
+      prefix: "Bearer "
+  providers:
+    - issuer: {{ .Values.endUserAuthentication.issuer }}
+      audiences:
+        - {{ .Values.endUserAuthentication.audience | quote }}
+      jwks:
+        remote:
+          jwksPath: {{ .Values.endUserAuthentication.jwksPath }}
+          cacheDuration: {{ .Values.endUserAuthentication.jwksCacheDuration }}
+          backendRef:
+            group: agentgateway.dev
+            kind: AgentgatewayBackend
+            name: kora-firebase-jwks
+            port: 443
+{{- end -}}
+
 {{- define "kora-ai-gateway.vertexGroup" -}}
 - providers:
     - name: vertex

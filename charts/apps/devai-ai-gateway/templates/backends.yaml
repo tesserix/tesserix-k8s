@@ -1,6 +1,8 @@
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
 metadata:
+  # Registry's devai-ai route references this legacy name. Keep the name while
+  # using Workload Identity; changing it requires an atomic Registry revision.
   name: devai-vertex-api-key
   labels:
     {{- include "devai-ai-gateway.labels" . | nindent 4 }}
@@ -16,13 +18,7 @@ spec:
               region: {{ .Values.providers.vertex.region }}
             policies:
               auth:
-                credentials:
-                  - secretRef:
-                      name: devai-ai-gateway-secrets
-                      key: VERTEX_API_KEY
-                    location:
-                      header:
-                        name: x-goog-api-key
+                gcp: {}
               tls: {}
 ---
 {{- if not .Values.registryOwnership.enabled }}

@@ -14,3 +14,8 @@ output "workload_identity_pool" {
   description = "Workload Identity pool"
   value       = "${var.project_id}.svc.id.goog"
 }
+
+output "atlantis_service_account_email" {
+  description = "Google service account used by Atlantis through Workload Identity"
+  value       = google_service_account.atlantis.email
+}

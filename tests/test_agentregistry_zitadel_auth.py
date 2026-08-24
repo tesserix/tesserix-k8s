@@ -8,7 +8,7 @@ import yaml
 
 ROOT = pathlib.Path(__file__).parents[1]
 ISSUER = "https://auth.tesserix.app"
-PROJECT_ID = "386889024519799084"
+PROJECT_ID = "387190457387450503"
 ADMIN_EMAILS = {"samyak.rout@gmail.com", "mahesh.sangawar@gmail.com"}
 
 
@@ -171,6 +171,72 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             },
             project["oidcApps"][0],
         )
+
+    def test_tesserix_is_the_default_organization(self):
+        documents = render_zitadel_bootstrap()
+        config = resource(documents, "ConfigMap", "zitadel-bootstrap-config")
+        desired = json.loads(config["data"]["desired.json"])
+
+        self.assertEqual("TESSERIX", desired["defaultOrg"])
+
+    def test_registry_admin_access_is_reconciled(self):
+        documents = render_zitadel_bootstrap()
+        config = resource(documents, "ConfigMap", "zitadel-bootstrap-config")
+        desired = json.loads(config["data"]["desired.json"])
+        project = next(
+            item
+            for item in desired["platformProjects"]
+            if item["name"] == "AgentRegistry"
+        )
+
+        self.assertEqual(
+            [
+                {
+                    "key": "agentregistry.admin",
+                    "displayName": "Agent Registry Administrator",
+                    "group": "Agent Registry",
+                }
+            ],
+            project["roles"],
+        )
+        self.assertEqual(
+            [
+                {
+                    "login": "samyak.rout@gmail.com",
+                    "roles": ["agentregistry.admin"],
+                },
+                {
+                    "login": "mahesh.sangawar@gmail.com",
+                    "roles": ["agentregistry.admin"],
+                },
+            ],
+            project["humanGrants"],
+        )
+
+    def test_no_product_project_is_left_in_the_reserved_org(self):
+        documents = render_zitadel_bootstrap()
+        config = resource(documents, "ConfigMap", "zitadel-bootstrap-config")
+        desired = json.loads(config["data"]["desired.json"])
+
+        # ZITADEL keeps only its own console project; every product project —
+        # AgentGateway included — belongs in TESSERIX.
+        self.assertEqual(["ZITADEL"], desired["reservedOrg"]["allowedProjects"])
+        self.assertEqual(
+            set(),
+            {
+                item["name"]
+                for item in desired["platformProjects"]
+                if item["org"] == "ZITADEL"
+            },
+        )
+
+        gateway = next(
+            item
+            for item in desired["platformProjects"]
+            if item["name"] == "AgentGateway"
+        )
+        self.assertEqual("TESSERIX", gateway["org"])
+        self.assertEqual("387190457387450503", gateway["expectedId"])
 
     def test_browser_and_machine_routes_have_separate_auth_boundaries(self):
         documents = render_agentic_istio()

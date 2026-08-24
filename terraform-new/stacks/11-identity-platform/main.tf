@@ -1,5 +1,5 @@
 # Identity Platform Stack — Multi-Tenant Configuration
-# State: stacks/{environment}/identity-platform/default.tfstate
+# State: stacks/prod/identity-platform/default.tfstate
 # Dependencies: 01-foundation
 #
 # Per-product GIP tenants provide user pool isolation between products.
@@ -15,7 +15,7 @@ data "terraform_remote_state" "foundation" {
 
   config = {
     bucket = var.state_bucket
-    prefix = "stacks/${var.environment}/foundation"
+    prefix = "stacks/prod/foundation"
   }
 }
 

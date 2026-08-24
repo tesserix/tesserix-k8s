@@ -44,6 +44,17 @@ env:
   PLATFORM_API_AUTH_ENABLED: "true"
   ZITADEL_ISSUER: "https://auth.tesserix.app"
   ZITADEL_PROJECT_ID: "386377618200461939"
+  # Turns the health module's Kubernetes reads ON. Set only now that the
+  # Role/RoleBinding from #591/#592 are confirmed live in the cluster —
+  # `auth can-i list deployments --as=system:serviceaccount:tesserix:platform-api`
+  # answers yes. Set before the grant, this would have made the module log a
+  # warning and serve `unmeasured` to every operator, which from the console is
+  # indistinguishable from the failure it exists to report.
+  #
+  # Absent or any value other than exactly "true" leaves cluster reads off, and
+  # the service still boots: a health check that cannot read the cluster is a
+  # degraded signal, not an outage.
+  PLATFORM_API_CLUSTER_READ_ENABLED: "true"
 
 # The service makes no GCP API calls. Blanked deliberately so the KSA is not
 # annotated to impersonate global-config-prod.yaml's shared
@@ -56,4 +67,21 @@ gcp:
     secretPrefix: "prod"
 
 pdb:
+  enabled: true
+
+# Namespace-scoped read on Deployments and CNPG Clusters, for the console's
+# health module.
+#
+# It lives HERE and not as an `image.tag`-style Helm parameter on the ArgoCD
+# Application, even though that is where it reads most naturally. Every
+# app-of-apps in this repo sets
+#   ignoreDifferences: [{kind: Application, jsonPointers: [/spec/source/helm/parameters]}]
+# with RespectIgnoreDifferences=true, because Kargo owns that array and rewrites
+# it on every promotion. A parameter added to it in git is therefore never
+# reconciled and never applied — and the Application still reports Synced,
+# because the field is excluded from the comparison. Silent no-op.
+#
+# values-prod.yaml is applied LAST in the valueFiles chain, so it wins, and it
+# is outside the ignored path.
+clusterRead:
   enabled: true

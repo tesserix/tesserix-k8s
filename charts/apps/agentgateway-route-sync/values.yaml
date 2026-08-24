@@ -105,8 +105,19 @@ registry:
   scopeClaim: "urn:zitadel:iam:org:project:387190457387450503:roles"
   prune: true
   # Never prune if a valid, digest-verified export drops below the permanent
-  # 24-resource platform baseline imported during the ownership handoff.
-  minDesiredResourceCount: 24
+  # 27-resource platform baseline (24 handed off plus Kora's three user-auth
+  # resources).
+  minDesiredResourceCount: 27
+
+# Keep the Registry-owned platform providers, routes, and policies aligned
+# with the reviewed Helm rollback definitions. The import is idempotent and
+# updates the 24 handoff artifacts plus Kora's three user-auth resources.
+registryPlatformSeed:
+  enabled: true
+  expectedCount: 27
+  activeDeadlineSeconds: 180
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600
 
 # The phase-one import is complete. Keep the exact-count guard for a tested
 # rollback/replay path, but do not render the importer in steady state.
@@ -172,6 +183,7 @@ images:
   curl:
     repository: curlimages/curl
     tag: "8.11.1"
+    digest: sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69
   kubectl:
     # DEP-5: docker.io/bitnami/kubectl:1.31 was removed in the Bitnami catalog
     # migration (ImagePullBackOff). Use bitnamilegacy/* — the published home for

@@ -1,0 +1,204 @@
+atlantis:
+  fullnameOverride: atlantis
+  atlantisUrl: https://atlantis.tesserix.app
+  orgAllowlist: github.com/tesserix/tesserix-k8s
+  logLevel: info
+  defaultTFDistribution: terraform
+  defaultTFVersion: "1.15.8"
+  image:
+    repository: ghcr.io/runatlantis/atlantis
+    tag: v0.47.1@sha256:5112319554630f6e4a93bfaf78c1fb9cea024a0eebd210e6563322c1c67df842
+    pullPolicy: IfNotPresent
+  allowForkPRs: false
+  allowDraftPRs: false
+  hidePrevPlanComments: true
+  hideUnchangedPlanComments: true
+  disableApply: false
+  disableApplyAll: false
+  disableRepoLocking: false
+
+  githubApp:
+    slug: tesserix-atlantis
+  vcsSecretName: atlantis-vcs
+  # No basicAuthSecretName: the console is fronted by oauth2-proxy against
+  # Zitadel, and leaving it set would put a second, password prompt behind the
+  # SSO one.
+
+  repoConfig: |
+    ---
+    repos:
+      - id: github.com/tesserix/tesserix-k8s
+        branch: /^main$/
+        plan_requirements: [undiverged]
+        apply_requirements: [approved, mergeable, undiverged]
+        import_requirements: [approved, mergeable, undiverged]
+        workflow: terraform
+        allowed_overrides: []
+        allow_custom_workflows: false
+    workflows:
+      terraform:
+        plan:
+          steps:
+            - init
+            - plan:
+                extra_args:
+                  - -var-file=../../environments/prod/terraform.tfvars
+        apply:
+          steps: [apply]
+    metrics:
+      prometheus:
+        endpoint: /metrics
+
+  ingress:
+    enabled: false
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 4141
+
+  replicaCount: 1
+  volumeClaim:
+    enabled: true
+    dataStorage: 20Gi
+    storageClassName: standard-rwo-retain
+    accessModes: [ReadWriteOnce]
+  podDisruptionBudget:
+    enabled: false
+
+  serviceAccount:
+    create: true
+    mount: true
+    name: atlantis
+    annotations:
+      iam.gke.io/gcp-service-account: tesseract-prod-atlantis@tesseracthub-480811.iam.gserviceaccount.com
+
+  statefulSet:
+    securityContext:
+      fsGroup: 1000
+      fsGroupChangePolicy: OnRootMismatch
+      runAsUser: 100
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+  environmentSecrets:
+    - name: ATLANTIS_GH_APP_ID
+      secretKeyRef:
+        name: atlantis-vcs
+        key: github_app_id
+    - name: ATLANTIS_GH_APP_INSTALLATION_ID
+      secretKeyRef:
+        name: atlantis-vcs
+        key: github_app_installation_id
+  loadEnvFromSecrets:
+    - atlantis-terraform-vars
+
+  extraPath: /opt/atlantis-tools
+  extraVolumes:
+    - name: terraform-tools
+      emptyDir: {}
+  extraVolumeMounts:
+    - name: terraform-tools
+      mountPath: /opt/atlantis-tools
+      readOnly: true
+  initContainers:
+    - name: install-kubectl
+      image: ghcr.io/runatlantis/atlantis:v0.47.1@sha256:5112319554630f6e4a93bfaf78c1fb9cea024a0eebd210e6563322c1c67df842
+      imagePullPolicy: IfNotPresent
+      command: [/bin/bash, -ec]
+      args:
+        - |
+          case "$(uname -m)" in
+            x86_64)
+              architecture=amd64
+              expected=7721f265e18709862655affba5343e85e1980639395d5754473dafaadcaa69e3
+              ;;
+            aarch64)
+              architecture=arm64
+              expected=420e6110e3ba7ee5a3927b5af868d18df17aae36b720529ffa4e9e945aa95450
+              ;;
+            *)
+              echo "unsupported architecture: $(uname -m)" >&2
+              exit 1
+              ;;
+          esac
+          curl -fsSLo /opt/atlantis-tools/kubectl \
+            "https://dl.k8s.io/release/v1.34.1/bin/linux/${architecture}/kubectl"
+          printf '%s  %s\n' "$expected" /opt/atlantis-tools/kubectl | sha256sum -c
+          chmod 0755 /opt/atlantis-tools/kubectl
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 1000
+        capabilities:
+          drop: [ALL]
+      volumeMounts:
+        - name: terraform-tools
+          mountPath: /opt/atlantis-tools
+
+  test:
+    enabled: false
+
+externalSecrets:
+  storeName: gcp-secret-store
+  refreshInterval: 1h
+  vcs:
+    githubAppId: prod-atlantis-github-app-id
+    githubAppInstallationId: prod-atlantis-github-app-installation-id
+    githubAppPrivateKey: prod-atlantis-github-app-private-key
+    webhookSecret: prod-atlantis-webhook-secret
+  terraformVariables:
+    TF_VAR_cloudflare_api_token: prod-terraform-cloudflare-api-token
+    TF_VAR_letsencrypt_email: prod-terraform-letsencrypt-email
+    TF_VAR_google_oauth_client_secret: prod-terraform-google-oauth-client-secret
+    TF_VAR_github_app_id: prod-terraform-arc-github-app-id
+    TF_VAR_github_app_installation_id: prod-terraform-arc-github-app-installation-id
+    TF_VAR_github_app_private_key: prod-terraform-arc-github-app-private-key
+
+oauth2Proxy:
+  enabled: true
+  name: atlantis-ui-oauth2-proxy
+  replicas: 2
+  image:
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    digest: sha256:f6a4aa83a27e316114bf79664302b1ffb2cc8ce697fb479273af4feb3fb16fe3
+  issuerUrl: https://auth.tesserix.app
+  redirectUrl: https://atlantis.tesserix.app/oauth2/callback
+  backendLogoutUrl: "https://auth.tesserix.app/oidc/v1/end_session?id_token_hint={id_token}"
+  upstream: http://atlantis.atlantis.svc.cluster.local:80
+  cookieName: _tesserix_atlantis
+  dnsServiceIP: 10.30.0.10
+  # The whole access list. Zitadel authenticates; this decides who gets in.
+  allowedEmails:
+    - samyak.rout@gmail.com
+    - mahesh.sangawar@gmail.com
+  resources:
+    requests:
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  externalSecret:
+    clientId: prod-atlantis-ui-client-id
+    clientSecret: prod-atlantis-ui-client-secret
+    # oauth2-proxy decodes this with URL-safe base64: generate it as
+    # `openssl rand -base64 32 | tr '+/' '-_'` or the pod crashloops on a 44-byte key.
+    cookieSecret: prod-atlantis-ui-cookie-secret
+
+virtualService:
+  host: atlantis.tesserix.app
+  gateway: istio-ingress/tesseract-gateway

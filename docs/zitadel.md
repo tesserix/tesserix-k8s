@@ -212,10 +212,16 @@ Notable choices:
 Per-organization policy overrides everything here, so a tenant can force MFA or
 disable password login without touching this file.
 
-## Organizations — TESSERIX is the default, ZITADEL is reserved
+## Organizations — every product lives in TESSERIX, ZITADEL is reserved
 
-**Every product project belongs in TESSERIX.** It is the instance default org, so
-new users and registrations land there, and it is the org this platform runs on.
+**Every product project belongs in TESSERIX**, and since the AgentGateway move
+none is left outside it.
+
+The *default* org is a separate question and is still `ZITADEL`: an unscoped
+login resolves the default org's Google IdP, and promoting TESSERIX before an
+instance-level IdP exists breaks federated sign-in with `validation_failed`
+(#359). Where projects live and where users land are independent — do not
+change one because the other moved.
 
 **The ZITADEL org cannot be deleted or deactivated, and must not be.** It is the
 instance's initial org and it owns:
@@ -227,10 +233,10 @@ instance's initial org and it owns:
 - `zitadel-admin`, the break-glass password admin — the only way back in when an
   IdP misroutes a federated login.
 
-So it is demoted rather than removed: `zitadel-bootstrap` sets TESSERIX as the
-default org and then fails the run if any project other than `ZITADEL` appears
-in the ZITADEL org. Nothing is deleted automatically — a project holds live OIDC
-clients, and dropping one takes an application's logins down.
+So it is emptied of products rather than removed: `zitadel-bootstrap` fails the
+run if any project other than `ZITADEL` appears in the ZITADEL org. Nothing is
+deleted automatically — a project holds live OIDC clients, and dropping one
+takes an application's logins down.
 
 If that check fires, move the project out with the runbook below.
 

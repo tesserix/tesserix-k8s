@@ -88,7 +88,7 @@ class PerServerAuthorizationTests(unittest.TestCase):
         )
         self.assertIn("requireServerScope=true", script)
         self.assertIn(
-            "scopeClaim=urn%3Azitadel%3Aiam%3Aorg%3Aproject%3A386889024519799084%3Aroles",
+            "scopeClaim=urn%3Azitadel%3Aiam%3Aorg%3Aproject%3A387190457387450503%3Aroles",
             script,
         )
 

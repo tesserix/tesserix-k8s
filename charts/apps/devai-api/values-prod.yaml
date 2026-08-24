@@ -26,6 +26,17 @@ image:
 # authenticated dashboard users pass and anonymous mutating calls get 401.
 requireAuth: true
 
+# DEVAI_AUTH_BFF_SHARED_SECRET is an optional: secret key, so an ExternalSecret
+# outage empties it — and an empty shared secret means "trust X-Forwarded-* from
+# anyone". This makes that case fail closed. No effect while the secret is
+# present, which is why it ships without a staged roll.
+trustForwardedWithoutSecret: false
+
+# The document tools take their file_path from a regex over issue text, so an
+# unconfined pod reads whatever an issue author names. Nothing in prod feeds
+# them a legitimate local file; drop one here to ingest it deliberately.
+toolWorkspaceRoot: "/tmp/devai-docs"
+
 # Bumping this annotation rolls the deployment so :main gets re-pulled.
 # fee0326 = drawio fix; carries everything since e417d62 including:
 #   - c450608 feat(agentic): aregistry profile + agentgateway wiring
@@ -312,7 +323,7 @@ llm:
   #   heavy    → vertex_gemini:gemini-3.1-pro-preview (or keep Claude)
   tierLight: "vertex_gemini:gemini-2.5-flash"
   tierStandard: "vertex_gemini:gemini-2.5-flash"
-  tierHeavy: "anthropic:claude-sonnet-4-20250514"
+  tierHeavy: "anthropic:claude-sonnet-5"
   tierFrontier: "openai:o3"
 
 # ─── Durable orchestration (Temporal) ───────────────────────────────────────

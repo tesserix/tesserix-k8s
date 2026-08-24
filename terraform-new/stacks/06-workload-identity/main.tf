@@ -1,5 +1,5 @@
 # Workload Identity Stack - Service Accounts and WI Bindings
-# State: stacks/{environment}/workload-identity/default.tfstate
+# State: stacks/prod/workload-identity/default.tfstate
 # Dependencies: 04-gke, 03-storage
 
 # Reference other stacks
@@ -7,7 +7,7 @@ data "terraform_remote_state" "gke" {
   backend = "gcs"
   config = {
     bucket = var.state_bucket
-    prefix = "stacks/${var.environment}/gke"
+    prefix = "stacks/prod/gke"
   }
 }
 
@@ -15,7 +15,7 @@ data "terraform_remote_state" "storage" {
   backend = "gcs"
   config = {
     bucket = var.state_bucket
-    prefix = "stacks/${var.environment}/storage"
+    prefix = "stacks/prod/storage"
   }
 }
 

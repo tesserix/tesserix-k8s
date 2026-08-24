@@ -1,326 +1,182 @@
-# Terraform Stack Dependencies Configuration
-# Multi-Region Support with Dynamic Environment Resolution
+# Canonical Terraform stack graph for the production control plane.
+#
+# This file is consumed by the local orchestrator and mirrored by atlantis.yaml.
+# State prefixes deliberately match the existing GCS objects; changing one is a
+# state migration, not a naming cleanup.
+version: "2.0"
 
-version: "1.0"
-
-# =============================================================================
-# Project Configuration
-# =============================================================================
-# Naming Convention:
-#   All environments (devtest, pilot, prod) use the same GCP project: tesseracthub-480811
-#   devtest: tesseract-devtest-*
-#   pilot:   tesseract-pilot-*
-#   prod:    tesseract-prod-*
-# =============================================================================
-
-projects:
-  devtest:
-    name: tesseracthub
-    id: tesseracthub-480811
-    number: "480811"
-    admin_user: unidevidp@gmail.com
-    naming_prefix: tesseract
-
-  pilot:
-    name: tesseracthub
-    id: tesseracthub-480811
-    number: "480811"
-    admin_user: unidevidp@gmail.com
-    naming_prefix: tesseract
-
-  prod:
-    name: tesseracthub
-    id: tesseracthub-480811
-    number: "480811"
-    admin_user: unidevidp@gmail.com
-    naming_prefix: tesseract
-
-# =============================================================================
-# Multi-Region Configuration
-# =============================================================================
-# Each region has its own infrastructure stack (VPC, GKE, etc.)
-# State bucket is ALWAYS in Australia for data sovereignty
-# =============================================================================
-
-regions:
-  # Australia - Primary for DevTest and state storage
-  au:
-    code: au
-    gcp_region: australia-southeast1
-    zones:
-      - australia-southeast1-a
-      - australia-southeast1-b
-      - australia-southeast1-c
-    compliance: privacy-act
-    description: Australia - Primary development region
-
-  # India - Primary for Production
-  in:
-    code: in
-    gcp_region: asia-south1
-    zones:
-      - asia-south1-a
-      - asia-south1-b
-      - asia-south1-c
-    compliance: dpdpa
-    description: India - Primary production region
-
-# =============================================================================
-# State Management Configuration
-# =============================================================================
-# State bucket location: Australia (australia-southeast1) for all environments
-# This ensures state files are stored in a compliant location
-# =============================================================================
+project:
+  id: tesseracthub-480811
+  number: "849928263410"
+  environment: prod
+  region: asia-south1
 
 state:
-  # State bucket is ALWAYS in Australia regardless of deployment region
-  bucket_location: australia-southeast1
-  bucket_storage_class: STANDARD
+  bucket: tesseract-terraform-states
+  location: australia-southeast1
+  storage_class: STANDARD
+  acknowledged_orphans:
+    cloud-run:
+      state_prefix: stacks/prod/cloud-run
+      managed: false
+      reason: State exists in GCS but there is no corresponding source stack.
+      disposition: Preserve until an explicit adoption or retirement decision.
+    legacy-state-devtest:
+      state_prefix: state/devtest
+      managed: false
+      reason: Legacy state exists outside the terraform-new stack graph.
+      disposition: Preserve until an explicit adoption or retirement decision.
+    legacy-state-prod:
+      state_prefix: state/prod
+      managed: false
+      reason: Legacy state exists outside the terraform-new stack graph.
+      disposition: Preserve until an explicit adoption or retirement decision.
+    legacy-terraform-devtest:
+      state_prefix: terraform/devtest
+      managed: false
+      reason: Legacy state exists outside the terraform-new stack graph.
+      disposition: Preserve until an explicit adoption or retirement decision.
+    legacy-terraform-state:
+      state_prefix: terraform/state
+      managed: false
+      reason: Legacy state exists outside the terraform-new stack graph.
+      disposition: Preserve until an explicit adoption or retirement decision.
+    tesserix-governance:
+      state_prefix: tesserix-governance
+      managed: false
+      reason: Governance state is owned outside the terraform-new stack graph.
+      disposition: Preserve under its existing owner.
 
-  # Naming pattern: {project_prefix}-terraform-states
-  bucket_names:
-    devtest: tesseract-terraform-states
-    pilot: tesseract-terraform-states
-    prod: tesseract-terraform-states
-
-  # State prefix pattern: stacks/{environment}/{region}/{stack_name}
-  prefix_pattern: "stacks/{environment}/{region}/{stack_name}"
-
-# =============================================================================
-# Stack Definitions with Dependencies
-# =============================================================================
-# Each stack is deployed per-region with its own state file
-# Pattern: stacks/{env}/{region}/{stack}/
-# Example: stacks/prod/in/gke/ (Production GKE in India)
-# =============================================================================
+naming:
+  pattern: "{prefix}-{environment}-{resource}"
+  prefix: tesseract
+  scope: New resources only; existing names remain unchanged to avoid replacements.
+  exceptions:
+    state_bucket: tesseract-terraform-states
 
 stacks:
-  # Layer 1: Foundation - No dependencies
+  00-state-bootstrap:
+    name: state-bootstrap
+    description: Existing GCS Terraform state bucket ownership and protection
+    path: stacks/00-state-bootstrap
+    state_prefix: stacks/prod/state-bootstrap
+    dependencies: []
+    timeout: 10m
+
   01-foundation:
     name: foundation
-    description: Enable required GCP APIs
+    description: Required GCP APIs
     path: stacks/01-foundation
-    state_prefix: foundation
-    dependencies: []
-    outputs:
-      - apis_enabled
-      - project_id
-      - region
+    state_prefix: stacks/prod/foundation
+    dependencies: [00-state-bootstrap]
     timeout: 10m
-    per_region: false  # Foundation is project-wide, not per-region
 
-  # Layer 2: Network - Depends on Foundation (PER REGION)
   02-network:
     name: network
-    description: VPC, Subnets, NAT Gateway, Firewall Rules
+    description: VPC, subnets, NAT, and firewall rules
     path: stacks/02-network
-    state_prefix: network
-    dependencies:
-      - 01-foundation
-    outputs:
-      - vpc_id
-      - vpc_name
-      - vpc_self_link
-      - subnet_id
-      - subnet_name
-      - pods_ip_range_name
-      - services_ip_range_name
+    state_prefix: stacks/prod/network
+    dependencies: [01-foundation]
     timeout: 15m
-    per_region: true  # Each region has its own VPC
 
-  # Layer 3: Storage - Depends on Foundation (CAN BE MULTI-REGION)
   03-storage:
     name: storage
-    description: GCS Buckets, Secret Manager, KMS
+    description: GCS buckets, Secret Manager, and KMS
     path: stacks/03-storage
-    state_prefix: storage
-    dependencies:
-      - 01-foundation
-    outputs:
-      - bucket_names
-      - bucket_urls
-      - secret_ids
-      - kms_keyring_id
+    state_prefix: stacks/prod/storage
+    dependencies: [01-foundation]
     timeout: 10m
-    per_region: true  # Regional buckets for compliance
 
-  # Layer 4: GKE - Depends on Network (PER REGION)
   04-gke:
     name: gke
-    description: GKE Cluster and Node Pools
+    description: GKE cluster and node pools
     path: stacks/04-gke
-    state_prefix: gke
-    dependencies:
-      - 02-network
-    outputs:
-      - cluster_id
-      - cluster_name
-      - cluster_endpoint
-      - cluster_ca_certificate
+    state_prefix: stacks/prod/gke
+    dependencies: [02-network]
     timeout: 30m
-    per_region: true  # Each region has its own GKE cluster
 
-  # Layer 5: Kubernetes Bootstrap - Depends on GKE
   05-k8s-bootstrap:
     name: k8s-bootstrap
-    description: Kong, Cert-Manager, ArgoCD, External Secrets
+    description: Kubernetes and Argo CD bootstrap resources
     path: stacks/05-k8s-bootstrap
-    state_prefix: k8s-bootstrap
-    dependencies:
-      - 04-gke
-    outputs:
-      - kong_proxy_ip
-      - argocd_server_url
+    state_prefix: stacks/prod/k8s-bootstrap
+    dependencies: [04-gke]
     timeout: 20m
-    per_region: true
 
-  # Layer 6: Workload Identity - Depends on GKE and Storage
   06-workload-identity:
     name: workload-identity
-    description: Service Accounts and Workload Identity Bindings
+    description: Google service accounts and GKE Workload Identity bindings
     path: stacks/06-workload-identity
-    state_prefix: workload-identity
-    dependencies:
-      - 04-gke
-      - 03-storage
-    outputs:
-      - service_account_emails
+    state_prefix: stacks/prod/workload-identity
+    dependencies: [03-storage, 04-gke]
     timeout: 10m
-    per_region: true
 
-  # Layer 7: App Secrets - Depends on GKE
   07-app-secrets:
     name: app-secrets
-    description: Application Secrets in Secret Manager
+    description: Application secrets in Secret Manager
     path: stacks/07-app-secrets
-    state_prefix: app-secrets
-    dependencies:
-      - 04-gke
-      - 06-workload-identity
-    outputs:
-      - secret_ids
+    state_prefix: stacks/prod/app-secrets
+    dependencies: [04-gke, 06-workload-identity]
     timeout: 10m
-    per_region: true
 
-  # Layer 8: Communication Services - Depends on Foundation
   08-communication-services:
     name: communication-services
-    description: Email, SMS, Push Notification Services
+    description: Email, SMS, push, and Pub/Sub services
     path: stacks/08-communication-services
-    state_prefix: communication-services
-    dependencies:
-      - 01-foundation
-    outputs:
-      - pubsub_topic_ids
+    state_prefix: stacks/prod/communication-services
+    dependencies: [01-foundation]
     timeout: 10m
-    per_region: false  # Project-wide, not per-region
 
-  # Layer 9: GitHub ARC - Depends on K8s Bootstrap
   09-github-arc:
     name: github-arc
-    description: GitHub Actions Runner Controller
+    description: GitHub Actions Runner Controller resources retained in state
     path: stacks/09-github-arc
-    state_prefix: github-arc
-    dependencies:
-      - 05-k8s-bootstrap
-    outputs:
-      - arc_controller_ready
+    state_prefix: stacks/prod/github-arc
+    dependencies: [05-k8s-bootstrap]
     timeout: 15m
-    per_region: true  # Runners per region for locality
 
-  # Layer 11: Identity Platform - Depends on Foundation (APIs)
   11-identity-platform:
     name: identity-platform
-    description: Google Identity Platform multi-tenant configuration (Platform, Marketplace)
+    description: Google Identity Platform tenant configuration
     path: stacks/11-identity-platform
-    state_prefix: identity-platform
-    dependencies:
-      - 01-foundation
-    outputs:
-      - tenant_ids
-      - tenant_display_names
+    state_prefix: stacks/prod/identity-platform
+    dependencies: [01-foundation]
     timeout: 10m
-    per_region: false  # Identity Platform is project-wide
 
-# =============================================================================
-# Execution Order (Topologically Sorted)
-# =============================================================================
+  12-vertex:
+    name: vertex
+    description: Vertex AI private connectivity, DNS, and gateway IAM
+    path: stacks/12-vertex
+    state_prefix: stacks/prod/vertex
+    dependencies: [02-network]
+    timeout: 15m
 
 execution_order:
   - phase: 1
-    parallel: false
-    stacks: [01-foundation]
-
+    stacks: [00-state-bootstrap]
   - phase: 2
-    parallel: true
-    stacks: [02-network, 03-storage, 08-communication-services, 11-identity-platform]
-
+    stacks: [01-foundation]
   - phase: 3
-    parallel: false
-    stacks: [04-gke]
-
+    stacks: [02-network, 03-storage, 08-communication-services, 11-identity-platform]
   - phase: 4
-    parallel: true
-    stacks: [05-k8s-bootstrap, 06-workload-identity]
-
+    stacks: [04-gke, 12-vertex]
   - phase: 5
-    parallel: false
-    stacks: [07-app-secrets]
-
+    stacks: [05-k8s-bootstrap, 06-workload-identity]
   - phase: 6
-    parallel: true
+    stacks: [07-app-secrets]
+  - phase: 7
     stacks: [09-github-arc]
 
-# Destroy Order (reverse of execution)
 destroy_order:
-  - 11-identity-platform
   - 09-github-arc
   - 07-app-secrets
   - 06-workload-identity
   - 05-k8s-bootstrap
+  - 12-vertex
   - 04-gke
+  - 11-identity-platform
   - 08-communication-services
   - 03-storage
   - 02-network
   - 01-foundation
-
-# =============================================================================
-# GitHub Actions Workflow Configuration
-# =============================================================================
-
-github_actions:
-  # Required GitHub Secrets for each project
-  required_secrets:
-    common:
-      - CLOUDFLARE_API_TOKEN
-      - CLOUDFLARE_ZONE_ID
-      - LETSENCRYPT_EMAIL
-      - GOOGLE_OAUTH_CLIENT_ID
-      - GOOGLE_OAUTH_CLIENT_SECRET
-      - ARGOCD_GITHUB_APP_ID
-      - ARGOCD_GITHUB_APP_INSTALLATION_ID
-      - ARGOCD_GITHUB_APP_PRIVATE_KEY
-
-    devtest:
-      - GCP_DEVTEST_PROJECT_ID
-      - GCP_DEVTEST_SA_KEY  # or use Workload Identity
-      - GCP_DEVTEST_WIF_PROVIDER
-      - GCP_DEVTEST_WIF_SA_EMAIL
-
-    prod:
-      - GCP_PROD_PROJECT_ID
-      - GCP_PROD_SA_KEY  # or use Workload Identity
-      - GCP_PROD_WIF_PROVIDER
-      - GCP_PROD_WIF_SA_EMAIL
-
-  # Workload Identity Federation (recommended over SA keys)
-  workload_identity:
-    devtest:
-      provider: projects/tesseracthub-480811/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-      service_account: github-actions@tesseracthub-480811.iam.gserviceaccount.com
-    pilot:
-      provider: projects/tesseracthub-480811/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-      service_account: github-actions@tesseracthub-480811.iam.gserviceaccount.com
-    prod:
-      provider: projects/tesseracthub-480811/locations/global/workloadIdentityPools/github-pool/providers/github-provider
-      service_account: github-actions@tesseracthub-480811.iam.gserviceaccount.com
+  - 00-state-bootstrap

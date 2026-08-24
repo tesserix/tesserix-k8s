@@ -1,6 +1,6 @@
 # Vertex Stack - Private Service Connect endpoint, DNS pinning, and IAM
 # for Vertex AI access from the GKE cluster (DevAI + agentgateway).
-# State: stacks/{environment}/vertex/default.tfstate
+# State: stacks/prod/vertex/default.tfstate
 # Dependencies: 02-network (VPC), 04-gke (Workload Identity pool)
 #
 # Design:

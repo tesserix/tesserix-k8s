@@ -1,0 +1,23 @@
+{{- range .Values.mcpServices }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ required "mcpServices[].name is required" .name }}
+  annotations:
+    agentgateway.dev/mcp-path: {{ required "mcpServices[].path is required" .path | quote }}
+    agentgateway.dev/mcp-target-name: {{ .name }}
+  labels:
+    {{- include "devai-sre.labels" $ | nindent 4 }}
+    mcp.tesserix.app/server: {{ .name }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ $.Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+      appProtocol: agentgateway.dev/mcp
+  selector:
+    {{- include "devai-sre.selectorLabels" $ | nindent 4 }}
+{{- end }}

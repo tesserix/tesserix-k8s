@@ -1,5 +1,5 @@
 # Kubernetes Bootstrap Stack - Kong, Cert-Manager, ArgoCD, External Secrets
-# State: stacks/{environment}/k8s-bootstrap/default.tfstate
+# State: stacks/prod/k8s-bootstrap/default.tfstate
 # Dependencies: 04-gke
 
 # Reference GKE stack outputs
@@ -8,7 +8,7 @@ data "terraform_remote_state" "gke" {
 
   config = {
     bucket = var.state_bucket
-    prefix = "stacks/${var.environment}/gke"
+    prefix = "stacks/prod/gke"
   }
 }
 
@@ -329,11 +329,17 @@ resource "null_resource" "gcp_secret_store" {
   }
 
   provisioner "local-exec" {
+    environment = {
+      KUBE_SERVER         = "https://${data.terraform_remote_state.gke.outputs.cluster_endpoint}"
+      KUBE_CA_CERTIFICATE = data.terraform_remote_state.gke.outputs.cluster_ca_certificate
+    }
+
     command = <<-EOT
       # Wait for External Secrets CRDs to be available
       echo "Waiting for External Secrets CRDs..."
       for i in $(seq 1 30); do
-        if kubectl get crd clustersecretstores.external-secrets.io >/dev/null 2>&1; then
+        if bash "${path.module}/../../scripts/kubectl-gke.sh" \
+          get crd clustersecretstores.external-secrets.io >/dev/null 2>&1; then
           echo "CRD is available"
           break
         fi
@@ -342,7 +348,7 @@ resource "null_resource" "gcp_secret_store" {
       done
 
       # Apply ClusterSecretStore
-      cat <<EOF | kubectl apply -f -
+      cat <<EOF | bash "${path.module}/../../scripts/kubectl-gke.sh" apply -f -
 apiVersion: external-secrets.io/v1beta1
 kind: ClusterSecretStore
 metadata:
@@ -537,18 +543,26 @@ resource "null_resource" "argocd_bootstrap_app" {
   count = var.install_argocd && var.argocd_bootstrap_enabled ? 1 : 0
 
   triggers = {
-    environment   = var.environment
-    namespace     = var.argocd_namespace
-    repo_url      = var.argocd_repo_url
-    repo_revision = var.argocd_repo_revision
+    cluster_ca_certificate = data.terraform_remote_state.gke.outputs.cluster_ca_certificate
+    cluster_server         = "https://${data.terraform_remote_state.gke.outputs.cluster_endpoint}"
+    environment            = var.environment
+    namespace              = var.argocd_namespace
+    repo_url               = var.argocd_repo_url
+    repo_revision          = var.argocd_repo_revision
   }
 
   provisioner "local-exec" {
+    environment = {
+      KUBE_SERVER         = self.triggers.cluster_server
+      KUBE_CA_CERTIFICATE = self.triggers.cluster_ca_certificate
+    }
+
     command = <<-EOT
       # Wait for ArgoCD CRDs to be available
       echo "Waiting for ArgoCD Application CRD to be ready..."
       for i in $(seq 1 30); do
-        if kubectl get crd applications.argoproj.io &>/dev/null; then
+        if bash "${path.module}/../../scripts/kubectl-gke.sh" \
+          get crd applications.argoproj.io >/dev/null 2>&1; then
           echo "ArgoCD CRD is ready"
           break
         fi
@@ -557,7 +571,7 @@ resource "null_resource" "argocd_bootstrap_app" {
       done
 
       # Apply the ArgoCD Bootstrap Application
-      kubectl apply -f - <<EOF
+      bash "${path.module}/../../scripts/kubectl-gke.sh" apply -f - <<EOF
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -595,8 +609,12 @@ EOF
   }
 
   provisioner "local-exec" {
-    when    = destroy
-    command = "kubectl delete application ${self.triggers.environment}-bootstrap -n ${self.triggers.namespace} --ignore-not-found=true || true"
+    when = destroy
+    environment = {
+      KUBE_SERVER         = self.triggers.cluster_server
+      KUBE_CA_CERTIFICATE = self.triggers.cluster_ca_certificate
+    }
+    command = "bash ../../scripts/kubectl-gke.sh delete application ${self.triggers.environment}-bootstrap -n ${self.triggers.namespace} --ignore-not-found=true || true"
   }
 
   depends_on = [

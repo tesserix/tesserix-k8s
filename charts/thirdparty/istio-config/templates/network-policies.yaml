@@ -683,11 +683,16 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: kagent-system
-    # devai consumers
+    # Product namespaces that consume the control plane. Kora was added
+    # after its registry lookups timed out for a day: egress was allowed on
+    # the kora side, but a missing entry here dropped every packet, which
+    # looks identical to an unreachable service.
+{{- range $consumer := $.Values.agenticConsumerNamespaces }}
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: devai
+              kubernetes.io/metadata.name: {{ $consumer }}
+{{- end }}
     - from:
         - namespaceSelector:
             matchLabels:

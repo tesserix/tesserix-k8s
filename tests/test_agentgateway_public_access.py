@@ -8,7 +8,7 @@ import yaml
 ROOT = pathlib.Path(__file__).parents[1]
 ISSUER = "https://auth.tesserix.app"
 JWKS_PATH = "/oauth/v2/keys"
-PROJECT_AUDIENCE = "386889024519799084"
+PROJECT_AUDIENCE = "387190457387450503"
 HUMAN_EMAILS = {"samyak.rout@gmail.com", "mahesh.sangawar@gmail.com"}
 
 
@@ -145,6 +145,258 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
                     )
                 )
 
+    def test_standalone_console_suppresses_rendered_secret_config_logs(self):
+        documents = render_chart("charts/apps/agentgateway-console")
+        deployment = resource(documents, "Deployment", "agentgateway-console")
+        container = deployment["spec"]["template"]["spec"]["containers"][0]
+        env = {entry["name"]: entry.get("value") for entry in container["env"]}
+
+        self.assertEqual(
+            "info,agentgateway_app::commands::run=warn",
+            env["RUST_LOG"],
+        )
+        config = (
+            ROOT / "charts/apps/agentgateway-console/files/config.yaml"
+        ).read_text()
+        self.assertNotIn(
+            "filter: info,agentgateway_app::commands::run=warn",
+            config,
+        )
+
+    def test_standalone_console_requires_virtual_api_keys(self):
+        config = (
+            ROOT / "charts/apps/agentgateway-console/files/config.yaml"
+        ).read_text()
+
+        self.assertIn(
+            """    apiKey:
+      mode: strict
+      location:
+        header:
+          name: x-tesserix-virtual-api-key
+      keys: []""",
+            config,
+        )
+        self.assertNotIn("mode: optional", config)
+
+    def test_llm_playground_stays_same_origin_without_cors(self):
+        config_text = (
+            ROOT / "charts/apps/agentgateway-console/files/config.yaml"
+        ).read_text()
+        for placeholder in (
+            "pgPassword",
+            "oidcClientId",
+            "oidcClientSecret",
+        ):
+            config_text = config_text.replace(f"{{{{ .{placeholder} }}}}", "test")
+        config = yaml.safe_load(config_text)
+
+        self.assertEqual(["console"], config["ui"]["gateways"])
+        self.assertIn("console", config["llm"]["gateways"])
+        self.assertNotIn("cors", config["llm"]["policies"])
+
+    def test_standalone_console_ui_allows_only_oidc_with_same_origin_csrf(self):
+        config_text = (
+            ROOT / "charts/apps/agentgateway-console/files/config.yaml"
+        ).read_text()
+        for placeholder in (
+            "pgPassword",
+            "oidcClientId",
+            "oidcClientSecret",
+        ):
+            config_text = config_text.replace(f"{{{{ .{placeholder} }}}}", "test")
+        policies = yaml.safe_load(config_text)["ui"]["policies"]
+
+        self.assertEqual({"oidc", "authorization", "csrf"}, set(policies))
+        self.assertEqual({}, policies["csrf"])
+
+    def test_standalone_console_models_use_managed_provider_credentials(self):
+        config_text = (
+            ROOT / "charts/apps/agentgateway-console/files/config.yaml"
+        ).read_text()
+        for placeholder in (
+            "pgPassword",
+            "oidcClientId",
+            "oidcClientSecret",
+        ):
+            config_text = config_text.replace(f"{{{{ .{placeholder} }}}}", "test")
+        config = yaml.safe_load(config_text)
+
+        providers = {
+            provider["name"]: provider for provider in config["llm"]["providers"]
+        }
+        self.assertEqual(
+            {"anthropic", "openai", "gemini", "vertex"}, set(providers)
+        )
+        self.assertEqual(
+            "$ANTHROPIC_API_KEY", providers["anthropic"]["params"]["apiKey"]
+        )
+        self.assertEqual(
+            "$OPENAI_API_KEY", providers["openai"]["params"]["apiKey"]
+        )
+        self.assertEqual(
+            "$GEMINI_API_KEY", providers["gemini"]["params"]["apiKey"]
+        )
+        self.assertEqual(
+            {
+                "vertexProject": "tesseracthub-480811",
+                "vertexRegion": "global",
+            },
+            providers["vertex"]["params"],
+        )
+        self.assertEqual({"gcp": {}}, providers["vertex"]["defaults"]["auth"])
+
+        models = {model["name"]: model for model in config["llm"]["models"]}
+        for provider_name in ("anthropic", "openai", "gemini", "vertex"):
+            model_name = f"{provider_name}/*"
+            self.assertEqual(
+                {"reference": provider_name}, models[model_name]["provider"]
+            )
+            self.assertEqual(
+                f'llmRequest.model.stripPrefix("{provider_name}/")',
+                models[model_name]["transformation"]["model"],
+            )
+
+        documents = render_chart("charts/apps/agentgateway-console")
+        external_secret = resource(
+            documents, "ExternalSecret", "agentgateway-console-config"
+        )
+        remote_refs = {
+            item["secretKey"]: item["remoteRef"]["key"]
+            for item in external_secret["spec"]["data"]
+        }
+        self.assertEqual(
+            {
+                "anthropicApiKey": "prod-devai-anthropic-api-key",
+                "openaiApiKey": "prod-devai-openai-api-key",
+                "geminiApiKey": "prod-devai-gemini-api-key",
+            },
+            {
+                key: remote_refs[key]
+                for key in ("anthropicApiKey", "openaiApiKey", "geminiApiKey")
+            },
+        )
+
+        deployment = resource(documents, "Deployment", "agentgateway-console")
+        self.assertEqual(
+            "agentgateway-console-config",
+            deployment["metadata"]["annotations"][
+                "secret.reloader.stakater.com/reload"
+            ],
+        )
+        env = {
+            item["name"]: item.get("valueFrom", {}).get("secretKeyRef")
+            for item in deployment["spec"]["template"]["spec"]["containers"][0][
+                "env"
+            ]
+        }
+        self.assertEqual(
+            {
+                "ANTHROPIC_API_KEY": {
+                    "name": "agentgateway-console-config",
+                    "key": "anthropicApiKey",
+                },
+                "OPENAI_API_KEY": {
+                    "name": "agentgateway-console-config",
+                    "key": "openaiApiKey",
+                },
+                "GEMINI_API_KEY": {
+                    "name": "agentgateway-console-config",
+                    "key": "geminiApiKey",
+                },
+            },
+            {
+                key: env[key]
+                for key in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY")
+            },
+        )
+
+    def test_standalone_console_requires_user_identity_and_applies_guardrails(self):
+        config_text = (
+            ROOT / "charts/apps/agentgateway-console/files/config.yaml"
+        ).read_text()
+        for placeholder in (
+            "pgPassword",
+            "oidcClientId",
+            "oidcClientSecret",
+        ):
+            config_text = config_text.replace(f"{{{{ .{placeholder} }}}}", "test")
+        policies = yaml.safe_load(config_text)["llm"]["policies"]
+
+        jwt = policies["jwtAuth"]
+        self.assertEqual("strict", jwt["mode"])
+        self.assertEqual(
+            {"header": {"name": "authorization", "prefix": "Bearer "}},
+            jwt["location"],
+        )
+        provider = jwt["providers"][0]
+        self.assertEqual(ISSUER, provider["issuer"])
+        self.assertEqual([PROJECT_AUDIENCE], provider["audiences"])
+        self.assertEqual(f"{ISSUER}{JWKS_PATH}", provider["jwks"]["url"])
+        self.assertEqual(
+            [
+                {
+                    "require": '"agentgateway.models" in '
+                    'jwt["urn:zitadel:iam:org:project:'
+                    f'{PROJECT_AUDIENCE}:roles"]'
+                }
+            ],
+            policies["authorization"]["rules"],
+        )
+
+        guardrails = policies["guardrails"]
+        self.assertEqual("Enabled", guardrails["streaming"])
+        request_rules = [
+            rule
+            for guard in guardrails["request"]
+            for rule in guard["regex"]["rules"]
+        ]
+        self.assertTrue({"builtin": "creditCard"} in request_rules)
+        self.assertTrue({"builtin": "ssn"} in request_rules)
+        self.assertTrue(
+            any(
+                "previous|prior|system|developer" in rule.get("pattern", "")
+                for rule in request_rules
+            )
+        )
+        response_rules = [
+            rule
+            for guard in guardrails["response"]
+            for rule in guard["regex"]["rules"]
+        ]
+        self.assertEqual(
+            {
+                ("builtin", "creditCard"),
+                ("builtin", "email"),
+                ("builtin", "phoneNumber"),
+                ("builtin", "ssn"),
+            },
+            {tuple(rule.items())[0] for rule in response_rules},
+        )
+
+    def test_zitadel_client_allows_standalone_and_legacy_admin_callbacks(self):
+        values = yaml.safe_load(
+            (ROOT / "charts/apps/zitadel-bootstrap/values.yaml").read_text()
+        )
+        project = next(
+            item
+            for item in values["desired"]["platformProjects"]
+            if item["name"] == "AgentGateway"
+        )
+        application = next(
+            item
+            for item in project["oidcApps"]
+            if item["name"] == "agentgateway-admin-ui"
+        )
+
+        self.assertEqual(
+            {
+                "https://agentgateway.tesserix.app/oauth/callback",
+                "https://agentgateway.tesserix.app/oauth2/callback",
+            },
+            set(application["redirectUris"]),
+        )
+
     def test_mcp_gateway_is_private_hardened_and_disruption_safe(self):
         documents = render_chart("charts/apps/agentgateway-route-sync")
         parameters = resource(
@@ -196,7 +448,7 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
         expressions = authorization["policy"]["matchExpressions"]
         self.assertEqual(1, len(expressions))
         self.assertEqual(
-            '"agentgateway.mcp" in jwt["urn:zitadel:iam:org:project:386889024519799084:roles"]',
+            '"agentgateway.mcp" in jwt["urn:zitadel:iam:org:project:387190457387450503:roles"]',
             expressions[0],
         )
         self.assertEqual("Allow", authorization["action"])
@@ -233,7 +485,7 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
         expressions = authorization["policy"]["matchExpressions"]
         self.assertEqual(1, len(expressions))
         self.assertEqual(
-            '"agentgateway.models" in jwt["urn:zitadel:iam:org:project:386889024519799084:roles"]',
+            '"agentgateway.models" in jwt["urn:zitadel:iam:org:project:387190457387450503:roles"]',
             expressions[0],
         )
         self.assertEqual("agentgateway-ratelimit", rate_limit["backendRef"]["name"])

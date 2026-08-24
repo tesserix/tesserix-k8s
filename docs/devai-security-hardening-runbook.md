@@ -141,12 +141,39 @@ Set in `tesserix-k8s` prod values, commit, sync:
 
 - `devai-api` + `devai-sre`: `requireAuth: true` (→ `DEVAI_REQUIRE_AUTH=true`) and wire
   `DEVAI_AUTH_BFF_SHARED_SECRET` (now in the `devai-auth-bff-secrets` ExternalSecret).
-- `devai-mcp-hub`: `DEVAI_MCP_HUB_REQUIRE_AUTH=true`, `DEVAI_MCP_HUB_SSRF_ENFORCE=true`.
+- `devai-mcp-hub`: both flags stay **false** for now — see WAVE-3 below.
 - `agentic-registry`: `AUTH_ANONYMOUS_ROLE=read` + `AUTH_TRUSTED_PROXY=true` (downgrades the
   anonymous=admin posture to read-only; the bootstrap/seed write path is unaffected — seeds call
   `store.Apply` directly, and the mesh DENY already restricts writes to the bootstrap SA).
 
 Roll one service at a time and watch login + a known mutating call after each.
+
+---
+
+## 5a. WAVE 3 — the remaining flags (2026-08-23)
+
+Wired into the charts and set in prod values:
+
+- `devai-api` + `devai-sre`: `trustForwardedWithoutSecret: false`. `DEVAI_AUTH_BFF_SHARED_SECRET` is
+  an `optional:` secret key, so an ExternalSecret outage empties it — and an empty secret means
+  "trust `X-Forwarded-*` from anyone". With this set, that case fails closed instead. No effect while
+  the secret is present, which is why it can ship without a staged roll.
+- `devai-api`: `toolWorkspaceRoot: /tmp/devai-docs`. The document tools take their `file_path` from a
+  regex over issue text, so an unconfined pod reads whatever an issue author names. Nothing in prod
+  feeds them a legitimate local file; drop a file in that directory to ingest one deliberately.
+- `devai-mcp-hub`: `DEVAI_MCP_HUB_SSRF_ENFORCE` is wired but **still false**. It could not ship as
+  written: the guard resolved the endpoint host and rejected every private address, but every
+  in-cluster MCP resolves to a private ClusterIP — enforcing would have dropped the whole federated
+  surface. devai#284 fixes that (RFC-1918 exempt for a host an explicit suffix allowlisted;
+  loopback, link-local and `169.254.169.254` still blocked), so flip this to `"true"` once a tag
+  containing that merge is the running image. Flipping it against an older image breaks federation.
+
+`DEVAI_MCP_HUB_REQUIRE_AUTH` stays **false**, deliberately. Nothing in the devai codebase dials the
+Hub's `/mcp`; its callers are MCP clients configured out of band, and none of them is known to stamp
+identity. Flipping it 401s every one of them at once. Before flipping: confirm each caller sends
+`X-Forwarded-User` **plus** `X-Auth-Bff-Secret` (the Hub pod has no shared secret env of its own, so
+wire one too), then flip and watch the Hub log for `rejecting unauthenticated request`. Until then the
+mesh `AuthorizationPolicy` restricting the Hub to five devai SAs is the control that holds.
 
 ---
 
