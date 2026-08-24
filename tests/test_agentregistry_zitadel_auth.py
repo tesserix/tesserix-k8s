@@ -213,6 +213,29 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             project["humanGrants"],
         )
 
+    def test_platform_admins_receive_every_declared_project_role(self):
+        documents = render_zitadel_bootstrap()
+        config = resource(documents, "ConfigMap", "zitadel-bootstrap-config")
+        desired = json.loads(config["data"]["desired.json"])
+        platform_admins = {
+            "samyak.rout@gmail.com",
+            "mahesh.sangawar@gmail.com",
+        }
+
+        self.assertTrue(platform_admins.issubset(desired["admins"]))
+        for project in desired["platformProjects"]:
+            declared_roles = {role["key"] for role in project.get("roles", [])}
+            grants = {
+                grant["login"]: set(grant["roles"])
+                for grant in project.get("humanGrants", [])
+            }
+            for login in platform_admins:
+                self.assertEqual(
+                    declared_roles,
+                    grants.get(login),
+                    f"{login} must have full access to {project['name']}",
+                )
+
     def test_no_product_project_is_left_in_the_reserved_org(self):
         documents = render_zitadel_bootstrap()
         config = resource(documents, "ConfigMap", "zitadel-bootstrap-config")
