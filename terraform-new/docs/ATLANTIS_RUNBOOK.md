@@ -197,6 +197,13 @@ pull request. Affected projects report `atlantis/plan: <project>` and
 affected saved plans apply successfully. A failed or missing project status
 keeps the aggregate status from succeeding.
 
+A green `0/0 projects` aggregate status means Atlantis processed the pull
+request but no production Terraform project matched the changed paths. This is
+expected for documentation, repository configuration, and manual-only test
+project changes. It does not mean Terraform ran a plan. A production stack
+`*.tf` change must instead show its named project status and a nonzero project
+count; investigate the `when_modified` rules if it reports zero.
+
 Atlantis also adds detailed pull request comments for plan and apply commands.
 The plan comment includes the plan diff, the project name, usable targeted
 commands, and a project-specific lock link. These comments and statuses are the

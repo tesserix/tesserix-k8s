@@ -293,6 +293,8 @@ class AtlantisRepositoryConfigurationTests(unittest.TestCase):
             "required `atlantis/apply`",
             "plan diff",
             "project-specific lock link",
+            "`0/0 projects`",
+            "no production Terraform project",
         ):
             self.assertIn(feedback, runbook)
 
