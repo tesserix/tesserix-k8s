@@ -238,6 +238,14 @@ class AtlantisPlatformTests(unittest.TestCase):
     def setUpClass(cls):
         cls.documents = render_atlantis_chart()
 
+    def test_container_environment_names_are_unique(self):
+        stateful_set = resource(self.documents, "StatefulSet", "atlantis")
+        environment = stateful_set["spec"]["template"]["spec"]["containers"][0][
+            "env"
+        ]
+        names = [entry["name"] for entry in environment]
+        self.assertEqual(len(names), len(set(names)))
+
     def test_workload_identity_uses_a_dedicated_gsa_and_ksa(self):
         service_account = resource(self.documents, "ServiceAccount", "atlantis")
         self.assertEqual(
