@@ -214,10 +214,22 @@ class AtlantisRepositoryConfigurationTests(unittest.TestCase):
         self.assertFalse(self.values["atlantis"]["allowForkPRs"])
         self.assertFalse(self.values["atlantis"]["allowDraftPRs"])
 
-    def test_server_workflow_applies_only_the_saved_plan(self):
+    def test_server_workflow_uses_production_variables_and_saved_plan(self):
         repo_config = yaml.safe_load(self.values["atlantis"]["repoConfig"])
         workflow = repo_config["workflows"]["terraform"]
-        self.assertEqual(["init", "plan"], workflow["plan"]["steps"])
+        self.assertEqual(
+            [
+                "init",
+                {
+                    "plan": {
+                        "extra_args": [
+                            "-var-file=../../environments/prod/terraform.tfvars"
+                        ]
+                    }
+                },
+            ],
+            workflow["plan"]["steps"],
+        )
         self.assertEqual(["apply"], workflow["apply"]["steps"])
 
 
