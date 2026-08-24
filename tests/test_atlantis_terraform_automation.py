@@ -281,6 +281,54 @@ class AtlantisPlatformTests(unittest.TestCase):
         )
         self.assertEqual(404, api_route["directResponse"]["status"])
 
+    def test_ingress_allows_only_the_atlantis_webhook_method_and_path(self):
+        chart = ROOT / "charts/infrastructure/istio-auth-policies"
+        result = subprocess.run(
+            [
+                "helm",
+                "template",
+                "istio-auth-policies",
+                str(chart),
+                "--namespace",
+                "istio-ingress",
+                "--values",
+                str(chart / "values.yaml"),
+                "--values",
+                str(chart / "values-prod.yaml"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        documents = [
+            document
+            for document in yaml.safe_load_all(result.stdout)
+            if document
+        ]
+
+        for policy_name in (
+            "allow-public-api-endpoints",
+            "allow-public-api-endpoints-custom",
+        ):
+            policy = resource(documents, "AuthorizationPolicy", policy_name)
+            matching_operations = [
+                target["operation"]
+                for rule in policy["spec"]["rules"]
+                for target in rule.get("to", [])
+                if target["operation"].get("hosts")
+                == ["atlantis.tesserix.app"]
+            ]
+            self.assertEqual(
+                [
+                    {
+                        "hosts": ["atlantis.tesserix.app"],
+                        "paths": ["/events"],
+                        "methods": ["POST"],
+                    }
+                ],
+                matching_operations,
+            )
+
     def test_network_policy_selects_the_rendered_atlantis_pod(self):
         stateful_set = resource(self.documents, "StatefulSet", "atlantis")
         network_policy = resource(self.documents, "NetworkPolicy", "atlantis-ingress")
