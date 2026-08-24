@@ -327,6 +327,15 @@ class AtlantisPlatformTests(unittest.TestCase):
         values = load_yaml(ROOT / "charts/thirdparty/atlantis/values.yaml")
         self.assertRegex(values["atlantis"]["image"]["tag"], r"@sha256:[0-9a-f]{64}$")
 
+    def test_helm_lint_registers_the_atlantis_chart_repository(self):
+        chart = load_yaml(ROOT / "charts/thirdparty/atlantis/Chart.yaml")
+        workflow = (ROOT / ".github/workflows/helm-lint.yaml").read_text()
+
+        self.assertIn(
+            f"helm repo add atlantis {chart['dependencies'][0]['repository']}",
+            workflow,
+        )
+
 
 class AtlantisApprovalRelayTests(unittest.TestCase):
     def test_new_workflows_pin_every_action_to_a_commit(self):
