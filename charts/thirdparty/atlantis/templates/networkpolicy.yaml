@@ -10,10 +10,17 @@ spec:
       release: atlantis
   policyTypes: [Ingress]
   ingress:
+    # The gateway reaches Atlantis directly for /events only; every other path
+    # is routed to oauth2-proxy by the VirtualService.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-ingress
+{{- if .Values.oauth2Proxy.enabled }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .Values.oauth2Proxy.name }}
+{{- end }}
       ports:
         - protocol: TCP
           port: 4141

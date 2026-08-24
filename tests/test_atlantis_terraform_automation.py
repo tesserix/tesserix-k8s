@@ -1,3 +1,4 @@
+import json
 import pathlib
 import re
 import subprocess
@@ -301,7 +302,8 @@ class AtlantisPlatformTests(unittest.TestCase):
             if document.get("kind") == "ExternalSecret"
         ]
 
-        self.assertEqual(3, len(external_secrets))
+        # vcs, basic-auth (retained for rollback), terraform vars, oauth2-proxy.
+        self.assertEqual(4, len(external_secrets))
         self.assertEqual(
             {"external-secrets.io/v1beta1"},
             {document["apiVersion"] for document in external_secrets},
@@ -374,6 +376,96 @@ class AtlantisPlatformTests(unittest.TestCase):
         # The namespace is unmeshed, so a per-pod ALLOW would select nothing.
         names = {document["metadata"]["name"] for document in documents}
         self.assertNotIn("allow-atlantis-public", names)
+
+    def test_console_is_fronted_by_zitadel_and_the_webhook_bypasses_it(self):
+        virtual_service = resource(self.documents, "VirtualService", "atlantis")
+        routes = virtual_service["spec"]["http"]
+        order = [route["name"] for route in routes]
+        # The webhook must be matched before the catch-all, or GitHub's POST is
+        # answered with a login redirect.
+        self.assertLess(order.index("github-webhook"), order.index("web-ui"))
+
+        webhook = next(r for r in routes if r["name"] == "github-webhook")
+        self.assertEqual(
+            "atlantis.atlantis.svc.cluster.local",
+            webhook["route"][0]["destination"]["host"],
+        )
+
+        web_ui = next(r for r in routes if r["name"] == "web-ui")
+        self.assertEqual(
+            "atlantis-ui-oauth2-proxy.atlantis.svc.cluster.local",
+            web_ui["route"][0]["destination"]["host"],
+        )
+        self.assertEqual(4180, web_ui["route"][0]["destination"]["port"]["number"])
+
+    def test_console_password_auth_is_gone(self):
+        stateful_set = resource(self.documents, "StatefulSet", "atlantis")
+        rendered = yaml.safe_dump(stateful_set)
+        self.assertNotIn("ATLANTIS_WEB_BASIC_AUTH", rendered)
+        self.assertNotIn("ATLANTIS_WEB_USERNAME", rendered)
+        self.assertNotIn("ATLANTIS_WEB_PASSWORD", rendered)
+
+    def test_only_the_two_named_operators_may_sign_in(self):
+        config_map = resource(
+            self.documents, "ConfigMap", "atlantis-ui-oauth2-proxy-emails"
+        )
+        emails = config_map["data"]["authenticated-emails.txt"].split()
+        self.assertEqual(
+            ["samyak.rout@gmail.com", "mahesh.sangawar@gmail.com"], emails
+        )
+
+    def test_proxy_authenticates_against_zitadel_without_leaking_tokens(self):
+        deployment = resource(self.documents, "Deployment", "atlantis-ui-oauth2-proxy")
+        args = deployment["spec"]["template"]["spec"]["containers"][0]["args"]
+        self.assertIn("--provider=oidc", args)
+        self.assertIn("--oidc-issuer-url=https://auth.tesserix.app", args)
+        self.assertIn(
+            "--redirect-url=https://atlantis.tesserix.app/oauth2/callback", args
+        )
+        self.assertIn(
+            "--authenticated-emails-file=/etc/oauth2-proxy/authenticated-emails.txt",
+            args,
+        )
+        self.assertIn("--code-challenge-method=S256", args)
+        for cookie_flag in ("--cookie-secure=true", "--cookie-httponly=true"):
+            self.assertIn(cookie_flag, args)
+        # Atlantis cannot verify a token, so it must never be handed one.
+        for leak in (
+            "--pass-access-token=true",
+            "--pass-authorization-header=true",
+            "--set-authorization-header=true",
+        ):
+            self.assertNotIn(leak, args)
+
+    def test_proxy_credentials_come_from_secret_manager(self):
+        external_secret = resource(
+            self.documents, "ExternalSecret", "atlantis-ui-oauth2-proxy"
+        )
+        keys = {
+            entry["secretKey"]: entry["remoteRef"]["key"]
+            for entry in external_secret["spec"]["data"]
+        }
+        self.assertEqual(
+            {
+                "client-id": "prod-atlantis-ui-client-id",
+                "client-secret": "prod-atlantis-ui-client-secret",
+                "cookie-secret": "prod-atlantis-ui-cookie-secret",
+            },
+            keys,
+        )
+        deployment = resource(self.documents, "Deployment", "atlantis-ui-oauth2-proxy")
+        rendered = yaml.safe_dump(deployment)
+        self.assertNotIn("client-secret: ", rendered)
+
+    def test_proxy_may_reach_atlantis_and_atlantis_stays_otherwise_closed(self):
+        network_policy = resource(self.documents, "NetworkPolicy", "atlantis-ingress")
+        sources = network_policy["spec"]["ingress"][0]["from"]
+        self.assertIn(
+            {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "atlantis-ui-oauth2-proxy"}}},
+            sources,
+        )
+        ports = network_policy["spec"]["ingress"][0]["ports"]
+        self.assertEqual([{"protocol": "TCP", "port": 4141}], ports)
 
     def test_network_policy_selects_the_rendered_atlantis_pod(self):
         stateful_set = resource(self.documents, "StatefulSet", "atlantis")
@@ -496,6 +588,68 @@ class AtlantisApprovalRelayTests(unittest.TestCase):
         graph = load_yaml(TERRAFORM_ROOT / "dependencies.yaml")
         matrix = workflow["jobs"]["validate"]["strategy"]["matrix"]["stack"]
         self.assertEqual(set(graph["stacks"]), set(matrix))
+
+
+class AtlantisZitadelProjectTests(unittest.TestCase):
+    """The console's OIDC client is reconciled, not left as a console artefact."""
+
+    @classmethod
+    def setUpClass(cls):
+        result = subprocess.run(
+            [
+                "helm",
+                "template",
+                "zitadel-bootstrap",
+                str(ROOT / "charts/apps/zitadel-bootstrap"),
+                "--namespace",
+                "zitadel",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        documents = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
+        config = resource(documents, "ConfigMap", "zitadel-bootstrap-config")
+        desired = json.loads(config["data"]["desired.json"])
+        cls.project = next(
+            item for item in desired["platformProjects"] if item["name"] == "Atlantis"
+        )
+
+    def test_project_is_pinned_to_the_tesserix_org_and_its_created_id(self):
+        self.assertEqual("TESSERIX", self.project["org"])
+        self.assertEqual("387690151817511174", self.project["expectedId"])
+
+    def test_oidc_client_matches_what_oauth2_proxy_sends(self):
+        self.assertEqual(
+            {
+                "name": "atlantis-ui",
+                "appType": "OIDC_APP_TYPE_WEB",
+                "authMethodType": "OIDC_AUTH_METHOD_TYPE_BASIC",
+                "loginBaseUri": "https://auth.tesserix.app/ui/v2/login",
+                "redirectUris": ["https://atlantis.tesserix.app/oauth2/callback"],
+                "postLogoutRedirectUris": ["https://atlantis.tesserix.app"],
+            },
+            self.project["oidcApps"][0],
+        )
+
+    def test_both_operators_are_granted_the_console_role(self):
+        self.assertEqual(
+            ["atlantis.admin"], [role["key"] for role in self.project["roles"]]
+        )
+        self.assertEqual(
+            {
+                "samyak.rout@gmail.com": ["atlantis.admin"],
+                "mahesh.sangawar@gmail.com": ["atlantis.admin"],
+            },
+            {grant["login"]: grant["roles"] for grant in self.project["humanGrants"]},
+        )
+
+    def test_grant_list_matches_the_proxy_email_allowlist(self):
+        chart = load_yaml(ROOT / "charts/thirdparty/atlantis/values.yaml")
+        self.assertEqual(
+            {grant["login"] for grant in self.project["humanGrants"]},
+            set(chart["oauth2Proxy"]["allowedEmails"]),
+        )
 
 
 if __name__ == "__main__":

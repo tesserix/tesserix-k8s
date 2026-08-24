@@ -170,6 +170,31 @@ desired:
             - https://aregistry.tesserix.app/oauth2/callback
           postLogoutRedirectUris:
             - https://aregistry.tesserix.app/
+    - org: TESSERIX
+      name: Atlantis
+      expectedId: "387690151817511174"
+      roles:
+        - key: atlantis.admin
+          displayName: Atlantis Admin
+          group: terraform-automation
+      oidcApps:
+        - name: atlantis-ui
+          appType: OIDC_APP_TYPE_WEB
+          authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
+          loginBaseUri: https://auth.tesserix.app/ui/v2/login
+          redirectUris:
+            - https://atlantis.tesserix.app/oauth2/callback
+          postLogoutRedirectUris:
+            - https://atlantis.tesserix.app
+      # oauth2-proxy terminates the session and Atlantis never sees the token,
+      # so these grants only bite once the project's projectRoleCheck is on.
+      # They are declared first so turning that flag on cannot lock both
+      # operators out.
+      humanGrants:
+        - login: samyak.rout@gmail.com
+          roles: [atlantis.admin]
+        - login: mahesh.sangawar@gmail.com
+          roles: [atlantis.admin]
 
   # The instance's initial org. It cannot be deleted or deactivated: it owns the
   # ZITADEL project (console, Admin/Management/Auth APIs), the iam-admin service

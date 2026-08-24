@@ -20,6 +20,9 @@ spec:
             exact: /status
       directResponse:
         status: 404
+    # GitHub cannot complete an OIDC flow, so the webhook is routed to Atlantis
+    # directly and stays authenticated by its HMAC signature. Keep this above
+    # the catch-all: ordering is what keeps the webhook out of the login redirect.
     - name: github-webhook
       match:
         - uri:
@@ -35,8 +38,15 @@ spec:
         - uri:
             prefix: /
       route:
+{{- if .Values.oauth2Proxy.enabled }}
+        - destination:
+            host: {{ .Values.oauth2Proxy.name }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: 4180
+{{- else }}
         - destination:
             host: atlantis.{{ .Release.Namespace }}.svc.cluster.local
             port:
               number: 80
+{{- end }}
       timeout: 30s
