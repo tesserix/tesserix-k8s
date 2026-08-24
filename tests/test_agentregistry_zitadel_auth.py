@@ -172,6 +172,70 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             project["oidcApps"][0],
         )
 
+    def test_tesserix_is_the_default_organization(self):
+        documents = render_zitadel_bootstrap()
+        config = resource(documents, "ConfigMap", "zitadel-bootstrap-config")
+        desired = json.loads(config["data"]["desired.json"])
+
+        self.assertEqual("TESSERIX", desired["defaultOrg"])
+
+    def test_registry_admin_access_is_reconciled(self):
+        documents = render_zitadel_bootstrap()
+        config = resource(documents, "ConfigMap", "zitadel-bootstrap-config")
+        desired = json.loads(config["data"]["desired.json"])
+        project = next(
+            item
+            for item in desired["platformProjects"]
+            if item["name"] == "AgentRegistry"
+        )
+
+        self.assertEqual(
+            [
+                {
+                    "key": "agentregistry.admin",
+                    "displayName": "Agent Registry Administrator",
+                    "group": "Agent Registry",
+                }
+            ],
+            project["roles"],
+        )
+        self.assertEqual(
+            [
+                {
+                    "login": "samyak.rout@gmail.com",
+                    "roles": ["agentregistry.admin"],
+                },
+                {
+                    "login": "mahesh.sangawar@gmail.com",
+                    "roles": ["agentregistry.admin"],
+                },
+            ],
+            project["humanGrants"],
+        )
+
+    def test_platform_admins_receive_every_declared_project_role(self):
+        documents = render_zitadel_bootstrap()
+        config = resource(documents, "ConfigMap", "zitadel-bootstrap-config")
+        desired = json.loads(config["data"]["desired.json"])
+        platform_admins = {
+            "samyak.rout@gmail.com",
+            "mahesh.sangawar@gmail.com",
+        }
+
+        self.assertTrue(platform_admins.issubset(desired["admins"]))
+        for project in desired["platformProjects"]:
+            declared_roles = {role["key"] for role in project.get("roles", [])}
+            grants = {
+                grant["login"]: set(grant["roles"])
+                for grant in project.get("humanGrants", [])
+            }
+            for login in platform_admins:
+                self.assertEqual(
+                    declared_roles,
+                    grants.get(login),
+                    f"{login} must have full access to {project['name']}",
+                )
+
     def test_no_product_project_is_left_in_the_reserved_org(self):
         documents = render_zitadel_bootstrap()
         config = resource(documents, "ConfigMap", "zitadel-bootstrap-config")

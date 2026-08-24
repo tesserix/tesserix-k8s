@@ -329,11 +329,18 @@ an organization, not config — that binding is the reason Zitadel replaced
 Keycloak. Create them per tenant through the API with the `iam-admin` machine
 key, or in the console under *Organization → Identity Providers*.
 
-The Google IdP on the ZITADEL org is deliberately outside `zitadel-bootstrap`:
-its update endpoint replaces the whole config including the client secret, and
-that secret was typed into the console and never stored in Secret Manager, so
-reconciling it from git would blank it. Put the secret in Secret Manager first
-if this ever needs to be declared.
+There are currently **no IdPs on this instance**, at instance or org level. The
+Google IdP both org login policies used to reference was deleted, leaving a
+dangling `386336249998213772` in each — every human signs in with a password.
+That is what unblocked `defaultOrg: TESSERIX`, which had been held on ZITADEL
+because federated humans were linked to the ZITADEL org's copy.
+
+When Google is reconnected, put its client secret in Secret Manager first and
+create it at the **instance** level. A per-org connector is what forced the hold:
+an unscoped login resolves the default org's IdP, so a human linked to another
+org's connector cannot get in. Declaring one in `zitadel-bootstrap` still needs
+care — the update endpoint replaces the whole config including the secret, so
+reconciling from git blanks it unless the secret is supplied.
 
 **Actions.** Custom claims, token enrichment and provisioning hooks are Actions
 v2 objects, created through the API.
