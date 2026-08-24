@@ -447,11 +447,23 @@ class AtlantisPlatformTests(unittest.TestCase):
         }
         self.assertEqual(
             {
-                "client-id": "prod-atlantis-ui-client-id",
-                "client-secret": "prod-atlantis-ui-client-secret",
-                "cookie-secret": "prod-atlantis-ui-cookie-secret",
+                "clientId": "prod-atlantis-ui-client-id",
+                "clientSecret": "prod-atlantis-ui-client-secret",
+                "cookieSecret": "prod-atlantis-ui-cookie-secret",
             },
             keys,
+        )
+        self.assertEqual(
+            {
+                "client-id": "{{ .clientId }}",
+                "client-secret": "{{ .clientSecret }}",
+                "cookie-secret": "{{ .cookieSecret | trunc 32 }}",
+            },
+            external_secret["spec"]["target"]["template"]["data"],
+        )
+        self.assertEqual(
+            "v2",
+            external_secret["spec"]["target"]["template"]["engineVersion"],
         )
         deployment = resource(self.documents, "Deployment", "atlantis-ui-oauth2-proxy")
         rendered = yaml.safe_dump(deployment)
