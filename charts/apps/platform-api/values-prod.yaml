@@ -85,3 +85,26 @@ pdb:
 # is outside the ignored path.
 clusterRead:
   enabled: true
+
+# Federation: mark8ly only (tesserix-home#334). Turning this on is what makes
+# the estate audit log read a second source; until it was set, LoadRegistry
+# returned an empty registry and the client was dormant.
+#
+# The base URL ends in /api/v1/platform because that is where mark8ly mounts
+# this surface. In-cluster the call goes sidecar-to-sidecar and never reaches
+# istio-ingress, so the AuthorizationPolicy that denies un-JWT'd /api/v1/admin/*
+# at the edge is not what is being avoided here — the prefix is simply the
+# route. What DOES gate this path is the mesh policy in
+# charts/apps/mark8ly-marketplace-api-admin, which had to learn the
+# platform-api principal in this same change.
+#
+# The secret is the same GCP Secret Manager value marketplace-api itself reads,
+# mirrored in by the mark8ly-federation ExternalSecret. Both ends of an HMAC
+# must hold identical bytes.
+federation:
+  enabled: true
+  products:
+    mark8ly:
+      baseURL: "http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080/api/v1/platform"
+      secretName: mark8ly-federation
+      secretKey: FEDERATION_MARK8LY_SECRET

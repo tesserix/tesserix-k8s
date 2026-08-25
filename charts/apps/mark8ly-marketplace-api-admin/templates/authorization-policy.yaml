@@ -35,3 +35,15 @@ spec:
               # openpanel's cors-sync CronJob reads /internal/active-domains to
               # keep merchant custom domains in the storefront project's CORS.
               - "cluster.local/ns/openpanel/sa/openpanel"
+              # platform-api's federation client calls /api/v1/platform/admin/*
+              # on behalf of a console operator (tesserix-home#334). This is
+              # the successor to the `company` principal above: the same calls
+              # used to leave apps/web, and are moving to the Go service.
+              #
+              # Without this entry the call is refused HERE, by the sidecar,
+              # with an Istio RBAC 403 — before mark8ly's own HMAC check ever
+              # runs. That failure looks nothing like the 401 the signing
+              # scheme produces, and it leaves no trace in marketplace-api's
+              # logs, so it is worth knowing this line is what admits the
+              # caller at all.
+              - "cluster.local/ns/tesserix/sa/platform-api"

@@ -86,6 +86,32 @@ spec:
                   name: {{ .Values.database.tesserix.secretName | quote }}
                   key: password
             {{- end }}
+            {{- if .Values.federation.enabled }}
+            # Federation (tesserix-home#334). All three variables per product
+            # are emitted from ONE guard on purpose: LoadRegistry fails closed,
+            # so a product named in FEDERATION_PRODUCTS whose BASE_URL or
+            # SECRET is empty aborts startup. Splitting the plain values into
+            # `env:` and the secret into its own block would make a half-
+            # configured deploy expressible, and its symptom is a crashloop
+            # rather than a degraded feature.
+            - name: FEDERATION_PRODUCTS
+              value: {{ keys .Values.federation.products | sortAlpha | join "," | quote }}
+            {{- range $slug, $cfg := .Values.federation.products }}
+            # `upper` and nothing else. The Go side computes this prefix as
+            # "FEDERATION_" + strings.ToUpper(slug) + "_", which does NOT
+            # translate hyphens. Helpfully replacing "-" with "_" here would
+            # emit FEDERATION_FOO_BAR_BASE_URL while the service looks up
+            # FEDERATION_FOO-BAR_BASE_URL, and the pod would crashloop on a
+            # variable that is visibly present in the manifest.
+            - name: FEDERATION_{{ $slug | upper }}_BASE_URL
+              value: {{ $cfg.baseURL | quote }}
+            - name: FEDERATION_{{ $slug | upper }}_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $cfg.secretName | quote }}
+                  key: {{ $cfg.secretKey | quote }}
+            {{- end }}
+            {{- end }}
           {{- if and .Values.livenessProbe .Values.livenessProbe.enabled }}
           # /health does not touch the database, on purpose. Restarting a pod
           # because Postgres is unreachable cannot bring Postgres back.
