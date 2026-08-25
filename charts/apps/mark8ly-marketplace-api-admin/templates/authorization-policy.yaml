@@ -40,10 +40,20 @@ spec:
               # the successor to the `company` principal above: the same calls
               # used to leave apps/web, and are moving to the Go service.
               #
-              # Without this entry the call is refused HERE, by the sidecar,
-              # with an Istio RBAC 403 — before mark8ly's own HMAC check ever
-              # runs. That failure looks nothing like the 401 the signing
-              # scheme produces, and it leaves no trace in marketplace-api's
-              # logs, so it is worth knowing this line is what admits the
-              # caller at all.
+              # CORRECTION (#625 claimed otherwise): this entry is NOT what
+              # admits the caller today, and adding it unblocked nothing.
+              # Neither `tesserix` nor `mark8ly` is in the mesh — both carry
+              # istio-injection: disabled, neither is labelled for ambient, and
+              # the pods on both sides run a single container with no sidecar.
+              # Istio enforces an AuthorizationPolicy in the proxy, so with no
+              # proxy this whole file is inert for these workloads. Federation
+              # was verified working against production BEFORE anyone checked
+              # whether the policy applied.
+              #
+              # It stays because the list should be right on the day either
+              # namespace is onboarded — at which point every principal absent
+              # from it starts failing with an Istio RBAC 403 that leaves no
+              # trace in marketplace-api's logs. Better to add it now, while
+              # someone is thinking about it, than to discover it during a mesh
+              # migration.
               - "cluster.local/ns/tesserix/sa/platform-api"
