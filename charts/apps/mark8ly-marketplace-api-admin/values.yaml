@@ -235,10 +235,23 @@ adminConformanceCron:
   schedule: "20 6 * * *"
   # Node only — the suite is fetched from npm at run time.
   image: "node:22-alpine"
-  # A caret range, not a pin: the suite gains contract amendments over time and
-  # a pin here would quietly stop enforcing anything added after it. Breaking
-  # changes come with a major bump, which this range will not take.
-  version: "^0.4.0"
+  # `>=0.5.0 <1.0.0`, NOT `^0.5.0`.
+  #
+  # This was `^0.4.0`, and that was wrong in the exact way the comment claimed
+  # to avoid. For a 0.x package npm's caret allows PATCHES ONLY — `^0.4.0`
+  # matches 0.4.9 and excludes 0.5.0 — while every contract amendment this
+  # suite has shipped was a minor bump (0.2 -> 0.3 -> 0.4 -> 0.5). So the range
+  # did precisely what a pin does: quietly stop enforcing anything added after
+  # it, which on a conformance job means going green while checking an older
+  # contract.
+  #
+  # The explicit range takes minors and stops at 1.0.0, where a breaking change
+  # would land and deserves a deliberate read rather than an overnight surprise.
+  #
+  # 0.5.0 is not optional here: it added the check that fails an endpoint a
+  # product SERVES but does not declare — the one that closes the drift between
+  # this chart's declaration and the product's own admin-conformance.json.
+  version: ">=0.5.0 <1.0.0"
   # MUST stay in step with mark8ly's own admin-conformance.json — see the
   # ConfigMap template for why nothing enforces that and what the risk is.
   declaration:
