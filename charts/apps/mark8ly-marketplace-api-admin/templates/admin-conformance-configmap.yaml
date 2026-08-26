@@ -1,0 +1,36 @@
+{{- if .Values.adminConformanceCron.enabled }}
+# The declaration the conformance suite runs with: which contract endpoints
+# mark8ly claims to implement. The suite SKIPS what is not declared and FAILS
+# anything that is, so this file is what opts each endpoint into enforcement.
+#
+# Rendered from structured YAML in values rather than pasted as a JSON string,
+# so a malformed declaration is a template error at render time rather than an
+# exit-2 at 06:20 in the morning.
+#
+# ## Known duplication, stated rather than hidden
+#
+# mark8ly commits its own `admin-conformance.json` at its repo root, because
+# the contract requires a product to declare itself there and the suite's
+# filename is deliberately not configurable. That copy and this one describe
+# the same thing and nothing enforces that they agree.
+#
+# The drift is one-directional and quiet in the direction that matters: an
+# endpoint added to mark8ly's file but not here is simply not checked, and an
+# unchecked endpoint reports as a skip, which reads as a pass. That is the
+# exact failure mode the declaration allowlist exists to prevent, reintroduced
+# one level up. It is accepted here only because the alternative — teaching a
+# distroless Go image to hand its declaration to a Node sidecar — is more
+# machinery than the risk warrants today. See mark8ly#290 for the follow-up.
+#
+# **If you change mark8ly/admin-conformance.json, change this too.**
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-admin-conformance
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}-admin-conformance
+    app.kubernetes.io/part-of: mark8ly
+data:
+  admin-conformance.json: {{ .Values.adminConformanceCron.declaration | toPrettyJson | quote }}
+{{- end }}

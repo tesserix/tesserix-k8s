@@ -225,6 +225,37 @@ refundSweepCron:
   enabled: true
   schedule: "*/5 * * * *"
 
+# Product Admin Integration Contract conformance (mark8ly#290). Runs the
+# published suite against this service's own platform admin surface and fails
+# the Job on any declared endpoint that deviates.
+adminConformanceCron:
+  enabled: true
+  # 06:20 UTC daily, offset off the hour so it does not queue behind
+  # everything else in the estate that runs at :00.
+  schedule: "20 6 * * *"
+  # Node only — the suite is fetched from npm at run time.
+  image: "node:22-alpine"
+  # A caret range, not a pin: the suite gains contract amendments over time and
+  # a pin here would quietly stop enforcing anything added after it. Breaking
+  # changes come with a major bump, which this range will not take.
+  version: "^0.4.0"
+  # MUST stay in step with mark8ly's own admin-conformance.json — see the
+  # ConfigMap template for why nothing enforces that and what the risk is.
+  declaration:
+    slug: mark8ly
+    contractVersion: 2
+    endpoints:
+      audit-logs: true
+      health: true
+      kpis: true
+      entities:
+        types:
+          - tenants
+      "billing/subscriptions": true
+      "billing/trials": true
+      "tenant-lifecycle": true
+      "lifecycle/reason-codes": true
+
 # Audit-ingest secret consumed by the marketplace-api admin engine.
 # Override in values-uat.yaml to point at mark8ly-uat-audit-ingest.
 auditIngest:

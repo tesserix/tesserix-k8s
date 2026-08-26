@@ -1,0 +1,142 @@
+{{- if .Values.adminConformanceCron.enabled }}
+# Product Admin Integration Contract conformance (mark8ly#290).
+#
+# Runs @tesserix/admin-conformance against this service's OWN platform admin
+# surface and fails the Job on any declared endpoint that deviates. The suite
+# is a black-box HTTP check: it tests whatever is actually serving, which is
+# why it belongs on a schedule against the running deployment rather than in a
+# pull-request pipeline where the code under review is not deployed.
+#
+# # Why this is a CronJob and not a GitHub Actions job
+#
+# It WAS a GitHub Actions job. The surface is published through Cloudflare, and
+# Cloudflare serves a bot-challenge HTML page to GitHub-hosted runner IPs — so
+# every endpoint came back `<!DOCTYPE html>` instead of JSON and the suite
+# reported seven "returns JSON" failures for a service that was perfectly
+# healthy. Running in-cluster reaches the ClusterIP service directly, with no
+# edge in the path.
+#
+# It also removes a second problem: the Actions job needed the platform admin
+# HMAC secret copied into a GitHub repository secret, a copy nothing would
+# rotate. Here the existing Kubernetes secret is mounted directly, so there is
+# one secret and no copy to go stale.
+#
+# istio injection is DISABLED for the same reason refund-sweep disables it: a
+# Job with a sidecar never terminates, because the sidecar keeps the pod
+# Running forever.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.name }}-admin-conformance
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}-admin-conformance
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: cron
+spec:
+  schedule: {{ .Values.adminConformanceCron.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  # Deliberately higher than the successful limit: a failing run is the one
+  # somebody needs the logs of, and a deviation may not be looked at for days.
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 120
+  jobTemplate:
+    spec:
+      # One retry, not zero: the run reaches out to registry.npmjs.org to fetch
+      # the suite, and a registry blip is not a contract deviation. A genuine
+      # deviation simply fails twice.
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: {{ .Values.name }}-admin-conformance
+            app.kubernetes.io/part-of: mark8ly
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          # Never, not OnFailure: each attempt gets its own pod, so the logs of
+          # a first failure survive the retry. OnFailure restarts in place and
+          # the earlier output is gone.
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - name: declaration
+              configMap:
+                name: {{ .Values.name }}-admin-conformance
+            # npx writes a cache and a temp tree, so the root filesystem stays
+            # read-only and everything writable is confined here.
+            - name: tmp
+              emptyDir: {}
+          containers:
+            - name: conformance
+              image: {{ .Values.adminConformanceCron.image | quote }}
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -u
+                  npx -y "@tesserix/admin-conformance@$SUITE_VERSION" \
+                    --base "$BASE_URL" \
+                    --slug mark8ly \
+                    --declaration /conf/admin-conformance.json
+                  status=$?
+                  # 0 conforms, 1 a declared endpoint deviates, 2 the suite
+                  # could not run at all. Distinguished because they have
+                  # different owners: 1 is this service's bug, 2 is a broken
+                  # harness or an unreachable base URL, and a job that reports
+                  # them identically eventually sends someone to debug the
+                  # wrong one.
+                  case "$status" in
+                    0) echo "Every declared endpoint conforms." ;;
+                    1) echo "FAILED: a declared endpoint deviates from the contract." ;;
+                    2) echo "FAILED: the suite could not run — unreadable declaration or unreachable base URL. This is a harness failure, not a contract deviation." ;;
+                    *) echo "FAILED: unexpected exit $status from the conformance suite." ;;
+                  esac
+                  exit "$status"
+              env:
+                - name: BASE_URL
+                  value: "http://{{ .Values.name }}.{{ .Values.namespace }}.svc.cluster.local:{{ .Values.service.port }}/api/v1/platform"
+                - name: SUITE_VERSION
+                  value: {{ .Values.adminConformanceCron.version | quote }}
+                # The same secret the server verifies signatures with, read
+                # from the same values block the Deployment uses — so renaming
+                # it breaks both together rather than leaving this job signing
+                # with something the server no longer accepts.
+                {{- with .Values.platformAdminSecret }}
+                - name: ADMIN_CONFORMANCE_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .secretName }}
+                      key: {{ .secretKey }}
+                {{- end }}
+                # npm needs a writable HOME and cache; both land in the
+                # emptyDir so readOnlyRootFilesystem can stay on.
+                - name: HOME
+                  value: /tmp
+                - name: npm_config_cache
+                  value: /tmp/.npm
+              volumeMounts:
+                - name: declaration
+                  mountPath: /conf
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+{{- end }}
