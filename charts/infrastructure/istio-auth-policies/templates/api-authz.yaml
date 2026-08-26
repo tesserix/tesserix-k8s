@@ -219,6 +219,21 @@ spec:
               - "kora-api.tesserix.app"
             paths:
               - "/webhooks/cashfree"
+              # Stripe's webhook, for the same reason and with the same
+              # scoping (kora#478). Allowlisted BEFORE Stripe is configured on
+              # purpose: kora-api mounts exactly one provider's webhook, so
+              # while Stripe is unconfigured this path simply 404s from the
+              # app. The alternative — adding it at cutover — means the first
+              # real payment settles into a 403 at the gateway, which is the
+              # failure the comment above already describes.
+              #
+              # Verified 2026-08-26: POST /webhooks/stripe returned 403
+              # "RBAC: access denied" from the mesh, never reaching kora-api.
+              #
+              # Authentication is Stripe's signature in Stripe-Signature,
+              # verified in the handler over the RAW body, with a five-minute
+              # freshness bound so a captured delivery cannot be replayed.
+              - "/webhooks/stripe"
             methods:
               - "POST"
 

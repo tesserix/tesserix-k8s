@@ -219,6 +219,28 @@ env:
   # have paid. Nothing on this URL is trusted — the app re-asks the gateway.
   CASHFREE_RETURN_URL: "mobile://billing/return"
 
+# Stripe (kora#478). Everything below renders ONLY when stripe.enabled is true,
+# so with it false this chart produces byte-identical output to before.
+#
+# That gate is not ceremony. ESO fails the WHOLE ExternalSecret if any remoteRef
+# names a key missing from Secret Manager — see the note above remoteRefs — so
+# adding stripe_secret_key before it exists in tesseracthub-480811 would stop
+# database_url re-syncing and take kora-api down. The secrets must exist FIRST,
+# then this flips.
+#
+# kora-api picks Stripe over Cashfree whenever both are configured, and mounts
+# exactly one provider's webhook. Rolling back is clearing these, not reverting
+# code — which is the entire safety margin of the migration (kora#479).
+stripe:
+  enabled: false
+  env:
+    # The URL Stripe returns the user to. NOT necessarily Cashfree's deep link:
+    # Stripe validates success_url and may reject a custom scheme like
+    # mobile://, in which case this needs to be an https page that then deep
+    # links. UNVERIFIED as of 2026-08-26 — confirm in test mode before relying
+    # on it, because it fails at session creation, not at return time.
+    STRIPE_RETURN_URL: "mobile://billing/return"
+
 # Each entry maps an env var name to a key in the k8s Secret created by
 # the ExternalSecret. Keep this in sync with externalsecret.yaml.
 secretEnv:
@@ -269,6 +291,14 @@ secretEnv:
   # the intended safe state for an environment with no gateway.
   CASHFREE_APP_ID: cashfree_app_id
   CASHFREE_SECRET_KEY: cashfree_secret_key
+  # Stripe, rendered only when stripe.enabled. Unlike Cashfree — where the
+  # merchant secret key is BOTH the API credential and the webhook signing key
+  # — Stripe's endpoint signing secret is a separate credential that cannot be
+  # derived from the API key. kora-api requires both before it mounts anything,
+  # so a deployment cannot end up able to take money but unable to verify the
+  # callback confirming it.
+  STRIPE_SECRET_KEY: stripe_secret_key
+  STRIPE_WEBHOOK_SECRET: stripe_webhook_secret
 
 # GCP / Workload Identity — annotates the SA with the matching GSA email.
 #
@@ -343,6 +373,11 @@ externalSecret:
     # verification key; kora-api reads it once for both.
     cashfree_app_id: prod-homechef-cashfree-test-app-id
     cashfree_secret_key: prod-homechef-cashfree-test-secret-key
+    # Stripe, rendered only when stripe.enabled. BOTH Secret Manager entries
+    # must exist in tesseracthub-480811 before that flips, per the ESO
+    # all-or-nothing rule above.
+    stripe_secret_key: prod-kora-stripe-secret-key
+    stripe_webhook_secret: prod-kora-stripe-webhook-secret
 
 # Schema migration. Runs as the Deployment's `migrate` initContainer (same
 # image, command override), so the API container cannot start — and the pod

@@ -226,14 +226,23 @@ spec:
               value: {{ $value | quote }}
             {{- end }}
             {{- end }}
+            {{- /* Stripe plain env, only when the provider is enabled. */}}
+            {{- if and .Values.stripe .Values.stripe.enabled }}
+            {{- range $key, $value := .Values.stripe.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- end }}
             # Secret env from values.yaml :: secretEnv — each maps an env var
             # name to a key in the <fullname>-secrets Secret created by the
             # ExternalSecret. `optional: true` lets pods boot before a value is
             # populated.
             {{- $secretName := printf "%s-secrets" (include "kora-api.fullname" .) -}}
             {{- $directProviderSecrets := dict "GEMINI_API_KEY" true "OPENAI_API_KEY" true }}
+            {{- $stripeEnv := dict "STRIPE_SECRET_KEY" true "STRIPE_WEBHOOK_SECRET" true }}
+            {{- $stripeEnabled := and .Values.stripe .Values.stripe.enabled }}
             {{- range $envName, $secretKey := .Values.secretEnv }}
-            {{- if or $directProvidersEnabled (not (hasKey $directProviderSecrets $envName)) }}
+            {{- if and (or $directProvidersEnabled (not (hasKey $directProviderSecrets $envName))) (or $stripeEnabled (not (hasKey $stripeEnv $envName))) }}
             - name: {{ $envName }}
               valueFrom:
                 secretKeyRef:
