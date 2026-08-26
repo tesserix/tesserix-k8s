@@ -41,6 +41,36 @@ securityContext:
   runAsNonRoot: true
   runAsUser: 1000
 
+# Product Admin Integration Contract conformance (kora#430). Runs the published
+# suite against Kora's own /v1/admin surface and fails the Job on any declared
+# endpoint that deviates. Mirrors the mark8ly-marketplace-api-admin chart.
+adminConformanceCron:
+  enabled: true
+  # 06:40 UTC daily. Offset from mark8ly's 06:20 so the two products' runs do
+  # not hit registry.npmjs.org in the same minute, and so a shared failure is
+  # distinguishable from a coincidence.
+  schedule: "40 6 * * *"
+  # Node only — the suite is fetched from npm at run time.
+  image: "node:22-alpine"
+  # A caret range, not a pin: the suite gains contract amendments over time and
+  # a pin here would quietly stop enforcing anything added after it.
+  version: "^0.4.0"
+  # MUST stay in step with kora's own admin-conformance.json — see the
+  # ConfigMap template for why nothing enforces that and what the risk is.
+  declaration:
+    slug: kora
+    contractVersion: 2
+    endpoints:
+      audit-logs: true
+      inbox:
+        slaDeclared: false
+      entities:
+        types:
+          - users
+          - foods
+      health: true
+      kpis: true
+
 service:
   type: ClusterIP
   port: 8080
