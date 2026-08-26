@@ -110,6 +110,16 @@ spec:
                 secretKeyRef:
                   name: {{ $cfg.secretName | quote }}
                   key: {{ $cfg.secretKey | quote }}
+            {{- if $cfg.entities }}
+            # Optional, unlike BASE_URL and SECRET: a product that federates
+            # audit logs and serves no §3.4 entity type is a normal
+            # configuration, so an absent list must not be an empty string —
+            # LoadRegistry treats "" as "serves none", which is the same
+            # answer, but emitting the variable at all would suggest a
+            # declaration was made.
+            - name: FEDERATION_{{ $slug | upper }}_ENTITIES
+              value: {{ join "," $cfg.entities | quote }}
+            {{- end }}
             {{- end }}
             {{- end }}
           {{- if and .Values.livenessProbe .Values.livenessProbe.enabled }}
