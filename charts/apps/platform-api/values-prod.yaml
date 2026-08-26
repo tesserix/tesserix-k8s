@@ -125,3 +125,36 @@ federation:
       # has no tenants".
       entities:
         - tenants
+
+    # Kora (kora#430, kora#458). Registered 2026-08-26.
+    #
+    # Serves the contract's five reads: audit-logs, inbox, entities/{type},
+    # health, kpis. kpis answers a deliberate 501 not_implemented — Kora is
+    # pre-launch and kora#43 has not settled which numbers are headline, and
+    # §3.1 is explicit that 501 is a legitimate answer while `{}` is not.
+    kora:
+      # MUST end in /v1, and the service is kora-api-DIRECT.
+      #
+      # The client calls {BaseURL}/admin/<endpoint> and signs the DECODED
+      # URL.Path, including whatever prefix BaseURL carries. Kora mounts
+      # everything under /v1, so the signed path is /v1/admin/audit-logs. Point
+      # this at the bare host and every call 401s with a signature mismatch —
+      # the same class of trap as mark8ly's /api/v1/platform prefix above,
+      # reached by a different route.
+      #
+      # There is no Service named `kora-api`; `kora-api-direct` is the one that
+      # exists. Verified 2026-08-26 by curling /health from a pod in this
+      # namespace: 200.
+      baseURL: "http://kora-api-direct.kora.svc.cluster.local:8080/v1"
+      secretName: kora-federation
+      secretKey: FEDERATION_KORA_SECRET
+      # Both types are implemented and tested (kora#433). The warning on
+      # mark8ly above applies in reverse here: declaring a type before its
+      # endpoint exists turns a missing feature into a failed source, and
+      # these two exist.
+      #
+      # `users` is what closes the coverage gap kora#433 was opened for —
+      # "a HomeChef or Kora user cannot be found from global search at all".
+      entities:
+        - users
+        - foods
