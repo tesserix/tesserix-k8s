@@ -120,6 +120,24 @@ spec:
             - name: FEDERATION_{{ $slug | upper }}_ENTITIES
               value: {{ join "," $cfg.entities | quote }}
             {{- end }}
+            {{- if $cfg.endpoints }}
+            # Which CONTRACT ENDPOINTS this product implements beyond the ones
+            # every federating product serves — today only `inbox`.
+            #
+            # Optional for the same reason ENTITIES is, and load-bearing for a
+            # sharper one: §3.2 is required of products that ADOPT it, not of
+            # every product at once. mark8ly does not mount /admin/inbox, so a
+            # fan-out that included it would answer 404 and render to an
+            # operator as "mark8ly could not be read" — on the one surface
+            # where a red entry means something is wrong with the estate.
+            #
+            # Absence means "implements none", so a product stays out of the
+            # estate queue until declared in. An under-declared product is a
+            # visibly missing source; an over-declared one is a permanent red
+            # failure on a surface operators are meant to trust.
+            - name: FEDERATION_{{ $slug | upper }}_ENDPOINTS
+              value: {{ join "," $cfg.endpoints | quote }}
+            {{- end }}
             {{- end }}
             {{- end }}
           {{- if and .Values.livenessProbe .Values.livenessProbe.enabled }}
