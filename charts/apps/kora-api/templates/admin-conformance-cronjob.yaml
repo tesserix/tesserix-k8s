@@ -1,0 +1,140 @@
+{{- if .Values.adminConformanceCron.enabled }}
+# Product Admin Integration Contract conformance (kora#430).
+#
+# Runs @tesserix/admin-conformance against Kora's own /v1/admin surface and
+# fails the Job on any declared endpoint that deviates. Mirrors the mark8ly
+# CronJob (charts/apps/mark8ly-marketplace-api-admin), deliberately, so the
+# estate has one shape for this rather than two.
+#
+# # Why in-cluster rather than GitHub Actions
+#
+# The mark8ly equivalent was tried in Actions first and could not work: these
+# surfaces sit behind Cloudflare, which serves a bot-challenge HTML page to
+# GitHub-hosted runner IPs, so every endpoint came back `<!DOCTYPE html>`
+# instead of JSON. In-cluster reaches the ClusterIP service with no edge in the
+# path — and needs no copy of the HMAC secret outside Kubernetes.
+#
+# # What differs from the mark8ly job, and why it matters here
+#
+#   * **Kora IS in the mesh** (ambient, with a waypoint) — mark8ly is not, so
+#     mark8ly's AuthorizationPolicies are inert while Kora's are ENFORCED.
+#     Traffic from this Job passes the waypoint and is authorised by
+#     `allow-internal-kora`, which permits the `kora` namespace. That is why
+#     this Job must stay in this namespace: moving it elsewhere would be
+#     refused by the mesh, not merely inconvenient.
+#   * **The base URL ends in `/v1`**, not `/api/v1/platform`. Kora mounts its
+#     admin surface at `/v1/admin/*`; the federation registry entry in
+#     platform-api uses the same `/v1` base, so the two agree by construction.
+#
+# istio injection is disabled to match the seed Job's annotation and the
+# namespace's own `istio-injection: disabled` label.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "kora-api.fullname" . }}-admin-conformance
+  labels:
+    {{- include "kora-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: conformance
+spec:
+  schedule: {{ .Values.adminConformanceCron.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  # Deliberately higher than the successful limit: a failing run is the one
+  # somebody needs the logs of, and a deviation may sit unread for days.
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 120
+  jobTemplate:
+    spec:
+      # One retry, not zero: the run fetches the suite from registry.npmjs.org,
+      # and a registry blip is not a contract deviation. A genuine deviation
+      # simply fails twice.
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            {{- include "kora-api.labels" . | nindent 12 }}
+            app.kubernetes.io/component: conformance
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          # Never, not OnFailure: each attempt gets its own pod, so a first
+          # failure's logs survive the retry.
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+            - name: declaration
+              configMap:
+                name: {{ include "kora-api.fullname" . }}-admin-conformance
+            # npx writes a cache and a temp tree, so the root filesystem stays
+            # read-only and everything writable is confined here.
+            - name: tmp
+              emptyDir: {}
+          containers:
+            - name: conformance
+              image: {{ .Values.adminConformanceCron.image | quote }}
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -u
+                  npx -y "@tesserix/admin-conformance@$SUITE_VERSION" \
+                    --base "$BASE_URL" \
+                    --slug kora \
+                    --declaration /conf/admin-conformance.json
+                  status=$?
+                  # 0 conforms, 1 a declared endpoint deviates, 2 the suite
+                  # could not run at all. Distinguished because they have
+                  # different owners: 1 is Kora's bug, 2 is a broken harness or
+                  # an unreachable base URL, and a job reporting them
+                  # identically sends someone to debug the wrong one.
+                  case "$status" in
+                    0) echo "Every declared endpoint conforms." ;;
+                    1) echo "FAILED: a declared endpoint deviates from the contract." ;;
+                    2) echo "FAILED: the suite could not run — unreadable declaration or unreachable base URL. This is a harness failure, not a contract deviation." ;;
+                    *) echo "FAILED: unexpected exit $status from the conformance suite." ;;
+                  esac
+                  exit "$status"
+              env:
+                - name: BASE_URL
+                  value: "http://{{ .Values.service.nameOverride | default (include "kora-api.fullname" .) }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port | default 8080 }}/v1"
+                - name: SUITE_VERSION
+                  value: {{ .Values.adminConformanceCron.version | quote }}
+                # The same secret kora-api verifies signatures with, from the
+                # same ExternalSecret-managed Secret the Deployment reads — so
+                # a rotation reaches both together rather than leaving this Job
+                # signing with something the API no longer accepts.
+                - name: ADMIN_CONFORMANCE_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "kora-api.fullname" . }}-secrets
+                      key: KORA_PLATFORM_ADMIN_SECRET
+                # npm needs a writable HOME and cache; both land in the
+                # emptyDir so readOnlyRootFilesystem can stay on.
+                - name: HOME
+                  value: /tmp
+                - name: npm_config_cache
+                  value: /tmp/.npm
+              volumeMounts:
+                - name: declaration
+                  mountPath: /conf
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+{{- end }}

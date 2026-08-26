@@ -1,0 +1,33 @@
+{{- if .Values.adminConformanceCron.enabled }}
+# The declaration the conformance suite runs with: which contract endpoints
+# Kora claims to implement. The suite SKIPS what is not declared and FAILS
+# anything that is, so this file is what opts each endpoint into enforcement.
+#
+# Rendered from structured YAML in values rather than pasted as a JSON string,
+# so a malformed declaration is a template error at render time rather than an
+# exit-2 in the small hours.
+#
+# ## Known duplication, stated rather than hidden
+#
+# Kora commits its own `admin-conformance.json` at its repo root, because the
+# contract requires a product to declare itself there and the suite's filename
+# is deliberately not configurable. That copy and this one describe the same
+# thing and nothing enforces that they agree.
+#
+# The drift is quiet in the direction that matters: an endpoint added to Kora's
+# file but not here is simply not checked, and an unchecked endpoint reports as
+# a skip, which reads as a pass. That is the failure the declaration allowlist
+# exists to prevent, reintroduced one level up. Same trade as the mark8ly
+# chart; if one of them gets a durable fix, both should.
+#
+# **If you change kora/admin-conformance.json, change this too.**
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kora-api.fullname" . }}-admin-conformance
+  labels:
+    {{- include "kora-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: conformance
+data:
+  admin-conformance.json: {{ .Values.adminConformanceCron.declaration | toPrettyJson | quote }}
+{{- end }}
