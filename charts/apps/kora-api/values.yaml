@@ -187,6 +187,26 @@ secretEnv:
   # the container would never see it and the admin surface would stay
   # permanently unmounted (404, not 401).
   KORA_BFF_HMAC_KEY: KORA_BFF_HMAC_KEY
+  # The platform CONSOLE's shared secret — a DIFFERENT credential from the one
+  # above, and a different signing scheme (kora#430).
+  #
+  # KORA_BFF_HMAC_KEY authenticates the tesserix-home admin PORTAL, whose
+  # canonical string carries userID/email/role/pool and no query, nonce or
+  # capability. This one authenticates platform-api's federation client, which
+  # signs mark8ly's scheme: canonical query, single-use nonce, operator and
+  # capability. The two canonical strings are byte-incompatible, so sharing one
+  # key between them would mean rotating either caller's credential silently
+  # revokes the other's.
+  #
+  # Same trap as the note above: without this line the ExternalSecret still
+  # creates the k8s Secret key, but the Deployment only injects env vars listed
+  # in this map, so /v1/admin/{audit-logs,inbox,entities,health,kpis} would
+  # stay permanently unmounted — 404, not 401.
+  #
+  # NOT base64. api/internal/config/config.go reads this as a raw string,
+  # deliberately unlike KORA_BFF_HMAC_KEY which it base64-decodes. Both ends of
+  # an HMAC must hold identical bytes, and federation.Sign takes a string too.
+  KORA_PLATFORM_ADMIN_SECRET: KORA_PLATFORM_ADMIN_SECRET
   # kora-api REFUSES TO START if APPLE_PRIVATE_KEY is set while either of the
   # other two is empty (api/internal/config/config.go). That is deliberate: a
   # partial config would otherwise mount /v1/me/apple-authorization and have
@@ -255,6 +275,11 @@ externalSecret:
     database_url: prod-kora-database-url
     expo_access_token: prod-kora-expo-access-token
     KORA_BFF_HMAC_KEY: prod-kora-bff-internal-hmac-key
+    # Created 2026-08-26 (kora#430). The SAME GCP value platform-api reads
+    # through the kora-federation ExternalSecret in
+    # external-secrets/prod/tesserix/externalsecret.yaml — both ends of an
+    # HMAC must hold identical bytes.
+    KORA_PLATFORM_ADMIN_SECRET: prod-kora-api-platform-admin
     # Sign in with Apple. Required for account deletion (#106): Apple has
     # mandated since June 2022 that an app offering Sign in with Apple revoke
     # the user's refresh token when their account is deleted, and Firebase
