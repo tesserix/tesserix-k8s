@@ -108,3 +108,20 @@ federation:
       baseURL: "http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080/api/v1/platform"
       secretName: mark8ly-federation
       secretKey: FEDERATION_MARK8LY_SECRET
+      # The §3.4 entity types mark8ly serves. Read by
+      # federation.Registry.SlugsServing, which the tenants module uses instead
+      # of Slugs() — `{type}` is product-defined, so a product federating audit
+      # logs does not necessarily have tenants, and asking one that does not
+      # would answer 404 and surface to an operator as a failed source.
+      #
+      # `tenants` only, for now: mark8ly#277 shipped and is conformance-passing
+      # against production, while its entities/users counterpart (mark8ly#278)
+      # is unblocked but not built. Adding `users` here before that endpoint
+      # exists would turn a missing feature into a failed source.
+      #
+      # Without this line the tenants surface answers 501 not_implemented,
+      # which is the intended fail-closed behaviour rather than an empty list:
+      # an unconfigured deployment must not be able to impersonate "the estate
+      # has no tenants".
+      entities:
+        - tenants
