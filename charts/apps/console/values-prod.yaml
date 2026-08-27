@@ -82,9 +82,25 @@ pdb:
 # are what the Application actually renders (see the ordering note at the top of
 # this file), so this is the only place the flag can be trusted to take effect.
 #
-# READ THE PRECONDITION IN values.yaml BEFORE ENABLING. In short: the GSM
-# secret `prod-tesserix-stripe-restricted-read-key` must already exist in
-# tesseracthub-480811, and the first run this produces is day one of the 7-day
-# window #327's Stripe write-key revocation rests on.
+# READ THE PRECONDITION IN values.yaml BEFORE CHANGING. Both GSM secrets named
+# by `stripeSecretKeyTest` / `stripeSecretKeyLive` must exist in
+# tesseracthub-480811 before they are named here — ESO resolves `data` as a
+# unit, so a dangling reference parks the whole ExternalSecret.
+#
+# SATISFIED AS OF 2026-08-28: both exist, both are restricted keys that were
+# verified UNABLE TO WRITE, and both modes report `clean`. Day one of the 7-day
+# window #327's Stripe write-key revocation rests on is 2026-08-27 (test) and
+# 2026-08-28 (live).
+#
+# The read-only property is checked at the CREDENTIAL, not claimed by the code:
+# a checker that could write to Stripe would be evidence that the catalog and
+# Stripe agree only because the checker can make them agree. The live write key
+# is a SEPARATE credential (`prod-tesserix-stripe-write-key-live`) that this
+# chart deliberately does not mount.
+#
+# `prod-tesserix-stripe-restricted-read-key`, named here until 2026-08-28, no
+# longer exists: it held a live key that was later widened to write, which made
+# a read-only name actively misleading. It was deleted once its value lived in
+# the write secret. Do not resurrect the unsuffixed name.
 parityCheck:
   enabled: true
