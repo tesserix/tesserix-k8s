@@ -449,6 +449,20 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             }
             self.assertEqual(expected, parameters)
 
+    def test_mcp_bridge_uses_verified_direct_gar_image(self):
+        documents = render_chart(
+            "charts/apps/devai-mcp-bridge",
+            "devai-mcp-bridge",
+            "devai",
+        )
+        deployment = resource(documents, "Deployment", "devai-mcp-bridge")
+
+        self.assertEqual(
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/"
+            "devai-mcp-bridge:latest",
+            deployment["spec"]["template"]["spec"]["containers"][0]["image"],
+        )
+
     def test_devai_temporal_workers_are_ha_hardened_and_promoted(self):
         documents = render_chart(
             "charts/apps/devai-api",
