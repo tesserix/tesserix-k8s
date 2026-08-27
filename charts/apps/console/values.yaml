@@ -342,28 +342,59 @@ database:
 #      on the evidence of seven consecutive clean days of those rows. The first
 #      run is day one; there is no dry-run mode, because a run that did not
 #      record would not be a run.
-#   2. It ADDS STRIPE_RESTRICTED_READ_KEY to the ExternalSecret, which means
-#      ESO starts resolving `stripeSecretKey` in GCP Secret Manager.
+#   2. It ADDS the per-mode STRIPE_RESTRICTED_READ_KEY_* entries to the
+#      ExternalSecret, which means ESO starts resolving them in GCP Secret
+#      Manager.
 #
-# PRECONDITION, AND IT IS A LIVE-SYSTEM STATE RATHER THAN A MERGED PR:
-# `prod-tesserix-stripe-restricted-read-key` must already EXIST in project
-# tesseracthub-480811, as a Stripe restricted key with read on Prices and
-# nothing else. ESO resolves the ExternalSecret's `data` as a unit — one
-# missing remoteRef parks the whole thing in SecretSyncedError. The already
-# synced Secret is retained, so the console keeps serving, but it STOPS
-# REFRESHING: a later SESSION_ENCRYPT_KEY rotation would then never reach the
-# console, and that failure looks like an unexplained login loop rather than an
-# error. Create the GSM secret first, confirm it, then flip this.
+# PRECONDITION, AND IT IS A LIVE-SYSTEM STATE RATHER THAN A MERGED PR: every
+# GSM secret named below must already EXIST in project tesseracthub-480811, as
+# a Stripe restricted key with read on Prices and nothing else. ESO resolves
+# the ExternalSecret's `data` as a unit — one missing remoteRef parks the whole
+# thing in SecretSyncedError. The already synced Secret is retained, so the
+# console keeps serving, but it STOPS REFRESHING: a later SESSION_ENCRYPT_KEY
+# rotation would then never reach the console, and that failure looks like an
+# unexplained login loop rather than an error. Create the GSM secret first,
+# confirm it, then name it here.
+#
+# THAT IS WHY EACH MODE IS NAMED SEPARATELY AND EMPTY MEANS "NOT WIRED": test
+# and live are separate Stripe accounts with separately provisioned
+# credentials, and as of 2026-08-27 only test's exists. One combined switch
+# would make wiring test wait on a live key that is nobody's decision here
+# (mark8ly#371) — and pointing at the absent live secret anyway is exactly the
+# SecretSyncedError above.
 #
 # Off by default so the chart renders — and this key's absence stays harmless —
 # anywhere that is not prod. Prod turns it on in values-prod.yaml.
 parityCheck:
   enabled: false
 
-  # GSM secret holding the restricted key. Named here rather than inlined in
-  # the template so a rotation to a differently-named secret is a values change.
-  # Only read when `enabled` is true.
-  stripeSecretKey: prod-tesserix-stripe-restricted-read-key
+  # GSM secrets holding the per-mode restricted keys, one per Stripe mode.
+  # Named here rather than inlined in the template so a rotation to a
+  # differently-named secret is a values change. Only read when `enabled`.
+  #
+  # ONE VARIABLE PER MODE, AND THE SUFFIX IS NOT COSMETIC. #378 split the
+  # check across both Stripe modes, and `stripe-read.ts`'s KEY_ENV names
+  # STRIPE_RESTRICTED_READ_KEY_TEST and STRIPE_RESTRICTED_READ_KEY_LIVE. An
+  # unsuffixed STRIPE_RESTRICTED_READ_KEY is read by NOTHING: the check throws
+  # `... is not set` for both modes and writes two `failed` rows a night,
+  # forever, while looking correctly configured. That is what this chart
+  # shipped between 0293afa6 and this change.
+  #
+  # EMPTY STRING MEANS "NOT WIRED YET" — the entry is omitted from the
+  # ExternalSecret and the CronJob entirely, rather than referencing a GSM
+  # secret that does not exist. See the ESO note above for why a dangling
+  # reference is worse than an absent one.
+  #
+  # A mode with no key still gets a row: `failed`, naming its own variable.
+  # That is deliberate (`stripe-read.ts`: the two modes are independently
+  # optional) — live having no credential for months must cost live's row and
+  # nothing else, because taking test down with it would forfeit every clean
+  # day test has accumulated.
+  stripeSecretKeyTest: prod-tesserix-stripe-restricted-read-key-test
+
+  # MISSING AS OF 2026-08-27, deliberately left unwired. Needed so live records
+  # `not_bootstrapped` — the honest "nothing here yet" — rather than `failed`.
+  stripeSecretKeyLive: ""
 
   # Daily, 02:15 UTC. See the long note in
   # templates/parity-check-cronjob.yaml for why the cadence is exactly one run

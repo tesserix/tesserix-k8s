@@ -208,8 +208,8 @@ spec:
                 {{- end }}
                 # ONE KEY, NOT `envFrom`. The Deployment projects the whole
                 # console-secrets Secret because the server genuinely needs all
-                # of it; this job needs one credential and must not hold the
-                # others. ZITADEL_LOGIN_CLIENT_TOKEN in particular mints sessions
+                # of it; this job needs the Stripe read credentials and must not
+                # hold the others. ZITADEL_LOGIN_CLIENT_TOKEN in particular mints sessions
                 # for ANY user in the instance — handing that to an unattended
                 # 02:15 job would put the estate's most privileged credential in
                 # a pod nobody watches, in service of a check whose entire
@@ -221,11 +221,31 @@ spec:
                 # alerting outcome. Without it the kubelet raises
                 # CreateContainerConfigError, the script never runs, and the day
                 # becomes a silent hole in the window instead.
-                - name: STRIPE_RESTRICTED_READ_KEY
+                #
+                # ONE PER MODE, NAMED TO MATCH `stripe-read.ts`'s KEY_ENV. The
+                # job checks BOTH modes in one invocation (#378), and each mode
+                # resolves its own variable at call time. An unsuffixed
+                # STRIPE_RESTRICTED_READ_KEY is read by nothing: both modes
+                # would throw `... is not set` and the job would write two
+                # `failed` rows a night while looking correctly configured.
+                #
+                # Projected unconditionally rather than gated on the values
+                # names above: `optional: true` already covers the absent case
+                # with a recorded `failed` row, and a template conditional here
+                # would instead produce CreateContainerConfigError-free silence
+                # in a second place, which is one more thing to keep in step
+                # with the ExternalSecret.
+                - name: STRIPE_RESTRICTED_READ_KEY_TEST
                   valueFrom:
                     secretKeyRef:
                       name: {{ include "console.fullname" . }}-secrets
-                      key: STRIPE_RESTRICTED_READ_KEY
+                      key: STRIPE_RESTRICTED_READ_KEY_TEST
+                      optional: true
+                - name: STRIPE_RESTRICTED_READ_KEY_LIVE
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "console.fullname" . }}-secrets
+                      key: STRIPE_RESTRICTED_READ_KEY_LIVE
                       optional: true
                 - name: NODE_ENV
                   value: "production"
