@@ -217,7 +217,12 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             "http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080",
             env["DEVAI_AGENTGATEWAY_URL"],
         )
+        self.assertEqual("vertex_gemini", env["DEVAI_LLM_PROVIDER"])
         self.assertEqual("anthropic", env["DEVAI_LLM_FALLBACK_PROVIDER"])
+        self.assertEqual("vertex_gemini:gemini-2.5-flash", env["DEVAI_LLM_TIER_LIGHT"])
+        self.assertEqual("vertex_gemini:gemini-2.5-flash", env["DEVAI_LLM_TIER_STANDARD"])
+        self.assertEqual("vertex_gemini:gemini-2.5-flash", env["DEVAI_LLM_TIER_HEAVY"])
+        self.assertEqual("vertex_gemini:gemini-2.5-flash", env["DEVAI_LLM_TIER_FRONTIER"])
         self.assertEqual("openbao", env["DEVAI_SECRETS_PROVIDER"])
 
     def test_devai_production_uses_durable_evaluation_object_storage(self):

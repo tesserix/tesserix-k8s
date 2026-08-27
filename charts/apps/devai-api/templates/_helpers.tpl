@@ -328,8 +328,8 @@ identical environment — defined once here so the two never drift.
   value: {{ .Values.llm.gatewayRequired | default false | quote }}
 {{- if .Values.llm.vertexEnabled }}
 # Vertex AI — keyless (Workload Identity ADC) + VPC-private (PSC-pinned
-# aiplatform DNS zone, terraform-new/stacks/12-vertex). Selectable as
-# llm_provider=vertex_gemini globally or per specialization.
+# aiplatform DNS zone, terraform-new/stacks/12-vertex). Provider priority
+# comes from the product's Settings/configured fallback chain.
 - name: DEVAI_VERTEX_PROJECT
   value: {{ .Values.llm.vertexProject | default .Values.gcp.projectId | quote }}
 - name: DEVAI_VERTEX_LOCATION
@@ -364,7 +364,7 @@ identical environment — defined once here so the two never drift.
   value: "true"
 {{- end }}
 {{- if .Values.llm.provider }}
-# The platform-default LLM backend (per-user/per-spec choices override it).
+# The platform-default LLM backend. Model preferences never reorder providers.
 - name: DEVAI_LLM_PROVIDER
   value: {{ .Values.llm.provider | quote }}
 {{- end }}
