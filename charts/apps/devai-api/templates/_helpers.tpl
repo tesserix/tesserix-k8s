@@ -144,10 +144,10 @@ identical environment — defined once here so the two never drift.
 {{- if .Values.memory }}
 - name: DEVAI_MEMORY_PROVIDER
   value: {{ .Values.memory.provider | default "noop" | quote }}
-# Embedding provider for memory semantic search (pgvector). "auto" uses
-# OpenAI when DEVAI_OPENAI_API_KEY is present (wired below from the
-# ExternalSecret); without it pgvector degrades to keyword recall.
-# Dimensions must match the agent_memories.embedding column: vector(1536).
+# Embedding provider for memory semantic search. "auto" follows the product's
+# primary/fallback LLM order and selects the first embedding-capable adapter.
+# Dimensions must match the selected provider and the immutable Qdrant
+# collection (or the pgvector column when that memory provider is selected).
 - name: DEVAI_EMBEDDING_PROVIDER
   value: {{ .Values.memory.embeddingProvider | default "auto" | quote }}
 - name: DEVAI_EMBEDDING_MODEL
