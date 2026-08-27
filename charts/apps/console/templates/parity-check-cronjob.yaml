@@ -1,0 +1,245 @@
+{{- if .Values.parityCheck.enabled }}
+{{/*
+=============================================================================
+PLAN-CATALOG PARITY CHECK — the nightly job (#326 P1a)
+=============================================================================
+Runs `apps/console/scripts/parity-check.mjs` out of the console image: it
+compares the plan catalog in `tesserix_admin` against live Stripe Prices and
+records EXACTLY ONE row in `plan_catalog_parity_runs` per run, with outcome
+`clean`, `differences` or `failed`.
+
+WHAT THE ROWS ARE FOR, because it explains every policy field below.
+#327 revokes mark8ly's Stripe WRITE key on the evidence of a 7-DAY WINDOW OF
+CONSECUTIVE CLEAN RUNS. The window is a query over these rows. So the rows are
+the deliverable — not the exit code, not the logs — and this manifest's job is
+to guarantee the table gets one honest row per day and never two.
+
+WHY A CRONJOB AND NOT A CALL TO THE EXISTING ROUTE.
+`POST /api/internal/parity-check` does the same work behind the console's
+operator-session guard. A CronJob has no operator and cannot mint a session,
+and the alternatives (a shared-secret header, or a Zitadel service account)
+both mean a new credential path into a surface whose read-only posture is
+exactly what #327 leans on. This runs the same `performParityCheck()` directly,
+in-process, over no HTTP surface at all.
+
+ISTIO INJECTION IS DISABLED IN THIS NAMESPACE — verified: `tesserix` is listed
+under sidecarInjection.ambientExcluded in charts/thirdparty/istio-config, and
+carries `istio-injection: disabled` with no `istio.io/dataplane-mode: ambient`.
+That is load-bearing HERE in a way it is not for the Deployment. A sidecar does
+not exit when the app container does, so an injected Job pod runs until
+activeDeadlineSeconds and is then reported as a FAILED job even though the
+check succeeded and its row was written — an alert that contradicts the data.
+IF `tesserix` IS EVER RE-ENROLLED IN INJECTION OR AMBIENT, this CronJob needs
+`sidecar.istio.io/inject: "false"` in the pod annotations below, in that same
+change.
+=============================================================================
+*/}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "console.fullname" . }}-parity-check
+  labels:
+    {{- include "console.labels" . | nindent 4 }}
+    app.kubernetes.io/component: parity-check
+spec:
+  # Daily, 02:15 UTC. Off the hour so it does not land in the same minute as
+  # every other cluster job; late enough that a Stripe catalog edit made during
+  # the working day is settled before the check reads it.
+  schedule: {{ .Values.parityCheck.schedule | quote }}
+  # DAILY, NOT HOURLY, and this is a correctness choice rather than a cost one.
+  # The window is counted in DAYS, so the query that decides #327 is a
+  # `GROUP BY date` over these rows. One run per day makes that query total and
+  # unambiguous. Four runs per day makes "was 2026-09-03 a clean day?" an
+  # argument about whether one drifted run out of four spoils it — an argument
+  # with no right answer, held a week after the fact, about a key revocation.
+  #
+  # Pinned rather than inherited: kube-controller-manager evaluates `schedule`
+  # in ITS timezone when this is unset, and `plan_catalog_parity_runs` timestamps
+  # are UTC. Leaving them to agree by luck puts a run near a local midnight on
+  # the wrong side of a day boundary and silently shortens the window.
+  timeZone: {{ .Values.parityCheck.timeZone | quote }}
+  # TWO RUNS, ONE DAY, TWO ROWS. Overlap is only possible if a run outlives the
+  # next tick, which is what a hung Stripe call looks like — and that is exactly
+  # the run whose duplicate would be most confusing. Forbid skips the new tick
+  # rather than queueing it; the skipped day shows up as a missing row, which
+  # reads correctly as "no evidence for that day" instead of two rows
+  # disagreeing about it.
+  concurrencyPolicy: Forbid
+  # Enough history to answer "did last week hold?" from kubectl without going to
+  # the table, and to see a run that failed before it could write anything.
+  successfulJobsHistoryLimit: {{ .Values.parityCheck.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.parityCheck.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      # NO RETRIES. Not a tolerance for flakiness — the opposite.
+      #
+      # The script exits 0 for BOTH `clean` AND `differences`, because drift is
+      # the check's OUTPUT, not a crash. It exits 1 only for `failed` (Stripe
+      # unreachable, key missing, catalog unreadable) — and by the time it does,
+      # IT HAS ALREADY WRITTEN THE `failed` ROW. A retry therefore does not heal
+      # a bad day; it writes a SECOND row for the same day. The 7-day window is a
+      # query over those rows, so retrying corrupts the evidence in precisely the
+      # circumstance it was meant to rescue.
+      #
+      # (Exit 2 is the third case: `unrecordable` — the DB was unreachable, so NO
+      # row exists at all. That one is a day-shaped hole in the window and the
+      # job's own failure is the only signal covering it. A retry could in
+      # principle help there, but backoffLimit cannot distinguish 1 from 2, and
+      # duplicating evidence is worse than missing it.)
+      backoffLimit: 0
+      # Keep the finished pod for a day so the morning after can read the single
+      # JSON log line straight off it. The row in the table is the durable
+      # record; this is just the convenience copy.
+      ttlSecondsAfterFinished: {{ .Values.parityCheck.ttlSecondsAfterFinished }}
+      # BACKSTOP, NOT MECHANISM. The script closes its pg pool explicitly and
+      # force-exits shortly after its log line, so a healthy run terminates on
+      # its own in seconds. This exists for the case it cannot: a Stripe socket
+      # that neither responds nor resets. Generous enough that a slow-but-working
+      # run is never killed mid-write (which would leave the hole an
+      # `unrecordable` at least records honestly), short enough that a wedged run
+      # is gone long before the next tick and `concurrencyPolicy` never has to
+      # arbitrate.
+      activeDeadlineSeconds: {{ .Values.parityCheck.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            # DELIBERATELY NOT `console.selectorLabels`. Three live resources in
+            # this chart select on those labels, and all three would misbehave if
+            # a Job pod carried them:
+            #   - Service/console would add this pod as an endpoint and route
+            #     real console traffic to a container with no server listening.
+            #   - PodDisruptionBudget/console would count it against
+            #     maxUnavailable: 1 and block node drains while it runs.
+            #   - the podAntiAffinity in values-prod.yaml would push the
+            #     Deployment's own pods around to avoid it.
+            # A distinct name plus a component label keeps the pod identifiable
+            # (`-l app.kubernetes.io/component=parity-check`) and inert.
+            #
+            # THE COST OF THAT CHOICE, WRITTEN DOWN: this chart's own
+            # `allow-console-egress` NetworkPolicy is scoped to the same
+            # selector labels, so it does NOT cover this pod. The job's egress
+            # therefore rides entirely on charts/apps/company's namespace-wide
+            # pair (`podSelector: {}`), which grants DNS, the whole
+            # `tesserix` namespace — that is tesserix-postgres-rw:5432 — and
+            # 0.0.0.0/0:443 minus the private ranges, which is api.stripe.com.
+            # Both of the job's two destinations are covered today. If that
+            # namespace-wide egress is ever narrowed, this job goes dark by
+            # writing a `failed` row every night with a Stripe timeout in it,
+            # and nothing in THIS chart will explain why — so narrow it and
+            # this together, or give the parity pod its own egress rule.
+            app.kubernetes.io/name: {{ include "console.name" . }}-parity-check
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: parity-check
+            app.kubernetes.io/managed-by: {{ .Release.Service }}
+        spec:
+          # NEVER, not OnFailure: restartPolicy is the kubelet's in-pod retry and
+          # would defeat backoffLimit: 0 from underneath, re-running the script in
+          # the same pod and writing the duplicate row the note above exists to
+          # prevent.
+          restartPolicy: Never
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          # Same ServiceAccount as the Deployment. It grants nothing this job
+          # needs — the AuthorizationPolicy on it is for the console → web admin
+          # API call, which this job never makes — but it also grants nothing
+          # dangerous (values-prod blanks the Workload Identity annotation), and
+          # a second SA would be a second thing to keep in step for no gain.
+          serviceAccountName: {{ include "console.serviceAccountName" . }}
+          securityContext:
+            runAsNonRoot: true
+            # The `nextjs` user created in Dockerfile.console.
+            runAsUser: 1001
+            runAsGroup: 1001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: parity-check
+              # SAME IMAGE AND TAG AS THE DEPLOYMENT, which is the whole reason
+              # the check can be trusted: the job and the operator-triggered
+              # route run the identical build of `performParityCheck()`. In prod
+              # the effective tag is the `image.tag` Helm parameter Kargo
+              # rewrites on the ArgoCD Application, so the two move together by
+              # construction and cannot drift into deciding the same catalog two
+              # different ways.
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                # TRUE HERE, though the Deployment runs with it false: Next.js
+                # writes its own cache at runtime, this script does not. Checked
+                # against the bundle rather than assumed — the only fs write it
+                # can reach is the Stripe SDK's telemetry-id file, which is
+                # wrapped in its own try/catch and degrades to a null id. `pg`
+                # and the check itself touch nothing on disk.
+                readOnlyRootFilesystem: true
+              # WORKDIR is /app and the bundle sits at
+              # /app/apps/console/scripts/parity-check.mjs — INSIDE the Next
+              # standalone tree on purpose, because `pg` is external to the
+              # bundle and Node only finds the image's hoisted node_modules by
+              # walking up from there. Overrides the image's CMD (the Next
+              # server); if the path in Dockerfile.console moves, this moves.
+              command: ["node", "apps/console/scripts/parity-check.mjs"]
+              env:
+                # Matches the Deployment's block exactly — same host, same
+                # database, same ESO-synced Secret. It must: the row this job
+                # writes and the row the operator-triggered route writes have to
+                # land in the same table for the window query to see both.
+                {{- if .Values.database.tesserix.enabled }}
+                - name: TESSERIX_DB_HOST
+                  value: {{ .Values.database.tesserix.host | quote }}
+                - name: TESSERIX_DB_PORT
+                  value: {{ .Values.database.tesserix.port | quote }}
+                - name: TESSERIX_DB_NAME
+                  value: {{ .Values.database.tesserix.name | quote }}
+                - name: TESSERIX_DB_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.database.tesserix.secretName | quote }}
+                      key: username
+                - name: TESSERIX_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.database.tesserix.secretName | quote }}
+                      key: password
+                {{- end }}
+                # ONE KEY, NOT `envFrom`. The Deployment projects the whole
+                # console-secrets Secret because the server genuinely needs all
+                # of it; this job needs one credential and must not hold the
+                # others. ZITADEL_LOGIN_CLIENT_TOKEN in particular mints sessions
+                # for ANY user in the instance — handing that to an unattended
+                # 02:15 job would put the estate's most privileged credential in
+                # a pod nobody watches, in service of a check whose entire
+                # argument is that it can only read.
+                #
+                # optional: true DELIBERATELY. If the key is somehow absent the
+                # pod still starts, the script records a `failed` row naming the
+                # missing variable, and exits 1. That is a recorded, greppable,
+                # alerting outcome. Without it the kubelet raises
+                # CreateContainerConfigError, the script never runs, and the day
+                # becomes a silent hole in the window instead.
+                - name: STRIPE_RESTRICTED_READ_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "console.fullname" . }}-secrets
+                      key: STRIPE_RESTRICTED_READ_KEY
+                      optional: true
+                - name: NODE_ENV
+                  value: "production"
+              # Small and fixed. The job holds one pg connection and one page of
+              # Stripe Prices at a time; the limit exists so a runaway cannot
+              # evict console pods off a spot node at 02:15.
+              resources:
+                {{- toYaml .Values.parityCheck.resources | nindent 16 }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}
