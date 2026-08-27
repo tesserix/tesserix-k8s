@@ -214,6 +214,10 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             env["DEVAI_LLM_GATEWAY_BASE_URL"],
         )
         self.assertEqual(
+            "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/openai/v1",
+            env["DEVAI_OPENAI_BASE_URL"],
+        )
+        self.assertEqual(
             "http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080",
             env["DEVAI_AGENTGATEWAY_URL"],
         )
