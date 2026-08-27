@@ -72,3 +72,19 @@ gcp:
 
 pdb:
   enabled: true
+
+# The plan-catalog parity check runs in prod, and ONLY in prod — it is the only
+# environment with a real Stripe account to compare the catalog against.
+#
+# ON PURPOSE IN THIS FILE, NOT AS AN ARGOCD HELM PARAMETER. A parameter added
+# to an Application's `helm.parameters` in git is a silent no-op that still
+# reports Synced, which is how this estate has lost changes before. Values files
+# are what the Application actually renders (see the ordering note at the top of
+# this file), so this is the only place the flag can be trusted to take effect.
+#
+# READ THE PRECONDITION IN values.yaml BEFORE ENABLING. In short: the GSM
+# secret `prod-tesserix-stripe-restricted-read-key` must already exist in
+# tesseracthub-480811, and the first run this produces is day one of the 7-day
+# window #327's Stripe write-key revocation rests on.
+parityCheck:
+  enabled: true

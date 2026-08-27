@@ -330,3 +330,65 @@ database:
     port: 5432
     name: tesserix_admin
     secretName: tesserix-postgres-tesserix-admin
+
+# ---------------------------------------------------------------------------
+# Plan-catalog parity check (#326 P1a) — the nightly CronJob.
+#
+# WHAT TURNING THIS ON STARTS. It is not "enable a job". Flipping `enabled` to
+# true does two irreversible-ish things at once:
+#
+#   1. It STARTS THE 7-DAY CLOCK. Each nightly run writes one row into
+#      `plan_catalog_parity_runs`, and #327 revokes mark8ly's Stripe WRITE key
+#      on the evidence of seven consecutive clean days of those rows. The first
+#      run is day one; there is no dry-run mode, because a run that did not
+#      record would not be a run.
+#   2. It ADDS STRIPE_RESTRICTED_READ_KEY to the ExternalSecret, which means
+#      ESO starts resolving `stripeSecretKey` in GCP Secret Manager.
+#
+# PRECONDITION, AND IT IS A LIVE-SYSTEM STATE RATHER THAN A MERGED PR:
+# `prod-tesserix-stripe-restricted-read-key` must already EXIST in project
+# tesseracthub-480811, as a Stripe restricted key with read on Prices and
+# nothing else. ESO resolves the ExternalSecret's `data` as a unit — one
+# missing remoteRef parks the whole thing in SecretSyncedError. The already
+# synced Secret is retained, so the console keeps serving, but it STOPS
+# REFRESHING: a later SESSION_ENCRYPT_KEY rotation would then never reach the
+# console, and that failure looks like an unexplained login loop rather than an
+# error. Create the GSM secret first, confirm it, then flip this.
+#
+# Off by default so the chart renders — and this key's absence stays harmless —
+# anywhere that is not prod. Prod turns it on in values-prod.yaml.
+parityCheck:
+  enabled: false
+
+  # GSM secret holding the restricted key. Named here rather than inlined in
+  # the template so a rotation to a differently-named secret is a values change.
+  # Only read when `enabled` is true.
+  stripeSecretKey: prod-tesserix-stripe-restricted-read-key
+
+  # Daily, 02:15 UTC. See the long note in
+  # templates/parity-check-cronjob.yaml for why the cadence is exactly one run
+  # per day and why the timezone is pinned rather than inherited from
+  # kube-controller-manager.
+  schedule: "15 2 * * *"
+  timeZone: "Etc/UTC"
+
+  # A day of finished pods, so the morning after can read the job's single JSON
+  # log line without going to the table.
+  ttlSecondsAfterFinished: 86400
+
+  # Backstop for a Stripe socket that never answers — not the exit mechanism,
+  # which the script owns. Ten minutes: far above a real run (seconds), far
+  # below the next tick.
+  activeDeadlineSeconds: 600
+
+  # Enough history to answer "did last week hold?" from kubectl alone.
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 7
+
+  # Memory only, per project convention. One pg connection and one page of
+  # Stripe Prices at a time.
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 256Mi

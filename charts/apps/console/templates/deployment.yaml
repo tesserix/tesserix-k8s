@@ -45,6 +45,23 @@ spec:
           {{- if .Values.externalSecrets.enabled }}
           # SESSION_ENCRYPT_KEY arrives here — see templates/externalsecret.yaml
           # for why it must be the same value the company deployment gets.
+          #
+          # STRIPE_RESTRICTED_READ_KEY ARRIVES HERE TOO, and it is needed on
+          # THIS pod as well as on the CronJob's. `POST /api/internal/parity-check`
+          # (app/api/internal/parity-check/route.ts) is the operator-triggered
+          # "run it now", and it calls the SAME `performParityCheck()` the
+          # nightly job does. Without the key on the Deployment that route does
+          # not error politely — it records a `failed` row in
+          # plan_catalog_parity_runs on every press, polluting the 7-day window
+          # that #327's revocation decision reads.
+          #
+          # It needs no entry of its own below: this envFrom projects EVERY key
+          # in the console-secrets Secret, so the key appears the moment the
+          # ExternalSecret syncs it and is simply absent while
+          # parityCheck.enabled is false. An explicit `env` + secretKeyRef with
+          # optional: true would render the identical result and add a second
+          # place to keep in step with the ExternalSecret, so it is deliberately
+          # not written.
           envFrom:
             - secretRef:
                 name: {{ include "console.fullname" . }}-secrets
