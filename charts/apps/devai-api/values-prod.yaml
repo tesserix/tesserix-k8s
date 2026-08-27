@@ -160,15 +160,17 @@ k8sRuntime:
 # pgvector holds are NOT migrated by this switch — they stay readable only
 # by flipping back to "pgvector".
 # Swap with one env var: noop | redis | pgvector | qdrant | mem0 | zep | hondo.
-# Embeddings ride the existing DEVAI_OPENAI_API_KEY; set
-# embeddingProvider: "none" to force keyword-only recall.
+# Auto follows the product LLM order, so Vertex supplies embeddings through
+# Solo.io Agent Gateway without a user or platform OpenAI key. The legacy
+# 1,536-dimension collection is empty but retained; use a distinct collection
+# name because Qdrant collection dimensions are immutable.
 memory:
   provider: "qdrant"
   embeddingProvider: "auto"
-  embeddingModel: "text-embedding-3-small"
-  embeddingDimensions: 1536
+  embeddingModel: "text-embedding-005"
+  embeddingDimensions: 768
   qdrantUrl: "http://qdrant.ai-database.svc.cluster.local:6333"
-  qdrantCollection: "devai_memories"
+  qdrantCollection: "devai_memories_vertex_768"
 
 objectStore:
   provider: "gcs"

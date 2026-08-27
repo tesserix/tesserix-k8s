@@ -223,6 +223,12 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         )
         self.assertEqual("vertex_gemini", env["DEVAI_LLM_PROVIDER"])
         self.assertEqual("anthropic", env["DEVAI_LLM_FALLBACK_PROVIDER"])
+        self.assertEqual("auto", env["DEVAI_EMBEDDING_PROVIDER"])
+        self.assertEqual("768", env["DEVAI_EMBEDDING_DIMENSIONS"])
+        self.assertEqual(
+            "devai_memories_vertex_768",
+            env["DEVAI_QDRANT_COLLECTION"],
+        )
         self.assertEqual("vertex_gemini:gemini-2.5-flash", env["DEVAI_LLM_TIER_LIGHT"])
         self.assertEqual("vertex_gemini:gemini-2.5-flash", env["DEVAI_LLM_TIER_STANDARD"])
         self.assertEqual("vertex_gemini:gemini-2.5-flash", env["DEVAI_LLM_TIER_HEAVY"])
