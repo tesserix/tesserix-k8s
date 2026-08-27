@@ -46,8 +46,8 @@ spec:
           # SESSION_ENCRYPT_KEY arrives here — see templates/externalsecret.yaml
           # for why it must be the same value the company deployment gets.
           #
-          # STRIPE_RESTRICTED_READ_KEY ARRIVES HERE TOO, and it is needed on
-          # THIS pod as well as on the CronJob's. `POST /api/internal/parity-check`
+          # STRIPE_RESTRICTED_READ_KEY_TEST / _LIVE ARRIVE HERE TOO, and they
+          # are needed on THIS pod as well as on the CronJob's. `POST /api/internal/parity-check`
           # (app/api/internal/parity-check/route.ts) is the operator-triggered
           # "run it now", and it calls the SAME `performParityCheck()` the
           # nightly job does. Without the key on the Deployment that route does
@@ -55,10 +55,10 @@ spec:
           # plan_catalog_parity_runs on every press, polluting the 7-day window
           # that #327's revocation decision reads.
           #
-          # It needs no entry of its own below: this envFrom projects EVERY key
+          # They need no entries of their own below: this envFrom projects EVERY key
           # in the console-secrets Secret, so the key appears the moment the
-          # ExternalSecret syncs it and is simply absent while
-          # parityCheck.enabled is false. An explicit `env` + secretKeyRef with
+          # ExternalSecret syncs them, and they are simply absent while
+          # parityCheck.enabled is false or a mode's secret name is empty. An explicit `env` + secretKeyRef with
           # optional: true would render the identical result and add a second
           # place to keep in step with the ExternalSecret, so it is deliberately
           # not written.
