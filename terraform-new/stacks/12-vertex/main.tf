@@ -110,6 +110,7 @@ resource "google_service_account_iam_member" "kora_agentgateway_wi" {
 
 # Native DevAI LLM data plane. This is distinct from the controller/MCP KSA:
 # the Gateway API controller creates a ServiceAccount named after the Gateway.
+# The KSA annotation selects the GSA but cannot authorize impersonation without this binding.
 resource "google_service_account_iam_member" "devai_agentgateway_wi" {
   service_account_id = google_service_account.agentgateway_llm.name
   role               = "roles/iam.workloadIdentityUser"

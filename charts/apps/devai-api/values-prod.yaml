@@ -295,10 +295,8 @@ llm:
   # the PSC endpoint (terraform-new/stacks/12-vertex). Project defaults to
   # gcp.projectId. asia-south1 is validated end to end; "global" also works.
   vertexEnabled: true
-  # Canonical provider order (user-directed): Vertex Gemini is the
-  # primary (keyless, VPC-private), then groq → openrouter → anthropic
-  # pick up failed calls in that order. Unconfigured links (e.g.
-  # openrouter until a key exists) are skipped automatically.
+  # Canonical product routing: Vertex Gemini is always attempted first;
+  # Anthropic is the secondary provider when Vertex is unavailable.
   provider: "vertex_gemini"
   # Human users must configure their own keys in Settings; shared platform
   # secrets serve only system/webhook automation and the fallback chain.
@@ -310,21 +308,20 @@ llm:
   # tenant connector under this email to keep automation off the shared
   # keys). Empty until provisioned → automation uses the fallback chain.
   systemPrincipal: ""
-  fallbackProvider: "groq,openrouter,anthropic"
+  fallbackProvider: "anthropic"
   vertexLocation: "global"
   vertexGeminiModel: "gemini-2.5-flash"
   vertexBaseUrl: "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/vertex"
-  # Cost tiers — "provider:model". light/standard ride Vertex Gemini;
-  # heavy/frontier stay on Claude/o3 via the same gateway. Only
-  # gemini-2.5-flash is model-enabled in the project today; after enabling
-  # more models in console (Agent Platform → Models) flip:
+  # Cost tiers — "provider:model". Every tier stays on the configured
+  # primary. Only gemini-2.5-flash is model-enabled in the project today;
+  # after enabling more models in console (Agent Platform → Models) flip:
   #   light    → vertex_gemini:gemini-3.1-flash-lite
   #   standard → vertex_gemini:gemini-3.5-flash
   #   heavy    → vertex_gemini:gemini-3.1-pro-preview (or keep Claude)
   tierLight: "vertex_gemini:gemini-2.5-flash"
   tierStandard: "vertex_gemini:gemini-2.5-flash"
-  tierHeavy: "anthropic:claude-sonnet-5"
-  tierFrontier: "openai:o3"
+  tierHeavy: "vertex_gemini:gemini-2.5-flash"
+  tierFrontier: "vertex_gemini:gemini-2.5-flash"
 
 # ─── Durable orchestration (Temporal) ───────────────────────────────────────
 temporal:

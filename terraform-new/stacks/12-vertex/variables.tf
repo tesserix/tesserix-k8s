@@ -40,7 +40,7 @@ variable "common_labels" {
 variable "vpc_name" {
   description = "Name of the VPC the PSC endpoint and DNS zone attach to"
   type        = string
-  default     = "tesseract-prod-vpc"
+  default     = "tesseract-prod-in-vpc"
 }
 
 # ============================================================================

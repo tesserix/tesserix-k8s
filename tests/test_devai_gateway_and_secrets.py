@@ -181,6 +181,21 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             r'devai_agentgateway_ksa\s*=\s*"agentgateway-system/ai-gateway"',
         )
 
+    def test_gateway_bypasses_waypoint_and_metadata_capture(self):
+        documents = render_chart(
+            "charts/apps/devai-ai-gateway", "devai-ai-gateway", "agentgateway-system"
+        )
+        parameters = resource(documents, "AgentgatewayParameters", "ai-gateway")
+        metadata = parameters["spec"]["deployment"]["spec"]["template"]["metadata"]
+
+        self.assertEqual("none", metadata["labels"]["istio.io/use-waypoint"])
+        self.assertEqual(
+            "169.254.169.254/32",
+            metadata["annotations"][
+                "traffic.sidecar.istio.io/excludeOutboundIPRanges"
+            ],
+        )
+
     def test_devai_production_requires_gateway_for_llm_and_mcp(self):
         documents = render_chart(
             "charts/apps/devai-api",
@@ -202,6 +217,12 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             "http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080",
             env["DEVAI_AGENTGATEWAY_URL"],
         )
+        self.assertEqual("vertex_gemini", env["DEVAI_LLM_PROVIDER"])
+        self.assertEqual("anthropic", env["DEVAI_LLM_FALLBACK_PROVIDER"])
+        self.assertEqual("vertex_gemini:gemini-2.5-flash", env["DEVAI_LLM_TIER_LIGHT"])
+        self.assertEqual("vertex_gemini:gemini-2.5-flash", env["DEVAI_LLM_TIER_STANDARD"])
+        self.assertEqual("vertex_gemini:gemini-2.5-flash", env["DEVAI_LLM_TIER_HEAVY"])
+        self.assertEqual("vertex_gemini:gemini-2.5-flash", env["DEVAI_LLM_TIER_FRONTIER"])
         self.assertEqual("openbao", env["DEVAI_SECRETS_PROVIDER"])
 
     def test_devai_production_uses_durable_evaluation_object_storage(self):
