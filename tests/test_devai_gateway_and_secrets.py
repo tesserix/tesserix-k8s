@@ -503,6 +503,36 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         self.assertIn("--deployment-name", command)
         self.assertIn("--build-id", command)
 
+    def test_devai_agent_lifecycle_alerts_cover_the_byoa_operational_signals(self):
+        documents = render_chart(
+            "charts/apps/devai-api",
+            "devai-api",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        rules = resource(documents, "PrometheusRule", "devai-api-agent-lifecycle")
+        alerts = {
+            rule["alert"]: rule
+            for group in rules["spec"]["groups"]
+            for rule in group["rules"]
+        }
+        self.assertEqual(
+            {
+                "DevAIAgentLifecycleQueueOld",
+                "DevAISandboxCapacityPressure",
+                "DevAIAgentLifecycleStuck",
+                "DevAISandboxCleanupBacklog",
+                "DevAIAuthenticationFailures",
+                "DevAIAgentImportFailures",
+                "DevAIAgentEvaluationFailures",
+                "DevAISandboxQuotaPressure",
+            },
+            set(alerts),
+        )
+        for rule in alerts.values():
+            self.assertEqual("devai-platform", rule["labels"]["owner"])
+            self.assertTrue(rule["annotations"]["runbook_url"].endswith("devai-agent-lifecycle.md"))
+
     def test_devai_temporal_egress_allows_frontend_and_hbone(self):
         documents = render_chart(
             "charts/apps/devai-api",

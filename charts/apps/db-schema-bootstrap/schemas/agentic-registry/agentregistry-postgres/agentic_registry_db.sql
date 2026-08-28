@@ -77,6 +77,31 @@ CREATE TABLE IF NOT EXISTS registry.artifact_revisions (
 CREATE INDEX IF NOT EXISTS idx_revisions_artifact
     ON registry.artifact_revisions (kind, namespace, name, created_at DESC);
 
+-- Atomic bundle publication records the original result for safe retries and
+-- commits an integration event in the same transaction as artifact changes.
+CREATE TABLE IF NOT EXISTS registry.publish_idempotency (
+    actor_scope  text        NOT NULL,
+    key          text        NOT NULL,
+    request_hash char(64)    NOT NULL,
+    result       jsonb       NOT NULL,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    expires_at   timestamptz NOT NULL,
+    PRIMARY KEY (actor_scope, key)
+);
+CREATE INDEX IF NOT EXISTS idx_publish_idempotency_expiry
+    ON registry.publish_idempotency (expires_at);
+
+CREATE TABLE IF NOT EXISTS registry.publish_outbox (
+    id           uuid        PRIMARY KEY,
+    actor_scope  text        NOT NULL,
+    event_type   text        NOT NULL,
+    payload      jsonb       NOT NULL,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    published_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS idx_publish_outbox_unpublished
+    ON registry.publish_outbox (created_at, id) WHERE published_at IS NULL;
+
 -- Seed an initial revision for any pre-existing artifact (idempotent backfill).
 INSERT INTO registry.artifact_revisions
     (kind, namespace, name, tag, revision, uid, api_version, visibility, tenant_id, org_id, team_id,

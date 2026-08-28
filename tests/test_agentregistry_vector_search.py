@@ -67,6 +67,34 @@ class AgentRegistryVectorSearchTests(unittest.TestCase):
         )
         self.assertIn("USING hnsw (embedding vector_cosine_ops)", schema)
 
+    def test_prod_bootstrap_owns_atomic_publication_support_tables(self):
+        schema = (
+            ROOT
+            / "charts/apps/db-schema-bootstrap/schemas/agentic-registry/agentregistry-postgres/agentic_registry_db.sql"
+        ).read_text()
+
+        self.assertIn(
+            "CREATE TABLE IF NOT EXISTS registry.publish_idempotency",
+            schema,
+        )
+        self.assertIn(
+            "PRIMARY KEY (actor_scope, key)",
+            schema,
+        )
+        self.assertIn(
+            "CREATE INDEX IF NOT EXISTS idx_publish_idempotency_expiry",
+            schema,
+        )
+        self.assertIn(
+            "CREATE TABLE IF NOT EXISTS registry.publish_outbox",
+            schema,
+        )
+        self.assertIn(
+            "CREATE INDEX IF NOT EXISTS idx_publish_outbox_unpublished",
+            schema,
+        )
+        self.assertIn("WHERE published_at IS NULL", schema)
+
     def test_prod_enables_vector_search_and_restarts_on_config_changes(self):
         documents = render_registry()
         config = resource(documents, "ConfigMap", "agentregistry-config")

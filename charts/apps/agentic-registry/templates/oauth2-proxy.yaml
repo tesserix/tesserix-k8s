@@ -55,7 +55,7 @@ spec:
             - --provider=oidc
             - --http-address=0.0.0.0:4180
             - --oidc-issuer-url={{ $oauth.issuerUrl }}
-            - --scope=openid profile email urn:zitadel:iam:org:project:id:{{ $oauth.projectId }}:aud urn:zitadel:iam:org:projects:roles
+            - --scope=openid profile email urn:zitadel:iam:org:project:id:{{ $oauth.projectId }}:aud urn:zitadel:iam:org:projects:roles urn:zitadel:iam:user:metadata
             - --code-challenge-method=S256
             - --upstream={{ $oauth.upstream }}
             - --redirect-url={{ $oauth.redirectUrl }}
@@ -72,7 +72,9 @@ spec:
             - --set-xauthrequest=true
             - --skip-provider-button=true
             - --email-domain=*
+            {{- if $oauth.allowedEmails }}
             - --authenticated-emails-file=/etc/oauth2-proxy/authenticated-emails.txt
+            {{- end }}
             - --pass-access-token=true
             - --pass-authorization-header=true
             - --set-authorization-header=false
@@ -114,15 +116,19 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if $oauth.allowedEmails }}
             - name: authenticated-emails
               mountPath: /etc/oauth2-proxy
               readOnly: true
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if $oauth.allowedEmails }}
         - name: authenticated-emails
           configMap:
             name: {{ $oauth.name }}-emails
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
