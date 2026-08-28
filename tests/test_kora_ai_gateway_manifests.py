@@ -924,9 +924,11 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             ]
         }
 
-        self.assertEqual(
-            "16777216",
-            env["TOKEN_OPTIMIZER_MAX_REQUEST_BYTES"],
+        # The optimizer's own Settings validator rejects anything above 2 MiB and
+        # exits 1 at startup, so assert the ceiling rather than mirror the value.
+        self.assertLessEqual(
+            int(env["TOKEN_OPTIMIZER_MAX_REQUEST_BYTES"]),
+            2097152,
         )
 
     def test_registry_publish_path_is_credential_gated(self):
