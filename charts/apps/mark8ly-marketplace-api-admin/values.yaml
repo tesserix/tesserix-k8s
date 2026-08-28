@@ -268,6 +268,21 @@ adminConformanceCron:
     endpoints:
       audit-logs: true
       health: true
+      # §3.2, mark8ly#415. Declared with slaDeclared FALSE despite
+      # sea_manual_review carrying a real 5-business-day SLA: the suite's
+      # slaDeclared is a per-QUEUE promise (checks.ts requires due_at on
+      # EVERY item), and only one of mark8ly's five inbox kinds sets it —
+      # erasure deliberately does not, because its table has no due column
+      # and a read endpoint inventing a statutory deadline would be policy
+      # in the wrong place. `true` would fail; `false` understates. The
+      # per-kind gap is filed as design-system#36.
+      #
+      # ORDERING: this line is only safe once mark8ly is DEPLOYED serving
+      # the contract's { items, total } envelope on /admin/inbox. It served
+      # the house { data, pagination } shape until mark8ly#415; declaring
+      # ahead of that deploy fails the run on the envelope instead.
+      inbox:
+        slaDeclared: false
       kpis: true
       entities:
         types:
