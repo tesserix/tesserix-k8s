@@ -20,6 +20,12 @@ spec:
       values: |
         app: agentic-registry
 
+        # Run the additive pgvector migration on the next scheduler tick. This
+        # returns to the normal 30-minute cadence after the production schema
+        # is verified.
+        schedule: "* * * * *"
+        applySchemaToExistingDatabases: true
+
         # Provisions the `registry` schema inside agentic_registry_db on the
         # registry's OWN in-namespace CNPG cluster (agentregistry-postgres). The
         # database is created by CNPG bootstrap, so the file is named
@@ -30,9 +36,12 @@ spec:
           - name: agentregistry-postgres
             host: agentregistry-postgres-rw.agentregistry-system.svc.cluster.local
             port: 5432
-            user: agentregistry
+            # CREATE EXTENSION vector requires the CNPG superuser. The secret is
+            # operator-managed because enableSuperuserAccess is on for this
+            # cluster; no credential is committed here.
+            user: postgres
             database: agentic_registry_db
-            secretName: agentregistry-postgres-app-credentials
+            secretName: agentregistry-postgres-superuser
             secretKey: password
   destination:
     server: https://kubernetes.default.svc
