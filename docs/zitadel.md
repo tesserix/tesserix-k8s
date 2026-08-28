@@ -175,7 +175,7 @@ Secrets read from GCP Secret Manager:
 |---|---|---|
 | `prod-zitadel-masterkey` | `zitadel-masterkey` | every Zitadel container |
 | `prod-zitadel-db-password` | `zitadel-db-credentials` | the `zitadel` DB role |
-| `prod-zitadel-admin-password` | `zitadel-admin-password` | first-instance human admin — **no user currently matches it**, see #678 |
+| `prod-zitadel-admin-password` | `zitadel-admin-password` | first-instance human admin — that account was deleted 2026-08-19; **no user matches this value now** |
 | `prod-zitadel-login-service-crt` / `-key` | `zitadel-login-service-key` | login v2 → API |
 
 Secrets Zitadel writes back on first setup, in the `zitadel` namespace:
@@ -236,15 +236,39 @@ applications — Management-API, Admin-API, Auth-API and Management Console — 
 `iam-admin` (`386261254652101258`) is owned by this org. Both halves of the claim
 above hold.
 
-> **There is no `zitadel-admin` break-glass user.** This list used to name one as
-> "the only way back in when an IdP misroutes a federated login". No such user
-> exists: the ZITADEL org holds only machine users (`iam-admin`,
-> `agentgateway-adk-prod`), and every human on the instance is in TESSERIX. The
-> de-facto equivalent is `admin.user` (`386915955290145068`, IAM_OWNER, password
-> set, no IdP link) — but it lives in TESSERIX, so it is inside the blast radius
-> of exactly the failure a break-glass account exists for. With no SMTP there is
-> also no password reset. Tracked in #678; do not rely on a recovery path this
-> document promises until that is closed.
+**The break-glass admin is `instance-admin`, and it lives in TESSERIX — not here.**
+This list used to name `zitadel-admin` in the ZITADEL org. That account was
+Zitadel's generated first-instance admin
+(`zitadel-admin@zitadel.auth.tesserix.app`, created 2026-08-14 alongside
+`iam-admin`) and it was **deliberately replaced**: the account was created in
+TESSERIX on 2026-08-19 05:04 and the original removed five minutes later, both
+carrying the same `unidevidp@gmail.com` address. Nothing was lost; the docs
+simply were not updated. It was renamed from `admin.user` to `instance-admin` on
+2026-08-28.
+
+So the break-glass account today is:
+
+```
+instance-admin   386915955290145068   org TESSERIX   IAM_OWNER   password set 2026-08-19
+```
+
+Two properties to preserve, because they are what make it break-glass:
+
+- **It keeps a password.** Federated sign-in is not a recovery path — it is one of
+  the things that can break. It gained a Google link on 2026-08-28, which
+  is fine; the password is what matters and must not be removed.
+- **There is no SMTP provider**, so there is no password reset. Losing this
+  password means losing admin access, and the value in
+  `prod-zitadel-admin-password` will not help — it belonged to the deleted
+  first-instance account, not to this one.
+
+Known limitation, accepted deliberately: `instance-admin` sits in TESSERIX, the same
+org as everyday logins, so it shares a failure domain with them. An org-level
+login-policy break in TESSERIX — the class of bug behind the 0s
+`passwordCheckLifetime` loop — would take it down too. Some protection remains in
+that `samyak.rout@gmail.com` is IAM_OWNER, password-only and has never linked an
+IdP, so a purely IdP-side failure does not lock everyone out. Moving break-glass
+into the ZITADEL org would isolate it properly; that was weighed and not done.
 
 So it is emptied of products rather than removed: `zitadel-bootstrap` fails the
 run if any project other than `ZITADEL` appears in the ZITADEL org. Nothing is
@@ -380,6 +404,21 @@ off on both 2026-08-28 (#675); they now run `isAutoCreation: false`,
 `isCreationAllowed: false`, `isLinkingAllowed: true`,
 `autoLinking: AUTO_LINKING_OPTION_EMAIL` — existing humans still link by verified
 email, new ones must be created by the platform.
+
+**`isAutoUpdate` is off on the TESSERIX connector, and must stay off.** With it
+on, Zitadel rewrites the linked user's profile from Google's claims on *every*
+federated sign-in. That is not theoretical: `instance-admin`'s display name was
+edited in the console twice on 2026-08-28, reported saved both times, and both
+times reverted to the Google account's name at the next login — the profile form
+is not broken, it is being overwritten afterwards. Turned off the same day. The
+cost is that a genuine rename at Google no longer propagates, which for a
+break-glass account is the right way round.
+
+All four of these options are false-by-default booleans, so Zitadel omits them
+from the API response entirely — `isAutoUpdate: false` reads back as *absent*,
+not as `false`. Any reconciler must treat absent as false or it will re-assert
+them forever; see the `drift_between` docstring in `zitadel-bootstrap` for the
+same trap that produced the 0s `passwordCheckLifetime` login loop.
 
 **Updating an IdP does not blank its secret, as long as you omit the field.** An
 earlier revision of this document warned that "the update endpoint replaces the
