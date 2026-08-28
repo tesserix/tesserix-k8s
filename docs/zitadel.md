@@ -175,7 +175,7 @@ Secrets read from GCP Secret Manager:
 |---|---|---|
 | `prod-zitadel-masterkey` | `zitadel-masterkey` | every Zitadel container |
 | `prod-zitadel-db-password` | `zitadel-db-credentials` | the `zitadel` DB role |
-| `prod-zitadel-admin-password` | `zitadel-admin-password` | first-instance human admin |
+| `prod-zitadel-admin-password` | `zitadel-admin-password` | first-instance human admin — **no user currently matches it**, see #678 |
 | `prod-zitadel-login-service-crt` / `-key` | `zitadel-login-service-key` | login v2 → API |
 
 Secrets Zitadel writes back on first setup, in the `zitadel` namespace:
@@ -230,8 +230,21 @@ instance's initial org and it owns:
   applications. Removing it takes `auth.tesserix.app` down completely.
 - `iam-admin`, the service user behind the PAT `zitadel-bootstrap` authenticates
   with. Deactivating the org kills the reconciler along with it.
-- `zitadel-admin`, the break-glass password admin — the only way back in when an
-  IdP misroutes a federated login.
+
+Verified on the live instance 2026-08-28: the `ZITADEL` project owns four ACTIVE
+applications — Management-API, Admin-API, Auth-API and Management Console — and
+`iam-admin` (`386261254652101258`) is owned by this org. Both halves of the claim
+above hold.
+
+> **There is no `zitadel-admin` break-glass user.** This list used to name one as
+> "the only way back in when an IdP misroutes a federated login". No such user
+> exists: the ZITADEL org holds only machine users (`iam-admin`,
+> `agentgateway-adk-prod`), and every human on the instance is in TESSERIX. The
+> de-facto equivalent is `admin.user` (`386915955290145068`, IAM_OWNER, password
+> set, no IdP link) — but it lives in TESSERIX, so it is inside the blast radius
+> of exactly the failure a break-glass account exists for. With no SMTP there is
+> also no password reset. Tracked in #678; do not rely on a recovery path this
+> document promises until that is closed.
 
 So it is emptied of products rather than removed: `zitadel-bootstrap` fails the
 run if any project other than `ZITADEL` appears in the ZITADEL org. Nothing is
@@ -359,11 +372,32 @@ instance-level IdPs: an IdP created at instance level appears **nowhere** until
 each org policy names it or is reset to inherit. Plan accordingly — this is the
 fact that makes "just add it at the instance" wrong on this instance.
 
-Consolidating the two onto one instance-level connector is tracked in #676, and
-`isAutoCreation: true` on both — which contradicts `allowRegister: false` — in
-#675. Whenever one is declared in `zitadel-bootstrap`, note that the update
-endpoint replaces the whole config including the secret, so reconciling from git
-blanks it unless the secret is supplied.
+Consolidating the two onto one instance-level connector is tracked in #676.
+
+Both connectors previously carried `isAutoCreation: true`, which contradicted
+`allowRegister: false` and let any Google account self-provision a user. Turned
+off on both 2026-08-28 (#675); they now run `isAutoCreation: false`,
+`isCreationAllowed: false`, `isLinkingAllowed: true`,
+`autoLinking: AUTO_LINKING_OPTION_EMAIL` — existing humans still link by verified
+email, new ones must be created by the platform.
+
+**Updating an IdP does not blank its secret, as long as you omit the field.** An
+earlier revision of this document warned that "the update endpoint replaces the
+whole config including the secret, so reconciling from git blanks it unless the
+secret is supplied". That is only true if you *send* a `clientSecret`. Omit it
+and the stored value is untouched — proven against the eventstore when #675 flipped
+the flags above:
+
+```
+2026-08-28  org.idp.google.changed   386381087862948767   clientSecret in payload = f
+2026-08-15  org.idp.google.changed   386381087862948767   clientSecret in payload = f
+2026-08-15  org.idp.google.added     386381087862948767   clientSecret in payload = t
+```
+
+Only the original `added` event carries it. So a reconciler can assert an IdP's
+non-secret configuration without ever holding the secret — which is what makes
+declaring these in `zitadel-bootstrap` practical. Supplying an empty or wrong
+secret is still destructive; omitting the field is not.
 
 **Actions.** Custom claims, token enrichment and provisioning hooks are Actions
 v2 objects, created through the API.
