@@ -329,18 +329,41 @@ an organization, not config — that binding is the reason Zitadel replaced
 Keycloak. Create them per tenant through the API with the `iam-admin` machine
 key, or in the console under *Organization → Identity Providers*.
 
-There are currently **no IdPs on this instance**, at instance or org level. The
-Google IdP both org login policies used to reference was deleted, leaving a
-dangling `386336249998213772` in each — every human signs in with a password.
-That is what unblocked `defaultOrg: TESSERIX`, which had been held on ZITADEL
-because federated humans were linked to the ZITADEL org's copy.
+Google sign-in works today, through **two org-level connectors** — one per org,
+each on its own OAuth client, neither declared in git. Read from the live
+instance on 2026-08-28:
 
-When Google is reconnected, put its client secret in Secret Manager first and
-create it at the **instance** level. A per-org connector is what forced the hold:
-an unscoped login resolves the default org's IdP, so a human linked to another
-org's connector cannot get in. Declaring one in `zitadel-bootstrap` still needs
-care — the update endpoint replaces the whole config including the secret, so
-reconciling from git blanks it unless the secret is supplied.
+```
+instance IdPs   none
+instance policy allowExternalIdp=true, idps=[]
+
+ZITADEL  org  login policy isDefault=false (CUSTOM), idps=[]
+              IdP 386336249998213772 "Google" ACTIVE  <- orphaned, referenced by nothing
+              clientId 849928263410-eq63i2v34j61mbaghf0opu9fubmrkqua...
+
+TESSERIX org  login policy isDefault=false (CUSTOM), idps=[386381087862948767]
+              IdP 386381087862948767 "Google" ACTIVE  <- the one in service
+              clientId 849928263410-ctrdo7o0sj68r4sddbf942bolunplc4e...
+```
+
+An earlier revision of this section claimed there were no IdPs at all and that
+`386336249998213772` was a dangling reference to a deleted object. Both were
+wrong: it is a live IdP in the ZITADEL org, and TESSERIX holds a *separate* one.
+Verify against the instance before trusting any statement here about IdP state —
+none of it is reconciled, so it can drift the moment someone opens the console.
+
+**IdPs bind to organizations, never to projects.** A project only governs whether
+an authenticated user gets a token (`projectRoleCheck`, role grants). And
+**both orgs run custom login policies** (`isDefault=false`), so neither inherits
+instance-level IdPs: an IdP created at instance level appears **nowhere** until
+each org policy names it or is reset to inherit. Plan accordingly — this is the
+fact that makes "just add it at the instance" wrong on this instance.
+
+Consolidating the two onto one instance-level connector is tracked in #676, and
+`isAutoCreation: true` on both — which contradicts `allowRegister: false` — in
+#675. Whenever one is declared in `zitadel-bootstrap`, note that the update
+endpoint replaces the whole config including the secret, so reconciling from git
+blanks it unless the secret is supplied.
 
 **Actions.** Custom claims, token enrichment and provisioning hooks are Actions
 v2 objects, created through the API.
