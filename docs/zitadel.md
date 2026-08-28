@@ -177,6 +177,7 @@ Secrets read from GCP Secret Manager:
 | `prod-zitadel-db-password` | `zitadel-db-credentials` | the `zitadel` DB role |
 | `prod-zitadel-admin-password` | `zitadel-admin-password` | first-instance human admin — that account was deleted 2026-08-19; **no user matches this value now** |
 | `prod-zitadel-login-service-crt` / `-key` | `zitadel-login-service-key` | login v2 → API |
+| `prod-zitadel-resend-api-key` | *(none — read once, held in Zitadel)* | SMTP password, entered through `/admin/v1/smtp` rather than mounted |
 
 Secrets Zitadel writes back on first setup, in the `zitadel` namespace:
 
@@ -257,9 +258,10 @@ Two properties to preserve, because they are what make it break-glass:
 - **It keeps a password.** Federated sign-in is not a recovery path — it is one of
   the things that can break. It gained a Google link on 2026-08-28, which
   is fine; the password is what matters and must not be removed.
-- **There is no SMTP provider**, so there is no password reset. Losing this
-  password means losing admin access, and the value in
-  `prod-zitadel-admin-password` will not help — it belonged to the deleted
+- **It has a password reset, since 2026-08-28.** Before that there was no SMTP
+  provider, so losing the password meant losing admin access outright. Email now
+  goes out through Resend — see *What is not in git* below. Note the value in
+  `prod-zitadel-admin-password` is still no help: it belonged to the deleted
   first-instance account, not to this one.
 
 Known limitation, accepted deliberately: `instance-admin` sits in TESSERIX, the same
@@ -352,14 +354,36 @@ curl -s https://auth.tesserix.app/ui/v2/login/loginname | grep -o '#[0-9A-Fa-f]\
 
 ## What is not in git
 
-Three things cannot be declared in this chart, and the instance is not
-production-ready until they are done in the console.
+Configured live and not declared in this chart. Each one drifts silently, because
+nothing reconciles it.
 
-**SMTP.** `DefaultInstance` applies only at first instance creation, so the
-provider is configured under *Instance → Notifications → SMTP provider* — host,
-port, sender and password all entered there, not through the chart. Until then
-there is no email verification and no password reset, so a locked-out user has
-no route back in.
+**SMTP — configured 2026-08-28, through Resend.** Until that date there was no
+provider at all, which meant no email verification and **no password reset**: a
+locked-out operator had no route back in. That gap is closed.
+
+```
+id             388266420867171601
+senderAddress  auth@tesserix.app        senderName  Tesserix
+host           smtp.resend.com:587      user        resend
+tls            true                     state       SMTP_CONFIG_ACTIVE
+password       prod-zitadel-resend-api-key (GCP Secret Manager, send-only Resend key)
+```
+
+Port **587 with STARTTLS**, not 465. Zitadel's `tls` flag drives STARTTLS, and
+465 expects implicit TLS — the mismatch is a silent failure, not an error.
+
+The key is deliberately **not** the platform-wide `prod-resend-api-key` that
+mark8ly and fanzone share. Rotating that one for an unrelated product would take
+out password reset for the whole identity platform, at exactly the moment someone
+is trying to recover an account. `tesserix.app` is verified in Resend and already
+serves `mark8ly-otto`, so a second key needed no DNS work.
+
+`DefaultInstance` applies only at first instance creation, so this cannot come
+from the chart — but `/admin/v1/smtp` exists and could be asserted the way the
+Google IdP now is. One caveat found while setting it up: `description` sent to
+`PUT /admin/v1/smtp/{id}` is ignored, and a reconciler that asserts it would
+report drift it can never fix. Confirm which fields actually take before building
+one.
 
 **IdP connectors.** GitHub, Google, Okta and Entra are runtime objects bound to
 an organization, not config — that binding is the reason Zitadel replaced
