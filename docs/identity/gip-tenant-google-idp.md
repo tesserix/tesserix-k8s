@@ -20,15 +20,25 @@ include `https://mark8ly.com/...` callbacks, not the Firebase Auth handler at
 `https://tesseracthub-480811.firebaseapp.com/__/auth/handler`. Using it from
 a `signInWithPopup` web flow produces `Error 400: redirect_uri_mismatch`.
 
-## Why two OAuth clients?
+## Why several OAuth clients?
 
-The tesseracthub-480811 Firebase project has two Google OAuth Web Clients,
-each created for a different flow:
+The tesseracthub-480811 project now holds **more than two** Google OAuth Web
+Clients. Only the first two below are GIP's; the rest belong to Zitadel and must
+never be bound to a GIP tenant:
 
 | Client suffix | Created by | Used for | Auth redirect URIs |
 |---|---|---|---|
 | `-5djgu3n40c5...` | manual Console (mark8ly setup) | mark8ly server-side OAuth dance (mark8ly-auth-bff Go service) | `https://mark8ly.com/oauth/callback`, etc. |
 | `-3n4fva16mm...` | Firebase Console auto-created when Google sign-in was first enabled at project level | Firebase Web SDK `signInWithPopup` / multi-tenant flows | `https://tesseracthub-480811.firebaseapp.com/__/auth/handler` |
+| `-ctrdo7o0sj68...` | **Zitadel** — TESSERIX org IdP `386381087862948767` | Google sign-in at `auth.tesserix.app`. **Not GIP.** | Zitadel login callbacks |
+| `-eq63i2v34j61...` | **Zitadel** — ZITADEL org IdP `386336249998213772` | Orphaned: the IdP is ACTIVE but referenced by no login policy. **Not GIP.** | Zitadel login callbacks |
+
+The two systems are independent and stay that way through the migration: mark8ly,
+Fanzone, HomeChef and Blog authenticate through GIP with the Firebase client;
+console, aregistry, mcp, agentgateway and atlantis authenticate through Zitadel
+with its own. Binding a Zitadel client to a GIP tenant — or vice versa — makes
+secret rotation a cross-system outage. Consolidating the two Zitadel clients onto
+one instance-level connector is tracked in #676.
 
 Google does **not** expose a public API for managing the Authorized
 JavaScript Origins / Authorized Redirect URIs of a Web OAuth client.

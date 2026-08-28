@@ -212,10 +212,18 @@ env:
   # # Why it is set, after being set and reverted once
   #
   # An unscoped login resolves the login name in the INSTANCE DEFAULT
-  # ORGANIZATION. That default is `ZITADEL` (386261254651576970), and it is not
-  # an accident of configuration — charts/apps/zitadel-bootstrap sets
-  # `defaultOrg: ZITADEL` and its reconciler PUTs it back if anything changes
-  # it. Today's bootstrap run logged `default org: ZITADEL in sync`.
+  # ORGANIZATION. When this was written that default was `ZITADEL`
+  # (386261254651576970), held there deliberately by charts/apps/zitadel-bootstrap.
+  #
+  # CORRECTED 2026-08-28: it is now `TESSERIX` (386377229942128837).
+  # zitadel-bootstrap declares `defaultOrg: TESSERIX` and the live instance
+  # agrees, so the paragraph below describing a mismatch between the default org
+  # and where the operators live no longer applies.
+  #
+  # Keep this pin anyway. It is what makes the console's login independent of an
+  # instance-wide setting a bootstrap job reconciles on its own schedule — which
+  # is exactly the property #290's acceptance asked for. Unpinning it would make
+  # console login break the next time the default org moves.
   #
   # The operators live in `TESSERIX` (386377229942128837). So without this
   # scope the console asks Zitadel to find an operator in an organization that
@@ -234,6 +242,13 @@ env:
   #   - It holds all eleven platform-console roles, so the project's
   #     "Only authorized users can authenticate" check (projectRoleCheck=True)
   #     passes.
+  #
+  #     CORRECTED 2026-08-28: platform-console now reads projectRoleCheck=FALSE
+  #     on the live instance, so Zitadel no longer refuses a role-less user a
+  #     token for this project. The console is not open as a result — the
+  #     middleware below independently requires the `read` capability — but the
+  #     Zitadel-side half of that gate is off, and this comment should not be
+  #     read as evidence that it is on.
   #   - It has no passkey, no IdP link and no MFA factor, so a password is its
   #     only credential — and `passwordChanged` is 05:10:42Z on 2026-08-19,
   #     AFTER the scope was set, tested and reverted.
