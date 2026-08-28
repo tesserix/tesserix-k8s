@@ -196,6 +196,14 @@ sendgrid:
 resend:
   secretName: mark8ly-resend
   apiKeyKey: RESEND_API_KEY
+  # Verifies INBOUND delivery-event webhooks (mark8ly#348B). A different
+  # credential from apiKeyKey and not interchangeable: the API key
+  # authenticates us calling Resend, this verifies Resend calling us.
+  #
+  # Syncing it into the secret is NOT enough on its own — the deployment has
+  # to reference the key too, or the pod never sees it and the endpoint
+  # answers 503 not_configured forever.
+  webhookSecretKey: RESEND_WEBHOOK_SECRET
 # Email provider chain order. The named provider sends first; every other
 # configured provider is its per-message fallback. Valid: resend | sendgrid
 # (or a comma-separated preference list). Flip to sendgrid to restore

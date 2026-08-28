@@ -245,6 +245,18 @@ spec:
                   name: {{ .Values.resend.secretName }}
                   key: {{ .Values.resend.apiKeyKey }}
                   optional: true
+            {{- if .Values.resend.webhookSecretKey }}
+            # Inbound delivery-event verification (mark8ly#348B). optional:true
+            # so a cluster without the secret still starts — marketplace-api
+            # mounts the endpoint regardless and answers 503 not_configured,
+            # which is diagnosable, rather than crash-looping on a missing env.
+            - name: RESEND_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.resend.secretName }}
+                  key: {{ .Values.resend.webhookSecretKey }}
+                  optional: true
+            {{- end }}
             {{- end }}
             # Orders the provider chain: the named provider sends first,
             # every other configured provider is its per-message fallback.
