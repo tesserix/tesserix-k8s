@@ -366,41 +366,49 @@ an organization, not config — that binding is the reason Zitadel replaced
 Keycloak. Create them per tenant through the API with the `iam-admin` machine
 key, or in the console under *Organization → Identity Providers*.
 
-Google sign-in works today, through **two org-level connectors** — one per org,
-each on its own OAuth client, neither declared in git. Read from the live
-instance on 2026-08-28:
+Google sign-in works today, through **one org-level connector**, declared in
+`zitadel-bootstrap` since 2026-08-28:
 
 ```
 instance IdPs   none
 instance policy allowExternalIdp=true, idps=[]
 
-ZITADEL  org  login policy isDefault=false (CUSTOM), idps=[]
-              IdP 386336249998213772 "Google" ACTIVE  <- orphaned, referenced by nothing
-              clientId 849928263410-eq63i2v34j61mbaghf0opu9fubmrkqua...
-
+ZITADEL  org  login policy isDefault=false (CUSTOM), idps=[]   — no connector
 TESSERIX org  login policy isDefault=false (CUSTOM), idps=[386381087862948767]
-              IdP 386381087862948767 "Google" ACTIVE  <- the one in service
+              IdP 386381087862948767 "Google" ACTIVE
               clientId 849928263410-ctrdo7o0sj68r4sddbf942bolunplc4e...
 ```
 
-An earlier revision of this section claimed there were no IdPs at all and that
-`386336249998213772` was a dangling reference to a deleted object. Both were
-wrong: it is a live IdP in the ZITADEL org, and TESSERIX holds a *separate* one.
-Verify against the instance before trusting any statement here about IdP state —
-none of it is reconciled, so it can drift the moment someone opens the console.
+There were two until 2026-08-28. The ZITADEL org's connector
+(`386336249998213772`, on its own separate OAuth client) had been detached from
+that org's login policy on 2026-08-21 and left running with zero user links —
+live, invisible, and still holding a client secret. Deleted under #676. Note the
+delete path: a modern provider is `DELETE /management/v1/idps/templates/{id}`;
+the legacy `/management/v1/idps/{id}` returns 404 for it.
 
 **IdPs bind to organizations, never to projects.** A project only governs whether
 an authenticated user gets a token (`projectRoleCheck`, role grants). And
 **both orgs run custom login policies** (`isDefault=false`), so neither inherits
-instance-level IdPs: an IdP created at instance level appears **nowhere** until
-each org policy names it or is reset to inherit. Plan accordingly — this is the
-fact that makes "just add it at the instance" wrong on this instance.
+instance-level IdPs: an IdP created at instance level would appear **nowhere**
+until each org policy named it or was reset to inherit.
 
-Consolidating the two onto one instance-level connector is tracked in #676.
+**It stays org-level deliberately, and #676 was closed on that basis.** An
+instance connector is inherited by every org that does not override it, including
+the tenant orgs `zitadel-onboarding.md` creates — and tenants bring their own
+IdP, so a Tesserix-owned Google button on a customer's login page is the wrong
+default. The reason instance-level was originally wanted — an unscoped login
+resolving the *default* org's connector, stranding humans linked elsewhere —
+disappeared when `defaultOrg` became TESSERIX, which is where all the humans
+already are.
+
+`zitadel-bootstrap` now asserts the connector each run: it fixes option drift,
+re-binds it to the login policy if that reference is lost, and fails the run on a
+missing provider, an unexpected ID or a changed `clientId` — each of which needs
+a client secret the reconciler deliberately does not hold.
 
 Both connectors previously carried `isAutoCreation: true`, which contradicted
 `allowRegister: false` and let any Google account self-provision a user. Turned
-off on both 2026-08-28 (#675); they now run `isAutoCreation: false`,
+off on both 2026-08-28 (#675); the survivor now runs `isAutoCreation: false`,
 `isCreationAllowed: false`, `isLinkingAllowed: true`,
 `autoLinking: AUTO_LINKING_OPTION_EMAIL` — existing humans still link by verified
 email, new ones must be created by the platform.
@@ -418,7 +426,9 @@ All four of these options are false-by-default booleans, so Zitadel omits them
 from the API response entirely — `isAutoUpdate: false` reads back as *absent*,
 not as `false`. Any reconciler must treat absent as false or it will re-assert
 them forever; see the `drift_between` docstring in `zitadel-bootstrap` for the
-same trap that produced the 0s `passwordCheckLifetime` login loop.
+same trap that produced the 0s `passwordCheckLifetime` login loop. That is
+exactly what `reconcile_org_idps` reuses, and `test_absent_false_option_is_not_drift`
+is there to keep it that way.
 
 **Updating an IdP does not blank its secret, as long as you omit the field.** An
 earlier revision of this document warned that "the update endpoint replaces the
