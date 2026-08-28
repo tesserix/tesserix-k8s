@@ -117,6 +117,45 @@ desired:
   # instance skin, so a stray console edit cannot fork the platform look.
   selfBrandedOrgs: []
 
+  # Federated sign-in connectors, asserted but never created from here.
+  #
+  # The client secret is NOT declared and never reaches this job. It was written
+  # once when the provider was created and lives only in Zitadel's encrypted
+  # eventstore; the reconciler omits the field on update, which leaves the stored
+  # value untouched. Sending an empty string would blank it — that is the
+  # difference, and it is why a missing provider, an unexpected id or a changed
+  # clientId fails the run instead of being "fixed" from git.
+  #
+  # Deliberately org-level, not instance-level. An instance connector is
+  # inherited by every org that does not override it, including future tenant
+  # orgs — and tenants bring their own IdP, so a Tesserix-owned Google button on
+  # their login page is wrong. The reason instance-level was once wanted (an
+  # unscoped login resolving the default org's connector) disappeared when
+  # defaultOrg became TESSERIX, where the humans already are.
+  idps:
+    - org: TESSERIX
+      name: Google
+      expectedId: "386381087862948767"
+      clientId: 849928263410-ctrdo7o0sj68r4sddbf942bolunplc4e.apps.googleusercontent.com
+      scopes:
+        - openid
+        - profile
+        - email
+      options:
+        # Linking on, creation off: an existing human links by verified email,
+        # a stranger with a Google account gets nothing. Auto-creation on is how
+        # an unrelated account could self-provision, which allowRegister: false
+        # exists to prevent.
+        isLinkingAllowed: true
+        isCreationAllowed: false
+        isAutoCreation: false
+        # OFF, and it must stay off. On, Zitadel rewrites the linked user's
+        # profile from Google's claims at every sign-in — instance-admin's
+        # display name was edited twice in the console, reported saved both
+        # times, and reverted on the next login. The form was never the problem.
+        isAutoUpdate: false
+        autoLinking: AUTO_LINKING_OPTION_EMAIL
+
   platformProjects:
     - org: TESSERIX
       name: AgentGateway

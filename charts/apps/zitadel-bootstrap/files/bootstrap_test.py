@@ -619,6 +619,122 @@ class ReservedOrgTest(unittest.TestCase):
         self.assertEqual([c for c in recorder.calls if c[0] == "DELETE"], [])
 
 
+class OrgIdpTest(unittest.TestCase):
+    """The connector is asserted from git without the reconciler ever holding its secret."""
+
+    IDP = {
+        "org": "TESSERIX",
+        "name": "Google",
+        "expectedId": "idp-1",
+        "clientId": "client-1.apps.googleusercontent.com",
+        "scopes": ["openid", "profile", "email"],
+        "options": {
+            "isLinkingAllowed": True,
+            "isCreationAllowed": False,
+            "isAutoCreation": False,
+            "isAutoUpdate": False,
+            "autoLinking": "AUTO_LINKING_OPTION_EMAIL",
+        },
+    }
+
+    # Zitadel omits false booleans, so an in-sync provider returns only the
+    # options that are actually true. Reading this as drift is the trap that
+    # kept passwordCheckLifetime pinned at 0s.
+    LIVE_OPTIONS = {"isLinkingAllowed": True, "autoLinking": "AUTO_LINKING_OPTION_EMAIL"}
+
+    def _recorder(self, options=None, idp_id="idp-1", client_id=None, bound=True, found=True):
+        idp = {
+            "id": idp_id,
+            "name": "Google",
+            "state": "IDP_STATE_ACTIVE",
+            "config": {
+                "options": self.LIVE_OPTIONS if options is None else options,
+                "google": {
+                    "clientId": client_id or self.IDP["clientId"],
+                    "scopes": ["openid", "profile", "email"],
+                },
+            },
+        }
+        policy = {"policy": {"idps": [{"idpId": idp_id}] if bound else []}}
+        return Recorder({
+            ("POST", "/admin/v1/orgs/_search"): (200, json.dumps(ORGS).encode()),
+            ("POST", "/management/v1/idps/templates/_search"): (
+                200, json.dumps({"result": [idp] if found else []}).encode()),
+            ("GET", "/management/v1/policies/login"): (200, json.dumps(policy).encode()),
+        })
+
+    def _updates(self, recorder):
+        return [call for call in recorder.calls if call[0] == "PUT" and "/idps/google/" in call[1]]
+
+    def test_in_sync_provider_performs_no_writes(self):
+        recorder = self._recorder()
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_org_idps([self.IDP])
+        self.assertEqual(recorder.writes, [
+            ("POST", "/admin/v1/orgs/_search"),
+            ("POST", "/management/v1/idps/templates/_search"),
+        ])
+
+    def test_absent_false_option_is_not_drift(self):
+        """isAutoCreation:false reads back absent; treating that as drift never converges."""
+        recorder = self._recorder(options={"isLinkingAllowed": True, "autoLinking": "AUTO_LINKING_OPTION_EMAIL"})
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_org_idps([self.IDP])
+        self.assertEqual(self._updates(recorder), [])
+
+    def test_reasserts_an_option_flipped_in_the_console(self):
+        """isAutoUpdate:true silently overwrites profiles from the IdP on every login."""
+        live = dict(self.LIVE_OPTIONS, isAutoUpdate=True)
+        recorder = self._recorder(options=live)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_org_idps([self.IDP])
+        self.assertEqual(len(self._updates(recorder)), 1)
+
+    def test_update_never_sends_the_client_secret(self):
+        """Sending the field is what blanks it; omitting it leaves the stored value alone."""
+        recorder = self._recorder(options=dict(self.LIVE_OPTIONS, isAutoUpdate=True))
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_org_idps([self.IDP])
+        body = self._updates(recorder)[0][2]
+        self.assertNotIn("clientSecret", body)
+
+    def test_missing_provider_fails_closed(self):
+        """Creating one needs a secret this reconciler must never hold."""
+        recorder = self._recorder(found=False)
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_org_idps([self.IDP])
+
+    def test_unexpected_id_fails_closed(self):
+        """A different ID means user links point at a provider git does not describe."""
+        recorder = self._recorder(idp_id="idp-other")
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_org_idps([self.IDP])
+
+    def test_client_id_drift_fails_closed(self):
+        """Repointing at another OAuth client needs its secret, so report rather than guess."""
+        recorder = self._recorder(client_id="someone-else.apps.googleusercontent.com")
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_org_idps([self.IDP])
+
+    def test_binds_the_provider_when_the_login_policy_lost_it(self):
+        """An unbound provider is live but invisible — no button on the login page."""
+        recorder = self._recorder(bound=False)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_org_idps([self.IDP])
+        self.assertIn(("POST", "/management/v1/policies/login/idps"), recorder.writes)
+
+    def test_scopes_every_call_to_the_owning_org(self):
+        recorder = self._recorder(options=dict(self.LIVE_OPTIONS, isAutoUpdate=True))
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_org_idps([self.IDP])
+        scoped = {headers.get("x-zitadel-orgid") for path, headers in recorder.headers
+                  if path != "/admin/v1/orgs/_search"}
+        self.assertEqual(scoped, {"org-tesserix"})
+
+
 class MainTest(unittest.TestCase):
     def _responses(self):
         return {
@@ -631,6 +747,13 @@ class MainTest(unittest.TestCase):
             ("GET", "/admin/v1/orgs/default"): (200, json.dumps({"org": {"id": "org-tesserix"}}).encode()),
             ("GET", "/management/v1/policies/label"): (200, json.dumps({"policy": {"isDefault": True}}).encode()),
             ("POST", "/management/v1/projects/_search"): (200, json.dumps({"result": [{"id": "p-1", "name": "ZITADEL"}]}).encode()),
+            ("POST", "/management/v1/idps/templates/_search"): (200, json.dumps({"result": [{
+                "id": "idp-1",
+                "name": "Google",
+                "config": {"options": OrgIdpTest.LIVE_OPTIONS,
+                           "google": {"clientId": OrgIdpTest.IDP["clientId"]}},
+            }]}).encode()),
+            ("GET", "/management/v1/policies/login"): (200, json.dumps({"policy": {"idps": [{"idpId": "idp-1"}]}}).encode()),
         }
 
     def _config(self, path):
@@ -642,6 +765,7 @@ class MainTest(unittest.TestCase):
                 "admins": ["samyak.rout@gmail.com"],
                 "defaultOrg": "TESSERIX",
                 "selfBrandedOrgs": [],
+                "idps": [OrgIdpTest.IDP],
                 "platformProjects": [],
                 "reservedOrg": {"name": "ZITADEL", "allowedProjects": ["ZITADEL"]},
             }, fh)

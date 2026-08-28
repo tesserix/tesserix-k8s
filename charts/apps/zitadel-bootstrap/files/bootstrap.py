@@ -236,6 +236,93 @@ def reconcile_org_branding(self_branded):
         log(f"org branding {org['name']}: reset to the instance skin")
 
 
+def reconcile_org_idps(desired_idps):
+    """Assert an org's IdP connector without ever holding its client secret.
+
+    Only the secret is off-limits; the behaviour flags are reconciled, because
+    they are exactly what gets flipped in the console. `isAutoUpdate` in
+    particular rewrites a linked user's profile from the provider's claims on
+    every federated sign-in, which reverts any display name edited here — it
+    looked like a broken profile form until the event log showed the overwrite.
+
+    Omitting `clientSecret` from the update is safe and deliberate: Zitadel only
+    re-encrypts the secret when the field is present, so the change event carries
+    no secret and the stored value survives. Sending an empty string would blank
+    it. That is the distinction an earlier revision of docs/zitadel.md missed.
+
+    Anything that cannot be fixed without the secret fails the run instead: a
+    missing provider, an unexpected ID, or a different client ID all mean the
+    live trust anchor is not the one git describes, and quietly repointing users'
+    federated identities is worse than stopping.
+    """
+    for desired in desired_idps:
+        org = next((item for item in list_orgs() if item["name"] == desired["org"]), None)
+        if not org:
+            raise SystemExit(f"idp org {desired['org']!r} does not exist")
+        scope = {"x-zitadel-orgid": org["id"]}
+        name = desired["name"]
+
+        status, payload = request(
+            "POST", "/management/v1/idps/templates/_search", {"query": {"limit": 100}}, headers=scope
+        )
+        if status != 200:
+            raise SystemExit(f"idp search in {desired['org']} failed: {status} {payload!r}")
+        matches = [item for item in json.loads(payload).get("result", []) if item["name"] == name]
+        if len(matches) != 1:
+            raise SystemExit(
+                f"idp {name!r} must exist exactly once in {desired['org']}; create it once "
+                "through the console so its one-time secret goes straight to Zitadel"
+            )
+        live = matches[0]
+        if live["id"] != desired["expectedId"]:
+            raise SystemExit(
+                f"idp {name!r} ID {live['id']} does not match the committed "
+                f"{desired['expectedId']}; user links point at a provider git does not describe"
+            )
+
+        live_client_id = live["config"]["google"].get("clientId")
+        if live_client_id != desired["clientId"]:
+            raise SystemExit(
+                f"idp {name!r} client ID drifted to {live_client_id!r}; repointing it needs the "
+                "new client's secret, which this reconciler deliberately does not hold"
+            )
+
+        drift = drift_between(desired["options"], live["config"].get("options", {}))
+        if drift:
+            log(f"idp {name}: reasserting {sorted(drift)}")
+            status, payload = request(
+                "PUT",
+                f"/management/v1/idps/google/{live['id']}",
+                {
+                    "name": name,
+                    "clientId": desired["clientId"],
+                    "scopes": desired["scopes"],
+                    "providerOptions": desired["options"],
+                },
+                headers=scope,
+            )
+            if status != 200:
+                raise SystemExit(f"idp {name!r} update failed: {status} {payload!r}")
+        else:
+            log(f"idp {name}: in sync")
+
+        # A provider the login policy does not reference is live but invisible:
+        # no button on the login page, and no error anywhere saying why.
+        status, payload = request("GET", "/management/v1/policies/login", headers=scope)
+        if status != 200:
+            raise SystemExit(f"login policy read for {desired['org']} failed: {status} {payload!r}")
+        bound = {item.get("idpId") for item in json.loads(payload)["policy"].get("idps", [])}
+        if live["id"] in bound:
+            log(f"idp {name}: bound to the {desired['org']} login policy")
+            continue
+        status, payload = request(
+            "POST", "/management/v1/policies/login/idps", {"idpId": live["id"]}, headers=scope
+        )
+        if status != 200:
+            raise SystemExit(f"idp {name!r} login policy binding failed: {status} {payload!r}")
+        log(f"idp {name}: bound to the {desired['org']} login policy")
+
+
 def reconcile_platform_project(desired):
     """Reconcile a platform resource-server project without managing secrets.
 
@@ -480,6 +567,7 @@ def main():
     reconcile_admins(desired["admins"])
     reconcile_default_org(desired["defaultOrg"])
     reconcile_org_branding(desired["selfBrandedOrgs"])
+    reconcile_org_idps(desired.get("idps", []))
     for project in desired.get("platformProjects", []):
         reconcile_platform_project(project)
     # Last: a stray project is a report, and must not stop branding converging.
