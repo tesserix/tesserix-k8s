@@ -117,6 +117,34 @@ desired:
   # instance skin, so a stray console edit cannot fork the platform look.
   selfBrandedOrgs: []
 
+  # Outbound email, asserted but never created from here.
+  #
+  # Email is the only recovery path instance-admin has, and a provider that gets
+  # deactivated or repointed stops password reset with no error anywhere — nobody
+  # finds out until someone is locked out. Hence requireActive.
+  #
+  # The password is NOT declared. It lives in prod-zitadel-resend-api-key and was
+  # entered once through /admin/v1/smtp; omitting the field on update preserves
+  # the stored value, verified against the eventstore (the change event carries no
+  # password key and mail kept sending).
+  #
+  # Port 587 + STARTTLS, not 465: Zitadel's `tls` flag drives STARTTLS, and 465
+  # expects implicit TLS. The mismatch fails silently.
+  #
+  # `description` is deliberately absent from the asserted set. Zitadel writes it
+  # to the eventstore but never projects it to the read model — a day after being
+  # changed, GET still returned the value set at creation — so comparing it would
+  # report drift no write can clear.
+  smtp:
+    expectedId: "388266420867171601"
+    senderAddress: auth@tesserix.app
+    senderName: Tesserix
+    host: smtp.resend.com:587
+    user: resend
+    tls: true
+    description: Resend
+    requireActive: true
+
   # Federated sign-in connectors, asserted but never created from here.
   #
   # The client secret is NOT declared and never reaches this job. It was written

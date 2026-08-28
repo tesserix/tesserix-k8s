@@ -236,6 +236,58 @@ def reconcile_org_branding(self_branded):
         log(f"org branding {org['name']}: reset to the instance skin")
 
 
+def reconcile_smtp(desired):
+    """Assert the SMTP provider without holding its password.
+
+    Email is the only recovery path the break-glass admin has, and a provider
+    that is deactivated — or quietly repointed at another host — stops password
+    reset with no error anywhere. Nobody finds out until someone is locked out.
+
+    Two behaviours of this endpoint drive the shape of this function, both
+    established against the live instance rather than read from a doc:
+
+    - Omitting `password` from the PUT preserves the stored secret. The change
+      event carries no password key and mail keeps sending, so a reconciler can
+      own the configuration while the credential stays in Secret Manager.
+    - `description` is written to the eventstore but **never projected** to the
+      read model: a day after it was changed, GET still returned the value set at
+      creation. Comparing it would report drift that no write can ever clear, so
+      it is sent on update and never treated as drift.
+    """
+    if not desired:
+        return
+    config_id = desired["expectedId"]
+    status, payload = request("GET", f"/admin/v1/smtp/{config_id}")
+    if status != 200:
+        raise SystemExit(
+            f"smtp config {config_id} not found ({status}); create it once through "
+            "/admin/v1/smtp so its password goes straight to Zitadel, then commit the id"
+        )
+    live = json.loads(payload)["smtpConfig"]
+
+    asserted = ("senderAddress", "senderName", "host", "user", "tls")
+    drift = drift_between({key: desired[key] for key in asserted}, live)
+    if drift:
+        log(f"smtp: reasserting {sorted(drift)}")
+        body = {key: desired[key] for key in asserted}
+        body["description"] = desired.get("description", "")
+        status, payload = request("PUT", f"/admin/v1/smtp/{config_id}", body)
+        if status != 200:
+            raise SystemExit(f"smtp update failed: {status} {payload!r}")
+    else:
+        log("smtp: in sync")
+
+    if not desired.get("requireActive"):
+        return
+    if live.get("state") == "SMTP_CONFIG_ACTIVE":
+        log("smtp: active")
+        return
+    status, payload = request("POST", f"/admin/v1/smtp/{config_id}/_activate", {})
+    if status != 200:
+        raise SystemExit(f"smtp activation failed: {status} {payload!r}")
+    log("smtp: reactivated")
+
+
 def reconcile_org_idps(desired_idps):
     """Assert an org's IdP connector without ever holding its client secret.
 
@@ -567,6 +619,7 @@ def main():
     reconcile_admins(desired["admins"])
     reconcile_default_org(desired["defaultOrg"])
     reconcile_org_branding(desired["selfBrandedOrgs"])
+    reconcile_smtp(desired.get("smtp"))
     reconcile_org_idps(desired.get("idps", []))
     for project in desired.get("platformProjects", []):
         reconcile_platform_project(project)

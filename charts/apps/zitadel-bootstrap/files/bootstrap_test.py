@@ -735,6 +735,96 @@ class OrgIdpTest(unittest.TestCase):
         self.assertEqual(scoped, {"org-tesserix"})
 
 
+class SmtpTest(unittest.TestCase):
+    """Email is the only recovery path the break-glass account has."""
+
+    SMTP = {
+        "expectedId": "smtp-1",
+        "senderAddress": "auth@tesserix.app",
+        "senderName": "Tesserix",
+        "host": "smtp.resend.com:587",
+        "user": "resend",
+        "tls": True,
+        "description": "Resend",
+        "requireActive": True,
+    }
+
+    LIVE = {
+        "id": "smtp-1",
+        "senderAddress": "auth@tesserix.app",
+        "senderName": "Tesserix",
+        "host": "smtp.resend.com:587",
+        "user": "resend",
+        "tls": True,
+        "state": "SMTP_CONFIG_ACTIVE",
+        # The read model reports this as the value set at creation no matter what
+        # is written later, so the reconciler must never compare it.
+        "description": "whatever the projection kept",
+    }
+
+    def _recorder(self, live=None, status=200):
+        payload = json.dumps({"smtpConfig": live if live is not None else self.LIVE}).encode()
+        return Recorder({("GET", "/admin/v1/smtp/smtp-1"): (status, payload)})
+
+    def _updates(self, recorder):
+        return [call for call in recorder.calls if call[0] == "PUT" and call[1] == "/admin/v1/smtp/smtp-1"]
+
+    def test_in_sync_config_performs_no_writes(self):
+        recorder = self._recorder()
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_smtp(self.SMTP)
+        self.assertEqual(recorder.writes, [])
+
+    def test_description_is_never_drift(self):
+        """It is written to the eventstore but never projected, so asserting it never converges."""
+        recorder = self._recorder(dict(self.LIVE, description="something else entirely"))
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_smtp(self.SMTP)
+        self.assertEqual(self._updates(recorder), [])
+
+    def test_fixes_a_changed_host(self):
+        recorder = self._recorder(dict(self.LIVE, host="smtp.example.test:25"))
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_smtp(self.SMTP)
+        self.assertEqual(len(self._updates(recorder)), 1)
+
+    def test_absent_tls_reads_as_false_and_is_fixed(self):
+        """Zitadel omits false booleans; tls dropped to false comes back missing."""
+        live = {key: value for key, value in self.LIVE.items() if key != "tls"}
+        recorder = self._recorder(live)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_smtp(self.SMTP)
+        self.assertEqual(len(self._updates(recorder)), 1)
+
+    def test_update_never_sends_the_password(self):
+        """Omitting it preserves the stored secret; the reconciler must never hold it."""
+        recorder = self._recorder(dict(self.LIVE, host="smtp.example.test:25"))
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_smtp(self.SMTP)
+        body = self._updates(recorder)[0][2]
+        self.assertNotIn("password", body)
+
+    def test_reactivates_a_deactivated_provider(self):
+        """A deactivated provider stops password reset with no error anywhere."""
+        recorder = self._recorder(dict(self.LIVE, state="SMTP_CONFIG_INACTIVE"))
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_smtp(self.SMTP)
+        self.assertIn(("POST", "/admin/v1/smtp/smtp-1/_activate"), recorder.writes)
+
+    def test_missing_provider_fails_closed(self):
+        """Creating one needs the password, which this job deliberately does not hold."""
+        recorder = self._recorder(status=404)
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_smtp(self.SMTP)
+
+    def test_undeclared_smtp_is_skipped(self):
+        recorder = Recorder({})
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_smtp(None)
+        self.assertEqual(recorder.calls, [])
+
+
 class MainTest(unittest.TestCase):
     def _responses(self):
         return {
@@ -754,6 +844,7 @@ class MainTest(unittest.TestCase):
                            "google": {"clientId": OrgIdpTest.IDP["clientId"]}},
             }]}).encode()),
             ("GET", "/management/v1/policies/login"): (200, json.dumps({"policy": {"idps": [{"idpId": "idp-1"}]}}).encode()),
+            ("GET", "/admin/v1/smtp/smtp-1"): (200, json.dumps({"smtpConfig": SmtpTest.LIVE}).encode()),
         }
 
     def _config(self, path):
@@ -765,6 +856,7 @@ class MainTest(unittest.TestCase):
                 "admins": ["samyak.rout@gmail.com"],
                 "defaultOrg": "TESSERIX",
                 "selfBrandedOrgs": [],
+                "smtp": SmtpTest.SMTP,
                 "idps": [OrgIdpTest.IDP],
                 "platformProjects": [],
                 "reservedOrg": {"name": "ZITADEL", "allowedProjects": ["ZITADEL"]},
