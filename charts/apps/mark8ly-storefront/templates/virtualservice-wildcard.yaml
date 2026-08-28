@@ -110,6 +110,31 @@ spec:
             port:
               number: {{ .Values.apiHost.servicePort }}
       timeout: 30s
+    # Resend delivery-event webhook (mark8ly#348B). Must reach the ADMIN
+    # engine, where the email_sends rows and the applier live, so it needs an
+    # explicit route BEFORE the storefront fallthrough — same reasoning as
+    # the Pub/Sub push route above.
+    #
+    # The caller is Resend and holds no session, no Firebase token and no
+    # internal secret: it authenticates with an HMAC signature verified
+    # in-handler over the raw body, with a five-minute freshness bound. That
+    # is why this is its own path rather than living under /api/v1/platform/*,
+    # which is HMAC-signed by the CONSOLE under a different scheme — one
+    # prefix carrying two auth models is how a future reader wires the wrong
+    # one.
+    #
+    # /internal/* stays unrouted (private), exactly as the comment above says.
+    - match:
+        - authority:
+            exact: "api.mark8ly.com"
+          uri:
+            prefix: /webhooks/resend
+      route:
+        - destination:
+            host: {{ .Values.apiHost.adminServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.apiHost.servicePort }}
+      timeout: 30s
     # Tesserix platform console admin surface (mark8ly#274/#275/#276).
     # The console's endpoints live under /api/v1/platform/admin/* — their own
     # prefix, deliberately NOT the /api/v1/admin/* the merchant admin API uses.
