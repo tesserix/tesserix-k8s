@@ -378,12 +378,25 @@ out password reset for the whole identity platform, at exactly the moment someon
 is trying to recover an account. `tesserix.app` is verified in Resend and already
 serves `mark8ly-otto`, so a second key needed no DNS work.
 
-`DefaultInstance` applies only at first instance creation, so this cannot come
-from the chart — but `/admin/v1/smtp` exists and could be asserted the way the
-Google IdP now is. One caveat found while setting it up: `description` sent to
-`PUT /admin/v1/smtp/{id}` is ignored, and a reconciler that asserts it would
-report drift it can never fix. Confirm which fields actually take before building
-one.
+`DefaultInstance` applies only at first instance creation, so the provider cannot
+be *created* from the chart — but `zitadel-bootstrap` now **asserts** it through
+`/admin/v1/smtp`, the same way it asserts the Google IdP. Sender, host, user and
+`tls` are held to `desired.smtp`; a deactivated provider is reactivated; a missing
+one fails the run, because creating it needs the password.
+
+Two properties of this endpoint, both established against the live instance
+rather than assumed:
+
+- **Omitting `password` on `PUT` preserves the stored secret.** The change event
+  carries no password key and mail keeps sending, so the reconciler owns the
+  configuration while the credential stays in Secret Manager. Same rule as the
+  IdP endpoint.
+- **`description` is written but never projected.** It reaches the eventstore —
+  `instance.smtp.config.changed` carries the new value — yet `GET` still returns
+  the string set at creation, a day later. It is therefore sent on update and
+  never compared; asserting it would report drift no write can clear. An earlier
+  note here called it "ignored", which the event log disproves: the write lands,
+  the read model just never reflects it.
 
 **IdP connectors.** GitHub, Google, Okta and Entra are runtime objects bound to
 an organization, not config — that binding is the reason Zitadel replaced
