@@ -1,6 +1,6 @@
 # Global ADK runtime
 
-Owner: `devai-platform`
+Owner: Tesserix AI platform
 
 The consumer endpoint is
 `http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080`.

@@ -216,20 +216,9 @@ agenticControlPlane:
   registryPublishEnabled: true
   registryDefaultTenant: "devai"
   registryPublishOnBoot: true
-  # agentgateway in this cluster is CONTROL PLANE ONLY — the agentgateway
-  # Service exposes 9978 (xDS gRPC), 9093 (health), 9092 (metrics).
-  # There is NO HTTP data-plane port for /mcp/<name> traffic; solo.io
-  # agentgateway-1.x is an xDS server that configures an Envoy data
-  # plane separately, and we have not deployed that Envoy yet.
-  #
-  # Leaving this empty makes the runner fall back to dialing each MCP
-  # server's own Service directly (URL comes from aregistry's
-  # /v0/servers record). That's the correct degraded mode until the
-  # agentgateway-proxy data plane is rolled.
-  #
-  # When the data plane is added (future PR in tesserix-k8s), flip
-  # this to the proxy's Service URL — devai-runner picks it up on the
-  # next Job dispatch with no code change.
+  # The agentgateway control plane configures the separate HA data plane at
+  # agentgateway-mcp:8080. Production agent traffic fails closed through this
+  # endpoint; it must never fall back to a Registry-advertised backend Service.
   agentgatewayUrl: "http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080"
   # Platform default: kagent A2A dispatch is OFF — every agent runs as a K8s
   # Job. Turn it on platform-wide here, or let a user/team/org/tenant enable it
