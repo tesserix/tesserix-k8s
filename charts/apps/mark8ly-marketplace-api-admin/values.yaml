@@ -264,7 +264,7 @@ adminConformanceCron:
   # ConfigMap template for why nothing enforces that and what the risk is.
   declaration:
     slug: mark8ly
-    contractVersion: 2
+    contractVersion: 3
     endpoints:
       audit-logs: true
       health: true
@@ -306,6 +306,24 @@ adminConformanceCron:
       "billing/trials": true
       "tenant-lifecycle": true
       "lifecycle/reason-codes": true
+      # contract v3 (design-system#40, 2026-08-29). break-glass CAN be
+      # declared, unlike the earlier assumption recorded here: it is gated
+      # on EXACT STRING EQUALITY against a capability value
+      # (rotate-credentials) plus a non-empty operator — there is no grant
+      # list and no identity that must "hold" anything
+      # (marketplace-api/internal/handlers/platformadmin/middleware.go:
+      # 367-385). The admin-conformance-cronjob.yaml template's npx
+      # invocation now passes --operator and --capability rotate-credentials
+      # on every run so this probe gets a real 200 instead of a
+      # correctly-issued 403 read as a conformance failure.
+      "outbox": true
+      "email-sends": true
+      "notifications": true
+      "break-glass": true
+      "conversions": true
+      "onboarding/funnel": true
+      "onboarding/sessions": true
+      "tenant-purge": true
 
 # Audit-ingest secret consumed by the marketplace-api admin engine.
 # Override in values-uat.yaml to point at mark8ly-uat-audit-ingest.

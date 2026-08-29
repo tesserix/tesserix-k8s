@@ -82,10 +82,38 @@ spec:
               args:
                 - |
                   set -u
+                  # --operator and --capability are required for this run to
+                  # correctly probe `break-glass` (contract v3): it is the
+                  # only read on this surface gated on an EXACT capability
+                  # VALUE match, not just presence of a signature
+                  # (middleware.go:367-385). The suite's CLI already defaults
+                  # both flags to non-empty values ("admin-conformance" /
+                  # "platform"), so omitting them here would never trip
+                  # 401 operator_required — the operator is never missing.
+                  # It would instead fail with 403 capability_insufficient,
+                  # because the default capability "platform" does not equal
+                  # "rotate-credentials". Either way a correctly-behaving
+                  # gate would report as a conformance FAILURE, not a skip;
+                  # --operator is set explicitly below anyway, since an
+                  # explicit value is better than relying on a CLI default.
+                  # "rotate-credentials" is the literal value break-glass's
+                  # RequiredReadCapabilities entry compares against
+                  # (middleware.go:367-385) — exact string equality, no
+                  # lattice, no grant list, no identity verification of any
+                  # kind. The operator value below is recorded verbatim into
+                  # request context (CtxOperatorID, middleware.go:388-392)
+                  # for audit purposes only; it is never checked against
+                  # anything, so any non-empty machine-identity-shaped string
+                  # under maxIdentityLen (256, middleware.go:34) satisfies
+                  # the gate. Whoever wonders later why a conformance job
+                  # asserts a credential-rotation capability: this comment is
+                  # the answer, not tribal knowledge.
                   npx -y "@tesserix/admin-conformance@$SUITE_VERSION" \
                     --base "$BASE_URL" \
                     --slug mark8ly \
-                    --declaration /conf/admin-conformance.json
+                    --declaration /conf/admin-conformance.json \
+                    --operator conformance-cronjob@mark8ly \
+                    --capability rotate-credentials
                   status=$?
                   # 0 conforms, 1 a declared endpoint deviates, 2 the suite
                   # could not run at all. Distinguished because they have
