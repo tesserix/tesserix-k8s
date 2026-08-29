@@ -36,6 +36,25 @@ def render_chart() -> list[dict]:
     return [document for document in yaml.safe_load_all(result.stdout) if document]
 
 
+def render_registry_chart() -> list[dict]:
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "agentic-registry",
+            str(ROOT / "charts/apps/agentic-registry"),
+            "--namespace",
+            "agentregistry-system",
+            "--values",
+            str(ROOT / "charts/apps/agentic-registry/values-prod.yaml"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [document for document in yaml.safe_load_all(result.stdout) if document]
+
+
 def resource(documents: list[dict], kind: str, name: str) -> dict:
     return next(
         document
@@ -148,6 +167,32 @@ def test_workload_and_gateway_receive_distinct_secret_projections() -> None:
         }
     ]
     assert not [document for document in documents if document.get("kind") == "Secret"]
+
+
+def test_registry_accepts_a_separate_tesserix_scoped_sre_deploy_key() -> None:
+    documents = render_registry_chart()
+    deployment = resource(documents, "Deployment", "agentregistry")
+    external_secret = resource(documents, "ExternalSecret", "agentregistry-secrets")
+    env = {
+        entry["name"]: entry
+        for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    mappings = {
+        item["secretKey"]: item["remoteRef"]["key"]
+        for item in external_secret["spec"]["data"]
+    }
+
+    assert mappings["SRE_DEPLOY_KEY_SHA256"] == (
+        "prod-agentic-registry-sre-deploy-key-sha256"
+    )
+    assert env["SRE_DEPLOY_KEY_SHA256"]["valueFrom"]["secretKeyRef"] == {
+        "name": "agentregistry-secrets",
+        "key": "SRE_DEPLOY_KEY_SHA256",
+    }
+    configured = env["AUTH_DEPLOY_KEYS"]["value"]
+    assert "kora=$(KORA_DEPLOY_KEY_SHA256)" in configured
+    assert "devai=$(DEVAI_DEPLOY_KEY_SHA256)" in configured
+    assert "tesserix=$(SRE_DEPLOY_KEY_SHA256)" in configured
 
 
 def test_a_more_specific_shared_gateway_route_authenticates_every_caller() -> None:
