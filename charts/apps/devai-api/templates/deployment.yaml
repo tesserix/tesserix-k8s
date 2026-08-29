@@ -29,11 +29,28 @@ spec:
       # fields (mcp_hub_port:int) and crash pydantic on startup. The app reads
       # everything it needs from explicit env, never service links.
       enableServiceLinks: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "devai-api.serviceAccountName" . }}
+      {{- if .Values.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          minDomains: {{ .Values.topologySpread.zoneMinDomains }}
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: {{ .Values.topologySpread.zoneWhenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "devai-api.selectorLabels" . | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: {{ .Values.topologySpread.hostnameWhenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "devai-api.selectorLabels" . | nindent 14 }}
+      {{- end }}
       securityContext:
         runAsUser: 10001
         runAsNonRoot: true
@@ -169,6 +186,10 @@ spec:
             timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep {{ .Values.preStopDelaySeconds }}"]
       {{- if or .Values.schemaBootstrap.enabled .Values.localAuth.enabled (and .Values.settings .Values.settings.brokerTokenFile) .Values.nats.auth.enabled }}
       volumes:
         {{- if .Values.schemaBootstrap.enabled }}

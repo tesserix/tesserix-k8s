@@ -63,15 +63,12 @@ spec:
         - source:
             principals: ["cluster.local/ns/devai/sa/devai-mcp-hub"]
 
-    # Rule 5d: Registry-approved MCP calls through the AgentGateway data plane.
-    # The upstream service bearer remains mandatory at the application layer.
+    # Rule 5d: AgentGateway data-plane traffic. This Service bypasses the
+    # waypoint, so ztunnel can enforce only the source principal. DevAI still
+    # requires separate dedicated upstream bearers for MCP and A2A requests.
     - from:
         - source:
             principals: ["cluster.local/ns/agentgateway-system/sa/agentgateway-mcp"]
-      to:
-        - operation:
-            paths: ["/mcp/*"]
-            methods: ["GET", "POST", "DELETE"]
 
     # Rule 5c: kagent-agent-sync (kagent-system) curls /api/settings/kagent/
     # active-variants to learn which model variants users enabled in Settings,

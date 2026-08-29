@@ -103,6 +103,16 @@ identical environment — defined once here so the two never drift.
       name: devai-api-secrets
       key: DEVAI_MCP_HUB_SERVICE_TOKEN
       optional: true
+# AgentGateway terminates Zitadel authentication for shared A2A calls and
+# replaces the caller token with this dedicated upstream bearer.
+- name: DEVAI_ADK_RUNTIME_SERVICE_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: devai-api-secrets
+      key: DEVAI_ADK_RUNTIME_SERVICE_TOKEN
+      optional: true
+- name: DEVAI_ADK_RUNTIME_BASE_URL
+  value: {{ .Values.globalRuntime.baseUrl | quote }}
 # Database — password must be defined before URL for $(VAR) expansion
 - name: DB_PASSWORD
   valueFrom:

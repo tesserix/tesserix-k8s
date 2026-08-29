@@ -123,17 +123,20 @@ class DevAIMCPIngressTests(unittest.TestCase):
                         for source in rule.get("from", [])
                     )
                 )
-                self.assertEqual(
-                    [
-                        {
-                            "operation": {
-                                "paths": ["/mcp/*"],
-                                "methods": ["GET", "POST", "DELETE"],
+                if workload == "devai-api":
+                    self.assertNotIn("to", gateway_rule)
+                else:
+                    self.assertEqual(
+                        [
+                            {
+                                "operation": {
+                                    "paths": ["/mcp/*"],
+                                    "methods": ["GET", "POST", "DELETE"],
+                                }
                             }
-                        }
-                    ],
-                    gateway_rule["to"],
-                )
+                        ],
+                        gateway_rule["to"],
+                    )
 
     def test_agentgateway_mcp_has_ambient_egress_to_devai(self):
         policies = [

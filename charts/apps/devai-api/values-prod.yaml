@@ -1,6 +1,13 @@
 # Production overrides for devai-api
 
-replicaCount: 1
+replicaCount: 3
+
+topologySpread:
+  enabled: true
+
+pdb:
+  enabled: true
+  minAvailable: 2
 
 # CHART-7: prod must never resolve to a floating :latest. Immutable release
 # seed; the ArgoCD app's helm parameter (also pinned) is what Kargo overwrites
@@ -50,10 +57,9 @@ podAnnotations:
 
 resources:
   requests:
-    # Bumped from 128Mi: devai-api now runs as a single replica (see keda
-    # below) so this one pod carries all dashboard + webhook + pipeline-worker
-    # load. 128Mi was also so small that KEDA's memory trigger read ~146% and
-    # pinned the deployment at max replicas.
+    # 128Mi was too small and drove KEDA above target. Keep the established
+    # 384Mi request while scaling horizontally; this chart intentionally sets
+    # memory only and leaves CPU to the cluster policy.
     memory: 384Mi
   limits:
     memory: 768Mi
@@ -65,22 +71,17 @@ keda:
   enabled: true
   pollingInterval: 15
   cooldownPeriod: 300
-  minReplicaCount: 1
-  # PINNED TO 1: the dashboard's live observability — the per-stage SSE log
-  # stream, the events ring buffer, the A2A timeline, and the in-memory run
-  # snapshot — all live in ONE pod's process (whichever pod claimed the run
-  # from the durable Redis queue). With >1 replica the dashboard's polls + SSE
-  # round-robin across pods, so ~2/3 of requests hit a pod with no live state
-  # and the UI flickers / shows "Events (0)" / "Waiting for agent…" / resets on
-  # refresh. A single replica gives one source of truth. Run durability is
-  # unaffected: the Redis reliable-queue + boot reconcile already survive pod
-  # rolls. (Re-enable scaling only once SSE/events are Redis pub/sub backed.)
-  maxReplicaCount: 1
+  # Three replicas keep the 99.9% runtime SLO through one pod/node disruption.
+  # At the observed 361Mi single-pod working set, the 80% memory trigger may
+  # add a fourth replica after rollout. Nine is the 3x burst ceiling for the
+  # accepted 100-concurrent-interactive-run baseline.
+  minReplicaCount: 3
+  maxReplicaCount: 9
   prometheus:
     # Off: prometheus-server is scaled to zero on this cluster, so the scaler
     # errors, KEDA marks the ScaledObject Degraded and every Kargo promotion
-    # times out waiting on devai-api's health. Nothing is lost — replicas are
-    # pinned at 1 above. Re-enable together with Prometheus.
+    # times out waiting on devai-api's health. Nothing is lost — the memory
+    # trigger and three-replica floor remain active. Re-enable with Prometheus.
     enabled: false
     serverAddress: "http://prometheus-server.monitoring.svc.cluster.local:80"
     requestRateQuery: 'sum(rate(istio_requests_total{destination_canonical_service="devai-api",reporter="destination"}[2m]))'

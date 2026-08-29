@@ -225,5 +225,23 @@ class ProbeMeshGuardrailTests(unittest.TestCase):
         self.assertEqual(["8080"], rule["to"][0]["operation"]["ports"])
 
 
+class GatewayConsumerGuardrailTests(unittest.TestCase):
+    def test_kora_reaches_only_the_internal_agentgateway_listener(self):
+        allow = resource(
+            istio_policies(),
+            "AuthorizationPolicy",
+            "agentgateway-authz",
+        )
+        rules = [
+            rule
+            for rule in allow["spec"]["rules"]
+            if "kora"
+            in rule.get("from", [{}])[0].get("source", {}).get("namespaces", [])
+        ]
+
+        self.assertEqual(1, len(rules))
+        self.assertEqual(["8080"], rules[0]["to"][0]["operation"]["ports"])
+
+
 if __name__ == "__main__":
     unittest.main()

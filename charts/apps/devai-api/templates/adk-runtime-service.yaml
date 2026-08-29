@@ -1,0 +1,19 @@
+{{- if .Values.globalRuntime.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.globalRuntime.serviceName }}
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: adk-runtime
+    istio.io/use-waypoint: "none"
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "devai-api.selectorLabels" . | nindent 4 }}
+{{- end }}
