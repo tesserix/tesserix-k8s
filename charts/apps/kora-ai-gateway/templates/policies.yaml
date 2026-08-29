@@ -1,4 +1,22 @@
 {{- if not .Values.registryOwnership.enabled }}
+# Requires a Firebase end-user ID token on every AI route section EXCEPT
+# "embedding". That omission is deliberate and load-bearing, not an oversight:
+#
+#   Kora's food index is embedded offline by cmd/embed, which runs as a
+#   sync-wave-0 seed Job. There is no end user at index-build time and no token
+#   to present, so requiring one on the embedding section would fail that Job
+#   permanently and leave the index unbuilt. Query-time embeddings are likewise
+#   an internal lookup step, carrying a food phrase and no user context.
+#
+# What still guards the embedding section: the client API key required by
+# kora-ai-traffic's apiKeyAuthentication (Strict), plus the NetworkPolicy and
+# Istio authorization admitting only Kora workloads. What it does NOT get is
+# per-user attribution -- an embedding call cannot be tied to an end user, so
+# do not build per-user quota or billing on gateway embedding telemetry.
+#
+# Verified 2026-08-29: POST /v1/embeddings returns 200 with the client key
+# alone, while POST /v1/chat/completions on the structured section returns
+# 401 "authentication failure: no bearer token found". See kora#251.
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
 metadata:
