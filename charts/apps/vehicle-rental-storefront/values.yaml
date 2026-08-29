@@ -1,0 +1,71 @@
+name: vehicle-rental-storefront
+namespace: vehicle-rental
+partOf: vehicle-rental-app
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/vehicle-rental-storefront
+  tag: "v0.1.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: ghcr-pull-secret
+
+service:
+  type: ClusterIP
+  port: 3000
+
+# infrastructure.md sizes the storefront 2 → 8 on RPS. Starting flat at 2: there
+# is no traffic to scale on yet, and an HPA with no metrics history thrashes on
+# the first real day.
+replicas: 2
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+# One VirtualService owns the whole *.tesserix.app wildcard and splits by
+# authority, following mark8ly-storefront. Istio merges same-host VSes badly, so
+# storefront / admin / onboarding must be routed from one object, not three.
+ingress:
+  enabled: true
+  gateway: istio-ingress/tesseract-gateway
+  wildcardHost: "*.tesserix.app"
+  # <shop>-admin.tesserix.app — matched before the storefront catch-all.
+  adminServiceName: vehicle-rental-admin
+  adminServicePort: 3000
+  onboarding:
+    enabled: true
+    host: rentme.tesserix.app
+    serviceName: vehicle-rental-onboarding
+    servicePort: 3000
+
+# The UI holds no database credential. Postgres is reached only by the Go API,
+# which is what enforces the tenant scope the RLS policies read.
+api:
+  baseUrl: http://vehicle-rental-api.vehicle-rental.svc.cluster.local:8080
+
+auth:
+  issuer: https://auth.tesserix.app
+  clientId: vehicle-rental-storefront
+
+# Tenant custom domains (rentals.bikashmotors.in) terminate at
+# custom-domain-gateway and are forwarded here; the shop is resolved from Host
+# either way, so the app needs no separate code path.
+customDomains:
+  enabled: true
+
+gcp:
+  secretManager:
+    enabled: true
+    refreshInterval: 1h
+    secretStore: gcp-secret-store
+  secrets:
+    sessionKey: prod-vehicle-rental-session-encrypt-key

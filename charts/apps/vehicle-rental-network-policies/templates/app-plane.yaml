@@ -1,0 +1,110 @@
+{{- /*
+The app plane is reachable from the edge by design — the storefront is a public
+website. So the lock here is weaker than the data plane's on purpose, and the
+real boundary is data-plane.yaml.
+
+This chart does NOT own either Namespace object; istio-config does, because it
+labels them for the mesh. A prune of this app must not be able to take the
+database's PVCs with it.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ .Values.appNamespace }}
+  labels:
+    app.kubernetes.io/part-of: vehicle-rental-app
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  # No rules: NetworkPolicies are additive, so this is the floor the rules below
+  # build on rather than something they override.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-edge-and-platform
+  namespace: {{ .Values.appNamespace }}
+  labels:
+    app.kubernetes.io/part-of: vehicle-rental-app
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.appNamespace }}
+        {{- range .Values.allowedSources }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+        {{- end }}
+{{- if .Values.hbone.enabled }}
+---
+{{/*
+Ambient HBONE. istio-config enrols vehicle-rental as ambient, so ztunnel tunnels
+every pod-to-pod call over 15008. Without this rule the default-deny above eats
+that tunnel and calls time out with no error logged anywhere.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-hbone-15008
+  namespace: {{ .Values.appNamespace }}
+  labels:
+    app.kubernetes.io/part-of: vehicle-rental-app
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 15008
+      from:
+        - ipBlock:
+            cidr: {{ .Values.podCIDR }}
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 15008
+      to:
+        - ipBlock:
+            cidr: {{ .Values.podCIDR }}
+{{- end }}
+---
+{{/*
+Egress stays broad and the lock is on the way in, matching dwellm8. What the app
+plane must reach is external and moves — Zitadel's JWKS, GCP Secret Manager, the
+payment gateway — and an allow-list of those IPs goes stale and then presents as
+checkout failing at 3am.
+
+infrastructure.md asks for a hostname allow-list (PSP, VAHAN, DigiLocker, …).
+NetworkPolicy cannot express one — it matches CIDRs. That belongs in a set of
+Istio ServiceEntries plus an egress gateway, which is a separate change.
+
+The metadata IP is excluded: these pods have no Workload Identity binding, their
+credentials arrive as Secrets ESO wrote. A pod that can curl the metadata server
+is a pod that can go looking for a token it was never given.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-broad
+  namespace: {{ .Values.appNamespace }}
+  labels:
+    app.kubernetes.io/part-of: vehicle-rental-app
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
