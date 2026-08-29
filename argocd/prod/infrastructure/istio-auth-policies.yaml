@@ -103,6 +103,24 @@ spec:
               - "mcp.tesserix.app"
               - "agentgateway.tesserix.app"
               - "aregistry.tesserix.app"
+              # The console serves machine-callable endpoints to Zitadel
+              # service users (tesserix-home#427), so a Zitadel-issued token
+              # must be allowed to reach this host.
+              #
+              # This list generates `deny-foreign-hosts-…`, a DENY policy keyed
+              # on the ISSUER (`requestPrincipals: https://auth.tesserix.app/*`)
+              # and NOT on the audience — so it refuses every Zitadel token sent
+              # to a host absent here, whatever project minted it. Allowlisting
+              # the audience above is therefore necessary but NOT sufficient:
+              # without this line the request clears JWT validation and is then
+              # denied by RBAC, which reports as `RBAC: access denied` rather
+              # than anything naming a host.
+              #
+              # Widening it does not weaken the console: `verifyMachineAuthHeader`
+              # independently requires audience 386377618200461939, so an
+              # agentgateway token reaching this host is still refused by the
+              # application.
+              - "console.tesserix.app"
 
         # Frontend apps - these need to be accessible without authentication
         # for initial page load (login page, static assets, etc.)
