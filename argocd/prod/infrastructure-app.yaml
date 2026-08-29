@@ -20,6 +20,17 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
+  # The controller appends pre/post-delete-finalizer entries to child
+  # Applications whose charts ship delete hooks (kyverno, zitadel). Finalizer
+  # lists diff atomically, so those children showed permanently OutOfSync here
+  # and selfHeal churned without ever winning — the controller re-adds the
+  # entries after every sync. SSA field ownership keeps real syncs from
+  # stripping them, so ignoring the field only silences the false diff.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /metadata/finalizers
   syncPolicy:
     automated:
       prune: true
