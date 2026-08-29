@@ -9,6 +9,7 @@ ROOT = pathlib.Path(__file__).parents[1]
 ISSUER = "https://auth.tesserix.app"
 JWKS_PATH = "/oauth/v2/keys"
 PROJECT_AUDIENCE = "387190457387450503"
+REGISTRY_PROJECT_AUDIENCE = "386930054896026901"
 HUMAN_EMAILS = {"samyak.rout@gmail.com", "mahesh.sangawar@gmail.com"}
 
 
@@ -729,7 +730,7 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
         self.assertEqual(["Ingress", "Egress"], network_policy["spec"]["policyTypes"])
         self.assertIn("key: oauth_subject", config["data"]["config.yaml"])
 
-    def test_ingress_accepts_only_agentgateway_audience_on_exact_hosts(self):
+    def test_ingress_accepts_agentic_audiences_on_exact_hosts(self):
         application = yaml.safe_load(
             (ROOT / "argocd/prod/infrastructure/istio-auth-policies.yaml").read_text()
         )
@@ -737,9 +738,15 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
         issuer = next(
             item for item in values["extraGip"] if item["issuer"] == ISSUER
         )
-        self.assertEqual([PROJECT_AUDIENCE], issuer["audiences"])
         self.assertEqual(
-            ["mcp.tesserix.app", "agentgateway.tesserix.app"],
+            [PROJECT_AUDIENCE, REGISTRY_PROJECT_AUDIENCE], issuer["audiences"]
+        )
+        self.assertEqual(
+            [
+                "mcp.tesserix.app",
+                "agentgateway.tesserix.app",
+                "aregistry.tesserix.app",
+            ],
             issuer["restrictToHosts"],
         )
 
@@ -749,7 +756,11 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
             for host in app.get("hosts", [])
         }
         self.assertTrue(
-            {"mcp.tesserix.app", "agentgateway.tesserix.app"}.issubset(public_hosts)
+            {
+                "mcp.tesserix.app",
+                "agentgateway.tesserix.app",
+                "aregistry.tesserix.app",
+            }.issubset(public_hosts)
         )
 
         documents = render_istio_auth_policies()
@@ -762,7 +773,11 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
             operation = deny["spec"]["rules"][0]["to"][0]["operation"]
             self.assertEqual(["80", "443"], operation["ports"])
             self.assertEqual(
-                ["mcp.tesserix.app", "agentgateway.tesserix.app"],
+                [
+                    "mcp.tesserix.app",
+                    "agentgateway.tesserix.app",
+                    "aregistry.tesserix.app",
+                ],
                 operation["notHosts"],
             )
 
