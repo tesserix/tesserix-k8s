@@ -81,6 +81,24 @@ spec:
             audiences:
               - "387190457387450503"
               - "386930054896026901"
+              # Platform Console project. A Zitadel SERVICE USER calling the
+              # console's machine-callable endpoints (tesserix-home#427)
+              # presents a token with this audience.
+              #
+              # It lives on THIS entry rather than a new one because a
+              # RequestAuthentication is SELECTOR-scoped, not host-scoped:
+              # `restrictToHosts` below shapes the AuthorizationPolicy, while
+              # JWT validation applies to every request reaching the gateway
+              # with this issuer, whatever host it asked for. A second entry
+              # repeating `https://auth.tesserix.app` would give the gateway
+              # two rules for one issuer, which is ambiguous rather than
+              # additive.
+              #
+              # Found the hard way: the console endpoint answered 403
+              # `Audiences in Jwt are not allowed` — an Envoy message, not the
+              # application's — while the app itself was correct and its
+              # unauthenticated path answered 401 normally.
+              - "386377618200461939"
             restrictToHosts:
               - "mcp.tesserix.app"
               - "agentgateway.tesserix.app"
