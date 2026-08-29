@@ -541,6 +541,11 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         backend = resource(documents, "AgentgatewayBackend", "global-adk-runtime")
         route = resource(documents, "HTTPRoute", "global-adk-runtime")
         policy = resource(documents, "AgentgatewayPolicy", "global-adk-runtime")
+        observability = resource(
+            documents,
+            "AgentgatewayPolicy",
+            "global-adk-runtime-observability",
+        )
         secret = resource(documents, "ExternalSecret", "global-adk-runtime-upstream")
 
         self.assertEqual(
@@ -563,6 +568,24 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         self.assertEqual(
             "global-adk-runtime",
             route["spec"]["rules"][0]["backendRefs"][0]["name"],
+        )
+        self.assertEqual(
+            [
+                {
+                    "group": "gateway.networking.k8s.io",
+                    "kind": "Gateway",
+                    "name": "agentgateway-mcp",
+                    "sectionName": "mcp",
+                }
+            ],
+            observability["spec"]["targetRefs"],
+        )
+        self.assertEqual(
+            [
+                {"name": "auth.subject", "expression": "jwt.sub"},
+                {"name": "auth.client_id", "expression": "jwt.client_id"},
+            ],
+            observability["spec"]["frontend"]["accessLog"]["attributes"]["add"],
         )
 
         traffic = policy["spec"]["traffic"]
