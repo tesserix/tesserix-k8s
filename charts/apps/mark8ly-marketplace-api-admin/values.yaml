@@ -256,10 +256,29 @@ adminConformanceCron:
   # The explicit range takes minors and stops at 1.0.0, where a breaking change
   # would land and deserves a deliberate read rather than an overnight surprise.
   #
-  # 0.5.0 is not optional here: it added the check that fails an endpoint a
-  # product SERVES but does not declare — the one that closes the drift between
-  # this chart's declaration and the product's own admin-conformance.json.
-  version: ">=0.5.0 <1.0.0"
+  # 0.5.0 was not optional when this floor was written: it added the check that
+  # fails an endpoint a product SERVES but does not declare — the one that
+  # closes the drift between this chart's declaration and the product's own
+  # admin-conformance.json.
+  #
+  # The floor is now 0.8.1, because the declaration below moved to contract v3:
+  #
+  #   - 0.8.0 (design-system#40) added the eight v3 endpoint ids this chart
+  #     declares — outbox, email-sends, notifications, break-glass,
+  #     conversions, onboarding/funnel, onboarding/sessions, tenant-purge.
+  #     parseEndpoints THROWS on an id it does not recognise, and a throw at
+  #     declaration-parse time fails the ENTIRE run, not the one entry. So a
+  #     resolved 0.5.x here would take every endpoint down, not just the new
+  #     ones.
+  #   - 0.8.1 (design-system#43) corrected onboarding/funnel's envelope to
+  #     `free`. 0.8.0 had inferred `data-flat-map` and reported two FALSE §4.1
+  #     failures against a mark8ly handler that was correct and unchanged.
+  #     Resolving to 0.8.0 would fail this job nightly on a contract defect.
+  #
+  # npm resolves the newest match, so today this range and the old one both
+  # land on 0.8.1 — the floor matters when something pins or caches an older
+  # resolution, which is exactly when nobody is watching.
+  version: ">=0.8.1 <1.0.0"
   # MUST stay in step with mark8ly's own admin-conformance.json — see the
   # ConfigMap template for why nothing enforces that and what the risk is.
   declaration:
