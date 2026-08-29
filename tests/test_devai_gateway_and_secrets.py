@@ -35,6 +35,27 @@ def resource(documents, kind, name):
 
 
 class DevAIGatewayAndSecretsTests(unittest.TestCase):
+    def test_dashboard_owns_its_content_security_policy(self):
+        documents = [
+            document
+            for document in yaml.safe_load_all(
+                (ROOT / "manifests/devai-istio/virtualservice.yaml").read_text()
+            )
+            if document
+        ]
+        virtual_service = resource(documents, "VirtualService", "devai-platform")
+        dashboard_route = next(
+            route
+            for route in virtual_service["spec"]["http"]
+            if route.get("match") == [{"uri": {"prefix": "/"}}]
+        )
+
+        response_headers = dashboard_route.get("headers", {}).get("response", {})
+        self.assertNotIn(
+            "content-security-policy",
+            response_headers.get("set", {}),
+        )
+
     def test_llm_gateway_is_native_agentgateway_with_every_provider(self):
         documents = render_chart(
             "charts/apps/devai-ai-gateway", "devai-ai-gateway", "agentgateway-system"
