@@ -1,0 +1,71 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: falco
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: runtime-security
+  annotations:
+    # After external-secrets-resources (wave 0) — falcosidekick reads its
+    # Slack webhook from the ESO-managed `falcosidekick-secrets` Secret.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://falcosecurity.github.io/charts
+    chart: falco
+    targetRevision: 9.1.0
+    helm:
+      releaseName: falco
+      values: |
+        # CO-RE eBPF probe — the only driver that works on COS node kernels;
+        # no module build or download at pod start.
+        driver:
+          kind: modern_ebpf
+
+        # DaemonSet on every node; memory-only resources (cluster rule).
+        resources:
+          requests:
+            cpu: null
+            memory: 512Mi
+          limits:
+            cpu: null
+            memory: 1Gi
+
+        # Event fan-out to Slack. Slack webhook comes from the ESO-managed
+        # Secret (SLACK_WEBHOOKURL key) — never a value in this file.
+        falcosidekick:
+          enabled: true
+          replicaCount: 2
+          # No `cpu: null` here — the subchart default is `resources: {}`, so a
+          # literal null would render into the manifest instead of cancelling.
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          config:
+            existingSecret: falcosidekick-secrets
+            slack:
+              # notice+ during the tuning period; raise to warning once the
+              # rule exceptions for Istio/CNPG/node agents are in place.
+              minimumpriority: notice
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: falco
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
