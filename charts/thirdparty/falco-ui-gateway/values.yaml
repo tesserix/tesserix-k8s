@@ -1,0 +1,42 @@
+# OAuth2 Proxy fronting Falcosidekick-UI with Zitadel OIDC.
+# Client ID/secret and cookie secret come from GCP SM via ESO — never here.
+
+oauth2Proxy:
+  image:
+    repository: quay.io/oauth2-proxy/oauth2-proxy
+    tag: "v7.7.1"
+    pullPolicy: IfNotPresent
+  replicas: 2
+  resources:
+    requests:
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+  provider: oidc
+  oidcIssuerUrl: https://auth.tesserix.app
+  scope: "openid email profile"
+  # Zitadel handles authentication; this allowlist is the authorization gate.
+  allowedEmails:
+    - samyak.rout@gmail.com
+    - mahesh.sangawar@gmail.com
+  redirectUrl: https://falco.tesserix.app/oauth2/callback
+  upstream: http://falco-falcosidekick-ui.falco.svc.cluster.local:2802
+  cookie:
+    name: _falco_oauth2
+    secure: true
+    expire: 168h
+    refresh: 1h
+
+externalSecret:
+  enabled: true
+  secretStore: gcp-secret-store
+  refreshInterval: 1h
+  secrets:
+    clientId: prod-falco-oidc-client-id
+    clientSecret: prod-falco-oidc-client-secret
+    cookieSecret: prod-falco-oauth2-cookie-secret
+
+virtualService:
+  enabled: true
+  host: falco.tesserix.app
+  gateway: istio-ingress/tesseract-gateway
