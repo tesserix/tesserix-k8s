@@ -1,0 +1,163 @@
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: global-adk-runtime-zitadel-jwks
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  policies:
+    tls: {}
+  static:
+    host: {{ .Values.oauth.jwks.host }}
+    port: 443
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: global-adk-runtime
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  a2a:
+    host: {{ .Values.globalAdkRuntime.host | quote }}
+    port: {{ .Values.globalAdkRuntime.port }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: global-adk-runtime
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.gateway.name }}
+      sectionName: mcp
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ .Values.globalAdkRuntime.pathPrefix | quote }}
+        - path:
+            type: Exact
+            value: {{ .Values.globalAdkRuntime.agentCardPath | quote }}
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: global-adk-runtime
+          weight: 1
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: global-adk-runtime
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: global-adk-runtime
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: {{ .Values.oauth.issuer }}
+          audiences:
+            - {{ .Values.oauth.audience | quote }}
+          jwks:
+            remote:
+              jwksPath: {{ .Values.oauth.jwks.path }}
+              cacheDuration: {{ .Values.oauth.jwks.cacheDuration }}
+              backendRef:
+                group: agentgateway.dev
+                kind: AgentgatewayBackend
+                name: global-adk-runtime-zitadel-jwks
+                port: 443
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          - {{ printf "%q in jwt[%q]" .Values.globalAdkRuntime.machineRole .Values.oauth.roleClaim | quote }}
+    transformation:
+      request:
+        set:
+          - name: X-ADK-Workload-Subject
+            value: jwt.sub
+          - name: X-ADK-Workload-Client-ID
+            value: jwt.client_id
+    rateLimit:
+      local:
+        - requests: {{ .Values.globalAdkRuntime.limits.requestsPerMinutePerReplica }}
+          unit: Minutes
+          burst: {{ .Values.globalAdkRuntime.limits.requestBurst }}
+      global:
+        backendRef:
+          name: {{ .Values.rateLimit.backend }}
+          port: {{ .Values.rateLimit.port }}
+        domain: {{ .Values.rateLimit.domain }}
+        failureMode: FailClosed
+        descriptors:
+          - entries:
+              - name: gateway
+                expression: '"runtime"'
+              - name: oauth_subject
+                expression: jwt.sub
+            unit: Requests
+    timeouts:
+      request: {{ .Values.globalAdkRuntime.requestTimeout }}
+  backend:
+    auth:
+      secretRef:
+        name: {{ .Values.globalAdkRuntime.upstreamSecret.name }}
+        key: {{ .Values.globalAdkRuntime.upstreamSecret.key }}
+      location:
+        header:
+          name: Authorization
+          prefix: "Bearer "
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: global-adk-runtime-observability
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: global-adk-runtime
+  frontend:
+    accessLog:
+      attributes:
+        add:
+          - name: auth.subject
+            expression: jwt.sub
+          - name: auth.client_id
+            expression: jwt.client_id
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: {{ .Values.globalAdkRuntime.upstreamSecret.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  refreshInterval: {{ .Values.externalSecret.refreshInterval }}
+  secretStoreRef:
+    name: {{ .Values.externalSecret.secretStore }}
+    kind: ClusterSecretStore
+  target:
+    name: {{ .Values.globalAdkRuntime.upstreamSecret.name }}
+    creationPolicy: Owner
+  data:
+    - secretKey: {{ .Values.globalAdkRuntime.upstreamSecret.key }}
+      remoteRef:
+        key: {{ .Values.globalAdkRuntime.upstreamSecret.remoteRef }}

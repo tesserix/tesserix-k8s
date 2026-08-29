@@ -484,6 +484,234 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             deployment["spec"]["template"]["spec"]["containers"][0]["image"],
         )
 
+    def test_global_adk_runtime_api_is_multi_zone_and_disruption_safe(self):
+        documents = render_chart(
+            "charts/apps/devai-api",
+            "devai-api",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        deployment = resource(documents, "Deployment", "devai-api")
+        pod = deployment["spec"]["template"]["spec"]
+        container = pod["containers"][0]
+        scaler = resource(documents, "ScaledObject", "devai-api")
+
+        self.assertEqual(3, scaler["spec"]["minReplicaCount"])
+        self.assertEqual(9, scaler["spec"]["maxReplicaCount"])
+        self.assertEqual(
+            {"kubernetes.io/hostname", "topology.kubernetes.io/zone"},
+            {item["topologyKey"] for item in pod["topologySpreadConstraints"]},
+        )
+        self.assertGreaterEqual(pod["terminationGracePeriodSeconds"], 930)
+        self.assertEqual(
+            ["/bin/sh", "-c", "sleep 5"],
+            container["lifecycle"]["preStop"]["exec"]["command"],
+        )
+        self.assertNotIn("cpu", container["resources"]["requests"])
+        self.assertNotIn("cpu", container["resources"]["limits"])
+
+        pdb = resource(documents, "PodDisruptionBudget", "devai-api")
+        self.assertEqual(2, pdb["spec"]["minAvailable"])
+
+    def test_global_adk_runtime_has_a_stable_service_alias(self):
+        documents = render_chart(
+            "charts/apps/devai-api",
+            "devai-api",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        service = resource(documents, "Service", "adk-runtime")
+
+        self.assertEqual("none", service["metadata"]["labels"]["istio.io/use-waypoint"])
+        self.assertEqual(
+            {
+                "app.kubernetes.io/name": "devai-api",
+                "app.kubernetes.io/instance": "devai-api",
+            },
+            service["spec"]["selector"],
+        )
+        self.assertEqual(8080, service["spec"]["ports"][0]["port"])
+
+    def test_global_adk_runtime_is_internal_and_zitadel_authenticated(self):
+        documents = render_chart(
+            "charts/apps/agentgateway-route-sync",
+            "agentgateway-route-sync",
+            "agentgateway-system",
+        )
+        backend = resource(documents, "AgentgatewayBackend", "global-adk-runtime")
+        route = resource(documents, "HTTPRoute", "global-adk-runtime")
+        policy = resource(documents, "AgentgatewayPolicy", "global-adk-runtime")
+        secret = resource(documents, "ExternalSecret", "global-adk-runtime-upstream")
+
+        self.assertEqual(
+            {"host": "adk-runtime.devai.svc.cluster.local", "port": 8080},
+            backend["spec"]["a2a"],
+        )
+        self.assertEqual("mcp", route["spec"]["parentRefs"][0]["sectionName"])
+        self.assertEqual(
+            [
+                {"path": {"type": "PathPrefix", "value": "/a2a/v1/"}},
+                {
+                    "path": {
+                        "type": "Exact",
+                        "value": "/.well-known/agent-card.json",
+                    }
+                },
+            ],
+            route["spec"]["rules"][0]["matches"],
+        )
+        self.assertEqual(
+            "global-adk-runtime",
+            route["spec"]["rules"][0]["backendRefs"][0]["name"],
+        )
+
+        traffic = policy["spec"]["traffic"]
+        provider = traffic["jwtAuthentication"]["providers"][0]
+        self.assertEqual("Strict", traffic["jwtAuthentication"]["mode"])
+        self.assertEqual("https://auth.tesserix.app", provider["issuer"])
+        self.assertEqual(["387190457387450503"], provider["audiences"])
+        self.assertEqual(
+            [
+                '"agentgateway.runtime" in jwt['
+                '"urn:zitadel:iam:org:project:387190457387450503:roles"]'
+            ],
+            traffic["authorization"]["policy"]["matchExpressions"],
+        )
+        self.assertEqual(
+            [
+                {"name": "X-ADK-Workload-Subject", "value": "jwt.sub"},
+                {"name": "X-ADK-Workload-Client-ID", "value": "jwt.client_id"},
+            ],
+            traffic["transformation"]["request"]["set"],
+        )
+        self.assertEqual(
+            [{"requests": 1800, "unit": "Minutes", "burst": 200}],
+            traffic["rateLimit"]["local"],
+        )
+        self.assertEqual(
+            {
+                "backendRef": {"name": "agentgateway-ratelimit", "port": 8081},
+                "domain": "agentgateway-public",
+                "failureMode": "FailClosed",
+                "descriptors": [
+                    {
+                        "entries": [
+                            {"name": "gateway", "expression": '"runtime"'},
+                            {"name": "oauth_subject", "expression": "jwt.sub"},
+                        ],
+                        "unit": "Requests",
+                    }
+                ],
+            },
+            traffic["rateLimit"]["global"],
+        )
+        self.assertEqual({"request": "15m"}, traffic["timeouts"])
+        self.assertEqual(
+            {
+                "secretRef": {
+                    "name": "global-adk-runtime-upstream",
+                    "key": "token",
+                },
+                "location": {
+                    "header": {"name": "Authorization", "prefix": "Bearer "}
+                },
+            },
+            policy["spec"]["backend"]["auth"],
+        )
+        self.assertEqual(
+            [
+                {
+                    "secretKey": "token",
+                    "remoteRef": {
+                        "key": "prod-global-adk-runtime-upstream-token"
+                    },
+                }
+            ],
+            secret["spec"]["data"],
+        )
+
+        rate_limit_documents = list(
+            yaml.safe_load_all(
+                (ROOT / "manifests/agentic-istio/ratelimit.yaml").read_text()
+            )
+        )
+        rate_limit_config = yaml.safe_load(
+            resource(
+                rate_limit_documents,
+                "ConfigMap",
+                "agentgateway-ratelimit",
+            )["data"]["config.yaml"]
+        )
+        runtime = next(
+            descriptor
+            for descriptor in rate_limit_config["descriptors"]
+            if descriptor.get("value") == "runtime"
+        )
+        self.assertEqual("gateway", runtime["key"])
+        self.assertEqual(
+            {"unit": "minute", "requests_per_unit": 1800},
+            runtime["descriptors"][0]["rate_limit"],
+        )
+
+    def test_global_adk_runtime_token_is_injected_into_devai(self):
+        documents = render_chart(
+            "charts/apps/devai-api",
+            "devai-api",
+            "devai",
+            ("values.yaml", "values-prod.yaml"),
+        )
+        deployment = resource(documents, "Deployment", "devai-api")
+        env = {
+            item["name"]: item
+            for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        self.assertEqual(
+            {
+                "name": "devai-api-secrets",
+                "key": "DEVAI_ADK_RUNTIME_SERVICE_TOKEN",
+                "optional": True,
+            },
+            env["DEVAI_ADK_RUNTIME_SERVICE_TOKEN"]["valueFrom"]["secretKeyRef"],
+        )
+        self.assertEqual(
+            "http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080",
+            env["DEVAI_ADK_RUNTIME_BASE_URL"]["value"],
+        )
+
+        external_secrets = list(
+            yaml.safe_load_all(
+                (ROOT / "external-secrets/prod/devai/externalsecret.yaml").read_text()
+            )
+        )
+        secret = resource(external_secrets, "ExternalSecret", "devai-api-secrets")
+        mappings = {
+            item["secretKey"]: item["remoteRef"]["key"]
+            for item in secret["spec"]["data"]
+        }
+        self.assertEqual(
+            "prod-global-adk-runtime-upstream-token",
+            mappings["DEVAI_ADK_RUNTIME_SERVICE_TOKEN"],
+        )
+
+    def test_zitadel_declares_the_global_runtime_machine_role(self):
+        values = yaml.safe_load(
+            (ROOT / "charts/apps/zitadel-bootstrap/values.yaml").read_text()
+        )
+        project = next(
+            item
+            for item in values["desired"]["platformProjects"]
+            if item["name"] == "AgentGateway"
+        )
+
+        self.assertIn(
+            {
+                "key": "agentgateway.runtime",
+                "displayName": "ADK Runtime",
+                "group": "gateway-access",
+            },
+            project["roles"],
+        )
+
     def test_devai_temporal_workers_are_ha_hardened_and_promoted(self):
         documents = render_chart(
             "charts/apps/devai-api",
@@ -547,12 +775,19 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
                 "DevAIAgentImportFailures",
                 "DevAIAgentEvaluationFailures",
                 "DevAISandboxQuotaPressure",
+                "GlobalADKRuntimeBackendHADegraded",
+                "GlobalADKRuntimeGatewayHADegraded",
             },
             set(alerts),
         )
-        for rule in alerts.values():
+        for name, rule in alerts.items():
             self.assertEqual("devai-platform", rule["labels"]["owner"])
-            self.assertTrue(rule["annotations"]["runbook_url"].endswith("devai-agent-lifecycle.md"))
+            runbook = (
+                "global-adk-runtime.md"
+                if name.startswith("GlobalADKRuntime")
+                else "devai-agent-lifecycle.md"
+            )
+            self.assertTrue(rule["annotations"]["runbook_url"].endswith(runbook))
 
     def test_devai_temporal_egress_allows_frontend_and_hbone(self):
         documents = render_chart(

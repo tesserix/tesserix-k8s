@@ -67,4 +67,20 @@ spec:
           annotations:
             summary: Tenants are repeatedly hitting sandbox quota controls
             runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/devai-agent-lifecycle.md
+    - name: global-adk-runtime.availability
+      rules:
+        - alert: GlobalADKRuntimeBackendHADegraded
+          expr: 'max(kube_deployment_status_replicas_available{namespace="{{ .Release.Namespace }}",deployment="{{ include "devai-api.fullname" . }}"}) < 2 or absent(kube_deployment_status_replicas_available{namespace="{{ .Release.Namespace }}",deployment="{{ include "devai-api.fullname" . }}"})'
+          for: 5m
+          labels: {severity: critical, owner: devai-platform}
+          annotations:
+            summary: Global ADK runtime has fewer than two available backend replicas
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/global-adk-runtime.md
+        - alert: GlobalADKRuntimeGatewayHADegraded
+          expr: 'max(kube_deployment_status_replicas_available{namespace="agentgateway-system",deployment="agentgateway-mcp"}) < 2 or absent(kube_deployment_status_replicas_available{namespace="agentgateway-system",deployment="agentgateway-mcp"})'
+          for: 5m
+          labels: {severity: critical, owner: devai-platform}
+          annotations:
+            summary: Global ADK runtime has fewer than two available gateway replicas
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/global-adk-runtime.md
 {{- end }}

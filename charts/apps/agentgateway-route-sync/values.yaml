@@ -46,6 +46,23 @@ oauth:
   roleClaim: "urn:zitadel:iam:org:project:387190457387450503:roles"
   machineRole: agentgateway.mcp
 
+globalAdkRuntime:
+  host: adk-runtime.devai.svc.cluster.local
+  port: 8080
+  pathPrefix: /a2a/v1/
+  agentCardPath: /.well-known/agent-card.json
+  requestTimeout: 15m
+  machineRole: agentgateway.runtime
+  limits:
+    # One surviving gateway replica can absorb the accepted 20 starts/s peak
+    # with 50% headroom, plus short Agent Card discovery bursts.
+    requestsPerMinutePerReplica: 1800
+    requestBurst: 200
+  upstreamSecret:
+    name: global-adk-runtime-upstream
+    key: token
+    remoteRef: prod-global-adk-runtime-upstream-token
+
 ui:
   upstream: http://agentregistry.agentregistry-system.svc.cluster.local:12121
   oauth2Proxy:

@@ -574,6 +574,12 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             destination["namespaceSelector"]["matchLabels"]
             ["kubernetes.io/metadata.name"],
         )
+        gateway_selector = destination["podSelector"]["matchExpressions"][0]
+        self.assertEqual("In", gateway_selector["operator"])
+        self.assertEqual(
+            {"kora-ai", "agentgateway-mcp"},
+            set(gateway_selector["values"]),
+        )
         self.assertEqual(8080, egress["ports"][0]["port"])
 
     def test_production_kora_api_enables_the_ai_gateway(self):
