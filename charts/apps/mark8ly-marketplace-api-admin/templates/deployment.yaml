@@ -210,6 +210,33 @@ spec:
                   key: {{ .Values.sentryDsn.secretKey }}
                   optional: true
             {{- end }}
+            # Console plan-catalog parallel run (mark8ly#304).
+            # Every value optional: absent, no console read is attempted and
+            # prices come from the compiled catalog exactly as before.
+            {{- if .Values.consoleCatalog }}
+            - name: CONSOLE_CATALOG_URL
+              value: {{ .Values.consoleCatalog.url | quote }}
+            - name: CONSOLE_CATALOG_TOKEN_URL
+              value: {{ .Values.consoleCatalog.tokenUrl | quote }}
+            - name: CONSOLE_CATALOG_SCOPE
+              value: {{ .Values.consoleCatalog.scope | quote }}
+            - name: CONSOLE_CATALOG_MODE
+              value: {{ .Values.consoleCatalog.mode | quote }}
+            - name: CONSOLE_CATALOG_INTERVAL
+              value: {{ .Values.consoleCatalog.interval | quote }}
+            - name: CONSOLE_CATALOG_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.consoleCatalog.secretName }}
+                  key: {{ .Values.consoleCatalog.clientIdKey }}
+                  optional: true
+            - name: CONSOLE_CATALOG_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.consoleCatalog.secretName }}
+                  key: {{ .Values.consoleCatalog.clientSecretKey }}
+                  optional: true
+            {{- end }}
             # S3: Stripe Billing
             {{- if .Values.stripeBilling }}
             - name: STRIPE_BILLING_SECRET_KEY
