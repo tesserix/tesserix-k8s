@@ -724,6 +724,72 @@ CREATE INDEX IF NOT EXISTS idx_sandboxes_owner ON sandboxes(owner, created_at DE
 CREATE INDEX IF NOT EXISTS idx_sandboxes_reap ON sandboxes(expires_at) WHERE status <> 'destroyed';
 CREATE INDEX IF NOT EXISTS idx_sandboxes_agent ON sandboxes((spec->'agent'->>'name'), created_at DESC);
 
+-- Immutable Registry snapshots used by sandboxes and evaluations (ADR-0007).
+CREATE TABLE IF NOT EXISTS agent_imports (
+    id                  UUID PRIMARY KEY,
+    owner_scope         TEXT NOT NULL,
+    tenant_id           TEXT NOT NULL DEFAULT '',
+    project_id          TEXT NOT NULL,
+    idempotency_key     TEXT NOT NULL,
+    request_fingerprint TEXT NOT NULL,
+    registry_ref        TEXT NOT NULL,
+    state               TEXT NOT NULL,
+    agent               JSONB NOT NULL,
+    dependency_lock     JSONB NOT NULL DEFAULT '[]'::jsonb,
+    permissions         JSONB NOT NULL DEFAULT '{}'::jsonb,
+    conformance         JSONB NOT NULL,
+    created_by          TEXT NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (owner_scope, project_id, idempotency_key),
+    CHECK (state IN ('ready', 'blocked', 'failed', 'pending_verification'))
+);
+
+CREATE TABLE IF NOT EXISTS agent_import_outbox (
+    id            UUID PRIMARY KEY,
+    import_id     UUID NOT NULL REFERENCES agent_imports(id),
+    owner_scope   TEXT NOT NULL,
+    event_type    TEXT NOT NULL,
+    payload       JSONB NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_at  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_imports_owner_project_created
+    ON agent_imports(owner_scope, project_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_import_outbox_unpublished
+    ON agent_import_outbox(created_at, id) WHERE published_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS agent_lifecycle_events (
+    id          UUID PRIMARY KEY,
+    workflow_id TEXT NOT NULL,
+    sequence    INTEGER NOT NULL CHECK (sequence > 0),
+    owner_scope TEXT NOT NULL,
+    tenant_id   TEXT NOT NULL DEFAULT '',
+    operation   TEXT NOT NULL,
+    state       TEXT NOT NULL,
+    step        TEXT NOT NULL,
+    error_code  TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (workflow_id, sequence)
+);
+
+CREATE TABLE IF NOT EXISTS agent_lifecycle_outbox (
+    id           UUID PRIMARY KEY,
+    event_id     UUID NOT NULL REFERENCES agent_lifecycle_events(id),
+    owner_scope  TEXT NOT NULL,
+    event_type   TEXT NOT NULL,
+    payload      JSONB NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_at TIMESTAMPTZ,
+    UNIQUE (event_id, event_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_lifecycle_events_owner_created
+    ON agent_lifecycle_events(owner_scope, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_lifecycle_outbox_unpublished
+    ON agent_lifecycle_outbox(created_at, id) WHERE published_at IS NULL;
+
 -- ============================================================================
 -- VERSIONED EVALUATION DATASETS AND DURABLE RESULTS
 -- Dataset case payloads are immutable content-addressed object-store blobs.

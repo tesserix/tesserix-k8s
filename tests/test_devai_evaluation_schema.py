@@ -41,6 +41,54 @@ def test_eval_owner_scope_indexes_and_chart_release_are_present() -> None:
     assert "idx_eval_suites_owner" in SQL
     assert "idx_eval_runs_owner_sandbox" in SQL
 
+
+def test_agent_imports_are_immutable_tenant_scoped_and_idempotent() -> None:
+    assert "CREATE TABLE IF NOT EXISTS agent_imports" in SQL
+    imports_sql = SQL[
+        SQL.index("CREATE TABLE IF NOT EXISTS agent_imports") :
+        SQL.index("CREATE TABLE IF NOT EXISTS eval_datasets")
+    ]
+    assert re.search(r"owner_scope\s+TEXT NOT NULL", imports_sql)
+    assert re.search(r"project_id\s+TEXT NOT NULL", imports_sql)
+    assert re.search(r"registry_ref\s+TEXT NOT NULL", imports_sql)
+    assert re.search(r"agent\s+JSONB NOT NULL", imports_sql)
+    assert re.search(r"dependency_lock\s+JSONB NOT NULL", imports_sql)
+    assert "UNIQUE (owner_scope, project_id, idempotency_key)" in imports_sql
+    assert "CHECK (state IN ('ready', 'blocked', 'failed', 'pending_verification'))" in imports_sql
+    assert "idx_agent_imports_owner_project_created" in SQL
+
+
+def test_agent_import_creation_has_a_transactional_outbox() -> None:
+    assert "CREATE TABLE IF NOT EXISTS agent_import_outbox" in SQL
+    outbox_sql = SQL[
+        SQL.index("CREATE TABLE IF NOT EXISTS agent_import_outbox") :
+        SQL.index("CREATE TABLE IF NOT EXISTS eval_datasets")
+    ]
+    assert re.search(r"import_id\s+UUID NOT NULL REFERENCES agent_imports\(id\)", outbox_sql)
+    assert re.search(r"owner_scope\s+TEXT NOT NULL", outbox_sql)
+    assert re.search(r"published_at\s+TIMESTAMPTZ", outbox_sql)
+    assert "idx_agent_import_outbox_unpublished" in SQL
+
+
+def test_agent_lifecycle_transitions_have_an_append_only_transactional_outbox() -> None:
+    assert "CREATE TABLE IF NOT EXISTS agent_lifecycle_events" in SQL
+    events_sql = SQL[
+        SQL.index("CREATE TABLE IF NOT EXISTS agent_lifecycle_events") :
+        SQL.index("CREATE TABLE IF NOT EXISTS agent_lifecycle_outbox")
+    ]
+    assert "UNIQUE (workflow_id, sequence)" in events_sql
+    assert re.search(r"owner_scope\s+TEXT NOT NULL", events_sql)
+    assert re.search(r"operation\s+TEXT NOT NULL", events_sql)
+    assert re.search(r"state\s+TEXT NOT NULL", events_sql)
+    assert "CREATE TABLE IF NOT EXISTS agent_lifecycle_outbox" in SQL
+    outbox_sql = SQL[
+        SQL.index("CREATE TABLE IF NOT EXISTS agent_lifecycle_outbox") :
+        SQL.index("CREATE TABLE IF NOT EXISTS eval_datasets")
+    ]
+    assert re.search(r"event_id\s+UUID NOT NULL REFERENCES agent_lifecycle_events\(id\)", outbox_sql)
+    assert "UNIQUE (event_id, event_type)" in outbox_sql
+    assert "idx_agent_lifecycle_outbox_unpublished" in outbox_sql
+
 def test_eval_comparisons_pin_configuration_and_owned_run_pairs() -> None:
     eval_runs_sql = SQL[
         SQL.index("CREATE TABLE IF NOT EXISTS eval_runs") :

@@ -42,6 +42,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 {{- end }}
 
+{{- define "devai-api.workerBuildId" -}}
+{{- $buildID := .Values.temporal.workerBuildId | default .Values.image.tag -}}
+{{- regexReplaceAll "@sha256:.*$" $buildID "" -}}
+{{- end }}
+
 {{/*
 Shared container env for the API server and the Temporal worker.
 Both run the same image and the same blueprint stages, so they need an
@@ -495,7 +500,7 @@ identical environment — defined once here so the two never drift.
 - name: DEVAI_TEMPORAL_WORKER_DEPLOYMENT_NAME
   value: {{ .Values.temporal.workerDeploymentName | default "devai" | quote }}
 - name: DEVAI_TEMPORAL_WORKER_BUILD_ID
-  value: {{ .Values.temporal.workerBuildId | default .Values.image.tag | quote }}
+  value: {{ include "devai-api.workerBuildId" . | quote }}
 - name: DEVAI_TEMPORAL_WORKER_GRACEFUL_SHUTDOWN_SECONDS
   value: {{ .Values.temporal.workerGracefulShutdownSeconds | default 60 | quote }}
 {{- end }}

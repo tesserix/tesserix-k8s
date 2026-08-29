@@ -120,6 +120,55 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
 
 CREATE INDEX IF NOT EXISTS idempotency_keys_expiry_idx ON idempotency_keys (expires_at);
 
+-- Self-service Agent Registry workspaces. The internal UUID remains the
+-- platform tenant id while zitadel_org_id is the signed org claim presented to
+-- Registry. project_grant_id is required to grant publisher service users the
+-- Registry project's roles without trusting caller-supplied identity ids.
+CREATE TABLE IF NOT EXISTS registry_tenants (
+    tenant_id         UUID PRIMARY KEY REFERENCES organizations (id) ON DELETE CASCADE,
+    zitadel_org_id    TEXT        NOT NULL UNIQUE,
+    owner_subject     TEXT        NOT NULL UNIQUE,
+    slug              TEXT        NOT NULL UNIQUE,
+    namespace         TEXT        NOT NULL UNIQUE,
+    project_grant_id  TEXT        NOT NULL,
+    state             TEXT        NOT NULL DEFAULT 'pending'
+                      CHECK (state IN ('pending', 'ready', 'failed', 'needs_support')),
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Projection only: the OAuth verifier and one-time client secret live in
+-- Zitadel. In particular, no secret, hash, or verifier may be added here.
+CREATE TABLE IF NOT EXISTS registry_credentials (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id         UUID        NOT NULL REFERENCES registry_tenants (tenant_id) ON DELETE CASCADE,
+    zitadel_user_id   TEXT        NOT NULL UNIQUE,
+    client_id         TEXT        NOT NULL UNIQUE,
+    name              TEXT        NOT NULL,
+    scopes            TEXT[]      NOT NULL,
+    namespaces        TEXT[]      NOT NULL,
+    kinds             TEXT[]      NOT NULL,
+    created_by        TEXT        NOT NULL,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at        TIMESTAMPTZ NOT NULL,
+    status            TEXT        NOT NULL DEFAULT 'active'
+                      CHECK (status IN ('active', 'rotating', 'expired', 'revoked')),
+    rotated_from      UUID REFERENCES registry_credentials (id),
+    cutover_at        TIMESTAMPTZ,
+    revoked_at        TIMESTAMPTZ,
+    last_used_at      TIMESTAMPTZ,
+    CHECK (cardinality(scopes) BETWEEN 1 AND 3),
+    CHECK (cardinality(namespaces) BETWEEN 1 AND 20),
+    CHECK (cardinality(kinds) BETWEEN 1 AND 9),
+    CHECK (expires_at > created_at)
+);
+
+CREATE INDEX IF NOT EXISTS registry_credentials_tenant_idx
+    ON registry_credentials (tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS registry_credentials_reap_idx
+    ON registry_credentials (expires_at, cutover_at)
+    WHERE status IN ('active', 'rotating');
+
 -- Append-only and hash-chained. hash covers the row's own fields plus
 -- prev_hash, so an edit or deletion breaks the chain even for someone holding
 -- the application's own credential.
@@ -148,7 +197,8 @@ CREATE INDEX IF NOT EXISTS audit_events_actor_idx ON audit_events (actor_id, occ
 GRANT USAGE ON SCHEMA public TO onboarding;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON
-    products, organizations, org_products, domains, idps, idempotency_keys
+    products, organizations, org_products, domains, idps, idempotency_keys,
+    registry_tenants, registry_credentials
     TO onboarding;
 
 -- The whole point: the application may append to the ledger and read it back,

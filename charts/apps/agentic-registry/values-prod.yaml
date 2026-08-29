@@ -36,16 +36,18 @@ config:
   authMode: jwks
   authJwksUrl: "https://auth.tesserix.app/oauth/v2/keys"
   authIssuer: "https://auth.tesserix.app"
-  authAudience: "387190457387450503"
-  authGroupsClaim: "urn:zitadel:iam:org:project:387190457387450503:roles"
+  authAudience: "386930054896026901"
+  authGroupsClaim: "urn:zitadel:iam:org:project:386930054896026901:roles"
+  authTenantClaim: "urn:zitadel:iam:org:id"
   authAdminEmails: "samyak.rout@gmail.com,mahesh.sangawar@gmail.com"
-  authAdminRole: "agentgateway.models"
+  authAdminRole: "agentregistry.admin"
   authAnonymousRole: read
   publicBaseUrl: "https://aregistry.tesserix.app"
   # Lock CORS to the registry's own public origin (the UI is served same-origin
   # behind the OAuth proxy, so no other browser origin legitimately calls /v0). The base
   # default is "*", which reflects any Origin — fine for local, wrong for prod.
   corsOrigins: "https://aregistry.tesserix.app"
+  identityControlPlaneUrl: "http://onboarding-api.onboarding.svc.cluster.local:8080"
   # Agent Registry owns the authorized semantic index in its Postgres catalog;
   # pgvector 0.8.0, vector(256), and the HNSW cosine index are provisioned by
   # agentic-registry-db-schema-bootstrap before this is enabled.
@@ -70,6 +72,8 @@ externalSecret:
   deployKeysEnabled: true
   koraDeployKeyDigestKey: prod-agentic-registry-kora-deploy-key-sha256
   devaiDeployKeyDigestKey: prod-agentic-registry-devai-deploy-key-sha256
+  cliClientIdEnabled: true
+  cliClientIdKey: prod-agentregistry-cli-client-id
   forceSync: kora-deploy-key-v3
 
 postgresql:
@@ -88,12 +92,11 @@ keda:
 
 oauth2Proxy:
   enabled: true
-  # Request the shared AgentGateway audience/role even though this browser
-  # client has its own redirect URI and credentials.
-  projectId: "387190457387450503"
-  allowedEmails:
-    - samyak.rout@gmail.com
-    - mahesh.sangawar@gmail.com
+  # Public self-service sign-in. Registry authorization still comes from the
+  # verified tenant/project claims; the separate auth.adminEmails list grants
+  # the two platform operators global administration.
+  projectId: "386930054896026901"
+  allowedEmails: []
 
 # Public ingress is owned by manifests/agentic-istio (aregistry.tesserix.app
 # -> agentregistry-ui-oauth2-proxy -> agentregistry:12121). The chart's own direct

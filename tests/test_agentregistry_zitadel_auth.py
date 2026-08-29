@@ -8,7 +8,7 @@ import yaml
 
 ROOT = pathlib.Path(__file__).parents[1]
 ISSUER = "https://auth.tesserix.app"
-PROJECT_ID = "387190457387450503"
+PROJECT_ID = "386930054896026901"
 ADMIN_EMAILS = {"samyak.rout@gmail.com", "mahesh.sangawar@gmail.com"}
 
 
@@ -87,8 +87,16 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             f"urn:zitadel:iam:org:project:{PROJECT_ID}:roles",
             config["data"]["AUTH_GROUPS_CLAIM"],
         )
-        self.assertEqual("agentgateway.models", config["data"]["AUTH_ADMIN_ROLE"])
+        self.assertEqual("agentregistry.admin", config["data"]["AUTH_ADMIN_ROLE"])
         self.assertEqual(PROJECT_ID, config["data"]["AUTH_AUDIENCE"])
+        self.assertEqual(
+            "urn:zitadel:iam:org:id",
+            config["data"]["AUTH_TENANT_CLAIM"],
+        )
+        self.assertEqual(
+            "http://onboarding-api.onboarding.svc.cluster.local:8080",
+            config["data"]["IDENTITY_CONTROL_PLANE_URL"],
+        )
         self.assertEqual(
             "samyak.rout@gmail.com,mahesh.sangawar@gmail.com",
             config["data"]["AUTH_ADMIN_EMAILS"],
@@ -99,6 +107,10 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             for item in registry["spec"]["template"]["spec"]["containers"][0]["env"]
         }
         self.assertNotIn("AUTH_AUDIENCE", registry_env)
+        self.assertEqual(
+            {"name": "agentregistry-secrets", "key": "AUTH_CLI_CLIENT_ID"},
+            registry_env["AUTH_CLI_CLIENT_ID"]["valueFrom"]["secretKeyRef"],
+        )
 
         self.assertEqual(2, proxy["spec"]["replicas"])
         self.assertEqual(1, pdb["spec"]["minAvailable"])
@@ -117,6 +129,8 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
         )
         self.assertIn("--pass-access-token=true", container["args"])
         self.assertIn("--pass-authorization-header=true", container["args"])
+        scope = next(arg for arg in container["args"] if arg.startswith("--scope="))
+        self.assertIn("urn:zitadel:iam:user:metadata", scope)
         self.assertIn(
             "--backend-logout-url=https://auth.tesserix.app/oidc/v1/end_session?id_token_hint={id_token}",
             container["args"],
@@ -125,9 +139,11 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
         self.assertIn("--cookie-httponly=true", container["args"])
         self.assertIn("--cookie-samesite=lax", container["args"])
         self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
-        self.assertEqual(
-            ADMIN_EMAILS,
-            set(emails["data"]["authenticated-emails.txt"].splitlines()),
+        self.assertEqual(set(), set(emails["data"]["authenticated-emails.txt"].splitlines()))
+        self.assertIn("--email-domain=*", container["args"])
+        self.assertNotIn(
+            "--authenticated-emails-file=/etc/oauth2-proxy/authenticated-emails.txt",
+            container["args"],
         )
         self.assertEqual(
             {
@@ -139,6 +155,15 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
                 item["remoteRef"]["key"]
                 for item in external_secret["spec"]["data"]
             },
+        )
+
+        registry_secret = resource(documents, "ExternalSecret", "agentregistry-secrets")
+        self.assertIn(
+            {
+                "secretKey": "AUTH_CLI_CLIENT_ID",
+                "remoteRef": {"key": "prod-agentregistry-cli-client-id"},
+            },
+            registry_secret["spec"]["data"],
         )
         self.assertEqual(["Ingress", "Egress"], network_policy["spec"]["policyTypes"])
 
@@ -172,6 +197,17 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             project["oidcApps"][0],
         )
 
+        self.assertEqual(
+            {
+                "name": "agentregistry-cli",
+                "appType": "OIDC_APP_TYPE_NATIVE",
+                "authMethodType": "OIDC_AUTH_METHOD_TYPE_NONE",
+                "redirectUris": ["http://127.0.0.1/callback"],
+                "postLogoutRedirectUris": [],
+            },
+            project["oidcApps"][1],
+        )
+
     def test_tesserix_is_the_default_organization(self):
         documents = render_zitadel_bootstrap()
         config = resource(documents, "ConfigMap", "zitadel-bootstrap-config")
@@ -190,24 +226,33 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            [
-                {
-                    "key": "agentregistry.admin",
-                    "displayName": "Agent Registry Administrator",
-                    "group": "Agent Registry",
-                }
-            ],
-            project["roles"],
+            {
+                "agentregistry.admin",
+                "registry.reader",
+                "registry.publisher",
+                "registry.deleter",
+            },
+            {role["key"] for role in project["roles"]},
         )
         self.assertEqual(
             [
                 {
                     "login": "samyak.rout@gmail.com",
-                    "roles": ["agentregistry.admin"],
+                    "roles": [
+                        "agentregistry.admin",
+                        "registry.reader",
+                        "registry.publisher",
+                        "registry.deleter",
+                    ],
                 },
                 {
                     "login": "mahesh.sangawar@gmail.com",
-                    "roles": ["agentregistry.admin"],
+                    "roles": [
+                        "agentregistry.admin",
+                        "registry.reader",
+                        "registry.publisher",
+                        "registry.deleter",
+                    ],
                 },
             ],
             project["humanGrants"],

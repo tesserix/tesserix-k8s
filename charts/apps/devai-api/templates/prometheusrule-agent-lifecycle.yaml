@@ -1,0 +1,70 @@
+{{- if .Values.monitoring.lifecycleAlerts.enabled }}
+{{- $alerts := .Values.monitoring.lifecycleAlerts }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "devai-api.fullname" . }}-agent-lifecycle
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: devai.agent-lifecycle
+      rules:
+        - alert: DevAIAgentLifecycleQueueOld
+          expr: max(devai_agent_lifecycle_outbox_oldest_age_seconds) > {{ $alerts.queueAgeSeconds }}
+          for: 10m
+          labels: {severity: warning, owner: devai-platform}
+          annotations:
+            summary: Agent lifecycle outbox delivery is delayed
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/devai-agent-lifecycle.md
+        - alert: DevAISandboxCapacityPressure
+          expr: max(devai_sandbox_live) >= {{ $alerts.sandboxCapacityWarning }}
+          for: 10m
+          labels: {severity: warning, owner: devai-platform}
+          annotations:
+            summary: DevAI sandbox capacity is close to the initial platform limit
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/devai-agent-lifecycle.md
+        - alert: DevAIAgentLifecycleStuck
+          expr: max(devai_agent_lifecycle_stuck_workflows) > 0
+          for: 5m
+          labels: {severity: critical, owner: devai-platform}
+          annotations:
+            summary: An Agent lifecycle workflow requires intervention
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/devai-agent-lifecycle.md
+        - alert: DevAISandboxCleanupBacklog
+          expr: max(devai_sandbox_cleanup_backlog) >= {{ $alerts.cleanupBacklog }}
+          for: 15m
+          labels: {severity: critical, owner: devai-platform}
+          annotations:
+            summary: Sandbox teardown or TTL cleanup is backlogged
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/devai-agent-lifecycle.md
+        - alert: DevAIAuthenticationFailures
+          expr: sum(increase(devai_http_server_requests_total{http_status_code="401"}[5m])) > {{ $alerts.authFailures }}
+          for: 5m
+          labels: {severity: warning, owner: devai-platform}
+          annotations:
+            summary: DevAI authentication failures are elevated
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/devai-agent-lifecycle.md
+        - alert: DevAIAgentImportFailures
+          expr: sum(increase(devai_agent_lifecycle_outbox_published_total{operation="import",state=~"failed|timed_out|stuck"}[10m])) > {{ $alerts.importFailures }}
+          for: 5m
+          labels: {severity: warning, owner: devai-platform}
+          annotations:
+            summary: External Agent imports are failing
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/devai-agent-lifecycle.md
+        - alert: DevAIAgentEvaluationFailures
+          expr: sum(increase(devai_agent_lifecycle_outbox_published_total{operation="evaluate",state=~"failed|timed_out|stuck"}[10m])) > {{ $alerts.evaluationFailures }}
+          for: 5m
+          labels: {severity: warning, owner: devai-platform}
+          annotations:
+            summary: External Agent evaluations are failing
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/devai-agent-lifecycle.md
+        - alert: DevAISandboxQuotaPressure
+          expr: sum(increase(devai_sandbox_quota_rejections_total[10m])) > {{ $alerts.quotaRejections }}
+          for: 5m
+          labels: {severity: warning, owner: devai-platform}
+          annotations:
+            summary: Tenants are repeatedly hitting sandbox quota controls
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/devai-agent-lifecycle.md
+{{- end }}
