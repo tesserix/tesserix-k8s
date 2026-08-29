@@ -463,6 +463,9 @@ def reconcile_platform_project(desired):
                     "authMethodType", "OIDC_AUTH_METHOD_TYPE_BASIC"
                 ),
             }
+            if "grantTypes" in wanted:
+                actual["grantTypes"] = sorted(live.get("grantTypes", []))
+                expected["grantTypes"] = sorted(wanted["grantTypes"])
             if actual != expected:
                 raise SystemExit(
                     f"platform OIDC application {wanted['name']!r} configuration drifted; "

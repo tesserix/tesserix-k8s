@@ -202,6 +202,11 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
                 "name": "agentregistry-cli",
                 "appType": "OIDC_APP_TYPE_NATIVE",
                 "authMethodType": "OIDC_AUTH_METHOD_TYPE_NONE",
+                "grantTypes": [
+                    "OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
+                    "OIDC_GRANT_TYPE_REFRESH_TOKEN",
+                    "OIDC_GRANT_TYPE_DEVICE_CODE",
+                ],
                 "redirectUris": ["http://127.0.0.1/callback"],
                 "postLogoutRedirectUris": [],
             },
