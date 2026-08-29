@@ -207,6 +207,24 @@ env:
   # application bug rather than a configuration gap.
   ZITADEL_PROJECT_ID: "386377618200461939"
 
+  # Expected `aud` on a MACHINE access token — a Zitadel service user calling
+  # /api/v1/plan-catalog (tesserix-home#427). Read off a real token minted for
+  # `mark8ly-catalog-reader`, not inferred: a client_credentials token requested
+  # with the reserved `…:project:<id>:aud` scope carries the PROJECT id here.
+  #
+  # It equals ZITADEL_PROJECT_ID above, and that is a coincidence of this
+  # deployment rather than a rule — `aud` says who a token is for, the project
+  # id says whose roles it carries. They are separate variables so that a future
+  # deployment where they diverge does not silently authenticate the wrong thing.
+  #
+  # Deliberately NOT ZITADEL_CLIENT_ID: that is console-web's OIDC client id,
+  # what an OPERATOR's browser token carries. Defaulting this to it would let a
+  # browser-flow token that reached the machine path pass as a service
+  # credential. `verifyMachineAuthHeader` refuses to start without this value
+  # and refuses again if it is empty, because jose skips the `aud` comparison
+  # entirely when the configured audience is falsy.
+  ZITADEL_MACHINE_AUDIENCE: "386377618200461939"
+
   # ZITADEL_ORG_ID pins login to the operators' organization.
   #
   # # Why it is set, after being set and reverted once
