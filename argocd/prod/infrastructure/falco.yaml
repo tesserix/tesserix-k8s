@@ -39,6 +39,13 @@ spec:
             cpu: null
             memory: 1Gi
 
+        # The small-support nodes run ~99% memory-requested (one is also out
+        # of pod slots), and DaemonSet pods cannot trigger node scale-up — two
+        # falco pods sat Pending for hours. This class (900000) lets the
+        # scheduler preempt a priority-0 workload pod, which then reschedules
+        # or scales a node up itself. Runtime security must cover every node.
+        podPriorityClassName: tesserix-platform-critical
+
         # Event fan-out to Slack. Slack webhook comes from the ESO-managed
         # Secret (SLACK_WEBHOOKURL key) — never a value in this file.
         falcosidekick:
@@ -56,8 +63,14 @@ spec:
             slack:
               # warning+ only — notice-level rules (e.g. Contact K8S API
               # Server From Container) fire for every legitimate controller
-              # and flooded the channel; they remain visible in the UI/logs.
+              # and flooded the channel; they remain in the pod logs.
               minimumpriority: warning
+            # warning+ in the events UI too — same reasoning as slack. The
+            # chart has no config.webui.minimumpriority key (it wires the
+            # webui output itself), so this reaches the binary as env.
+            extraEnv:
+              - name: WEBUI_MINIMUMPRIORITY
+                value: warning
 
           # Events UI at falco.tesserix.app — auth is enforced by the
           # oauth2-proxy in front (falco-ui-gateway chart, Zitadel OIDC),
