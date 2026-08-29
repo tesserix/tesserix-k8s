@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sre-ai-agent
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: ai-agents
+    app.kubernetes.io/component: sre-agent
+    environment: prod
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: main
+    path: charts/apps/sre-ai-agent
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-agents
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,28 @@
+{{- if .Values.enabled }}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: sre-ai-agent
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sre-ai-agent.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: sre-ai-agent
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/agentgateway-system/sa/agentgateway-mcp
+      to:
+        - operation:
+            methods: ["GET", "POST"]
+            paths: ["/a2a/v1/sre-investigator*"]
+    - to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/healthz", "/readyz"]
+{{- end }}

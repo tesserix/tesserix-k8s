@@ -335,6 +335,7 @@ spec:
             principals:
               - "cluster.local/ns/devai/sa/devai-api"
               - "cluster.local/ns/devai/sa/devai-runner"
+              - "cluster.local/ns/ai-agents/sa/sre-ai-agent"
       to:
         - operation:
             ports: ["8080"]
@@ -481,7 +482,8 @@ spec:
             methods: ["POST"]
             notPaths: ["/v0/agentgateway/import"]
 ---
-# ai-gateway DENY — close provider routes to DevAI's two workload identities.
+# ai-gateway DENY — close provider routes to the two DevAI identities and the
+# standalone read-only SRE investigator.
 # allow-mesh-internal would let intra-cluster pods (including pods in
 # agentgateway-system itself) hit /anthropic + /openai and burn our API
 # budget. ai-gateway exists exclusively to serve devai workloads.
@@ -502,6 +504,7 @@ spec:
             notPrincipals:
               - "cluster.local/ns/devai/sa/devai-api"
               - "cluster.local/ns/devai/sa/devai-runner"
+              - "cluster.local/ns/ai-agents/sa/sre-ai-agent"
       to:
         - operation:
             ports: ["8080"]
