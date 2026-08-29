@@ -21,14 +21,28 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: kora
-  # Deliberately NOT automated (unlike the stockpilot-postgres sibling this
-  # was mirrored from, which has syncPolicy.automated.selfHeal: true). This
-  # cluster's cutover is a deliberate, human-run step (Task 4 of the
-  # kora-postgres-migration plan) — it must not provision itself the moment
-  # this Application is synced into the kora-app-of-apps directory. Add
-  # `automated: { selfHeal: true }` back only when the human doing the
-  # cutover is ready for ArgoCD to own this resource going forward.
+  # Automated as of 2026-08-29 (kora#188). This was deliberately NOT automated
+  # while the cutover was pending: the cluster's cutover is a human-run step
+  # (Task 4 of the kora-postgres-migration plan) and it must not provision
+  # itself the moment this Application lands in the kora-app-of-apps
+  # directory. The previous comment said to add this back "only when the
+  # human doing the cutover is ready for ArgoCD to own this resource going
+  # forward". The cutover is done — kora_db serves production — so that
+  # condition is met and drift should now be corrected rather than
+  # accumulate silently.
+  #
+  # selfHeal WITHOUT prune, matching the stockpilot-postgres sibling. Prune is
+  # deliberately absent: on a database Application it would delete resources
+  # that leave the chart, and a Cluster or ScheduledBackup removed by an
+  # editing mistake is not something to reconcile automatically.
+  #
+  # Verified Synced/Healthy immediately before enabling this (both
+  # Cluster/kora-postgres and ScheduledBackup/kora-postgres-scheduled-backup),
+  # so turning selfHeal on reconciles nothing on the first pass — it only
+  # binds future drift.
   syncPolicy:
+    automated:
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
