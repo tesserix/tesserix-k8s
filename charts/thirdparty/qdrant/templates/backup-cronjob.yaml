@@ -25,11 +25,18 @@ spec:
             app.kubernetes.io/name: qdrant-backup
         spec:
           serviceAccountName: {{ .Values.backup.serviceAccount.name }}
+          # Never, not OnFailure: with OnFailure the job controller deletes the
+          # pod once backoffLimit is hit and the failure logs go with it —
+          # workload logging is disabled cluster-wide, so the pod is the only
+          # place the error text exists.
           restartPolicy: {{ .Values.backup.cronJob.restartPolicy }}
           securityContext:
             runAsNonRoot: true
-            runAsUser: 1000
-            fsGroup: 1000
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: backup
               image: "{{ .Values.backup.image.repository }}:{{ .Values.backup.image.tag }}"
@@ -65,6 +72,12 @@ spec:
                   RUN_TS=$(date -u +%Y-%m-%dT%H-%M-%SZ)
 
                   echo "Qdrant snapshot backup — ${RUN_TS}, ${REPLICAS} node(s) -> ${DEST}"
+
+                  # Workload Identity sanity line: which identity gcloud will
+                  # use. If this prints the node SA instead of qdrant-backup@,
+                  # the WI binding is the problem, not GCS.
+                  echo "identity: $(curl -sS -H 'Metadata-Flavor: Google' \
+                    http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/email || echo unavailable)"
 
                   for i in $(seq 0 $((REPLICAS - 1))); do
                     HOST="qdrant-${i}.qdrant-headless.${NS}.svc.cluster.local:6333"
