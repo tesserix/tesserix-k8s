@@ -185,6 +185,28 @@ stripeBilling:
   secretName: mark8ly-stripe-billing
   secretKeyKey: STRIPE_BILLING_SECRET_KEY
   webhookSecretKey: STRIPE_BILLING_WEBHOOK_SECRET
+# ── Console plan-catalog parallel run (mark8ly#304 / #392) ──────
+# Reads the console's published plan catalog and compares it against the
+# catalog compiled into marketplace-api, logging differences. It DECIDES
+# NOTHING — prices still come from the compiled Go catalog. The cutover is a
+# separate change, gated on this reporting durably zero.
+#
+# Runs on its own ticker, never on a request path: BACKLOG §P requires that
+# nothing on a customer payment path depend on the console being reachable.
+# Remove this block and the parallel run simply does not start.
+#
+# The scope carries BOTH the project-audience scope (which puts the project
+# in the token's aud, proving it was minted for this route) and the roles
+# scope (without which the token verifies but holds no capability).
+consoleCatalog:
+  url: https://console.tesserix.app/api/v1/plan-catalog
+  tokenUrl: https://auth.tesserix.app/oauth/v2/token
+  scope: "openid urn:zitadel:iam:org:project:id:386377618200461939:aud urn:zitadel:iam:org:projects:roles"
+  mode: test
+  interval: 15m
+  secretName: mark8ly-console-catalog
+  clientIdKey: CONSOLE_CATALOG_CLIENT_ID
+  clientSecretKey: CONSOLE_CATALOG_CLIENT_SECRET
 # ── Marketing M4: Campaign email dispatch ───────────────────────
 # SendGrid API key shared with platform-api. Email from noreply@tesserix.app.
 sendgrid:
