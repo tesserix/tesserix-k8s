@@ -264,7 +264,7 @@ adminConformanceCron:
   # ConfigMap template for why nothing enforces that and what the risk is.
   declaration:
     slug: mark8ly
-    contractVersion: 2
+    contractVersion: 3
     endpoints:
       audit-logs: true
       health: true
@@ -306,6 +306,20 @@ adminConformanceCron:
       "billing/trials": true
       "tenant-lifecycle": true
       "lifecycle/reason-codes": true
+      # contract v3 (design-system#…, 2026-08-29). break-glass is
+      # deliberately NOT declared here: it is the only read gated on an
+      # exact capability VALUE (rotate-credentials), and this CronJob's
+      # invocation below passes only --base/--slug/--declaration — no
+      # --capability. Declaring it would make a correctly-403'd probe
+      # report as a conformance failure every night. It lands together
+      # with the --capability flag in a later task.
+      "outbox": true
+      "email-sends": true
+      "notifications": true
+      "conversions": true
+      "onboarding/funnel": true
+      "onboarding/sessions": true
+      "tenant-purge": true
 
 # Audit-ingest secret consumed by the marketplace-api admin engine.
 # Override in values-uat.yaml to point at mark8ly-uat-audit-ingest.
