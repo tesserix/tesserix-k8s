@@ -242,6 +242,16 @@ spec:
             hosts:
               - "costestimator.tesserix.app"
               - "kubecost.tesserix.app"
+          # falco — gateway host ALLOW only; the oauth2-proxy in the falco
+          # namespace (falco-ui-gateway chart) enforces Zitadel OIDC + an email
+          # allowlist, and its sign-in redirect must be reachable
+          # unauthenticated. No `namespace`: falco is not in the mesh. The
+          # values-prod.yaml entry alone did nothing — this inline block is
+          # what the chart receives (see helivanta note below).
+          - name: falco
+            label: falco-ui-oauth2-proxy
+            hosts:
+              - "falco.tesserix.app"
           # onboarding — gateway host ALLOW only; the chart ships pod-level
           # ALLOWs for both api and web. Public here like observability: the API
           # gates the console on Google sign-in against console.adminEmails, and
