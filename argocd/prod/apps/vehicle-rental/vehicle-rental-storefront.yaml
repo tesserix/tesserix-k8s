@@ -1,0 +1,40 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vehicle-rental-storefront
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: vehicle-rental-app
+    app.kubernetes.io/component: storefront
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: vehicle-rental-app
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/vehicle-rental-storefront
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vehicle-rental
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+    syncOptions:
+      # CreateNamespace is deliberately absent: istio-config owns both
+      # namespaces so it can label them for the mesh. Retry covers the
+      # first sync if this app lands before istio-config has run.
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

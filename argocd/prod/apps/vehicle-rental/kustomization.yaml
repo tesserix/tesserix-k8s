@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # The namespace lock first, so nothing runs unprotected even briefly.
+  - vehicle-rental-network-policies.yaml
+  # CNPG first, then the schema, then the surfaces that need both.
+  - vehicle-rental-postgres.yaml
+  - vehicle-rental-db-schema-bootstrap.yaml
+  # The chatbot's conversation store. Independent of Postgres; a chat outage
+  # must not be a booking outage.
+  - vehicle-rental-mongodb.yaml
+  # The only workload holding a database credential; every UI proxies to it.
+  - vehicle-rental-api.yaml
+  # Sign-up before the surfaces a signed-up shop uses.
+  - vehicle-rental-onboarding.yaml
+  # The storefront chart also owns the *.tesserix.app VirtualService that routes
+  # all three, so it must be present for admin and onboarding to be reachable.
+  - vehicle-rental-storefront.yaml
+  - vehicle-rental-admin.yaml
