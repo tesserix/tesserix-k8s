@@ -499,6 +499,13 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         self.assertEqual(3, scaler["spec"]["minReplicaCount"])
         self.assertEqual(9, scaler["spec"]["maxReplicaCount"])
         self.assertEqual(
+            {
+                "type": "RollingUpdate",
+                "rollingUpdate": {"maxSurge": 0, "maxUnavailable": 1},
+            },
+            deployment["spec"]["strategy"],
+        )
+        self.assertEqual(
             {"kubernetes.io/hostname", "topology.kubernetes.io/zone"},
             {item["topologyKey"] for item in pod["topologySpreadConstraints"]},
         )
