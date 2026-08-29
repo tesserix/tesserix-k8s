@@ -1,0 +1,39 @@
+# Guardrails for the upstream substrate stack. Currently: a self-heal CronJob
+# that repairs the ate-system Valkey cluster after simultaneous pod restarts
+# (stale peer IPs in persisted nodes.conf — see chart for the full story).
+# Retire the valkey job when substrate is migrated to chart 0.0.13+ (postgres).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: substrate-ops
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: agent-substrate
+  annotations:
+    # After the substrate app (-5) so the namespace and Valkey exist.
+    argocd.argoproj.io/sync-wave: "-4"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: main
+    path: charts/infrastructure/substrate-ops
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ate-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

@@ -1,0 +1,93 @@
+{{- if .Values.valkeySelfHeal.enabled }}
+# The upstream substrate chart (<=0.0.12) runs Valkey in cluster mode with
+# nodes.conf persisted on PVCs but no cluster-announce-hostname, and the
+# setting is not reachable from values. If every pod restarts at once (node
+# upgrade, eviction wave) each node's peer table holds only dead pod IPs,
+# gossip never re-forms, and ate-api-server crashloops on the stale slot map
+# (2026-08-22: 6-day outage). Upstream's fix is the valkey->postgres swap in
+# chart 0.0.13+; until that migration, this job re-MEETs the nodes at their
+# current IPs whenever cluster_state != ok. The MEET mesh is deliberately
+# all-to-all: a node only corrects its own advertised address on an INBOUND
+# meet, so one-directional repair leaves a stale self-address in the slot map.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: valkey-cluster-selfheal
+  namespace: ate-system
+  labels:
+    app: valkey-cluster-selfheal
+spec:
+  schedule: {{ .Values.valkeySelfHeal.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      template:
+        metadata:
+          labels:
+            app: valkey-cluster-selfheal
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: selfheal
+              image: {{ .Values.valkeySelfHeal.image }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  memory: 32Mi
+                limits:
+                  memory: 64Mi
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -u
+                  SVC={{ .Values.valkeySelfHeal.headlessService }}.ate-system.svc
+                  IPS=""
+                  i=0
+                  while [ "${i}" -lt {{ .Values.valkeySelfHeal.nodes }} ]; do
+                    ip=$(getent hosts valkey-cluster-${i}.${SVC} | awk '{print $1}') || true
+                    [ -n "${ip}" ] && IPS="${IPS} ${ip}"
+                    i=$((i+1))
+                  done
+                  if [ -z "${IPS}" ]; then
+                    echo "no valkey pods resolvable; nothing to do"
+                    exit 0
+                  fi
+                  NEED=0
+                  for ip in ${IPS}; do
+                    st=$(valkey-cli -h "${ip}" cluster info 2>/dev/null | tr -d '\r' | grep '^cluster_state:' || true)
+                    if [ "${st}" != "cluster_state:ok" ]; then
+                      echo "${ip}: ${st:-unreachable}"
+                      NEED=1
+                    fi
+                  done
+                  if [ "${NEED}" = "0" ]; then
+                    echo "cluster healthy"
+                    exit 0
+                  fi
+                  echo "re-meeting nodes at current IPs"
+                  for src in ${IPS}; do
+                    for dst in ${IPS}; do
+                      [ "${src}" = "${dst}" ] && continue
+                      valkey-cli -h "${src}" cluster meet "${dst}" 6379 || true
+                    done
+                  done
+                  sleep 10
+                  for ip in ${IPS}; do
+                    echo "${ip}: $(valkey-cli -h "${ip}" cluster info 2>/dev/null | tr -d '\r' | grep '^cluster_state:')"
+                  done
+{{- end }}
