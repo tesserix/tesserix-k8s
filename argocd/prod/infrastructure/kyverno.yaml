@@ -80,6 +80,17 @@ spec:
         # policies name. Re-enable if background policies are ever added.
         reportsController:
           enabled: false
+        # The kyverno-api subchart renders literal `labels: {}` and
+        # `annotations: {}` on its eleven policies.kyverno.io CRDs. SSA drops
+        # an empty map on write, so the desired-only `{}` never matches the
+        # live object and all eleven sat permanently OutOfSync, churning the
+        # parent app's selfHeal. Real content on both keys makes desired and
+        # live converge (a server-side dry-run apply is a no-op otherwise).
+        kyverno-api:
+          labels:
+            app.kubernetes.io/part-of: kyverno
+          annotations:
+            argocd.argoproj.io/sync-options: ServerSideApply=true
   destination:
     server: https://kubernetes.default.svc
     namespace: kyverno
