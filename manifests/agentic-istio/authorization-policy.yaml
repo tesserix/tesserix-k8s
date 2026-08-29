@@ -219,9 +219,23 @@ spec:
               - "/healthz"
               - "/v0/health"
               - "/v0/signing-key"
+              - "/v0/auth/config"
               - "/v0/agents/{*}/card"
               - "/v0/agents/{*}/.well-known/agent-card.json"
               - "/v0/agents/{*}/{*}/card"
+    # CLI bearer requests bypass browser SSO but remain subject to Registry's
+    # issuer, audience, scope, role, tenant, namespace, and kind checks.
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
+      to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/v0/*"]
+      when:
+        - key: request.headers[authorization]
+          values: ["Bearer *"]
     # Kubelet probes
     - to:
         - operation:

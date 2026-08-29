@@ -452,7 +452,10 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             for match in matches
             if "regex" in match["uri"]
         }
-        self.assertEqual({"/healthz", "/v0/health", "/v0/signing-key"}, exact_paths)
+        self.assertEqual(
+            {"/healthz", "/v0/health", "/v0/signing-key", "/v0/auth/config"},
+            exact_paths,
+        )
         self.assertEqual(
             {
                 r"^/v0/agents/[^/]+/(card|\.well-known/agent-card\.json)$",
@@ -470,6 +473,7 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
             "/healthz",
             "/v0/health",
             "/v0/signing-key",
+            "/v0/auth/config",
             "/v0/agents/{*}/card",
             "/v0/agents/{*}/.well-known/agent-card.json",
             "/v0/agents/{*}/{*}/card",
@@ -481,6 +485,49 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
                 and rule.get("to", [{}])[0].get("operation", {}).get("methods")
                 == ["GET"]
                 and set(rule["to"][0]["operation"]["paths"]) == public_paths
+                for rule in allow["spec"]["rules"]
+            )
+        )
+
+    def test_bearer_registry_api_bypasses_the_human_session_proxy(self):
+        documents = render_agentic_istio()
+        virtual_service = resource(documents, "VirtualService", "aregistry-ui")
+        bearer_route = next(
+            route
+            for route in virtual_service["spec"]["http"]
+            if any(
+                match.get("headers", {}).get("authorization")
+                == {"regex": r"^Bearer .+"}
+                for match in route.get("match", [])
+            )
+        )
+
+        self.assertEqual({"prefix": "/v0/"}, bearer_route["match"][0]["uri"])
+        self.assertEqual(
+            "agentregistry.agentregistry-system.svc.cluster.local",
+            bearer_route["route"][0]["destination"]["host"],
+        )
+        self.assertEqual(
+            12121, bearer_route["route"][0]["destination"]["port"]["number"]
+        )
+
+        allow = resource(documents, "AuthorizationPolicy", "agentregistry-authz")
+        ingress_principal = (
+            "cluster.local/ns/istio-ingress/sa/istio-ingressgateway"
+        )
+        self.assertTrue(
+            any(
+                rule.get("from", [{}])[0].get("source", {}).get("principals")
+                == [ingress_principal]
+                and rule.get("to")
+                == [{"operation": {"methods": ["GET"], "paths": ["/v0/*"]}}]
+                and rule.get("when")
+                == [
+                    {
+                        "key": "request.headers[authorization]",
+                        "values": ["Bearer *"],
+                    }
+                ]
                 for rule in allow["spec"]["rules"]
             )
         )
