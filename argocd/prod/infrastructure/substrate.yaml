@@ -65,6 +65,17 @@ spec:
       namespace: ate-system
       jsonPointers:
         - /data
+    # volumeClaimTemplates diff atomically (no merge key), and the API server
+    # adds apiVersion/kind/volumeMode/status to each live entry, so the
+    # SSA-applied StatefulSet sat permanently OutOfSync (a server-side dry-run
+    # apply is a no-op) and the parent app's selfHeal churned. VCTs are
+    # immutable on a live StatefulSet, so ignoring them loses nothing.
+    - group: apps
+      kind: StatefulSet
+      name: valkey-cluster
+      namespace: ate-system
+      jsonPointers:
+        - /spec/volumeClaimTemplates
   syncPolicy:
     automated:
       prune: true
