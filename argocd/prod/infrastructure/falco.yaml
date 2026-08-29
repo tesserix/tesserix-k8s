@@ -54,6 +54,28 @@ spec:
               # rule exceptions for Istio/CNPG/node agents are in place.
               minimumpriority: notice
 
+          # Events UI at falco.tesserix.app — auth is enforced by the
+          # oauth2-proxy in front (falco-ui-gateway chart, Zitadel OIDC),
+          # so the UI's own basic auth is off. Redis is the bundled
+          # redis-stack (RediSearch required — Valkey won't do); no PVC,
+          # Slack + logs are the durable record.
+          webui:
+            enabled: true
+            disableauth: true
+            resources:
+              requests:
+                memory: 64Mi
+              limits:
+                memory: 128Mi
+            redis:
+              enabled: true
+              storageEnabled: false
+              resources:
+                requests:
+                  memory: 128Mi
+                limits:
+                  memory: 256Mi
+
   destination:
     server: https://kubernetes.default.svc
     namespace: falco

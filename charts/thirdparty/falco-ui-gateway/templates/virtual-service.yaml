@@ -1,0 +1,25 @@
+{{- if .Values.virtualService.enabled }}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: falco-ui-vs
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "falco-ui-gateway.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.virtualService.host | quote }}
+  gateways:
+    - {{ .Values.virtualService.gateway }}
+  http:
+    # All traffic goes through OAuth2 Proxy (auth + reverse proxy to the UI)
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: falco-ui-oauth2-proxy.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: 4180
+      timeout: 30s
+{{- end }}
