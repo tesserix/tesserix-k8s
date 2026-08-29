@@ -525,6 +525,26 @@ class PlatformProjectTest(unittest.TestCase):
                 bootstrap.reconcile_platform_project(dict(self.PROJECT))
         self.assertEqual([], [call for call in recorder.calls if call[0] in ("PUT", "DELETE")])
 
+    def test_drifted_oidc_grant_types_fail_closed_without_writing(self):
+        project = dict(self.PROJECT)
+        project["oidcApps"] = [
+            dict(
+                self.PROJECT["oidcApps"][0],
+                grantTypes=[
+                    "OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
+                    "OIDC_GRANT_TYPE_REFRESH_TOKEN",
+                    "OIDC_GRANT_TYPE_DEVICE_CODE",
+                ],
+            )
+        ]
+        recorder = self._recorder()
+
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_platform_project(project)
+
+        self.assertEqual([], [call for call in recorder.calls if call[0] in ("PUT", "DELETE")])
+
     def test_missing_login_v2_is_reconciled_without_changing_client_config(self):
         recorder = self._recorder()
         recorder.responses[
