@@ -306,16 +306,20 @@ adminConformanceCron:
       "billing/trials": true
       "tenant-lifecycle": true
       "lifecycle/reason-codes": true
-      # contract v3 (design-system#…, 2026-08-29). break-glass is
-      # deliberately NOT declared here: it is the only read gated on an
-      # exact capability VALUE (rotate-credentials), and this CronJob's
-      # invocation below passes only --base/--slug/--declaration — no
-      # --capability. Declaring it would make a correctly-403'd probe
-      # report as a conformance failure every night. It lands together
-      # with the --capability flag in a later task.
+      # contract v3 (design-system#…, 2026-08-29). break-glass CAN be
+      # declared, unlike the earlier assumption recorded here: it is gated
+      # on EXACT STRING EQUALITY against a capability value
+      # (rotate-credentials) plus a non-empty operator — there is no grant
+      # list and no identity that must "hold" anything
+      # (marketplace-api/internal/handlers/platformadmin/middleware.go:
+      # 367-385). The admin-conformance-cronjob.yaml template's npx
+      # invocation now passes --operator and --capability rotate-credentials
+      # on every run so this probe gets a real 200 instead of a
+      # correctly-issued 403 read as a conformance failure.
       "outbox": true
       "email-sends": true
       "notifications": true
+      "break-glass": true
       "conversions": true
       "onboarding/funnel": true
       "onboarding/sessions": true
