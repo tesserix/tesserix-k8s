@@ -86,10 +86,16 @@ spec:
                   # correctly probe `break-glass` (contract v3): it is the
                   # only read on this surface gated on an EXACT capability
                   # VALUE match, not just presence of a signature
-                  # (middleware.go:367-385). Without --operator the endpoint
-                  # answers 401 operator_required; without --capability, 403
-                  # capability_insufficient — either way a correctly-behaving
-                  # gate would report as a conformance FAILURE, not a skip.
+                  # (middleware.go:367-385). The suite's CLI already defaults
+                  # both flags to non-empty values ("admin-conformance" /
+                  # "platform"), so omitting them here would never trip
+                  # 401 operator_required — the operator is never missing.
+                  # It would instead fail with 403 capability_insufficient,
+                  # because the default capability "platform" does not equal
+                  # "rotate-credentials". Either way a correctly-behaving
+                  # gate would report as a conformance FAILURE, not a skip;
+                  # --operator is set explicitly below anyway, since an
+                  # explicit value is better than relying on a CLI default.
                   # "rotate-credentials" is the literal value break-glass's
                   # RequiredReadCapabilities entry compares against
                   # (middleware.go:367-385) — exact string equality, no
