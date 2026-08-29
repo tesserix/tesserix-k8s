@@ -27,10 +27,14 @@ spec:
           kind: modern_ebpf
 
         # DaemonSet on every node; memory-only resources (cluster rule).
+        # 256Mi request: the optimize-utilization scheduler packs nodes too
+        # tightly for 512Mi headroom on every node, and DaemonSet pods
+        # cannot trigger node scale-up. Typical modern_ebpf RSS is well
+        # under this; the 1Gi limit still bounds it.
         resources:
           requests:
             cpu: null
-            memory: 512Mi
+            memory: 256Mi
           limits:
             cpu: null
             memory: 1Gi
