@@ -36,20 +36,36 @@ spec:
         spec:
           serviceAccountName: {{ .Values.fullnameOverride }}-backup
           restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            fsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: dump
               image: {{ .Values.backup.image | quote }}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
               env:
                 - name: MONGODB_URI
                   valueFrom:
                     secretKeyRef:
                       name: {{ .Values.externalSecret.secretName }}
                       key: MONGODB_URI
+                # Non-root with a read-only root: gcloud/gsutil state goes to /tmp.
+                - name: HOME
+                  value: /tmp
+                - name: CLOUDSDK_CONFIG
+                  value: /tmp/gcloud
               command: ["/bin/bash", "-c"]
               args:
                 - |
                   set -euo pipefail
-                  apt-get update -qq && apt-get install -y -qq mongodb-database-tools
                   stamp=$(date -u +%Y%m%dT%H%M%SZ)
                   mongodump --uri="$MONGODB_URI" --archive=/tmp/dump.gz --gzip
                   gsutil cp /tmp/dump.gz {{ .Values.backup.destination }}/${stamp}.gz
