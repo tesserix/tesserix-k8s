@@ -206,6 +206,10 @@ spec:
           method:
             exact: GET
         - uri:
+            exact: /v0/auth/config
+          method:
+            exact: GET
+        - uri:
             regex: '^/v0/agents/[^/]+/(card|\.well-known/agent-card\.json)$'
           method:
             exact: GET
@@ -213,6 +217,21 @@ spec:
             regex: '^/v0/agents/[^/]+/[^/]+/card$'
           method:
             exact: GET
+      route:
+        - destination:
+            host: agentregistry.agentregistry-system.svc.cluster.local
+            port:
+              number: 12121
+      timeout: 30s
+    # Native/CLI clients authenticate directly with Zitadel and send the
+    # resulting bearer token to Registry. Browser requests carry no bearer
+    # header at the ingress and continue through oauth2-proxy below.
+    - match:
+        - uri:
+            prefix: /v0/
+          headers:
+            authorization:
+              regex: '^Bearer .+'
       route:
         - destination:
             host: agentregistry.agentregistry-system.svc.cluster.local
