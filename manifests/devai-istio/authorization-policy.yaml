@@ -70,6 +70,14 @@ spec:
         - source:
             principals: ["cluster.local/ns/agentgateway-system/sa/agentgateway-mcp"]
 
+    # Ambient fallback for the Gateway hop: ztunnel preserves the source
+    # namespace but does not expose a workload principal on this path. The
+    # NetworkPolicy admits only pods with the agentgateway-mcp Gateway label;
+    # application-layer upstream bearers remain mandatory.
+    - from:
+        - source:
+            namespaces: ["agentgateway-system"]
+
     # Rule 5c: kagent-agent-sync (kagent-system) curls /api/settings/kagent/
     # active-variants to learn which model variants users enabled in Settings,
     # so it provisions exactly those Agent pods on demand. ztunnel enforces only
@@ -131,6 +139,16 @@ spec:
     - from:
         - source:
             principals: ["cluster.local/ns/agentgateway-system/sa/agentgateway-mcp"]
+      to:
+        - operation:
+            paths: ["/mcp/*"]
+            methods: ["GET", "POST", "DELETE"]
+
+    # Ambient fallback for the same Gateway hop. NetworkPolicy still limits
+    # admission to the labelled agentgateway-mcp data-plane pods.
+    - from:
+        - source:
+            namespaces: ["agentgateway-system"]
       to:
         - operation:
             paths: ["/mcp/*"]
