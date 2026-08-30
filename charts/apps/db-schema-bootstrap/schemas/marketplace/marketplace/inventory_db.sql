@@ -97,26 +97,6 @@ CREATE TABLE IF NOT EXISTS public.inventory_alerts (
 
 
 --
--- Name: inventory_reservations; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE IF NOT EXISTS public.inventory_reservations (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    tenant_id character varying(255) NOT NULL,
-    warehouse_id uuid NOT NULL,
-    product_id uuid NOT NULL,
-    variant_id uuid,
-    quantity bigint NOT NULL,
-    order_id uuid NOT NULL,
-    reserved_at timestamp with time zone,
-    expires_at timestamp with time zone,
-    status character varying(20) DEFAULT 'ACTIVE'::character varying NOT NULL,
-    created_at timestamp with time zone,
-    updated_at timestamp with time zone
-);
-
-
---
 -- Name: inventory_transfer_items; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -218,28 +198,6 @@ CREATE TABLE IF NOT EXISTS public.purchase_orders (
 
 
 --
--- Name: stock_levels; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE IF NOT EXISTS public.stock_levels (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    tenant_id character varying(255) NOT NULL,
-    vendor_id character varying(255),
-    warehouse_id uuid NOT NULL,
-    product_id uuid NOT NULL,
-    variant_id uuid,
-    quantity_on_hand bigint DEFAULT 0 NOT NULL,
-    quantity_reserved bigint DEFAULT 0 NOT NULL,
-    quantity_available bigint DEFAULT 0 NOT NULL,
-    reorder_point bigint DEFAULT 0,
-    reorder_quantity bigint DEFAULT 0,
-    last_restocked_at timestamp with time zone,
-    created_at timestamp with time zone,
-    updated_at timestamp with time zone
-);
-
-
---
 -- Name: suppliers; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -327,14 +285,6 @@ ALTER TABLE ONLY public.inventory_alerts
 
 
 --
--- Name: inventory_reservations inventory_reservations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.inventory_reservations
-    ADD CONSTRAINT inventory_reservations_pkey PRIMARY KEY (id);
-
-
---
 -- Name: inventory_transfer_items inventory_transfer_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -364,14 +314,6 @@ ALTER TABLE ONLY public.purchase_order_items
 
 ALTER TABLE ONLY public.purchase_orders
     ADD CONSTRAINT purchase_orders_pkey PRIMARY KEY (id);
-
-
---
--- Name: stock_levels stock_levels_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.stock_levels
-    ADD CONSTRAINT stock_levels_pkey PRIMARY KEY (id);
 
 
 --
@@ -458,41 +400,6 @@ CREATE INDEX IF NOT EXISTS idx_inventory_alerts_variant_id ON public.inventory_a
 --
 
 CREATE INDEX IF NOT EXISTS idx_inventory_alerts_warehouse_id ON public.inventory_alerts USING btree (warehouse_id);
-
-
---
--- Name: idx_inventory_reservations_order_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX IF NOT EXISTS idx_inventory_reservations_order_id ON public.inventory_reservations USING btree (order_id);
-
-
---
--- Name: idx_inventory_reservations_product_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX IF NOT EXISTS idx_inventory_reservations_product_id ON public.inventory_reservations USING btree (product_id);
-
-
---
--- Name: idx_inventory_reservations_tenant_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX IF NOT EXISTS idx_inventory_reservations_tenant_id ON public.inventory_reservations USING btree (tenant_id);
-
-
---
--- Name: idx_inventory_reservations_variant_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX IF NOT EXISTS idx_inventory_reservations_variant_id ON public.inventory_reservations USING btree (variant_id);
-
-
---
--- Name: idx_inventory_reservations_warehouse_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX IF NOT EXISTS idx_inventory_reservations_warehouse_id ON public.inventory_reservations USING btree (warehouse_id);
 
 
 --
@@ -626,41 +533,6 @@ CREATE INDEX IF NOT EXISTS idx_purchase_orders_tenant_vendor ON public.purchase_
 --
 
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_warehouse_id ON public.purchase_orders USING btree (warehouse_id);
-
-
---
--- Name: idx_stock_levels_product_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX IF NOT EXISTS idx_stock_levels_product_id ON public.stock_levels USING btree (product_id);
-
-
---
--- Name: idx_stock_levels_tenant_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX IF NOT EXISTS idx_stock_levels_tenant_id ON public.stock_levels USING btree (tenant_id);
-
-
---
--- Name: idx_stock_levels_tenant_vendor; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX IF NOT EXISTS idx_stock_levels_tenant_vendor ON public.stock_levels USING btree (vendor_id);
-
-
---
--- Name: idx_stock_levels_variant_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX IF NOT EXISTS idx_stock_levels_variant_id ON public.stock_levels USING btree (variant_id);
-
-
---
--- Name: idx_stock_levels_warehouse_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX IF NOT EXISTS idx_stock_levels_warehouse_id ON public.stock_levels USING btree (warehouse_id);
 
 
 --
