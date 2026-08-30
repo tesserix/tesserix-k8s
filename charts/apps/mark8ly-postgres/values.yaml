@@ -123,6 +123,15 @@ allowedAppNames:
   # image with the refund-sweep-cron entrypoint; istio-injection off, so
   # it needs an explicit NetworkPolicy allowance to reach CNPG on 5432.
   - mark8ly-marketplace-api-admin-refund-sweep
+  # Expired stock-hold sweeper CronJob (admin chart, mark8ly#229/#231).
+  # Same shape as refund-sweep above: marketplace-api image, its own
+  # entrypoint, istio-injection off — so it needs its own allowance here.
+  #
+  # Its absence is a SILENT failure, not a loud one: the connection is
+  # dropped rather than refused, so the binary sits in db.Open's retry
+  # loop producing no output until activeDeadlineSeconds kills the Job.
+  # That is how this was found — a live run, not a review.
+  - mark8ly-marketplace-api-admin-stock-hold-sweep
 
 # Cross-namespace clients allowed into postgres. Prod allows the
 # tesserix super-admin Next.js + APIs; UAT defaults to none (test env
