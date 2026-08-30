@@ -4,6 +4,13 @@
 # on stable resource names. Runs in agentgateway-system, whose SA the registry
 # authz already allows to GET /v0/*; the consumer-egress NetworkPolicy already
 # permits the :12121 hop, so no extra wiring is needed.
+{{- if not (has .Values.controller.mode (list "active" "shadow" "disabled")) }}
+{{- fail "controller.mode must be active, shadow, or disabled" }}
+{{- end }}
+{{- $controllerActive := and .Values.controller.enabled (eq .Values.controller.mode "active") -}}
+{{- if ne $controllerActive .Values.cron.suspend }}
+{{- fail "exactly one sync writer is required: active controller requires cron.suspend=true" }}
+{{- end }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -12,6 +19,7 @@ metadata:
   labels:
     {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
 spec:
+  suspend: {{ .Values.cron.suspend }}
   schedule: {{ .Values.cron.schedule | quote }}
   concurrencyPolicy: {{ .Values.cron.concurrencyPolicy }}
   startingDeadlineSeconds: {{ .Values.cron.startingDeadlineSeconds }}

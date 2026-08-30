@@ -1,13 +1,13 @@
 # agentgateway-route-sync — defaults
 #
-# Two pieces:
+# Three pieces:
 #   1. A Gateway (gatewayClassName: agentgateway) whose listener the
 #      agentgateway controller reconciles into a data-plane proxy — this is
 #      what actually serves /mcp/<name> traffic (the agentgateway Service in
 #      this cluster is control-plane-only: 9978 xDS / 9093 / 9092).
-#   2. A CronJob that curls the registry's server-side export endpoint and
-#      applies the rendered AgentgatewayBackend + HTTPRoute objects. Re-runs
-#      are idempotent (server-side apply on stable resource names).
+#   2. An HA Lease-elected controller that verifies and reconciles Registry
+#      desired state, watches Kubernetes drift, and retains last-known-good.
+#   3. The original CronJob retained as the tested rollback path.
 
 namespace: agentgateway-system
 
@@ -185,8 +185,49 @@ externalSecret:
   refreshInterval: 1h
   registryDeployKey: prod-agentic-registry-devai-deploy-key
 
+# HA Registry-to-AgentGateway controller. Shadow is deliberately the rollout
+# default: the CronJob remains the sole writer until live parity is proven.
+controller:
+  enabled: true
+  mode: shadow
+  replicas: 2
+  image:
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/agentic-registry
+    # main-59a9827; the manifest passed the blocking Trivy gate in
+    # agentic-registry Actions run 33303178621.
+    digest: sha256:40973ac1806bdf9d030aa0d0eb57d4aca432a052d9358e5e961bdfd233316fda
+    pullPolicy: IfNotPresent
+  httpPort: 9090
+  pollInterval: 30s
+  safetyInterval: 5m
+  watchResyncInterval: 5m
+  acceptanceTimeout: 20s
+  acceptancePollInterval: 500ms
+  registryRequestTimeout: 30s
+  maxBodyBytes: 5242880
+  fieldManager: agentgateway-registry-sync
+  lease:
+    name: agentgateway-route-sync
+    duration: 15s
+    renewDeadline: 10s
+    retryPeriod: 2s
+  resources:
+    requests:
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  monitoring:
+    enabled: true
+    interval: 30s
+    alertLabels:
+      severity: warning
+      owner: platform
+
 # CronJob cadence + safety.
 cron:
+  # Shadow rollout leaves this false. Active cutover sets true in the same
+  # GitOps change; rollback reverts that commit and resumes the tested path.
+  suspend: false
   schedule: "*/5 * * * *"
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 120
