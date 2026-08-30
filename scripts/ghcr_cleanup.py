@@ -8,6 +8,7 @@ GitHub-hosted runner without installing dependencies.
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
 import email.utils
 import json
@@ -86,10 +87,15 @@ def parse_github_time(value: str) -> dt.datetime:
 
 
 _TAG_RE = re.compile(r'^\s*tag:\s*["\']?([A-Za-z0-9][A-Za-z0-9._-]*)["\']?\s*(?:#.*)?$')
+# Kargo writes image tags into ArgoCD Application helm parameters as
+# `value: "<tag>"` lines; over-matching unrelated values only over-protects.
+_PARAM_VALUE_RE = re.compile(
+    r'^\s*value:\s*["\']?([A-Za-z0-9][A-Za-z0-9._-]*)["\']?\s*(?:#.*)?$'
+)
 
 
 def deployed_image_tags(chart_root: str) -> set[str]:
-    """Collect every image tag pinned by a chart under `chart_root`.
+    """Collect every image tag pinned by a manifest under `chart_root`.
 
     These are the tags production is actually running. A cluster on preemptible
     nodes re-pulls an image whenever a pod moves, so deleting one of these from
@@ -107,7 +113,7 @@ def deployed_image_tags(chart_root: str) -> set[str]:
             try:
                 with open(path, "r", encoding="utf-8") as handle:
                     for line in handle:
-                        match = _TAG_RE.match(line)
+                        match = _TAG_RE.match(line) or _PARAM_VALUE_RE.match(line)
                         if match:
                             tags.add(match.group(1))
             except OSError:
@@ -323,6 +329,108 @@ class GitHubClient:
         return items
 
 
+_MANIFEST_ACCEPT = ", ".join(
+    (
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+    )
+)
+
+
+class RegistryClient:
+    """Resolves which untagged versions are children of kept multi-arch tags.
+
+    GHCR stores every child manifest of a multi-arch image as an *untagged*
+    package version. Deleting those by age alone leaves the tagged parent
+    resolving to 404ing children: the tag still lists, the pull fails.
+    """
+
+    def __init__(self, token: str, *, registry: str = "https://ghcr.io") -> None:
+        self._token = token
+        self._registry = registry.rstrip("/")
+        self._bearer_cache: dict[str, str] = {}
+
+    def _bearer(self, repository: str) -> str:
+        cached = self._bearer_cache.get(repository)
+        if cached:
+            return cached
+        basic = base64.b64encode(f"x:{self._token}".encode()).decode()
+        request = urllib.request.Request(
+            f"{self._registry}/token?scope=repository:{repository}:pull",
+            headers={"Authorization": f"Basic {basic}"},
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            bearer = json.load(response).get("token", "")
+        if not bearer:
+            raise CleanupError(f"registry token exchange failed for {repository}")
+        self._bearer_cache[repository] = bearer
+        return bearer
+
+    def child_digests(self, repository: str, digest: str) -> set[str]:
+        request = urllib.request.Request(
+            f"{self._registry}/v2/{repository}/manifests/{digest}",
+            headers={
+                "Authorization": f"Bearer {self._bearer(repository)}",
+                "Accept": _MANIFEST_ACCEPT,
+            },
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            manifest = json.load(response)
+        return {
+            str(entry["digest"])
+            for entry in manifest.get("manifests", ())
+            if entry.get("digest")
+        }
+
+
+def drop_referenced_untagged(
+    registry: RegistryClient | None,
+    repository: str,
+    versions: Sequence[Mapping[str, Any]],
+    deletable: Sequence[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    """Keep untagged versions that kept tags still reference (or might).
+
+    Only registry-verified orphans are deletable; if the registry cannot be
+    consulted, every untagged version survives — orphan blobs are cheap,
+    a 404ing production tag is not.
+    """
+    untagged = [v for v in deletable if not version_tag_list(v)]
+    if not untagged:
+        return list(deletable)
+    referenced: set[str] | None
+    if registry is None:
+        referenced = None
+    else:
+        deletable_ids = {int(v["id"]) for v in deletable}
+        try:
+            referenced = set()
+            for version in versions:
+                if int(version["id"]) in deletable_ids:
+                    continue
+                if not version_tag_list(version):
+                    continue
+                referenced |= registry.child_digests(
+                    repository, str(version["name"])
+                )
+        except (CleanupError, OSError, ValueError) as error:
+            print(
+                f"{repository}: registry lookup failed ({error}); "
+                "keeping all untagged versions",
+                flush=True,
+            )
+            referenced = None
+    if referenced is None:
+        return [v for v in deletable if version_tag_list(v)]
+    return [
+        v
+        for v in deletable
+        if version_tag_list(v) or str(v["name"]) not in referenced
+    ]
+
+
 def next_link(link_header: str) -> str:
     for entry in link_header.split(","):
         match = re.match(r'\s*<([^>]+)>;\s*rel="([^"]+)"', entry)
@@ -372,6 +480,7 @@ def cleanup(
     dry_run: bool,
     resume_after: str = "",
     protected_tags: Iterable[str] = (),
+    registry: RegistryClient | None = None,
     now: dt.datetime | None = None,
 ) -> CleanupResult:
     protected_tags = set(protected_tags)
@@ -408,6 +517,9 @@ def cleanup(
             result.versions_examined += len(versions)
             deletable = select_deletable_versions(
                 versions, cutoff=cutoff, keep=keep, protected_tags=protected_tags
+            )
+            deletable = drop_referenced_untagged(
+                registry, f"{org}/{name}", versions, deletable
             )
             print(
                 f"{name}: {len(versions)} versions, {len(deletable)} eligible for deletion",
@@ -487,9 +599,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--protect-tags-from",
-        default="",
+        action="append",
+        default=[],
         help=(
-            "Directory of Helm charts to scan for pinned image tags. Any GHCR "
+            "Directory to scan for pinned image tags (repeatable). Any GHCR "
             "version carrying one of those tags is never deleted, regardless of "
             "age — production is running it."
         ),
@@ -506,21 +619,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("GHCR_TOKEN is required")
 
     protected_tags: set[str] = set()
-    if args.protect_tags_from:
-        if not os.path.isdir(args.protect_tags_from):
+    for protect_root in args.protect_tags_from:
+        if not os.path.isdir(protect_root):
             raise SystemExit(
-                f"--protect-tags-from: no such directory: {args.protect_tags_from}"
+                f"--protect-tags-from: no such directory: {protect_root}"
             )
-        protected_tags = deployed_image_tags(args.protect_tags_from)
+        found = deployed_image_tags(protect_root)
         # Deleting an in-use image is silent until a node is replaced, so a
         # misconfigured path that silently protected nothing would be worse than
         # the bug this guards against. Fail loudly instead.
-        if not protected_tags:
+        if not found:
             raise SystemExit(
                 f"--protect-tags-from: no image tags found under "
-                f"{args.protect_tags_from}; refusing to run with an empty keep-list"
+                f"{protect_root}; refusing to run with an empty keep-list"
             )
-        print(f"Protecting {len(protected_tags)} tags pinned by charts", flush=True)
+        protected_tags |= found
+    if args.protect_tags_from:
+        print(f"Protecting {len(protected_tags)} tags pinned by manifests", flush=True)
 
     deadline = time.monotonic() + args.soft_timeout_seconds
     client = GitHubClient(
@@ -537,6 +652,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             dry_run=args.dry_run,
             resume_after=args.resume_after,
             protected_tags=protected_tags,
+            registry=RegistryClient(token),
         )
     except (CleanupError, KeyError, TypeError, ValueError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
