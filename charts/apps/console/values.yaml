@@ -515,3 +515,16 @@ publishCatalog:
   # "holds a test mode key but is read as the live mode credential" rather
   # than publishing the live catalog into a sandbox.
   stripeWriteKeyLive: prod-tesserix-stripe-write-key-live
+
+# Rollout strategy. Unset, Kubernetes defaults to 25%/25%, which for any small
+# replica count rounds to maxSurge 1 / maxUnavailable 0 — the surge-first shape
+# that deadlocks a rollout on a memory-saturated cluster (#709), silently,
+# while the Deployment still reports Available=True because the old pods keep
+# serving. Defaulted here so an overlay that says nothing inherits the safe
+# behaviour rather than the deadlocking one; `values-prod.yaml` restates it
+# explicitly, with the replica-count reasoning that makes it free there.
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+    maxSurge: 0
