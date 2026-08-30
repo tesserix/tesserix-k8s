@@ -573,7 +573,7 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             {"host": "adk-runtime.devai.svc.cluster.local", "port": 8080},
             backend["spec"]["a2a"],
         )
-        self.assertEqual("mcp", route["spec"]["parentRefs"][0]["sectionName"])
+        self.assertEqual("runtime", route["spec"]["parentRefs"][0]["sectionName"])
         self.assertEqual(
             [
                 {"path": {"type": "PathPrefix", "value": "/a2a/v1/"}},
@@ -596,7 +596,18 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
                     "group": "gateway.networking.k8s.io",
                     "kind": "Gateway",
                     "name": "agentgateway-mcp",
-                    "sectionName": "mcp",
+                    "sectionName": "runtime",
+                }
+            ],
+            policy["spec"]["targetRefs"],
+        )
+        self.assertEqual(
+            [
+                {
+                    "group": "gateway.networking.k8s.io",
+                    "kind": "Gateway",
+                    "name": "agentgateway-mcp",
+                    "sectionName": "runtime",
                 }
             ],
             observability["spec"]["targetRefs"],
@@ -718,7 +729,7 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             env["DEVAI_ADK_RUNTIME_SERVICE_TOKEN"]["valueFrom"]["secretKeyRef"],
         )
         self.assertEqual(
-            "http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080",
+            "http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8082",
             env["DEVAI_ADK_RUNTIME_BASE_URL"]["value"],
         )
 

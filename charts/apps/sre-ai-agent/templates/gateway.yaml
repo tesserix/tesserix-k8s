@@ -2,20 +2,6 @@
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayBackend
 metadata:
-  name: sre-ai-zitadel-jwks
-  namespace: {{ .Values.gateway.namespace }}
-  labels:
-    {{- include "sre-ai-agent.labels" . | nindent 4 }}
-spec:
-  policies:
-    tls: {}
-  static:
-    host: {{ .Values.gateway.oauth.jwksHost }}
-    port: 443
----
-apiVersion: agentgateway.dev/v1alpha1
-kind: AgentgatewayBackend
-metadata:
   name: sre-ai-agent
   namespace: {{ .Values.gateway.namespace }}
   labels:
@@ -37,7 +23,7 @@ spec:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: {{ .Values.gateway.name }}
-      sectionName: mcp
+      sectionName: runtime
   rules:
     - matches:
         - path:
@@ -58,57 +44,9 @@ metadata:
     {{- include "sre-ai-agent.labels" . | nindent 4 }}
 spec:
   targetRefs:
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
+    - group: agentgateway.dev
+      kind: AgentgatewayBackend
       name: sre-ai-agent
-  traffic:
-    jwtAuthentication:
-      mode: Strict
-      providers:
-        - issuer: {{ .Values.gateway.oauth.issuer }}
-          audiences:
-            - {{ .Values.gateway.oauth.audience | quote }}
-          jwks:
-            remote:
-              jwksPath: {{ .Values.gateway.oauth.jwksPath }}
-              cacheDuration: {{ .Values.gateway.oauth.jwksCacheDuration }}
-              backendRef:
-                group: agentgateway.dev
-                kind: AgentgatewayBackend
-                name: sre-ai-zitadel-jwks
-                port: 443
-    authorization:
-      action: Allow
-      policy:
-        matchExpressions:
-          - {{ printf "%q in jwt[%q]" .Values.gateway.oauth.role .Values.gateway.oauth.roleClaim | quote }}
-    transformation:
-      request:
-        set:
-          - name: X-ADK-Workload-Subject
-            value: jwt.sub
-          - name: X-ADK-Workload-Client-ID
-            value: jwt.client_id
-    rateLimit:
-      local:
-        - requests: {{ .Values.gateway.rateLimit.requestsPerMinutePerReplica }}
-          unit: Minutes
-          burst: {{ .Values.gateway.rateLimit.burst }}
-      global:
-        backendRef:
-          name: {{ .Values.gateway.rateLimit.backend }}
-          port: {{ .Values.gateway.rateLimit.port }}
-        domain: {{ .Values.gateway.rateLimit.domain }}
-        failureMode: FailClosed
-        descriptors:
-          - entries:
-              - name: gateway
-                expression: '"sre-ai-agent"'
-              - name: oauth_subject
-                expression: jwt.sub
-            unit: Requests
-    timeouts:
-      request: {{ .Values.gateway.requestTimeout }}
   backend:
     auth:
       secretRef:

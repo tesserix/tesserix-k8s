@@ -195,12 +195,11 @@ def test_registry_accepts_a_separate_tesserix_scoped_sre_deploy_key() -> None:
     assert "tesserix=$(SRE_DEPLOY_KEY_SHA256)" in configured
 
 
-def test_a_more_specific_shared_gateway_route_authenticates_every_caller() -> None:
+def test_sre_agent_uses_the_shared_runtime_listener_and_backend_identity() -> None:
     documents = render_chart()
     backend = resource(documents, "AgentgatewayBackend", "sre-ai-agent")
     route = resource(documents, "HTTPRoute", "sre-ai-agent")
     policy = resource(documents, "AgentgatewayPolicy", "sre-ai-agent")
-    traffic = policy["spec"]["traffic"]
 
     assert backend["metadata"]["namespace"] == "agentgateway-system"
     assert backend["spec"]["a2a"] == {
@@ -213,7 +212,7 @@ def test_a_more_specific_shared_gateway_route_authenticates_every_caller() -> No
             "group": "gateway.networking.k8s.io",
             "kind": "Gateway",
             "name": "agentgateway-mcp",
-            "sectionName": "mcp",
+            "sectionName": "runtime",
         }
     ]
     assert route["spec"]["rules"][0]["matches"] == [
@@ -232,21 +231,14 @@ def test_a_more_specific_shared_gateway_route_authenticates_every_caller() -> No
             "weight": 1,
         }
     ]
-    provider = traffic["jwtAuthentication"]["providers"][0]
-    assert traffic["jwtAuthentication"]["mode"] == "Strict"
-    assert provider["issuer"] == "https://auth.tesserix.app"
-    assert provider["audiences"] == ["387190457387450503"]
-    assert "agentgateway.runtime" in traffic["authorization"]["policy"]["matchExpressions"][0]
-    assert traffic["transformation"]["request"]["set"] == [
-        {"name": "X-ADK-Workload-Subject", "value": "jwt.sub"},
-        {"name": "X-ADK-Workload-Client-ID", "value": "jwt.client_id"},
+    assert policy["spec"]["targetRefs"] == [
+        {
+            "group": "agentgateway.dev",
+            "kind": "AgentgatewayBackend",
+            "name": "sre-ai-agent",
+        }
     ]
-    assert traffic["rateLimit"]["global"]["failureMode"] == "FailClosed"
-    assert traffic["rateLimit"]["global"]["descriptors"][0]["entries"][0] == {
-        "name": "gateway",
-        "expression": '"sre-ai-agent"',
-    }
-    assert "backend" not in traffic
+    assert "traffic" not in policy["spec"]
     backend_auth = policy["spec"]["backend"]["auth"]
     assert backend_auth["secretRef"] == {
         "name": "sre-ai-agent-upstream",

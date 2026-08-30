@@ -1,8 +1,10 @@
 {{- if .Values.probe.enabled }}
-# Capability prober — dials every routed MCP server through the public gateway
-# path and records what it actually served on the registry artifact's status.
-# It runs as an ordinary machine client: same Zitadel token, same route, same
-# authorization as any agent, so "reachable" means reachable for callers too.
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.probe.image.digest) }}
+{{- fail "probe.image.digest must be an immutable sha256 digest" }}
+{{- end }}
+# Capability prober — dials every routed MCP server through the mesh-only
+# listener and records what it actually served on the registry artifact's
+# status. Its dedicated service account is admitted only to that listener.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -12,6 +14,7 @@ metadata:
     {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
 automountServiceAccountToken: false
 ---
+{{- if .Values.probe.oauth.enabled }}
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
@@ -35,6 +38,7 @@ spec:
       remoteRef:
         key: {{ .Values.probe.externalSecret.clientSecret }}
 ---
+{{- end }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -67,8 +71,8 @@ spec:
               type: RuntimeDefault
           containers:
             - name: probe
-              image: "{{ .Values.probe.image.repository }}:{{ .Values.probe.image.tag }}"
-              imagePullPolicy: {{ .Values.images.pullPolicy }}
+              image: "{{ .Values.probe.image.repository }}@{{ .Values.probe.image.digest }}"
+              imagePullPolicy: {{ .Values.probe.image.pullPolicy }}
               command: ["/app/agentic-probe"]
               env:
                 - name: REGISTRY_ENDPOINT
@@ -79,15 +83,16 @@ spec:
                   value: {{ join "," .Values.registry.sourceNamespaces | quote }}
                 - name: PROBE_TIMEOUT
                   value: {{ .Values.probe.timeout | quote }}
-                - name: MCP_TOKEN_URL
-                  value: {{ .Values.probe.oauth.tokenUrl | quote }}
-                - name: MCP_SCOPE
-                  value: {{ .Values.probe.oauth.scope | quote }}
                 - name: REGISTRY_DEPLOY_KEY
                   valueFrom:
                     secretKeyRef:
                       name: {{ .Values.registry.authSecret.name }}
                       key: {{ .Values.registry.authSecret.key }}
+                {{- if .Values.probe.oauth.enabled }}
+                - name: MCP_TOKEN_URL
+                  value: {{ .Values.probe.oauth.tokenUrl | quote }}
+                - name: MCP_SCOPE
+                  value: {{ .Values.probe.oauth.scope | quote }}
                 - name: MCP_CLIENT_ID
                   valueFrom:
                     secretKeyRef:
@@ -98,6 +103,7 @@ spec:
                     secretKeyRef:
                       name: {{ .Values.probe.externalSecret.name }}
                       key: CLIENT_SECRET
+                {{- end }}
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
