@@ -8,6 +8,12 @@ spec:
   {{- if and (not .Values.autoscaling.enabled) (not .Values.keda.enabled) }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
+  # Replace one pod at a time because the production node pools cannot host a surge replica.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       {{- include "devai-api.selectorLabels" . | nindent 6 }}
