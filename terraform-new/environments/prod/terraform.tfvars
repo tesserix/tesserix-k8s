@@ -154,59 +154,77 @@ cluster_labels = {
 }
 
 # =============================================================================
-# Node Pool Configuration - Infrastructure Workloads on Spot VMs
+# Node Pool Configuration - On-Demand under 3-year E2 CUD
 # =============================================================================
-# Strategy: e2-standard-8 Spot VMs — fewer larger nodes for better scheduling.
-# GKE runs platform infra: PostgreSQL, MongoDB, Redis, NATS, Istio, plus shared apps.
+# Commitment e2-cud-asia-south1 covers 30 vCPU / 120 GB (GENERAL_PURPOSE_E2,
+# 36-month, ends 2029-08-30). CUDs only apply to STANDARD provisioning, so all
+# worker pools run on-demand. Steady state 36 vCPU / 144 GB: 30/120 at the
+# committed rate, the ~6 vCPU / 24 GB remainder at on-demand rates.
+# Memory requests sit at ~99% of allocatable on 5 of 6 nodes — do not shrink
+# steady-state capacity below 144 GB without right-sizing requests first.
 #
-# SPOT VM TOGGLE:
-#   use_spot_instances = true   -> Use Spot VMs (current: ENABLED for cost savings)
-#   use_spot_instances = false  -> Use On-Demand VMs (switch if stability issues arise)
-#   use_spot_instances = null   -> Use per-pool 'spot' setting
-#
-# Cost Comparison (asia-south1, e2-standard-8, per node/month):
-#   - On-Demand: ~$194/month
-#   - Spot:      ~$58/month  (70% savings)
-#   - With 2-4 nodes: $116-$232/month (Spot) vs $388-$776/month (On-Demand)
-#
-# Spot VM Considerations:
-#   - Can be preempted with 30 seconds notice
-#   - GKE handles graceful shutdown and rescheduling automatically
-#   - Use PodDisruptionBudgets (PDBs) to ensure high availability for stateful workloads
-#   - PostgreSQL/MongoDB should have PDBs and anti-affinity rules for resilience
-#
-# TO SWITCH TO ON-DEMAND: Simply change use_spot_instances = false below
+# spot flag is immutable on a node pool: flipping it REPLACES the pool.
 # =============================================================================
 
-use_spot_instances = true # ENABLED - 70% cost savings; set to false for on-demand
+use_spot_instances = false # On-demand — required for CUD coverage
 
 node_pools = [
   {
     name                        = "optimized-v2"
-    machine_type                = "e2-standard-8" # 8 vCPU, 32GB RAM — downsized from e2-standard-16 (actual usage ~5 vCPU / 30 Gi)
-    disk_size_gb                = 80              # Reduced from 100 — sufficient for node workloads
-    disk_type                   = "pd-standard"   # Standard disk for cost optimization
-    spot                        = true            # Per-pool setting (overridden by use_spot_instances)
+    machine_type                = "e2-standard-8" # 8 vCPU, 32GB RAM
+    disk_size_gb                = 80
+    disk_type                   = "pd-standard"
+    spot                        = false
     initial_node_count          = 1
-    min_count                   = 0     # Per-zone min (using total counts instead)
-    max_count                   = 0     # Per-zone max (using total counts instead)
-    total_min_count             = 1     # Min 1 node — autoscaler adds nodes in other zones as needed for zonal PVCs
-    total_max_count             = 4     # Max 4 nodes — autoscaler adds nodes as requests exceed capacity
-    location_policy             = "ANY" # Nodes can be in ANY zone for better spot availability
+    min_count                   = 0 # Per-zone min (using total counts instead)
+    max_count                   = 0 # Per-zone max (using total counts instead)
+    total_min_count             = 3 # Steady state — 24 vCPU / 96 GB of the CUD
+    total_max_count             = 4
+    location_policy             = "BALANCED"
     max_pods_per_node           = 110
     auto_repair                 = true
-    auto_upgrade                = true # Auto-upgrade enabled with surge protection
-    max_surge                   = 1    # New nodes created before old ones removed
-    max_unavailable             = 0    # Zero unavailable during upgrades (surge-only strategy)
+    auto_upgrade                = true
+    max_surge                   = 1
+    max_unavailable             = 0
     enable_secure_boot          = true
     enable_integrity_monitoring = true
     labels = {
-      workload    = "infrastructure"
-      optimized   = "true"
-      environment = "prod"
-      spot        = "true"
+      workload     = "infrastructure"
+      optimized    = "true"
+      environment  = "prod"
+      provisioning = "on-demand"
     }
-    tags   = ["prod", "tesseract", "optimized", "spot"]
+    tags   = ["prod", "tesseract", "optimized", "on-demand"]
+    taints = []
+  },
+  {
+    # Existing pool created outside Terraform — import before apply:
+    # terraform import 'google_container_node_pool.pools["small-support"]' \
+    #   tesseracthub-480811/asia-south1/tesseract-prod-in-gke/small-support
+    name                        = "small-support"
+    machine_type                = "e2-standard-4" # 4 vCPU, 16GB RAM
+    disk_size_gb                = 80
+    disk_type                   = "pd-standard"
+    spot                        = false
+    initial_node_count          = 1
+    min_count                   = 0
+    max_count                   = 0
+    total_min_count             = 3 # Steady state — 12 vCPU / 48 GB
+    total_max_count             = 3
+    location_policy             = "BALANCED"
+    max_pods_per_node           = 110
+    auto_repair                 = true
+    auto_upgrade                = true
+    max_surge                   = 1
+    max_unavailable             = 0
+    enable_secure_boot          = true
+    enable_integrity_monitoring = true
+    labels = {
+      workload     = "support"
+      environment  = "prod"
+      provisioning = "on-demand"
+    }
+    tags   = ["prod", "tesseract", "support", "on-demand"]
     taints = []
   }
 ]
