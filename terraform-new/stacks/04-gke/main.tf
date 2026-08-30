@@ -220,7 +220,8 @@ resource "google_container_node_pool" "pools" {
     boot_disk_kms_key = var.boot_disk_kms_key
 
     service_account = var.node_service_account
-    oauth_scopes    = var.node_oauth_scopes
+    # oauth_scopes force replacement — per-pool override lets a live pool keep its scopes
+    oauth_scopes = each.value.oauth_scopes != null ? each.value.oauth_scopes : var.node_oauth_scopes
 
     labels = merge(var.node_labels, each.value.labels)
     tags   = each.value.tags
