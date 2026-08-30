@@ -50,6 +50,7 @@ class AgentGatewaySyncControllerTests(unittest.TestCase):
         self.assertEqual("shadow", env["RECONCILIATION_MODE"]["value"])
         self.assertEqual("true", env["PRUNE"]["value"])
         self.assertEqual("27", env["MIN_RESOURCES"]["value"])
+        self.assertEqual("5242880", env["MAX_BODY_BYTES"]["value"])
         self.assertIn("/v0/export/agentgateway?", env["REGISTRY_URL"]["value"])
         self.assertIn("namespace=devai", env["REGISTRY_URL"]["value"])
         self.assertEqual("/var/run/secrets/registry/API_KEY", env["REGISTRY_TOKEN_FILE"]["value"])
