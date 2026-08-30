@@ -1,0 +1,111 @@
+{{- if .Values.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sre-ai-agent
+  labels:
+    {{- include "sre-ai-agent.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "sre-ai-agent.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "sre-ai-agent.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 100
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "sre-ai-agent.selectorLabels" . | nindent 14 }}
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              {{- include "sre-ai-agent.selectorLabels" . | nindent 14 }}
+      containers:
+        - name: sre-agent
+          image: {{ include "sre-ai-agent.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            - name: SRE_AGENT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sre-ai-agent
+                  key: API_KEY
+            - name: SRE_AGENT_GATEWAY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sre-ai-agent
+                  key: GATEWAY_API_KEY
+            - name: SRE_AGENT_TENANT_ID
+              value: {{ .Values.config.tenantId | quote }}
+            - name: SRE_AGENT_GATEWAY_BASE_URL
+              value: {{ .Values.config.gatewayBaseUrl | quote }}
+            - name: SRE_AGENT_GATEWAY_MODEL
+              value: {{ .Values.config.gatewayModel | quote }}
+            - name: SRE_AGENT_NAMESPACES
+              value: {{ .Values.config.namespaces | quote }}
+            - name: SRE_AGENT_MAX_PROMPT_CHARS
+              value: {{ .Values.config.maxPromptChars | quote }}
+            - name: SRE_AGENT_REQUEST_TIMEOUT_SECONDS
+              value: {{ .Values.config.requestTimeoutSeconds | quote }}
+            - name: SRE_AGENT_CLUSTER_TIMEOUT_SECONDS
+              value: {{ .Values.config.clusterTimeoutSeconds | quote }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 12
+            periodSeconds: 5
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 2
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

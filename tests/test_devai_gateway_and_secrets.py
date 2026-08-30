@@ -155,6 +155,7 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             {
                 "cluster.local/ns/devai/sa/devai-api",
                 "cluster.local/ns/devai/sa/devai-runner",
+                "cluster.local/ns/ai-agents/sa/sre-ai-agent",
             },
             set(principals),
         )
@@ -173,6 +174,19 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             (("app.kubernetes.io/name", "devai-api-worker"),), ingress_selectors
         )
         self.assertIn((("devai.tesserix.app/role", "runner"),), ingress_selectors)
+        sre_ingress = {
+            tuple(sorted(source.get("podSelector", {}).get("matchLabels", {}).items()))
+            for rule in network_policy["spec"]["ingress"]
+            for source in rule.get("from", [])
+            if source.get("namespaceSelector", {})
+            .get("matchLabels", {})
+            .get("kubernetes.io/metadata.name")
+            == "ai-agents"
+        }
+        self.assertEqual(
+            {(("app.kubernetes.io/name", "sre-ai-agent"),)},
+            sre_ingress,
+        )
 
     def test_gateway_vertex_identity_is_terraform_bound(self):
         documents = render_chart(
