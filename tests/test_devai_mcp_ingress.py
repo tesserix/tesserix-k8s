@@ -179,6 +179,66 @@ class DevAIMCPIngressTests(unittest.TestCase):
             policy["spec"]["egress"],
         )
 
+    def test_agentgateway_mcp_can_reach_registered_product_backends(self):
+        policies = [
+            document
+            for document in yaml.safe_load_all(
+                (
+                    ROOT / "manifests/agentic-istio/networkpolicy-consumer-egress.yaml"
+                ).read_text()
+            )
+            if document
+        ]
+        egress = resource(
+            policies,
+            "NetworkPolicy",
+            "allow-agentgateway-mcp-to-product-mcp-egress",
+        )
+        destinations = {
+            peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
+            for rule in egress["spec"]["egress"]
+            for peer in rule["to"]
+        }
+        self.assertEqual({"homechef", "mark8ly", "support-platform"}, destinations)
+
+        homechef = render_chart(
+            "charts/thirdparty/istio-config", "istio-config", "istio-system"
+        )
+        homechef_policy = resource(homechef, "NetworkPolicy", "allow-homechef-ingress")
+        homechef_sources = {
+            peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
+            for rule in homechef_policy["spec"]["ingress"]
+            for peer in rule["from"]
+        }
+        self.assertIn("agentgateway-system", homechef_sources)
+
+        support = render_chart(
+            "charts/apps/support-platform-namespace",
+            "support-platform-namespace",
+            "support-platform",
+        )
+        support_policy = resource(
+            support, "NetworkPolicy", "allow-in-namespace-and-sources"
+        )
+        support_sources = {
+            peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
+            for rule in support_policy["spec"]["ingress"]
+            for peer in rule["from"]
+            if "namespaceSelector" in peer
+            and "kubernetes.io/metadata.name"
+            in peer["namespaceSelector"].get("matchLabels", {})
+        }
+        self.assertIn("agentgateway-system", support_sources)
+
+        mark8ly = render_chart(
+            "charts/apps/mark8ly-namespace", "mark8ly-namespace", "mark8ly"
+        )
+        mark8ly_policy = resource(mark8ly, "AuthorizationPolicy", "allow-known-sources")
+        mark8ly_sources = set(
+            mark8ly_policy["spec"]["rules"][0]["from"][0]["source"]["namespaces"]
+        )
+        self.assertIn("agentgateway-system", mark8ly_sources)
+
     def test_devai_services_are_discoverable_as_identity_aware_mcp_targets(self):
         cases = (
             (

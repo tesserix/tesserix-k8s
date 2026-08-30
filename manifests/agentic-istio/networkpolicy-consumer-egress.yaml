@@ -87,6 +87,38 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: devai
 ---
+# The Gateway exports only MCP servers registered for gateway use. Permit its
+# data-plane pods to reach the namespaces that currently host those product
+# MCP backends; destination-side policy and mesh authorization remain the L7
+# enforcement boundary.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-agentgateway-mcp-to-product-mcp-egress
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: networking
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: agentgateway-mcp
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: homechef
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: mark8ly
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: support-platform
+---
 # kagent-agent-sync also curls devai-api (devai namespace) for the active
 # variant set — the union of every user's Settings-enabled models — so it can
 # provision exactly those Agent pods on demand. Same additive, full-namespace

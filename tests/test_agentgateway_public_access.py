@@ -430,7 +430,7 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
             listener["name"]: listener["port"]
             for listener in gateway["spec"]["listeners"]
         }
-        self.assertEqual({"mcp": 8080, "public": 8081}, listeners)
+        self.assertEqual({"mcp": 8080, "public": 8081, "runtime": 8082}, listeners)
 
     def test_mcp_gateway_requires_zitadel_identity_and_subject_rate_limit(self):
         documents = render_chart("charts/apps/agentgateway-route-sync")

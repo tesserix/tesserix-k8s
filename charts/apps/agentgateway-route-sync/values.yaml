@@ -23,6 +23,7 @@ gateway:
   # HTTP listener the proxy serves /mcp/<name> on.
   port: 8080
   publicPort: 8081
+  runtimePort: 8082
   # Which namespaces' HTTPRoutes may attach. The route-sync writes routes into
   # this same namespace, so "Same" is sufficient and tightest.
   allowedRoutesFrom: Same
@@ -152,16 +153,18 @@ ownershipHandoff:
 # records it on the registry artifact's status. Reachability in the catalog is
 # what the probe measured, never what a row asserts.
 probe:
-  # Enable once the registry image carries /app/agentic-probe and the Zitadel
-  # machine client behind prod-agentgateway-mcp-probe-client-id exists; without
-  # both, every scheduled Job fails to start.
-  enabled: false
+  # Probe the mesh-only listener with this pod's dedicated service-account
+  # identity. The job needs no broad OAuth client; public JWT enforcement is
+  # independently owned by the listener policy and covered by gateway smokes.
+  enabled: true
   name: agentic-probe
   gatewayUrl: http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080
   timeout: 30s
   image:
-    repository: ghcr.io/tesserix/agentic-registry
-    tag: latest
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/agentic-registry
+    # Same verified image as the controller; it includes /app/agentic-probe.
+    digest: sha256:1ae02412e4c5da8c14aea89a83898bc3e82f359da07c7919a875dc5ed64f89ca
+    pullPolicy: IfNotPresent
   schedule: "*/15 * * * *"
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 120
@@ -173,6 +176,7 @@ probe:
   # The prober authenticates to the gateway as a machine client, exactly like
   # any other agent — it holds no privileged bypass.
   oauth:
+    enabled: false
     tokenUrl: https://auth.tesserix.app/oauth/v2/token
     scope: "openid urn:zitadel:iam:org:project:id:387190457387450503:aud urn:zitadel:iam:org:projects:roles"
   externalSecret:
@@ -193,9 +197,9 @@ controller:
   replicas: 2
   image:
     repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/agentic-registry
-    # main-59a9827; the manifest passed the blocking Trivy gate in
-    # agentic-registry Actions run 33303178621.
-    digest: sha256:40973ac1806bdf9d030aa0d0eb57d4aca432a052d9358e5e961bdfd233316fda
+    # main-e0d766d; the manifest passed the blocking Trivy gate in
+    # agentic-registry Actions run 33309332415.
+    digest: sha256:1ae02412e4c5da8c14aea89a83898bc3e82f359da07c7919a875dc5ed64f89ca
     pullPolicy: IfNotPresent
   httpPort: 9090
   pollInterval: 30s

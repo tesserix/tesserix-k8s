@@ -108,7 +108,7 @@ class PerServerAuthorizationTests(unittest.TestCase):
 
 class CapabilityProbeTests(unittest.TestCase):
     def setUp(self):
-        self.documents = render_chart(CHART, "probe.enabled=true")
+        self.documents = render_chart(CHART)
         self.cronjob = resource(self.documents, "CronJob", "agentic-probe")
         self.pod = self.cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]
 
@@ -116,7 +116,7 @@ class CapabilityProbeTests(unittest.TestCase):
         self.assertEqual("agentic-probe", self.pod["serviceAccountName"])
         resource(self.documents, "ServiceAccount", "agentic-probe")
 
-    def test_probe_dials_the_public_gateway_and_writes_only_status(self):
+    def test_probe_dials_the_internal_gateway_and_writes_only_status(self):
         container = self.pod["containers"][0]
         self.assertEqual(["/app/agentic-probe"], container["command"])
         env = {item["name"]: item for item in container["env"]}
@@ -129,14 +129,18 @@ class CapabilityProbeTests(unittest.TestCase):
             env["TENANT_NAMESPACES"]["value"],
         )
 
-    def test_probe_credentials_come_from_the_secret_store(self):
+    def test_probe_uses_mesh_identity_without_a_broad_oauth_credential(self):
         container = self.pod["containers"][0]
         env = {item["name"]: item for item in container["env"]}
-        for name in ("REGISTRY_DEPLOY_KEY", "MCP_CLIENT_ID", "MCP_CLIENT_SECRET"):
-            self.assertIn("secretKeyRef", env[name]["valueFrom"])
-        secret = resource(self.documents, "ExternalSecret", "agentic-probe-oauth")
-        self.assertEqual(
-            "ClusterSecretStore", secret["spec"]["secretStoreRef"]["kind"]
+        self.assertIn("secretKeyRef", env["REGISTRY_DEPLOY_KEY"]["valueFrom"])
+        self.assertNotIn("MCP_CLIENT_ID", env)
+        self.assertNotIn("MCP_CLIENT_SECRET", env)
+        self.assertFalse(
+            any(
+                document.get("kind") == "ExternalSecret"
+                and document.get("metadata", {}).get("name") == "agentic-probe-oauth"
+                for document in self.documents
+            )
         )
 
     def test_probe_pod_is_hardened(self):
@@ -145,14 +149,23 @@ class CapabilityProbeTests(unittest.TestCase):
         self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
         self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
         self.assertEqual(["ALL"], container["securityContext"]["capabilities"]["drop"])
+        self.assertRegex(
+            container["image"],
+            r"^asia-south1-docker\.pkg\.dev/tesseracthub-480811/ghcr-remote/"
+            r"tesserix/agentic-registry@sha256:[0-9a-f]{64}$",
+        )
 
-    def test_probe_ships_disabled_until_its_image_and_client_exist(self):
-        documents = render_chart(CHART)
+    def test_probe_can_be_disabled_for_rollback(self):
+        documents = render_chart(CHART, "probe.enabled=false")
         names = {
             (document.get("kind"), document.get("metadata", {}).get("name"))
             for document in documents
         }
         self.assertNotIn(("CronJob", "agentic-probe"), names)
+
+    def test_probe_rejects_a_mutable_image_reference(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            render_chart(CHART, "probe.image.digest=latest")
 
 
 class ProbeMeshGuardrailTests(unittest.TestCase):
@@ -226,6 +239,44 @@ class ProbeMeshGuardrailTests(unittest.TestCase):
 
 
 class GatewayConsumerGuardrailTests(unittest.TestCase):
+    def test_runtime_listener_is_cluster_internal_and_relies_on_strict_jwt(self):
+        documents = istio_policies()
+        allow = resource(
+            documents,
+            "AuthorizationPolicy",
+            "agentgateway-authz",
+        )
+        runtime_rule = next(
+            rule
+            for rule in allow["spec"]["rules"]
+            if rule.get("to", [{}])[0].get("operation", {}).get("ports")
+            == ["8082"]
+        )
+        self.assertNotIn("from", runtime_rule)
+
+        network = resource(
+            documents,
+            "NetworkPolicy",
+            "allow-agentgateway-runtime-ingress",
+        )
+        self.assertEqual(
+            {
+                "matchLabels": {
+                    "gateway.networking.k8s.io/gateway-name": "agentgateway-mcp"
+                }
+            },
+            network["spec"]["podSelector"],
+        )
+        self.assertEqual(
+            [
+                {
+                    "from": [{"namespaceSelector": {}}],
+                    "ports": [{"port": 8082, "protocol": "TCP"}],
+                }
+            ],
+            network["spec"]["ingress"],
+        )
+
     def test_kora_reaches_only_the_internal_agentgateway_listener(self):
         allow = resource(
             istio_policies(),
