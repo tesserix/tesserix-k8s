@@ -1,9 +1,9 @@
-name: GHCR Cleanup (5-day retention)
+name: GHCR Cleanup (3-day retention)
 
 # For every container package in ghcr.io/tesserix:
 #   * always retain any version whose tag is pinned by a chart under charts/;
 #   * always retain the newest 3 package versions;
-#   * retain every version updated within the last 5 days; and
+#   * retain every version updated within the last 3 days; and
 #   * delete all other tagged and untagged versions.
 #
 # The chart keep-list is not optional. Age does not imply "unused": an app that
@@ -130,7 +130,7 @@ jobs:
         env:
           GHCR_TOKEN: ${{ steps.package-token.outputs.token }}
           DRY_RUN: ${{ github.event_name != 'schedule' && inputs.dry-run || false }}
-          CUT_OFF: 5d
+          CUT_OFF: 3d
           RESUME_AFTER: ${{ inputs.resume-after || '' }}
         run: |
           args=(
@@ -180,7 +180,7 @@ jobs:
           VERSIONS_WOULD_DELETE: ${{ steps.cleanup.outputs.versions-would-delete || '0' }}
           RESUME_AFTER: ${{ steps.cleanup.outputs.resume-after || '' }}
           TOKEN_SOURCE: ${{ steps.package-token.outputs.source || 'unavailable' }}
-          CUT_OFF: 5d
+          CUT_OFF: 3d
         run: |
           {
             echo "## GHCR cleanup"
