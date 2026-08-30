@@ -85,8 +85,8 @@ spec:
         # apiVersion, store.Apply upserts on kind/namespace/name/tag). So no
         # per-kind flattening is needed — we just POST each file's raw YAML.
         # Order matters: projects + skills + prompts + servers must land before
-        # agents (which reference them). Auth is anonymous (mesh-gated), so no
-        # Authorization header.
+        # agents (which reference them). Authentication uses the registry deploy
+        # key mounted from a Secret; mesh policy independently restricts reachability.
         - name: upsert
           image: python:3.12-alpine
           command:
@@ -95,26 +95,40 @@ spec:
           args:
             - |
               set -euo pipefail
-              # Only `requests` is needed — we POST the seed YAML verbatim, so
-              # no client-side YAML parsing. Pip-install at boot keeps the image
-              # tiny (~100KB wheel, well under a second).
-              pip install --quiet --no-cache-dir 'requests==2.*'
-
               cat > /tmp/upsert.py <<'PYEOF'
-              import os, sys, pathlib, requests
+              import os
+              import pathlib
+              import sys
+              import urllib.error
+              import urllib.request
 
               SEEDS = pathlib.Path(os.environ["SEEDS_DIR"])
               ENDPOINT = os.environ["AREGISTRY_ENDPOINT"].rstrip("/")
+              HEADERS = {
+                  "Authorization": f"Bearer {os.environ['AREGISTRY_DEPLOY_KEY']}",
+                  "Content-Type": "application/yaml",
+              }
 
               # The seeds are full apiVersion/kind/metadata/spec envelopes; our
               # agentic-registry accepts them as-is at POST /v0/apply
               # (decodeMultiDoc parses YAML, Normalized() canonicalizes the
               # apiVersion, store.Apply upserts on kind/namespace/name/tag).
-              SESSION = requests.Session()
-              SESSION.headers.update({
-                  "Authorization": f"Bearer {os.environ['AREGISTRY_DEPLOY_KEY']}",
-                  "Content-Type": "application/yaml",
-              })
+              def post_seed(path):
+                  request = urllib.request.Request(
+                      f"{ENDPOINT}/v0/apply",
+                      data=path.read_bytes(),
+                      headers=HEADERS,
+                      method="POST",
+                  )
+                  try:
+                      with urllib.request.urlopen(request, timeout=30) as response:
+                          return response.status, response.read(200).decode(
+                              "utf-8", errors="replace"
+                          )
+                  except urllib.error.HTTPError as error:
+                      return error.code, error.read(200).decode(
+                          "utf-8", errors="replace"
+                      )
 
               # Apply in dependency order: projects + skills + prompts + servers
               # before agents (which reference them). Any other *.yaml under the
@@ -134,16 +148,16 @@ spec:
               for f in ordered:
                   label = str(f.relative_to(SEEDS))
                   try:
-                      r = SESSION.post(f"{ENDPOINT}/v0/apply", data=f.read_bytes(), timeout=30)
+                      status, body = post_seed(f)
                   except Exception as e:
                       print(f"  ERROR {label}: {e}"); err += 1; continue
-                  if r.status_code == 200:
+                  if status == 200:
                       print(f"  ok {label}"); ok += 1
-                  elif r.status_code == 207:
+                  elif status == 207:
                       # MultiStatus — at least one object in the doc had an issue.
-                      print(f"  partial (207) {label}: {r.text[:200]}"); err += 1
+                      print(f"  partial (207) {label}: {body}"); err += 1
                   else:
-                      print(f"  FAIL ({r.status_code}) {label}: {r.text[:200]}"); err += 1
+                      print(f"  FAIL ({status}) {label}: {body}"); err += 1
 
               print(f"registry bootstrap complete: {ok} applied, {err} failed")
               # Soft success: a stray non-seed/template file shouldn't wedge the
