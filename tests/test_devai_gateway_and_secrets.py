@@ -755,6 +755,17 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             },
             project["roles"],
         )
+        self.assertIn(
+            {
+                "login": "agentgateway-adk-prod",
+                "roles": [
+                    "agentgateway.mcp",
+                    "agentgateway.models",
+                    "agentgateway.runtime",
+                ],
+            },
+            project["machineGrants"],
+        )
 
     def test_devai_temporal_workers_are_ha_hardened_and_promoted(self):
         documents = render_chart(

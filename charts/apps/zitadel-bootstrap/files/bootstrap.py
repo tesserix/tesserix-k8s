@@ -551,37 +551,53 @@ def reconcile_platform_project(desired):
     if status != 200:
         raise SystemExit(f"platform project grant search failed: {status} {payload!r}")
     grants = json.loads(payload).get("result", [])
-    for grant in desired.get("humanGrants", []):
-        user_id = find_user(grant["login"])
-        if not user_id:
-            log(f"platform project user {grant['login']}: no such verified user, skipping")
-            continue
-        live = next(
-            (
-                item
-                for item in grants
-                if item.get("userId") == user_id and item.get("projectId") == project_id
-            ),
-            None,
-        )
-        wanted_roles = sorted(grant["roles"])
-        if live and sorted(live.get("roleKeys", [])) == wanted_roles:
-            log(f"platform project user {grant['login']}: in sync")
-            continue
-        if live:
-            method = "PUT"
-            path = f"/management/v1/users/{user_id}/grants/{live['id']}"
-            body = {"roleKeys": wanted_roles}
-        else:
-            method = "POST"
-            path = f"/management/v1/users/{user_id}/grants"
-            body = {"projectId": project_id, "roleKeys": wanted_roles}
-        status, payload = request(method, path, body, headers=scope)
-        if status != 200:
-            raise SystemExit(
-                f"platform project grant for {grant['login']} failed: {status} {payload!r}"
+    grant_groups = (
+        ("user", desired.get("humanGrants", [])),
+        ("machine", desired.get("machineGrants", [])),
+    )
+    for principal, configured_grants in grant_groups:
+        for grant in configured_grants:
+            user_id = find_user(grant["login"])
+            if not user_id:
+                if principal == "machine":
+                    raise SystemExit(
+                        f"platform project machine {grant['login']}: no such user"
+                    )
+                log(
+                    f"platform project {principal} {grant['login']}: "
+                    "no such verified user, skipping"
+                )
+                continue
+            live = next(
+                (
+                    item
+                    for item in grants
+                    if item.get("userId") == user_id
+                    and item.get("projectId") == project_id
+                ),
+                None,
             )
-        log(f"platform project user {grant['login']}: roles reconciled")
+            wanted_roles = sorted(grant["roles"])
+            if live and sorted(live.get("roleKeys", [])) == wanted_roles:
+                log(f"platform project {principal} {grant['login']}: in sync")
+                continue
+            if live:
+                method = "PUT"
+                path = f"/management/v1/users/{user_id}/grants/{live['id']}"
+                body = {"roleKeys": wanted_roles}
+            else:
+                method = "POST"
+                path = f"/management/v1/users/{user_id}/grants"
+                body = {"projectId": project_id, "roleKeys": wanted_roles}
+            status, payload = request(method, path, body, headers=scope)
+            if status != 200:
+                raise SystemExit(
+                    f"platform project grant for {grant['login']} failed: "
+                    f"{status} {payload!r}"
+                )
+            log(
+                f"platform project {principal} {grant['login']}: roles reconciled"
+            )
 
 
 def assert_reserved_org_clean(name, allowed):
