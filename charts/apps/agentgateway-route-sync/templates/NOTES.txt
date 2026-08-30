@@ -5,26 +5,25 @@ What this deploys (workstream G1):
     — the agentgateway controller reconciles this into a data-plane proxy that
     serves /mcp/<name> on :{{ .Values.gateway.port }}. Until this exists the cluster has only
     the agentgateway control plane (xDS), with no port serving MCP traffic.
-  • CronJob/agentgateway-route-sync ({{ .Values.cron.schedule }}) — curls
-    {{ .Values.registry.endpoint }}/v0/export/agentgateway and applies the
-    rendered AgentgatewayBackend + HTTPRoute per MCP server in namespace
-    "{{ join "," .Values.registry.sourceNamespaces }}".
+  • Deployment/agentgateway-route-sync-controller ({{ .Values.controller.mode }})
+    — two replicas, one Lease leader, continuously verifies Registry desired
+    state and reports drift. The CronJob remains {{ ternary "suspended" "active" .Values.cron.suspend }} as rollback.
 
 Verify (read-only):
   kubectl get gateway {{ .Values.gateway.name }} -n {{ .Values.namespace }} -o wide
   kubectl get agentgatewaybackends,httproutes -n {{ .Values.namespace }} \
     -l app.kubernetes.io/managed-by=agentic-registry
-  kubectl create job --from=cronjob/agentgateway-route-sync sync-now -n {{ .Values.namespace }}  # trigger once
+  kubectl get deploy,pod,pdb,lease,cronjob -n {{ .Values.namespace }} \
+    -l app.kubernetes.io/name=agentgateway-route-sync
 
 AUTH status:
   • Caller -> gateway: devai + kagent-system are already admitted to
     {{ .Values.namespace }} by the agentic-istio "agentgateway-authz" policy, so
     /mcp/* from those namespaces is authorized. No change needed.
 
-FOLLOW-UPS (workstream G4 — intentionally NOT shipped here because they depend
-on the data-plane proxy that only exists after the Gateway is reconciled):
+FOLLOW-UPS:
   • proxy -> MCP-backend NetworkPolicy (full-ns egress per the ambient/HBONE
     learning), once the proxy workload's labels/SA are known.
-  • Prune-on-delete: after validating the Registry export count and digest, the
-    CronJob removes only Registry-labelled resources absent from the desired
-    export. It refuses to prune below the configured platform-resource floor.
+  • Active cutover is a separate GitOps change after shadow parity: set
+    controller.mode=active and cron.suspend=true together. See
+    docs/runbooks/agentgateway-route-sync.md.
