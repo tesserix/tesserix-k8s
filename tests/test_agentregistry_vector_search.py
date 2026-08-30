@@ -67,7 +67,7 @@ class AgentRegistryVectorSearchTests(unittest.TestCase):
         )
         self.assertIn("USING hnsw (embedding vector_cosine_ops)", schema)
 
-    def test_prod_bootstrap_owns_atomic_publication_support_tables(self):
+    def test_prod_bootstrap_grants_runtime_access_to_publication_tables(self):
         schema = (
             ROOT
             / "charts/apps/db-schema-bootstrap/schemas/agentic-registry/agentregistry-postgres/agentic_registry_db.sql"
@@ -94,6 +94,23 @@ class AgentRegistryVectorSearchTests(unittest.TestCase):
             schema,
         )
         self.assertIn("WHERE published_at IS NULL", schema)
+        self.assertIn("GRANT USAGE ON SCHEMA registry TO agentregistry;", schema)
+        self.assertIn(
+            "GRANT SELECT, INSERT, UPDATE ON registry.artifacts TO agentregistry;",
+            schema,
+        )
+        self.assertIn(
+            "GRANT SELECT, INSERT ON registry.artifact_revisions TO agentregistry;",
+            schema,
+        )
+        self.assertIn(
+            "GRANT SELECT, INSERT, DELETE ON registry.publish_idempotency TO agentregistry;",
+            schema,
+        )
+        self.assertIn(
+            "GRANT INSERT ON registry.publish_outbox TO agentregistry;",
+            schema,
+        )
 
     def test_prod_enables_vector_search_and_restarts_on_config_changes(self):
         documents = render_registry()

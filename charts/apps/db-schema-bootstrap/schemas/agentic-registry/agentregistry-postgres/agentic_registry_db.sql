@@ -4,13 +4,13 @@
 -- PROD placement: applied to the registry's OWN in-namespace CNPG cluster
 -- (agentregistry-postgres) by db-schema-bootstrap. The database
 -- `agentic_registry_db` is created by CNPG bootstrap, so the file is named
--- agentic_registry_db.sql and the bootstrap just applies this idempotent DDL as
--- its owner (`agentregistry`) — no CREATE DATABASE needed. The app fully
+-- agentic_registry_db.sql and the bootstrap applies this idempotent DDL as the
+-- CNPG superuser — no CREATE DATABASE needed. The app fully
 -- schema-qualifies every statement (registry.artifacts, ...).
 --
 -- The CNPG operand image includes pgvector. This file is applied as the CNPG
--- superuser because `vector` is not a trusted extension; the application role
--- remains the owner of the authoritative artifact tables.
+-- superuser because `vector` is not a trusted extension. Runtime privileges are
+-- granted explicitly below so newly created tables do not depend on ownership.
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -101,6 +101,16 @@ CREATE TABLE IF NOT EXISTS registry.publish_outbox (
 );
 CREATE INDEX IF NOT EXISTS idx_publish_outbox_unpublished
     ON registry.publish_outbox (created_at, id) WHERE published_at IS NULL;
+
+-- The bootstrap connects as `postgres`, while the service connects as
+-- `agentregistry`. Keep runtime access to the operations used by the store:
+-- artifacts are read/upserted, revisions are read/appended, idempotency rows are
+-- read/appended/expired, and outbox events are append-only.
+GRANT USAGE ON SCHEMA registry TO agentregistry;
+GRANT SELECT, INSERT, UPDATE ON registry.artifacts TO agentregistry;
+GRANT SELECT, INSERT ON registry.artifact_revisions TO agentregistry;
+GRANT SELECT, INSERT, DELETE ON registry.publish_idempotency TO agentregistry;
+GRANT INSERT ON registry.publish_outbox TO agentregistry;
 
 -- Seed an initial revision for any pre-existing artifact (idempotent backfill).
 INSERT INTO registry.artifact_revisions
