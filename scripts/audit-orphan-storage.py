@@ -445,6 +445,16 @@ def render_markdown(findings: list[Finding], age_days: int, applied: bool) -> st
 # Apply (delete) — only the safest categories.
 # ---------------------------------------------------------------------------
 
+def _action_line(ok: bool, what: str, res: subprocess.CompletedProcess) -> str:
+    # A bare FAIL is undiagnosable from the report (the 2026-08-29 run failed
+    # every PV delete for a month of RBAC denials nobody saw) — keep the last
+    # stderr line.
+    if ok:
+        return f"OK: {what}"
+    reason = (res.stderr or "").strip().splitlines()
+    return f"FAIL: {what} — {reason[-1] if reason else 'no stderr'}"
+
+
 def apply_safe_deletes(findings: list[Finding], project: str) -> list[str]:
     actions: list[str] = []
     for f in findings:
@@ -456,8 +466,8 @@ def apply_safe_deletes(findings: list[Finding], project: str) -> list[str]:
                  "--zone", f.disk_zone, "--project", project, "--quiet"],
                 capture_output=True, text=True,
             )
-            ok = res.returncode == 0
-            actions.append(f"{'OK' if ok else 'FAIL'}: gcloud disk delete {f.disk_name} ({f.disk_size_gb}GB)")
+            actions.append(_action_line(res.returncode == 0,
+                                        f"gcloud disk delete {f.disk_name} ({f.disk_size_gb}GB)", res))
         elif f.category == "RELEASED_PV":
             if f.pv_name and f.pv_name != "-":
                 res = subprocess.run(
@@ -465,15 +475,29 @@ def apply_safe_deletes(findings: list[Finding], project: str) -> list[str]:
                     capture_output=True, text=True,
                 )
                 ok = res.returncode == 0
-                actions.append(f"{'OK' if ok else 'FAIL'}: kubectl delete pv {f.pv_name}")
+                actions.append(_action_line(ok, f"kubectl delete pv {f.pv_name}", res))
+                if ok and f.disk_name == "(no disk)":
+                    # With the disk already gone, a stale external-attacher
+                    # finalizer holds the PV in Terminating forever; clearing
+                    # it is safe because there is nothing left to detach.
+                    still = subprocess.run(["kubectl", "get", "pv", f.pv_name],
+                                           capture_output=True, text=True)
+                    if still.returncode == 0:
+                        res = subprocess.run(
+                            ["kubectl", "patch", "pv", f.pv_name, "--type", "merge",
+                             "-p", '{"metadata":{"finalizers":null}}'],
+                            capture_output=True, text=True,
+                        )
+                        actions.append(_action_line(res.returncode == 0,
+                                                    f"kubectl clear finalizers pv {f.pv_name}", res))
             if f.disk_name and f.disk_name != "(no disk)":
                 res = subprocess.run(
                     ["gcloud", "compute", "disks", "delete", f.disk_name,
                      "--zone", f.disk_zone, "--project", project, "--quiet"],
                     capture_output=True, text=True,
                 )
-                ok = res.returncode == 0
-                actions.append(f"{'OK' if ok else 'FAIL'}: gcloud disk delete {f.disk_name} ({f.disk_size_gb}GB)")
+                actions.append(_action_line(res.returncode == 0,
+                                            f"gcloud disk delete {f.disk_name} ({f.disk_size_gb}GB)", res))
     return actions
 
 
