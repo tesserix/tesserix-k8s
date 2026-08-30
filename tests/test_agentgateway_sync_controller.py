@@ -87,6 +87,7 @@ class AgentGatewaySyncControllerTests(unittest.TestCase):
         )
         resource(documents, "PodMonitoring", "agentgateway-route-sync-controller")
         alerts = resource(documents, "Rules", "agentgateway-route-sync-controller")
+        self.assertEqual("1m", alerts["spec"]["groups"][0]["interval"])
         alert_names = {
             rule["alert"]
             for group in alerts["spec"]["groups"]
