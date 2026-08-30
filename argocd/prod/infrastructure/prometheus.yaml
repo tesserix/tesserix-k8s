@@ -24,15 +24,14 @@ spec:
         # Prometheus server configuration
         server:
           # PARKED 2026-08-01 at 0 for cost. Everything below is kept verbatim
-          # so revival is a single 0 → 1; the 20Gi TSDB PVC is retained.
-          # See docs/observability-park.md.
+          # so revival is a single 0 → 1. See docs/observability-park.md.
           replicaCount: 0
 
-          # Persistent storage (standard HDD — existing PVC, migrate to premium-rwo SSD later)
+          # Storage dropped 2026-08-30 (TSDB disk snapshotted as
+          # orphan-cleanup-*); revival starts with an empty TSDB on emptyDir
+          # until persistence is deliberately re-enabled.
           persistentVolume:
-            enabled: true
-            size: 20Gi
-            storageClass: standard
+            enabled: false
 
           # No memory limits — Prometheus self-regulates and needs uncapped
           # memory during WAL replay (500+ segments from prior 15d retention)
@@ -111,9 +110,10 @@ spec:
           enabled: true
           replicaCount: 0
 
+          # Storage dropped 2026-08-30 with the parked stack; alertmanager
+          # holds only silences/notification state.
           persistentVolume:
-            enabled: true
-            size: 10Gi
+            enabled: false
 
           resources:
             requests:
