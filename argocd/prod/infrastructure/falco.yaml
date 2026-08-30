@@ -46,6 +46,22 @@ spec:
         # or scales a node up itself. Runtime security must cover every node.
         podPriorityClassName: tesserix-platform-critical
 
+        # Rule exceptions for known-legitimate workload behaviour.
+        customRules:
+          tesserix-exceptions.yaml: |-
+            # Postiz boots by running Prisma's schema/query engines that pnpm
+            # dlx unpacks into the writable layer — upstream image behaviour
+            # (v2.21.x), not an intrusion. Fired Critical on every pod start.
+            - rule: Drop and execute new binary in container
+              exceptions:
+                - name: postiz_prisma_engines
+                  fields: [k8s.ns.name, proc.exepath]
+                  comps: ["=", contains]
+                  values:
+                    - [postiz, "@prisma/engines"]
+              override:
+                exceptions: append
+
         # Event fan-out to Slack. Slack webhook comes from the ESO-managed
         # Secret (SLACK_WEBHOOKURL key) — never a value in this file.
         falcosidekick:
