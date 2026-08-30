@@ -317,6 +317,31 @@ env:
   # ANYONE WITHOUT THE `read` ROLE LOSES ACCESS THE MOMENT THIS DEPLOYS.
   AUTH_PROVIDER: "zitadel"
 
+  # Recover a callback that arrives with no `state` cookie by bouncing it ONCE
+  # through /auth/login, instead of dead-ending on `{"error":"state_mismatch"}`.
+  #
+  # WHY IT WAS OFF, AND WHY THAT REASON HAS EXPIRED. `auth/callback/route.ts`
+  # makes this opt-in "because the writer of the guard (/auth/login) may not be
+  # on every pod yet during a rollout" — a half-rolled deployment could bounce a
+  # browser to a pod that does not set the cookie, and loop. That was a rollout
+  # concern, not a permanent one: the route has been on every console pod since
+  # tesserix-home#295 (2026-08-20), and both pods now run the same image.
+  #
+  # WHAT IT FIXES, observed 2026-08-30. An operator reaching
+  # /login?authRequest=... directly — a bookmark, a tab left open, or Zitadel
+  # resuming an earlier auth request — never passes through /auth/login, so no
+  # `state` cookie is ever written. The callback then sees `cookieNames:
+  # ['cf_clearance']` and refuses. The login was otherwise entirely valid; the
+  # only thing missing was the CSRF guard for a leg the browser never started.
+  #
+  # THE LOOP GUARDS STAY. `retryRefusal()` still refuses when a retry has
+  # already happened (`state.retried`, which rides inside Zitadel's `state` and
+  # so survives the cookieless request being recovered from — a cookie marker
+  # would be absent on exactly those requests, fail open, and spin forever),
+  # and when the request is a speculative prefetch rather than a navigation.
+  # At most ONE extra round trip, then the same error as before.
+  CONSOLE_CALLBACK_RETRY: "true"
+
 # External Secrets Configuration (GCP Secret Manager → K8s Secrets)
 externalSecrets:
   enabled: true
