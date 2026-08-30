@@ -255,6 +255,18 @@ refundSweepCron:
   enabled: true
   schedule: "*/5 * * * *"
 
+# Expired stock-hold sweeper (mark8ly#229/#231). Housekeeping only:
+# availability is computed from LIVE holds, so an expired row already
+# reduces it by nothing and a missed run costs only dead rows. Hourly is
+# ample — contrast refundSweepCron above, which is every 5 minutes because
+# a stuck refund is money that has not moved.
+stockHoldSweepCron:
+  enabled: true
+  schedule: "17 * * * *"
+  # Bounded per run, deleted FOR UPDATE SKIP LOCKED, so a backlog drains
+  # over several runs rather than in one long-held lock.
+  batch: 500
+
 # Product Admin Integration Contract conformance (mark8ly#290). Runs the
 # published suite against this service's own platform admin surface and fails
 # the Job on any declared endpoint that deviates.

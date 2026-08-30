@@ -1,0 +1,81 @@
+{{- if .Values.stockHoldSweepCron.enabled }}
+# Expired stock-hold sweeper (mark8ly#229/#231) — deletes stock_holds rows
+# that lapsed more than an hour ago.
+#
+# THIS IS HOUSEKEEPING, NOT CORRECTNESS, and the schedule reflects that.
+# Availability is computed, never stored:
+#
+#   available = variant_stock.quantity
+#             - SUM(qty) FILTER (WHERE state = 'held' AND expires_at > now())
+#
+# so an expired hold already reduces availability by nothing. If this job
+# never runs again, stock, pricing and checkout all stay correct — only dead
+# rows accumulate. That is why it runs hourly rather than every few minutes,
+# and why a failure here is not a page: it means rows are piling up, not
+# that anything customers can buy is wrong.
+#
+# Contrast refund-sweep, which runs every 5 minutes because a stuck refund
+# is money that has not moved.
+#
+# Same shape as refund-sweep otherwise: runs the marketplace-api Go image
+# with a bundled entrypoint, talks to Postgres directly, and disables istio
+# injection because a Job with a sidecar never terminates.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.name }}-stock-hold-sweep
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}-stock-hold-sweep
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: cron
+spec:
+  schedule: {{ .Values.stockHoldSweepCron.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 60
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # Above the binary's own 2-minute self-deadline so a healthy run
+      # finishes on its own; a hung run is killed well before the next tick.
+      activeDeadlineSeconds: 150
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: {{ .Values.name }}-stock-hold-sweep
+            app.kubernetes.io/part-of: mark8ly
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ .Values.name }}
+          imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: stock-hold-sweep
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["/usr/local/bin/stock-hold-sweep-cron"]
+              env:
+{{ include "mark8ly-marketplace-api-admin.dbEnv" . | indent 16 }}
+                - name: STOCK_HOLD_SWEEP_BATCH
+                  value: {{ .Values.stockHoldSweepCron.batch | quote }}
+              resources:
+                requests:
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+{{- end }}
