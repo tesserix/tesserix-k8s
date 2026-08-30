@@ -5,6 +5,10 @@ metadata:
   namespace: {{ .Values.namespace }}
   labels:
     {{- include "postiz.labels" . | nindent 4 }}
+  # Reloader rolls the deployment when a referenced secret changes, so a DB
+  # password rotation propagates into DATABASE_URL without a manual restart.
+  annotations:
+    reloader.stakater.com/auto: "true"
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
