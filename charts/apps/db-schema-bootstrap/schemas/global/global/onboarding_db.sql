@@ -3,6 +3,8 @@
 -- Idempotent: safe to run on every CronJob execution. See docs/onboarding-api.md.
 
 SET client_min_messages = warning;
+SET lock_timeout = '5s';
+SET statement_timeout = '2min';
 
 -- The application connects as "onboarding", which is NOT the owner of these
 -- tables. That is what makes the REVOKE at the bottom of this file stick: a

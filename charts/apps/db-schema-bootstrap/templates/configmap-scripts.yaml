@@ -136,6 +136,18 @@ data:
         fi
       fi
 
+      # Selected schema files can opt into reconciliation on an existing
+      # database when they are explicitly idempotent and no application-side
+      # migration runner exists. All other existing databases remain untouched.
+      REAPPLY_EXISTING=false
+      {{- if .reapplyExistingSchemas }}
+      case "$db_name" in
+        {{- range .reapplyExistingSchemas }}
+        {{ . | quote }}) REAPPLY_EXISTING=true ;;
+        {{- end }}
+      esac
+      {{- end }}
+
       # --- Apply schema DDL: ONLY on a database this run just created ---
       #
       # These .sql files are frozen pg_dump snapshots. Replaying one over a live
@@ -152,7 +164,9 @@ data:
       # So the rule is: this job PROVISIONS, the application EVOLVES. On a fresh
       # database the snapshot is a useful head start. On an existing one the
       # application is the single source of truth and this job must not touch it.
-      if [ "$DB_WAS_CREATED" != "true" ] && [ "{{ $.Values.applySchemaToExistingDatabases | default false }}" != "true" ]; then
+      if [ "$DB_WAS_CREATED" != "true" ] \
+         && [ "{{ $.Values.applySchemaToExistingDatabases | default false }}" != "true" ] \
+         && [ "$REAPPLY_EXISTING" != "true" ]; then
         log_info "  [$db_name] Database already provisioned — skipping DDL (application owns schema)"
         TOTAL_SKIPPED=$((TOTAL_SKIPPED + 1))
         continue
