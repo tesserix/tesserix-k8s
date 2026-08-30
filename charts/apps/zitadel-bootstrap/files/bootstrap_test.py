@@ -355,6 +355,24 @@ class OrgBrandingTest(unittest.TestCase):
 
 
 class PlatformProjectTest(unittest.TestCase):
+    MACHINE_GRANT = {
+        "login": "agentgateway-adk-prod",
+        "roles": [
+            "agentgateway.mcp",
+            "agentgateway.models",
+            "agentgateway.runtime",
+        ],
+    }
+    MACHINE_USERS = {
+        "result": AdminTest.USERS["result"]
+        + [
+            {
+                "userId": "machine-1",
+                "username": "agentgateway-adk-prod",
+                "machine": {"name": "agentgateway-adk-prod"},
+            }
+        ]
+    }
     PROJECT = {
         "org": "ZITADEL",
         "name": "AgentGateway",
@@ -473,6 +491,94 @@ class PlatformProjectTest(unittest.TestCase):
         with mock.patch.object(bootstrap, "request", recorder):
             bootstrap.reconcile_platform_project(dict(self.PROJECT))
         self.assertIn(("POST", "/management/v1/users/u-1/grants"), recorder.writes)
+
+    def test_adds_missing_machine_grant(self):
+        project = dict(self.PROJECT, machineGrants=[self.MACHINE_GRANT])
+        recorder = self._recorder(users=self.MACHINE_USERS)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(project)
+        grant_writes = [
+            call
+            for call in recorder.calls
+            if call[:2] == (
+                "POST",
+                "/management/v1/users/machine-1/grants",
+            )
+        ]
+        self.assertEqual(
+            [{"projectId": "p-agentgateway", "roleKeys": sorted(self.MACHINE_GRANT["roles"])}],
+            [call[2] for call in grant_writes],
+        )
+
+    def test_missing_declared_machine_fails_closed(self):
+        project = dict(self.PROJECT, machineGrants=[self.MACHINE_GRANT])
+        recorder = self._recorder()
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.reconcile_platform_project(project)
+        self.assertIn("agentgateway-adk-prod", str(caught.exception))
+        self.assertIn("machine", str(caught.exception))
+
+    def test_in_sync_machine_grant_performs_no_state_write(self):
+        project = dict(self.PROJECT, machineGrants=[self.MACHINE_GRANT])
+        grants = [
+            {
+                "id": "grant-1",
+                "userId": "u-1",
+                "projectId": "p-agentgateway",
+                "roleKeys": ["agentgateway.mcp", "agentgateway.models"],
+            },
+            {
+                "id": "grant-machine",
+                "userId": "machine-1",
+                "projectId": "p-agentgateway",
+                "roleKeys": self.MACHINE_GRANT["roles"],
+            },
+        ]
+        recorder = self._recorder(grants=grants, users=self.MACHINE_USERS)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(project)
+        grant_writes = [
+            call
+            for call in recorder.calls
+            if "/grants" in call[1]
+            and not call[1].endswith("_search")
+            and call[0] in ("POST", "PUT")
+        ]
+        self.assertEqual([], grant_writes)
+
+    def test_updates_drifted_machine_roles(self):
+        project = dict(self.PROJECT, machineGrants=[self.MACHINE_GRANT])
+        grants = [
+            {
+                "id": "grant-1",
+                "userId": "u-1",
+                "projectId": "p-agentgateway",
+                "roleKeys": ["agentgateway.mcp", "agentgateway.models"],
+            },
+            {
+                "id": "grant-machine",
+                "userId": "machine-1",
+                "projectId": "p-agentgateway",
+                "roleKeys": ["agentgateway.mcp", "agentgateway.models"],
+            },
+        ]
+        recorder = self._recorder(grants=grants, users=self.MACHINE_USERS)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(project)
+        updates = [
+            call
+            for call in recorder.calls
+            if call[:2]
+            == (
+                "PUT",
+                "/management/v1/users/machine-1/grants/grant-machine",
+            )
+        ]
+        self.assertEqual(
+            [{"roleKeys": sorted(self.MACHINE_GRANT["roles"])}],
+            [call[2] for call in updates],
+        )
 
     def test_updates_drifted_human_roles(self):
         recorder = self._recorder(grants=[{
