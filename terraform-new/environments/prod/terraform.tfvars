@@ -157,8 +157,8 @@ cluster_labels = {
 # Node Pool Configuration - On-Demand under 3-year E2 CUD
 # =============================================================================
 # Commitment e2-cud-asia-south1 covers 30 vCPU / 120 GB (GENERAL_PURPOSE_E2,
-# 36-month, ends 2029-08-30). CUDs only apply to STANDARD provisioning, so all
-# worker pools run on-demand. Steady state 36 vCPU / 144 GB: 30/120 at the
+# 36-month, ends 2029-08-30). CUDs only apply to STANDARD provisioning, so the
+# worker pools move on-demand. Steady state 36 vCPU / 144 GB: 30/120 at the
 # committed rate, the ~6 vCPU / 24 GB remainder at on-demand rates.
 # Memory requests sit at ~99% of allocatable on 5 of 6 nodes — do not shrink
 # steady-state capacity below 144 GB without right-sizing requests first.
@@ -166,7 +166,11 @@ cluster_labels = {
 # spot flag is immutable on a node pool: flipping it REPLACES the pool.
 # =============================================================================
 
-use_spot_instances = false # On-demand — required for CUD coverage
+# Per-pool spot flags: flipping spot replaces a pool, and one apply replacing
+# both pools would leave the cluster with zero workers. Phase 1 (this change)
+# moves optimized-v2 to on-demand while small-support keeps serving; phase 2
+# flips small-support once optimized-v2 is back.
+use_spot_instances = null
 
 node_pools = [
   {
@@ -198,14 +202,11 @@ node_pools = [
     taints = []
   },
   {
-    # Existing pool created outside Terraform — import before apply:
-    # terraform import 'google_container_node_pool.pools["small-support"]' \
-    #   tesseracthub-480811/asia-south1/tesseract-prod-in-gke/small-support
     name                        = "small-support"
     machine_type                = "e2-standard-4" # 4 vCPU, 16GB RAM
     disk_size_gb                = 80
     disk_type                   = "pd-standard"
-    spot                        = false
+    spot                        = true # Phase 2 flips this to false after optimized-v2 is on-demand
     initial_node_count          = 1
     min_count                   = 0
     max_count                   = 0
@@ -222,9 +223,9 @@ node_pools = [
     labels = {
       workload     = "support"
       environment  = "prod"
-      provisioning = "on-demand"
+      provisioning = "spot" # Phase 2: on-demand
     }
-    tags   = ["prod", "tesseract", "support", "on-demand"]
+    tags   = ["prod", "tesseract", "support", "spot"]
     taints = []
   }
 ]
