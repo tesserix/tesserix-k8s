@@ -95,12 +95,27 @@ pdb:
 # The read-only property is checked at the CREDENTIAL, not claimed by the code:
 # a checker that could write to Stripe would be evidence that the catalog and
 # Stripe agree only because the checker can make them agree. The live write key
-# is a SEPARATE credential (`prod-tesserix-stripe-write-key-live`) that this
-# chart deliberately does not mount.
+# is a SEPARATE credential (`prod-tesserix-stripe-write-key-live`).
+#
+# UNTIL 2026-08-30 THIS CHART MOUNTED THAT KEY NOWHERE, and this note said so.
+# It is now mounted, by `publishCatalog.enabled` below — tesserix-home#327's
+# whole point is that the console can publish the live catalog. What has NOT
+# changed is the sentence above it: the parity CHECKER still cannot write.
+# That is structural rather than a promise, because the CronJob enumerates its
+# environment explicitly and names only the two read keys, while the
+# Deployment takes everything via `envFrom`. See the block in
+# `templates/externalsecret.yaml`, which spells out why switching the CronJob
+# to `envFrom` would silently destroy #327's own evidence.
 #
 # `prod-tesserix-stripe-restricted-read-key`, named here until 2026-08-28, no
 # longer exists: it held a live key that was later widened to write, which made
 # a read-only name actively misleading. It was deleted once its value lived in
 # the write secret. Do not resurrect the unsuffixed name.
 parityCheck:
+  enabled: true
+
+# Live catalog publishing — ON here and nowhere else. See `values.yaml`'s
+# `publishCatalog` block for what this grants, what else has to be true for a
+# publish to succeed, and why it is not folded into `parityCheck`.
+publishCatalog:
   enabled: true
