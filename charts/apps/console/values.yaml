@@ -471,3 +471,47 @@ parityCheck:
       memory: 128Mi
     limits:
       memory: 256Mi
+
+# Publishing the plan catalog to Stripe (tesserix-home#327).
+#
+# SEPARATE FROM `parityCheck` ON PURPOSE. The parity check OBSERVES Stripe and
+# must never be able to change it; publishing is the one path that does change
+# it. Folding the write key into `parityCheck` would put the credential that
+# mutates Stripe under a flag whose whole meaning is "watch Stripe", and the
+# next person reading `parityCheck.enabled: true` would have no reason to
+# suspect it also granted write. Two concerns, two switches.
+#
+# OFF BY DEFAULT, and on only where an overlay says so. `enabled: false` here
+# means no non-prod environment mounts a live write key by inheriting a
+# default, which is the failure this default exists to prevent.
+#
+# TURNING THIS ON IS THE ACT OF UNBLOCKING LIVE PUBLISHING. Two other things
+# must already be true or it will not help:
+#   1. `plan_catalog_publish_attempts` / `_operations` must be owned by the
+#      console's DB role. They were owned by `postgres` with no grants until
+#      tesserix-home#437, so a publish failed at its FIRST WRITE with a
+#      Postgres permission error, before Stripe was ever called. Provisioning
+#      a Stripe key would not have helped.
+#   2. The operator must hold the `publish-catalog` capability; `actions.ts`
+#      re-checks it server-side regardless of what the UI offers.
+#
+# ROLLOUT IS REQUIRED. The Deployment receives this through `envFrom`, which
+# the kubelet resolves once at container start — updating the Secret does not
+# mutate a running container's environment. ESO's refreshInterval is 1h, so
+# worst case is that hour plus a `kubectl rollout restart deploy/console`.
+publishCatalog:
+  enabled: false
+  # GSM secret holding the live-mode Stripe WRITE key, in
+  # tesseracthub-480811. VERIFIED 2026-08-30 against the live API, without
+  # creating anything: it is an `rk_live_` restricted key on
+  # acct_1SgwbFCyiazmanuP (the prod account), it is a DIFFERENT credential
+  # from `prod-tesserix-stripe-restricted-read-key-live` (different SHA256),
+  # and it holds write on both Products and Prices — `POST /v1/products` with
+  # an empty body answers `Missing required param: name`, a validation error,
+  # where a read-only key answers `more_permissions_required`.
+  #
+  # `stripe-write.ts`'s `announcedMode()` refuses a key whose prefix
+  # contradicts its slot, so an `rk_test_` value here fails loudly with
+  # "holds a test mode key but is read as the live mode credential" rather
+  # than publishing the live catalog into a sandbox.
+  stripeWriteKeyLive: prod-tesserix-stripe-write-key-live
