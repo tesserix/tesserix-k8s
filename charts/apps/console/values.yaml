@@ -460,8 +460,26 @@ parityCheck:
   # as a legacy "test mode" one holding nothing — a description of that
   # account's TEST side, not of the account. A Stripe account is one id with
   # both modes; `acct_1SgwbFCyiazmanuP` is the main account, and
-  # `acct_1SgwbhE1SGxvhzVd` ("Tesserix sandbox") is a sandbox hanging off it
-  # that holds the 42-price catalog today.
+  # `acct_1SgwbhE1SGxvhzVd` ("Tesserix sandbox") is a sandbox hanging off it.
+  #
+  # WHICH ACCOUNT HOLDS THE CATALOG DEPENDS ON THE MODE, and this note used to
+  # say only "the sandbox holds the 42-price catalog today", which reads as
+  # though live's catalog lived there too. Both keys were probed on
+  # 2026-08-30, and each reports its own account:
+  #
+  #   ..._LIVE -> acct_1SgwbFCyiazmanuP   42 active prices, all 42 mark8ly-keyed
+  #   ..._TEST -> acct_1SgwbhE1SGxvhzVd   43 active prices, 42 mark8ly-keyed
+  #
+  # So the sandbox holds the TEST catalog and the main account's LIVE mode
+  # holds the live one. That matches the cutover runbook, which says the 42
+  # prices were bootstrapped into acct_1SgwbFCyiazmanuP; the two documents
+  # were not in conflict, they were describing different modes.
+  #
+  # The sandbox's 43rd price is a GBP price carrying NO lookup key. It is not
+  # ours and is not an orphan: `findOrphans` intersects "archived in our log"
+  # with "active in Stripe", and our log has never touched it. It is the
+  # reason MARK8LY_LOOKUP_KEY_PREFIX filtering is load-bearing rather than
+  # decorative — the account is genuinely shared.
   #
   # Live reads as `not_bootstrapped` until the catalog is bootstrapped there:
   # zero `mark8ly_` prices, verified through this key. That is the honest
