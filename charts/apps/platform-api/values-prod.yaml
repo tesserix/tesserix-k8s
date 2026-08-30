@@ -137,8 +137,25 @@ federation:
       #
       # Registered here now that mark8ly mounts the route (mark8ly outbox
       # task, this workstream).
+      #
+      # `onboarding` added 2026-08-30 for tesserix-home#404, and the same
+      # "declared is not mounted" discipline was applied before adding it:
+      # mark8ly's `GET /admin/onboarding/funnel` was probed in production and
+      # answered 401 (mounted, signature rejected) against a control 404 for a
+      # made-up path under the same prefix. Implemented, declared AND wired —
+      # the three states `platformadmin/routes.go`'s `if deps.X != nil` mounts
+      # keep separate.
+      #
+      # UNTIL THIS LANDED, `/platform/onboarding` RENDERED PARKED. platform-api
+      # answers 501 for an undeclared endpoint, and the console's funnel page
+      # narrows that to "Onboarding is not federated here" rather than to an
+      # empty funnel — so the surface shipped honest, and this entry is what
+      # makes it answer. That ordering is deliberate: the page could be
+      # reviewed and deployed without this, and this is reversible without
+      # touching the page.
       endpoints:
         - outbox
+        - onboarding
 
     # Kora (kora#430, kora#458). Registered 2026-08-26.
     #
