@@ -137,7 +137,7 @@ maintenance_start_time = "21:30"
 # Release Channel
 release_channel           = "RAPID" # Use RAPID channel for latest edge GKE versions
 use_latest_version        = true
-kubernetes_version_prefix = null
+kubernetes_version_prefix = "1.36." # Latest 1.36.x patch — pin keeps upgrades deterministic
 
 # Master Authorized Networks
 # TODO: Restrict to specific IPs after ARC runners are deployed
