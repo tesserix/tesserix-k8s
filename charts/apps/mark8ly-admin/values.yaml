@@ -78,3 +78,28 @@ openpanel:
   clientIdKey: admin-client-id
   apiUrl: https://analytics.tesserix.app/api
   scriptUrl: https://analytics.tesserix.app/op1.js
+
+# Replace before surging, so a rollout frees a pod's memory before it
+# needs the replacement's (#709).
+#
+# The default is 25%/25%, which on a single-replica Deployment rounds to
+# maxSurge=1, maxUnavailable=0: the new pod must SCHEDULE BEFORE the old
+# one dies, so a roll needs double the pod's memory at once. On a cluster
+# whose memory requests sit near 100% (while actual usage is around half
+# that) the new pod pends forever and the rollout deadlocks — with the
+# Deployment still reporting Available=True, because the old pod keeps
+# serving. On 2026-08-30 that left seven mark8ly deployments stuck and
+# production a day behind main, with nothing alerting.
+#
+# The cost is honest and accepted: on a single-replica service this is a
+# brief 503 during each rollout, where surge-first gave none. Deploys that
+# always complete are worth more than a few seconds of downtime on an
+# operator-timed rollout. Same remedy as temporal (#538) and devai (#600).
+#
+# At 2+ replicas there is no downtime at all: one pod stays up while the
+# other is replaced.
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 0
+    maxUnavailable: 1
