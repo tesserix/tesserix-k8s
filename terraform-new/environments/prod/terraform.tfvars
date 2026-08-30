@@ -137,7 +137,7 @@ maintenance_start_time = "21:30"
 # Release Channel
 release_channel           = "RAPID" # Use RAPID channel for latest edge GKE versions
 use_latest_version        = true
-kubernetes_version_prefix = null
+kubernetes_version_prefix = "1.36." # Latest 1.36.x patch — pin keeps upgrades deterministic
 
 # Master Authorized Networks
 # TODO: Restrict to specific IPs after ARC runners are deployed
@@ -154,59 +154,51 @@ cluster_labels = {
 }
 
 # =============================================================================
-# Node Pool Configuration - Infrastructure Workloads on Spot VMs
+# Node Pool Configuration - On-Demand under 3-year E2 CUD
 # =============================================================================
-# Strategy: e2-standard-8 Spot VMs — fewer larger nodes for better scheduling.
-# GKE runs platform infra: PostgreSQL, MongoDB, Redis, NATS, Istio, plus shared apps.
+# Commitment e2-cud-asia-south1 covers 30 vCPU / 120 GB (GENERAL_PURPOSE_E2,
+# 36-month, ends 2029-08-30). CUDs only apply to STANDARD provisioning, so the
+# single worker pool runs on-demand: 3-5 x e2-standard-8 = 24-40 vCPU /
+# 96-160 GB, with 30/120 at the committed rate and any remainder on-demand.
+# Memory requests run close to allocatable — the autoscaler is expected to
+# sit at 4+ nodes; do not lower total_max_count without right-sizing first.
 #
-# SPOT VM TOGGLE:
-#   use_spot_instances = true   -> Use Spot VMs (current: ENABLED for cost savings)
-#   use_spot_instances = false  -> Use On-Demand VMs (switch if stability issues arise)
-#   use_spot_instances = null   -> Use per-pool 'spot' setting
-#
-# Cost Comparison (asia-south1, e2-standard-8, per node/month):
-#   - On-Demand: ~$194/month
-#   - Spot:      ~$58/month  (70% savings)
-#   - With 2-4 nodes: $116-$232/month (Spot) vs $388-$776/month (On-Demand)
-#
-# Spot VM Considerations:
-#   - Can be preempted with 30 seconds notice
-#   - GKE handles graceful shutdown and rescheduling automatically
-#   - Use PodDisruptionBudgets (PDBs) to ensure high availability for stateful workloads
-#   - PostgreSQL/MongoDB should have PDBs and anti-affinity rules for resilience
-#
-# TO SWITCH TO ON-DEMAND: Simply change use_spot_instances = false below
+# spot flag is immutable on a node pool: flipping it REPLACES the pool.
 # =============================================================================
 
-use_spot_instances = true # ENABLED - 70% cost savings; set to false for on-demand
+# Phase 1 moved optimized-v2 to on-demand while small-support kept serving;
+# phase 2 (this change) removes small-support, leaving a single on-demand pool
+# sized to the CUD. min 3 nodes = 24 vCPU / 96 GB; the autoscaler grows to 5
+# for former small-support load, and the slice above 30/120 bills on-demand.
+use_spot_instances = null
 
 node_pools = [
   {
     name                        = "optimized-v2"
-    machine_type                = "e2-standard-8" # 8 vCPU, 32GB RAM — downsized from e2-standard-16 (actual usage ~5 vCPU / 30 Gi)
-    disk_size_gb                = 80              # Reduced from 100 — sufficient for node workloads
-    disk_type                   = "pd-standard"   # Standard disk for cost optimization
-    spot                        = true            # Per-pool setting (overridden by use_spot_instances)
+    machine_type                = "e2-standard-8" # 8 vCPU, 32GB RAM
+    disk_size_gb                = 80
+    disk_type                   = "pd-standard"
+    spot                        = false
     initial_node_count          = 1
-    min_count                   = 0     # Per-zone min (using total counts instead)
-    max_count                   = 0     # Per-zone max (using total counts instead)
-    total_min_count             = 1     # Min 1 node — autoscaler adds nodes in other zones as needed for zonal PVCs
-    total_max_count             = 4     # Max 4 nodes — autoscaler adds nodes as requests exceed capacity
-    location_policy             = "ANY" # Nodes can be in ANY zone for better spot availability
+    min_count                   = 0 # Per-zone min (using total counts instead)
+    max_count                   = 0 # Per-zone max (using total counts instead)
+    total_min_count             = 3 # 24 vCPU / 96 GB floor; autoscaler adds nodes up to max
+    total_max_count             = 6 # 2 per zone — zonal PVs need headroom in their own zone
+    location_policy             = "BALANCED"
     max_pods_per_node           = 110
     auto_repair                 = true
-    auto_upgrade                = true # Auto-upgrade enabled with surge protection
-    max_surge                   = 1    # New nodes created before old ones removed
-    max_unavailable             = 0    # Zero unavailable during upgrades (surge-only strategy)
+    auto_upgrade                = true
+    max_surge                   = 1
+    max_unavailable             = 0
     enable_secure_boot          = true
     enable_integrity_monitoring = true
     labels = {
-      workload    = "infrastructure"
-      optimized   = "true"
-      environment = "prod"
-      spot        = "true"
+      workload     = "infrastructure"
+      optimized    = "true"
+      environment  = "prod"
+      provisioning = "on-demand"
     }
-    tags   = ["prod", "tesseract", "optimized", "spot"]
+    tags   = ["prod", "tesseract", "optimized", "on-demand"]
     taints = []
   }
 ]

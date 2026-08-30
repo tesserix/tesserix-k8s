@@ -259,6 +259,7 @@ variable "node_pools" {
     enable_integrity_monitoring = optional(bool, true)
     labels                      = optional(map(string), {})
     tags                        = optional(list(string), [])
+    oauth_scopes                = optional(list(string), null)
     taints = optional(list(object({
       key    = string
       value  = string
