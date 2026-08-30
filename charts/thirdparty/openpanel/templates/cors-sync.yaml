@@ -35,9 +35,16 @@ containers:
         set -eu
         psql="psql -h $DB_HOST -U $DB_USER -d $DB_NAME -v ON_ERROR_STOP=1 -tA"
 
-        wget -q -O /tmp/domains.json \
-          --header="X-Internal-Auth: $INTERNAL_AUTH" \
-          "$MARKETPLACE_API_URL/internal/active-domains"
+        # busybox wget has no --tries; retry here so an API rollout window
+        # doesn't burn the whole job's backoffLimit (2026-08-30 Error pods).
+        for attempt in 1 2 3 4 5; do
+          wget -q -O /tmp/domains.json \
+            --header="X-Internal-Auth: $INTERNAL_AUTH" \
+            "$MARKETPLACE_API_URL/internal/active-domains" && break
+          [ "$attempt" = 5 ] && { echo "active-domains fetch failed after 5 attempts" >&2; exit 1; }
+          echo "active-domains fetch attempt $attempt failed; retrying in 15s" >&2
+          sleep 15
+        done
 
         # Merchants land on the apex and on www, and OpenPanel matches the
         # Origin exactly, so both spellings have to be listed.
@@ -79,6 +86,9 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
+      # Reap failed jobs within the hour instead of holding Error pods for
+      # failedJobsHistoryLimit rotations.
+      ttlSecondsAfterFinished: 3600
       template:
         metadata:
           labels:
