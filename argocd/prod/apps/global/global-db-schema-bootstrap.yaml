@@ -27,6 +27,11 @@ spec:
             user: global
             secretName: global-postgres-app-credentials
             secretKey: password
+            # onboarding-service has no application-side migration runner. Its
+            # SQL is idempotent, so reconcile only this existing database while
+            # leaving every other global snapshot in provision-only mode.
+            reapplyExistingSchemas:
+              - onboarding_db
   destination:
     server: https://kubernetes.default.svc
     namespace: global
