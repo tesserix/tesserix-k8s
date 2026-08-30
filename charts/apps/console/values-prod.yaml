@@ -12,16 +12,43 @@ image:
 # tesserix.app (see charts/apps/company/values-prod.yaml).
 replicaCount: 2
 
-# Zero-downtime rollout: maxUnavailable 0 keeps the old pod serving until the
-# new one is up, maxSurge 1 allows the extra pod needed to do that.
+# Replace before surging, so a rollout frees a pod's memory before it needs the
+# replacement's (#709) — the same remedy as mark8ly (#725), temporal (#538) and
+# devai (#600).
+#
+# THIS BLOCK USED TO SAY maxUnavailable 0 / maxSurge 1, described as
+# "zero-downtime". The intent was right and the mechanism was wrong ABOVE ONE
+# REPLICA: maxSurge 1 means the new pod must SCHEDULE BEFORE any old one dies,
+# so a roll transiently needs three pods' worth of memory for a two-pod
+# Deployment. On a cluster whose memory requests sit near 100% the third pod
+# pends forever and the rollout deadlocks — while the Deployment still reports
+# Available=True, because the old pods keep serving. That is exactly what
+# happened on 2026-08-30: `console` sat at `0/6 nodes are available:
+# Insufficient memory` with `max node group size reached`, and needed manual
+# intervention that briefly dropped it to one available replica.
+#
+# STILL ZERO-DOWNTIME HERE, and that is the point — this is not the tradeoff
+# #725 accepted for its single-replica services. `replicaCount: 2` above means
+# maxUnavailable 1 takes exactly one pod down at a time and ALWAYS leaves one
+# serving. The rollout never needs capacity beyond what the Deployment already
+# occupies, so it completes on a full cluster instead of hanging on it. A
+# single-replica service would pay a brief 503 for this; a two-replica one
+# pays nothing.
+#
+# IF replicaCount EVER DROPS TO 1, this becomes the honest tradeoff #725
+# documents rather than a free win: deploys that always complete, at the cost
+# of a short gap. Do not "restore" maxSurge 1 to avoid that gap — the deadlock
+# it reintroduces is silent, and a stuck rollout is worse than a visible blip.
 strategy:
   type: RollingUpdate
   rollingUpdate:
-    maxUnavailable: 0
-    maxSurge: 1
+    maxUnavailable: 1
+    maxSurge: 0
 
-# Preferred, not required: with a hard rule the surge pod during a rollout
-# would be unschedulable if only one node had room.
+# Preferred, not required: with a hard rule a replacement pod would be
+# unschedulable if only one node had room. (This note used to say "the surge
+# pod"; with maxSurge 0 there is no surge pod, but the reasoning is unchanged
+# for the replacement that takes a terminated pod's place.)
 affinity:
   podAntiAffinity:
     preferredDuringSchedulingIgnoredDuringExecution:
