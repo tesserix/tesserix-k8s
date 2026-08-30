@@ -202,18 +202,20 @@ node_pools = [
     taints = []
   },
   {
+    # Mirrors the live pool exactly (disk 50, max_pods 64 are immutable — any
+    # drift here replaces the pool). Phase 2 flips spot to false.
     name                        = "small-support"
     machine_type                = "e2-standard-4" # 4 vCPU, 16GB RAM
-    disk_size_gb                = 80
+    disk_size_gb                = 50
     disk_type                   = "pd-standard"
-    spot                        = true # Phase 2 flips this to false after optimized-v2 is on-demand
+    spot                        = true
     initial_node_count          = 1
     min_count                   = 0
     max_count                   = 0
-    total_min_count             = 3 # Steady state — 12 vCPU / 48 GB
+    total_min_count             = 1
     total_max_count             = 3
-    location_policy             = "BALANCED"
-    max_pods_per_node           = 110
+    location_policy             = "ANY"
+    max_pods_per_node           = 64
     auto_repair                 = true
     auto_upgrade                = true
     max_surge                   = 1
@@ -221,11 +223,11 @@ node_pools = [
     enable_secure_boot          = true
     enable_integrity_monitoring = true
     labels = {
-      workload     = "support"
-      environment  = "prod"
-      provisioning = "spot" # Phase 2: on-demand
+      workload    = "small-pods"
+      environment = "prod"
+      spot        = "true"
     }
-    tags   = ["prod", "tesseract", "support", "spot"]
+    tags   = []
     taints = []
   }
 ]
