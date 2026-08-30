@@ -158,18 +158,18 @@ cluster_labels = {
 # =============================================================================
 # Commitment e2-cud-asia-south1 covers 30 vCPU / 120 GB (GENERAL_PURPOSE_E2,
 # 36-month, ends 2029-08-30). CUDs only apply to STANDARD provisioning, so the
-# worker pools move on-demand. Steady state 36 vCPU / 144 GB: 30/120 at the
-# committed rate, the ~6 vCPU / 24 GB remainder at on-demand rates.
-# Memory requests sit at ~99% of allocatable on 5 of 6 nodes — do not shrink
-# steady-state capacity below 144 GB without right-sizing requests first.
+# single worker pool runs on-demand: 3-5 x e2-standard-8 = 24-40 vCPU /
+# 96-160 GB, with 30/120 at the committed rate and any remainder on-demand.
+# Memory requests run close to allocatable — the autoscaler is expected to
+# sit at 4+ nodes; do not lower total_max_count without right-sizing first.
 #
 # spot flag is immutable on a node pool: flipping it REPLACES the pool.
 # =============================================================================
 
-# Per-pool spot flags: flipping spot replaces a pool, and one apply replacing
-# both pools would leave the cluster with zero workers. Phase 1 (this change)
-# moves optimized-v2 to on-demand while small-support keeps serving; phase 2
-# flips small-support once optimized-v2 is back.
+# Phase 1 moved optimized-v2 to on-demand while small-support kept serving;
+# phase 2 (this change) removes small-support, leaving a single on-demand pool
+# sized to the CUD. min 3 nodes = 24 vCPU / 96 GB; the autoscaler grows to 5
+# for former small-support load, and the slice above 30/120 bills on-demand.
 use_spot_instances = null
 
 node_pools = [
@@ -182,8 +182,8 @@ node_pools = [
     initial_node_count          = 1
     min_count                   = 0 # Per-zone min (using total counts instead)
     max_count                   = 0 # Per-zone max (using total counts instead)
-    total_min_count             = 3 # Steady state — 24 vCPU / 96 GB of the CUD
-    total_max_count             = 4
+    total_min_count             = 3 # 24 vCPU / 96 GB floor; autoscaler adds nodes up to max
+    total_max_count             = 6 # 2 per zone — zonal PVs need headroom in their own zone
     location_policy             = "BALANCED"
     max_pods_per_node           = 110
     auto_repair                 = true
@@ -200,44 +200,6 @@ node_pools = [
     }
     tags   = ["prod", "tesseract", "optimized", "on-demand"]
     taints = []
-  },
-  {
-    # Mirrors the live pool exactly (disk 50, max_pods 64 are immutable — any
-    # drift here replaces the pool). Phase 2 flips spot to false.
-    name                        = "small-support"
-    machine_type                = "e2-standard-4" # 4 vCPU, 16GB RAM
-    disk_size_gb                = 50
-    disk_type                   = "pd-standard"
-    spot                        = true
-    initial_node_count          = 1
-    min_count                   = 0
-    max_count                   = 0
-    total_min_count             = 1
-    total_max_count             = 3
-    location_policy             = "ANY"
-    max_pods_per_node           = 64
-    auto_repair                 = true
-    auto_upgrade                = true
-    max_surge                   = 1
-    max_unavailable             = 0
-    enable_secure_boot          = true
-    enable_integrity_monitoring = true
-    labels = {
-      workload    = "small-pods"
-      environment = "prod"
-      spot        = "true"
-    }
-    tags   = []
-    taints = []
-    # Live pool's legacy scopes — pinning them avoids a forced replacement in phase 1.
-    oauth_scopes = [
-      "https://www.googleapis.com/auth/devstorage.read_only",
-      "https://www.googleapis.com/auth/logging.write",
-      "https://www.googleapis.com/auth/monitoring",
-      "https://www.googleapis.com/auth/service.management.readonly",
-      "https://www.googleapis.com/auth/servicecontrol",
-      "https://www.googleapis.com/auth/trace.append",
-    ]
   }
 ]
 
