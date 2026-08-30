@@ -26,6 +26,10 @@ spec:
         {{- include "devai-registry-bootstrap.labels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
+      automountServiceAccountToken: false
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       restartPolicy: OnFailure
       initContainers:
         # Step 1: shallow-fetch the pinned DevAI ref to /workspace.
@@ -89,6 +93,15 @@ spec:
         # key mounted from a Secret; mesh policy independently restricts reachability.
         - name: upsert
           image: python:3.12-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
           command:
             - /bin/sh
             - -c
@@ -178,6 +191,9 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
@@ -190,3 +206,5 @@ spec:
             items:
               - key: .gitconfig
                 path: .gitconfig
+        - name: tmp
+          emptyDir: {}

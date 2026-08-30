@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 import yaml
 
@@ -37,3 +38,40 @@ def test_bootstrap_uses_standard_library_http_without_runtime_install() -> None:
     assert "import requests" not in template
     assert "urllib.request" in template
     assert "urllib.error.HTTPError" in template
+
+
+def test_upsert_container_is_hardened_with_a_writable_tmp_volume() -> None:
+    rendered = subprocess.run(
+        [
+            "helm",
+            "template",
+            "devai-registry-bootstrap",
+            "charts/apps/devai-registry-bootstrap",
+            "--namespace",
+            "devai",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    job = next(
+        document
+        for document in yaml.safe_load_all(rendered)
+        if document and document.get("kind") == "Job"
+    )
+    pod_spec = job["spec"]["template"]["spec"]
+    upsert = next(
+        container for container in pod_spec["containers"] if container["name"] == "upsert"
+    )
+
+    assert pod_spec["securityContext"]["seccompProfile"]["type"] == "RuntimeDefault"
+    assert upsert["securityContext"] == {
+        "allowPrivilegeEscalation": False,
+        "capabilities": {"drop": ["ALL"]},
+        "readOnlyRootFilesystem": True,
+        "runAsGroup": 65532,
+        "runAsNonRoot": True,
+        "runAsUser": 65532,
+    }
+    assert {"name": "tmp", "mountPath": "/tmp"} in upsert["volumeMounts"]
+    assert {"name": "tmp", "emptyDir": {}} in pod_spec["volumes"]
