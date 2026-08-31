@@ -371,6 +371,68 @@ def test_network_and_mesh_policy_expose_only_the_reviewed_service_paths() -> Non
     }
 
 
+def test_sre_reaches_ai_gateway_through_the_ambient_waypoint() -> None:
+    documents = render_chart()
+    sre_network = resource(documents, "NetworkPolicy", "sre-ai-agent")
+
+    waypoint_destination = {
+        "namespaceSelector": {
+            "matchLabels": {"kubernetes.io/metadata.name": "agentgateway-system"}
+        },
+        "podSelector": {
+            "matchLabels": {
+                "gateway.networking.k8s.io/gateway-name": "waypoint"
+            }
+        },
+    }
+    waypoint_egress = [
+        rule
+        for rule in sre_network["spec"]["egress"]
+        if rule.get("to") == [waypoint_destination]
+    ]
+    assert waypoint_egress == [
+        {
+            "to": [waypoint_destination],
+            "ports": [{"port": 15008, "protocol": "TCP"}],
+        }
+    ]
+
+    waypoint_ingress = resource(
+        documents,
+        "NetworkPolicy",
+        "allow-sre-ai-agent-to-ai-gateway-waypoint",
+    )
+    assert waypoint_ingress["metadata"]["namespace"] == "agentgateway-system"
+    assert waypoint_ingress["spec"] == {
+        "podSelector": {
+            "matchLabels": {
+                "gateway.networking.k8s.io/gateway-name": "waypoint"
+            }
+        },
+        "policyTypes": ["Ingress"],
+        "ingress": [
+            {
+                "from": [
+                    {
+                        "namespaceSelector": {
+                            "matchLabels": {
+                                "kubernetes.io/metadata.name": "ai-agents"
+                            }
+                        },
+                        "podSelector": {
+                            "matchLabels": {
+                                "app.kubernetes.io/instance": "sre-ai-agent",
+                                "app.kubernetes.io/name": "sre-ai-agent",
+                            }
+                        },
+                    }
+                ],
+                "ports": [{"port": 15008, "protocol": "TCP"}],
+            }
+        ],
+    }
+
+
 def test_agentgateway_plaintext_is_scoped_to_the_sre_workload_port() -> None:
     documents = render_chart()
     peer_authentication = resource(
