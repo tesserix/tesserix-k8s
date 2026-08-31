@@ -1,0 +1,41 @@
+{{- if and .Values.rbac.create .Values.k8sRuntime.enabled (.Values.k8sRuntime.sandboxNamespaceIsolation | default false) }}
+# Agent sandboxes live in throwaway devai-sbx-* namespaces, so the api needs
+# cluster-scoped rights the runtime Role deliberately lacks: Namespace
+# lifecycle, the sandbox objects it creates inside those namespaces, and
+# cluster-wide Job list/watch for the JobWatcher. This is the one exception
+# to "no cluster-wide write access" — scoped to the sandbox object kinds.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "devai-api.fullname" . }}-sandbox-manager
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "secrets", "configmaps", "services", "serviceaccounts", "resourcequotas", "limitranges", "persistentvolumeclaims"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "get", "list", "watch", "delete", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "devai-api.fullname" . }}-sandbox-manager
+  labels:
+    {{- include "devai-api.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "devai-api.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "devai-api.fullname" . }}-sandbox-manager
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
