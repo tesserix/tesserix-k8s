@@ -12,10 +12,9 @@ spec:
       {{- include "sre-ai-agent.selectorLabels" . | nindent 6 }}
   action: ALLOW
   rules:
-    - from:
-        - source:
-            namespaces: [{{ .Values.gateway.namespace | quote }}]
-      to:
+    # The non-mesh AgentGateway has no SPIFFE principal at ztunnel. Source
+    # restriction is enforced by the gateway-pod NetworkPolicy and API token.
+    - to:
         - operation:
             ports: [{{ .Values.service.port | quote }}]
 {{- end }}

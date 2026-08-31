@@ -399,9 +399,6 @@ def test_agentgateway_plaintext_is_scoped_to_the_sre_workload_port() -> None:
         "action": "ALLOW",
         "rules": [
             {
-                "from": [
-                    {"source": {"namespaces": ["agentgateway-system"]}}
-                ],
                 "to": [{"operation": {"ports": ["8080"]}}],
             }
         ],
