@@ -171,9 +171,38 @@ federation:
       # makes it answer. That ordering is deliberate: the page could be
       # reviewed and deployed without this, and this is reversible without
       # touching the page.
+      #
+      # `billing` and `inbox` added 2026-08-31 for tesserix-home#407, under the
+      # same discipline. Probed against the DEPLOYED marketplace-api revision
+      # (main-4484bd1), not against mark8ly's main:
+      #
+      #   /admin/billing/subscriptions  401   mounted, signature rejected
+      #   /admin/billing/trials         401   mounted, signature rejected
+      #   /admin/inbox                  401   mounted, signature rejected
+      #   /admin/billing/not-real       404   control, same prefix
+      #   /admin/not-a-real-route       404   control
+      #
+      # The two controls matter: a 401 only means "mounted" if a made-up path
+      # under the same prefix answers 404. Both do, so the router is
+      # discriminating on the route and not blanket-rejecting everything
+      # unsigned.
+      #
+      # Until this landed, mark8ly#284 and #285 were shipped and INVISIBLE:
+      # platform-api's billing service was constructed with an empty slug list
+      # and answered 501, and the console rendered "No product is federating
+      # billing to the console yet." Every layer was behaving correctly.
+      #
+      # `break-glass` is deliberately NOT declared. mark8ly mounts it — it
+      # probes 401 like the others — but nothing in platform-api calls
+      # SlugsImplementing("break-glass"), so declaring it would change
+      # nothing. The four slugs with readers are inbox, billing, onboarding
+      # and outbox (cmd/server/main.go:195, 208, 282, 296); declaring outside
+      # that set is noise that reads like a capability.
       endpoints:
         - outbox
         - onboarding
+        - billing
+        - inbox
 
     # Kora (kora#430, kora#458). Registered 2026-08-26.
     #
@@ -207,9 +236,15 @@ federation:
       entities:
         - users
         - foods
-      # §3.2. Kora is the estate's ONLY implementer — mark8ly does not mount
-      # /admin/inbox at all, which is why this is declared per product rather
-      # than assumed of everyone.
+      # §3.2. Declared per product rather than assumed of everyone.
+      #
+      # This said "Kora is the estate's ONLY implementer — mark8ly does not
+      # mount /admin/inbox at all" until 2026-08-31. That stopped being true
+      # when mark8ly#280 landed: mark8ly mounts it, probes 401 against the
+      # deployed revision, and is now declared above. Corrected rather than
+      # deleted because the stale claim is precisely what would stop the next
+      # person declaring it — a comment asserting a product serves nothing is
+      # read as a reason not to check (tesserix-home#407).
       #
       # Kora's queue merges two sources: `feedback` rows in open/in_progress,
       # and food_resolution_outcomes whose kind NeedsHuman() (only
