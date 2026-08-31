@@ -191,11 +191,11 @@ externalSecret:
   refreshInterval: 1h
   registryDeployKey: prod-agentic-registry-devai-deploy-key
 
-# HA Registry-to-AgentGateway controller. Shadow is deliberately the rollout
-# default: the CronJob remains the sole writer until live parity is proven.
+# HA Registry-to-AgentGateway controller. Live shadow validation is complete;
+# the controller is now the sole production writer.
 controller:
   enabled: true
-  mode: shadow
+  mode: active
   replicas: 2
   image:
     repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/agentic-registry
@@ -231,9 +231,9 @@ controller:
 
 # CronJob cadence + safety.
 cron:
-  # Shadow rollout leaves this false. Active cutover sets true in the same
-  # GitOps change; rollback reverts that commit and resumes the tested path.
-  suspend: false
+  # Retain the CronJob as the rollback path while the active controller writes.
+  # Reverting the cutover resumes this tested fallback in the same GitOps change.
+  suspend: true
   schedule: "*/5 * * * *"
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 120

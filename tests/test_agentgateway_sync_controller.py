@@ -33,7 +33,7 @@ def resource(documents, kind, name):
 
 class AgentGatewaySyncControllerTests(unittest.TestCase):
     def test_shadow_controller_is_ha_observable_and_incapable_of_pruning(self):
-        documents = render_chart()
+        documents = render_chart("controller.mode=shadow", "cron.suspend=false")
         deployment = resource(documents, "Deployment", "agentgateway-route-sync-controller")
         pod = deployment["spec"]["template"]["spec"]
         container = pod["containers"][0]
@@ -103,8 +103,8 @@ class AgentGatewaySyncControllerTests(unittest.TestCase):
             }.issubset(alert_names)
         )
 
-    def test_active_cutover_suspends_but_does_not_delete_cron_rollback(self):
-        documents = render_chart("controller.mode=active", "cron.suspend=true")
+    def test_production_defaults_use_active_controller_and_keep_cron_rollback(self):
+        documents = render_chart()
         deployment = resource(documents, "Deployment", "agentgateway-route-sync-controller")
         env = {
             item["name"]: item["value"]
@@ -120,11 +120,11 @@ class AgentGatewaySyncControllerTests(unittest.TestCase):
 
     def test_active_controller_requires_the_cron_writer_to_be_suspended(self):
         with self.assertRaises(subprocess.CalledProcessError):
-            render_chart("controller.mode=active")
+            render_chart("controller.mode=active", "cron.suspend=false")
 
     def test_suspended_cron_requires_the_controller_to_be_active(self):
         with self.assertRaises(subprocess.CalledProcessError):
-            render_chart("cron.suspend=true")
+            render_chart("controller.mode=shadow", "cron.suspend=true")
 
     def test_controller_rejects_an_unknown_reconciliation_mode(self):
         with self.assertRaises(subprocess.CalledProcessError):
