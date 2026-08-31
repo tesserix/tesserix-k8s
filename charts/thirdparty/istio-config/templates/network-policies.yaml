@@ -1143,6 +1143,16 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ $ns }}
     {{- end }}
+    # Every ambient waypoint needs xDS and workload certificates from istiod.
+    {{- range $ns := .Values.ambient.waypointNamespaces }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $ns }}
+          podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: waypoint
+    {{- end }}
     # Allow from istio-ingress and istio-egress gateways
     - from:
         - namespaceSelector:

@@ -55,6 +55,23 @@ def render_registry_chart() -> list[dict]:
     return [document for document in yaml.safe_load_all(result.stdout) if document]
 
 
+def render_istio_config() -> list[dict]:
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "istio-config",
+            str(ROOT / "charts/thirdparty/istio-config"),
+            "--namespace",
+            "istio-system",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [document for document in yaml.safe_load_all(result.stdout) if document]
+
+
 def resource(documents: list[dict], kind: str, name: str) -> dict:
     return next(
         document
@@ -107,6 +124,28 @@ def test_the_ai_agents_namespace_has_ambient_identity_and_a_waypoint() -> None:
     assert "ai-agents" in values["sidecarInjection"]["namespaces"]
     assert "ai-agents" in values["ambient"]["waypointNamespaces"]
     assert values["sidecarInjection"]["protectedTiers"]["ai-agents"] == "application"
+
+
+def test_every_waypoint_namespace_can_reach_istiod() -> None:
+    values = load("charts/thirdparty/istio-config/values.yaml")
+    policy = resource(
+        render_istio_config(), "NetworkPolicy", "allow-webhook-to-istiod"
+    )
+    waypoint_namespaces_allowed_to_istiod = {
+        peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
+        for rule in policy["spec"]["ingress"]
+        for peer in rule.get("from", [])
+        if "namespaceSelector" in peer
+        and peer.get("podSelector", {}).get("matchLabels", {}).get(
+            "gateway.networking.k8s.io/gateway-name"
+        )
+        == "waypoint"
+    }
+
+    assert (
+        set(values["ambient"]["waypointNamespaces"])
+        <= waypoint_namespaces_allowed_to_istiod
+    )
 
 
 def test_the_sre_workload_is_ha_pinned_and_hardened() -> None:
