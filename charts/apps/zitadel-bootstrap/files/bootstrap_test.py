@@ -29,6 +29,7 @@ import bootstrap  # noqa: E402  - imported after the environment it reads at loa
 
 LIVE_LABEL_POLICY = {"primaryColor": "#5B5FD6", "themeMode": "THEME_MODE_AUTO", "disableWatermark": True}
 LIVE_LOGIN_POLICY = {"allowUsernamePassword": True, "allowRegister": False}
+LIVE_LOCKOUT_POLICY = {"maxPasswordAttempts": "10", "maxOtpAttempts": "10"}
 
 # Session durations the chart does not declare. Held in constants rather than
 # inline literals because secret scanners read a field name beginning with
@@ -37,6 +38,39 @@ CHECK_LIFETIME_FIELD = "passwordCheckLifetime"
 LONG_LIFETIME = "240h0m0s"
 SHORT_LIFETIME = "12h0m0s"
 REDIRECT_URI = "https://app.example.test"
+
+VALUES_YAML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "values.yaml")
+
+
+def yaml_lockout_policy():
+    """The lockoutPolicy block as values.yaml literally writes it.
+
+    Hand-parsed rather than loaded with PyYAML because this file is stdlib-only
+    and, more to the point, the property under test is the quoting itself: a
+    real YAML loader would happily give back an int and the regression this
+    guards would pass unnoticed. A quoted scalar stays a str here; a bare one
+    becomes an int, which is exactly the mistake being pinned.
+    """
+    parsed = {}
+    indent = None
+    with open(VALUES_YAML) as fh:
+        for line in fh:
+            if line.strip() == "lockoutPolicy:":
+                indent = len(line) - len(line.lstrip())
+                continue
+            if indent is None:
+                continue
+            depth = len(line) - len(line.lstrip())
+            if not line.strip() or depth <= indent:
+                break
+            key, _, value = line.strip().partition(":")
+            value = value.strip()
+            if value.startswith('"') and value.endswith('"'):
+                parsed[key] = value[1:-1]
+            else:
+                parsed[key] = int(value) if value.isdigit() else value
+    return parsed
+
 
 
 class Recorder:
@@ -197,6 +231,74 @@ class LoginPolicyTest(unittest.TestCase):
         with mock.patch.object(bootstrap, "request", recorder):
             with self.assertRaises(SystemExit):
                 bootstrap.reconcile_login_policy(dict(LIVE_LOGIN_POLICY))
+
+
+class LockoutPolicyTest(unittest.TestCase):
+    """maxOtpAttempts is the only bound on TOTP guessing, so nothing here may silently no-op."""
+
+    def test_no_write_when_policy_matches(self):
+        recorder = Recorder({("GET", "/admin/v1/policies/lockout"): (200, json.dumps({"policy": LIVE_LOCKOUT_POLICY}).encode())})
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_lockout_policy(dict(LIVE_LOCKOUT_POLICY))
+        self.assertEqual(recorder.writes, [])
+
+    def test_writes_the_declared_values_when_the_bound_drifts(self):
+        live = dict(LIVE_LOCKOUT_POLICY, maxOtpAttempts="3")
+        recorder = Recorder({("GET", "/admin/v1/policies/lockout"): (200, json.dumps({"policy": live}).encode())})
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_lockout_policy(dict(LIVE_LOCKOUT_POLICY))
+        self.assertEqual(recorder.writes, [("PUT", "/admin/v1/policies/lockout")])
+        sent = [call[2] for call in recorder.calls if call[:2] == ("PUT", "/admin/v1/policies/lockout")][0]
+        self.assertEqual(sent["maxOtpAttempts"], "10")
+        self.assertEqual(sent["maxPasswordAttempts"], "10")
+
+    def test_writes_when_the_bound_drifts_to_unlimited(self):
+        """0 is not a smaller number, it is no limit at all — the failure this pins."""
+        live = dict(LIVE_LOCKOUT_POLICY, maxOtpAttempts="0", maxPasswordAttempts="0")
+        recorder = Recorder({("GET", "/admin/v1/policies/lockout"): (200, json.dumps({"policy": live}).encode())})
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_lockout_policy(dict(LIVE_LOCKOUT_POLICY))
+        self.assertEqual(recorder.writes, [("PUT", "/admin/v1/policies/lockout")])
+
+    def test_integer_ten_is_not_equal_to_string_ten(self):
+        """Regression: declaring these as ints never converges, so the quotes are load-bearing.
+
+        The API returns strings. Declared as 10, drift_between reports drift on
+        every run and the job PUTs forever against a policy that is already
+        correct. If someone tidies the quotes out of values.yaml, this fails.
+        """
+        self.assertEqual(
+            bootstrap.drift_between({"maxOtpAttempts": 10}, {"maxOtpAttempts": "10"}),
+            {"maxOtpAttempts": 10},
+        )
+        declared = yaml_lockout_policy()
+        self.assertEqual(declared, {"maxPasswordAttempts": "10", "maxOtpAttempts": "10"})
+        for key, value in declared.items():
+            self.assertIsInstance(value, str, f"{key} must stay quoted in values.yaml")
+
+    def test_put_preserves_live_fields_the_chart_does_not_declare(self):
+        """PUT replaces the policy, so an undeclared field must be sent back as-is."""
+        live = dict(LIVE_LOCKOUT_POLICY, maxOtpAttempts="3", showLockOutFailures=True,
+                    isDefault=True, details={"sequence": "9"})
+        recorder = Recorder({("GET", "/admin/v1/policies/lockout"): (200, json.dumps({"policy": live}).encode())})
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_lockout_policy(dict(LIVE_LOCKOUT_POLICY))
+        sent = [call[2] for call in recorder.calls if call[:2] == ("PUT", "/admin/v1/policies/lockout")][0]
+        self.assertEqual(sent["showLockOutFailures"], True)
+        self.assertEqual(sent["maxOtpAttempts"], "10")
+        # isDefault is carried by this policy while it is unmanaged; it is a
+        # read-only echo and must not be sent back.
+        self.assertNotIn("isDefault", sent)
+        self.assertNotIn("details", sent)
+
+    def test_raises_on_api_error(self):
+        recorder = Recorder({
+            ("GET", "/admin/v1/policies/lockout"): (200, json.dumps({"policy": {"maxOtpAttempts": "0"}}).encode()),
+            ("PUT", "/admin/v1/policies/lockout"): (403, b'{"message":"nope"}'),
+        })
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_lockout_policy(dict(LIVE_LOCKOUT_POLICY))
 
 
 class AdminTest(unittest.TestCase):
@@ -956,6 +1058,7 @@ class MainTest(unittest.TestCase):
         return {
             ("GET", "/admin/v1/policies/label"): (200, json.dumps({"policy": LIVE_LABEL_POLICY}).encode()),
             ("GET", "/admin/v1/policies/login"): (200, json.dumps({"policy": LIVE_LOGIN_POLICY}).encode()),
+            ("GET", "/admin/v1/policies/lockout"): (200, json.dumps({"policy": LIVE_LOCKOUT_POLICY}).encode()),
             ("GET", "/assets/v1/instance/policy/label/logo"): (200, b"light-bytes"),
             ("POST", "/admin/v1/members/_search"): (200, json.dumps({"result": [{"userId": "u-1", "roles": ["IAM_OWNER"]}]}).encode()),
             ("POST", "/v2/users"): (200, json.dumps(AdminTest.USERS).encode()),
@@ -978,6 +1081,7 @@ class MainTest(unittest.TestCase):
             json.dump({
                 "labelPolicy": LIVE_LABEL_POLICY,
                 "loginPolicy": LIVE_LOGIN_POLICY,
+                "lockoutPolicy": LIVE_LOCKOUT_POLICY,
                 "assets": {"logo": "logo-light.png"},
                 "admins": ["samyak.rout@gmail.com"],
                 "defaultOrg": "TESSERIX",
