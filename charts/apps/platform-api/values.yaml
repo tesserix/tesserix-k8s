@@ -145,6 +145,24 @@ env:
   # secret to manage for no gain.
   ZITADEL_PROJECT_ID: "386377618200461939"
 
+  # The console's OIDC client id — how this API tells an operator from a
+  # service, for the audit trail only.
+  #
+  # It used to infer that from the presence of an `email` claim. A real
+  # operator ACCESS token carries no `email` at all (Zitadel puts profile
+  # claims in the ID token and on the userinfo endpoint), so every human was
+  # recorded as a service (tesserix-home#450). `client_id` is present on both
+  # kinds of token, is signed by the issuer, and is compared against this
+  # explicitly configured value rather than guessed at from which claims
+  # happen to be present — claim presence varies with the SCOPES a caller
+  # requests, not only with who the caller is.
+  #
+  # Same value as the console's own ZITADEL_CLIENT_ID. Optional by design: it
+  # decides audit labelling and never authorisation, so an unset value must not
+  # be able to take the service down. Unset, every principal is recorded as a
+  # service and the API says so once at startup, at WARN.
+  ZITADEL_CONSOLE_CLIENT_ID: "386382971877196703"
+
 # No ExternalSecret. The service's only credential is the tesserix-postgres
 # Secret below, which CNPG generates in-cluster — nothing here comes from GCP
 # Secret Manager yet. That changes with tesserix-home#278 (Zitadel), and the
