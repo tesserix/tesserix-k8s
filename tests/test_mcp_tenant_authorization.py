@@ -195,7 +195,7 @@ class ProbeMeshGuardrailTests(unittest.TestCase):
             for path in operation["operation"].get("paths", [])
         }
         self.assertEqual({"GET", "PUT"}, methods)
-        self.assertIn("/v0/mcpservers/*/status", paths)
+        self.assertIn("/v0/mcpservers/{*}/status", paths)
 
     def test_probe_is_denied_every_other_registry_mutation(self):
         deny = resource(
@@ -221,7 +221,7 @@ class ProbeMeshGuardrailTests(unittest.TestCase):
         self.assertIn(
             {
                 "methods": ["PUT"],
-                "notPaths": ["/v0/mcpservers/*/status"],
+                "notPaths": ["/v0/mcpservers/{*}/status"],
             },
             operations,
         )
