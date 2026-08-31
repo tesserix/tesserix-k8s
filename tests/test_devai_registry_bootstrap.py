@@ -17,6 +17,12 @@ def test_multistatus_with_rejected_artifact_counts_as_error() -> None:
     assert "ok += 1" not in multistatus
 
 
+def test_bootstrap_fails_unless_every_seed_is_applied() -> None:
+    template = JOB_TEMPLATE.read_text(encoding="utf-8")
+
+    assert "sys.exit(0 if ok > 0 and err == 0 else 1)" in template
+
+
 def test_seed_source_is_pinned_to_the_adk_registry_release() -> None:
     values = yaml.safe_load(
         Path("charts/apps/devai-registry-bootstrap/values.yaml").read_text(
@@ -25,8 +31,8 @@ def test_seed_source_is_pinned_to_the_adk_registry_release() -> None:
     )
     template = JOB_TEMPLATE.read_text(encoding="utf-8")
 
-    assert values["seedSource"]["ref"] == "396e7af7e171ec3f8ed5d3386fa5f5d511807d93"
-    assert values["reseedNonce"] == "2026-08-31-registry-permissions-retry-v1"
+    assert values["seedSource"]["ref"] == "867121d37986bb79aa47bc7fc2cb4259d71d258a"
+    assert values["reseedNonce"] == "2026-08-31-agent-seed-v1.0.2"
     assert 'git -C /workspace/devai fetch --depth=1 origin "$REF"' in template
     assert "git -C /workspace/devai checkout --detach FETCH_HEAD" in template
 

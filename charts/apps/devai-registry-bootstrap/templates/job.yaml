@@ -173,10 +173,9 @@ spec:
                       print(f"  FAIL ({status}) {label}: {body}"); err += 1
 
               print(f"registry bootstrap complete: {ok} applied, {err} failed")
-              # Soft success: a stray non-seed/template file shouldn't wedge the
-              # whole catalog (the app's health gates on this Job). Fail only if
-              # nothing landed at all.
-              sys.exit(0 if ok > 0 else 1)
+              # Argo health must represent full catalog convergence. A partial
+              # apply leaves Registry and AgentGateway on different desired state.
+              sys.exit(0 if ok > 0 and err == 0 else 1)
               PYEOF
 
               SEEDS_DIR=/workspace/devai/{{ .Values.seedSource.subdir }} \
