@@ -3,7 +3,7 @@
 Owner: Tesserix AI platform
 
 The consumer endpoint is
-`http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8080`.
+`http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8082`.
 AgentGateway runs in `agentgateway-system`; the warm backend pool and stable
 `adk-runtime` alias run in `devai`.
 
@@ -17,19 +17,27 @@ GCP Secret Manager value.
    its PDB allows one disruption, and its Service has ready endpoints.
 2. Check that `devai-api` has at least three ready replicas across zones,
    `adk-runtime` selects those pods, and its PDB has `minAvailable: 2`.
-3. Inspect `HTTPRoute/global-adk-runtime`, both `AgentgatewayPolicy` objects,
-   `AgentgatewayBackend/global-adk-runtime`, and their Accepted/ResolvedRefs
-   conditions.
+3. Confirm `HTTPRoute/global-adk-runtime` targets the cross-namespace
+   `Service/devai/adk-runtime`, its `ReferenceGrant` is present, and the Service
+   port declares `appProtocol: agentgateway.dev/a2a`. The retained
+   `AgentgatewayBackend/global-adk-runtime` is a rollback artifact, not the
+   active route target. Inspect both `AgentgatewayPolicy` objects and the
+   route's Accepted/ResolvedRefs conditions.
 4. Check both ExternalSecrets and only their Ready conditions. A missing
    `prod-global-adk-runtime-upstream-token` or mismatched projection causes 401;
    do not read the credential to compare it manually.
 5. Separate 401 (issuer, audience, role, expiry, upstream projection), 404
    (capability not admitted), 409 (human gate), 429 (rate limit), and 503
-   (Registry, model gateway, or runtime composition unavailable).
+   (mesh identity rejection, Registry, model gateway, or runtime composition
+   unavailable).
 6. Correlate AgentGateway access logs by verified subject/client id and DevAI
    logs by trace id. Do not log request bodies or tokens.
 7. For missing cross-replica live events, inspect Redis connectivity and relay
    errors. Durable run state and per-run logs remain the recovery source.
+8. For `503` plus `Connection reset by peer`, inspect the destination ztunnel
+   log. A route targeting the opaque A2A backend loses the gateway's trusted
+   mesh identity; restore the Service backend and A2A `appProtocol` rather than
+   weakening the DevAI authorization policy.
 
 ## Recovery
 

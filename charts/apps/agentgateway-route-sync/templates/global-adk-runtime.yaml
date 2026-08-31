@@ -46,10 +46,29 @@ spec:
             type: Exact
             value: {{ .Values.globalAdkRuntime.agentCardPath | quote }}
       backendRefs:
-        - group: agentgateway.dev
-          kind: AgentgatewayBackend
-          name: global-adk-runtime
+        - group: ""
+          kind: Service
+          name: {{ .Values.globalAdkRuntime.serviceName }}
+          namespace: {{ .Values.globalAdkRuntime.serviceNamespace }}
+          port: {{ .Values.globalAdkRuntime.port }}
           weight: 1
+---
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-agentgateway-global-adk-runtime
+  namespace: {{ .Values.globalAdkRuntime.serviceNamespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: {{ .Values.namespace }}
+  to:
+    - group: ""
+      kind: Service
+      name: {{ .Values.globalAdkRuntime.serviceName }}
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
