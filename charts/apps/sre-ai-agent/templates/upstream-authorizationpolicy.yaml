@@ -1,0 +1,21 @@
+{{- if .Values.enabled }}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: sre-ai-agent-upstream-l4
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sre-ai-agent.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "sre-ai-agent.selectorLabels" . | nindent 6 }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: [{{ .Values.gateway.namespace | quote }}]
+      to:
+        - operation:
+            ports: [{{ .Values.service.port | quote }}]
+{{- end }}

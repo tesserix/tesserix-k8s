@@ -372,8 +372,12 @@ def test_network_and_mesh_policy_expose_only_the_reviewed_service_paths() -> Non
 
 
 def test_agentgateway_plaintext_is_scoped_to_the_sre_workload_port() -> None:
+    documents = render_chart()
     peer_authentication = resource(
-        render_chart(), "PeerAuthentication", "sre-ai-agent-upstream"
+        documents, "PeerAuthentication", "sre-ai-agent-upstream"
+    )
+    upstream_authorization = resource(
+        documents, "AuthorizationPolicy", "sre-ai-agent-upstream-l4"
     )
 
     assert peer_authentication["spec"] == {
@@ -384,6 +388,23 @@ def test_agentgateway_plaintext_is_scoped_to_the_sre_workload_port() -> None:
             }
         },
         "portLevelMtls": {"8080": {"mode": "PERMISSIVE"}},
+    }
+    assert upstream_authorization["spec"] == {
+        "selector": {
+            "matchLabels": {
+                "app.kubernetes.io/instance": "sre-ai-agent",
+                "app.kubernetes.io/name": "sre-ai-agent",
+            }
+        },
+        "action": "ALLOW",
+        "rules": [
+            {
+                "from": [
+                    {"source": {"namespaces": ["agentgateway-system"]}}
+                ],
+                "to": [{"operation": {"ports": ["8080"]}}],
+            }
+        ],
     }
 
 
