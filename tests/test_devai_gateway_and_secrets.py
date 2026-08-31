@@ -552,6 +552,10 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             service["spec"]["selector"],
         )
         self.assertEqual(8080, service["spec"]["ports"][0]["port"])
+        self.assertEqual(
+            "agentgateway.dev/a2a",
+            service["spec"]["ports"][0]["appProtocol"],
+        )
 
     def test_global_adk_runtime_is_internal_and_zitadel_authenticated(self):
         documents = render_chart(
@@ -561,6 +565,11 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         )
         backend = resource(documents, "AgentgatewayBackend", "global-adk-runtime")
         route = resource(documents, "HTTPRoute", "global-adk-runtime")
+        reference_grant = resource(
+            documents,
+            "ReferenceGrant",
+            "allow-agentgateway-global-adk-runtime",
+        )
         policy = resource(documents, "AgentgatewayPolicy", "global-adk-runtime")
         observability = resource(
             documents,
@@ -587,8 +596,30 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             route["spec"]["rules"][0]["matches"],
         )
         self.assertEqual(
-            "global-adk-runtime",
-            route["spec"]["rules"][0]["backendRefs"][0]["name"],
+            {
+                "group": "",
+                "kind": "Service",
+                "name": "adk-runtime",
+                "namespace": "devai",
+                "port": 8080,
+                "weight": 1,
+            },
+            route["spec"]["rules"][0]["backendRefs"][0],
+        )
+        self.assertEqual("devai", reference_grant["metadata"]["namespace"])
+        self.assertEqual(
+            [
+                {
+                    "group": "gateway.networking.k8s.io",
+                    "kind": "HTTPRoute",
+                    "namespace": "agentgateway-system",
+                }
+            ],
+            reference_grant["spec"]["from"],
+        )
+        self.assertEqual(
+            [{"group": "", "kind": "Service", "name": "adk-runtime"}],
+            reference_grant["spec"]["to"],
         )
         self.assertEqual(
             [
