@@ -103,6 +103,37 @@ desired:
     secondFactorCheckLifetime: 64800s      # 18h
     multiFactorCheckLifetime: 43200s       # 12h
 
+  # HOW MANY FAILED ATTEMPTS BEFORE THE USER IS LOCKED. Declared because it was
+  # not: GET /admin/v1/policies/lockout returned isDefault: true, so these were
+  # Zitadel's own defaults, unmanaged, with nothing in git to notice a change.
+  #
+  # maxOtpAttempts is the only thing bounding TOTP guessing anywhere in this
+  # estate, and it does bound it. Verified 2026-08-31 (tesserix-home#445) by
+  # enrolling a disposable user with TOTP and submitting wrong codes through
+  # PATCH /v2/sessions/{id} — the same call the console's submitTotp makes:
+  # attempts 1-10 returned "Invalid code", attempt 11 returned "User is
+  # locked", and the user ended in USER_STATE_LOCKED. Exactly maxOtpAttempts.
+  #
+  # That is worth stating because login-sufficiency.ts documents the opposite
+  # for forceMfa — "Zitadel does not enforce MFA" for a login client — and it
+  # would be reasonable to assume lockout is delegated the same way. It is not.
+  # forceMfa is requirement evaluation, which Zitadel hands to the login
+  # client; maxOtpAttempts is a failure counter inside the check command, which
+  # Zitadel applies regardless of who is calling. So the console does not need
+  # its own TOTP rate limiting, and this is why.
+  #
+  # 0 means unlimited. An unpinned lockout policy drifting to 0 is the same
+  # shape of failure as the 0s lifetimes above — silent, invisible, and working
+  # exactly as configured — with a worse outcome: unbounded TOTP guessing.
+  #
+  # Quoted deliberately. The API returns these as strings, and drift_between
+  # compares declared against live by equality, where 10 != "10". Declared as
+  # integers this reports drift on every run and PUTs forever without ever
+  # converging. Do not tidy the quotes away; bootstrap_test.py pins this.
+  lockoutPolicy:
+    maxPasswordAttempts: "10"
+    maxOtpAttempts: "10"
+
   # Granted IAM_OWNER if they exist. A federated admin only exists after their
   # first sign-in, so a missing user is skipped, not an error.
   admins:

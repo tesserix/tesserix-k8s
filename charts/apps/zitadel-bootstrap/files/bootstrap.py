@@ -1,4 +1,4 @@
-"""Reconciles the Zitadel instance branding, login policy and admins from Git.
+"""Reconciles the Zitadel instance branding, policies and admins from Git.
 
 Runs on a schedule, so every step is idempotent: it compares desired state to
 live state and only writes on a difference. Assets are compared by content
@@ -145,6 +145,36 @@ def reconcile_login_policy(desired):
     status, payload = request("PUT", "/admin/v1/policies/login", body)
     if status != 200:
         raise SystemExit(f"login policy update failed: {status} {payload!r}")
+
+
+def reconcile_lockout_policy(desired):
+    """Pin how many failed attempts lock a user out.
+
+    This was Zitadel's own default and nothing declared it, so nothing would
+    have noticed it changing — and 0 means unlimited. maxOtpAttempts is the
+    only bound on TOTP guessing in this estate: verified against the session
+    API on 2026-08-31, a user locks on the 11th wrong code submitted through
+    PATCH /v2/sessions/{id}, exactly as the policy says. See values.yaml and
+    tesserix-home#445.
+
+    Same replace-not-patch caveat as the login policy: the PUT overwrites the
+    whole policy, so undeclared live fields have to be sent back. strip_readonly
+    already drops isDefault, which this policy carries while it is unmanaged.
+
+    The declared values are strings because the API returns strings; an integer
+    10 would differ from "10" on every run and the job would PUT forever.
+    """
+    live = get_json("/admin/v1/policies/lockout")["policy"]
+    drift = drift_between(desired, live)
+    if not drift:
+        log("lockout policy: in sync")
+        return
+    body = strip_readonly(live)
+    body.update(desired)
+    log(f"lockout policy: updating {sorted(drift)}")
+    status, payload = request("PUT", "/admin/v1/policies/lockout", body)
+    if status != 200:
+        raise SystemExit(f"lockout policy update failed: {status} {payload!r}")
 
 
 def find_user(identifier):
@@ -635,6 +665,7 @@ def main():
         activate_label_policy()
 
     reconcile_login_policy(desired["loginPolicy"])
+    reconcile_lockout_policy(desired["lockoutPolicy"])
     reconcile_admins(desired["admins"])
     reconcile_default_org(desired["defaultOrg"])
     reconcile_org_branding(desired["selfBrandedOrgs"])
