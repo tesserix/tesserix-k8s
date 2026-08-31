@@ -115,6 +115,26 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.gip.webApiKeySecret.name }}
                   key: {{ .Values.gip.webApiKeySecret.key }}
+            {{- if .Values.gip.serverApiKeySecret }}
+            # Server-to-server GIP key, no HTTP-referrer restriction.
+            # platform-api prefers this over GIP_WEB_API_KEY, which is the
+            # browser bundle's public key and is referrer-restricted — GIP
+            # answers admin calls made with it "Requests from referer
+            # <empty> are blocked" (403). Optional so a cluster without the
+            # server key deploys unchanged.
+            - name: GIP_SERVER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.gip.serverApiKeySecret.name }}
+                  key: {{ .Values.gip.serverApiKeySecret.key }}
+                  # Optional on purpose: the pod must start whether or not
+                  # the key has been provisioned yet. When it is absent the
+                  # env var is simply unset and platform-api falls back to
+                  # the web key, behaving exactly as it did before. Without
+                  # this, ordering this change before the secret would turn
+                  # a broken password reset into a service that cannot boot.
+                  optional: true
+            {{- end }}
             # Cross-service calls into marketplace-api (self-vendor
             # ensure/update on onboarding + audit emit on staff events).
             # Pin the URL here so a code-level default change can't
