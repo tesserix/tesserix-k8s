@@ -63,6 +63,29 @@ def resource(documents: list[dict], kind: str, name: str) -> dict:
     )
 
 
+def test_production_defaults_render_the_digest_pinned_workload() -> None:
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "sre-ai-agent",
+            str(ROOT / "charts/apps/sre-ai-agent"),
+            "--namespace",
+            "ai-agents",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    documents = [document for document in yaml.safe_load_all(result.stdout) if document]
+
+    deployment = resource(documents, "Deployment", "sre-ai-agent")
+    assert deployment["spec"]["template"]["spec"]["containers"][0]["image"] == (
+        "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/"
+        "tesserix/ai-agents-sre@sha256:2cb69bdd73ee5c002ee268386efbbaeaf77670e81db5cdc81d7441c275281216"
+    )
+
+
 def test_the_sre_agent_application_owns_a_product_neutral_namespace() -> None:
     application = load("argocd/prod/apps/ai-apps/sre-ai-agent.yaml")
     resources = load("argocd/prod/apps/ai-apps/kustomization.yaml")["resources"]
