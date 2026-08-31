@@ -1,0 +1,18 @@
+{{- if .Values.enabled }}
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: sre-ai-agent-upstream
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sre-ai-agent.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "sre-ai-agent.selectorLabels" . | nindent 6 }}
+  # AgentGateway gateway pods intentionally run outside ambient capture.
+  # NetworkPolicy and the injected upstream bearer token secure this hop.
+  portLevelMtls:
+    "{{ .Values.service.port }}":
+      mode: PERMISSIVE
+{{- end }}
