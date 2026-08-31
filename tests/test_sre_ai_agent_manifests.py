@@ -371,6 +371,22 @@ def test_network_and_mesh_policy_expose_only_the_reviewed_service_paths() -> Non
     }
 
 
+def test_agentgateway_plaintext_is_scoped_to_the_sre_workload_port() -> None:
+    peer_authentication = resource(
+        render_chart(), "PeerAuthentication", "sre-ai-agent-upstream"
+    )
+
+    assert peer_authentication["spec"] == {
+        "selector": {
+            "matchLabels": {
+                "app.kubernetes.io/instance": "sre-ai-agent",
+                "app.kubernetes.io/name": "sre-ai-agent",
+            }
+        },
+        "portLevelMtls": {"8080": {"mode": "PERMISSIVE"}},
+    }
+
+
 def test_only_the_sre_service_account_can_use_the_shared_vertex_route() -> None:
     principal = "cluster.local/ns/ai-agents/sa/sre-ai-agent"
     values = load("charts/apps/devai-ai-gateway/values.yaml")
