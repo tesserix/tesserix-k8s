@@ -319,6 +319,22 @@ Admins are matched by login name or by **verified** email, because a federated
 admin's login name is their IdP subject, not their address. An admin who has
 never signed in does not exist yet and is skipped rather than failing the run.
 
+**Machine users, instance memberships and the IAM_OWNER allowlist are reconciled
+too, as of this change.** `desired.machineUsers` creates a machine user that
+does not yet exist (`POST /management/v1/users/machine`, scoped to its org)
+and never touches one that does — see *What is not in git* for the boundary
+this stops at. `desired.instanceMembers` grants or updates an explicit role
+list per login through `/admin/v1/members`, separately from `reconcile_admins`'
+hardcoded `IAM_OWNER` grant for `desired.admins`; a login in both lists fails
+the run before either reconciler makes a call, because two reconcilers writing
+different roles to the same membership would flap every 30 minutes.
+`desired.allowedIamOwnerMachines` is a fail-closed report, not a fix: any
+machine user holding instance `IAM_OWNER` that is not on the list stops the
+run, the same read-only precedent as `assert_reserved_org_clean`. A live query
+found exactly two such machine users — `iam-admin` (this reconciler's own
+credential) and `svc-onboarding` (documented in `docs/onboarding-api.md`
+9.1) — both seeded into the allowlist with a reason.
+
 ### The skin applies to every org
 
 The Aurora palette in `desired.labelPolicy` is set on the **instance** label
@@ -484,6 +500,20 @@ Only the original `added` event carries it. So a reconciler can assert an IdP's
 non-secret configuration without ever holding the secret — which is what makes
 declaring these in `zitadel-bootstrap` practical. Supplying an empty or wrong
 secret is still destructive; omitting the field is not.
+
+**Machine user credentials.** `zitadel-bootstrap` now creates a declared machine
+user's *account* (`desired.machineUsers`, see above) and reconciles who holds
+what instance membership, but it never creates or holds the account's
+*credential*. A PAT or a machine key can only be read once, at the moment it is
+issued — Zitadel does not let you fetch an existing one again — so there is no
+API call this reconciler could make on a schedule that would keep a credential
+current the way it keeps a label policy current. Issuing the key still happens
+by hand in the console (*Users → Service Users → \<user\> → Keys → New*, or
+*Personal Access Tokens → New*) and the value still goes into GCP Secret
+Manager by hand, exactly as before this change. What changed is narrower than
+it might read: the account and its instance-level grants are now asserted from
+git; the one-time secret that authenticates as that account is not, and cannot
+be without Zitadel exposing a re-issuable credential, which it does not.
 
 **Actions.** Custom claims, token enrichment and provisioning hooks are Actions
 v2 objects, created through the API.
