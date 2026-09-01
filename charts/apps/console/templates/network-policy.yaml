@@ -96,3 +96,15 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
+    # secrets-api (SECRETS_API_ORIGIN, secrets console cutover). `tesserix`
+    # isn't in the ambient mesh (no sidecar, no dataplane-mode label), so this
+    # is a plain cross-namespace NetworkPolicy allow, not HBONE-tunnelled
+    # traffic — matches the mirrored ingress rule in
+    # secret-service/templates/network-policies.yaml (allow-ingress-console).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: secret-service
+      ports:
+        - protocol: TCP
+          port: 8080
