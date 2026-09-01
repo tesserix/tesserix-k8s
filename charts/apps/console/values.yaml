@@ -32,7 +32,35 @@ serviceAccount:
   name: ""
 
 podAnnotations: {}
-podLabels: {}
+# Enrol ONLY the console's pods in the ambient mesh, rather than labelling the
+# whole `tesserix` namespace.
+#
+# Without this the console cannot reach secret-service-api at all. That service
+# is ambient and inherits the mesh-wide STRICT PeerAuthentication
+# (istio-system/default) because its namespace sets none of its own; ztunnel
+# rejects the console's plaintext connection before any AuthorizationPolicy is
+# consulted — observed as `explicitly denied by:
+# istio-system/istio_converted_static_strict`. Meshing the caller is what gives
+# it an mTLS identity to present, and it is the fix the cutover design (§7)
+# assumed was already in place when it specified a principal-based policy.
+#
+# Pod-level rather than namespace-level deliberately: labelling the namespace
+# would enrol platform-api, company, ai-usage-ingest, auth-bff, blog, docs and
+# storybook at the same time, which is a large blast radius for unblocking one
+# surface. Istio is 1.29.6, so per-pod enrolment is supported.
+#
+# Safe for inbound: `allow-console-public` is an unconditional ALLOW selecting
+# app.kubernetes.io/name=console, so the mesh-wide deny-all-default does not
+# lock the console out, and tesserix-mtls (PERMISSIVE) admits the gateway's
+# plaintext.
+podLabels:
+  istio.io/dataplane-mode: ambient
+
+networkPolicy:
+  # Cluster pod CIDR, for the ambient HBONE rule in network-policy.yaml. Same
+  # value as secret-service's chart uses; a wrong one silently kills every
+  # east-west connection the console makes through ztunnel.
+  podCIDR: 10.20.0.0/16
 
 podSecurityContext:
   fsGroup: 1001

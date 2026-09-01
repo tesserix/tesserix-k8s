@@ -96,11 +96,15 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
-    # secrets-api (SECRETS_API_ORIGIN, secrets console cutover). `tesserix`
-    # isn't in the ambient mesh (no sidecar, no dataplane-mode label), so this
-    # is a plain cross-namespace NetworkPolicy allow, not HBONE-tunnelled
-    # traffic — matches the mirrored ingress rule in
-    # secret-service/templates/network-policies.yaml (allow-ingress-console).
+    # secrets-api (SECRETS_API_ORIGIN, secrets console cutover). Mirrors the
+    # ingress rule in secret-service/templates/network-policies.yaml
+    # (allow-ingress-console).
+    #
+    # This is the DIRECT path, used only if the console's pods are not enrolled
+    # in the ambient mesh. While `istio.io/dataplane-mode: ambient` is set on
+    # them (values.yaml `podLabels`) the live path is HBONE on 15008 instead —
+    # see allow-console-hbone below. Kept so removing that label does not
+    # silently break connectivity.
     - to:
         - namespaceSelector:
             matchLabels:
@@ -108,3 +112,39 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+---
+# Ambient HBONE. The console's pods are enrolled in the ambient mesh so they can
+# present an mTLS identity to secret-service-api, which sits behind the
+# mesh-wide STRICT PeerAuthentication. Once enrolled, their east-west traffic is
+# tunnelled through ztunnel on 15008 rather than sent directly to the
+# destination port, so without this every such connection fails — and, per the
+# same rule in secret-service/templates/network-policies.yaml, "with no log on
+# either side".
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-console-hbone
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "console.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "console.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.podCIDR }}
+      ports:
+        - protocol: TCP
+          port: 15008
+  egress:
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.podCIDR }}
+      ports:
+        - protocol: TCP
+          port: 15008
