@@ -182,6 +182,16 @@ def find_user(identifier):
 
     An unverified address is whatever the account holder typed, so matching on
     one would let anyone claim IAM_OWNER by setting an email they do not own.
+
+    Capped at 100 users, unpaginated. Verified against the live instance: 9
+    users total today, so the headroom is real. But three reconcilers now
+    depend on this returning every user — reconcile_admins,
+    reconcile_instance_members and reconcile_machine_users — and past 100 the
+    call silently returns fewer than all users rather than erroring, so a user
+    past the cutoff reads as "does not exist". That would make
+    reconcile_machine_users retry a create every run and reconcile_instance_members
+    skip a real membership indefinitely.
+    Not paginating today; revisit if user count approaches 100.
     """
     status, payload = request("POST", "/v2/users", {"query": {"limit": 100}})
     if status != 200:
@@ -454,7 +464,7 @@ def reconcile_machine_users(machine_users):
         log(f"machine user {machine['username']}: created")
 
 
-def reconcile_instance_members(instance_members, admins):
+def reconcile_instance_members(instance_members, admins, machine_logins=()):
     """Grant or update instance-level memberships with an explicit role list.
 
     reconcile_admins hardcodes IAM_OWNER for desired.admins; this reconciles
@@ -463,6 +473,17 @@ def reconcile_instance_members(instance_members, admins):
     roles to one membership would flap every 30 minutes, which is worse than
     leaving the grant as a manual step. That is checked up front, against the
     raw login lists, before either side makes an API call.
+
+    machine_logins is the set of usernames reconcile_machine_users has already
+    created in this same pass (it must run first — see main()). A login not
+    resolvable by find_user is not automatically forgivable the way an
+    unregistered human admin is: a human genuinely may not have signed in yet,
+    but a machine user with no first-sign-in concept either exists because
+    reconcile_machine_users just created it, or its declaration here is wrong
+    (a typo, or a declaration order bug like tesserix-home#211). So a login in
+    machineUsers that still doesn't resolve fails the run naming the login,
+    instead of silently deferring the grant to the next scheduled run 30
+    minutes later.
     """
     overlap = sorted(set(admins) & {member["login"] for member in instance_members})
     if overlap:
@@ -480,7 +501,16 @@ def reconcile_instance_members(instance_members, admins):
     for member in instance_members:
         user_id = find_user(member["login"])
         if not user_id:
-            log(f"instance member {member['login']}: no such user yet, skipping")
+            if member["login"] in machine_logins:
+                raise SystemExit(
+                    f"instance member {member['login']}: declared in desired.machineUsers "
+                    "but still not resolvable after reconcile_machine_users ran; this is a "
+                    "bug (ordering or a typo), not a not-yet-signed-in user"
+                )
+            log(
+                f"instance member {member['login']}: no such user yet "
+                "(human admins only exist after their first sign-in), skipping"
+            )
             continue
         wanted_roles = sorted(member["roles"])
         current_roles = sorted(live.get(user_id, []))
@@ -796,14 +826,23 @@ def main():
     reconcile_login_policy(desired["loginPolicy"])
     reconcile_lockout_policy(desired["lockoutPolicy"])
     reconcile_admins(desired["admins"])
-    reconcile_instance_members(desired.get("instanceMembers", []), desired["admins"])
+    # Before reconcile_instance_members: a login can be declared in both
+    # machineUsers and instanceMembers (create a reader, grant it a scoped
+    # role), and that grant must land in the same pass rather than waiting
+    # for a machine user created this run to be visible on the next one.
+    machine_users = desired.get("machineUsers", [])
+    reconcile_machine_users(machine_users)
+    reconcile_instance_members(
+        desired.get("instanceMembers", []),
+        desired["admins"],
+        machine_logins={machine["username"] for machine in machine_users},
+    )
     reconcile_default_org(desired["defaultOrg"])
     reconcile_org_branding(desired["selfBrandedOrgs"])
     reconcile_smtp(desired.get("smtp"))
     reconcile_org_idps(desired.get("idps", []))
-    # Before platform projects: a machine user created here can be granted
-    # project roles in the same pass.
-    reconcile_machine_users(desired.get("machineUsers", []))
+    # Also before platform projects: a machine user created above can be
+    # granted project roles in the same pass.
     for project in desired.get("platformProjects", []):
         reconcile_platform_project(project)
     # Last: a stray project or an unlisted IAM_OWNER is a report, and must not

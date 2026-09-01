@@ -1159,12 +1159,41 @@ class InstanceMemberTest(unittest.TestCase):
         self.assertEqual([call[2] for call in updates], [{"roles": ["IAM_OWNER_VIEWER", "IAM_USER_MANAGER"]}])
 
     def test_skips_a_login_that_has_never_signed_in(self):
+        """A human admin genuinely may not have signed in yet — skip, don't fail."""
         recorder = self._recorder(live_members=[], users={"result": []})
         with mock.patch.object(bootstrap, "request", recorder):
             bootstrap.reconcile_instance_members(
                 [{"login": "nobody@gmail.com", "roles": ["IAM_OWNER_VIEWER"]}], admins=[]
             )
         self.assertNotIn(("POST", "/admin/v1/members"), recorder.writes)
+
+    def test_unresolved_login_not_in_machine_users_is_skipped_not_failed(self):
+        """Same unresolved case as above, made explicit against machine_logins."""
+        recorder = self._recorder(live_members=[], users={"result": []})
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_instance_members(
+                [{"login": "nobody@gmail.com", "roles": ["IAM_OWNER_VIEWER"]}],
+                admins=[],
+                machine_logins={"svc-onboarding"},
+            )
+        self.assertNotIn(("POST", "/admin/v1/members"), recorder.writes)
+
+    def test_unresolved_login_declared_as_a_machine_user_fails_naming_the_login(self):
+        """Unlike a human, a machine user has no 'has not signed in yet' excuse:
+        after reconcile_machine_users ran, this is an ordering bug or a typo."""
+        recorder = self._recorder(live_members=[], users={"result": []})
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.reconcile_instance_members(
+                    [{"login": "svc-onboarding", "roles": ["IAM_OWNER_VIEWER"]}],
+                    admins=[],
+                    machine_logins={"svc-onboarding"},
+                )
+        self.assertIn("svc-onboarding", str(caught.exception))
+        self.assertEqual([call[:2] for call in recorder.calls], [
+            ("POST", "/admin/v1/members/_search"),
+            ("POST", "/v2/users"),
+        ])
 
     def test_login_in_both_admins_and_instance_members_fails_before_any_call(self):
         """Two reconcilers writing different roles to one membership would flap every run."""
@@ -1323,6 +1352,53 @@ class MainTest(unittest.TestCase):
         with mock.patch.object(bootstrap, "request", recorder), mock.patch.object(bootstrap, "CONFIG_PATH", config):
             bootstrap.main()
         self.assertIn(("POST", "/management/v1/users/machine"), recorder.writes)
+
+    def test_grants_an_instance_membership_to_a_machine_user_created_in_the_same_pass(self):
+        """tesserix-home#211 shape: create a reader machine user and grant it a
+        scoped instance role in the same run, not the next one 30 minutes later."""
+        config = os.path.join(WORKDIR, "desired.json")
+        with open(config, "w") as fh:
+            json.dump({
+                "labelPolicy": LIVE_LABEL_POLICY,
+                "loginPolicy": LIVE_LOGIN_POLICY,
+                "lockoutPolicy": LIVE_LOCKOUT_POLICY,
+                "assets": {"logo": "logo-light.png"},
+                "admins": ["samyak.rout@gmail.com"],
+                "instanceMembers": [{"login": "svc-reader", "roles": ["IAM_OWNER_VIEWER"]}],
+                "defaultOrg": "TESSERIX",
+                "selfBrandedOrgs": [],
+                "smtp": SmtpTest.SMTP,
+                "idps": [OrgIdpTest.IDP],
+                "machineUsers": [dict(MachineUserTest.MACHINE, username="svc-reader", name="svc-reader")],
+                "platformProjects": [],
+                "reservedOrg": {"name": "ZITADEL", "allowedProjects": ["ZITADEL"]},
+                "allowedIamOwnerMachines": [],
+            }, fh)
+
+        class CreateThenFindableRecorder(Recorder):
+            """Simulates the created machine user becoming resolvable by
+            find_user, the way it would on a real instance once /v2/users
+            reflects the account this same run just created."""
+
+            def __call__(self, method, path, body=None, headers=None, raw=None, content_type=None):
+                if (method, path) == ("POST", "/v2/users") and self.created:
+                    return 200, json.dumps({
+                        "result": AdminTest.USERS["result"] + [
+                            {"userId": "m-reader", "username": "svc-reader", "machine": {"name": "svc-reader"}}
+                        ]
+                    }).encode()
+                status, payload = super().__call__(method, path, body, headers, raw, content_type)
+                if (method, path) == ("POST", "/management/v1/users/machine"):
+                    self.created = True
+                return status, payload
+
+        recorder = CreateThenFindableRecorder(self._responses())
+        recorder.created = False
+        with mock.patch.object(bootstrap, "request", recorder), mock.patch.object(bootstrap, "CONFIG_PATH", config):
+            bootstrap.main()
+        self.assertIn(("POST", "/management/v1/users/machine"), recorder.writes)
+        grants = [call for call in recorder.calls if call[:2] == ("POST", "/admin/v1/members")]
+        self.assertEqual([call[2] for call in grants], [{"userId": "m-reader", "roles": ["IAM_OWNER_VIEWER"]}])
 
     def test_fails_when_an_unlisted_machine_holds_iam_owner(self):
         config = os.path.join(WORKDIR, "desired.json")
