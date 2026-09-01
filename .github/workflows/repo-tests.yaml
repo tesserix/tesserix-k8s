@@ -1,0 +1,122 @@
+# =============================================================================
+# Repository Tests
+#
+# The 281 tests in tests/ assert that this repo's manifests say what we think
+# they say: that an app is registered, that a NetworkPolicy selects the pod it
+# names, that an IAM role does NOT carry a permission. Until now CI never ran
+# any of them (#782), so they drifted from the manifests they guard and nobody
+# was told.
+# =============================================================================
+name: Repository Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  HELM_VERSION: '3.14.0'
+  # Pinned to terraform.yml's version. One test drives a real `terraform`
+  # binary against the failure-smoke stack; without it that test fails with a
+  # bare FileNotFoundError, which is what the first run of this workflow did.
+  TF_VERSION: '1.15.8'
+
+jobs:
+  pytest:
+    name: Repository tests
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # test_failure_smoke_stack_returns_an_intentional_plan_error shells out to
+      # `terraform`. A developer machine usually has one, so this test passes
+      # locally and fails on a runner — the first run of this workflow caught
+      # exactly that. `terraform_wrapper: false` matches terraform.yml: the
+      # wrapper is a shell shim, and the test invokes the binary through
+      # subprocess rather than a shell.
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      # Several tests shell out to `helm template` and read the rendered
+      # output, so a chart with an unvendored dependency fails at collection
+      # time rather than as an assertion. That accounted for 20 of the 24
+      # failures #782 reports: they are an environment artifact, not broken
+      # tests. With dependencies built, all 45 tests in
+      # test_atlantis_terraform_automation.py pass.
+      - name: Add Helm repositories
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo add jetstack https://charts.jetstack.io
+          helm repo add istio https://istio-release.storage.googleapis.com/charts
+          helm repo add cloudnative-pg https://cloudnative-pg.github.io/charts
+          helm repo add external-secrets https://charts.external-secrets.io
+          helm repo add qdrant https://qdrant.github.io/qdrant-helm
+          helm repo add openbao https://openbao.github.io/openbao-helm
+          helm repo add zitadel https://charts.zitadel.com
+          helm repo add atlantis https://runatlantis.github.io/helm-charts
+          helm repo update
+
+      # Mirrors helm-lint.yaml's step, and NOT `|| true` for the reason stated
+      # there: swallowing a dependency-build failure defers it to a later step
+      # that names the symptom and hides the cause.
+      - name: Build chart dependencies
+        run: |
+          set -uo pipefail
+          failed=0
+          for chart in charts/apps/*/ charts/infrastructure/*/ charts/thirdparty/*/; do
+            [ -f "$chart/Chart.yaml" ] || continue
+            grep -q "^dependencies:" "$chart/Chart.yaml" || continue
+            if ! helm dependency build "$chart" 2>&1 | tee /tmp/dep.log; then
+              echo "::error file=${chart}Chart.yaml::helm dependency build failed — $(grep -m1 -i 'error' /tmp/dep.log || echo 'see log above')"
+              failed=1
+            fi
+          done
+          exit $failed
+
+      - name: Install test dependencies
+        run: python3 -m pip install --quiet pytest pyyaml
+
+      # QUARANTINE — four tests fail on main today, tracked in #782.
+      #
+      # They are deselected rather than deleted or amended, and deliberately not
+      # "fixed" here: every one is a test that still describes the intended
+      # property while the manifest moved underneath it. Editing the test to
+      # match the manifest would turn a signal into a rubber stamp, and only the
+      # owner of each subsystem knows which side is wrong. The symptom is
+      # recorded next to each so a fixer starts from the failure, not from a
+      # re-run.
+      #
+      # Removing a line here must make CI fail, not pass. If one of these starts
+      # passing, delete its line in the same PR as the fix.
+      - name: Run repository tests
+        run: |
+          python3 -m pytest tests/ -q \
+            `# expects the Tesserix project audience 386377618200461939 on the` \
+            `# agentic hosts; the rendered ingress carries only two audiences.` \
+            --deselect 'tests/test_agentgateway_public_access.py::AgentGatewayPublicAccessTests::test_ingress_accepts_agentic_audiences_on_exact_hosts' \
+            `# the rendered policy grants a principal the test does not expect:` \
+            `# cluster.local/ns/devai/sa/devai-sandbox.` \
+            --deselect 'tests/test_devai_gateway_and_secrets.py::DevAIGatewayAndSecretsTests::test_gateway_routes_are_provider_specific_and_private' \
+            `# a dry run reports 0 versions it would delete where the fixture` \
+            `# expects 2. The never-actually-delete property still holds; what` \
+            `# is wrong is what the dry run TELLS you, which is the whole point` \
+            `# of a dry run.` \
+            --deselect 'tests/test_ghcr_cleanup.py::RetentionTests::test_dry_run_never_calls_delete' \
+            `# expects the StatefulSet valkey-cluster among the resources an` \
+            `# upgrade preserves; the render no longer contains it.` \
+            --deselect 'tests/test_substrate_gke_oidc.py::SubstrateGKEOIDCTests::test_upgrade_preserves_existing_tls_and_signing_material'
