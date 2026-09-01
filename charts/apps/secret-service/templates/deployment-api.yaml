@@ -41,14 +41,6 @@ spec:
               value: production
             - name: PORT
               value: {{ .Values.api.port | quote }}
-            - name: APP_BASE_URL
-              value: https://{{ .Values.host }}
-            - name: ALLOWED_ORIGINS
-              value: https://{{ .Values.host }}
-            - name: SESSION_TTL
-              value: {{ .Values.sessionTTL | quote }}
-            - name: ADMIN_EMAILS
-              value: {{ join "," .Values.adminEmails | quote }}
             - name: SECRET_BACKENDS
               value: {{ join "," .Values.backends.enabled | quote }}
             - name: SECRET_BACKEND_DEFAULT
@@ -67,16 +59,23 @@ spec:
               value: {{ .Values.openbao.kubernetesRole | quote }}
             - name: OPENBAO_K8S_MOUNT
               value: {{ .Values.openbao.kubernetesMount | quote }}
-            - name: WORKLOAD_SECRET_BROKER_ENABLED
-              value: {{ .Values.workloadSecretBroker.enabled | quote }}
-            - name: WORKLOAD_SECRET_AUDIENCE
-              value: {{ .Values.workloadSecretBroker.audience | quote }}
-            - name: WORKLOAD_SECRET_ALLOWED_SUBJECTS
-              value: {{ join "," .Values.workloadSecretBroker.allowedSubjects | quote }}
-            - name: WORKLOAD_SECRET_NAMESPACE
-              value: {{ .Values.workloadSecretBroker.namespace | quote }}
-            - name: WORKLOAD_SECRET_APP
-              value: {{ .Values.workloadSecretBroker.app | quote }}
+            # ZITADEL_CONSOLE_CLIENT_ID must be set: verify.go compares the
+            # bearer token's azp against this explicit value, and an operator
+            # calling through any other client is recorded as KindService
+            # instead of a human (cutover design §5).
+            - name: ZITADEL_ISSUER
+              value: {{ .Values.zitadel.issuer | quote }}
+            - name: ZITADEL_PROJECT_ID
+              value: {{ .Values.zitadel.projectId | quote }}
+            - name: ZITADEL_CONSOLE_CLIENT_ID
+              value: {{ .Values.zitadel.consoleClientID | quote }}
+            # The WORKLOAD_SECRET_* env vars are gone: this binary (main-4a2c28f)
+            # has no broker endpoint and reads none of them (secrets-api's
+            # config.go). `workloadSecretBroker` itself stays in values.yaml only
+            # because the Istio principal rule and the allow-ingress-devai-broker
+            # NetworkPolicy below still read its fields — removing those would
+            # silently foreclose the integration rather than decide against it
+            # (cutover design §8).
             - name: GITHUB_OWNER
               value: {{ .Values.gitops.owner | quote }}
             - name: GITHUB_REPO
