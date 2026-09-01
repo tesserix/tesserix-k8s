@@ -233,6 +233,58 @@ class LoginPolicyTest(unittest.TestCase):
                 bootstrap.reconcile_login_policy(dict(LIVE_LOGIN_POLICY))
 
 
+class OrgLoginPolicyTest(unittest.TestCase):
+    """Org custom policies do not inherit the instance policy; registration is
+    opened per org, and an org that fell back to the default policy is drift."""
+
+    ORGS = ("POST", "/admin/v1/orgs/_search")
+    ORG_LIST = (200, json.dumps({"result": [{"id": "org-1", "name": "TESSERIX"}]}).encode())
+    DESIRED = {"org": "TESSERIX", "policy": {"allowRegister": True}}
+
+    def test_no_write_when_policy_matches(self):
+        recorder = Recorder({
+            self.ORGS: self.ORG_LIST,
+            ("GET", "/management/v1/policies/login"): (200, json.dumps({"policy": {"allowRegister": True, "isDefault": False}}).encode()),
+        })
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_org_login_policy(dict(self.DESIRED))
+        self.assertEqual(recorder.writes, [self.ORGS])
+
+    def test_writes_when_registration_is_closed(self):
+        recorder = Recorder({
+            self.ORGS: self.ORG_LIST,
+            ("GET", "/management/v1/policies/login"): (200, json.dumps({"policy": {"allowRegister": False, "isDefault": False, "allowUsernamePassword": True}}).encode()),
+        })
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_org_login_policy(dict(self.DESIRED))
+        self.assertIn(("PUT", "/management/v1/policies/login"), recorder.writes)
+        sent = [call[2] for call in recorder.calls if call[:2] == ("PUT", "/management/v1/policies/login")][0]
+        self.assertEqual(sent["allowRegister"], True)
+        self.assertEqual(sent["allowUsernamePassword"], True)
+        put_headers = [h for path, h in recorder.headers if path == "/management/v1/policies/login"]
+        self.assertTrue(all(h.get("x-zitadel-orgid") == "org-1" for h in put_headers))
+
+    def test_raises_when_org_inherits_default_policy(self):
+        recorder = Recorder({
+            self.ORGS: self.ORG_LIST,
+            ("GET", "/management/v1/policies/login"): (200, json.dumps({"policy": {"allowRegister": False, "isDefault": True}}).encode()),
+        })
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_org_login_policy(dict(self.DESIRED))
+        self.assertNotIn(("PUT", "/management/v1/policies/login"), recorder.writes)
+
+    def test_raises_on_api_error(self):
+        recorder = Recorder({
+            self.ORGS: self.ORG_LIST,
+            ("GET", "/management/v1/policies/login"): (200, json.dumps({"policy": {"allowRegister": False, "isDefault": False}}).encode()),
+            ("PUT", "/management/v1/policies/login"): (403, b'{"message":"nope"}'),
+        })
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_org_login_policy(dict(self.DESIRED))
+
+
 class LockoutPolicyTest(unittest.TestCase):
     """maxOtpAttempts is the only bound on TOTP guessing, so nothing here may silently no-op."""
 

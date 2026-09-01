@@ -445,10 +445,17 @@ a client secret the reconciler deliberately does not hold.
 
 Both connectors previously carried `isAutoCreation: true`, which contradicted
 `allowRegister: false` and let any Google account self-provision a user. Turned
-off on both 2026-08-28 (#675); the survivor now runs `isAutoCreation: false`,
-`isCreationAllowed: false`, `isLinkingAllowed: true`,
-`autoLinking: AUTO_LINKING_OPTION_EMAIL` — existing humans still link by verified
-email, new ones must be created by the platform.
+off on both 2026-08-28 (#675) while the platform was staff-only. **Reopened
+2026-09-01 for consumer signup:** HomeChef customers self-register with email
+or their own Google account, so the survivor now runs `isAutoCreation: true`,
+`isCreationAllowed: true`, `isLinkingAllowed: true`,
+`autoLinking: AUTO_LINKING_OPTION_EMAIL`, and `allowRegister: true` is asserted
+on both the instance policy and the TESSERIX org's custom policy (orgs with a
+custom `isDefault=false` policy never inherit the instance value — the new
+`orgLoginPolicies` block in `zitadel-bootstrap` exists for exactly that).
+Authorization now rests where it belongs: self-registered users hold no role
+grants and no memberships; privileged surfaces are gated by role grants and
+app-side RBAC, not by closed registration.
 
 **`isAutoUpdate` is off on the TESSERIX connector, and must stay off.** With it
 on, Zitadel rewrites the linked user's profile from Google's claims on *every*

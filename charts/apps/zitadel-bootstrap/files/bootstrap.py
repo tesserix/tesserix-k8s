@@ -318,6 +318,41 @@ def reconcile_smtp(desired):
     log("smtp: reactivated")
 
 
+def reconcile_org_login_policy(desired):
+    """Overlay declared fields onto an org's custom login policy.
+
+    Orgs with a custom (isDefault=false) policy do not inherit the instance
+    policy, so instance-level allowRegister never reaches them. Same
+    replace-not-patch caveat as the instance policy: PUT the whole live body
+    with only the declared fields overlaid. An org that fell back to the
+    default policy is drift between git and the console, not something to
+    silently create a custom policy for.
+    """
+    org = next((item for item in list_orgs() if item["name"] == desired["org"]), None)
+    if not org:
+        raise SystemExit(f"login policy org {desired['org']!r} does not exist")
+    scope = {"x-zitadel-orgid": org["id"]}
+    status, payload = request("GET", "/management/v1/policies/login", headers=scope)
+    if status != 200:
+        raise SystemExit(f"login policy read for {desired['org']} failed: {status} {payload!r}")
+    live = json.loads(payload)["policy"]
+    if live.get("isDefault"):
+        raise SystemExit(
+            f"org {desired['org']} inherits the instance login policy; resolve which "
+            "policy the org should run before asserting fields on it here"
+        )
+    drift = drift_between(desired["policy"], live)
+    if not drift:
+        log(f"login policy {desired['org']}: in sync")
+        return
+    body = strip_readonly(live)
+    body.update(desired["policy"])
+    log(f"login policy {desired['org']}: updating {sorted(drift)}")
+    status, payload = request("PUT", "/management/v1/policies/login", body, headers=scope)
+    if status != 200:
+        raise SystemExit(f"login policy update for {desired['org']} failed: {status} {payload!r}")
+
+
 def reconcile_org_idps(desired_idps):
     """Assert an org's IdP connector without ever holding its client secret.
 
@@ -670,6 +705,8 @@ def main():
     reconcile_default_org(desired["defaultOrg"])
     reconcile_org_branding(desired["selfBrandedOrgs"])
     reconcile_smtp(desired.get("smtp"))
+    for policy in desired.get("orgLoginPolicies", []):
+        reconcile_org_login_policy(policy)
     reconcile_org_idps(desired.get("idps", []))
     for project in desired.get("platformProjects", []):
         reconcile_platform_project(project)

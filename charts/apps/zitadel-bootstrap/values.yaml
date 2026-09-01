@@ -50,10 +50,10 @@ desired:
   loginPolicy:
     allowUsernamePassword: true
     allowExternalIdp: true
-    # Self-registration is how an unrelated Google account got an admin-console
-    # login once before; tenants are provisioned by the platform, not by anyone
-    # who can reach the hostname.
-    allowRegister: false
+    # Open since 2026-09-01: HomeChef is a consumer product and customers
+    # self-register (email/password and Google). Privileged surfaces are gated
+    # by role grants and app-side RBAC, not by closed registration.
+    allowRegister: true
     forceMfa: false
     hidePasswordReset: false
     ignoreUnknownUsernames: true
@@ -191,6 +191,13 @@ desired:
   # their login page is wrong. The reason instance-level was once wanted (an
   # unscoped login resolving the default org's connector) disappeared when
   # defaultOrg became TESSERIX, where the humans already are.
+  # Orgs with a custom (isDefault=false) login policy do not inherit the
+  # instance policy above; registration must be opened on the org policy too.
+  orgLoginPolicies:
+    - org: TESSERIX
+      policy:
+        allowRegister: true
+
   idps:
     - org: TESSERIX
       name: Google
@@ -201,13 +208,12 @@ desired:
         - profile
         - email
       options:
-        # Linking on, creation off: an existing human links by verified email,
-        # a stranger with a Google account gets nothing. Auto-creation on is how
-        # an unrelated account could self-provision, which allowRegister: false
-        # exists to prevent.
+        # Linking and creation on (2026-09-01): customers sign up with their
+        # own Google account, and an existing human still links by verified
+        # email. Authorization lives in role grants, not closed registration.
         isLinkingAllowed: true
-        isCreationAllowed: false
-        isAutoCreation: false
+        isCreationAllowed: true
+        isAutoCreation: true
         # OFF, and it must stay off. On, Zitadel rewrites the linked user's
         # profile from Google's claims at every sign-in — instance-admin's
         # display name was edited twice in the console, reported saved both
