@@ -405,6 +405,135 @@ def reconcile_org_idps(desired_idps):
         log(f"idp {name}: bound to the {desired['org']} login policy")
 
 
+def reconcile_machine_users(machine_users):
+    """Create a declared machine user if it does not exist yet.
+
+    Every machine user previously had to be created by hand in the console,
+    and nothing recorded why it existed. `description` is required here for
+    exactly that reason: it is the only field that tells a future reader what
+    the account is for, and this estate has repeatedly been bitten by correct
+    things declared nowhere (svc-onboarding's IAM_OWNER grant, for one — see
+    assert_machine_iam_owners_allowlisted).
+
+    Runs before reconcile_platform_project so a machine user created here can
+    be granted project roles in the same pass, rather than needing two runs.
+
+    The credential itself (a PAT or machine key) is never handled here: it can
+    only be read once at issue time, so it still goes into Secret Manager by
+    hand after this creates the user. See docs/zitadel.md "What is not in git".
+    """
+    for machine in machine_users:
+        if not machine.get("description"):
+            raise SystemExit(
+                f"machine user {machine['username']}: description is required, "
+                "so a future reader knows why this account exists"
+            )
+        org = next((item for item in list_orgs() if item["name"] == machine["org"]), None)
+        if not org:
+            raise SystemExit(f"machine user org {machine['org']!r} does not exist")
+        scope = {"x-zitadel-orgid": org["id"]}
+
+        user_id = find_user(machine["username"])
+        if user_id:
+            log(f"machine user {machine['username']}: in sync")
+            continue
+
+        status, payload = request(
+            "POST",
+            "/management/v1/users/machine",
+            {
+                "userName": machine["username"],
+                "name": machine["name"],
+                "description": machine["description"],
+                "accessTokenType": machine["accessTokenType"],
+            },
+            headers=scope,
+        )
+        if status != 200:
+            raise SystemExit(f"machine user {machine['username']} create failed: {status} {payload!r}")
+        log(f"machine user {machine['username']}: created")
+
+
+def reconcile_instance_members(instance_members, admins):
+    """Grant or update instance-level memberships with an explicit role list.
+
+    reconcile_admins hardcodes IAM_OWNER for desired.admins; this reconciles
+    desired.instanceMembers, where the caller states the roles explicitly. The
+    two must never target the same login — two reconcilers writing different
+    roles to one membership would flap every 30 minutes, which is worse than
+    leaving the grant as a manual step. That is checked up front, against the
+    raw login lists, before either side makes an API call.
+    """
+    overlap = sorted(set(admins) & {member["login"] for member in instance_members})
+    if overlap:
+        raise SystemExit(
+            f"login(s) {', '.join(overlap)} appear in both desired.admins and "
+            "desired.instanceMembers; each login must be reconciled by exactly one of them"
+        )
+
+    live = {
+        member["userId"]: member.get("roles", [])
+        for member in json.loads(
+            request("POST", "/admin/v1/members/_search", {"query": {"limit": 100}})[1]
+        ).get("result", [])
+    }
+    for member in instance_members:
+        user_id = find_user(member["login"])
+        if not user_id:
+            log(f"instance member {member['login']}: no such user yet, skipping")
+            continue
+        wanted_roles = sorted(member["roles"])
+        current_roles = sorted(live.get(user_id, []))
+        if current_roles == wanted_roles:
+            log(f"instance member {member['login']}: in sync")
+            continue
+        if user_id in live:
+            status, payload = request("PUT", f"/admin/v1/members/{user_id}", {"roles": wanted_roles})
+        else:
+            status, payload = request("POST", "/admin/v1/members", {"userId": user_id, "roles": wanted_roles})
+        if status != 200:
+            raise SystemExit(f"instance member {member['login']} grant failed: {status} {payload!r}")
+        log(f"instance member {member['login']}: roles reconciled")
+
+
+def assert_machine_iam_owners_allowlisted(allowed):
+    """Fail the run if an un-declared machine user holds instance-wide IAM_OWNER.
+
+    A live query against the instance found two: iam-admin, this reconciler's
+    own credential, and svc-onboarding, documented only in
+    docs/onboarding-api.md and absent from every identity-facing list. A
+    machine user with IAM_OWNER can create and delete organizations, users and
+    grants across the whole platform — that is not something a new grant
+    should acquire silently.
+
+    Reports rather than revokes, same precedent as assert_reserved_org_clean:
+    revoking a service account's own instance role from underneath it can take
+    its callers down, and that is a decision for whoever put the grant there,
+    not for a scheduled job.
+
+    No extra API call: /admin/v1/members/_search already returns userType,
+    preferredLoginName and userId per member, confirmed against the live
+    instance.
+    """
+    status, payload = request("POST", "/admin/v1/members/_search", {"query": {"limit": 100}})
+    if status != 200:
+        raise SystemExit(f"instance member search failed: {status} {payload!r}")
+    allowed_set = set(allowed)
+    strays = sorted(
+        member.get("preferredLoginName") or member.get("userId")
+        for member in json.loads(payload).get("result", [])
+        if member.get("userType") == "TYPE_MACHINE"
+        and "IAM_OWNER" in member.get("roles", [])
+        and member.get("preferredLoginName") not in allowed_set
+    )
+    if strays:
+        raise SystemExit(
+            f"machine user(s) hold IAM_OWNER without being in desired.allowedIamOwnerMachines: "
+            f"{', '.join(strays)}. Add them with a reason, or revoke the grant."
+        )
+    log("machine IAM_OWNER holders: allowlisted")
+
+
 def reconcile_platform_project(desired):
     """Reconcile a platform resource-server project without managing secrets.
 
@@ -667,14 +796,20 @@ def main():
     reconcile_login_policy(desired["loginPolicy"])
     reconcile_lockout_policy(desired["lockoutPolicy"])
     reconcile_admins(desired["admins"])
+    reconcile_instance_members(desired.get("instanceMembers", []), desired["admins"])
     reconcile_default_org(desired["defaultOrg"])
     reconcile_org_branding(desired["selfBrandedOrgs"])
     reconcile_smtp(desired.get("smtp"))
     reconcile_org_idps(desired.get("idps", []))
+    # Before platform projects: a machine user created here can be granted
+    # project roles in the same pass.
+    reconcile_machine_users(desired.get("machineUsers", []))
     for project in desired.get("platformProjects", []):
         reconcile_platform_project(project)
-    # Last: a stray project is a report, and must not stop branding converging.
+    # Last: a stray project or an unlisted IAM_OWNER is a report, and must not
+    # stop branding converging.
     assert_reserved_org_clean(desired["reservedOrg"]["name"], desired["reservedOrg"]["allowedProjects"])
+    assert_machine_iam_owners_allowlisted(desired.get("allowedIamOwnerMachines", []))
     log("bootstrap complete")
 
 

@@ -141,6 +141,47 @@ desired:
     - samyak.rout@gmail.com
     - mahesh.sangawar@gmail.com
 
+  # Instance memberships with an explicit role list, for anyone who should not
+  # simply get IAM_OWNER through `admins`. A login must not appear in both
+  # lists — reconcile_instance_members fails the run if one does, rather than
+  # letting the two reconcilers fight over the same membership every 30
+  # minutes. Empty for now: nothing today needs a narrower instance role than
+  # IAM_OWNER or the roles a machine user already has through project grants.
+  instanceMembers: []
+
+  # Machine users created once and then left alone: reconcile_machine_users
+  # only creates a missing one, it never updates an existing one. Their
+  # credential (a PAT or machine key) can only be read at issue time, so it is
+  # created by hand in the console and put into GCP Secret Manager after this
+  # reconciler creates the account — see docs/zitadel.md "What is not in git".
+  machineUsers:
+    - org: ZITADEL
+      username: iam-admin
+      name: iam-admin
+      description: >-
+        The service user behind this reconciler's own PAT (iam-admin-pat).
+        Also holds the machine key used to create tenant organizations and
+        IdP connections through the API. See docs/zitadel.md "Credentials".
+      accessTokenType: ACCESS_TOKEN_TYPE_BEARER
+    - org: TESSERIX
+      username: svc-onboarding
+      name: svc-onboarding
+      description: >-
+        Authenticates the onboarding API to Zitadel with a private-key JWT to
+        create tenant organizations (S2/S3). Holds instance IAM_OWNER because
+        Zitadel has no narrower org-create role — see
+        docs/onboarding-api.md section 9.1 and allowedIamOwnerMachines below.
+      accessTokenType: ACCESS_TOKEN_TYPE_JWT
+
+  # Machine users allowed to hold instance-wide IAM_OWNER. Anything else with
+  # that role fails the run: a machine user with IAM_OWNER can create and
+  # delete organizations, users and grants across the whole platform, and a
+  # new one appearing should never pass unnoticed. Each entry needs a reason;
+  # a live query against the instance found exactly these two.
+  allowedIamOwnerMachines:
+    - iam-admin # this reconciler's own credential
+    - svc-onboarding # tenant org creation; see docs/onboarding-api.md 9.1, no narrower Zitadel role exists
+
   # Where new users and every product project belong.
   defaultOrg: TESSERIX
 

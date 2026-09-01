@@ -1053,6 +1053,181 @@ class SmtpTest(unittest.TestCase):
         self.assertEqual(recorder.calls, [])
 
 
+class MachineUserTest(unittest.TestCase):
+    """Creates a declared machine user once; never touches one that exists."""
+
+    MACHINE = {
+        "org": "TESSERIX",
+        "username": "svc-onboarding",
+        "name": "svc-onboarding",
+        "description": "Authenticates the onboarding API to Zitadel.",
+        "accessTokenType": "ACCESS_TOKEN_TYPE_JWT",
+    }
+
+    def _recorder(self, users=None):
+        return Recorder({
+            ("POST", "/admin/v1/orgs/_search"): (200, json.dumps(ORGS).encode()),
+            ("POST", "/v2/users"): (200, json.dumps(users if users is not None else {"result": []}).encode()),
+        })
+
+    def test_no_write_when_user_already_exists(self):
+        existing = {"result": [{"userId": "m-1", "username": "svc-onboarding"}]}
+        recorder = self._recorder(existing)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_machine_users([self.MACHINE])
+        self.assertEqual(recorder.writes, [
+            ("POST", "/admin/v1/orgs/_search"),
+            ("POST", "/v2/users"),
+        ])
+
+    def test_creates_a_missing_machine_user(self):
+        recorder = self._recorder()
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_machine_users([self.MACHINE])
+        creates = [call for call in recorder.calls if call[:2] == ("POST", "/management/v1/users/machine")]
+        self.assertEqual(len(creates), 1)
+        self.assertEqual(creates[0][2], {
+            "userName": "svc-onboarding",
+            "name": "svc-onboarding",
+            "description": "Authenticates the onboarding API to Zitadel.",
+            "accessTokenType": "ACCESS_TOKEN_TYPE_JWT",
+        })
+
+    def test_create_is_scoped_to_the_declared_org(self):
+        recorder = self._recorder()
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_machine_users([self.MACHINE])
+        scoped = [headers.get("x-zitadel-orgid") for path, headers in recorder.headers
+                  if path == "/management/v1/users/machine"]
+        self.assertEqual(scoped, ["org-tesserix"])
+
+    def test_missing_description_fails_without_any_api_call(self):
+        """description is the only record of why the account exists."""
+        machine = dict(self.MACHINE, description="")
+        recorder = Recorder({})
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.reconcile_machine_users([machine])
+        self.assertIn("description", str(caught.exception))
+        self.assertEqual(recorder.calls, [])
+
+    def test_missing_org_fails_closed(self):
+        machine = dict(self.MACHINE, org="NOPE")
+        recorder = self._recorder()
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_machine_users([machine])
+
+
+class InstanceMemberTest(unittest.TestCase):
+    """Grants or updates an explicit role list, and never fights reconcile_admins."""
+
+    def _recorder(self, live_members=None, users=None):
+        return Recorder({
+            ("POST", "/admin/v1/members/_search"): (
+                200, json.dumps({"result": live_members if live_members is not None else []}).encode()),
+            ("POST", "/v2/users"): (200, json.dumps(users if users is not None else AdminTest.USERS).encode()),
+        })
+
+    def test_no_write_when_roles_already_match(self):
+        recorder = self._recorder(live_members=[{"userId": "u-1", "roles": ["IAM_OWNER_VIEWER"]}])
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_instance_members(
+                [{"login": "samyak.rout@gmail.com", "roles": ["IAM_OWNER_VIEWER"]}], admins=[]
+            )
+        self.assertEqual(recorder.writes, [
+            ("POST", "/admin/v1/members/_search"),
+            ("POST", "/v2/users"),
+        ])
+
+    def test_grants_when_membership_is_missing(self):
+        recorder = self._recorder(live_members=[])
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_instance_members(
+                [{"login": "samyak.rout@gmail.com", "roles": ["IAM_OWNER_VIEWER"]}], admins=[]
+            )
+        grants = [call for call in recorder.calls if call[:2] == ("POST", "/admin/v1/members")]
+        self.assertEqual([call[2] for call in grants], [{"userId": "u-1", "roles": ["IAM_OWNER_VIEWER"]}])
+
+    def test_updates_when_roles_have_drifted(self):
+        recorder = self._recorder(live_members=[{"userId": "u-1", "roles": ["IAM_OWNER_VIEWER"]}])
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_instance_members(
+                [{"login": "samyak.rout@gmail.com", "roles": ["IAM_OWNER_VIEWER", "IAM_USER_MANAGER"]}], admins=[]
+            )
+        updates = [call for call in recorder.calls if call[:2] == ("PUT", "/admin/v1/members/u-1")]
+        self.assertEqual([call[2] for call in updates], [{"roles": ["IAM_OWNER_VIEWER", "IAM_USER_MANAGER"]}])
+
+    def test_skips_a_login_that_has_never_signed_in(self):
+        recorder = self._recorder(live_members=[], users={"result": []})
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_instance_members(
+                [{"login": "nobody@gmail.com", "roles": ["IAM_OWNER_VIEWER"]}], admins=[]
+            )
+        self.assertNotIn(("POST", "/admin/v1/members"), recorder.writes)
+
+    def test_login_in_both_admins_and_instance_members_fails_before_any_call(self):
+        """Two reconcilers writing different roles to one membership would flap every run."""
+        recorder = self._recorder()
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.reconcile_instance_members(
+                    [{"login": "samyak.rout@gmail.com", "roles": ["IAM_OWNER_VIEWER"]}],
+                    admins=["samyak.rout@gmail.com"],
+                )
+        self.assertIn("samyak.rout@gmail.com", str(caught.exception))
+        self.assertEqual(recorder.calls, [])
+
+
+class MachineIamOwnerAllowlistTest(unittest.TestCase):
+    """A machine user with instance IAM_OWNER can create/delete anything platform-wide."""
+
+    def _recorder(self, members):
+        return Recorder({("POST", "/admin/v1/members/_search"): (200, json.dumps({"result": members}).encode())})
+
+    def test_passes_when_the_only_machine_owner_is_allowlisted(self):
+        members = [{"userId": "m-1", "userType": "TYPE_MACHINE", "preferredLoginName": "iam-admin",
+                    "roles": ["IAM_OWNER"]}]
+        recorder = self._recorder(members)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.assert_machine_iam_owners_allowlisted(["iam-admin"])
+
+    def test_fails_when_an_unlisted_machine_holds_iam_owner(self):
+        members = [
+            {"userId": "m-1", "userType": "TYPE_MACHINE", "preferredLoginName": "iam-admin", "roles": ["IAM_OWNER"]},
+            {"userId": "m-2", "userType": "TYPE_MACHINE", "preferredLoginName": "svc-onboarding",
+             "roles": ["IAM_OWNER"]},
+        ]
+        recorder = self._recorder(members)
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.assert_machine_iam_owners_allowlisted(["iam-admin"])
+        self.assertIn("svc-onboarding", str(caught.exception))
+
+    def test_ignores_a_human_holding_iam_owner(self):
+        """Human IAM_OWNER holders are what reconcile_admins already governs."""
+        members = [{"userId": "u-1", "userType": "TYPE_HUMAN", "preferredLoginName": "samyak.rout@gmail.com",
+                    "roles": ["IAM_OWNER"]}]
+        recorder = self._recorder(members)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.assert_machine_iam_owners_allowlisted([])
+
+    def test_ignores_a_machine_without_iam_owner(self):
+        members = [{"userId": "m-1", "userType": "TYPE_MACHINE", "preferredLoginName": "some-bot",
+                    "roles": ["IAM_OWNER_VIEWER"]}]
+        recorder = self._recorder(members)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.assert_machine_iam_owners_allowlisted([])
+
+    def test_is_a_read_only_check(self):
+        members = [{"userId": "m-2", "userType": "TYPE_MACHINE", "preferredLoginName": "rogue", "roles": ["IAM_OWNER"]}]
+        recorder = self._recorder(members)
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.assert_machine_iam_owners_allowlisted([])
+        self.assertEqual([c for c in recorder.calls if c[0] in ("PUT", "DELETE") or (c[0] == "POST" and not c[1].endswith("_search"))], [])
+
+
 class MainTest(unittest.TestCase):
     def _responses(self):
         return {
@@ -1084,12 +1259,15 @@ class MainTest(unittest.TestCase):
                 "lockoutPolicy": LIVE_LOCKOUT_POLICY,
                 "assets": {"logo": "logo-light.png"},
                 "admins": ["samyak.rout@gmail.com"],
+                "instanceMembers": [],
                 "defaultOrg": "TESSERIX",
                 "selfBrandedOrgs": [],
                 "smtp": SmtpTest.SMTP,
                 "idps": [OrgIdpTest.IDP],
+                "machineUsers": [],
                 "platformProjects": [],
                 "reservedOrg": {"name": "ZITADEL", "allowedProjects": ["ZITADEL"]},
+                "allowedIamOwnerMachines": [],
             }, fh)
 
     def test_fully_in_sync_instance_performs_no_writes(self):
@@ -1121,6 +1299,44 @@ class MainTest(unittest.TestCase):
         with mock.patch.object(bootstrap, "request", recorder), mock.patch.object(bootstrap, "CONFIG_PATH", config):
             bootstrap.main()
         self.assertIn(("POST", "/admin/v1/policies/label/_activate"), recorder.writes)
+
+    def test_creates_a_declared_machine_user_before_platform_projects(self):
+        config = os.path.join(WORKDIR, "desired.json")
+        with open(config, "w") as fh:
+            json.dump({
+                "labelPolicy": LIVE_LABEL_POLICY,
+                "loginPolicy": LIVE_LOGIN_POLICY,
+                "lockoutPolicy": LIVE_LOCKOUT_POLICY,
+                "assets": {"logo": "logo-light.png"},
+                "admins": ["samyak.rout@gmail.com"],
+                "instanceMembers": [],
+                "defaultOrg": "TESSERIX",
+                "selfBrandedOrgs": [],
+                "smtp": SmtpTest.SMTP,
+                "idps": [OrgIdpTest.IDP],
+                "machineUsers": [MachineUserTest.MACHINE],
+                "platformProjects": [],
+                "reservedOrg": {"name": "ZITADEL", "allowedProjects": ["ZITADEL"]},
+                "allowedIamOwnerMachines": [],
+            }, fh)
+        recorder = Recorder(self._responses())
+        with mock.patch.object(bootstrap, "request", recorder), mock.patch.object(bootstrap, "CONFIG_PATH", config):
+            bootstrap.main()
+        self.assertIn(("POST", "/management/v1/users/machine"), recorder.writes)
+
+    def test_fails_when_an_unlisted_machine_holds_iam_owner(self):
+        config = os.path.join(WORKDIR, "desired.json")
+        self._config(config)
+        responses = self._responses()
+        responses[("POST", "/admin/v1/members/_search")] = (200, json.dumps({"result": [
+            {"userId": "u-1", "roles": ["IAM_OWNER"]},
+            {"userId": "m-2", "userType": "TYPE_MACHINE", "preferredLoginName": "rogue-bot", "roles": ["IAM_OWNER"]},
+        ]}).encode())
+        recorder = Recorder(responses)
+        with mock.patch.object(bootstrap, "request", recorder), mock.patch.object(bootstrap, "CONFIG_PATH", config):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.main()
+        self.assertIn("rogue-bot", str(caught.exception))
 
 
 if __name__ == "__main__":
