@@ -2276,6 +2276,17 @@ CREATE TABLE public.users (
 );
 
 
+CREATE TABLE public.user_identities (
+    id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    provider character varying(32) NOT NULL,
+    subject character varying(255) NOT NULL,
+    email character varying(255),
+    created_at timestamp with time zone,
+    last_login_at timestamp with time zone
+);
+
+
 --
 -- Name: wallet_txns; Type: TABLE; Schema: public; Owner: -
 --
@@ -3162,6 +3173,14 @@ ALTER TABLE ONLY public.transactions
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_identities user_identities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_identities
+    ADD CONSTRAINT user_identities_pkey PRIMARY KEY (id);
 
 
 --
@@ -4838,17 +4857,31 @@ CREATE INDEX idx_users_email_pool ON public.users USING btree (email, auth_pool)
 
 
 --
--- Name: idx_users_g_ip_uid; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_user_identities_provider_subject; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_users_g_ip_uid ON public.users USING btree (gip_uid);
+CREATE UNIQUE INDEX idx_user_identities_provider_subject ON public.user_identities USING btree (provider, subject);
 
 
 --
--- Name: idx_users_gip_uid; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_user_identities_subject; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX idx_users_gip_uid ON public.users USING btree (gip_uid) WHERE (gip_uid IS NOT NULL);
+CREATE INDEX idx_user_identities_subject ON public.user_identities USING btree (subject);
+
+
+--
+-- Name: idx_user_identities_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_user_identities_user_id ON public.user_identities USING btree (user_id);
+
+
+--
+-- Name: idx_users_gip_uid_nonempty; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_users_gip_uid_nonempty ON public.users USING btree (gip_uid) WHERE (gip_uid <> '');
 
 
 --
