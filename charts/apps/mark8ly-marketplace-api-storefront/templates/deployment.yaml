@@ -95,12 +95,9 @@ spec:
             # Resend always-on fallback; both optional so the pod starts
             # before the secrets sync (the engine then log-mails and warns).
             {{- if .Values.sendgrid }}
-            - name: SENDGRID_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.sendgrid.secretName }}
-                  key: {{ .Values.sendgrid.apiKeyKey }}
-                  optional: true
+            # SENDGRID_API_KEY deliberately unset — the key is dead
+            # ("401 Maximum credits exceeded") and setting it only put a
+            # broken provider in the fallback chain. See the admin chart.
             - name: EMAIL_FROM
               value: {{ .Values.sendgrid.emailFrom | quote }}
             {{- end }}

@@ -256,14 +256,15 @@ spec:
                   key: {{ .Values.stripeBilling.webhookSecretKey }}
                   optional: true
             {{- end }}
-            # Marketing M4 — Campaign email dispatch (SendGrid)
+            # Marketing M4 — Campaign email dispatch.
+            #
+            # SENDGRID_API_KEY is deliberately NOT set. internal/email builds
+            # its provider chain from whichever keys are non-empty, so wiring
+            # a SendGrid key put SendGrid in the chain behind Resend — and
+            # that account answers "401 Maximum credits exceeded". A dead
+            # fallback is worse than none: a Resend outage would fail over
+            # to it and lose the mail instead of failing loudly.
             {{- if .Values.sendgrid }}
-            - name: SENDGRID_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.sendgrid.secretName }}
-                  key: {{ .Values.sendgrid.apiKeyKey }}
-                  optional: true
             - name: EMAIL_FROM
               value: {{ .Values.sendgrid.emailFrom | quote }}
             {{- end }}
