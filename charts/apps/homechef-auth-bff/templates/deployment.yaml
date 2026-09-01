@@ -52,37 +52,12 @@ spec:
             # (COPY homechef-products.yaml /etc/auth-bff/homechef-products.yaml).
             - name: PRODUCTS_CONFIG_PATH
               value: {{ .Values.productsConfigPath | quote }}
-            - name: GIP_PROJECT_ID
-              value: {{ .Values.gip.projectId | quote }}
-            - name: GIP_PROJECT_NUMBER
-              value: {{ .Values.gip.projectNumber | quote }}
-            # GIP browser-exposed key (used server-side for password sign-in
-            # via the Identity Toolkit REST API, surfaced to the client for
-            # phone/social flows).
-            - name: GIP_WEB_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secrets.authBff }}
-                  key: GIP_WEB_API_KEY
-            # Per-app OAuth client secrets. Names match the
-            # `clientSecretEnv` fields in homechef-products.yaml — the
-            # productregistry resolver looks them up via os.Getenv at
-            # request time.
-            - name: HOMECHEF_CUSTOMER_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secrets.authBff }}
-                  key: HOMECHEF_CUSTOMER_CLIENT_SECRET
-            - name: HOMECHEF_BUSINESS_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secrets.authBff }}
-                  key: HOMECHEF_BUSINESS_CLIENT_SECRET
-            - name: HOMECHEF_INTERNAL_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.secrets.authBff }}
-                  key: HOMECHEF_INTERNAL_CLIENT_SECRET
+            # Zitadel hosted login; apps are public PKCE clients, so there
+            # are no per-app client secrets any more.
+            - name: ZITADEL_ISSUER
+              value: {{ .Values.zitadel.issuer | quote }}
+            - name: ZITADEL_PROJECT_ID
+              value: {{ .Values.zitadel.projectId | quote }}
             # Session — encrypted cookie shared across *.fe3dr.com.
             - name: SESSION_COOKIE_DOMAIN
               value: {{ .Values.session.cookieDomain | quote }}
