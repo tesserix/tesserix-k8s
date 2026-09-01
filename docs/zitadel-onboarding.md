@@ -83,7 +83,14 @@ secret exists at all:
 | Backend service | API | `PRIVATE_KEY_JWT` or client credentials | key or secret |
 
 A public client (SPA, native) that is issued a secret is a public client with a
-published secret. PKCE is not optional for those two.
+published secret. PKCE is not optional for those two. Its `client_id` is a
+public identifier, not a credential: it is safe to configure in a browser or
+mobile bundle. The security boundary is the combination of PKCE (the code is
+useless without the per-login verifier), exact redirect URI matching, and
+resource-server validation of signature, issuer, audience, expiry, and allowed
+algorithm. Never try to make a public client "confidential" by putting a
+secret in a frontend environment variable, mobile app, ConfigMap, or Secret
+Manager value later copied into either client.
 
 Set redirect URIs to the exact production URLs plus any preview hostnames.
 Zitadel matches them literally; a trailing-slash mismatch is a redirect failure
@@ -91,10 +98,13 @@ at sign-in with no useful error.
 
 ## Step 2. Store the credentials the way this estate stores credentials
 
-Never in git, never in a ConfigMap, never in the Argo Application's inline
-values. Client secrets go to GCP Secret Manager and reach the pod through
-External Secrets, exactly like [`zitadel.md`](zitadel.md) describes for
-Zitadel's own credentials:
+This step applies **only to confidential clients** (BFF token exchange,
+backend service, or machine-to-machine client). Public PKCE clients have no
+secret to store. Never put a confidential-client credential in Git, a
+ConfigMap, or an Argo Application's inline values. Store it in GCP Secret
+Manager and inject it into the server-side workload through External Secrets,
+exactly like [`zitadel.md`](zitadel.md) describes for Zitadel's own
+credentials:
 
 ```bash
 printf '%s' "$CLIENT_SECRET" | gcloud secrets create prod-<product>-oidc-client-secret \

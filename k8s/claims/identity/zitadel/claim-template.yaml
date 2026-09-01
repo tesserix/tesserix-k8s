@@ -10,6 +10,9 @@ spec:
   organization: TESSERIX
 ---
 # Add only after redirect URIs and the audience contract are approved.
+# `native` and `user_agent` are public PKCE clients. Their client ID is public;
+# do not add a client secret, machine key, or any other credential to this
+# claim. An installed app cannot protect one. Use exact redirect URIs only.
 apiVersion: identity.tesserix.app/v1alpha1
 kind: ZitadelApplication
 metadata:
@@ -24,3 +27,22 @@ spec:
     - com.example.product:/oauth/callback
   postLogoutRedirectUris:
     - com.example.product:/oauth/logout
+
+---
+# Browser-only SPA alternative. Use `user_agent` with the same public PKCE
+# model. A BFF or backend-to-backend workload needs a separate confidential
+# client and an explicit GCP Secret Manager handoff design.
+apiVersion: identity.tesserix.app/v1alpha1
+kind: ZitadelApplication
+metadata:
+  name: product-slug-web
+  namespace: identity-operator
+spec:
+  projectRef:
+    name: product-slug
+  displayName: Product web application
+  applicationType: user_agent
+  redirectUris:
+    - https://app.example.com/auth/callback
+  postLogoutRedirectUris:
+    - https://app.example.com/

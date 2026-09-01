@@ -4,6 +4,30 @@ This operator reconciles declarative Zitadel project and public OIDC
 application claims. It reads its machine key from External Secrets and writes
 only status identifiers back to claims; no client secret is created or stored.
 
+## Why public applications have no secret
+
+The operator creates `user_agent` and `native` applications as **public OIDC
+clients**. A browser SPA or installed mobile app cannot keep a client secret:
+any value bundled into JavaScript, an APK, or an IPA can be extracted and is
+therefore public. Creating a Secret Manager entry for such a value would give a
+false sense of security without protecting the client.
+
+Their client IDs are deliberately non-secret identifiers. Authentication is
+protected by Authorization Code with PKCE, exact registered redirect URIs, and
+server-side validation of the token signature, issuer, audience, expiry, and
+algorithm. The authorization code is bound to the client-generated PKCE
+verifier, so an intercepted code is not usable by an attacker without that
+verifier. Public clients must never use a wildcard redirect URI or embed a
+machine key, client secret, or service-account credential.
+
+Use a separate confidential client only when a server can keep credentials out
+of user-controlled software (for example, a backend-to-backend integration or
+a BFF token exchange). That is a different claim contract: its generated
+credential must be handed off directly to GCP Secret Manager and injected with
+External Secrets, never committed to Git or written into claim status. The
+current public-client operator contract intentionally does not create that
+kind of credential.
+
 Claims live in `k8s/claims/identity/zitadel/` and are reconciled by the
 `zitadel-claims` Argo CD Application into `identity-operator`, the namespace
 watched by this operator.
