@@ -149,6 +149,23 @@ desired:
   # IAM_OWNER or the roles a machine user already has through project grants.
   instanceMembers: []
 
+  # Org-level memberships, asserted but never created from here.
+  #
+  # ORG_OWNER_VIEWER is an ORG membership (POST /management/v1/orgs/members,
+  # a different endpoint and role vocabulary from instanceMembers above,
+  # which writes to /admin/v1/members). That write endpoint returns
+  # {"code":5,"message":"Not Found"} on this Zitadel v4.15.3, verified
+  # directly against the live instance, so there is no confirmed path to
+  # create or update one of these from this job. assert_org_memberships only
+  # reads and fails the run by name if a declared membership is missing or
+  # its roles have drifted — grant it by hand in the console, then declare it
+  # here so drift is caught. See docs/zitadel.md.
+  orgMemberships:
+    - org: TESSERIX
+      login: console-identity-reader
+      roles:
+        - ORG_OWNER_VIEWER
+
   # Machine users created once and then left alone: reconcile_machine_users
   # only creates a missing one, it never updates an existing one. Their
   # credential (a PAT or machine key) can only be read at issue time, so it is
@@ -172,6 +189,17 @@ desired:
         Zitadel has no narrower org-create role — see
         docs/onboarding-api.md section 9.1 and allowedIamOwnerMachines below.
       accessTokenType: ACCESS_TOKEN_TYPE_JWT
+    - org: TESSERIX
+      username: console-identity-reader
+      name: console-identity-reader
+      description: >-
+        Read-only Management API access for the console's cross-product
+        identity lookup (tesserix-home#211, feeding #134). Holds
+        ORG_OWNER_VIEWER — the narrowest read-only membership Zitadel offers,
+        because there is no user-only reader role — scoped to TESSERIX rather
+        than an instance-wide viewer role. Its PAT lives in GCP Secret Manager
+        as prod-console-identity-reader-pat; see docs/zitadel.md.
+      accessTokenType: ACCESS_TOKEN_TYPE_BEARER
 
   # Machine users allowed to hold instance-wide IAM_OWNER. Anything else with
   # that role fails the run: a machine user with IAM_OWNER can create and

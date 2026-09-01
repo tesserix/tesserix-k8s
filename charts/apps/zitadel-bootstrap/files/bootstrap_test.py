@@ -1309,6 +1309,97 @@ class MachineIamOwnerAllowlistTest(unittest.TestCase):
         self.assertEqual([c for c in recorder.calls if c[0] in ("PUT", "DELETE") or (c[0] == "POST" and not c[1].endswith("_search"))], [])
 
 
+class OrgMembershipTest(unittest.TestCase):
+    """Asserts an org membership matches declared roles; never writes one."""
+
+    MEMBERSHIP = {"org": "TESSERIX", "login": "console-identity-reader", "roles": ["ORG_OWNER_VIEWER"]}
+    USERS = {"result": [{"userId": "m-reader", "username": "console-identity-reader"}]}
+
+    def _recorder(self, memberships, users=None):
+        return Recorder({
+            ("POST", "/admin/v1/orgs/_search"): (200, json.dumps(ORGS).encode()),
+            ("POST", "/v2/users"): (200, json.dumps(users if users is not None else self.USERS).encode()),
+            ("POST", "/management/v1/users/m-reader/memberships/_search"): (
+                200, json.dumps({"result": memberships}).encode()),
+        })
+
+    def test_passes_when_roles_match(self):
+        live = [{"roles": ["ORG_OWNER_VIEWER"], "details": {"resourceOwner": "org-tesserix"}}]
+        recorder = self._recorder(live)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.assert_org_memberships([self.MEMBERSHIP])
+
+    def test_is_a_read_only_check(self):
+        live = [{"roles": ["ORG_OWNER_VIEWER"], "details": {"resourceOwner": "org-tesserix"}}]
+        recorder = self._recorder(live)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.assert_org_memberships([self.MEMBERSHIP])
+        self.assertEqual([c for c in recorder.calls if c[0] in ("PUT", "DELETE")], [])
+        self.assertEqual(
+            [c for c in recorder.calls if c[0] == "POST" and not c[1].endswith(("_search",)) and c[1] != "/v2/users"],
+            [],
+        )
+
+    def test_fails_naming_login_and_org_when_membership_is_genuinely_absent(self):
+        """The core property: an absent membership must not pass vacuously."""
+        recorder = self._recorder([])  # no memberships in this org at all
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.assert_org_memberships([self.MEMBERSHIP])
+        self.assertIn("console-identity-reader", str(caught.exception))
+        self.assertIn("TESSERIX", str(caught.exception))
+
+    def test_fails_when_membership_exists_in_a_different_org(self):
+        """A result list is not proof of membership in THIS org — resourceOwner must match."""
+        live = [{"roles": ["ORG_OWNER_VIEWER"], "details": {"resourceOwner": "org-zitadel"}}]
+        recorder = self._recorder(live)
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.assert_org_memberships([self.MEMBERSHIP])
+        self.assertIn("console-identity-reader", str(caught.exception))
+
+    def test_fails_when_roles_have_drifted(self):
+        live = [{"roles": ["ORG_USER_MANAGER"], "details": {"resourceOwner": "org-tesserix"}}]
+        recorder = self._recorder(live)
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.assert_org_memberships([self.MEMBERSHIP])
+        self.assertIn("ORG_USER_MANAGER", str(caught.exception))
+
+    def test_fails_when_user_does_not_exist(self):
+        recorder = self._recorder([], users={"result": []})
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.assert_org_memberships([self.MEMBERSHIP])
+        self.assertIn("console-identity-reader", str(caught.exception))
+        self.assertIn("no such user", str(caught.exception))
+        # Guards against the membership search running with a bogus/missing
+        # user id and failing for the wrong reason (an empty result read as
+        # "revoked" rather than "no such user").
+        self.assertEqual(
+            [c for c in recorder.calls if "/memberships/_search" in c[1]], []
+        )
+
+    def test_always_sends_the_org_id_header(self):
+        """Without x-zitadel-orgid the search silently returns an empty result,
+        indistinguishable from a revoked membership — the header must never be
+        left off, so pin it as a fact about every call this function makes."""
+        live = [{"roles": ["ORG_OWNER_VIEWER"], "details": {"resourceOwner": "org-tesserix"}}]
+        recorder = self._recorder(live)
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.assert_org_memberships([self.MEMBERSHIP])
+        scoped = [headers.get("x-zitadel-orgid") for path, headers in recorder.headers
+                  if path == "/management/v1/users/m-reader/memberships/_search"]
+        self.assertEqual(scoped, ["org-tesserix"])
+
+    def test_missing_org_fails_closed(self):
+        membership = dict(self.MEMBERSHIP, org="NOPE")
+        recorder = self._recorder([])
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.assert_org_memberships([membership])
+
+
 class MainTest(unittest.TestCase):
     def _responses(self):
         return {
@@ -1465,6 +1556,39 @@ class MainTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as caught:
                 bootstrap.main()
         self.assertIn("rogue-bot", str(caught.exception))
+
+    def test_fails_when_a_declared_org_membership_is_missing(self):
+        """Proves main() actually calls assert_org_memberships, not just that
+        the function works in isolation."""
+        config = os.path.join(WORKDIR, "desired.json")
+        with open(config, "w") as fh:
+            json.dump({
+                "labelPolicy": LIVE_LABEL_POLICY,
+                "loginPolicy": LIVE_LOGIN_POLICY,
+                "lockoutPolicy": LIVE_LOCKOUT_POLICY,
+                "assets": {"logo": "logo-light.png"},
+                "admins": ["samyak.rout@gmail.com"],
+                "instanceMembers": [],
+                "orgMemberships": [OrgMembershipTest.MEMBERSHIP],
+                "defaultOrg": "TESSERIX",
+                "selfBrandedOrgs": [],
+                "smtp": SmtpTest.SMTP,
+                "idps": [OrgIdpTest.IDP],
+                "machineUsers": [],
+                "platformProjects": [],
+                "reservedOrg": {"name": "ZITADEL", "allowedProjects": ["ZITADEL"]},
+                "allowedIamOwnerMachines": [],
+            }, fh)
+        responses = self._responses()
+        responses[("POST", "/v2/users")] = (200, json.dumps(OrgMembershipTest.USERS).encode())
+        responses[("POST", "/management/v1/users/m-reader/memberships/_search")] = (
+            200, json.dumps({"result": []}).encode())
+        recorder = Recorder(responses)
+        with mock.patch.object(bootstrap, "request", recorder), mock.patch.object(bootstrap, "CONFIG_PATH", config):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.main()
+        self.assertIn("console-identity-reader", str(caught.exception))
+        self.assertIn("TESSERIX", str(caught.exception))
 
 
 if __name__ == "__main__":

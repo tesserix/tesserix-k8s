@@ -335,6 +335,25 @@ found exactly two such machine users — `iam-admin` (this reconciler's own
 credential) and `svc-onboarding` (documented in `docs/onboarding-api.md`
 9.1) — both seeded into the allowlist with a reason.
 
+**Org memberships are asserted, not reconciled.** `desired.instanceMembers`
+above writes to `/admin/v1/members` — that endpoint is scoped to *instance*
+roles (`IAM_OWNER`, `IAM_LOGIN_CLIENT`, ...). An **org** membership such as
+`ORG_OWNER_VIEWER` is a different resource with a different role vocabulary,
+and its write endpoint — `POST /management/v1/orgs/members`, the shape every
+other org-scoped reconciler here would suggest — returns
+`{"code":5,"message":"Not Found"}` on this Zitadel v4.15.3, verified directly
+against the live instance. Shipping that guessed path anyway would fail this
+job every 30 minutes on a 404 that names the wrong problem. So
+`assert_org_memberships` only reads, via
+`POST /management/v1/users/{userId}/memberships/_search` with the
+`x-zitadel-orgid` header (mandatory — omit it and the endpoint returns an
+empty list rather than an error, indistinguishable from a revoked
+membership), and fails the run naming the login and org if a declared
+`desired.orgMemberships` entry is missing or its roles have drifted. The
+membership itself is still granted by hand in the console, the same
+"declared but not written" shape as the IdP client secret and the SMTP
+password below.
+
 ### The skin applies to every org
 
 The Aurora palette in `desired.labelPolicy` is set on the **instance** label
@@ -521,6 +540,35 @@ Manager by hand, exactly as before this change. What changed is narrower than
 it might read: the account and its instance-level grants are now asserted from
 git; the one-time secret that authenticates as that account is not, and cannot
 be without Zitadel exposing a re-issuable credential, which it does not.
+
+**`console-identity-reader`** (userId `388843516966469647`, org `TESSERIX`) is
+the console's cross-product identity lookup credential (tesserix-home#211,
+feeding #134). Declared in `desired.machineUsers` and its membership in
+`desired.orgMemberships`; both are asserted, not reconciled — see *Branding,
+login policy and admins are reconciled* above for why the membership write
+path specifically is not attempted.
+
+```
+membership   ORG_OWNER_VIEWER on TESSERIX (an ORG membership, not instance)
+PAT          prod-console-identity-reader-pat (GCP Secret Manager), synced to
+             the console Deployment as ZITADEL_IDENTITY_READER_PAT
+verified     lists all 8 TESSERIX users; DENIED at instance level
+             (/admin/v1/members/_search → "No matching permissions found");
+             DENIED writing (self-grant of IAM_OWNER → HTTP 403)
+```
+
+**Scoping decision.** Zitadel has no user-only reader role — the narrowest
+read-only *org* membership is `ORG_OWNER_VIEWER`, which reads everything in
+TESSERIX, not just users. `IAM_OWNER_VIEWER` (instance-wide read) was
+considered and rejected: it would read every org on the instance, including
+ZITADEL's own console configuration, for a lookup that only ever needs
+TESSERIX. `ORG_OWNER_VIEWER` on TESSERIX is the closer-fitting over-grant of
+the two.
+
+No per-secret GCP IAM binding was added for this PAT:
+`roles/secretmanager.secretAccessor` is already held project-wide by the ESO
+service accounts, which is why no other `prod-console-*` secret carries one
+of its own either.
 
 **Actions.** Custom claims, token enrichment and provisioning hooks are Actions
 v2 objects, created through the API.
