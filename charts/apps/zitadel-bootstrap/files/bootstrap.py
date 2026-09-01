@@ -599,6 +599,81 @@ def assert_machine_iam_owners_allowlisted(allowed):
     log("machine IAM_OWNER holders: allowlisted")
 
 
+def assert_org_memberships(org_memberships):
+    """Fail the run if a declared org membership is missing or has drifted.
+
+    This ASSERTS rather than RECONCILES, unlike reconcile_instance_members
+    above. reconcile_instance_members writes to /admin/v1/members, which is
+    the INSTANCE membership endpoint (IAM_OWNER, IAM_LOGIN_CLIENT, ...). An
+    org membership like ORG_OWNER_VIEWER is a different resource with a
+    different role vocabulary, and the write side of it —
+    POST /management/v1/orgs/members, the shape every other org-scoped
+    reconciler in this file would suggest — returns
+    {"code":5,"message":"Not Found"} on this Zitadel v4.15.3, verified
+    directly against the live instance. Shipping that path anyway would not
+    fail loudly once: it would fail this job every 30 minutes with a 404 on a
+    guessed URL, which names "the endpoint doesn't exist" instead of the real
+    fact this reconciler cares about, which is "the membership itself is
+    fine". So the membership is granted by hand in the console (see
+    docs/zitadel.md) and this only confirms it stayed that way — the same
+    "declared but not written" shape as reconcile_org_idps' clientSecret and
+    reconcile_smtp's password, for the same reason: no safe write path exists
+    here today.
+
+    Reads via POST /management/v1/users/{userId}/memberships/_search, the
+    read-side counterpart, verified working against the live instance.
+
+    The x-zitadel-orgid header is mandatory on every call, not merely typical
+    usage: without it this endpoint returns {"result": []} — an EMPTY LIST,
+    not an error — which is byte-for-byte what a genuinely revoked membership
+    looks like. Dropping the header would make this function pass or fail for
+    the wrong reason while looking identical either way, so it is set
+    unconditionally below rather than threaded through as an argument that
+    could be forgotten at a call site.
+    """
+    for membership in org_memberships:
+        org = next((item for item in list_orgs() if item["name"] == membership["org"]), None)
+        if not org:
+            raise SystemExit(f"org membership org {membership['org']!r} does not exist")
+        user_id = find_user(membership["login"])
+        if not user_id:
+            raise SystemExit(
+                f"org membership {membership['login']} in {membership['org']}: "
+                "no such user, so the membership cannot be verified"
+            )
+        scope = {"x-zitadel-orgid": org["id"]}
+        status, payload = request(
+            "POST",
+            f"/management/v1/users/{user_id}/memberships/_search",
+            {"query": {"limit": 100}},
+            headers=scope,
+        )
+        if status != 200:
+            raise SystemExit(
+                f"org membership search for {membership['login']} in {membership['org']} "
+                f"failed: {status} {payload!r}"
+            )
+        results = json.loads(payload).get("result", [])
+        match = next(
+            (item for item in results if item.get("details", {}).get("resourceOwner") == org["id"]),
+            None,
+        )
+        if not match:
+            raise SystemExit(
+                f"org membership {membership['login']} in {membership['org']}: missing; "
+                "grant it by hand in the console (see docs/zitadel.md — the write path is "
+                "unverified on this Zitadel version)"
+            )
+        wanted_roles = sorted(membership["roles"])
+        current_roles = sorted(match.get("roles", []))
+        if current_roles != wanted_roles:
+            raise SystemExit(
+                f"org membership {membership['login']} in {membership['org']}: roles "
+                f"{current_roles} do not match declared {wanted_roles}"
+            )
+        log(f"org membership {membership['login']} in {membership['org']}: in sync")
+
+
 def reconcile_platform_project(desired):
     """Reconcile a platform resource-server project without managing secrets.
 
@@ -872,6 +947,10 @@ def main():
         desired["admins"],
         machine_logins={machine["username"] for machine in machine_users},
     )
+    # Also after reconcile_machine_users, for the same reason: a membership
+    # declared for a machine user created above must be checkable in this
+    # same pass rather than reading as "missing" until the next run.
+    assert_org_memberships(desired.get("orgMemberships", []))
     reconcile_default_org(desired["defaultOrg"])
     reconcile_org_branding(desired["selfBrandedOrgs"])
     reconcile_smtp(desired.get("smtp"))
