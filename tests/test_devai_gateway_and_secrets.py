@@ -993,9 +993,16 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         deployment = resource(documents, "Deployment", "secret-service-api")
         pod = deployment["spec"]["template"]["spec"]
         env = {item["name"]: item.get("value") for item in pod["containers"][0]["env"]}
-        self.assertEqual("true", env["WORKLOAD_SECRET_BROKER_ENABLED"])
-        self.assertEqual("devai", env["WORKLOAD_SECRET_NAMESPACE"])
-        self.assertEqual("devai-api", env["WORKLOAD_SECRET_APP"])
+        # secrets-api (main-4a2c28f, the secrets console cutover) has no broker
+        # endpoint and reads none of the WORKLOAD_SECRET_* vars — see
+        # secrets-api/internal/config/config.go — so the deployment no longer
+        # sets them. `workloadSecretBroker` stays in values.yaml only to feed
+        # the Istio principal rule, the NetworkPolicy, and the OpenBao/role
+        # config asserted below: the integration is configured but not built
+        # (cutover design §8), and removing those would silently foreclose it.
+        self.assertNotIn("WORKLOAD_SECRET_BROKER_ENABLED", env)
+        self.assertNotIn("WORKLOAD_SECRET_NAMESPACE", env)
+        self.assertNotIn("WORKLOAD_SECRET_APP", env)
         role = resource(documents, "ClusterRole", "secret-service-discovery")
         self.assertTrue(
             any(
