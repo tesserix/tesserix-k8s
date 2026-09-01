@@ -540,3 +540,9 @@ Apache 2.0, and `apps/login/`, `packages/zitadel-client`, `packages/zitadel-prot
 are MIT. Running an unmodified image over a network is fine; modifying the
 server source and offering it as a service triggers the AGPL source
 obligation.
+
+## Per-product access control
+
+`ZitadelProject.spec.access` declares a product's audience (operator feature, 2026-09-01). Absent or `mode: public` means any signed-in org user can authenticate; the operator heals `projectRoleCheck` off. `mode: restricted` with `members: [{email, roles?}]` turns `projectRoleCheck` on and reconciles user grants to exactly that list — additions, role updates, and pruning of stale grants. Roles default to `member` and are auto-created on the project.
+
+Rules of thumb: restriction is per Zitadel project, not per application, so a separately-restricted product needs its own `ZitadelProject` claim; members must already have signed up (the claim goes `Ready=False` naming the email otherwise); org signup itself stays open — gating happens at token issuance.
