@@ -306,6 +306,7 @@ validation.
 | **Publishing Agent manifests** — GitHub OIDC route, review/merge/dispatch flow, verification, onboarding | [`docs/agent-registry-publishing.md`](docs/agent-registry-publishing.md) |
 | **Secret storage** — OpenBao, `openbao` namespace: auth roles, policies, ESO wiring, unseal and recovery | [`docs/openbao-secrets.md`](docs/openbao-secrets.md) |
 | **Whether a new app should set `prune: true`** — and why `requiresPruning` lies | [`docs/argocd-prune-audit.md`](docs/argocd-prune-audit.md) |
+| **Anonymized product data into DevAI evals** — SandboxDataSync claims, scaffolder, wiring gates | [`docs/sandbox-data-sync.md`](docs/sandbox-data-sync.md) |
 
 ### CloudNativePG (CNPG) quick facts
 
