@@ -108,6 +108,12 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
         "gcs": {"credentials": {"value": ""}},
     }
     app = values["langfuse"]
+    assert app["web"]["image"]["tag"] == (
+        "4.27.0@sha256:c9e2cab8469a5d7353e86a3252b02c52ac94ef31288ce2639ee01aabf5e4222b"
+    )
+    assert app["worker"]["image"]["tag"] == (
+        "4.27.0@sha256:091a85c3c54bf5fff7cc0073a7f35a52861cc0e30d33dd05569fe3ed66b15d8d"
+    )
     assert app["web"]["replicas"] == app["worker"]["replicas"] == 2
     assert app["web"]["livenessProbe"]["initialDelaySeconds"] == 90
     assert app["web"]["readinessProbe"]["initialDelaySeconds"] == 30
