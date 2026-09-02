@@ -225,6 +225,43 @@ def test_clickhouse_exposes_langfuse_cluster_and_bootstraps_database() -> None:
     ).read_text()
     assert "CREATE DATABASE IF NOT EXISTS langfuse ON CLUSTER otel;" in sql
 
+    retention_sql = (
+        ROOT
+        / "charts/apps/db-schema-bootstrap/schemas/observability/clickhouse/09-retention.sql"
+    ).read_text()
+    assert "-- bootstrap:allow-unknown-table" in retention_sql
+
+    bootstrap_render = subprocess.run(
+        [
+            "helm",
+            "template",
+            "observability",
+            str(ROOT / "charts/apps/db-schema-bootstrap"),
+            "--namespace",
+            "observability",
+            "--set",
+            "app=observability",
+            "--set-json",
+            "targets=[]",
+            "--set",
+            "clickhouse.enabled=true",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    bootstrap_items = [
+        item for item in yaml.safe_load_all(bootstrap_render.stdout) if item
+    ]
+    cronjob = resource(
+        bootstrap_items, "CronJob", "observability-db-schema-bootstrap-clickhouse"
+    )
+    command = cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"][
+        "containers"
+    ][0]["command"][2]
+    assert "bootstrap:allow-unknown-table" in command
+    assert "Code: 60" in command
+
     application = documents(
         "argocd/prod/infrastructure/observability-db-schema-bootstrap.yaml"
     )[0]
