@@ -136,7 +136,7 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
         "AUTH_CUSTOM_CHECKS": "pkce,state",
         "AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING": "true",
         "AUTH_CUSTOM_ID_TOKEN": "true",
-        "AUTH_CUSTOM_FETCH_USERINFO": "false",
+        "AUTH_CUSTOM_FETCH_USERINFO": "true",
     }
     for name, value in expected_oidc_values.items():
         assert env[name] == {"name": name, "value": value}
