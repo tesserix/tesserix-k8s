@@ -102,8 +102,15 @@ spec:
                 # ChainStore). Harmless while the mode is "inline".
                 - name: OPENBAO_ADDR
                   value: {{ .Values.openBaoAddr | default "http://openbao-active.openbao.svc.cluster.local:8200" | quote }}
+                # Defaults to .Values.name — the deployment's ServiceAccount,
+                # which this CronJob also runs as, and which is what the
+                # OpenBao Kubernetes auth role binds. An empty value is NOT
+                # acceptable: marketplace-api rejects it at startup whenever
+                # SHIPPING_SECRET_STORE is not "inline", so defaulting to ""
+                # (as this did originally) makes every sweep fail on config
+                # load before it reads a single row.
                 - name: OPENBAO_ROLE
-                  value: {{ .Values.openBaoRole | default "" | quote }}
+                  value: {{ .Values.openBaoRole | default .Values.name | quote }}
                 - name: OPENBAO_KV_MOUNT
                   value: {{ .Values.openBaoKvMount | default "kv" | quote }}
               resources:
