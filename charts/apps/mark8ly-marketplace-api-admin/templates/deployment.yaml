@@ -182,6 +182,23 @@ spec:
             # provider, field). Legacy rows with noop:/aes: refs still
             # resolve via the HybridStore fallback and lazy-migrate on
             # first read.
+            # OpenBao — required whenever SHIPPING_SECRET_STORE is not
+            # "inline". marketplace-api validates this at STARTUP and panics
+            # without it, deliberately: ChainStore routes bao:// references to
+            # OpenBao by prefix in ANY mode, so a gcpsm deployment that has
+            # ever had a row migrated still needs a working role to resolve it.
+            # A rollback from bao to gcpsm that dropped the role would leave
+            # those credentials unresolvable.
+            #
+            # The role name matches this app's ServiceAccount, which is what
+            # the OpenBao Kubernetes auth role binds (see the openbao chart's
+            # bootstrap.kubernetesRoles).
+            - name: OPENBAO_ADDR
+              value: {{ .Values.openBaoAddr | default "http://openbao-active.openbao.svc.cluster.local:8200" | quote }}
+            - name: OPENBAO_ROLE
+              value: {{ .Values.openBaoRole | default .Values.name | quote }}
+            - name: OPENBAO_KV_MOUNT
+              value: {{ .Values.openBaoKvMount | default "kv" | quote }}
             - name: SHIPPING_SECRET_STORE
               value: {{ .Values.carrierSecretStore | default "inline" | quote }}
             - name: GCP_PROJECT_ID
