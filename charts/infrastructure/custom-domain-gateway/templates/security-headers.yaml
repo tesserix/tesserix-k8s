@@ -37,6 +37,20 @@ spec:
             "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
             inlineCode: |
               function envoy_on_response(response_handle)
+                local h = response_handle:headers()
+
+                -- SET ONLY IF THE UPSTREAM DID NOT. Envoy's Lua `add` APPENDS,
+                -- so calling it on a header the app already sent emits it twice
+                -- and browser behaviour on conflicting values is undefined
+                -- (tesserix/mark8ly#596). `replace` would stop the duplication
+                -- but would also overwrite an app that chose something stricter
+                -- than this baseline. The gateway is a floor, not a ceiling.
+                local function default(name, value)
+                  if h:get(name) == nil then
+                    h:add(name, value)
+                  end
+                end
+
                 {{- if .Values.securityHeaders.hsts.enabled }}
                 -- Strict-Transport-Security
                 local hsts_value = "max-age={{ .Values.securityHeaders.hsts.maxAge }}"
@@ -46,36 +60,36 @@ spec:
                 {{- if .Values.securityHeaders.hsts.preload }}
                 hsts_value = hsts_value .. "; preload"
                 {{- end }}
-                response_handle:headers():add("Strict-Transport-Security", hsts_value)
+                h:replace("Strict-Transport-Security", hsts_value)
                 {{- end }}
 
                 {{- if .Values.securityHeaders.xFrameOptions.enabled }}
                 -- X-Frame-Options
-                response_handle:headers():add("X-Frame-Options", "{{ .Values.securityHeaders.xFrameOptions.value }}")
+                default("X-Frame-Options", "{{ .Values.securityHeaders.xFrameOptions.value }}")
                 {{- end }}
 
                 {{- if .Values.securityHeaders.xContentTypeOptions.enabled }}
                 -- X-Content-Type-Options
-                response_handle:headers():add("X-Content-Type-Options", "{{ .Values.securityHeaders.xContentTypeOptions.value }}")
+                default("X-Content-Type-Options", "{{ .Values.securityHeaders.xContentTypeOptions.value }}")
                 {{- end }}
 
                 {{- if .Values.securityHeaders.xXssProtection.enabled }}
                 -- X-XSS-Protection
-                response_handle:headers():add("X-XSS-Protection", "{{ .Values.securityHeaders.xXssProtection.value }}")
+                default("X-XSS-Protection", "{{ .Values.securityHeaders.xXssProtection.value }}")
                 {{- end }}
 
                 {{- if .Values.securityHeaders.referrerPolicy.enabled }}
                 -- Referrer-Policy
-                response_handle:headers():add("Referrer-Policy", "{{ .Values.securityHeaders.referrerPolicy.value }}")
+                default("Referrer-Policy", "{{ .Values.securityHeaders.referrerPolicy.value }}")
                 {{- end }}
 
                 {{- if .Values.securityHeaders.permissionsPolicy.enabled }}
                 -- Permissions-Policy
-                response_handle:headers():add("Permissions-Policy", "{{ .Values.securityHeaders.permissionsPolicy.value }}")
+                default("Permissions-Policy", "{{ .Values.securityHeaders.permissionsPolicy.value }}")
                 {{- end }}
 
                 -- Remove server identification headers
-                response_handle:headers():remove("Server")
-                response_handle:headers():remove("X-Powered-By")
+                h:remove("Server")
+                h:remove("X-Powered-By")
               end
 {{- end }}

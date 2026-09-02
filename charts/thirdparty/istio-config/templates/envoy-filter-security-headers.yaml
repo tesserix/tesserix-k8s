@@ -33,27 +33,57 @@ spec:
             "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
             inlineCode: |
               function envoy_on_response(response_handle)
-                -- HSTS: Enforce HTTPS for 1 year, include subdomains
-                response_handle:headers():add("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+                local h = response_handle:headers()
 
-                -- Prevent MIME type sniffing
-                response_handle:headers():add("X-Content-Type-Options", "nosniff")
+                -- SET ONLY IF THE UPSTREAM DID NOT.
+                --
+                -- Envoy's Lua `add` APPENDS. Calling it unconditionally on a
+                -- header the application already sent emits the header twice,
+                -- and browser behaviour on conflicting values is undefined —
+                -- some take the most restrictive, some take the last. That is
+                -- how mark8ly ended up serving `X-Frame-Options: DENY` and
+                -- `SAMEORIGIN` together, with nobody able to say which was in
+                -- force (tesserix/mark8ly#596).
+                --
+                -- `replace` would stop the duplication, but it would also
+                -- overwrite an app that deliberately chose something stricter
+                -- than this baseline — mark8ly's marketing site wants DENY and
+                -- `geolocation=()`, both tighter than the gateway default. So
+                -- the gateway supplies a floor for services that set nothing,
+                -- and gets out of the way of services that have an opinion.
+                local function default(name, value)
+                  if h:get(name) == nil then
+                    h:add(name, value)
+                  end
+                end
 
-                -- Prevent clickjacking (allow same origin only)
-                response_handle:headers():add("X-Frame-Options", "SAMEORIGIN")
+                -- HSTS is the exception, and is deliberately `replace`.
+                -- Transport security belongs to the edge, not to an app, and
+                -- this value carries `preload` where the app-set ones do not —
+                -- deferring to the upstream here would silently drop us toward
+                -- removal from the preload list.
+                h:replace("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+
+                default("X-Content-Type-Options", "nosniff")
+
+                -- Clickjacking. SAMEORIGIN is the floor; an app may choose DENY.
+                default("X-Frame-Options", "SAMEORIGIN")
 
                 -- XSS Protection (legacy browsers)
-                response_handle:headers():add("X-XSS-Protection", "1; mode=block")
+                default("X-XSS-Protection", "1; mode=block")
 
-                -- Referrer Policy: Don't leak referrer to cross-origin requests
-                response_handle:headers():add("Referrer-Policy", "strict-origin-when-cross-origin")
+                -- Referrer Policy: don't leak referrer to cross-origin requests
+                default("Referrer-Policy", "strict-origin-when-cross-origin")
 
-                -- Permissions Policy: Restrict browser features (allow geolocation & microphone for onboarding/commentary)
-                response_handle:headers():add("Permissions-Policy", "geolocation=(self), microphone=(self), camera=()")
+                -- Permissions Policy. This default allows geolocation and
+                -- microphone because onboarding/commentary need them; an app
+                -- that needs neither should send its own tighter value and
+                -- this will step aside.
+                default("Permissions-Policy", "geolocation=(self), microphone=(self), camera=()")
 
                 -- Remove server identification headers
-                response_handle:headers():remove("Server")
-                response_handle:headers():remove("X-Powered-By")
+                h:remove("Server")
+                h:remove("X-Powered-By")
               end
 ---
 # Security headers for custom domain gateway
@@ -87,25 +117,55 @@ spec:
             "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
             inlineCode: |
               function envoy_on_response(response_handle)
-                -- HSTS: Enforce HTTPS for 1 year, include subdomains
-                response_handle:headers():add("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+                local h = response_handle:headers()
 
-                -- Prevent MIME type sniffing
-                response_handle:headers():add("X-Content-Type-Options", "nosniff")
+                -- SET ONLY IF THE UPSTREAM DID NOT.
+                --
+                -- Envoy's Lua `add` APPENDS. Calling it unconditionally on a
+                -- header the application already sent emits the header twice,
+                -- and browser behaviour on conflicting values is undefined —
+                -- some take the most restrictive, some take the last. That is
+                -- how mark8ly ended up serving `X-Frame-Options: DENY` and
+                -- `SAMEORIGIN` together, with nobody able to say which was in
+                -- force (tesserix/mark8ly#596).
+                --
+                -- `replace` would stop the duplication, but it would also
+                -- overwrite an app that deliberately chose something stricter
+                -- than this baseline — mark8ly's marketing site wants DENY and
+                -- `geolocation=()`, both tighter than the gateway default. So
+                -- the gateway supplies a floor for services that set nothing,
+                -- and gets out of the way of services that have an opinion.
+                local function default(name, value)
+                  if h:get(name) == nil then
+                    h:add(name, value)
+                  end
+                end
 
-                -- Prevent clickjacking (allow same origin only)
-                response_handle:headers():add("X-Frame-Options", "SAMEORIGIN")
+                -- HSTS is the exception, and is deliberately `replace`.
+                -- Transport security belongs to the edge, not to an app, and
+                -- this value carries `preload` where the app-set ones do not —
+                -- deferring to the upstream here would silently drop us toward
+                -- removal from the preload list.
+                h:replace("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+
+                default("X-Content-Type-Options", "nosniff")
+
+                -- Clickjacking. SAMEORIGIN is the floor; an app may choose DENY.
+                default("X-Frame-Options", "SAMEORIGIN")
 
                 -- XSS Protection (legacy browsers)
-                response_handle:headers():add("X-XSS-Protection", "1; mode=block")
+                default("X-XSS-Protection", "1; mode=block")
 
-                -- Referrer Policy: Don't leak referrer to cross-origin requests
-                response_handle:headers():add("Referrer-Policy", "strict-origin-when-cross-origin")
+                -- Referrer Policy: don't leak referrer to cross-origin requests
+                default("Referrer-Policy", "strict-origin-when-cross-origin")
 
-                -- Permissions Policy: Restrict browser features (allow geolocation & microphone for onboarding/commentary)
-                response_handle:headers():add("Permissions-Policy", "geolocation=(self), microphone=(self), camera=()")
+                -- Permissions Policy. This default allows geolocation and
+                -- microphone because onboarding/commentary need them; an app
+                -- that needs neither should send its own tighter value and
+                -- this will step aside.
+                default("Permissions-Policy", "geolocation=(self), microphone=(self), camera=()")
 
                 -- Remove server identification headers
-                response_handle:headers():remove("Server")
-                response_handle:headers():remove("X-Powered-By")
+                h:remove("Server")
+                h:remove("X-Powered-By")
               end
