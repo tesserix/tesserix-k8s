@@ -1,0 +1,76 @@
+# Does the console's write-blind IAM role still match what Git declares?
+#
+# `tests/test_secret_manager_write_blind.py` already pins what the REPOSITORY
+# says, and runs on every pull request. This workflow pins what GCP actually
+# has. They answer different questions:
+#
+#   the test  -> catches someone widening the role in a pull request
+#   this job  -> catches someone widening it in the Cloud Console
+#
+# The second path is the one the guarantee actually rests on, and until this
+# existed nothing watched it. Atlantis autoplans a stack only `when_modified`
+# its own `*.tf` or the shared tfvars, so an unrelated pull request does not
+# plan the 06 stack — tesserix-k8s#847 touched charts only and its
+# `atlantis/plan` passed without planning it at all — and no other workflow runs
+# `terraform plan` on a schedule. A console click adding
+# `secretmanager.versions.access` therefore produced no diff, no failing check
+# and no alert, while granting the console the ability to read every secret
+# payload in the project. See tesserix-home#465.
+#
+# Read-only: `describe` and `get-iam-policy`, never a mutation. It reports
+# drift; it deliberately does not correct it, because the right correction for
+# an unexplained IAM change is a human deciding whether it was an attack.
+name: IAM Write-Blind Drift
+
+on:
+  schedule:
+    # Daily at 06:20 UTC (= 16:20 AEST / 11:50 IST). Offset from the other
+    # scheduled jobs (03:00 GHCR cleanup, 13:45 storage audit) so a shared
+    # runner shortage cannot make several of them contend at once.
+    - cron: '20 6 * * *'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  GCP_PROJECT_ID: tesseracthub-480811
+  # WIF — same values as terraform.yml; safe to hardcode (not sensitive).
+  WIF_PROVIDER: projects/849928263410/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+  SA_EMAIL: github-actions@tesseracthub-480811.iam.gserviceaccount.com
+
+jobs:
+  drift:
+    name: Write-blind role drift
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      id-token: write   # for WIF
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.SA_EMAIL }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The CI service account holds roles/iam.roleViewer and
+      # roles/resourcemanager.projectIamAdmin, so both reads below are already
+      # permitted — verified 2026-09-02. If this step starts failing with a
+      # permission error rather than a drift report, that binding changed.
+      - name: Check the write-blind role against the stack
+        run: python3 scripts/check_iam_write_blind.py
