@@ -23,6 +23,7 @@ class OperatorClaimLayoutTests(unittest.TestCase):
             for rule in policy["spec"]["egress"]
             for target in rule.get("to", [])
             if "ipBlock" in target
+            and target["ipBlock"]["cidr"].startswith("169.254.")
             for port in rule.get("ports", [])
         }
         self.assertEqual(

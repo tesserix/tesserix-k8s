@@ -54,3 +54,21 @@ def test_analytics_operator_can_reach_openpanel_api():
         for namespace in source.get("source", {}).get("namespaces", [])
     }
     assert "analytics-operator" in authorized_namespaces
+
+
+def test_analytics_operator_allows_ambient_hbone_egress():
+    resources = list(
+        yaml.safe_load_all(
+            (ROOT / "k8s/operators/analytics-onboarding/resources.yaml").read_text()
+        )
+    )
+    network_policy = resource(
+        resources, "NetworkPolicy", "analytics-onboarding-operator"
+    )
+    hbone_rule = next(
+        rule
+        for rule in network_policy["spec"]["egress"]
+        if {port["port"] for port in rule.get("ports", [])} == {15008}
+    )
+
+    assert hbone_rule["to"] == [{"ipBlock": {"cidr": "10.20.0.0/16"}}]
