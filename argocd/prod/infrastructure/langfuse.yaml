@@ -20,19 +20,13 @@ spec:
       values: |
         langfuse:
           logging: {level: info, format: json}
+          nodeSelector: {workload: infrastructure}
           salt:
             secretKeyRef: {name: langfuse-secrets, key: salt}
           encryptionKey:
             secretKeyRef: {name: langfuse-secrets, key: encryption-key}
           features: {telemetryEnabled: false, signUpDisabled: true}
-          auth:
-            disableUsernamePassword: true
-            providers:
-              google:
-                clientId:
-                  secretKeyRef: {name: langfuse-secrets, key: google-client-id}
-                clientSecret:
-                  secretKeyRef: {name: langfuse-secrets, key: google-client-secret}
+          auth: {disableUsernamePassword: false}
           nextauth:
             url: https://langfuse.tesserix.app
             secret:
@@ -118,7 +112,7 @@ spec:
           forcePathStyle: false
           gcs: {credentials: {value: ""}}
   destination: {server: https://kubernetes.default.svc, namespace: observability}
-  # Manual sync while the node pool and observability dependencies are parked.
+  # Manual sync keeps data-service migrations behind the rollout runbook.
   syncPolicy:
     syncOptions: [CreateNamespace=true]
     retry:

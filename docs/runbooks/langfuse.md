@@ -20,7 +20,7 @@ DevAI eval → PostgreSQL → DevAI Analytics and publish gates
 ```
 
 The official chart is pinned to `2.1.0` (Langfuse v4). Bundled data services
-are disabled. The Application is manual-sync while observability is parked.
+are disabled. The Application is manual-sync so migrations remain deliberate.
 
 ## SLO and capacity
 
@@ -34,17 +34,19 @@ are disabled. The Application is manual-sync while observability is parked.
 
 Do not sync Langfuse until an explicitly approved rollout has:
 
-1. Recreated the node pool documented in `docs/observability-park.md`.
+1. Confirmed the existing `optimized-v2` pool has at least 18 GiB aggregate
+   memory-request headroom. Langfuse, ClickHouse, and Keeper select
+   `workload=infrastructure`; no dedicated node pool is required.
 2. Created bucket `tesserix-langfuse-prod-in`, GSA
    `langfuse-prod@tesseracthub-480811.iam.gserviceaccount.com`, bucket IAM, and
    Workload Identity for `observability/langfuse`.
 3. Created GCP secrets `prod-langfuse-postgresql-password`,
    `prod-langfuse-salt`, `prod-langfuse-encryption-key`,
-   `prod-langfuse-nextauth-secret`, `prod-langfuse-google-client-id`,
-   `prod-langfuse-google-client-secret`, `prod-langfuse-init-user-password`,
+   `prod-langfuse-nextauth-secret`, `prod-langfuse-init-user-password`,
    `prod-devai-langfuse-public-key`, and `prod-devai-langfuse-secret-key`.
-4. Registered OAuth callback
-   `https://langfuse.tesserix.app/api/auth/callback/google` and DNS/TLS.
+4. Confirmed DNS/TLS and retained the bootstrap admin password in Secret
+   Manager. Signup remains disabled. Add Google OAuth later only after its exact
+   callback is registered in Google Cloud Console.
 
 Use cryptographically secure values and never place them in Git or logs. The
 pinned project keys bootstrap the `tesserix/devai` project idempotently and are
@@ -55,12 +57,13 @@ the same keys injected into DevAI.
 Each live mutation requires explicit approval. Use Argo CD, not `kubectl apply`.
 
 1. Capture Argo, PVC, CNPG, and parked-replica state in the change record.
-2. Recreate capacity; provision bucket/IAM/secrets; wait for ExternalSecrets.
+2. Confirm shared-pool capacity; provision bucket/IAM/secrets; wait for
+   ExternalSecrets.
 3. Revive Keeper, ClickHouse, and global Valkey. ClickHouse 26.4 satisfies the
    Langfuse v4 requirement of at least 25.12.
 4. Sync infra-postgres and verify the managed role/database are Ready.
 5. Manually sync Langfuse; verify 2 web + 2 worker pods, PDBs, spread, migrations,
-   GCS, and Google OAuth.
+   GCS, and bootstrap-admin login.
 6. Roll DevAI, run a known suite, and match run ID/pass rate/scorer dimensions
    between DevAI Analytics and Langfuse.
 
@@ -74,6 +77,7 @@ Rollback sets DevAI telemetry to `noop`, then stops Langfuse through GitOps.
 Retain PostgreSQL, GCS, ClickHouse and PVC data. Do not downgrade a data-bearing
 ClickHouse cluster; restore parked desired state and investigate first.
 
-The parked estate already carries roughly 390 GiB observability storage
-(~USD 68/month), 32 GiB monitoring storage (~USD 5/month), and needs at least
-three Spot nodes when revived. Measure two weeks before setting GCS retention.
+The retained estate already carries roughly 390 GiB observability storage
+(~USD 68/month) and 32 GiB monitoring storage (~USD 5/month). This rollout adds
+no node pool; monitor `optimized-v2` request saturation and GCS growth for two
+weeks before changing capacity or retention.

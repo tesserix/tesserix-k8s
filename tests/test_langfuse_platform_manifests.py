@@ -90,6 +90,7 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
     }
     app = values["langfuse"]
     assert app["web"]["replicas"] == app["worker"]["replicas"] == 2
+    assert app["nodeSelector"] == {"workload": "infrastructure"}
     assert (
         app["web"]["pdb"]["minAvailable"] == app["worker"]["pdb"]["minAvailable"] == 1
     )
@@ -99,7 +100,7 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
     assert env["CLICKHOUSE_CLUSTER_NAME"]["value"] == "otel"
     assert env["LANGFUSE_INIT_PROJECT_ID"]["value"] == "devai"
     assert app["nextauth"]["url"] == "https://langfuse.tesserix.app"
-    assert app["auth"]["disableUsernamePassword"] is True
+    assert app["auth"] == {"disableUsernamePassword": False}
 
 
 def test_secrets_routing_and_devai_export_are_wired() -> None:
@@ -114,6 +115,8 @@ def test_secrets_routing_and_devai_export_are_wired() -> None:
     assert mappings["postgres-password"] == "prod-langfuse-postgresql-password"
     assert mappings["project-public-key"] == "prod-devai-langfuse-public-key"
     assert mappings["project-secret-key"] == "prod-devai-langfuse-secret-key"
+    assert "google-client-id" not in mappings
+    assert "google-client-secret" not in mappings
     route = resource(
         documents("manifests/observability-istio/virtualservice.yaml"),
         "VirtualService",
@@ -143,14 +146,22 @@ def test_secrets_routing_and_devai_export_are_wired() -> None:
     }
 
 
-def test_parked_dependencies_are_revival_ready() -> None:
+def test_dependencies_run_on_the_shared_infrastructure_pool() -> None:
     clickhouse = yaml.safe_load(
         (ROOT / "charts/thirdparty/clickhouse-ha/values.yaml").read_text()
+    )
+    keeper = yaml.safe_load(
+        (ROOT / "charts/thirdparty/clickhouse-keeper/values.yaml").read_text()
     )
     queue = yaml.safe_load(
         (ROOT / "charts/apps/global-valkey/values-queue.yaml").read_text()
     )
-    assert clickhouse["replicaCount"] == 0
+    assert clickhouse["replicaCount"] == 2
+    assert keeper["replicaCount"] == 3
+    assert clickhouse["nodeSelector"] == keeper["nodeSelector"] == {
+        "workload": "infrastructure"
+    }
+    assert clickhouse["tolerations"] == keeper["tolerations"] == []
     assert tuple(int(part) for part in clickhouse["image"]["tag"].split(".")[:2]) >= (
         25,
         12,

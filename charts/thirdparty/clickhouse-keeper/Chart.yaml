@@ -6,14 +6,13 @@ description: |
   replication log, part checksums and leader election state for every
   ReplicatedMergeTree table; losing quorum makes ClickHouse read-only.
 
-  Deliberately scheduled on the ON-DEMAND node pool, NOT the Spot observability
-  pool. Quorum loss is the one failure a Spot preemption can turn into an
-  outage, and three Keepers cost ~1.2Gi total — cheap insurance that removes the
-  worst preemption failure mode. Do not add the observability toleration here.
+  Deliberately scheduled on the shared infrastructure pool. Quorum loss makes
+  ClickHouse unavailable, so hard anti-affinity keeps the three small members
+  on separate nodes.
 
   Three replicas is the minimum for a fault-tolerant Raft quorum (tolerates one
   loss). Scale to 5 only if the cluster grows past a handful of shards; an even
   count is never correct.
 type: application
-version: 1.0.0
+version: 1.0.1
 appVersion: "25.10.2.65"
