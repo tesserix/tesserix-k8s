@@ -82,3 +82,26 @@ spec:
             port:
               number: 80
       timeout: 30s
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: langfuse
+  namespace: observability
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: routing
+spec:
+  gateways: [istio-ingress/tesseract-gateway]
+  hosts: [langfuse.tesserix.app]
+  http:
+    - headers:
+        request:
+          set:
+            x-forwarded-host: langfuse.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: langfuse-web.observability.svc.cluster.local
+            port: {number: 3000}
+      timeout: 60s

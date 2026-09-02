@@ -1,0 +1,17 @@
+{{- range .Values.databases }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: {{ .name | replace "_" "-" }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: {{ $.Values.clusterName }}
+    app.kubernetes.io/component: database
+spec:
+  name: {{ .name }}
+  owner: {{ .owner }}
+  cluster: {name: {{ $.Values.clusterName }}}
+  ensure: present
+  databaseReclaimPolicy: retain
+{{- end }}

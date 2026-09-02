@@ -1,0 +1,126 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: langfuse
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: observability
+    environment: prod
+  annotations: {argocd.argoproj.io/sync-wave: "2"}
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: infrastructure
+  source:
+    repoURL: ghcr.io/langfuse/langfuse-k8s/charts
+    chart: langfuse
+    targetRevision: 2.1.0
+    helm:
+      releaseName: langfuse
+      values: |
+        langfuse:
+          logging: {level: info, format: json}
+          salt:
+            secretKeyRef: {name: langfuse-secrets, key: salt}
+          encryptionKey:
+            secretKeyRef: {name: langfuse-secrets, key: encryption-key}
+          features: {telemetryEnabled: false, signUpDisabled: true}
+          auth:
+            disableUsernamePassword: true
+            providers:
+              google:
+                clientId:
+                  secretKeyRef: {name: langfuse-secrets, key: google-client-id}
+                clientSecret:
+                  secretKeyRef: {name: langfuse-secrets, key: google-client-secret}
+          nextauth:
+            url: https://langfuse.tesserix.app
+            secret:
+              secretKeyRef: {name: langfuse-secrets, key: nextauth-secret}
+          serviceAccount:
+            create: true
+            automountServiceAccountToken: true
+            annotations:
+              iam.gke.io/gcp-service-account: langfuse-prod@tesseracthub-480811.iam.gserviceaccount.com
+          replicas: 2
+          web:
+            replicas: 2
+            resources: {requests: {memory: 512Mi}, limits: {memory: 1Gi}}
+            pdb: {create: true, minAvailable: 1}
+            pod:
+              topologySpreadConstraints:
+                - {maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {app: web}}}
+                - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app: web}}}
+          worker:
+            replicas: 2
+            resources: {requests: {memory: 1Gi}, limits: {memory: 2Gi}}
+            pdb: {create: true, minAvailable: 1}
+            pod:
+              topologySpreadConstraints:
+                - {maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {app: worker}}}
+                - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {app: worker}}}
+          podSecurityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile: {type: RuntimeDefault}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          extraVolumes: [{name: tmp, emptyDir: {}}]
+          extraVolumeMounts: [{name: tmp, mountPath: /tmp}]
+          additionalEnv:
+            - {name: CLICKHOUSE_CLUSTER_NAME, value: otel}
+            - {name: LANGFUSE_INIT_ORG_ID, value: tesserix}
+            - {name: LANGFUSE_INIT_ORG_NAME, value: Tesserix}
+            - {name: LANGFUSE_INIT_PROJECT_ID, value: devai}
+            - {name: LANGFUSE_INIT_PROJECT_NAME, value: DevAI}
+            - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+              valueFrom: {secretKeyRef: {name: langfuse-secrets, key: project-public-key}}
+            - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: langfuse-secrets, key: project-secret-key}}
+            - {name: LANGFUSE_INIT_USER_EMAIL, value: samyak.rout@gmail.com}
+            - {name: LANGFUSE_INIT_USER_NAME, value: Samyak Rout}
+            - name: LANGFUSE_INIT_USER_PASSWORD
+              valueFrom: {secretKeyRef: {name: langfuse-secrets, key: init-user-password}}
+        postgresql:
+          deploy: false
+          host: infra-postgres-rw.infra.svc.cluster.local
+          port: 5432
+          auth:
+            username: langfuse
+            database: langfuse
+            existingSecret: langfuse-secrets
+            secretKeys: {userPasswordKey: postgres-password}
+        clickhouse:
+          deploy: false
+          host: clickhouse-ha.observability.svc.cluster.local
+          httpPort: 8123
+          nativePort: 9000
+          database: otel
+          auth: {username: default, existingSecret: langfuse-secrets, existingSecretKey: clickhouse-password}
+          migration: {ssl: false, autoMigrate: true}
+          cluster: {enabled: true}
+        redis:
+          deploy: false
+          host: global-valkey-queue.global.svc.cluster.local
+          port: 6379
+          auth: {username: null, password: null, database: 0}
+          cluster: {enabled: false}
+          sentinel: {enabled: false}
+        s3:
+          deploy: false
+          storageProvider: gcs
+          bucket: tesserix-langfuse-prod-in
+          region: asia-south1
+          forcePathStyle: false
+          gcs: {credentials: {value: ""}}
+  destination: {server: https://kubernetes.default.svc, namespace: observability}
+  # Manual sync while the node pool and observability dependencies are parked.
+  syncPolicy:
+    syncOptions: [CreateNamespace=true]
+    retry:
+      limit: 5
+      backoff: {duration: 5s, factor: 2, maxDuration: 3m}
