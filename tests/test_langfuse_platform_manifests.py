@@ -126,7 +126,29 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
     assert env["CLICKHOUSE_CLUSTER_NAME"]["value"] == "default"
     assert env["LANGFUSE_INIT_PROJECT_ID"]["value"] == "devai"
     assert app["nextauth"]["url"] == "https://langfuse.tesserix.app"
-    assert app["auth"] == {"disableUsernamePassword": False}
+    assert app["auth"] == {"disableUsernamePassword": True}
+    assert app["features"]["signUpDisabled"] is False
+    expected_oidc_values = {
+        "AUTH_CUSTOM_ISSUER": "https://auth.tesserix.app",
+        "AUTH_CUSTOM_NAME": "Tesserix",
+        "AUTH_CUSTOM_SCOPE": "openid email profile",
+        "AUTH_CUSTOM_CLIENT_AUTH_METHOD": "client_secret_basic",
+        "AUTH_CUSTOM_CHECKS": "pkce,state",
+        "AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING": "true",
+        "AUTH_CUSTOM_ID_TOKEN": "true",
+        "AUTH_CUSTOM_FETCH_USERINFO": "false",
+    }
+    for name, value in expected_oidc_values.items():
+        assert env[name] == {"name": name, "value": value}
+    assert env["AUTH_CUSTOM_CLIENT_ID"]["valueFrom"] == {
+        "secretKeyRef": {"name": "langfuse-secrets", "key": "zitadel-client-id"}
+    }
+    assert env["AUTH_CUSTOM_CLIENT_SECRET"]["valueFrom"] == {
+        "secretKeyRef": {
+            "name": "langfuse-secrets",
+            "key": "zitadel-client-secret",
+        }
+    }
 
 
 def test_secrets_routing_and_devai_export_are_wired() -> None:
@@ -141,6 +163,8 @@ def test_secrets_routing_and_devai_export_are_wired() -> None:
     assert mappings["postgres-password"] == "prod-langfuse-postgresql-password"
     assert mappings["project-public-key"] == "prod-devai-langfuse-public-key"
     assert mappings["project-secret-key"] == "prod-devai-langfuse-secret-key"
+    assert mappings["zitadel-client-id"] == "prod-langfuse-zitadel-client-id"
+    assert mappings["zitadel-client-secret"] == "prod-langfuse-zitadel-client-secret"
     assert "google-client-id" not in mappings
     assert "google-client-secret" not in mappings
     route = resource(
@@ -191,6 +215,20 @@ def test_secrets_routing_and_devai_export_are_wired() -> None:
         "DEVAI_LANGFUSE_PUBLIC_KEY": "prod-devai-langfuse-public-key",
         "DEVAI_LANGFUSE_SECRET_KEY": "prod-devai-langfuse-secret-key",
     }
+
+
+def test_langfuse_zitadel_claim_is_restricted_to_approved_users() -> None:
+    claim = resource(
+        documents("k8s/operators/zitadel/claims/langfuse.yaml"),
+        "ZitadelProject",
+        "langfuse",
+    )
+    assert claim["spec"]["organization"] == "TESSERIX"
+    assert claim["spec"]["access"]["mode"] == "restricted"
+    assert claim["spec"]["access"]["members"] == [
+        {"email": "samyak.rout@gmail.com", "roles": ["admin"]},
+        {"email": "mahesh.sangawar@gmail.com", "roles": ["admin"]},
+    ]
 
 
 def test_dependencies_run_on_the_shared_infrastructure_pool() -> None:
