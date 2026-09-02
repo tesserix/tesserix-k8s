@@ -28,9 +28,9 @@ External Secrets, never committed to Git or written into claim status. The
 current public-client operator contract intentionally does not create that
 kind of credential.
 
-Claims live in `k8s/claims/identity/zitadel/` and are reconciled by the
-`zitadel-claims` Argo CD Application into `identity-operator`, the namespace
-watched by this operator.
+Claims live in `k8s/operators/zitadel/claims/`. The `zitadel-operator` Argo CD
+Application deploys both the controller and its claims into `identity-operator`,
+the namespace watched by this operator.
 
 ## Add a product
 
@@ -50,6 +50,5 @@ decommission workflow.
 
 ## Initial HomeChef claim
 
-`k8s/claims/identity/zitadel/homechef.yaml` creates the HomeChef project only.
-Applications are deferred until the migration has approved redirect URI and
-audience contracts, so the existing GIP users and clients remain unchanged.
+`k8s/operators/zitadel/claims/homechef.yaml` creates the HomeChef project and
+its approved public OIDC applications.
