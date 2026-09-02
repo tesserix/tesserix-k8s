@@ -208,9 +208,13 @@ a **capability prober** — a CronJob in `agentgateway-system` (or a goroutine i
 route-sync) that, for each platform server:
 
 1. Connects through the gateway with a platform service token.
-2. Calls `initialize` + `tools/list` + `resources/list` + `prompts/list`.
-3. Hashes the normalized capability set.
-4. `PATCH`es `status` on the registry object: `observedTools`, `observedHash`,
+2. Calls `server/discover` for MCP `2026-07-28`, then makes a self-contained
+   `tools/list` request. Both requests carry matching `MCP-Protocol-Version`,
+   `MCP-Method`, and `_meta` routing/capability metadata; neither uses
+   `initialize`, `notifications/initialized`, or `Mcp-Session-Id`.
+3. Rejects a server that does not advertise `2026-07-28`, then hashes the
+   normalized tool set.
+4. `PUT`s the observation to `status` on the registry object: `observedTools`, `observedHash`,
    `protocolVersion`, `lastProbedAt`, and a `Ready` condition.
 
 That gives four things we do not have:
@@ -228,6 +232,10 @@ That gives four things we do not have:
 
 Probe results are status, never spec. The manifest stays the operator's
 declaration; the probe stays the observation. They are compared, not merged.
+The status handler rereads the current artifact and merges against its exact
+tag, so an observation cannot be attached to a replacement published during a
+probe run. A legacy-only response remains `Ready=False` and its tool list is not
+published as a qualified observed surface.
 
 ### 5.1 Version pinning at the route
 
@@ -300,11 +308,15 @@ readiness for a server it never reached. Istio admits that principal to exactly
 one write path and denies every other registry mutation. The UI badge is the
 probe result — an unprobed server reads `Unprobed`, not `Active`.
 
-The CronJob ships with `probe.enabled=false`. Two things have to exist first:
-a registry image carrying `/app/agentic-probe`, and a Zitadel machine client
-whose credentials land in `prod-agentgateway-mcp-probe-client-id` and
-`prod-agentgateway-mcp-probe-client-secret`. Without either, every scheduled Job
-fails to start.
+Each probe operation is stateless MCP `2026-07-28`: `server/discover` followed
+by a separately complete `tools/list`. The gateway may send those requests to
+different replicas. Neither the probe nor a backend may depend on a session ID,
+cookie affinity, or pod-local discovery state.
+
+The CronJob is enabled with an immutable registry image carrying
+`/app/agentic-probe`. It uses its dedicated mesh service-account identity on
+the private MCP listener and therefore does not mount a broad OAuth client.
+Public-listener JWT behavior remains covered by separate gateway smoke tests.
 
 Outstanding: alert on `Unreachable` for any server with traffic in the last 24h.
 
@@ -357,3 +369,8 @@ Every one of these must be part of the platform test suite, deny cases first:
 9. A manifest carrying credential material → rejected at `/v0/apply`.
 10. A server the prober cannot reach → `Unreachable` in the catalog, and the UI
     never shows it as `Active`.
+11. `server/discover` and `tools/list` carry matching `2026-07-28` header/body
+    metadata; a legacy-only server cannot become Ready.
+12. Requests carrying `Mcp-Session-Id`, GET event streams, or mismatched
+    `MCP-Method` are rejected, and successive requests remain correct when they
+    land on different replicas.
