@@ -64,6 +64,21 @@ def test_infra_postgres_owns_langfuse_role_and_database() -> None:
 def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
     application = documents("argocd/prod/infrastructure/langfuse.yaml")[0]
     project = documents("argocd/prod/projects/infrastructure.yaml")[0]
+    clickhouse_render = subprocess.run(
+        [
+            "helm",
+            "template",
+            "clickhouse",
+            str(ROOT / "charts/thirdparty/clickhouse-ha"),
+            "--namespace",
+            "observability",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    clickhouse = [item for item in yaml.safe_load_all(clickhouse_render.stdout) if item]
+    clickhouse_service = resource(clickhouse, "Service", "clickhouse")
     source = application["spec"]["source"]
     values = yaml.safe_load(source["helm"]["values"])
     assert (source["repoURL"], source["chart"], source["targetRevision"]) == (
@@ -76,8 +91,8 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
     assert values["postgresql"]["deploy"] is False
     assert values["postgresql"]["host"] == "infra-postgres-rw.infra.svc.cluster.local"
     assert values["clickhouse"]["deploy"] is False
-    assert (
-        values["clickhouse"]["host"] == "clickhouse-ha.observability.svc.cluster.local"
+    assert values["clickhouse"]["host"] == (
+        f"{clickhouse_service['metadata']['name']}.observability.svc.cluster.local"
     )
     assert values["redis"]["deploy"] is False
     assert values["redis"]["host"] == "global-valkey-queue.global.svc.cluster.local"
