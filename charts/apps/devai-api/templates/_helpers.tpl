@@ -113,6 +113,18 @@ identical environment — defined once here so the two never drift.
       optional: true
 - name: DEVAI_ADK_RUNTIME_BASE_URL
   value: {{ .Values.globalRuntime.baseUrl | quote }}
+- name: DEVAI_LANGFUSE_PUBLIC_KEY
+  valueFrom:
+    secretKeyRef:
+      name: devai-langfuse-secrets
+      key: DEVAI_LANGFUSE_PUBLIC_KEY
+      optional: true
+- name: DEVAI_LANGFUSE_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: devai-langfuse-secrets
+      key: DEVAI_LANGFUSE_SECRET_KEY
+      optional: true
 # Database — password must be defined before URL for $(VAR) expansion
 - name: DB_PASSWORD
   valueFrom:

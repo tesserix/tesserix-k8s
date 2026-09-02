@@ -82,6 +82,21 @@ spec:
   # =========================================================================
   enableSuperuserAccess: false
 
+  {{- if .Values.managedRoles }}
+  managed:
+    roles:
+      {{- range .Values.managedRoles }}
+      - name: {{ .name }}
+        ensure: present
+        login: true
+        {{- with .comment }}
+        comment: {{ . | quote }}
+        {{- end }}
+        passwordSecret:
+          name: {{ .passwordSecret }}
+      {{- end }}
+  {{- end }}
+
   # =========================================================================
   # Continuous backup to GCS via Barman Cloud
   # =========================================================================
