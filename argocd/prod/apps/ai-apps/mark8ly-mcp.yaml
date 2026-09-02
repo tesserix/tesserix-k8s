@@ -32,13 +32,25 @@ spec:
           value: "main"
         # Phase 3 — auto-register marketplace-api's storefront read
         # operations tagged `x-mcp-expose: customer-read` as MCP
-        # tools. The spec is served at /storefront/openapi.json
-        # without the storefront-key gate (it's metadata, not data),
-        # so the gateway can fetch it unauthenticated. The actual
-        # backend calls the auto-tools make DO need the storefront
-        # key — injected via the secret block below.
+        # tools. The spec is served without the storefront-key gate
+        # (it's metadata, not data), so the gateway can fetch it
+        # unauthenticated. The actual backend calls the auto-tools
+        # make DO need the storefront key — injected via the secret
+        # block below.
+        #
+        # Two things this URL must get right, both of which it got
+        # wrong until #412 and neither of which reports a failure:
+        #   * :8080 — the Service exposes 8080 -> targetPort http;
+        #     omitting it defaults to :80, which nothing listens on.
+        #   * /api/v1 — ServeOpenAPISpec is mounted on the /api/v1
+        #     group, not at the root.
+        # Verified against the live pod:
+        #   /storefront/openapi.json         -> 404
+        #   /api/v1/storefront/openapi.json  -> 200 (OpenAPI 3.0.3,
+        #     5 operations: getStoreBranding, listStoreCategories,
+        #     listProductsByCategory, listStoreProducts, getStoreProduct)
         - name: openapi.urls
-          value: "http://mark8ly-marketplace-api-storefront.mark8ly.svc.cluster.local/storefront/openapi.json"
+          value: "http://mark8ly-marketplace-api-storefront.mark8ly.svc.cluster.local:8080/api/v1/storefront/openapi.json"
         - name: openapi.headers.template
           value: "X-Storefront-Key: $(STOREFRONT_KEY)"
         - name: openapi.headers.secret.enabled
