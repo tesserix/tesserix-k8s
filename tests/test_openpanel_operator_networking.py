@@ -72,3 +72,24 @@ def test_analytics_operator_allows_ambient_hbone_egress():
     )
 
     assert hbone_rule["to"] == [{"ipBlock": {"cidr": "10.20.0.0/16"}}]
+
+
+def test_analytics_operator_can_reach_node_local_dns():
+    resources = list(
+        yaml.safe_load_all(
+            (ROOT / "k8s/operators/analytics-onboarding/resources.yaml").read_text()
+        )
+    )
+    network_policy = resource(
+        resources, "NetworkPolicy", "analytics-onboarding-operator"
+    )
+    dns_rule = next(
+        rule
+        for rule in network_policy["spec"]["egress"]
+        if rule.get("to") == [{"ipBlock": {"cidr": "10.30.0.10/32"}}]
+    )
+
+    assert {
+        (port.get("protocol", "TCP"), port["port"])
+        for port in dns_rule["ports"]
+    } == {("TCP", 53), ("UDP", 53)}
