@@ -18,13 +18,17 @@ class OperatorClaimLayoutTests(unittest.TestCase):
         self.assertNotIn("uniqueItems", spec_schema["properties"]["types"])
 
         policy = next(resource for resource in resources if resource["kind"] == "NetworkPolicy")
-        metadata_egress = next(
-            rule
+        metadata_endpoints = {
+            (target["ipBlock"]["cidr"], port["port"])
             for rule in policy["spec"]["egress"]
-            if {target.get("ipBlock", {}).get("cidr") for target in rule.get("to", [])}
-            == {"169.254.169.254/32"}
+            for target in rule.get("to", [])
+            if "ipBlock" in target
+            for port in rule.get("ports", [])
+        }
+        self.assertEqual(
+            metadata_endpoints,
+            {("169.254.169.254/32", 80), ("169.254.169.252/32", 988)},
         )
-        self.assertEqual(metadata_egress["ports"], [{"protocol": "TCP", "port": 80}])
 
     def test_claims_live_with_their_operators_and_are_deployed(self):
         operators = {
