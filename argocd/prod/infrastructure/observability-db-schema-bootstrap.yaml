@@ -24,9 +24,9 @@ spec:
         # Selects schemas/observability/clickhouse/*.sql
         app: observability
 
-        # PARKED 2026-08-01: ClickHouse is at 0 replicas, so every run would
-        # just retry against a dead host. Flip to false when reviving.
-        suspend: true
+        # ClickHouse is serving on the shared infrastructure pool. Keep the
+        # idempotent schema reconciliation active.
+        suspend: false
 
         # No PostgreSQL here — this release uses only the ClickHouse path, so
         # the postgres CronJob is not rendered at all.
@@ -45,14 +45,10 @@ spec:
           # profile is what guarantees a compromised obs-api cannot alter
           # telemetry, so it is preserved rather than relaxed.
           sreWriterSecretKey: sre-writer-password
-          # Must reach ClickHouse on the tainted Spot pool.
+          # Run beside ClickHouse on the existing infrastructure pool.
           nodeSelector:
-            workload: observability
-          tolerations:
-            - key: workload
-              operator: Equal
-              value: observability
-              effect: NoSchedule
+            workload: infrastructure
+          tolerations: []
 
         serviceAccount:
           create: true

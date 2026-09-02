@@ -21,19 +21,23 @@ data:
   cluster.xml: |
     <clickhouse>
       <remote_servers>
-        <{{ .Values.clusterName }}>
+      {{- $root := . }}
+      {{- $clusters := concat (list .Values.clusterName) (.Values.clusterAliases | default (list)) }}
+      {{- range $clusterName := $clusters }}
+        <{{ $clusterName }}>
           <shard>
             <internal_replication>true</internal_replication>
-          {{- range $i := until (int .Values.replicaCount) }}
+          {{- range $i := until (int $root.Values.replicaCount) }}
             <replica>
-              <host>{{ include "clickhouse-ha.name" $ }}-{{ $i }}.{{ include "clickhouse-ha.headless" $ }}.{{ $.Release.Namespace }}.svc.cluster.local</host>
-              <port>{{ $.Values.ports.native }}</port>
-              <user>{{ $.Values.auth.user }}</user>
+              <host>{{ include "clickhouse-ha.name" $root }}-{{ $i }}.{{ include "clickhouse-ha.headless" $root }}.{{ $root.Release.Namespace }}.svc.cluster.local</host>
+              <port>{{ $root.Values.ports.native }}</port>
+              <user>{{ $root.Values.auth.user }}</user>
               <password from_env="CLICKHOUSE_PASSWORD"></password>
             </replica>
           {{- end }}
           </shard>
-        </{{ .Values.clusterName }}>
+        </{{ $clusterName }}>
+      {{- end }}
       </remote_servers>
 
       {{/*

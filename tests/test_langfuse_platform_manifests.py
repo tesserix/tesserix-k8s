@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import yaml
@@ -94,6 +95,7 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
     assert values["clickhouse"]["host"] == (
         f"{clickhouse_service['metadata']['name']}.observability.svc.cluster.local"
     )
+    assert values["clickhouse"]["database"] == "langfuse"
     assert values["redis"]["deploy"] is False
     assert values["redis"]["host"] == "global-valkey-queue.global.svc.cluster.local"
     assert values["redis"]["auth"]["username"] is None
@@ -114,7 +116,7 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
     assert app["securityContext"]["readOnlyRootFilesystem"] is True
     assert app["podSecurityContext"]["runAsNonRoot"] is True
     env = {item["name"]: item for item in app["additionalEnv"]}
-    assert env["CLICKHOUSE_CLUSTER_NAME"]["value"] == "otel"
+    assert env["CLICKHOUSE_CLUSTER_NAME"]["value"] == "default"
     assert env["LANGFUSE_INIT_PROJECT_ID"]["value"] == "devai"
     assert app["nextauth"]["url"] == "https://langfuse.tesserix.app"
     assert app["auth"] == {"disableUsernamePassword": False}
@@ -184,3 +186,42 @@ def test_dependencies_run_on_the_shared_infrastructure_pool() -> None:
         12,
     )
     assert "observability" in queue["networkPolicy"]["allowedNamespaces"]
+
+
+def test_clickhouse_exposes_langfuse_cluster_and_bootstraps_database() -> None:
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "clickhouse",
+            str(ROOT / "charts/thirdparty/clickhouse-ha"),
+            "--namespace",
+            "observability",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    items = [item for item in yaml.safe_load_all(result.stdout) if item]
+    config = resource(items, "ConfigMap", "clickhouse-config")
+    topology = ET.fromstring(config["data"]["cluster.xml"])
+    remote_servers = topology.find("remote_servers")
+    assert remote_servers is not None
+    for cluster_name in ("otel", "default"):
+        cluster = remote_servers.find(cluster_name)
+        assert cluster is not None
+        assert len(cluster.findall("./shard/replica")) == 2
+
+    sql = (
+        ROOT
+        / "charts/apps/db-schema-bootstrap/schemas/observability/clickhouse/01-database.sql"
+    ).read_text()
+    assert "CREATE DATABASE IF NOT EXISTS langfuse ON CLUSTER otel;" in sql
+
+    application = documents(
+        "argocd/prod/infrastructure/observability-db-schema-bootstrap.yaml"
+    )[0]
+    values = yaml.safe_load(application["spec"]["source"]["helm"]["values"])
+    assert values["suspend"] is False
+    assert values["clickhouse"]["nodeSelector"] == {"workload": "infrastructure"}
+    assert values["clickhouse"]["tolerations"] == []
