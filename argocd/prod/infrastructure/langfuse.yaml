@@ -25,8 +25,10 @@ spec:
             secretKeyRef: {name: langfuse-secrets, key: salt}
           encryptionKey:
             secretKeyRef: {name: langfuse-secrets, key: encryption-key}
-          features: {telemetryEnabled: false, signUpDisabled: true}
-          auth: {disableUsernamePassword: false}
+          # SSO users must be provisioned on first login. Zitadel project grants
+          # are the signup allowlist; local username/password auth stays disabled.
+          features: {telemetryEnabled: false, signUpDisabled: false}
+          auth: {disableUsernamePassword: true}
           nextauth:
             url: https://langfuse.tesserix.app
             secret:
@@ -70,6 +72,18 @@ spec:
           extraVolumeMounts: [{name: tmp, mountPath: /tmp}]
           additionalEnv:
             - {name: CLICKHOUSE_CLUSTER_NAME, value: default}
+            - name: AUTH_CUSTOM_CLIENT_ID
+              valueFrom: {secretKeyRef: {name: langfuse-secrets, key: zitadel-client-id}}
+            - name: AUTH_CUSTOM_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: langfuse-secrets, key: zitadel-client-secret}}
+            - {name: AUTH_CUSTOM_ISSUER, value: https://auth.tesserix.app}
+            - {name: AUTH_CUSTOM_NAME, value: Tesserix}
+            - {name: AUTH_CUSTOM_SCOPE, value: "openid email profile"}
+            - {name: AUTH_CUSTOM_CLIENT_AUTH_METHOD, value: client_secret_basic}
+            - {name: AUTH_CUSTOM_CHECKS, value: "pkce,state"}
+            - {name: AUTH_CUSTOM_ALLOW_ACCOUNT_LINKING, value: "true"}
+            - {name: AUTH_CUSTOM_ID_TOKEN, value: "true"}
+            - {name: AUTH_CUSTOM_FETCH_USERINFO, value: "false"}
             - {name: LANGFUSE_INIT_ORG_ID, value: tesserix}
             - {name: LANGFUSE_INIT_ORG_NAME, value: Tesserix}
             - {name: LANGFUSE_INIT_PROJECT_ID, value: devai}
