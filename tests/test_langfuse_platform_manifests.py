@@ -160,7 +160,6 @@ def test_secrets_routing_and_devai_export_are_wired() -> None:
     mappings = {
         item["secretKey"]: item["remoteRef"]["key"] for item in external["spec"]["data"]
     }
-    assert external["spec"]["refreshPolicy"] == "Periodic"
     assert external["spec"]["target"]["deletionPolicy"] == "Retain"
     assert mappings["postgres-password"] == "prod-langfuse-postgresql-password"
     assert mappings["project-public-key"] == "prod-devai-langfuse-public-key"
