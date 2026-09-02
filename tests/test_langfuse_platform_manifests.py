@@ -112,6 +112,10 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
     assert app["web"]["livenessProbe"]["initialDelaySeconds"] == 90
     assert app["web"]["readinessProbe"]["initialDelaySeconds"] == 30
     assert app["worker"]["livenessProbe"]["initialDelaySeconds"] == 90
+    assert app["web"]["resources"] == {
+        "requests": {"memory": "1Gi"},
+        "limits": {"memory": "2Gi"},
+    }
     assert app["nodeSelector"] == {"workload": "infrastructure"}
     assert (
         app["web"]["pdb"]["minAvailable"] == app["worker"]["pdb"]["minAvailable"] == 1
