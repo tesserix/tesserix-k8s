@@ -1,0 +1,158 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: analyticsonboardings.analytics.tesserix.app
+spec:
+  group: analytics.tesserix.app
+  names:
+    kind: AnalyticsOnboarding
+    plural: analyticsonboardings
+    singular: analyticsonboarding
+    shortNames: [analyticsclaim]
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources: {status: {}}
+      additionalPrinterColumns:
+        - name: Ready
+          type: string
+          jsonPath: '.status.conditions[?(@.type=="Ready")].status'
+        - name: Project
+          type: string
+          jsonPath: .status.projectId
+        - name: Client ID Secret
+          type: string
+          jsonPath: .status.clientIdSecret
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [displayName, domain, cors]
+              properties:
+                displayName: {type: string, minLength: 1, maxLength: 200}
+                domain: {type: string, minLength: 8, maxLength: 2000, pattern: '^https?://'}
+                cors:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  uniqueItems: true
+                  items: {type: string, minLength: 8, maxLength: 2000, pattern: '^https?://'}
+                types:
+                  type: array
+                  minItems: 1
+                  maxItems: 3
+                  uniqueItems: true
+                  items: {type: string, enum: [website, app, backend]}
+            status: {type: object, x-kubernetes-preserve-unknown-fields: true}
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: openpanel-root-credentials
+  namespace: analytics-operator
+spec:
+  refreshInterval: 10m
+  secretStoreRef: {name: gcp-secret-store, kind: ClusterSecretStore}
+  target: {name: openpanel-root-credentials, creationPolicy: Owner}
+  data:
+    - secretKey: client-id
+      remoteRef: {key: prod-openpanel-root-client-id}
+    - secretKey: client-secret
+      remoteRef: {key: prod-openpanel-root-client-secret}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: analytics-onboarding-operator
+  namespace: analytics-operator
+  annotations:
+    iam.gke.io/gcp-service-account: analytics-onboarding-operator@tesseracthub-480811.iam.gserviceaccount.com
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: analytics-onboarding-operator, namespace: analytics-operator}
+rules:
+  - apiGroups: [analytics.tesserix.app]
+    resources: [analyticsonboardings]
+    verbs: [get, list, watch]
+  - apiGroups: [analytics.tesserix.app]
+    resources: [analyticsonboardings/status]
+    verbs: [get, update, patch]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: analytics-onboarding-operator, namespace: analytics-operator}
+subjects: [{kind: ServiceAccount, name: analytics-onboarding-operator, namespace: analytics-operator}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: analytics-onboarding-operator}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: analytics-onboarding-operator
+  namespace: analytics-operator
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: analytics-onboarding-operator}}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: openpanel}}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openpanel
+              app.kubernetes.io/component: api
+      ports:
+        - {protocol: TCP, port: 3333}
+    - ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-onboarding-operator
+  namespace: analytics-operator
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: analytics-onboarding-operator}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: analytics-onboarding-operator}
+      annotations: {reloader.stakater.com/auto: "true"}
+    spec:
+      serviceAccountName: analytics-onboarding-operator
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: operator
+          image: ghcr.io/tesserix/analytics-onboarding-operator
+          args:
+            - --watch-namespace=analytics-operator
+            - --openpanel-api-url=http://openpanel-api.openpanel.svc.cluster.local:3333
+            - --gcp-project=tesseracthub-480811
+            - --secret-prefix=prod-openpanel-
+          ports: [{name: healthz, containerPort: 8081}]
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {memory: 256Mi}}
+          readinessProbe: {httpGet: {path: /readyz, port: healthz}, initialDelaySeconds: 3}
+          livenessProbe: {httpGet: {path: /healthz, port: healthz}, initialDelaySeconds: 10}
+          volumeMounts: [{name: root-credentials, mountPath: /var/run/openpanel-root, readOnly: true}]
+      volumes:
+        - name: root-credentials
+          secret: {secretName: openpanel-root-credentials, defaultMode: 256}
