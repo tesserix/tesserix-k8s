@@ -89,6 +89,21 @@ spec:
                   name: devai-auth-bff-secrets
                   key: DEVAI_AUTH_BFF_SHARED_SECRET
                   optional: true
+            # Langfuse API keys for the langfuse telemetry provider; optional
+            # so the pod starts before the devai-langfuse-secrets ES syncs
+            # (the adapter degrades to noop when the keys are empty).
+            - name: DEVAI_LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: devai-langfuse-secrets
+                  key: DEVAI_LANGFUSE_PUBLIC_KEY
+                  optional: true
+            - name: DEVAI_LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: devai-langfuse-secrets
+                  key: DEVAI_LANGFUSE_SECRET_KEY
+                  optional: true
             # The secret above is optional, so an ExternalSecret failure
             # silently empties it — and an empty shared secret means "trust
             # X-Forwarded-* from anyone". false makes that fail closed
