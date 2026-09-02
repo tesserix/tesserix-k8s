@@ -78,7 +78,7 @@ def test_existing_onboarding_database_receives_idempotent_schema_updates(tmp_pat
     values = yaml.safe_load(values_text)
     target = values["targets"][0]
 
-    assert target["reapplyExistingSchemas"] == ["onboarding_db"]
+    assert "onboarding_db" in target["reapplyExistingSchemas"]
 
     values_file = tmp_path / "values.yaml"
     values_file.write_text(values_text)

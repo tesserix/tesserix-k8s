@@ -82,6 +82,30 @@ spec:
   enableSuperuserAccess: false
 
   # =========================================================================
+  # CNPG-managed roles — reconciled continuously (not bootstrap-only), so
+  # this provisions roles on the already-running cluster. Same pattern as
+  # global-postgres, plus inRoles for membership-based grants.
+  # =========================================================================
+  {{- if .Values.managedRoles }}
+  managed:
+    roles:
+      {{- range .Values.managedRoles }}
+      - name: {{ .name }}
+        ensure: present
+        login: true
+        {{- with .inRoles }}
+        inRoles:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .comment }}
+        comment: {{ . | quote }}
+        {{- end }}
+        passwordSecret:
+          name: {{ .passwordSecret }}
+      {{- end }}
+  {{- end }}
+
+  # =========================================================================
   # Backup — continuous WAL archiving + base backups to GCS via Barman Cloud
   #
   # Gated so the chart still renders for a cluster that has no bucket or

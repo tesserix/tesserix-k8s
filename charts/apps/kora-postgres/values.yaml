@@ -47,6 +47,18 @@ backup:
   schedule: "0 0 */6 * * *"
   serviceAccount: "app-secrets-kora-prod@tesseracthub-480811.iam.gserviceaccount.com"
 
+# Read-only source identity for the DevAI sandbox sync
+# (k8s/operators/db-anonymise/claims/kora.yaml). pg_read_all_data keeps it
+# SELECT-only; the password secret is rendered by the ExternalSecret in
+# external-secrets/prod/kora/sandbox-sync.yaml from GCP Secret Manager key
+# prod-kora-sandbox-reader-password.
+managedRoles:
+  - name: kora_sandbox_reader
+    passwordSecret: kora-postgres-sandbox-reader
+    inRoles:
+      - pg_read_all_data
+    comment: SELECT-only reader for the DevAI sandbox evals sync
+
 postgresql:
   max_connections: "100"
   shared_buffers: "512MB"
