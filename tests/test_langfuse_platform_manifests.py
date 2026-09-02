@@ -63,6 +63,7 @@ def test_infra_postgres_owns_langfuse_role_and_database() -> None:
 
 def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
     application = documents("argocd/prod/infrastructure/langfuse.yaml")[0]
+    project = documents("argocd/prod/projects/infrastructure.yaml")[0]
     source = application["spec"]["source"]
     values = yaml.safe_load(source["helm"]["values"])
     assert (source["repoURL"], source["chart"], source["targetRevision"]) == (
@@ -71,6 +72,7 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
         "2.1.0",
     )
     assert "automated" not in application["spec"].get("syncPolicy", {})
+    assert source["repoURL"] in project["spec"]["sourceRepos"]
     assert values["postgresql"]["deploy"] is False
     assert values["postgresql"]["host"] == "infra-postgres-rw.infra.svc.cluster.local"
     assert values["clickhouse"]["deploy"] is False
