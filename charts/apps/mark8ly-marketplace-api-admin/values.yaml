@@ -136,11 +136,24 @@ mediaPublicBaseURL: "https://cdn.mark8ly.com"
 mediaCacheControl: "public, max-age=31536000, immutable"
 # ── P0: Security & encryption ────────────────────────────────────
 encryptionMode: "aes"
-# Carrier credentials (Delhivery, Razorpay, TaxJar, etc.) live in GCP
-# Secret Manager, one secret per (tenant, domain, provider, field).
-# Reads are backwards-compat: legacy rows carrying noop:/aes: refs are
-# lazily rewrapped to gsm:// on first access.
-carrierSecretStore: "gcpsm"
+# Carrier credentials (Delhivery, Razorpay, TaxJar, etc.).
+#
+# "bao" (mark8ly#319 phase 2): NEW WRITES go to OpenBao at
+# kv/data/mark8ly/marketplace-api/tenants/<tenant>/<domain>/<provider>/<field>
+# and persist a bao:// reference. Existing gsm:// rows keep resolving through
+# GCP Secret Manager — ChainStore routes on the reference PREFIX, not on this
+# mode, so old and new coexist and nothing needs migrating up front.
+#
+# Only this ADMIN deployment writes credentials. The storefront is left on
+# "gcpsm" deliberately: its OpenBao role is read-only by design, it still
+# resolves bao:// references by prefix, and leaving it here halves the blast
+# radius of this flip.
+#
+# ROLLBACK: set this back to "gcpsm" and LEAVE OPENBAO_ROLE/OPENBAO_ADDR SET.
+# Any row already migrated still carries a bao:// reference and still routes
+# to OpenBao; dropping the role would make those credentials unresolvable.
+# On the next save, MaybeRewrap migrates such a row back to gsm://.
+carrierSecretStore: "bao"
 gcpProjectId: "tesseracthub-480811"
 # Merchant device push (mobile-admin). Empty topic = publishing off.
 # The OIDC values must match the Pub/Sub push subscription's
