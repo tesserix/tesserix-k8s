@@ -132,10 +132,28 @@ spec:
                     sed -e "s|__OBSERVER_PASSWORD__|${OBSERVER_PASSWORD:-}|g" \
                         -e "s|__SRE_WRITER_PASSWORD__|${SRE_WRITER_PASSWORD:-}|g" \
                         "$f" > /tmp/rendered.sql
+                    set +e
                     clickhouse-client --host "${HOST}" --port "${PORT}" \
                       --user "${USER}" --password "${CLICKHOUSE_PASSWORD}" \
-                      --multiquery < /tmp/rendered.sql
-                    rm -f /tmp/rendered.sql
+                      --multiquery < /tmp/rendered.sql \
+                      > /tmp/clickhouse-output 2>&1
+                    status=$?
+                    set -e
+                    if [ "$status" -ne 0 ]; then
+                      if grep -q '^-- bootstrap:allow-unknown-table$' "$f" \
+                          && grep -q 'Code: 60' /tmp/clickhouse-output; then
+                        echo "optional table is not present yet; deferring $(basename "$f")"
+                      else
+                        # Do not print rendered SQL errors: user DDL may contain
+                        # substituted passwords.
+                        echo "$(basename "$f") failed with exit code $status" >&2
+                        rm -f /tmp/rendered.sql /tmp/clickhouse-output
+                        exit "$status"
+                      fi
+                    else
+                      cat /tmp/clickhouse-output
+                    fi
+                    rm -f /tmp/rendered.sql /tmp/clickhouse-output
                   done
 
                   echo "=== clickhouse bootstrap complete ==="

@@ -17,6 +17,7 @@
 --
 -- 30 days on the high-volume signals; Kubernetes events are tiny and the most
 -- useful thing to look back on, so they keep 90.
+-- bootstrap:allow-unknown-table
 
 ALTER TABLE otel.otel_logs ON CLUSTER otel
   MODIFY TTL toDateTime(Timestamp) + INTERVAL 30 DAY;
