@@ -41,6 +41,16 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secrets.name }}
                   key: {{ .Values.secrets.postgresqlPasswordKey }}
+            - name: ROOT_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: root-client-id
+            - name: ROOT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: root-client-secret
             - name: TARGET_NAMESPACE
               value: "{{ .Values.projectInit.targetNamespace }}"
             - name: SECRET_NAME
@@ -82,8 +92,9 @@ spec:
               echo "Target namespace: $TARGET_NAMESPACE"
               echo "Secret name: $SECRET_NAME"
 
-              # --- Install curl (K8s API calls) and argon2 (password hashing) ---
-              apk add --no-cache curl argon2 >/dev/null 2>&1
+              # Node hashes the Manage API root secret with the same scrypt
+              # format as OpenPanel. Argon2 remains for the legacy admin login.
+              apk add --no-cache curl argon2 nodejs >/dev/null 2>&1
 
               PSQL="psql -h $DB_HOST -U $DB_USER -d $DB_NAME -t -A -q"
 
@@ -190,13 +201,22 @@ spec:
               # --- Create Root Client (for future API management) ---
               echo "[4/6] Ensuring root client exists..."
               ROOT_EXISTS=$($PSQL -c "SELECT id FROM clients WHERE type = 'root'::\"ClientType\" AND \"organizationId\" = '$ORG_ID' LIMIT 1;")
-              if [ -z "$ROOT_EXISTS" ]; then
-                $PSQL -c "INSERT INTO clients (name, type, \"organizationId\", secret) VALUES ('api-root', 'root'::\"ClientType\", '$ORG_ID', 'sec_' || encode(gen_random_bytes(32), 'hex'));"
-                ROOT_EXISTS=$($PSQL -c "SELECT id FROM clients WHERE type = 'root'::\"ClientType\" AND \"organizationId\" = '$ORG_ID' LIMIT 1;")
-                echo "  Created root client: $ROOT_EXISTS"
-              else
-                echo "  Root client exists: $ROOT_EXISTS"
+              if [ -n "$ROOT_EXISTS" ] && [ "$ROOT_EXISTS" != "$ROOT_CLIENT_ID" ]; then
+                echo "  Existing root client ID does not match the managed credential" >&2
+                exit 1
               fi
+
+              ROOT_HASH=$(node -e 'const c=require("node:crypto"); const salt=c.randomBytes(16).toString("hex"); const key=c.scryptSync(process.env.ROOT_CLIENT_SECRET,salt,32).toString("hex"); process.stdout.write(`${salt}.${key}`)')
+              $PSQL <<EOSQL
+              INSERT INTO clients (id, name, type, "organizationId", secret)
+              VALUES ('$ROOT_CLIENT_ID', 'api-root', 'root'::"ClientType", '$ORG_ID', '$ROOT_HASH')
+              ON CONFLICT (id) DO UPDATE SET
+                name = EXCLUDED.name,
+                type = EXCLUDED.type,
+                "organizationId" = EXCLUDED."organizationId",
+                secret = EXCLUDED.secret;
+              EOSQL
+              echo "  Root client credential reconciled"
 
               # --- Create Admin User (for dashboard login) ---
               {{- if .Values.projectInit.adminUser.enabled }}

@@ -18,6 +18,10 @@ class OperatorClaimLayoutTests(unittest.TestCase):
                 "application": ROOT / "argocd/prod/apps/ai-apps/devai-sandbox-operator.yaml",
                 "claims": ["kora.yaml"],
             },
+            "analytics-onboarding": {
+                "application": ROOT / "argocd/prod/infrastructure/analytics-onboarding-operator.yaml",
+                "claims": ["langfuse.yaml", "devai.yaml"],
+            },
         }
 
         for operator, expected_claims in operators.items():
