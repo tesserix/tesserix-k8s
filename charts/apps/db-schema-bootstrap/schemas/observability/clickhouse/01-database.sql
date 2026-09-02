@@ -13,3 +13,4 @@
 -- must be idempotent.
 
 CREATE DATABASE IF NOT EXISTS otel ON CLUSTER otel;
+CREATE DATABASE IF NOT EXISTS langfuse ON CLUSTER otel;
