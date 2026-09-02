@@ -67,6 +67,45 @@ spec:
               command: ["/usr/local/bin/refund-sweep-cron"]
               env:
 {{ include "mark8ly-marketplace-api-admin.dbEnv" . | indent 16 }}
+                # Carrier credential resolution (mark8ly#166). Until now this
+                # CronJob had ONLY dbEnv, so the sweeper could not resolve the
+                # gsm:// reference stored on payment_gateway_configs — it
+                # handed the raw reference string to the gateway, which 401s,
+                # and every gateway re-drive from the sweep failed silently.
+                #
+                # These mirror the deployment's values exactly. The binary
+                # reads them through config.LoadCarrierSecretJob(), a NARROW
+                # loader: it deliberately does NOT require
+                # MARKETPLACE_FGA_API_URL, the internal-auth secret or the
+                # customer-session secret, none of which a refund sweeper
+                # uses — injecting them here would widen their blast radius
+                # for nothing. It shares validateShippingSecretStore() with
+                # the API so the two cannot drift on the part that matters.
+                #
+                # ENCRYPTION_* are genuinely needed: the store decodes legacy
+                # inline (noop:/aes:) references with the same encryptor.
+                - name: SHIPPING_SECRET_STORE
+                  value: {{ .Values.carrierSecretStore | default "inline" | quote }}
+                - name: GCP_PROJECT_ID
+                  value: {{ .Values.gcpProjectId | quote }}
+                - name: SECRET_NAME_PREFIX
+                  value: {{ .Values.carrierSecretPrefix | default "mark8ly-dev" | quote }}
+                - name: ENCRYPTION_MODE
+                  value: {{ .Values.encryptionMode | quote }}
+                - name: ENCRYPTION_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.encryptionKey.secretName }}
+                      key: {{ .Values.encryptionKey.secretKey }}
+                # OpenBao settings are consulted only when
+                # SHIPPING_SECRET_STORE is "gcpsm" or "bao" (both construct a
+                # ChainStore). Harmless while the mode is "inline".
+                - name: OPENBAO_ADDR
+                  value: {{ .Values.openBaoAddr | default "http://openbao-active.openbao.svc.cluster.local:8200" | quote }}
+                - name: OPENBAO_ROLE
+                  value: {{ .Values.openBaoRole | default "" | quote }}
+                - name: OPENBAO_KV_MOUNT
+                  value: {{ .Values.openBaoKvMount | default "kv" | quote }}
               resources:
                 requests:
                   memory: 64Mi
