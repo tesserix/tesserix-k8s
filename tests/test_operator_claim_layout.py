@@ -8,6 +8,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OperatorClaimLayoutTests(unittest.TestCase):
+    def test_analytics_operator_resources_are_gke_compatible(self):
+        resources_path = ROOT / "k8s/operators/analytics-onboarding/resources.yaml"
+        resources = list(yaml.safe_load_all(resources_path.read_text()))
+
+        crd = next(resource for resource in resources if resource["kind"] == "CustomResourceDefinition")
+        spec_schema = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]
+        self.assertNotIn("uniqueItems", spec_schema["properties"]["cors"])
+        self.assertNotIn("uniqueItems", spec_schema["properties"]["types"])
+
+        policy = next(resource for resource in resources if resource["kind"] == "NetworkPolicy")
+        metadata_egress = next(
+            rule
+            for rule in policy["spec"]["egress"]
+            if {target.get("ipBlock", {}).get("cidr") for target in rule.get("to", [])}
+            == {"169.254.169.254/32"}
+        )
+        self.assertEqual(metadata_egress["ports"], [{"protocol": "TCP", "port": 80}])
+
     def test_claims_live_with_their_operators_and_are_deployed(self):
         operators = {
             "zitadel": {
