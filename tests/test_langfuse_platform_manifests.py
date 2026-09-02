@@ -158,6 +158,27 @@ def test_secrets_routing_and_devai_export_are_wired() -> None:
     )
     assert values["env"]["DEVAI_TELEMETRY_PROVIDER"] == "langfuse"
     assert values["env"]["DEVAI_LANGFUSE_PUBLIC_URL"] == "https://langfuse.tesserix.app"
+    devai_render = subprocess.run(
+        [
+            "helm",
+            "template",
+            "devai-api",
+            str(ROOT / "charts/apps/devai-api"),
+            "--namespace",
+            "devai",
+            "-f",
+            str(ROOT / "charts/apps/devai-api/values-prod.yaml"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    devai_items = [item for item in yaml.safe_load_all(devai_render.stdout) if item]
+    for deployment_name in ("devai-api", "devai-api-worker"):
+        deployment = resource(devai_items, "Deployment", deployment_name)
+        assert deployment["spec"]["template"]["metadata"]["annotations"][
+            "secret.reloader.stakater.com/reload"
+        ] == "devai-langfuse-secrets"
     devai = resource(
         documents("external-secrets/prod/devai/externalsecret.yaml"),
         "ExternalSecret",
