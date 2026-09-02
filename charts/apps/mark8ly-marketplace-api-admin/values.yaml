@@ -267,6 +267,14 @@ stockHoldSweepCron:
   # over several runs rather than in one long-held lock.
   batch: 500
 
+# Outbound webhook delivery pruner (mark8ly#587). Enforces the 30-day
+# webhook_deliveries retention window; the window itself lives in Go
+# (webhook.RetentionWindow), not here — this only decides how often the
+# binary runs. Daily off-peak: a missed run costs dead rows, not money.
+webhookDeliveryPruneCron:
+  enabled: true
+  schedule: "41 3 * * *"
+
 # Product Admin Integration Contract conformance (mark8ly#290). Runs the
 # published suite against this service's own platform admin surface and fails
 # the Job on any declared endpoint that deviates.
