@@ -152,6 +152,16 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
 
 
 def test_secrets_routing_and_devai_export_are_wired() -> None:
+    secrets_app = documents(
+        "argocd/prod/infrastructure/external-secrets-resources.yaml"
+    )[0]
+    assert secrets_app["spec"]["ignoreDifferences"] == [
+        {
+            "group": "external-secrets.io",
+            "kind": "ExternalSecret",
+            "jsonPointers": ["/spec/refreshPolicy"],
+        }
+    ]
     external = resource(
         documents("external-secrets/prod/observability/langfuse-secrets.yaml"),
         "ExternalSecret",
