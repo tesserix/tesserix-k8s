@@ -101,6 +101,12 @@ spec:
   policyTypes: [Ingress, Egress]
   ingress: []
   egress:
+    # GKE NodeLocal DNS is host-networked and is not selected by namespace peers.
+    - to:
+        - ipBlock: {cidr: 10.30.0.10/32}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
     - to:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
       ports:
