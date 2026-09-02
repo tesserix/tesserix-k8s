@@ -5,21 +5,19 @@
 # count is fixed at 1 in the remote_servers template. At this data volume
 # (~1.2GiB/day compressed) a single shard is correct; sharding adds a
 # distributed-query hop for no benefit until the data outgrows one node's disk.
-# PARKED 2026-08-01 at 0 for cost — restore to 2 to revive; the two 100Gi data
-# PVCs are retained, so telemetry and table metadata survive the park.
-replicaCount: 0
+# Two replicas preserve availability while sharing the existing infrastructure
+# pool. The retained 100Gi PVCs preserve telemetry and table metadata.
+replicaCount: 2
 
 image:
   # Pulled through the GAR docker.io mirror rather than docker.io directly.
-  # On a Spot pool every preemption re-pulls this image, so keeping the pull
-  # inside asia-south1 removes both the egress cost and a slow cold start.
+  # Keeping the pull inside asia-south1 removes egress cost and slow cold starts.
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/clickhouse/clickhouse-server
-  # Langfuse v4 requires >=25.12. Dormant while replicaCount is 0.
+  # Langfuse v4 requires >=25.12.
   tag: "26.4"
   # IfNotPresent, deliberately. This is a third-party image on a pinned tag, so
   # the content behind that tag never changes and re-pulling gains nothing.
-  # It matters here because the stack runs on a Spot pool: Always would re-pull
-  # from GAR on every pod restart, and preemptions make restarts routine.
+  # Always would re-pull from GAR on every pod restart without adding safety.
   # Our own images (obs-api, obs-ui) use Always instead, because they track a
   # moving `main` tag that genuinely does change.
   pullPolicy: IfNotPresent
@@ -142,12 +140,9 @@ podDisruptionBudget:
   # With 2 replicas, allow at most one down at a time.
   maxUnavailable: 1
 
-# The Spot observability pool.
+# Share the existing general infrastructure pool; do not create dedicated
+# observability capacity.
 nodeSelector:
-  workload: observability
+  workload: infrastructure
 
-tolerations:
-  - key: workload
-    operator: Equal
-    value: observability
-    effect: NoSchedule
+tolerations: []

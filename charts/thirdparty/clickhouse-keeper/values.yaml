@@ -2,22 +2,19 @@
 # argocd/prod/infrastructure/clickhouse-keeper.yaml (the redis-global pattern).
 
 # Raft quorum size. MUST be odd. 3 tolerates the loss of one member.
-# PARKED 2026-08-01 at 0 for cost — restore to 3 to revive; see docs/observability-park.md
-replicaCount: 0
+replicaCount: 3
 
 image:
   # Standalone Keeper image — same release train as the ClickHouse servers in
   # charts/thirdparty/clickhouse-ha. Keep the two tags in lockstep on upgrade;
   # a Keeper older than its servers is supported, the reverse is not.
   # Pulled through the GAR docker.io mirror rather than docker.io directly.
-  # On a Spot pool every preemption re-pulls this image, so keeping the pull
-  # inside asia-south1 removes both the egress cost and a slow cold start.
+  # Keeping the pull inside asia-south1 removes egress cost and slow cold starts.
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/clickhouse/clickhouse-keeper
   tag: "25.10.2.65"
   # IfNotPresent, deliberately. This is a third-party image on a pinned tag, so
   # the content behind that tag never changes and re-pulling gains nothing.
-  # It matters here because the stack runs on a Spot pool: Always would re-pull
-  # from GAR on every pod restart, and preemptions make restarts routine.
+  # Always would re-pull from GAR on every pod restart without adding safety.
   # Our own images (obs-api, obs-ui) use Always instead, because they track a
   # moving `main` tag that genuinely does change.
   pullPolicy: IfNotPresent
@@ -86,7 +83,6 @@ podDisruptionBudget:
   enabled: true
   minAvailable: 2
 
-# NOTE: intentionally no tolerations. Keeper must NOT schedule onto the tainted
-# Spot observability pool — see the rationale in Chart.yaml.
 tolerations: []
-nodeSelector: {}
+nodeSelector:
+  workload: infrastructure
