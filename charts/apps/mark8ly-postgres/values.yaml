@@ -132,6 +132,17 @@ allowedAppNames:
   # loop producing no output until activeDeadlineSeconds kills the Job.
   # That is how this was found — a live run, not a review.
   - mark8ly-marketplace-api-admin-stock-hold-sweep
+  # Outbound webhook delivery pruner CronJob (admin chart, mark8ly#587).
+  # Third instance of the same shape, and it hit the exact failure the
+  # comment above warns about: the CronJob shipped without this entry and
+  # every run died on activeDeadlineSeconds after db.Open retried a
+  # silently-dropped connection ten times. Found by running the Job, which
+  # is the only way this is ever found.
+  #
+  # Adding a marketplace-api CronJob? It needs an entry HERE as well as its
+  # own manifest. The chart that defines the CronJob and the chart that
+  # grants it database access are different charts.
+  - mark8ly-marketplace-api-admin-webhook-delivery-prune
 
 # Cross-namespace clients allowed into postgres. Prod allows the
 # tesserix super-admin Next.js + APIs; UAT defaults to none (test env
