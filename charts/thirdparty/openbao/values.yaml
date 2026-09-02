@@ -327,6 +327,22 @@ bootstrap:
       hcl: |
         path "kv/data/platform/*"     { capabilities = ["read"] }
         path "kv/metadata/platform/*" { capabilities = ["read", "list"] }
+    # mark8ly per-tenant carrier credentials (mark8ly#319). NOT a
+    # `namespaceWhitelist` entry: that generates a read-only policy at
+    # kv/data/<ns>/<app>/*, and this app must CREATE and UPDATE secrets a
+    # merchant saves, and DELETE metadata when a credential is removed.
+    #
+    # Two policies, least privilege. Every Put and Destroy in marketplace-api
+    # is admin-side (handlers/admin/settings.go, internal/domain/service.go);
+    # storefront handlers only read, so storefront gets no write capability.
+    - name: mark8ly-marketplace-api-admin-carrier-secrets
+      hcl: |
+        path "kv/data/mark8ly/marketplace-api/tenants/*"     { capabilities = ["create", "read", "update"] }
+        path "kv/metadata/mark8ly/marketplace-api/tenants/*" { capabilities = ["read", "list", "delete"] }
+    - name: mark8ly-marketplace-api-storefront-carrier-secrets
+      hcl: |
+        path "kv/data/mark8ly/marketplace-api/tenants/*"     { capabilities = ["read"] }
+        path "kv/metadata/mark8ly/marketplace-api/tenants/*" { capabilities = ["read", "list"] }
   # Kubernetes auth roles. Each binds a named ServiceAccount in a named
   # namespace to a policy — `bound_service_account_names: ["*"]` is never
   # correct here, it grants the role to every pod in the namespace.
@@ -368,6 +384,22 @@ bootstrap:
       serviceAccounts: ["external-secrets"]
       namespaces: ["external-secrets"]
       policies: ["read-platform"]
+      ttl: 1h
+    - name: mark8ly-marketplace-api-admin
+      serviceAccounts:
+        - mark8ly-marketplace-api-admin
+      namespaces:
+        - mark8ly
+      policies:
+        - mark8ly-marketplace-api-admin-carrier-secrets
+      ttl: 1h
+    - name: mark8ly-marketplace-api-storefront
+      serviceAccounts:
+        - mark8ly-marketplace-api-storefront
+      namespaces:
+        - mark8ly
+      policies:
+        - mark8ly-marketplace-api-storefront-carrier-secrets
       ttl: 1h
 # =============================================================================
 # Raft snapshots to GCS
