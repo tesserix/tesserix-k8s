@@ -17,8 +17,8 @@ which surfaced as an unhandledRejection -> graceful shutdown -> ioredis
 shutdown, not a cause, which is what made it hard to read. project-init then
 exhausted its backoffLimit for the same reason.
 
-Runs as a PreSync hook so the schema exists before anything that needs it,
-including project-init (PostSync). `prisma migrate deploy` applies only
+Runs as the first PreSync hook so the schema exists before anything that needs
+it, including the ordered project-init hook. `prisma migrate deploy` applies only
 committed migrations and is a no-op when they are already applied, so this is
 safe on every sync.
 */}}
@@ -32,6 +32,7 @@ metadata:
     app.kubernetes.io/component: migrate
   annotations:
     argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/sync-wave: "-2"
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
     helm.sh/hook: pre-install,pre-upgrade
     helm.sh/hook-weight: "-5"
