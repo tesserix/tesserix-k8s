@@ -32,6 +32,11 @@ spec:
             # leaving every other global snapshot in provision-only mode.
             reapplyExistingSchemas:
               - onboarding_db
+              # devai_evals_db has no migration runner either: the sandbox
+              # sync worker only TRUNCATE+COPYs. Its SQL is idempotent, and
+              # reapplying converges grants for the devai_evals role, which
+              # CNPG creates asynchronously.
+              - devai_evals_db
   destination:
     server: https://kubernetes.default.svc
     namespace: global

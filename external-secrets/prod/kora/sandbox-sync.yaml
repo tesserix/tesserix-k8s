@@ -1,0 +1,59 @@
+##############################################################################
+# DevAI sandbox evals sync credentials (k8s/operators/db-anonymise).
+#
+# Two secrets:
+#   - kora-postgres-sandbox-reader: CNPG basic-auth secret for the
+#     kora_sandbox_reader managed role on kora-postgres (SELECT-only source).
+#   - kora-sandbox-sync: the three keys the SandboxDataSync CronJob mounts —
+#     source-url, target-url, anonymization-salt. The URLs live whole in GCP
+#     Secret Manager (house pattern, same as prod-kora-database-url); their
+#     embedded passwords must match the role password secrets above — a human
+#     coordination point GitOps cannot enforce.
+##############################################################################
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: kora-postgres-sandbox-reader
+  namespace: kora
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: kora-postgres-sandbox-reader
+    creationPolicy: Owner
+    # CNPG managed.roles expects basic-auth shape (username/password).
+    template:
+      type: kubernetes.io/basic-auth
+      data:
+        username: "kora_sandbox_reader"
+        password: "{{ .password }}"
+  data:
+    - secretKey: password
+      remoteRef:
+        key: prod-kora-sandbox-reader-password
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: kora-sandbox-sync
+  namespace: kora
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: kora-sandbox-sync
+    creationPolicy: Owner
+  data:
+    - secretKey: source-url
+      remoteRef:
+        key: prod-kora-sandbox-sync-source-url
+    - secretKey: target-url
+      remoteRef:
+        key: prod-kora-sandbox-sync-target-url
+    - secretKey: anonymization-salt
+      remoteRef:
+        key: prod-kora-sandbox-anonymization-salt

@@ -65,6 +65,12 @@ bootstrap:
     - "CREATE ROLE agentgateway LOGIN"
     - "CREATE DATABASE agentgateway_config OWNER agentgateway"
     - "CREATE DATABASE agentgateway_logs OWNER agentgateway"
+    # devai_evals_db (DevAI evaluation datasets — anonymised product snapshots
+    # from the devai-sandbox-operator). Owned by "global" like onboarding_db:
+    # the devai_evals writer role gets only per-schema grants from
+    # db-schema-bootstrap, so it can never widen its own privileges.
+    - "CREATE ROLE devai_evals LOGIN"
+    - "CREATE DATABASE devai_evals_db OWNER global"
   # Runs once against template1 at cluster creation; every database
   # subsequently CREATEd (including from postInitSQL above) inherits
   # whatever is installed here via Postgres's normal template-copy
@@ -107,6 +113,13 @@ managedRoles:
   - name: agentgateway
     passwordSecret: global-postgres-agentgateway
     comment: agentgateway console config and log stores
+  # Write identity for devai_evals_db (anonymised product snapshots for DevAI
+  # evaluations, written by the devai-sandbox-operator sync jobs). The database
+  # itself is provisioned by global-db-schema-bootstrap; grants live in
+  # schemas/global/global/devai_evals_db.sql.
+  - name: devai_evals
+    passwordSecret: global-postgres-devai-evals
+    comment: DevAI sandbox evals dataset writer
 
 # PostgreSQL tuning
 postgresql:
