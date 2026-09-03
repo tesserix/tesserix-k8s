@@ -24,7 +24,7 @@ and `eval.datasets` rows on `evals_db` (australis ADR-0003). Source:
    gcloud iam roles create evalsOnboardingSecretManager --project=$P --title="Evals onboarding secret manager" --permissions=secretmanager.secrets.get,secretmanager.versions.access,secretmanager.versions.add --stage=GA
    gcloud projects add-iam-policy-binding $P --member=serviceAccount:$SA --role=projects/$P/roles/evalsOnboardingSecretCreator --condition=None
    gcloud projects add-iam-policy-binding $P --member=serviceAccount:$SA --role=projects/$P/roles/evalsOnboardingSecretManager \
-     --condition="expression=resource.name.matches('^projects/$N/secrets/prod-[a-z0-9-]+-langfuse-(public|secret)-key(/versions/.*)?\$'),title=evals-langfuse-keys-only"
+     --condition="expression=resource.name.startsWith('projects/$N/secrets/prod-') && (resource.name.endsWith('-langfuse-public-key') || resource.name.endsWith('-langfuse-secret-key') || resource.name.extract('/secrets/{s}/versions/').endsWith('-langfuse-public-key') || resource.name.extract('/secrets/{s}/versions/').endsWith('-langfuse-secret-key')),title=evals-langfuse-keys-only"
    gcloud iam service-accounts add-iam-policy-binding $SA --project=$P --role=roles/iam.workloadIdentityUser \
      --member="serviceAccount:$P.svc.id.goog[evals-operator/evals-onboarding-operator]"
    ```
