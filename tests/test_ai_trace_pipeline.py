@@ -65,6 +65,7 @@ def test_redpanda_has_safe_memory_and_durable_topics_for_both_consumers() -> Non
     job_labels = job["spec"]["template"]["metadata"]["labels"]
     assert not all(job_labels.get(key) == value for key, value in broker_selector.items())
     script = job["spec"]["template"]["spec"]["containers"][0]["command"][-1]
+    assert 'rpk cluster health -X admin.hosts="${ADMIN_HOSTS}"' in script
     for topic in ("ai.traces", "otel.logs", "otel.traces", "otel.metrics"):
         assert f"rpk topic create {topic}" in script
     # Each topic carries retention in both its create and reconcile path.

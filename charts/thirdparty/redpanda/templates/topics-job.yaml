@@ -58,6 +58,8 @@ spec:
           env:
             - name: BROKERS
               value: "{{ include "redpanda.name" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ports.kafka }}"
+            - name: ADMIN_HOSTS
+              value: "{{ include "redpanda.name" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.ports.admin }}"
           command:
             - /bin/bash
             - -c
@@ -70,7 +72,9 @@ spec:
               # never match and the topics were silently never created.
               echo "waiting for the cluster to report healthy..."
               for i in $(seq 1 60); do
-                if rpk cluster health -X brokers="${BROKERS}" 2>/dev/null | grep -q "Healthy:.*true"; then
+                # cluster health uses the admin API; `brokers` configures only
+                # Kafka and otherwise leaves admin.hosts at 127.0.0.1:9644.
+                if rpk cluster health -X admin.hosts="${ADMIN_HOSTS}" 2>/dev/null | grep -q "Healthy:.*true"; then
                   echo "cluster healthy"
                   break
                 fi
