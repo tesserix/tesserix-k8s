@@ -11,16 +11,37 @@ data:
         endpoint: 0.0.0.0:{{ .Values.ports.health }}
 
     receivers:
-      kafka:
+      kafka/observability:
         brokers:
           {{- range .Values.kafka.brokers }}
           - {{ . | quote }}
           {{- end }}
-        client_id: otel-ingest
-        group_id: {{ .Values.kafka.groupID | quote }}
+        client_id: otel-ingest-clickhouse
+        group_id: {{ .Values.kafka.observabilityGroupID | quote }}
         initial_offset: {{ .Values.kafka.initialOffset }}
+        logs:
+          topics: [{{ .Values.kafka.topics.logs | quote }}]
+          encoding: otlp_proto
         traces:
           topics: [{{ .Values.kafka.topics.traces | quote }}]
+          encoding: otlp_proto
+        metrics:
+          topics: [{{ .Values.kafka.topics.metrics | quote }}]
+          encoding: otlp_proto
+        message_marking:
+          after: true
+          on_error: false
+
+      kafka/ai:
+        brokers:
+          {{- range .Values.kafka.brokers }}
+          - {{ . | quote }}
+          {{- end }}
+        client_id: otel-ingest-langfuse
+        group_id: {{ .Values.kafka.aiGroupID | quote }}
+        initial_offset: {{ .Values.kafka.initialOffset }}
+        traces:
+          topics: [{{ .Values.kafka.topics.aiTraces | quote }}]
           encoding: otlp_proto
         message_marking:
           # Commit only AFTER the batch was handed to the exporters, so a crash
@@ -53,6 +74,27 @@ data:
           {{- end }}
 
     exporters:
+      clickhouse:
+        endpoint: {{ .Values.clickhouse.endpoint | quote }}
+        database: {{ .Values.clickhouse.database | quote }}
+        username: {{ .Values.clickhouse.username | quote }}
+        password: ${env:CLICKHOUSE_PASSWORD}
+        cluster_name: {{ .Values.clickhouse.clusterName | quote }}
+        table_engine:
+          name: {{ .Values.clickhouse.tableEngine | quote }}
+        create_schema: {{ .Values.clickhouse.createSchema }}
+        ttl: {{ .Values.clickhouse.ttl }}
+        async_insert: {{ .Values.clickhouse.asyncInsert }}
+        compress: {{ .Values.clickhouse.compress }}
+        sending_queue:
+          enabled: true
+          queue_size: 5000
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 60s
+          max_elapsed_time: 0
+
       {{- range .Values.routes }}
       otlphttp/{{ .product }}:
         traces_endpoint: {{ $.Values.langfuse.endpoint | quote }}
@@ -76,8 +118,20 @@ data:
       extensions:
         - health_check
       pipelines:
-        traces/in:
-          receivers: [kafka]
+        traces/observability:
+          receivers: [kafka/observability]
+          processors: [memory_limiter, batch]
+          exporters: [clickhouse]
+        logs:
+          receivers: [kafka/observability]
+          processors: [memory_limiter, batch]
+          exporters: [clickhouse]
+        metrics:
+          receivers: [kafka/observability]
+          processors: [memory_limiter, batch]
+          exporters: [clickhouse]
+        traces/ai:
+          receivers: [kafka/ai]
           processors: [memory_limiter]
           exporters: [routing]
         {{- range .Values.routes }}

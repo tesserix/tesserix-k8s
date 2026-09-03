@@ -84,8 +84,8 @@ data:
           - sources:
               - from: connection
 
-      # Drop anything that is not an AI trace before it touches the buffer.
-      # Agents stamp the marker on their resource (ai-agents agent_telemetry).
+      # The AI branch is a copy of the trace stream. Filtering it leaves the
+      # general observability branch intact while keeping Langfuse AI-only.
       filter/ai:
         error_mode: ignore
         traces:
@@ -108,16 +108,46 @@ data:
         timeout: {{ .Values.processors.batch.timeout }}
 
     exporters:
-      # One exporter serves all three signals; the per-signal blocks below pick
-      # the topic. (Pre-0.150 this needed one exporter alias per signal.)
-      kafka:
+      kafka/observability:
         brokers:
           {{- range .Values.kafka.brokers }}
           - {{ . | quote }}
           {{- end }}
         client_id: otel-gateway
+        logs:
+          topic: {{ .Values.kafka.topics.logs | quote }}
+          encoding: otlp_proto
         traces:
           topic: {{ .Values.kafka.topics.traces | quote }}
+          encoding: otlp_proto
+        metrics:
+          topic: {{ .Values.kafka.topics.metrics | quote }}
+          encoding: otlp_proto
+        producer:
+          required_acks: {{ .Values.kafka.requiredAcks }}
+          compression: {{ .Values.kafka.compression }}
+          max_message_bytes: {{ .Values.kafka.maxMessageBytes }}
+        sending_queue:
+          enabled: {{ .Values.queue.enabled }}
+          {{- if .Values.queue.enabled }}
+          storage: file_storage/queue
+          {{- end }}
+          queue_size: {{ .Values.queue.size }}
+          num_consumers: {{ .Values.queue.numConsumers }}
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_interval: 60s
+          max_elapsed_time: 0
+
+      kafka/ai:
+        brokers:
+          {{- range .Values.kafka.brokers }}
+          - {{ . | quote }}
+          {{- end }}
+        client_id: otel-gateway-ai
+        traces:
+          topic: {{ .Values.kafka.topics.aiTraces | quote }}
           encoding: otlp_proto
         producer:
           required_acks: {{ .Values.kafka.requiredAcks }}
@@ -146,10 +176,22 @@ data:
         {{- end }}
         - health_check
       pipelines:
-        traces:
+        traces/observability:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, batch]
+          exporters: [kafka/observability]
+        traces/ai:
           receivers: [otlp]
           processors: [memory_limiter, filter/ai, k8sattributes, transform/product, batch]
-          exporters: [kafka]
+          exporters: [kafka/ai]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, batch]
+          exporters: [kafka/observability]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, k8sattributes, batch]
+          exporters: [kafka/observability]
       telemetry:
         metrics:
           # The `readers` form; the older `address:` field is removed in 0.156.
