@@ -265,25 +265,67 @@ spec:
             resources:
               requests:
                 memory: 128Mi
+            # Mounts the ExternalSecret at
+            # /etc/alertmanager/secrets/alertmanager-slack-webhook/ so the
+            # webhook URL is read from a file and never appears in this
+            # manifest, in `helm template`, or in ArgoCD's rendered diff.
+            secrets:
+              - alertmanager-slack-webhook
           config:
-            # PHASE 1 DELIVERS NOTHING, DELIBERATELY.
-            #
-            # The 16 rule sets have never fired in anger, so their
-            # thresholds are unproven. They evaluate here against a null
-            # receiver first: a wrong rule costs nothing, and we learn the
-            # real noise profile before anyone is paged.
-            #
-            # Phase 3 replaces this with a Slack receiver fed by the
-            # existing prod-falco-slack-webhook via External Secrets, routing
-            # severity=critical only.
+            # PHASE 3 — narrow, deliberate routing. Default stays "null":
+            # everything not explicitly matched below is evaluated and
+            # visible in Prometheus, and delivered nowhere.
             route:
               group_by: ["alertname", "cluster", "namespace"]
               group_wait: 30s
               group_interval: 5m
               repeat_interval: 12h
               receiver: "null"
+              routes:
+                # ── Heartbeat ──
+                # Watchdog fires permanently by design; it is the chart's
+                # dead-man's switch. It is routed because mark8ly currently
+                # has ZERO firing criticals, so without it a silent channel
+                # would be indistinguishable from a broken pipeline — the
+                # failure mode this whole effort exists to remove. One
+                # message a day is cheap proof that delivery works.
+                - matchers:
+                    - alertname = "Watchdog"
+                  receiver: slack-alerts
+                  group_wait: 0s
+                  group_interval: 24h
+                  repeat_interval: 24h
+
+                # ── mark8ly criticals only ──
+                # Scoped to one product on purpose. The other six have 132
+                # rules nobody has tuned, and five criticals firing right now
+                # that belong to other owners — paging them from here would
+                # be presumptuous and noisy.
+                #
+                # namespace="mark8ly" is VERIFIED to match: mark8ly's rules
+                # define only cluster+severity, but alerts inherit the series
+                # labels, and cnpg_* series carry namespace="mark8ly"
+                # (job="mark8ly/mark8ly-postgres"). A matcher that silently
+                # matched nothing would give exactly the false confidence
+                # this is meant to prevent.
+                - matchers:
+                    - namespace = "mark8ly"
+                    - severity = "critical"
+                  receiver: slack-alerts
             receivers:
               - name: "null"
+              - name: slack-alerts
+                slack_configs:
+                  # No `channel:` — an incoming webhook is bound to its own
+                  # channel (falco-events), and setting it here would imply a
+                  # control this integration does not have.
+                  - api_url_file: /etc/alertmanager/secrets/alertmanager-slack-webhook/SLACK_WEBHOOKURL
+                    send_resolved: true
+                    title: '{{ if eq .Status "firing" }}🔴{{ else }}✅{{ end }} {{ .CommonLabels.alertname }} ({{ .Status }})'
+                    text: >-
+                      {{ range .Alerts }}*{{ .Labels.severity }}* — {{ .Annotations.summary | default .Annotations.description | default "no summary" }}
+                      {{ if .Labels.namespace }}ns=`{{ .Labels.namespace }}` {{ end }}{{ if .Labels.cluster }}cluster=`{{ .Labels.cluster }}` {{ end }}{{ if .Labels.pod }}pod=`{{ .Labels.pod }}`{{ end }}
+                      {{ end }}
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
