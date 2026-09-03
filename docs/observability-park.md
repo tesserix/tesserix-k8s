@@ -12,8 +12,8 @@ counts back and recreating one node pool.
 | `clickhouse` | observability | `charts/thirdparty/clickhouse-ha/values.yaml` | `replicaCount: 2` |
 | `clickhouse-keeper` | observability | `charts/thirdparty/clickhouse-keeper/values.yaml` | `replicaCount: 3` |
 | `redpanda` | observability | **revived 2026-09-03** as the AI-trace buffer, see `docs/ai-trace-pipeline.md` | `replicaCount: 3` |
-| `otel-gateway` | observability | **revived 2026-09-03**, traces only, AI filter | `replicaCount: 2` |
-| `otel-ingest` | observability | **revived 2026-09-03**, routes Kafka to Langfuse (ClickHouse exporter removed) | `replicaCount: 2` |
+| `otel-gateway` | observability | **revived 2026-09-03**, all signals plus an AI-trace branch | `replicaCount: 2` |
+| `otel-ingest` | observability | **revived 2026-09-03**, ClickHouse plus per-product Langfuse routes | `replicaCount: 2` |
 | `otel-cluster` | observability | `charts/thirdparty/otel-cluster/values.yaml` | `replicaCount: 1` (never more) |
 | `otel-agent` (DaemonSet) | observability | `charts/thirdparty/otel-agent/values.yaml` | `nodeSelector: {}` |
 | `obs-api` | observability | **revived 2026-09-03** for the public explorer | `replicaCount: 2` |
@@ -27,9 +27,8 @@ counts back and recreating one node pool.
 | `grafana` | monitoring | `argocd/prod/infrastructure/grafana.yaml` → `replicas` | `1` |
 | `kiali` | istio-system | `argocd/prod/infrastructure/kiali.yaml` → `deployment.replicas` | `1` |
 
-DaemonSets have no replica count, so their park is an **unsatisfiable
-`nodeSelector`** (`tesserix.io/otel-agent`, `tesserix.io/node-exporter` — labels
-no node carries). Desired drops to 0 while the DaemonSet object stays.
+DaemonSets have no replica count. Their old park used an unsatisfiable
+`nodeSelector`; the OTel agent and Prometheus node exporter are now active.
 
 `enabled: false` was deliberately **not** used anywhere: every one of these
 ArgoCD apps runs `prune: true`, so disabling a subchart would delete the
@@ -87,10 +86,9 @@ not reach.
 2. `clickhouse-keeper` → 3, then `clickhouse` → 2. Wait for ClickHouse `Ready` —
    Keeper quorum must exist first or the replicated tables will not attach.
 3. `suspend: false` on the schema bootstrap; confirm the CronJob run succeeds.
-4. `redpanda`, `otel-gateway` and `otel-ingest` are already back as the AI-trace
-   pipeline on `optimized-v2`; reviving the rest means `otel-cluster` → 1 and
-   emptying `otel-agent`'s `nodeSelector`, plus restoring the ClickHouse exporter
-   and the log/metric topics the AI pipeline removed.
+4. `redpanda`, `otel-gateway`, `otel-ingest`, `otel-cluster`, and `otel-agent`
+   are active on the shared pools. The gateway sends general telemetry to
+   ClickHouse and independently fans AI traces out to Langfuse.
 5. `obs-api` → 2, `obs-ui` → 2.
 6. Monitoring side, independent of the above: `prometheus.yaml` counts back to 1,
    empty `prometheus-node-exporter.nodeSelector`, `grafana` → 1, `kiali` → 1.

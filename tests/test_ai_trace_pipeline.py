@@ -23,59 +23,84 @@ def collector_config(documents: list[dict], name: str) -> dict:
     return yaml.safe_load(resource(documents, "ConfigMap", name)["data"]["config.yaml"])
 
 
-def test_gateway_accepts_only_ai_traces_and_spools_to_redpanda() -> None:
+def test_gateway_fans_out_observability_and_ai_traces_to_redpanda() -> None:
     docs = render("charts/thirdparty/otel-gateway", "otel-gateway", "observability")
     config = collector_config(docs, "otel-gateway-config")
-    assert set(config["service"]["pipelines"]) == {"traces"}
-    traces = config["service"]["pipelines"]["traces"]
+    assert set(config["service"]["pipelines"]) == {
+        "logs",
+        "metrics",
+        "traces/observability",
+        "traces/ai",
+    }
+    traces = config["service"]["pipelines"]["traces/ai"]
     assert traces["processors"][:2] == ["memory_limiter", "filter/ai"]
-    assert traces["exporters"] == ["kafka"]
+    assert traces["exporters"] == ["kafka/ai"]
     condition = config["processors"]["filter/ai"]["traces"]["span"][0]
     assert 'resource.attributes["tesserix.signal"] != "ai"' == condition
-    kafka = config["exporters"]["kafka"]
-    assert kafka["traces"]["topic"] == "ai.traces"
-    assert "logs" not in kafka and "metrics" not in kafka
-    assert kafka["producer"]["required_acks"] == -1
-    assert kafka["sending_queue"]["storage"] == "file_storage/queue"
-    assert kafka["retry_on_failure"]["max_elapsed_time"] == 0
+    ai = config["exporters"]["kafka/ai"]
+    assert ai["traces"]["topic"] == "ai.traces"
+    assert "logs" not in ai and "metrics" not in ai
+    telemetry = config["exporters"]["kafka/observability"]
+    assert telemetry["logs"]["topic"] == "otel.logs"
+    assert telemetry["traces"]["topic"] == "otel.traces"
+    assert telemetry["metrics"]["topic"] == "otel.metrics"
+    for kafka in (ai, telemetry):
+        assert kafka["producer"]["required_acks"] == -1
+        assert kafka["sending_queue"]["storage"] == "file_storage/queue"
+        assert kafka["retry_on_failure"]["max_elapsed_time"] == 0
     sts = resource(docs, "StatefulSet", "otel-gateway")
     assert sts["spec"]["replicas"] == 2
     assert sts["spec"]["template"]["spec"]["nodeSelector"] == {"workload": "infrastructure"}
     assert "tolerations" not in sts["spec"]["template"]["spec"]
 
 
-def test_redpanda_declares_only_the_ai_topic_with_a_week_of_retention() -> None:
+def test_redpanda_has_safe_memory_and_durable_topics_for_both_consumers() -> None:
     docs = render("charts/thirdparty/redpanda", "redpanda", "observability")
     sts = resource(docs, "StatefulSet", "redpanda")
     assert sts["spec"]["replicas"] == 3
     assert sts["spec"]["template"]["spec"]["nodeSelector"] == {"workload": "infrastructure"}
     job = resource(docs, "Job", "redpanda-topics")
     script = job["spec"]["template"]["spec"]["containers"][0]["command"][-1]
-    assert "rpk topic create ai.traces" in script
-    assert "retention.ms=604800000" in script
-    assert "otel.logs" not in script and "otel.metrics" not in script
+    for topic in ("ai.traces", "otel.logs", "otel.traces", "otel.metrics"):
+        assert f"rpk topic create {topic}" in script
+    # Each topic carries retention in both its create and reconcile path.
+    assert script.count("retention.ms=604800000") == 8
     values = yaml.safe_load((ROOT / "charts/thirdparty/redpanda/values.yaml").read_text())
     assert values["cluster"]["autoCreateTopics"] is False
     assert values["cluster"]["defaultTopicReplications"] == 3
+    memory = values["runtime"]["memory"]
+    assert memory.endswith("M")
+    assert int(memory[:-1]) >= 1200
 
 
 def test_ingest_routes_each_product_to_its_own_langfuse_project() -> None:
     docs = render("charts/thirdparty/otel-ingest", "otel-ingest", "observability")
     config = collector_config(docs, "otel-ingest-config")
     products = ["kora", "sre", "devai", "australis", "ocr"]
-    receiver = config["receivers"]["kafka"]
+    receiver = config["receivers"]["kafka/ai"]
     assert receiver["traces"]["topics"] == ["ai.traces"]
     assert receiver["message_marking"] == {"after": True, "on_error": False}
     assert "logs" not in receiver and "metrics" not in receiver
-    assert "clickhouse" not in config["exporters"]
+    telemetry = config["receivers"]["kafka/observability"]
+    assert telemetry["logs"]["topics"] == ["otel.logs"]
+    assert telemetry["traces"]["topics"] == ["otel.traces"]
+    assert telemetry["metrics"]["topics"] == ["otel.metrics"]
+    clickhouse = config["exporters"]["clickhouse"]
+    assert clickhouse["database"] == "otel"
+    assert clickhouse["cluster_name"] == "otel"
+    assert clickhouse["table_engine"] == {"name": "ReplicatedMergeTree"}
+    assert clickhouse["create_schema"] is True
     table = config["connectors"]["routing"]["table"]
     assert [row["condition"] for row in table] == [
         f'attributes["service.namespace"] == "{p}"' for p in products
     ]
     assert config["connectors"]["routing"]["default_pipelines"] == ["traces/unrouted"]
-    assert config["service"]["pipelines"]["traces/in"] == {
-        "receivers": ["kafka"], "processors": ["memory_limiter"], "exporters": ["routing"]
+    assert config["service"]["pipelines"]["traces/ai"] == {
+        "receivers": ["kafka/ai"], "processors": ["memory_limiter"], "exporters": ["routing"]
     }
+    assert config["service"]["pipelines"]["traces/observability"]["exporters"] == ["clickhouse"]
+    assert config["service"]["pipelines"]["logs"]["exporters"] == ["clickhouse"]
+    assert config["service"]["pipelines"]["metrics"]["exporters"] == ["clickhouse"]
     for product in products:
         exporter = config["exporters"][f"otlphttp/{product}"]
         assert exporter["traces_endpoint"].endswith("/api/public/otel/v1/traces")

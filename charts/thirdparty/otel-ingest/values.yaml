@@ -3,7 +3,8 @@
 
 # Consumers in one Kafka consumer group. Scaling up to the partition count (6)
 # increases parallelism; beyond that the extra pods idle.
-# Revived 2026-09-03 as the Kafka -> Langfuse router (docs/ai-trace-pipeline.md).
+# Consumes the general observability stream into ClickHouse and independently
+# routes the AI trace stream into per-product Langfuse projects.
 replicaCount: 2
 
 image:
@@ -23,11 +24,29 @@ kafka:
   # protocol_version is deliberately NOT set: it is a MINIMUM and every value
   # tried exceeded what this Redpanda offers for JoinGroup, so the group never
   # formed. Empty lets franz-go negotiate.
-  groupID: otel-ingest
+  observabilityGroupID: otel-ingest-clickhouse
+  aiGroupID: otel-ingest-langfuse
   # First start with no committed offset reads the whole retained backlog.
   initialOffset: earliest
   topics:
-    traces: ai.traces
+    logs: otel.logs
+    traces: otel.traces
+    metrics: otel.metrics
+    aiTraces: ai.traces
+
+clickhouse:
+  endpoint: "tcp://clickhouse.observability.svc.cluster.local:9000?dial_timeout=10s"
+  database: otel
+  username: default
+  clusterName: otel
+  tableEngine: ReplicatedMergeTree
+  createSchema: true
+  ttl: 720h
+  asyncInsert: true
+  compress: lz4
+  env:
+    secretName: clickhouse-secrets
+    secretKey: clickhouse-password
 
 langfuse:
   # In-cluster Langfuse OTLP endpoint; the exporter appends nothing.

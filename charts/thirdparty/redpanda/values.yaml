@@ -52,7 +52,9 @@ runtime:
   smp: 1
   # Seastar allocates this up front. Kept meaningfully below the container
   # memory limit so the Go/C++ heap outside Seastar's arena has room.
-  memory: "1100M"
+  # Redpanda v26.1 refuses to start below 1 GiB after Seastar rounds its arena.
+  # 1280M leaves that floor intact while retaining headroom under 1792Mi.
+  memory: "1280M"
   reserveMemory: "0M"
 
 # Topics created by the post-install hook. 6 partitions gives the ingest tier
@@ -61,6 +63,15 @@ topics:
   # AI traces only (australis ADR-0003 D5). Seven days lets a Langfuse outage or
   # a missing project key be replayed from the buffer once fixed.
   - name: ai.traces
+    partitions: 6
+    retentionMs: 604800000
+  - name: otel.logs
+    partitions: 6
+    retentionMs: 604800000
+  - name: otel.traces
+    partitions: 6
+    retentionMs: 604800000
+  - name: otel.metrics
     partitions: 6
     retentionMs: 604800000
 
