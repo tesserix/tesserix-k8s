@@ -161,27 +161,6 @@ gcpProjectId: "tesseracthub-480811"
 pushEventsTopic: "mp-merchant-push"
 pushOidcAudience: "https://api.mark8ly.com/pubsub/merchant-push"
 pushOidcServiceAccount: "mp-pubsub-push@tesseracthub-480811.iam.gserviceaccount.com"
-# Application-layer naming on GCP SM secrets. Code only writes
-# secrets under this prefix by construction, so even though the IAM
-# binding is unconditional (see note below), the naming scheme
-# prevents cross-environment collision.
-carrierSecretPrefix: "mark8ly-prod"
-# Self-provisions the roles/secretmanager.admin binding on the
-# marketplace-api GCP SA via a Helm post-install/upgrade Job. The
-# binding is UNCONDITIONAL — GCP IAM can't gate secrets.create by
-# prefix because at create-time no resource exists. See the Job
-# template for full reasoning.
-#
-# DISABLED in prod (verified 2026-04-26): the binding is provisioned
-# out-of-band (verified by listing/creating/deleting a probe secret
-# from the marketplace-api SA in-cluster). The bootstrap design also
-# has a chicken-and-egg flaw — the runner SA needs
-# resourcemanager.projects.{getIamPolicy,setIamPolicy} to grant itself
-# secretmanager.admin, which the application SA does not (and should
-# not) hold. Re-enable only on a fresh cluster where you've
-# pre-bound roles/resourcemanager.projectIamAdmin to the runner SA.
-carrierIamBootstrap:
-  enabled: false
 corsAllowedOrigins: "https://*.mark8ly.com"
 # ── P1: Observability ────────────────────────────────────────────
 metricsPort: 9090

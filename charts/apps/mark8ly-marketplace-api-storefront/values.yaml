@@ -118,13 +118,12 @@ gcpProjectId: "tesseracthub-480811"
 # Merchant device push — checkout publishes new-order notifications here.
 # Empty = publishing off. Delivery runs on the admin engine.
 pushEventsTopic: "mp-merchant-push"
-carrierSecretPrefix: "mark8ly-prod"
-# Workload Identity → GCP SA. Required so the storefront pod can
-# read carrier credentials from GCP Secret Manager during
-# /checkout/shipping-rates and /checkout/payment-methods. The SA's
-# roles/secretmanager.admin binding is provisioned by the admin
-# chart's post-sync Job, so no further GCP-side action is needed
-# beyond the annotation.
+# Workload Identity → GCP SA. Carrier credentials now come from
+# OpenBao, not GCP Secret Manager (mark8ly#621), and the SA's
+# roles/secretmanager.admin binding has been revoked. The annotation
+# is still required: the storefront publishes new-order notifications
+# to Pub/Sub at checkout, which needs roles/pubsub.publisher on this
+# SA.
 gcpServiceAccount: "app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com"
 # ── Mobile support-chat bridge (#118) ─────────────────────────────
 # GIP project for verifying mobile customers' Firebase ID tokens.
