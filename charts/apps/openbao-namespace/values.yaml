@@ -32,6 +32,20 @@ allowedPodSources:
   - namespace: mark8ly
     podLabels:
       app.kubernetes.io/name: mark8ly-marketplace-api-storefront
+  # The refund-sweep CronJob. It runs under the ADMIN ServiceAccount, so its
+  # OpenBao ROLE was always covered — but a CronJob's pods carry their own
+  # app.kubernetes.io/name, and this list matches on the LABEL, not the
+  # identity. The comment above warned about exactly this and it happened
+  # anyway: after SHIPPING_SECRET_STORE flipped to "bao", the sweeper needed
+  # to resolve bao:// references and every OpenBao dial was silently dropped
+  # here, surfacing as "kubernetes login: context deadline exceeded".
+  #
+  # Only refund-sweep is listed. stock-hold-sweep and webhook-delivery-prune
+  # do not resolve carrier credentials and must not be granted access they
+  # have no use for.
+  - namespace: mark8ly
+    podLabels:
+      app.kubernetes.io/name: mark8ly-marketplace-api-admin-refund-sweep
 
 # Istio principals allowed to call the API, on top of the NetworkPolicy.
 # Format: <namespace>/<serviceaccount>. Only mesh-enrolled callers have one —
