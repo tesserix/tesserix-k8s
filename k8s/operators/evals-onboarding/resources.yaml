@@ -1,0 +1,201 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: evalonboardings.evals.tesserix.app
+spec:
+  group: evals.tesserix.app
+  names:
+    kind: EvalOnboarding
+    plural: evalonboardings
+    singular: evalonboarding
+    shortNames: [evalclaim]
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources: {status: {}}
+      additionalPrinterColumns:
+        - name: Ready
+          type: string
+          jsonPath: '.status.conditions[?(@.type=="Ready")].status'
+        - name: Project
+          type: string
+          jsonPath: .status.projectId
+        - name: Datasets
+          type: integer
+          jsonPath: .status.datasetsRegistered
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [displayName]
+              properties:
+                displayName: {type: string, minLength: 1, maxLength: 200}
+                datasets:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: object
+                    required: [name, modality]
+                    properties:
+                      name: {type: string, minLength: 1, maxLength: 63, pattern: '^[a-z0-9][a-z0-9-]*$'}
+                      modality: {type: string, enum: [agent, retrieval, ocr, transcription]}
+                      description: {type: string, maxLength: 1000}
+            status: {type: object, x-kubernetes-preserve-unknown-fields: true}
+---
+# Organization-scoped Langfuse key, created once in Organization Settings -> API Keys.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: langfuse-org-credentials
+  namespace: evals-operator
+spec:
+  refreshInterval: 10m
+  secretStoreRef: {name: gcp-secret-store, kind: ClusterSecretStore}
+  target: {name: langfuse-org-credentials, creationPolicy: Owner}
+  data:
+    - secretKey: public-key
+      remoteRef: {key: prod-langfuse-org-public-key}
+    - secretKey: secret-key
+      remoteRef: {key: prod-langfuse-org-secret-key}
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: evals-db-credentials
+  namespace: evals-operator
+spec:
+  refreshInterval: 10m
+  secretStoreRef: {name: gcp-secret-store, kind: ClusterSecretStore}
+  target: {name: evals-db-credentials, creationPolicy: Owner}
+  data:
+    - secretKey: password
+      remoteRef: {key: prod-grader-postgresql-password}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: evals-onboarding-operator
+  namespace: evals-operator
+  annotations:
+    iam.gke.io/gcp-service-account: evals-onboarding-operator@tesseracthub-480811.iam.gserviceaccount.com
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: evals-onboarding-operator, namespace: evals-operator}
+rules:
+  - apiGroups: [evals.tesserix.app]
+    resources: [evalonboardings]
+    verbs: [get, list, watch]
+  - apiGroups: [evals.tesserix.app]
+    resources: [evalonboardings/status]
+    verbs: [get, update, patch]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: evals-onboarding-operator, namespace: evals-operator}
+subjects: [{kind: ServiceAccount, name: evals-onboarding-operator, namespace: evals-operator}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: evals-onboarding-operator}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: evals-onboarding-operator
+  namespace: evals-operator
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: evals-onboarding-operator}}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    # GKE NodeLocal DNS is host-networked and is not selected by namespace peers.
+    - to:
+        - ipBlock: {cidr: 10.30.0.10/32}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: observability}}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: langfuse
+              app.kubernetes.io/component: web
+      ports:
+        - {protocol: TCP, port: 3000}
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: global}}
+          podSelector:
+            matchLabels:
+              cnpg.io/podRole: pooler
+      ports:
+        - {protocol: TCP, port: 5432}
+    # Ambient mesh sends cross-pod traffic through ztunnel on HBONE.
+    - to:
+        - ipBlock: {cidr: 10.20.0.0/16}
+      ports:
+        - {protocol: TCP, port: 15008}
+    - to:
+        - ipBlock: {cidr: 169.254.169.254/32}
+      ports:
+        - {protocol: TCP, port: 80}
+    - to:
+        - ipBlock: {cidr: 169.254.169.252/32}
+      ports:
+        - {protocol: TCP, port: 988}
+    - ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: evals-onboarding-operator
+  namespace: evals-operator
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: evals-onboarding-operator}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: evals-onboarding-operator}
+      annotations:
+        reloader.stakater.com/auto: "true"
+    spec:
+      serviceAccountName: evals-onboarding-operator
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: operator
+          image: ghcr.io/tesserix/evals-onboarding-operator
+          args:
+            - --watch-namespace=evals-operator
+            - --langfuse-url=http://langfuse-web.observability.svc.cluster.local:3000
+            - --gcp-project=tesseracthub-480811
+            - --secret-prefix=prod-
+            - --evals-db-url=postgres://grader@global-postgres-pooler-rw.global.svc.cluster.local:5432/evals_db?sslmode=prefer
+          ports: [{name: healthz, containerPort: 8081}]
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {memory: 256Mi}}
+          readinessProbe: {httpGet: {path: /readyz, port: healthz}, initialDelaySeconds: 3}
+          livenessProbe: {httpGet: {path: /healthz, port: healthz}, initialDelaySeconds: 10}
+          volumeMounts:
+            - {name: langfuse-org, mountPath: /var/run/langfuse-org, readOnly: true}
+            - {name: evals-db, mountPath: /var/run/evals-db, readOnly: true}
+      volumes:
+        - name: langfuse-org
+          secret: {secretName: langfuse-org-credentials, defaultMode: 256}
+        - name: evals-db
+          secret: {secretName: evals-db-credentials, defaultMode: 256}
