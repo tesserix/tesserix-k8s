@@ -240,6 +240,31 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         self.assertIn("--output name", script)
         self.assertIn('test "${count}" = "24"', script)
 
+    def test_product_mcp_upstream_keys_are_brokered_from_secret_manager(self):
+        documents = list(
+            yaml.safe_load_all(
+                (
+                    ROOT
+                    / "external-secrets/prod/agentgateway-system/externalsecret.yaml"
+                ).read_text(encoding="utf-8")
+            )
+        )
+        secret = resource(documents, "ExternalSecret", "product-mcp-upstream-keys")
+
+        self.assertEqual("agentgateway-system", secret["metadata"]["namespace"])
+        self.assertEqual(
+            {
+                "HOMECHEF_MCP_KEY": "prod-support-platform-homechef-mcp-key",
+                "MARK8LY_MCP_KEY": "prod-support-platform-mark8ly-mcp-key",
+                "PLATFORM_MCP_KEY": "prod-support-platform-platform-mcp-key",
+                "STOCKPILOT_MCP_KEY": "prod-support-platform-stockpilot-mcp-key",
+            },
+            {
+                item["secretKey"]: item["remoteRef"]["key"]
+                for item in secret["spec"]["data"]
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
