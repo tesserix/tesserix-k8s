@@ -23,9 +23,24 @@ spec:
       values: |
         # Prometheus server configuration
         server:
-          # PARKED 2026-08-01 at 0 for cost. Everything below is kept verbatim
-          # so revival is a single 0 → 1. See docs/observability-park.md.
-          replicaCount: 0
+          # REVIVED 2026-09-03 (was PARKED 2026-08-01 at 0 for cost; see
+          # docs/observability-park.md). Everything below is unchanged from
+          # the park, which is what made revival a single 0 → 1.
+          #
+          # Revived because the park's stated blocker no longer applies. The
+          # doc says parked pods pend forever on the `workload=observability`
+          # taint until that node pool is recreated — but no node carries any
+          # taint now, and this deployment has `nodeSelector: {}` and
+          # `tolerations: []`, so it schedules on the one remaining pool
+          # (optimized-v2, 6x e2-standard-8 at 24-63% memory). The 2Gi request
+          # fits existing headroom: no node pool, no new VM, and with
+          # persistentVolume disabled below, no new disk either.
+          #
+          # Only `server` is revived. alertmanager, pushgateway,
+          # kube-state-metrics, node-exporter and grafana stay at 0 — each
+          # adds pods without serving the reason for this change, and each is
+          # its own cost decision.
+          replicaCount: 1
 
           # Storage dropped 2026-08-30 (TSDB disk snapshotted as
           # orphan-cleanup-*); revival starts with an empty TSDB on emptyDir
