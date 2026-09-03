@@ -59,6 +59,7 @@ def test_redpanda_has_safe_memory_and_durable_topics_for_both_consumers() -> Non
     sts = resource(docs, "StatefulSet", "redpanda")
     assert sts["spec"]["replicas"] == 3
     assert sts["spec"]["template"]["spec"]["nodeSelector"] == {"workload": "infrastructure"}
+    assert sts["spec"]["updateStrategy"]["rollingUpdate"]["maxUnavailable"] == 3
     job = resource(docs, "Job", "redpanda-topics")
     script = job["spec"]["template"]["spec"]["containers"][0]["command"][-1]
     for topic in ("ai.traces", "otel.logs", "otel.traces", "otel.metrics"):
