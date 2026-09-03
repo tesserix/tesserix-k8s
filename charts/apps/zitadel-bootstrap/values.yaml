@@ -408,6 +408,60 @@ desired:
           roles: [atlantis.admin]
         - login: mahesh.sangawar@gmail.com
           roles: [atlantis.admin]
+    - org: TESSERIX
+      name: mark8ly-admin
+      expectedId: "389070376568619523"
+      # Closed product: a user holding no role here cannot obtain a token for
+      # it at all. This is what keeps storefront customers out of the merchant
+      # admin surface, enforced by Zitadel rather than by our own checks.
+      projectRoleCheck: true
+      roles:
+        - key: mark8ly.staff
+          displayName: Merchant Staff
+          group: mark8ly-access
+      oidcApps:
+        - name: mark8ly-admin-web
+          appType: OIDC_APP_TYPE_WEB
+          authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
+          loginBaseUri: https://admin.mark8ly.com
+          redirectUris:
+            - https://admin.mark8ly.com/auth/callback
+          postLogoutRedirectUris:
+            - https://admin.mark8ly.com/
+        - name: mark8ly-admin-mobile
+          appType: OIDC_APP_TYPE_NATIVE
+          authMethodType: OIDC_AUTH_METHOD_TYPE_NONE
+          redirectUris:
+            - mark8ly-admin:/auth/callback
+          postLogoutRedirectUris: []
+    - org: TESSERIX
+      name: mark8ly-storefront
+      expectedId: "389070377390703107"
+      # Open product: any TESSERIX user may authenticate. This matches the
+      # current open MP-Customer pool; see spec D2 for the accepted risk.
+      projectRoleCheck: false
+      roles:
+        - key: mark8ly.customer
+          displayName: Storefront Customer
+          group: mark8ly-access
+      oidcApps:
+        - name: mark8ly-storefront-web
+          appType: OIDC_APP_TYPE_WEB
+          authMethodType: OIDC_AUTH_METHOD_TYPE_BASIC
+          # Per-tenant subdomains cannot each be a login origin, so login runs
+          # on the one fixed registered origin and bounces back to the store,
+          # reusing the existing /auth/google trampoline shape.
+          loginBaseUri: https://mark8ly.com
+          redirectUris:
+            - https://mark8ly.com/auth/callback
+          postLogoutRedirectUris:
+            - https://mark8ly.com/
+        - name: mark8ly-storefront-mobile
+          appType: OIDC_APP_TYPE_NATIVE
+          authMethodType: OIDC_AUTH_METHOD_TYPE_NONE
+          redirectUris:
+            - mark8ly-storefront:/auth/callback
+          postLogoutRedirectUris: []
 
   # The instance's initial org. It cannot be deleted or deactivated: it owns the
   # ZITADEL project (console, Admin/Management/Auth APIs), the iam-admin service
