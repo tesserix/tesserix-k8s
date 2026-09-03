@@ -101,10 +101,30 @@ not reach.
   trying to export. The OTel SDK drops spans and logs a retry — no request path
   fails. Their exporter logs get noisier while parked.
 - Alert rules, `AlertmanagerConfig` and Grafana dashboards still render and sync.
-  Nothing evaluates or delivers them while Prometheus and Alertmanager are at 0 —
-  including the CNPG disk-full and HA alerts, so a repeat of the 2026-06-17
-  Postgres disk deadlock would arrive with no warning. The autoheal CronJob that
-  incident produced is unaffected and still runs.
+  Nothing evaluates or delivers them — including the CNPG disk-full and HA
+  alerts, so a repeat of the 2026-06-17 Postgres disk deadlock would arrive with
+  no warning. The autoheal CronJob that incident produced is unaffected and
+  still runs.
+
+  **CORRECTION 2026-09-04: un-parking does NOT restore alerting.** This bullet
+  used to read "while Prometheus and Alertmanager are at 0", which implies
+  scaling them back up brings evaluation with it. It does not. `prometheus`
+  was revived on 2026-09-03 (#899) and loads **zero** rule groups.
+
+  Two faults sit underneath the park and outlast it:
+
+  1. The estate's 16 `PrometheusRule` CRs are authored for prometheus-operator,
+     but the running Prometheus is the **community** chart, which reads rules
+     from its own config and ignores CRs. `prometheus-operator-crds` installs
+     the CRDs; the operator itself was never deployed, so those rules have
+     never been evaluated by anything.
+  2. No alertmanager receiver is configured anywhere, so even a running
+     alertmanager delivers to nothing.
+
+  Restoring alerting is therefore a project, not a replica count — see
+  `docs/2026-09-04-alerting-restoration-design.md`. Anyone reaching for this
+  doc mid-incident should know that scaling alertmanager back to 1 will not
+  page them.
 - `gpu-l4-spot` and `sandbox-gvisor` both sit at zero nodes already and cost
   nothing but their pool definitions.
 - **Eight ScaledObjects carry a `prometheus` trigger** and now log
