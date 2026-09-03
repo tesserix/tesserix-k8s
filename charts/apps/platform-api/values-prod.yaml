@@ -192,17 +192,38 @@ federation:
       # and answered 501, and the console rendered "No product is federating
       # billing to the console yet." Every layer was behaving correctly.
       #
+      # `conversions` added 2026-09-03 for tesserix-home#246, under the same
+      # discipline. Probed against the deployed marketplace-api:
+      #
+      #   /admin/conversions?email=…    401   mounted, signature rejected
+      #   /admin/definitely-not-a-route 404   control, same prefix
+      #
+      # The control is what makes the 401 mean "mounted" rather than "this
+      # surface rejects everything unsigned". mark8ly has served this since
+      # #279 (`ConversionsHandler`, mounted behind `deps.TenantDirectory`), so
+      # implemented, declared AND wired.
+      #
+      # UNTIL THIS LANDS, THE HANDOFF TAB CANNOT MATCH. platform-api answers
+      # 501 for an undeclared endpoint, the console maps every non-2xx to
+      # `unknown` (Ruling 28), and every row therefore shows no suggestion —
+      # which is exactly what it has done since #153, and why every conversion
+      # to date was linked by hand. Same ordering as `onboarding` above: the
+      # console change ships honest without this, and this is reversible
+      # without touching the console.
+      #
       # `break-glass` is deliberately NOT declared. mark8ly mounts it — it
       # probes 401 like the others — but nothing in platform-api calls
       # SlugsImplementing("break-glass"), so declaring it would change
-      # nothing. The four slugs with readers are inbox, billing, onboarding
-      # and outbox (cmd/server/main.go:195, 208, 282, 296); declaring outside
-      # that set is noise that reads like a capability.
+      # nothing. The slugs with readers are inbox, billing, onboarding, outbox
+      # and now conversions (cmd/server/main.go — see each module's Register
+      # call); declaring outside that set is noise that reads like a
+      # capability.
       endpoints:
         - outbox
         - onboarding
         - billing
         - inbox
+        - conversions
 
     # Kora (kora#430, kora#458). Registered 2026-08-26.
     #
