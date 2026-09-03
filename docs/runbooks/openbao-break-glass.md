@@ -3,9 +3,12 @@
 **Use this when the console is unavailable** — Zitadel is down, the console will
 not deploy, or you cannot sign in — and you need to read or rotate a secret.
 
-Everything below was executed against production on 2026-09-03, except the one
-step marked UNVERIFIED. Timings and exact responses are recorded so the next
-person can tell "this is broken" apart from "I did it wrong".
+**Every step below was executed against production on 2026-09-03**, including
+the escalation in step 4, whose artefacts were removed afterwards. Exact
+responses are recorded so the next person can tell "this is broken" apart from
+"I did it wrong".
+
+Steps 1-3 and 6 are re-checked daily; step 4 is not, because it writes.
 
 ---
 
@@ -102,15 +105,26 @@ OpenBao; it does not read from it. If you only need to confirm OpenBao is
 healthy or inspect its configuration, stop here — you already have what you
 need, and you have read nothing.
 
-## 4. If you must read or write a secret value — UNVERIFIED
+## 4. If you must read or write a secret value
 
 The bootstrap policy grants `sys/policies/acl/*` and `auth/kubernetes/role/*`,
 so it can grant itself access. That is root-equivalent by escalation and is the
 only route to a secret value without the console.
 
-**This step has not been executed in production.** Steps 1–3 and 6 have. It is
-written from the policy, and proving it is the first job of the next drill
-(tesserix-home#462) — do not assume it is correct because it is written down.
+**Executed against production on 2026-09-03**, then removed. What was observed:
+
+```
+POST auth/kubernetes/login (role=break-glass-probe)
+  -> policies: ["break-glass-probe","default"], ttl 600s
+GET  kv/data/cloudflared/cloudflared/tunnel
+  -> 200, key names ["token"], version 1
+GET  kv/data/homechef/homechef-api/db          <- a namespace NOT in the policy
+  -> 403 permission denied
+```
+
+That last line is the one worth having: **the narrow scope actually binds.** A
+policy written against `kv/data/*` would have read both, and nothing in the
+happy path would have told you.
 
 ```bash
 # a) create a narrowly scoped read policy
@@ -186,7 +200,10 @@ It deliberately does **not** cover step 4, which writes.
 Recorded rather than hidden, because a runbook that hides its own gaps is worse
 than none.
 
-- **Step 4 is unverified.** See above.
+- **Nothing here is exercised automatically except steps 1-3 and 6.** The daily
+  check deliberately does not perform step 4, because it writes. Step 4 was
+  verified by hand once, on 2026-09-03; if the policy grants change it could
+  rot without anything noticing.
 - **All five recovery shares live in one Secret Manager entry**
   (`prod-openbao-recovery-keys`). A 3-of-5 split exists so no single party holds
   enough to recover; whoever can read that secret holds all five. The split is
