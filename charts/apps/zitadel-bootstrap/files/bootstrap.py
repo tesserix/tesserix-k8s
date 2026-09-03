@@ -363,6 +363,16 @@ def reconcile_org_login_policy(desired):
         raise SystemExit(f"login policy update for {desired['org']} failed: {status} {payload!r}")
 
 
+# Per provider type, the fields that pin the trust anchor. None of them can be
+# reasserted without the provider secret this reconciler deliberately does not
+# hold, so drift in any one means the live provider is not the one git
+# describes and the run stops rather than repointing users' federated logins.
+IDP_ANCHOR_FIELDS = {
+    "google": ("clientId",),
+    "apple": ("clientId", "teamId", "keyId"),
+}
+
+
 def reconcile_org_idps(desired_idps):
     """Assert an org's IdP connector without ever holding its client secret.
 
@@ -372,8 +382,8 @@ def reconcile_org_idps(desired_idps):
     every federated sign-in, which reverts any display name edited here — it
     looked like a broken profile form until the event log showed the overwrite.
 
-    Omitting `clientSecret` from the update is safe and deliberate: Zitadel only
-    re-encrypts the secret when the field is present, so the change event carries
+    Omitting the provider secret from the update — `clientSecret` for Google,
+    `privateKey` for Apple — is safe and deliberate: Zitadel only re-encrypts the secret when the field is present, so the change event carries
     no secret and the stored value survives. Sending an empty string would blank
     it. That is the distinction an earlier revision of docs/zitadel.md missed.
 
@@ -388,6 +398,12 @@ def reconcile_org_idps(desired_idps):
             raise SystemExit(f"idp org {desired['org']!r} does not exist")
         scope = {"x-zitadel-orgid": org["id"]}
         name = desired["name"]
+        kind = desired.get("type", "google")
+        if kind not in IDP_ANCHOR_FIELDS:
+            raise SystemExit(
+                f"idp {name!r} declares unsupported type {kind!r}; known types are "
+                f"{sorted(IDP_ANCHOR_FIELDS)}"
+            )
 
         status, payload = request(
             "POST", "/management/v1/idps/templates/_search", {"query": {"limit": 100}}, headers=scope
@@ -407,25 +423,38 @@ def reconcile_org_idps(desired_idps):
                 f"{desired['expectedId']}; user links point at a provider git does not describe"
             )
 
-        live_client_id = live["config"]["google"].get("clientId")
-        if live_client_id != desired["clientId"]:
+        live_config = live["config"].get(kind)
+        if live_config is None:
             raise SystemExit(
-                f"idp {name!r} client ID drifted to {live_client_id!r}; repointing it needs the "
-                "new client's secret, which this reconciler deliberately does not hold"
+                f"idp {name!r} is declared as {kind!r} but the live provider carries "
+                f"{sorted(live['config'])}; git and Zitadel disagree about its type"
             )
+        for field in IDP_ANCHOR_FIELDS[kind]:
+            if live_config.get(field) != desired[field]:
+                raise SystemExit(
+                    f"idp {name!r} {field} drifted to {live_config.get(field)!r}; repointing it "
+                    "needs the provider secret, which this reconciler deliberately does not hold"
+                )
 
         drift = drift_between(desired["options"], live["config"].get("options", {}))
         if drift:
             log(f"idp {name}: reasserting {sorted(drift)}")
+            body = {
+                "name": name,
+                "clientId": desired["clientId"],
+                "scopes": desired["scopes"],
+                "providerOptions": desired["options"],
+            }
+            if kind == "apple":
+                # Required on every update even though neither is secret; only
+                # the .p8 (privateKey) is withheld so Zitadel keeps the stored
+                # one. Zitadel rejects the request outright without them.
+                body["teamId"] = desired["teamId"]
+                body["keyId"] = desired["keyId"]
             status, payload = request(
                 "PUT",
-                f"/management/v1/idps/google/{live['id']}",
-                {
-                    "name": name,
-                    "clientId": desired["clientId"],
-                    "scopes": desired["scopes"],
-                    "providerOptions": desired["options"],
-                },
+                f"/management/v1/idps/{kind}/{live['id']}",
+                body,
                 headers=scope,
             )
             if status != 200:
