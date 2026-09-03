@@ -133,7 +133,16 @@ jobs:
 
       - name: Run chart-testing lint
         if: steps.list-changed.outputs.changed == 'true'
-        run: ct lint --config .github/ct.yaml
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || [[ "$BASE_SHA" =~ ^0+$ ]]; then
+            BASE_SHA=HEAD^
+          fi
+          mapfile -t changed_files < <(git diff --name-only "$BASE_SHA" HEAD)
+          check_version=$(python3 scripts/chart_version_policy.py "${changed_files[@]}")
+          ct lint --config .github/ct.yaml \
+            --check-version-increment="$check_version"
 
   validate:
     name: Validate Helm Templates
