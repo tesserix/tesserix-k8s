@@ -15,3 +15,5 @@ def test_public_observability_ui_has_redundant_upstreams():
         assert values["replicaCount"] >= 2, (
             f"{component} backs observability.tesserix.app and cannot be scaled to zero"
         )
+        assert values["nodeSelector"] == {"workload": "infrastructure"}
+        assert values["tolerations"] == []
