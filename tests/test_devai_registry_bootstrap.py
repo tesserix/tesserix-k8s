@@ -31,8 +31,8 @@ def test_seed_source_is_pinned_to_the_adk_registry_release() -> None:
     )
     template = JOB_TEMPLATE.read_text(encoding="utf-8")
 
-    assert values["seedSource"]["ref"] == "d5f4d82263b5d3ea5015c9b9a293b5b5a58c045b"
-    assert values["reseedNonce"] == "2026-09-03-mcp-capabilities-v4"
+    assert values["seedSource"]["ref"] == "73ee615d0e1d024703a8a4ee134893b14a5c0154"
+    assert values["reseedNonce"] == "2026-09-03-kora-mcp-v5"
     assert 'git -C /workspace/devai fetch --depth=1 origin "$REF"' in template
     assert "git -C /workspace/devai checkout --detach FETCH_HEAD" in template
 

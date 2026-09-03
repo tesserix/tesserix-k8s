@@ -1,0 +1,54 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kora-mcp
+  namespace: argocd
+  annotations:
+    # Kargo's prod stage writes image.tag via argocd-update — the
+    # authorized-stage annotation tells Kargo it's allowed to.
+    kargo.akuity.io/authorized-stage: kargo-support-platform:prod
+  labels:
+    app.kubernetes.io/part-of: support-platform
+    app.kubernetes.io/component: mcp-stub
+    mcp.tesserix.app/tenant: kora
+    environment: prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: kora
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/mcp-gateway
+    helm:
+      parameters:
+        - name: tenant
+          value: "kora"
+        - name: namespace
+          value: "kora"
+        # Kargo support-platform/prod overwrites image.tag with the
+        # newest mcp-gateway main-<sha> on every CI build.
+        - name: image.tag
+          value: "main"
+        # Phase 4 file-backed OpenAPI loading is on by default in
+        # the chart. Kargo rewrites helm.parameters on every image
+        # bump, so per-Application overrides don't survive — the
+        # chart default does the job.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kora
+  ignoreDifferences:
+    # ArgoCD's structured-merge crashes on the newer
+    # Deployment.status.terminatingReplicas field. Cosmetic; the
+    # comparison succeeds, sync still runs.
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /status/terminatingReplicas
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true

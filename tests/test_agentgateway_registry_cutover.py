@@ -255,6 +255,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         self.assertEqual(
             {
                 "HOMECHEF_MCP_KEY": "prod-support-platform-homechef-mcp-key",
+                "KORA_MCP_KEY": "prod-support-platform-kora-mcp-key",
                 "MARK8LY_MCP_KEY": "prod-support-platform-mark8ly-mcp-key",
                 "PLATFORM_MCP_KEY": "prod-support-platform-platform-mcp-key",
                 "STOCKPILOT_MCP_KEY": "prod-support-platform-stockpilot-mcp-key",
