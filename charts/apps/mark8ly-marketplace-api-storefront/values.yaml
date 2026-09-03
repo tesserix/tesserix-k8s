@@ -101,9 +101,19 @@ encryptionKey:
 # ── P0: Security ─────────────────────────────────────────────────
 corsAllowedOrigins: "https://*.mark8ly.com"
 encryptionMode: "aes"
-# Carrier credentials — GCP Secret Manager. Must match the admin
-# variant exactly so both deployments read the same tenant secrets.
-carrierSecretStore: "gcpsm"
+# Carrier credentials — OpenBao. Must match the admin variant exactly so
+# both deployments read the same tenant secrets.
+#
+# The storefront never writes a credential, so this value does not change
+# which secrets it can reach: ChainStore routes by reference prefix, and
+# every stored reference is already bao://. Two things do change, and both
+# are why this is set rather than left on gcpsm:
+#   1. A gsm:// fall-through read is only counted when the primary backend
+#      is bao (see ChainStore.Get). On gcpsm the storefront's fall-through
+#      reads are invisible to carriersecrets_events_total, which would make
+#      the phase-5 "counter is zero" evidence meaningless for this engine.
+#   2. bao mode wraps the store in CachingStore (60s TTL); gcpsm does not.
+carrierSecretStore: "bao"
 gcpProjectId: "tesseracthub-480811"
 # Merchant device push — checkout publishes new-order notifications here.
 # Empty = publishing off. Delivery runs on the admin engine.
