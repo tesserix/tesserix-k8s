@@ -1,51 +1,63 @@
 {{- if .Values.projectInit.enabled }}
-# ServiceAccount for the project-init Job
+{{- $root := . }}
+# The hook ServiceAccount exists in the OpenPanel namespace. Its only
+# permissions are provided by namespace-scoped RoleBindings below.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "openpanel.fullname" . }}-project-init
+  name: {{ include "openpanel.fullname" $root }}-project-init
   labels:
-    {{- include "openpanel.labels" . | nindent 4 }}
+    {{- include "openpanel.labels" $root | nindent 4 }}
     app.kubernetes.io/component: project-init
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/sync-wave: "-2"
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 ---
-# ClusterRole: allows creating/updating Secrets in the target namespace
+{{- $default := .Values.projectInit.targetNamespace }}
+{{- $namespaces := dict }}
+{{- range $app, $config := .Values.projectInit.apps }}
+{{-   $namespace := default $default $config.namespace }}
+{{-   $_ := set $namespaces $namespace true }}
+{{- end }}
+{{- range $namespace, $_ := $namespaces }}
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
-  name: {{ include "openpanel.fullname" . }}-project-init
+  name: {{ include "openpanel.fullname" $root }}-project-init
+  namespace: {{ $namespace }}
   labels:
-    {{- include "openpanel.labels" . | nindent 4 }}
+    {{- include "openpanel.labels" $root | nindent 4 }}
     app.kubernetes.io/component: project-init
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/sync-wave: "-2"
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "create", "update", "patch"]
-    # Restrict to the target namespace via resourceNames is not possible for create,
-    # so we scope via the ClusterRoleBinding subjects namespace instead
 ---
-# ClusterRoleBinding: binds the ServiceAccount to the ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
+kind: RoleBinding
 metadata:
-  name: {{ include "openpanel.fullname" . }}-project-init
+  name: {{ include "openpanel.fullname" $root }}-project-init
+  namespace: {{ $namespace }}
   labels:
-    {{- include "openpanel.labels" . | nindent 4 }}
+    {{- include "openpanel.labels" $root | nindent 4 }}
     app.kubernetes.io/component: project-init
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/sync-wave: "-2"
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ include "openpanel.fullname" . }}-project-init
+  kind: Role
+  name: {{ include "openpanel.fullname" $root }}-project-init
 subjects:
   - kind: ServiceAccount
-    name: {{ include "openpanel.fullname" . }}-project-init
-    namespace: {{ .Release.Namespace }}
+    name: {{ include "openpanel.fullname" $root }}-project-init
+    namespace: {{ $root.Release.Namespace }}
+---
+{{- end }}
 {{- end }}
