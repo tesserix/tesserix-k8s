@@ -351,12 +351,18 @@ own identity token. The registry rejects credential material in a manifest at
 publish time (`/v0/apply`) and again at export, so a literal key cannot reach
 the catalog or the cluster. The Secret itself is GitOps-owned: platform
 credentials via ESO from Secret Manager, tenant credentials via OpenBao.
+The four active platform-operated product MCPs reference the single
+`product-mcp-upstream-keys` Secret in `agentgateway-system`, with one named key
+per backend and `X-MCP-Key` as the injection header. ESO materializes those
+entries from the existing per-product Secret Manager records; the Registry
+manifest contains references only.
 
 ### 6.4 Phase 4 — capability prober (shipped)
 
-`cmd/agentic-probe` runs as a CronJob in `agentgateway-system`, authenticates
-as an ordinary Zitadel machine client, and dials each server over the same
-gateway path an agent uses — it derives those paths from the export adapter, so
+`cmd/agentic-probe` runs as a CronJob in `agentgateway-system` and dials each
+server through the private mesh listener using its dedicated service-account
+identity. AgentGateway brokers the server-specific upstream credential, so the
+prober never holds a product key. It derives paths from the export adapter, so
 probe and route cannot drift. It posts raw observations to
 `PUT /v0/mcpservers/<name>/status`; the registry derives `Ready`, `Drifted` and
 `Unreachable` from the declaration, so a compromised prober cannot assert
@@ -447,9 +453,13 @@ gateway, Stockpilot CLI, and Australis integration seam are merged.
 - Dedicated Secret Manager keys exist for HomeChef, Mark8ly, Fanzone,
   Platform, Stockpilot, Gameverse, and Horoscope. Their values never belong in
   Git and existing keys were not rotated.
-- The bootstrap seed is pinned to DevAI commit `1239d514`, which declares the
-  four active product MCPs with Tesserix annotations for Customer AI Registry
-  qualification and AgentGateway export.
+- The bootstrap seed is pinned to DevAI commit `19fcda48`, which declares the
+  four active product MCPs with Tesserix annotations, stateless protocol
+  metadata, and secret references for Customer AI Registry qualification and
+  credential-brokered AgentGateway export.
+- NetworkPolicy allows the AgentGateway data plane to reach all four active
+  backend namespaces, including Stockpilot, while destination ingress remains
+  namespace-scoped.
 - Fanzone remains decommissioned. Gameverse and Horoscope retain aligned
   manifests and credentials but are not activated. No OpenPanel MCP
   implementation or authoritative manifest was found, so none was fabricated.

@@ -208,7 +208,9 @@ class DevAIMCPIngressTests(unittest.TestCase):
             for rule in egress["spec"]["egress"]
             for peer in rule["to"]
         }
-        self.assertEqual({"homechef", "mark8ly", "support-platform"}, destinations)
+        self.assertEqual(
+            {"homechef", "mark8ly", "stockpilot", "support-platform"}, destinations
+        )
 
         homechef = render_chart(
             "charts/thirdparty/istio-config", "istio-config", "istio-system"
@@ -247,6 +249,19 @@ class DevAIMCPIngressTests(unittest.TestCase):
             mark8ly_policy["spec"]["rules"][0]["from"][0]["source"]["namespaces"]
         )
         self.assertIn("agentgateway-system", mark8ly_sources)
+
+        stockpilot = render_chart(
+            "charts/thirdparty/istio-config", "istio-config", "istio-system"
+        )
+        stockpilot_policy = resource(
+            stockpilot, "NetworkPolicy", "allow-stockpilot-ingress"
+        )
+        stockpilot_sources = {
+            peer["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
+            for rule in stockpilot_policy["spec"]["ingress"]
+            for peer in rule["from"]
+        }
+        self.assertIn("agentgateway-system", stockpilot_sources)
 
     def test_devai_services_are_discoverable_as_identity_aware_mcp_targets(self):
         cases = (
