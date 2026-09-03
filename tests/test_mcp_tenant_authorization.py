@@ -266,6 +266,11 @@ class CapabilityProbeTests(unittest.TestCase):
             r"^asia-south1-docker\.pkg\.dev/tesseracthub-480811/ghcr-remote/"
             r"tesserix/agentic-registry@sha256:[0-9a-f]{64}$",
         )
+        self.assertTrue(
+            container["image"].endswith(
+                "@sha256:be065badc154428c97c370facf77e943eb3202fdd1380d0435b206a0a776b680"
+            )
+        )
 
     def test_probe_can_be_disabled_for_rollback(self):
         documents = render_chart(CHART, "probe.enabled=false")

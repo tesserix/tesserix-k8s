@@ -300,6 +300,22 @@ published as a qualified observed surface.
 `/mcp/<tenant>/<server>@<tag>` for pinned callers, lets an agent hold a version
 across a publish. Rollback is retagging in the registry — no gateway change.
 
+### 5.2 Stateless gateway transport
+
+Protocol `2026-07-28` routes use `AgentgatewayBackend.spec.static` and
+HTTPRoute `URLRewrite`, not AgentGateway's MCP-aware target. The MCP-aware
+target performs legacy initialization/session handling and rejects modern
+`server/discover` requests before they reach Tesserix MCP Runtime. Each tenant
+path and unambiguous flat compatibility path has its own prefix rewrite to the
+Registry-declared upstream `/mcp` path. JWT authorization, rate limits,
+telemetry, NetworkPolicy, and vault-backed `X-MCP-Key` injection remain in the
+gateway path.
+
+The bootstrap is pinned to DevAI `206f21fa`: changed Agent content uses the new
+immutable `1.0.3` revision and the Weather Blueprint publishes as
+`weather-workflow`, so re-seeding succeeds without weakening `409` conflict
+enforcement.
+
 ---
 
 ## 6. Plan
@@ -312,6 +328,7 @@ across a publish. Rollback is retagging in the registry — no gateway change.
 | Filter the agentgateway export on `mcp.tesserix.app/class=platform`; add a `labelSelector` query param as kagent's export already has | `agentic-registry` |
 | Add `spec.remotes[]` with the real Service host and port `8765` to every platform seed; label all `catalog-*` as `directory` | `devai` |
 | Validate on publish: `class=platform` requires `remotes[]`; reject at `/v0/apply` rather than at export | `agentic-registry` |
+| Render qualified stateless MCP records as raw HTTP backends with per-prefix URLRewrite; never create a gateway session | `agentic-registry` |
 
 Exit criterion: `curl` through `mcp.tesserix.app/mcp/<tenant>/homechef-mcp`
 returns a real `tools/list`, and no `catalog-*` HTTPRoute exists.
