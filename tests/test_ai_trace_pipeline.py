@@ -59,7 +59,9 @@ def test_redpanda_has_safe_memory_and_durable_topics_for_both_consumers() -> Non
     sts = resource(docs, "StatefulSet", "redpanda")
     assert sts["spec"]["replicas"] == 3
     assert sts["spec"]["template"]["spec"]["nodeSelector"] == {"workload": "infrastructure"}
-    assert sts["spec"]["updateStrategy"]["rollingUpdate"]["maxUnavailable"] == 1
+    # Leave the API-server default implicit. GKE strips maxUnavailable=1,
+    # otherwise Argo CD reports permanent drift for an equivalent object.
+    assert "updateStrategy" not in sts["spec"]
     job = resource(docs, "Job", "redpanda-topics")
     broker_selector = sts["spec"]["selector"]["matchLabels"]
     job_labels = job["spec"]["template"]["metadata"]["labels"]
