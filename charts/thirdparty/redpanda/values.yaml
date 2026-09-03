@@ -6,6 +6,13 @@
 # Revived 2026-09-03 as the AI-trace buffer (docs/ai-trace-pipeline.md).
 replicaCount: 3
 
+# Recovery-only rollout budget. All brokers are already unavailable on the
+# old 1100M arena, so allowing the controller to replace all three breaks the
+# deadlock where the first updated broker waits for two brokers that cannot
+# start. Restore this to 1 as soon as the cluster is healthy.
+updateStrategy:
+  maxUnavailable: 3
+
 image:
   # Pulled through the GAR docker.io mirror rather than docker.io directly.
   # On a Spot pool every preemption re-pulls this image, so keeping the pull
