@@ -164,10 +164,27 @@ declaration of which apps may read from OpenBao. It renders each app's
 namespace that is not listed cannot reference the shared store at all.
 
 The console does not edit the cluster to change it. It opens a pull request
-against this repository (`GITHUB_TOKEN` from GCP `prod-secret-service-github-token`,
-scoped to contents and pull requests), which `main-protection` requires a second
-administrator to merge; ArgoCD applies it after that. An entry with no grant
-reads nothing, and a grant with no entry has no store to be read through.
+against this repository, authenticating as the **`tesserix-secret-service`
+GitHub App** — scoped to this repository, `contents: write` +
+`pull_requests: write`, and deliberately **not** admin. ArgoCD applies the change
+once the pull request merges. An entry with no grant reads nothing, and a grant
+with no entry has no store to be read through.
+
+It used to authenticate with `GITHUB_TOKEN` from
+`prod-secret-service-github-token` — a named individual's personal access token
+that carried admin on this repository and an unconditional ruleset bypass. Two
+consequences, both since fixed (tesserix-home#464): every pull request the
+console opened was attributed to that person, and the service could merge its
+own proposals, which it did on every one. That secret is now disabled and
+nothing reads it.
+
+**Do not describe `main-protection` as requiring a second administrator.** It
+requires a pull request and a review, and two named users hold a `pull_request`
+bypass, so in practice merges here happen without an approving review — twelve
+of twelve on 2026-09-02. What the App identity guarantees is narrower and real:
+the service itself cannot merge, because it holds no administration and no
+bypass, so a console-raised proposal comes back `mergeable_state: blocked`
+(tesserix-home#313, #464).
 
 ### Wiring an application to it
 
