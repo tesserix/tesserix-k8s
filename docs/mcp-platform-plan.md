@@ -3,9 +3,15 @@
 How an MCP server gets created, published, routed, versioned and consumed at
 Tesserix, and how an agent obtains a token to call it.
 
-The invariant: **the registry is the only place an MCP server is declared.**
-The gateway never holds hand-written MCP config; it reconciles from the
-registry export. Nothing is `kubectl apply`-ed by a human.
+The invariant: **the Tesserix Customer AI Registry is the only place an MCP
+server is declared.** The gateway never holds hand-written MCP config; it
+reconciles from the registry export. Nothing is `kubectl apply`-ed by a human.
+
+This is the Tesserix-owned Registry using the canonical
+`registry.agentic.dev/v1alpha1` API group. It is not the Solo.io registry.
+`registry.solo.io/v1alpha1` is accepted only as a legacy input alias and is
+normalized to the canonical API on ingest. The existing Solo AgentGateway is a
+data-plane adapter; it does not own catalog state.
 
 ---
 
@@ -13,9 +19,9 @@ registry export. Nothing is `kubectl apply`-ed by a human.
 
 | Piece | Where | Role |
 |---|---|---|
-| Agentic Registry | `agentregistry.agentregistry-system:12121`, `aregistry.tesserix.app` | Declares MCP servers and tools. Not on the request path. |
+| Customer AI Registry | `agentregistry.agentregistry-system:12121`, `aregistry.tesserix.app` | Declares MCP servers and tools. Not on the request path. |
 | MCP AgentGateway | `Gateway/agentgateway-mcp` in `agentgateway-system`, `mcp.tesserix.app` | Validates tokens, authorizes, rate-limits, proxies `/mcp/<server>`. |
-| `agentgateway-route-sync` | CronJob, every 5 min | `GET /v0/export/agentgateway?namespace=devai` → SSA-applies `AgentgatewayBackend` + `HTTPRoute`. Prunes with a floor guard. |
+| `agentgateway-route-sync` | CronJob, every 5 min | Exports configured tenant namespaces → SSA-applies `AgentgatewayBackend` + `HTTPRoute`. Prunes with a floor guard. |
 | DevAI MCP Hub | `devai-mcp-hub.devai:8095` | Federates downstream MCP servers for DevAI agents; live `tools/list` every 60s. |
 | DevAI MCP Bridge | `devai-mcp-bridge.devai:8099` | Fronts stdio/`npx` servers as streamable HTTP. |
 | Seeds | `tesserix/devai` → `architecture/registry-seeds/mcp-servers/` | Git source of truth, POSTed by `devai-registry-bootstrap`. |
@@ -23,33 +29,66 @@ registry export. Nothing is `kubectl apply`-ed by a human.
 Identity is Zitadel: issuer `https://auth.tesserix.app`, project/audience
 `387190457387450503`, MCP role `agentgateway.mcp`.
 
-### 1.1 Three defects to fix before anything else
+### 1.1 Control-plane and request flow
 
-**D1 — every `/mcp/*` route in production is dead.**
-`adapters/agentgateway.targetFor` falls back to
-`<name>.<sandboxNamespace>.svc.cluster.local:8080/mcp` whenever a server has no
-`spec.remotes[]`. **No seed defines `spec.remotes`**, and `agentgateway-sandbox`
-contains zero Services. The real servers live elsewhere on a different port:
+```mermaid
+flowchart LR
+    YAML["DevAI product YAML\nregistry.agentic.dev/v1alpha1"]
+    REG["Tesserix Customer AI Registry\ncanonical catalog"]
+    PROBE["Stateless capability probe\nMCP 2026-07-28"]
+    GATE{"Qualification gates\nplatform class + remote + Ready"}
+    EXPORT["Gateway exporter\nportable desired state"]
+    SYNC["GitOps route sync\nSSA + prune floor"]
+    AGW["AgentGateway\nJWT, scope, quota"]
+    AGENT["External agent client"]
+    ROUTER["SLM router\nX-MCP-Key per request"]
+    MCP["Tenant MCP runtime\nstateless request"]
+    GSM["GCP Secret Manager\nplatform MCP key"]
+    ESO["External Secrets"]
+
+    YAML --> REG --> PROBE --> GATE
+    GATE -->|qualified| EXPORT --> SYNC --> AGW
+    AGENT --> AGW --> MCP
+    ROUTER --> MCP
+    GSM --> ESO --> ROUTER
+    ESO --> MCP
+    GATE -->|directory, unverified, or incompatible| HOLD["Catalog only; no route"]
+```
+
+Catalog publication and request serving have separate failure domains. If the
+Registry or route-sync is down, existing gateway routes continue serving. If a
+probe fails, the declaration remains visible but cannot become a qualified
+route. If AgentGateway is down, MCP calls fail closed; there is no direct path
+that bypasses identity, policy, quota, or telemetry.
+
+### 1.2 Historical defects addressed by this plan
+
+**D1 — generated `/mcp/*` routes originally targeted nonexistent Services.**
+The old `adapters/agentgateway.targetFor` fell back to
+`<name>.<sandboxNamespace>.svc.cluster.local:8080/mcp` when a server had no
+`spec.remotes[]`. The old seeds omitted `spec.remotes`, and
+`agentgateway-sandbox` contained zero Services. Platform manifests now declare
+the real endpoints and export rejects missing remotes:
 
 ```
 homechef-mcp.homechef:8765      mark8ly-mcp.mark8ly:8765
 stockpilot-mcp.stockpilot:8765  platform-mcp.support-platform:8765
 ```
 
-The UI's `ACTIVE` badge reflects a registry row, not reachability, so this has
-been invisible.
+Readiness now comes from the capability probe rather than the existence of a
+Registry row.
 
-**D2 — catalog entries are routed as if they were ours.**
-The Hub already skips `spec.catalog: true` (`discovery.py`) because those are
-per-user OAuth SaaS endpoints with no shared credential. The agentgateway
-export has no such filter, so 40 `catalog-*` HTTPRoutes were published into
-`agentgateway-system`. A directory entry must never become a route.
+**D2 — catalog entries were originally routed as if they were ours.**
+The Hub skipped `spec.catalog: true` (`discovery.py`) because those are per-user
+OAuth SaaS endpoints with no shared credential, but the old AgentGateway export
+did not. Export now requires `mcp.tesserix.app/class: platform`; a directory
+entry must never become a route.
 
-**D3 — capabilities are declared, never observed.**
-The registry resolves tools from `spec.tools` + `spec.toolSelector` against
-`Tool` artifacts. Only the Hub calls `tools/list` for real, and it writes
-nothing back. Nothing detects a server whose actual tool surface has drifted
-from its declaration, and nothing versions that surface.
+**D3 — capabilities were declared but never observed.**
+The Registry formerly resolved tools only from `spec.tools` +
+`spec.toolSelector`. The stateless capability probe now observes `tools/list`,
+writes status separately from spec, and prevents an unverified surface from
+qualifying for a route.
 
 ---
 
@@ -66,7 +105,7 @@ Every `MCPServer` is exactly one of these. The class decides routing.
 | Reachable at | `https://mcp.tesserix.app/mcp/<tenant>/<server>` | The vendor's own endpoint, direct from the user's client |
 | Purpose | Agents call it through the gateway | The UI lists it so a human can wire it into their own IDE |
 
-The export adapter must filter on this label. A directory entry appearing in
+The export adapter filters on this label. A directory entry appearing in
 `kubectl get httproute -n agentgateway-system` is a bug.
 
 ### 2.1 Catalog trim
@@ -133,6 +172,23 @@ Publishing to the registry uses a tenant-scoped deploy key
 deliberately separate from the runtime token: a leaked publish key must not be
 able to call tools, and a leaked runtime client must not be able to change the
 catalog. Never merge the two.
+
+### 3.4 Router-to-runtime authentication
+
+Every product MCP runtime requires `MCP_AUTH_KEY` and validates `X-MCP-Key` on
+each independent request. The shared Helm chart derives the Kubernetes Secret
+name as `<tenant>-mcp-auth`. External Secrets materializes that Secret from the
+platform-owned GCP Secret Manager key
+`prod-support-platform-<tenant>-mcp-key`; the SLM router consumes the same
+remote value under `<TENANT>_MCP_KEY` and attaches it only to that tenant's
+route.
+
+These are platform service-to-service credentials, not customer or end-user
+secrets. Customer-scoped credentials remain in OpenBao and must never be
+placed in this Secret Manager flow. Missing MCP auth material fails closed: a
+new runtime replica cannot start, and the router cannot authenticate a call.
+NetworkPolicy and mesh identity remain defence in depth, not replacements for
+per-request authentication.
 
 ---
 
@@ -208,9 +264,13 @@ a **capability prober** — a CronJob in `agentgateway-system` (or a goroutine i
 route-sync) that, for each platform server:
 
 1. Connects through the gateway with a platform service token.
-2. Calls `initialize` + `tools/list` + `resources/list` + `prompts/list`.
-3. Hashes the normalized capability set.
-4. `PATCH`es `status` on the registry object: `observedTools`, `observedHash`,
+2. Calls `server/discover` for MCP `2026-07-28`, then makes a self-contained
+   `tools/list` request. Both requests carry matching `MCP-Protocol-Version`,
+   `MCP-Method`, and `_meta` routing/capability metadata; neither uses
+   `initialize`, `notifications/initialized`, or `Mcp-Session-Id`.
+3. Rejects a server that does not advertise `2026-07-28`, then hashes the
+   normalized tool set.
+4. `PUT`s the observation to `status` on the registry object: `observedTools`, `observedHash`,
    `protocolVersion`, `lastProbedAt`, and a `Ready` condition.
 
 That gives four things we do not have:
@@ -228,6 +288,10 @@ That gives four things we do not have:
 
 Probe results are status, never spec. The manifest stays the operator's
 declaration; the probe stays the observation. They are compared, not merged.
+The status handler rereads the current artifact and merges against its exact
+tag, so an observation cannot be attached to a replacement published during a
+probe run. A legacy-only response remains `Ready=False` and its tool list is not
+published as a qualified observed surface.
 
 ### 5.1 Version pinning at the route
 
@@ -240,7 +304,7 @@ across a publish. Rollback is retagging in the registry — no gateway change.
 
 ## 6. Plan
 
-### 6.1 Phase 1 — make routes real (blocking)
+### 6.1 Phase 1 — make routes real (shipped)
 
 | Change | Repo |
 |---|---|
@@ -300,11 +364,15 @@ readiness for a server it never reached. Istio admits that principal to exactly
 one write path and denies every other registry mutation. The UI badge is the
 probe result — an unprobed server reads `Unprobed`, not `Active`.
 
-The CronJob ships with `probe.enabled=false`. Two things have to exist first:
-a registry image carrying `/app/agentic-probe`, and a Zitadel machine client
-whose credentials land in `prod-agentgateway-mcp-probe-client-id` and
-`prod-agentgateway-mcp-probe-client-secret`. Without either, every scheduled Job
-fails to start.
+Each probe operation is stateless MCP `2026-07-28`: `server/discover` followed
+by a separately complete `tools/list`. The gateway may send those requests to
+different replicas. Neither the probe nor a backend may depend on a session ID,
+cookie affinity, or pod-local discovery state.
+
+The CronJob is enabled with an immutable registry image carrying
+`/app/agentic-probe`. It uses its dedicated mesh service-account identity on
+the private MCP listener and therefore does not mount a broad OAuth client.
+Public-listener JWT behavior remains covered by separate gateway smoke tests.
 
 Outstanding: alert on `Unreachable` for any server with traffic in the last 24h.
 
@@ -357,3 +425,38 @@ Every one of these must be part of the platform test suite, deny cases first:
 9. A manifest carrying credential material → rejected at `/v0/apply`.
 10. A server the prober cannot reach → `Unreachable` in the catalog, and the UI
     never shows it as `Active`.
+11. `server/discover` and `tools/list` carry matching `2026-07-28` header/body
+    metadata; a legacy-only server cannot become Ready.
+12. Requests carrying `Mcp-Session-Id`, GET event streams, or mismatched
+    `MCP-Method` are rejected, and successive requests remain correct when they
+    land on different replicas.
+
+---
+
+## 9. Deployment status (2026-09-03)
+
+The runtime, Customer AI Registry, ADK, DevAI registrations, shared product
+gateway, Scrapper integration, Stockpilot CLI, and Australis integration seam
+are merged. Repository tests, Atlantis, and security checks for the GitOps
+change pass, but production is not yet fully testable:
+
+- GitOps PR `tesserix-k8s#869` still requires an independent review; branch
+  protection must not be bypassed.
+- The Registry and AgentGateway are ready in production.
+- HomeChef, Mark8ly, and platform each retain one ready mutable-image replica,
+  while the immutable `main-0bd8899` replica fails closed because
+  `MCP_AUTH_KEY` was not injected.
+- Dedicated Secret Manager keys exist for HomeChef, Mark8ly, Fanzone,
+  Platform, Stockpilot, Gameverse, and Horoscope. Their values never belong in
+  Git.
+- Stockpilot MCP is configured for one replica so its stateless tool surface
+  can be qualified and tested after reconciliation.
+- No OpenPanel MCP implementation or authoritative manifest was found, so no
+  server or Registry entry was fabricated. Scrapper has no active direct MCP
+  workload and remains unverified and unrouted.
+
+The auth wiring adds no workload or external-service cost: it reuses the
+existing chart, router, Secret Manager, and External Secrets reconciliation.
+Rollback is one Git revert of this wiring while the previous ready replicas
+remain available; once the fail-closed runtime is the only deployed version,
+rollback must select the last known-good Git/image revision through Argo CD.

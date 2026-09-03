@@ -81,11 +81,125 @@ class MultiTenantExportTests(unittest.TestCase):
         self.assertIn(f'test "${{expected_count}}" -ge "{floor}"', script)
 
 
+class ProductMCPAuthenticationTests(unittest.TestCase):
+    PRODUCTS = {
+        "homechef": "homechef",
+        "mark8ly": "mark8ly",
+        "fanzone": "fanzone",
+        "gameverse": "gameverse",
+        "horoscope": "horoscope",
+        "stockpilot": "stockpilot",
+        "platform": "support-platform",
+    }
+
+    def test_gateway_requires_a_tenant_specific_platform_secret(self):
+        documents = render_chart(
+            "charts/apps/mcp-gateway",
+            "tenant=homechef",
+            "namespace=homechef",
+        )
+        deployment = resource(documents, "Deployment", "homechef-mcp")
+        environment = {
+            item["name"]: item
+            for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+
+        self.assertEqual(
+            {
+                "name": "homechef-mcp-auth",
+                "key": "MCP_AUTH_KEY",
+            },
+            environment["MCP_AUTH_KEY"]["valueFrom"]["secretKeyRef"],
+        )
+
+    def test_every_product_mcp_auth_secret_is_materialised_by_eso(self):
+        for tenant, namespace in self.PRODUCTS.items():
+            with self.subTest(tenant=tenant):
+                documents = [
+                    document
+                    for document in yaml.safe_load_all(
+                        (
+                            ROOT
+                            / "external-secrets/prod"
+                            / namespace
+                            / "externalsecret.yaml"
+                        ).read_text()
+                    )
+                    if document
+                ]
+                external_secret = resource(
+                    documents, "ExternalSecret", f"{tenant}-mcp-auth"
+                )
+                self.assertEqual(
+                    [
+                        {
+                            "secretKey": "MCP_AUTH_KEY",
+                            "remoteRef": {
+                                "key": f"prod-support-platform-{tenant}-mcp-key"
+                            },
+                        }
+                    ],
+                    external_secret["spec"]["data"],
+                )
+
+    def test_router_authenticates_every_product_mcp_request(self):
+        documents = render_chart("charts/apps/support-platform-slm-router")
+        deployment = resource(documents, "Deployment", "support-platform-slm-router")
+        environment = {
+            item["name"]: item
+            for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        routes = yaml.safe_load(
+            resource(documents, "ConfigMap", "support-platform-slm-router-routes")[
+                "data"
+            ]["routes.yaml"]
+        )["products"]
+
+        for tenant in self.PRODUCTS:
+            with self.subTest(tenant=tenant):
+                env_name = f"{tenant.upper()}_MCP_KEY"
+                server = routes[tenant]["mcp_servers"][0]
+                self.assertEqual("X-MCP-Key", server["auth_header"])
+                self.assertEqual(env_name, server["auth_env_var"])
+                self.assertEqual(
+                    {
+                        "name": "support-platform-slm-router-mcp-keys",
+                        "key": env_name,
+                        "optional": True,
+                    },
+                    environment[env_name]["valueFrom"]["secretKeyRef"],
+                )
+
+    def test_router_and_server_keys_share_the_same_secret_manager_values(self):
+        documents = [
+            document
+            for document in yaml.safe_load_all(
+                (
+                    ROOT / "external-secrets/prod/support-platform/externalsecret.yaml"
+                ).read_text()
+            )
+            if document
+        ]
+        external_secret = resource(
+            documents, "ExternalSecret", "support-platform-slm-router-mcp-keys"
+        )
+        remote_keys = {
+            item["secretKey"]: item["remoteRef"]["key"]
+            for item in external_secret["spec"]["data"]
+        }
+
+        for tenant in self.PRODUCTS:
+            with self.subTest(tenant=tenant):
+                env_name = f"{tenant.upper()}_MCP_KEY"
+                self.assertEqual(
+                    f"prod-support-platform-{tenant}-mcp-key",
+                    remote_keys[env_name],
+                )
+
+
 class PerServerAuthorizationTests(unittest.TestCase):
     def test_scope_enforcement_is_requested_from_the_export(self):
-        script = render_script(
-            render_chart(CHART, "registry.requireServerScope=true")
-        )
+        script = render_script(render_chart(CHART, "registry.requireServerScope=true"))
         self.assertIn("requireServerScope=true", script)
         self.assertIn(
             "scopeClaim=urn%3Azitadel%3Aiam%3Aorg%3Aproject%3A387190457387450503%3Aroles",
@@ -96,9 +210,7 @@ class PerServerAuthorizationTests(unittest.TestCase):
         # Rendering the policies before Zitadel grants mcp:<tenant>:<server>
         # would 403 every existing client. The flag is the second step.
         self.assertFalse(values()["registry"]["requireServerScope"])
-        self.assertIn(
-            "requireServerScope=false", render_script(render_chart(CHART))
-        )
+        self.assertIn("requireServerScope=false", render_script(render_chart(CHART)))
 
     def test_scope_claim_matches_the_gateway_jwt_policy(self):
         self.assertEqual(
@@ -181,9 +293,7 @@ class ProbeMeshGuardrailTests(unittest.TestCase):
             in rule.get("from", [{}])[0].get("source", {}).get("principals", [])
         ]
         self.assertTrue(rules, "the prober needs an explicit ALLOW rule")
-        operations = [
-            operation for rule in rules for operation in rule.get("to", [])
-        ]
+        operations = [operation for rule in rules for operation in rule.get("to", [])]
         methods = {
             method
             for operation in operations
@@ -208,9 +318,7 @@ class ProbeMeshGuardrailTests(unittest.TestCase):
             for rule in deny["spec"]["rules"]
             if "notPrincipals" in rule["from"][0]["source"]
         )
-        self.assertIn(
-            PROBE_PRINCIPAL, baseline["from"][0]["source"]["notPrincipals"]
-        )
+        self.assertIn(PROBE_PRINCIPAL, baseline["from"][0]["source"]["notPrincipals"])
         narrowed = next(
             rule
             for rule in deny["spec"]["rules"]
@@ -249,8 +357,7 @@ class GatewayConsumerGuardrailTests(unittest.TestCase):
         runtime_rule = next(
             rule
             for rule in allow["spec"]["rules"]
-            if rule.get("to", [{}])[0].get("operation", {}).get("ports")
-            == ["8082"]
+            if rule.get("to", [{}])[0].get("operation", {}).get("ports") == ["8082"]
         )
         self.assertNotIn("from", runtime_rule)
 

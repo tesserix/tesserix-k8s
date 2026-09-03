@@ -414,6 +414,7 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
             gateway["spec"]["infrastructure"]["parametersRef"],
         )
         self.assertEqual("ClusterIP", parameters["spec"]["service"]["spec"]["type"])
+        self.assertNotIn("sessionAffinity", parameters["spec"]["service"]["spec"])
         self.assertEqual(2, parameters["spec"]["deployment"]["spec"]["replicas"])
         self.assertEqual(
             1,
