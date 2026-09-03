@@ -436,27 +436,24 @@ Every one of these must be part of the platform test suite, deny cases first:
 ## 9. Deployment status (2026-09-03)
 
 The runtime, Customer AI Registry, ADK, DevAI registrations, shared product
-gateway, Scrapper integration, Stockpilot CLI, and Australis integration seam
-are merged. Repository tests, Atlantis, and security checks for the GitOps
-change pass, but production is not yet fully testable:
+gateway, Stockpilot CLI, and Australis integration seam are merged.
 
-- GitOps PR `tesserix-k8s#869` still requires an independent review; branch
-  protection must not be bypassed.
-- The Registry and AgentGateway are ready in production.
-- HomeChef, Mark8ly, and platform each retain one ready mutable-image replica,
-  while the immutable `main-0bd8899` replica fails closed because
-  `MCP_AUTH_KEY` was not injected.
+- GitOps PR `tesserix-k8s#869` is merged and reconciled.
+- HomeChef, Mark8ly, platform, and Stockpilot run the same immutable
+  `mcp-gateway` digest through Tesserix MCP Runtime `v0.1.0-rc.6`; each is
+  desired/ready/updated/available `1/1/1/1`.
+- Live probes prove unauthenticated `401`, authenticated `server/discover` and
+  independent `tools/list` success on `2026-07-28`, and session rejection.
 - Dedicated Secret Manager keys exist for HomeChef, Mark8ly, Fanzone,
   Platform, Stockpilot, Gameverse, and Horoscope. Their values never belong in
-  Git.
-- Stockpilot MCP is configured for one replica so its stateless tool surface
-  can be qualified and tested after reconciliation.
-- No OpenPanel MCP implementation or authoritative manifest was found, so no
-  server or Registry entry was fabricated. Scrapper has no active direct MCP
-  workload and remains unverified and unrouted.
+  Git and existing keys were not rotated.
+- The bootstrap seed is pinned to DevAI commit `1239d514`, which declares the
+  four active product MCPs with Tesserix annotations for Customer AI Registry
+  qualification and AgentGateway export.
+- Fanzone remains decommissioned. Gameverse and Horoscope retain aligned
+  manifests and credentials but are not activated. No OpenPanel MCP
+  implementation or authoritative manifest was found, so none was fabricated.
+  Scrapper has no active direct MCP workload and remains unverified and unrouted.
 
-The auth wiring adds no workload or external-service cost: it reuses the
-existing chart, router, Secret Manager, and External Secrets reconciliation.
-Rollback is one Git revert of this wiring while the previous ready replicas
-remain available; once the fail-closed runtime is the only deployed version,
-rollback must select the last known-good Git/image revision through Argo CD.
+Rollback selects the preceding immutable image and seed revision through GitOps;
+it does not rotate credentials or create a direct path around AgentGateway.
