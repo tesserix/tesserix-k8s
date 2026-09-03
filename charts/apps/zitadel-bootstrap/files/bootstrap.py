@@ -679,13 +679,21 @@ def reconcile_project_role_check(
 ):
     """Assert a project's "only authorized users can authenticate" gate.
 
-    protojson omits projectRoleCheck from the response when it is false, so an
-    absent key means OFF, not "unset". Comparing with .get(..., False) is what
-    makes absent and false the same thing, deliberately.
+    desired=None means unmanaged: the key is absent from the config, so the
+    live value (whatever it is) is left alone — matching bootstrap.py's
+    philosophy that console-set fields survive. Only reconcile when the key is
+    explicitly present in the desired config.
+
+    For explicit True or False: protojson omits projectRoleCheck from the
+    response when false, so absent key reads as false. Comparing with
+    .get(..., False) makes absent and false the same thing deliberately.
 
     The management API has no partial update for a project: PUT replaces the
     whole resource, so name and roleAssertion are resent unchanged.
     """
+    if desired is None:
+        return
+
     current = bool(live.get("projectRoleCheck", False))
     if current == bool(desired):
         return
@@ -746,7 +754,7 @@ def reconcile_platform_project(desired):
         project_id=project_id,
         project_name=desired["name"],
         live=project,
-        desired=desired.get("projectRoleCheck", False),
+        desired=desired.get("projectRoleCheck"),
         scope=scope,
     )
 

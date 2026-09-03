@@ -1668,6 +1668,38 @@ class ProjectRoleCheckTest(unittest.TestCase):
                 ),
             )
 
+    def test_unmanaged_when_desired_is_none_and_live_is_true(self):
+        """Regression: absent projectRoleCheck key means unmanaged, not desired=False.
+
+        Three existing projects (AgentGateway, AgentRegistry, Atlantis) have
+        projectRoleCheck: true on the live instance but don't declare the key in
+        values.yaml. Without this check, the reconciler would compute desired=False
+        and silently disable their "only authorized users" gate every 30 minutes.
+        """
+        calls = []
+        bootstrap.reconcile_project_role_check(
+            project_id="3",
+            project_name="AgentGateway",
+            live={"id": "3", "name": "AgentGateway", "projectRoleCheck": True},
+            desired=None,
+            scope={},
+            request=self._recording_request(calls),
+        )
+        self.assertEqual(calls, [])
+
+    def test_unmanaged_when_desired_is_none_and_live_is_absent(self):
+        """Absent key on both desired and live is unmanaged, produces no writes."""
+        calls = []
+        bootstrap.reconcile_project_role_check(
+            project_id="4",
+            project_name="mark8ly-storefront",
+            live={"id": "4", "name": "mark8ly-storefront"},
+            desired=None,
+            scope={},
+            request=self._recording_request(calls),
+        )
+        self.assertEqual(calls, [])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
