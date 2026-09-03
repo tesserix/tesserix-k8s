@@ -1,0 +1,29 @@
+# Langfuse pods accept traffic only from the ingress gateway and application
+# namespaces that export AI traces; the worker exposes nothing. Selecting the
+# pods makes them deny-by-default, so every allowed source is listed here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: langfuse
+  namespace: observability
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: routing
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: langfuse
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+        - namespaceSelector:
+            matchLabels:
+              tesserix.io/tier: application
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000
