@@ -1,26 +1,19 @@
 apiVersion: v2
 name: otel-ingest
 description: |
-  OpenTelemetry Collector — ingest tier. Consumes the Redpanda topics and writes
-  to the replicated ClickHouse.
+  OpenTelemetry Collector — ingest tier. Consumes the ai.traces Redpanda topic
+  and routes each product's spans to its own Langfuse project over OTLP/HTTP.
 
-  This is the consumer side of the buffer, and the only component that talks to
-  ClickHouse. Splitting it from the gateway is the point of the whole design: a
-  ClickHouse outage stalls this tier, the backlog accumulates in Redpanda, and
-  applications never notice.
+  This is the consumer side of the buffer and the only component that talks to
+  Langfuse. A Langfuse outage stalls this tier, the backlog accumulates in
+  Redpanda, and agents never notice.
 
-  Offsets are committed only AFTER a successful write (message_marking.after),
-  so a crash mid-batch replays rather than loses. That makes delivery
-  at-least-once; ClickHouse deduplicates identical replicated inserts, so the
-  visible result is effectively exactly-once.
-
-  Why a collector rather than ClickHouse's own Kafka table engine: OTLP is
-  protobuf with deeply nested arrays, so the Kafka engine would need
-  JSONAsString plus arrayJoin/JSONExtract materialized views to flatten it by
-  hand. The clickhouseexporter already models the OTel schema, and with
-  cluster_name + table_engine it creates ReplicatedMergeTree tables ON CLUSTER.
+  Offsets are committed only AFTER a batch reaches the exporters
+  (message_marking.after), so a crash mid-batch replays rather than loses.
+  Delivery is at-least-once; span ids are derived from the ADK run id, so a
+  replay upserts in Langfuse rather than duplicating.
 
   Config schema targets collector v0.156.0.
 type: application
-version: 1.0.0
+version: 2.0.0
 appVersion: "0.156.0"

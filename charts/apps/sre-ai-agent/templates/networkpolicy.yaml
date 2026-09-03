@@ -81,6 +81,18 @@ spec:
       ports:
         - port: 443
           protocol: TCP
+    # AI traces to the OTel gateway; the observability namespace is outside the
+    # mesh, so this is plain OTLP/HTTP with no HBONE port.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.telemetry.namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: otel-gateway
+      ports:
+        - port: {{ .Values.telemetry.port }}
+          protocol: TCP
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
