@@ -174,14 +174,18 @@ spec:
               value: {{ .Values.openBaoKvMount | default "kv" | quote }}
             - name: SHIPPING_SECRET_STORE
               value: {{ .Values.carrierSecretStore | default "inline" | quote }}
+            # GCP_PROJECT_ID is now ONLY the merchant-push Pub/Sub project
+            # (see pushevents.NewPublisher). It has nothing to do with carrier
+            # secrets since mark8ly#621 retired GCP Secret Manager. Do NOT
+            # remove it: an empty value skips push publishing with only a log
+            # line, so merchant notifications would stop silently while the
+            # deployment stayed green.
             - name: GCP_PROJECT_ID
               value: {{ .Values.gcpProjectId | quote }}
             # Merchant device push — storefront checkout publishes new-order
             # notifications to this topic; delivery runs on the admin engine.
             - name: MARKETPLACE_PUSH_TOPIC
               value: {{ .Values.pushEventsTopic | default "" | quote }}
-            - name: SECRET_NAME_PREFIX
-              value: {{ .Values.carrierSecretPrefix | default "mark8ly-dev" | quote }}
             # P1: Observability
             - name: METRICS_PORT
               value: {{ .Values.metricsPort | quote }}
