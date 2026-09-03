@@ -1,0 +1,270 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: monitoring
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 65.5.0
+    helm:
+      releaseName: kps
+      values: |
+        # PHASE 1 of docs/2026-09-04-alerting-restoration-design.md.
+        #
+        # WHY THIS EXISTS: the estate has 16 PrometheusRule CRs authored for
+        # prometheus-operator, and no operator was ever installed — only the
+        # CRD chart. The community `prometheus` release cannot read CRs, so
+        # those rules have never been evaluated by anything. See mark8ly#644.
+        #
+        # This release runs ALONGSIDE the community `prometheus` release
+        # during phases 1-2. It is named `kps` precisely so nothing collides
+        # with the `prometheus-*` resources that release owns. The old one
+        # keeps serving until parity is proven (phase 2), because it is
+        # currently the ONLY thing scraping marketplace-api and we have no
+        # alerting that would tell us if that stopped.
+
+        # ── CRDs are already installed by the prometheus-operator-crds app ──
+        crds:
+          enabled: false
+
+        # ── Out of scope for this work ──
+        # A parked Grafana already exists in this namespace; dashboards are a
+        # separate decision (design doc, "Out of scope").
+        grafana:
+          enabled: false
+
+        # Both are currently PARKED at 0 in the community release. Left off
+        # here too rather than switched on speculatively — phase 2 surfaces
+        # any rule that needs their series by showing it never evaluating,
+        # and then they get enabled deliberately.
+        nodeExporter:
+          enabled: false
+        kubeStateMetrics:
+          enabled: false
+
+        prometheus:
+          prometheusSpec:
+            # Evaluate every PrometheusRule in the cluster, not just ones
+            # labelled for this release. The 16 existing CRs carry no
+            # release label — they were written for an operator that was
+            # never installed — so a selector would match none of them and
+            # this whole exercise would change nothing.
+            ruleSelectorNilUsesHelmValues: false
+            ruleNamespaceSelector: {}
+            ruleSelector: {}
+
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+
+            # Match the community release so a comparison in phase 2 is
+            # like-for-like, and so retention cost does not change.
+            retention: 7d
+            retentionSize: "15GB"
+
+            # Same reasoning as the community release: Prometheus needs
+            # uncapped memory during WAL replay. It is currently using
+            # ~3.4Gi against a 2Gi request.
+            resources:
+              requests:
+                memory: 2Gi
+
+            # emptyDir, matching the community release after its TSDB disk
+            # was dropped in the August park. History dies on restart;
+            # re-enabling persistence is a separate ~$5/month decision.
+            storageSpec: {}
+
+            # ── SCRAPE PARITY: the whole risk of this migration ──
+            # kube-prometheus-stack discovers targets through ServiceMonitor
+            # and PodMonitor CRs. It does NOT scrape prometheus.io/*
+            # annotations. That annotation job is currently the only thing
+            # scraping marketplace-api — http_requests_total,
+            # carriersecrets_events_total and the rest restored in
+            # mark8ly#625/#635. Carrying it forward verbatim is what stops
+            # this migration silently deleting the observability it exists
+            # to build on.
+            additionalScrapeConfigs:
+              - job_name: kubernetes-pods
+                kubernetes_sd_configs:
+                  - role: pod
+                relabel_configs:
+                  - action: keep
+                    regex: true
+                    source_labels:
+                      - __meta_kubernetes_pod_annotation_prometheus_io_scrape
+                  - action: drop
+                    regex: true
+                    source_labels:
+                      - __meta_kubernetes_pod_annotation_prometheus_io_scrape_slow
+                  - action: replace
+                    regex: (https?)
+                    source_labels:
+                      - __meta_kubernetes_pod_annotation_prometheus_io_scheme
+                    target_label: __scheme__
+                  - action: replace
+                    regex: (.+)
+                    source_labels:
+                      - __meta_kubernetes_pod_annotation_prometheus_io_path
+                    target_label: __metrics_path__
+                  - action: replace
+                    regex: (\d+);((([0-9]+?)(\.|$)){4})
+                    replacement: $2:$1
+                    source_labels:
+                      - __meta_kubernetes_pod_annotation_prometheus_io_port
+                      - __meta_kubernetes_pod_ip
+                    target_label: __address__
+                  - action: labelmap
+                    regex: __meta_kubernetes_pod_label_(.+)
+                  - action: replace
+                    source_labels:
+                      - __meta_kubernetes_namespace
+                    target_label: namespace
+                  - action: replace
+                    source_labels:
+                      - __meta_kubernetes_pod_name
+                    target_label: pod
+
+              # The four Istio jobs, carried verbatim from the community
+              # release's extraScrapeConfigs. Needed for parity in phase 2 —
+              # and eight ScaledObjects across the estate query
+              # istio_requests_total, so losing these would break autoscaling
+              # inputs as well as dashboards.
+              - job_name: istio-proxy
+                scrape_interval: 60s
+                metrics_path: /stats/prometheus
+                kubernetes_sd_configs:
+                - role: pod
+                relabel_configs:
+                - source_labels:
+                  - __meta_kubernetes_pod_container_name
+                  action: keep
+                  regex: istio-proxy
+                - source_labels:
+                  - __address__
+                  action: replace
+                  regex: ([^:]+)(?::\d+)?
+                  replacement: ${1}:15090
+                  target_label: __address__
+                - source_labels:
+                  - __meta_kubernetes_pod_name
+                  target_label: pod
+                - source_labels:
+                  - __meta_kubernetes_namespace
+                  target_label: namespace
+                - source_labels:
+                  - __meta_kubernetes_pod_label_app
+                  target_label: app
+                - source_labels:
+                  - __meta_kubernetes_pod_label_app_kubernetes_io_name
+                  target_label: workload
+              - job_name: istiod
+                kubernetes_sd_configs:
+                - role: endpoints
+                  namespaces:
+                    names:
+                    - istio-system
+                relabel_configs:
+                - source_labels:
+                  - __meta_kubernetes_service_name
+                  - __meta_kubernetes_endpoint_port_name
+                  action: keep
+                  regex: istiod;http-monitoring
+              - job_name: istio-ingressgateway
+                metrics_path: /stats/prometheus
+                kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names:
+                    - istio-ingress
+                relabel_configs:
+                - source_labels:
+                  - __meta_kubernetes_pod_label_app
+                  action: keep
+                  regex: istio-ingressgateway
+                - source_labels:
+                  - __address__
+                  action: replace
+                  regex: ([^:]+)(?::\d+)?
+                  replacement: ${1}:15090
+                  target_label: __address__
+                - source_labels:
+                  - __meta_kubernetes_pod_name
+                  target_label: pod
+                - source_labels:
+                  - __meta_kubernetes_namespace
+                  target_label: namespace
+              - job_name: istio-egressgateway
+                metrics_path: /stats/prometheus
+                kubernetes_sd_configs:
+                - role: pod
+                  namespaces:
+                    names:
+                    - istio-egress
+                relabel_configs:
+                - source_labels:
+                  - __meta_kubernetes_pod_label_app
+                  action: keep
+                  regex: istio-egressgateway
+                - source_labels:
+                  - __address__
+                  action: replace
+                  regex: ([^:]+)(?::\d+)?
+                  replacement: ${1}:15090
+                  target_label: __address__
+                - source_labels:
+                  - __meta_kubernetes_pod_name
+                  target_label: pod
+                - source_labels:
+                  - __meta_kubernetes_namespace
+                  target_label: namespace
+
+        alertmanager:
+          enabled: true
+          alertmanagerSpec:
+            resources:
+              requests:
+                memory: 128Mi
+          config:
+            # PHASE 1 DELIVERS NOTHING, DELIBERATELY.
+            #
+            # The 16 rule sets have never fired in anger, so their
+            # thresholds are unproven. They evaluate here against a null
+            # receiver first: a wrong rule costs nothing, and we learn the
+            # real noise profile before anyone is paged.
+            #
+            # Phase 3 replaces this with a Slack receiver fed by the
+            # existing prod-falco-slack-webhook via External Secrets, routing
+            # severity=critical only.
+            route:
+              group_by: ["alertname", "cluster", "namespace"]
+              group_wait: 30s
+              group_interval: 5m
+              repeat_interval: 12h
+              receiver: "null"
+            receivers:
+              - name: "null"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
