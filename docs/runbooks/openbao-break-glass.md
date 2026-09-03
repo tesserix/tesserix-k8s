@@ -167,6 +167,20 @@ revoke it explicitly.
 
 ---
 
+## This runbook is checked daily
+
+`.github/workflows/openbao-break-glass-check.yml` runs `scripts/check_break_glass.py`
+every day. It performs steps 1-3 and 6 against production — logs in as the
+bootstrap identity, asserts the policies it receives, asserts it **cannot** read
+a secret value, and revokes — then confirms the recovery secret still holds five
+shares.
+
+If that job is red, this document is wrong and the next incident will find out
+the hard way. It exists because the credential described at the top of this page
+was revoked and dead for weeks with nothing noticing.
+
+It deliberately does **not** cover step 4, which writes.
+
 ## Known weaknesses in this procedure
 
 Recorded rather than hidden, because a runbook that hides its own gaps is worse
