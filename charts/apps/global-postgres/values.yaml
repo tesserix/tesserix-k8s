@@ -15,7 +15,8 @@ imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 # Actual data ~120MB across all 12 databases, but 20Gi for growth headroom.
 storageSize: 20Gi
 storageClass: standard-rwo-retain
-walStorageSize: 5Gi
+# 16Gi clears CNPG's WAL pre-flight so replicas can be re-enabled, and absorbs grader write bursts.
+walStorageSize: 16Gi
 
 resources:
   requests:
@@ -71,6 +72,10 @@ bootstrap:
     # db-schema-bootstrap, so it can never widen its own privileges.
     - "CREATE ROLE devai_evals LOGIN"
     - "CREATE DATABASE devai_evals_db OWNER global"
+    # evals_db (shared eval store: golden datasets, rubrics, runs, scores) is
+    # written by the grader service; grants live in schemas/global/global/evals_db.sql.
+    - "CREATE ROLE grader LOGIN"
+    - "CREATE DATABASE evals_db OWNER global"
   # Runs once against template1 at cluster creation; every database
   # subsequently CREATEd (including from postInitSQL above) inherits
   # whatever is installed here via Postgres's normal template-copy
@@ -120,6 +125,10 @@ managedRoles:
   - name: devai_evals
     passwordSecret: global-postgres-devai-evals
     comment: DevAI sandbox evals dataset writer
+  # Write identity for evals_db; per-table grants only, never DDL.
+  - name: grader
+    passwordSecret: global-postgres-grader
+    comment: grader service eval store writer
 
 # PostgreSQL tuning
 postgresql:
