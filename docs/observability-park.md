@@ -16,8 +16,8 @@ counts back and recreating one node pool.
 | `otel-ingest` | observability | **revived 2026-09-03**, routes Kafka to Langfuse (ClickHouse exporter removed) | `replicaCount: 2` |
 | `otel-cluster` | observability | `charts/thirdparty/otel-cluster/values.yaml` | `replicaCount: 1` (never more) |
 | `otel-agent` (DaemonSet) | observability | `charts/thirdparty/otel-agent/values.yaml` | `nodeSelector: {}` |
-| `obs-api` | observability | `charts/apps/obs-api/values.yaml` | `replicaCount: 2` |
-| `obs-ui` | observability | `charts/apps/obs-ui/values.yaml` | `replicaCount: 2` |
+| `obs-api` | observability | **revived 2026-09-03** for the public explorer | `replicaCount: 2` |
+| `obs-ui` | observability | **revived 2026-09-03** for the public explorer | `replicaCount: 2` |
 | ClickHouse schema CronJob | observability | `argocd/prod/infrastructure/observability-db-schema-bootstrap.yaml` | `suspend: false` |
 | `prometheus-server` | monitoring | `argocd/prod/infrastructure/prometheus.yaml` → `server.replicaCount` | `1` |
 | `prometheus-alertmanager` | monitoring | same file → `alertmanager.replicaCount` | `1` |
