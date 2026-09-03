@@ -27,7 +27,14 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "redpanda.labels" . | nindent 8 }}
+        # Deliberately does not match the broker selector. Broker anti-affinity
+        # would otherwise prevent this one-shot Job from using the three nodes
+        # that host brokers, leaving topic creation pending on a full cluster.
+        app.kubernetes.io/name: redpanda-topics
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/part-of: tesserix
+        app.kubernetes.io/component: observability-bootstrap
       annotations:
         sidecar.istio.io/inject: "false"
     spec:
