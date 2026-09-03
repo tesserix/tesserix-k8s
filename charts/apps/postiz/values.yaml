@@ -97,6 +97,13 @@ flags:
   # without an invite).
   disableRegistration: "true"
   apiLimit: "30"
+  # Starts Postiz's `missingPostWorkflow` sweeper (InfiniteWorkflowRegister only
+  # runs it `if (!!process.env.RUN_CRON)`). Hourly, it re-signals any post left
+  # in QUEUE whose publishDate fell within the last 2 days, so a post whose
+  # Temporal workflow is missing or holds a stale timer self-heals instead of
+  # silently never publishing. Safe at replicaCount: 1 — a fixed workflow id
+  # (`missing-post-workflow`) means extra replicas would contend, not duplicate.
+  runCron: "true"
   # "cloudflare" = R2 object storage (stateless pod, RollingUpdate);
   # "local" = legacy PVC mode (re-pins pod to the PVC's zone, Recreate strategy)
   storageProvider: "cloudflare"
