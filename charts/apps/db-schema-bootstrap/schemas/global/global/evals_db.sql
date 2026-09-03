@@ -129,11 +129,13 @@ CREATE TABLE IF NOT EXISTS eval.case_results (
     UNIQUE (run_id, case_id)
 );
 
--- One row per criterion per case; unknown is recorded as a reason, never as zero.
+-- One row per criterion per case; grader_kind says who scored it (code, model or human).
 CREATE TABLE IF NOT EXISTS eval.scores (
     id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     case_result_id     UUID NOT NULL REFERENCES eval.case_results(id) ON DELETE CASCADE,
     criterion          TEXT NOT NULL,
+    grader_kind        TEXT NOT NULL CHECK (grader_kind IN ('code', 'model', 'human')),
+    grader_ref         TEXT NOT NULL,
     value              NUMERIC(12,6),
     unit               TEXT,
     unavailable_reason TEXT,
@@ -141,11 +143,25 @@ CREATE TABLE IF NOT EXISTS eval.scores (
     evidence           JSONB,
     judge_stamp        TEXT,
     flagged            BOOLEAN NOT NULL DEFAULT FALSE,
-    UNIQUE (case_result_id, criterion),
-    CHECK (value IS NOT NULL OR unavailable_reason IS NOT NULL)
+    scored_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (case_result_id, criterion, grader_kind, grader_ref),
+    CHECK (value IS NOT NULL OR unavailable_reason IS NOT NULL),
+    CHECK (grader_kind <> 'model' OR judge_stamp IS NOT NULL)
 );
 
--- Human labels on a case output; the judge is calibrated against these.
+-- Human review queue: which case results await a reviewer and for which rubric.
+CREATE TABLE IF NOT EXISTS eval.review_requests (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_result_id UUID NOT NULL REFERENCES eval.case_results(id) ON DELETE CASCADE,
+    rubric_id      UUID NOT NULL REFERENCES eval.rubrics(id),
+    reason         TEXT NOT NULL CHECK (reason IN ('calibration', 'flagged', 'sampled', 'disagreement', 'requested')),
+    status         TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done', 'skipped')),
+    assigned_to    TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (case_result_id, rubric_id)
+);
+
+-- Human labels on a case output; also the ground truth the model judge is calibrated against.
 CREATE TABLE IF NOT EXISTS eval.human_labels (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     case_result_id UUID NOT NULL REFERENCES eval.case_results(id) ON DELETE CASCADE,
@@ -188,6 +204,6 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'grader') THEN
     EXECUTE 'GRANT USAGE ON SCHEMA eval TO grader';
     EXECUTE 'GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA eval TO grader';
-    EXECUTE 'GRANT UPDATE ON eval.runs, eval.case_results, eval.baselines, eval.datasets TO grader';
+    EXECUTE 'GRANT UPDATE ON eval.runs, eval.case_results, eval.baselines, eval.datasets, eval.review_requests TO grader';
   END IF;
 END $$;
