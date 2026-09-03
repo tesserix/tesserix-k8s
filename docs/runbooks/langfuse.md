@@ -60,11 +60,17 @@ Each live mutation requires explicit approval. Use Argo CD, not `kubectl apply`.
 2. Confirm shared-pool capacity; provision bucket/IAM/secrets; wait for
    ExternalSecrets.
 3. Revive Keeper, ClickHouse, and global Valkey. ClickHouse 26.4 satisfies the
-   Langfuse v4 requirement of at least 25.12.
-4. Sync infra-postgres and verify the managed role/database are Ready.
-5. Manually sync Langfuse; verify 2 web + 2 worker pods, PDBs, spread, migrations,
+   Langfuse v4 requirement of at least 25.12. Langfuse queues live in Valkey
+   database 1; database 0 belongs to the postiz, social and openpanel BullMQ
+   queues. Changing the index strands in-flight jobs, so let the workers idle
+   before syncing.
+4. Confirm `NetworkPolicy/langfuse` in `observability` (from
+   `manifests/observability-istio`) is present: only `istio-ingress` and
+   `tesserix.io/tier=application` namespaces may reach `langfuse-web:3000`.
+5. Sync infra-postgres and verify the managed role/database are Ready.
+6. Manually sync Langfuse; verify 2 web + 2 worker pods, PDBs, spread, migrations,
    GCS, and bootstrap-admin login.
-6. Roll DevAI, run a known suite, and match run ID/pass rate/scorer dimensions
+7. Roll DevAI, run a known suite, and match run ID/pass rate/scorer dimensions
    between DevAI Analytics and Langfuse.
 
 ## Validation and rollback
