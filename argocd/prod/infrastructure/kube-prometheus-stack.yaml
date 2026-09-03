@@ -321,6 +321,12 @@ spec:
                   # control this integration does not have.
                   - api_url_file: /etc/alertmanager/secrets/alertmanager-slack-webhook/SLACK_WEBHOOKURL
                     send_resolved: true
+                    # Severity is omitted when it is "none": Slack renders
+                    # title and text adjacently, so the first heartbeat read
+                    # "Watchdog (firing)none — An alert that should always be
+                    # firing". Real alerts carry a meaningful severity and are
+                    # unaffected.
+                    #
                     # NOTE: Alertmanager templates are Go stdlib text/template
                     # plus a small helper set (toUpper, toLower, title, join,
                     # match, reReplaceAll, safeHtml, stringSlice). They are NOT
@@ -332,7 +338,7 @@ spec:
                     # heartbeat surfaced it.
                     title: '{{ if eq .Status "firing" }}🔴{{ else }}✅{{ end }} {{ .CommonLabels.alertname }} ({{ .Status }})'
                     text: >-
-                      {{ range .Alerts }}*{{ .Labels.severity }}* — {{ if .Annotations.summary }}{{ .Annotations.summary }}{{ else if .Annotations.description }}{{ .Annotations.description }}{{ else }}no summary{{ end }}
+                      {{ range .Alerts }}{{ if ne .Labels.severity "none" }}*{{ .Labels.severity }}* — {{ end }}{{ if .Annotations.summary }}{{ .Annotations.summary }}{{ else if .Annotations.description }}{{ .Annotations.description }}{{ else }}no summary{{ end }}
                       {{ if .Labels.namespace }}ns=`{{ .Labels.namespace }}` {{ end }}{{ if .Labels.cluster }}cluster=`{{ .Labels.cluster }}` {{ end }}{{ if .Labels.pod }}pod=`{{ .Labels.pod }}`{{ end }}
                       {{ end }}
   destination:
