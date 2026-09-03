@@ -2,21 +2,43 @@
 {{/* The mesh-wide deny-all-default reaches this ambient namespace too, so the
      API needs an explicit ALLOW or every caller gets "RBAC: access denied".
 
-     This is admitted by NAMESPACE, not principal, and that is a deliberate
-     downgrade from what the cutover design (§7) actually wants. The console
-     (namespace `tesserix`) has no ztunnel sidecar and no ambient label —
-     verified live: `istio-injection=disabled`, no `istio.io/dataplane-mode`
-     — so it presents no SPIFFE identity and a principal rule can never match
-     it; writing one here would deny the console outright. Namespace is the
-     strongest selector available until `tesserix` joins the mesh, at which
-     point this should tighten to the console's service account principal.
-     Until then this rule is a namespace check, not an identity check — it
-     does not authenticate the caller, only where the packet came from.
+     ADMITTED BY PRINCIPAL. An earlier version of this comment said a principal
+     rule "can never match" the console, because `tesserix` carries
+     `istio-injection=disabled` and no `istio.io/dataplane-mode`, so the caller
+     would present no SPIFFE identity and writing one here would deny the
+     console outright. The namespace label is still exactly that — but the
+     conclusion is no longer true: the console PODS are enrolled individually
+     (`istio.io/dataplane-mode: ambient`, `ambient.istio.io/redirection:
+     enabled`), and ztunnel records every call to this service as
+     `src.identity="spiffe://cluster.local/ns/tesserix/sa/console"`. Ambient
+     enrolment happened at the pod level, not the namespace level, which is
+     what made the namespace observation misleading. The old comment named
+     this tightening as the thing to do "at which point `tesserix` joins the
+     mesh"; it has.
 
-     `istio-ingress`/`istio-system` are dropped: the VirtualService is gone,
-     so accepting gateway traffic here is no longer correct. `secret-service`
-     stays for the intra-namespace health/ztunnel traffic network-policies.yaml
-     already carries, and `monitoring` stays for Prometheus scrape. */}}
+     WHY THIS MATTERS. `namespaces: ["tesserix"]` admitted eight workloads —
+     company, platform-api, tesserix-auth-bff, tesserix-blog, tesserix-docs,
+     tesserix-storybook, ai-usage-ingest, console — to the service holding
+     OpenBao write access and a GitHub App credential. Only the console has
+     any business here, and a namespace rule is a check on where a packet came
+     from rather than on who sent it (tesserix-home#520, #274).
+
+     OBSERVED BEFORE NARROWING, not assumed: across all six ztunnel pods, every
+     connection to this service came from that one identity — 146 of 146. No
+     `monitoring` traffic appeared, and there is no ServiceMonitor or
+     PodMonitor referencing this service anywhere, nor any metrics port on it
+     (the Service exposes `http:8080` alone), so the `monitoring` allowance is
+     dropped as serving nothing.
+
+     `secret-service` is KEPT deliberately. It holds only this workload, and
+     the intra-namespace allowance covers health and ztunnel traffic that
+     network-policies.yaml already carries. Removing it saves nothing and
+     risks readiness, which is the one failure here that would be an outage
+     rather than a refusal.
+
+     IF THIS IS WRONG, ztunnel says so: it logs RBAC decisions, so a caller
+     that should have been admitted appears as a denial rather than as silence.
+     Rollback is restoring the namespace rule. */}}
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
 metadata:
@@ -32,7 +54,11 @@ spec:
   rules:
     - from:
         - source:
-            namespaces: ["secret-service", "monitoring", "tesserix"]
+            principals:
+              - cluster.local/ns/tesserix/sa/console
+    - from:
+        - source:
+            namespaces: ["secret-service"]
     - from:
         - source:
             principals:

@@ -1,0 +1,92 @@
+# Does the break-glass path still work?
+#
+# `docs/runbooks/openbao-break-glass.md` is how secrets are reached when the
+# console is unavailable. It is only a control if it works, and this estate has
+# the counter-example: the `root_token` in `prod-openbao-recovery-keys` had been
+# revoked since the first bootstrap run — deliberately, by the Job itself — and
+# nothing noticed until someone tried to use it (tesserix-home#462). During an
+# incident that surfaces as a bare `permission denied`, which reads as "I lack
+# access" rather than "this credential was destroyed on purpose".
+#
+# So this EXERCISES the path rather than inspecting its configuration. A check
+# that merely confirmed the role existed would have passed for months while
+# break-glass was dead.
+#
+# It therefore mints a bootstrap token on each run — a privileged credential on
+# a schedule, which is the deliberate cost. Three things bound it: the role's
+# own 10-minute TTL, an explicit revoke, and an assertion that fails if that
+# token can ever read a secret VALUE. It reads no secret values and writes no
+# policy or role.
+name: OpenBao Break-Glass Check
+
+on:
+  schedule:
+    # Daily at 07:40 UTC (= 17:40 AEST / 13:10 IST). Offset from the other
+    # scheduled jobs (03:00 GHCR cleanup, 06:20 IAM drift, 13:45 storage audit)
+    # so a runner shortage cannot make them contend.
+    - cron: '40 7 * * *'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  GCP_PROJECT_ID: tesseracthub-480811
+  CLUSTER_NAME: tesseract-prod-in-gke
+  CLUSTER_REGION: asia-south1
+  # WIF — same values as terraform.yml; safe to hardcode (not sensitive).
+  WIF_PROVIDER: projects/849928263410/locations/global/workloadIdentityPools/github-pool/providers/github-provider
+  SA_EMAIL: github-actions@tesseracthub-480811.iam.gserviceaccount.com
+
+jobs:
+  break-glass:
+    name: Break-glass path
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 10
+
+    permissions:
+      contents: read
+      id-token: write   # for WIF
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.SA_EMAIL }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          install_components: 'gke-gcloud-auth-plugin'
+
+      - name: Get GKE credentials
+        run: |
+          gcloud container clusters get-credentials "${CLUSTER_NAME}" \
+            --region "${CLUSTER_REGION}" --project "${GCP_PROJECT_ID}"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # OpenBao is ClusterIP only, so the check reaches it the same way the
+      # runbook tells a human to: a port-forward. If this step starts failing,
+      # the runbook's step 1 is broken too.
+      - name: Port-forward OpenBao
+        run: |
+          kubectl -n openbao port-forward svc/openbao-active 8200:8200 &
+          for i in $(seq 1 15); do
+            curl -sf http://127.0.0.1:8200/v1/sys/health >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "::error::could not reach OpenBao through the port-forward"
+          exit 1
+
+      - name: Exercise the break-glass path
+        env:
+          BAO_ADDR: http://127.0.0.1:8200
+        run: python3 scripts/check_break_glass.py

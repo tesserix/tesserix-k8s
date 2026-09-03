@@ -264,12 +264,22 @@ database:
     name: homechef_db
     secretName: homechef-platform-admin
 
-# Dedicated OTel ClickHouse (clickhouse-otel.observability) for the platform
-# Observability page — read-only service health/traces. URL is the in-cluster
-# service; password from the tesserix-clickhouse-otel ExternalSecret.
+# OTel ClickHouse for the platform Observability page — read-only service
+# health/traces. URL is the in-cluster service; password from the
+# tesserix-clickhouse-otel ExternalSecret.
+#
+# Was clickhouse-otel.observability, which is decommissioned — no such Service
+# exists in the namespace, so every read from this page failed. PR #97 in
+# tesserix-home moved the CODE default to clickhouse.observability and
+# deliberately left the chart alone (committing here auto-deploys), which left
+# the two disagreeing silently. This is the other half (tesserix-home#106).
+#
+# Verified before changing: `clickhouse` is Running in observability, and the
+# credential in tesserix-clickhouse-otel authenticates against it
+# (`SELECT 1` over 8123 as `default` returns 1).
 clickhouseOtel:
   enabled: true
-  url: http://clickhouse-otel.observability.svc.cluster.local:8123
+  url: http://clickhouse.observability.svc.cluster.local:8123
   user: default
   secretName: tesserix-clickhouse-otel
 

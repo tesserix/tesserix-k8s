@@ -75,10 +75,18 @@ externalSecret:
   secretStoreRef:
     name: gcp-secret-store
     kind: ClusterSecretStore
-  # Set to "" once the App identity is verified in production; the service
-  # ignores GITHUB_TOKEN whenever GITHUB_APP_ID is set, so leaving both during
-  # the cutover is safe and gives a values-only rollback.
-  githubTokenSecret: prod-secret-service-github-token
+  # Empty since the App identity was verified end to end in production on
+  # 2026-09-03: a console-raised pull request (tesserix-k8s#871) was authored by
+  # `tesserix-secret-service[bot]` and came back `mergeable_state: blocked`,
+  # which is the property the PAT made impossible — it held admin and an
+  # unconditional ruleset bypass, so the service could merge its own proposals
+  # and did, on every earlier one (tesserix-home#464).
+  #
+  # The service ignores GITHUB_TOKEN whenever GITHUB_APP_ID is set, so this
+  # removes an unused credential rather than changing behaviour. Rollback is
+  # restoring this key AND flipping githubApp.enabled to false — both, not
+  # either.
+  githubTokenSecret: ""
   githubApp:
     # Flip to true only after the three secrets below exist in Secret Manager.
     # ESO fails the whole ExternalSecret if any referenced key is missing, which

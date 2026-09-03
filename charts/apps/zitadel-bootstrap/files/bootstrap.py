@@ -674,6 +674,45 @@ def assert_org_memberships(org_memberships):
         log(f"org membership {membership['login']} in {membership['org']}: in sync")
 
 
+def reconcile_project_role_check(
+    project_id, project_name, live, desired, scope, request=request
+):
+    """Assert a project's "only authorized users can authenticate" gate.
+
+    desired=None means unmanaged: the key is absent from the config, so the
+    live value (whatever it is) is left alone — matching bootstrap.py's
+    philosophy that console-set fields survive. Only reconcile when the key is
+    explicitly present in the desired config.
+
+    For explicit True or False: protojson omits projectRoleCheck from the
+    response when false, so absent key reads as false. Comparing with
+    .get(..., False) makes absent and false the same thing deliberately.
+
+    The management API has no partial update for a project: PUT replaces the
+    whole resource, so name and roleAssertion are resent unchanged.
+    """
+    if desired is None:
+        return
+
+    current = bool(live.get("projectRoleCheck", False))
+    if current == bool(desired):
+        return
+
+    body = {
+        "name": project_name,
+        "projectRoleAssertion": bool(live.get("projectRoleAssertion", False)),
+        "projectRoleCheck": bool(desired),
+        "hasProjectCheck": bool(live.get("hasProjectCheck", False)),
+    }
+    status, payload = request(
+        "PUT", f"/management/v1/projects/{project_id}", body, headers=scope
+    )
+    if status != 200:
+        raise SystemExit(
+            f"project {project_name!r} role-check update failed: {status} {payload!r}"
+        )
+
+
 def reconcile_platform_project(desired):
     """Reconcile a platform resource-server project without managing secrets.
 
@@ -710,6 +749,14 @@ def reconcile_platform_project(desired):
             f"the committed JWT audience {desired['expectedId']}"
         )
     project_id = project["id"]
+
+    reconcile_project_role_check(
+        project_id=project_id,
+        project_name=desired["name"],
+        live=project,
+        desired=desired.get("projectRoleCheck"),
+        scope=scope,
+    )
 
     wanted_apps = desired.get("oidcApps", [])
     if wanted_apps:

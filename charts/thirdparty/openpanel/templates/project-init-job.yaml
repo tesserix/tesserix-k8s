@@ -10,8 +10,8 @@ metadata:
     # Run after schema migration and before workloads consume managed clients.
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/sync-wave: "-1"
-    # Delete previous Job before creating a new one (idempotent re-runs)
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    # Remove completed hooks so their bound API tokens are invalidated.
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 spec:
   backoffLimit: 3
   activeDeadlineSeconds: 900
@@ -26,6 +26,14 @@ spec:
     spec:
       restartPolicy: OnFailure
       serviceAccountName: {{ include "openpanel.fullname" . }}-project-init
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: init
           image: "{{ .Values.projectInit.image.repository }}:{{ .Values.projectInit.image.tag }}"
@@ -60,6 +68,12 @@ spec:
               value: "{{ .Values.projectInit.organization.id }}"
             - name: ORG_NAME
               value: "{{ .Values.projectInit.organization.name }}"
+            - name: HOME
+              value: /work
+            - name: TMPDIR
+              value: /work/tmp
+            - name: KUBECONFIG
+              value: /work/kubeconfig
             {{- if .Values.projectInit.adminUser.enabled }}
             - name: ADMIN_EMAIL
               valueFrom:
@@ -88,14 +102,32 @@ spec:
             - -c
             - |
               set -e
+              umask 077
+              mkdir -p "$TMPDIR"
+
+              cat > "$KUBECONFIG" <<'EOKUBECONFIG'
+              apiVersion: v1
+              kind: Config
+              clusters:
+                - name: in-cluster
+                  cluster:
+                    server: https://kubernetes.default.svc
+                    certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              contexts:
+                - name: in-cluster
+                  context:
+                    cluster: in-cluster
+                    user: project-init
+              current-context: in-cluster
+              users:
+                - name: project-init
+                  user:
+                    tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+              EOKUBECONFIG
 
               echo "=== OpenPanel Project Init ==="
               echo "Target namespace: $TARGET_NAMESPACE"
               echo "Secret name: $SECRET_NAME"
-
-              # Node hashes the Manage API root secret with the same scrypt
-              # format as OpenPanel. Argon2 remains for the legacy admin login.
-              apk add --no-cache curl argon2 nodejs >/dev/null 2>&1
 
               PSQL="psql -h $DB_HOST -U $DB_USER -d $DB_NAME -t -A -q"
 
@@ -322,57 +354,26 @@ spec:
               # --- Write client IDs to a Secret in each consuming namespace ---
               echo "[6/6] Writing client IDs to K8s Secrets..."
 
-              TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-              CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-              API="https://kubernetes.default.svc"
-
               write_secret() {
                 local ns="$1"
-                local string_data="$2"
+                shift
+                local secret_dir="$TMPDIR/secrets/$ns"
+                mkdir -p "$secret_dir"
 
-                local body
-                body=$(cat <<EOJSON
-              {
-                "apiVersion": "v1",
-                "kind": "Secret",
-                "metadata": {
-                  "name": "$SECRET_NAME",
-                  "namespace": "$ns",
-                  "labels": {
-                    "app.kubernetes.io/managed-by": "openpanel-init",
-                    "app.kubernetes.io/part-of": "tesseract-hub"
-                  }
-                },
-                "type": "Opaque",
-                "stringData": $string_data
-              }
-              EOJSON
-              )
+                while [ "$#" -gt 0 ]; do
+                  local key="$1"
+                  local value="$2"
+                  shift 2
+                  printf '%s' "$value" > "$secret_dir/$key"
+                done
 
-                local code
-                code=$(curl -s -o /tmp/k8s-response.json -w "%{http_code}" \
-                  --cacert "$CA" \
-                  -H "Authorization: Bearer $TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -X POST -d "$body" \
-                  "$API/api/v1/namespaces/$ns/secrets")
-
-                if [ "$code" = "409" ]; then
-                  code=$(curl -s -o /tmp/k8s-response.json -w "%{http_code}" \
-                    --cacert "$CA" \
-                    -H "Authorization: Bearer $TOKEN" \
-                    -H "Content-Type: application/json" \
-                    -X PUT -d "$body" \
-                    "$API/api/v1/namespaces/$ns/secrets/$SECRET_NAME")
-                fi
-
-                if [ "$code" = "200" ] || [ "$code" = "201" ]; then
-                  echo "  $ns/$SECRET_NAME (HTTP $code)"
-                else
-                  echo "  ERROR: $ns/$SECRET_NAME failed (HTTP $code)"
-                  cat /tmp/k8s-response.json 2>/dev/null
-                  exit 1
-                fi
+                kubectl create secret generic "$SECRET_NAME" \
+                  --namespace "$ns" \
+                  --from-file="$secret_dir" \
+                  --labels="app.kubernetes.io/managed-by=openpanel-init,app.kubernetes.io/part-of=tesseract-hub" \
+                  --dry-run=client \
+                  --output=yaml | kubectl apply -f - >/dev/null
+                echo "  $ns/$SECRET_NAME reconciled"
               }
 
               {{/* Group apps by the namespace that consumes them, so each app's
@@ -385,24 +386,50 @@ spec:
               {{- end }}
               {{- range $ns, $apps := $byNamespace }}
 
-              STRING_DATA="{"
+              set --
               {{- range $i, $app := $apps }}
               CLIENT_VAL=$(eval echo "\$CLIENT_ID_{{ $app | replace "-" "_" }}")
-              {{ if $i }}STRING_DATA="$STRING_DATA,"{{ end }}
-              STRING_DATA="$STRING_DATA\"{{ $app }}-client-id\":\"$CLIENT_VAL\""
+              set -- "$@" "{{ $app }}-client-id" "$CLIENT_VAL"
               {{- end }}
-              STRING_DATA="$STRING_DATA}"
-              write_secret "{{ $ns }}" "$STRING_DATA"
+              write_secret "{{ $ns }}" "$@"
               {{- end }}
 
               echo ""
               echo "=== OpenPanel Project Init Complete ==="
               {{- range $app, $config := .Values.projectInit.apps }}
-              echo "  {{ $app }} -> {{ default $default $config.namespace }}: $(eval echo \$CLIENT_ID_{{ $app | replace "-" "_" }})"
+              echo "  {{ $app }} -> {{ default $default $config.namespace }}/$SECRET_NAME"
               {{- end }}
           resources:
             requests:
               memory: 128Mi
             limits:
               memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: kube-api-access
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+            - name: work
+              mountPath: /work
+      volumes:
+        - name: kube-api-access
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+        - name: work
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
 {{- end }}

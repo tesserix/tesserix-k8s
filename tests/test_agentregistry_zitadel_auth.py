@@ -274,6 +274,31 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
 
         self.assertTrue(platform_admins.issubset(desired["admins"]))
         for project in desired["platformProjects"]:
+            # Product projects are exempt: their roles describe merchants and
+            # storefront customers, not operators. `mark8ly.staff` on an
+            # operator would be a real access change to a closed merchant
+            # surface (that project sets projectRoleCheck: true, and its own
+            # comment calls the role "what keeps storefront customers out"),
+            # and `mark8ly.customer` would make them a shopper.
+            #
+            # The default is `platform`, so an entry that forgets to say what
+            # it is lands back under this invariant and fails here rather than
+            # silently escaping it.
+            kind = project.get("kind", "platform")
+            self.assertIn(
+                kind,
+                ("platform", "product"),
+                f"{project['name']} declares an unknown kind {kind!r}",
+            )
+            if kind == "product":
+                self.assertNotIn(
+                    "humanGrants",
+                    project,
+                    f"{project['name']} is a product project but grants humans "
+                    "roles directly — say why, or make it kind: platform",
+                )
+                continue
+
             declared_roles = {role["key"] for role in project.get("roles", [])}
             grants = {
                 grant["login"]: set(grant["roles"])

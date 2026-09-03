@@ -99,6 +99,7 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
     assert values["redis"]["deploy"] is False
     assert values["redis"]["host"] == "global-valkey-queue.global.svc.cluster.local"
     assert values["redis"]["auth"]["username"] is None
+    assert values["redis"]["auth"]["database"] == 1
     assert values["s3"] == {
         "deploy": False,
         "storageProvider": "gcs",
@@ -155,6 +156,32 @@ def test_langfuse_release_is_pinned_external_hardened_and_manual() -> None:
             "key": "zitadel-client-secret",
         }
     }
+
+
+def test_langfuse_pods_accept_only_gateway_and_application_traffic() -> None:
+    policy = resource(
+        documents("manifests/observability-istio/networkpolicy-langfuse.yaml"),
+        "NetworkPolicy",
+        "langfuse",
+    )
+    assert policy["metadata"]["namespace"] == "observability"
+    assert policy["spec"]["podSelector"] == {
+        "matchLabels": {"app.kubernetes.io/name": "langfuse"}
+    }
+    assert policy["spec"]["policyTypes"] == ["Ingress"]
+    (rule,) = policy["spec"]["ingress"]
+    assert rule["ports"] == [{"protocol": "TCP", "port": 3000}]
+    sources = rule["from"]
+    assert {
+        "namespaceSelector": {
+            "matchLabels": {"kubernetes.io/metadata.name": "istio-ingress"}
+        }
+    } in sources
+    assert {
+        "namespaceSelector": {"matchLabels": {"tesserix.io/tier": "application"}}
+    } in sources
+    assert {"podSelector": {}} in sources
+    assert len(sources) == 3
 
 
 def test_secrets_routing_and_devai_export_are_wired() -> None:
