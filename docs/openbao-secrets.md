@@ -409,10 +409,17 @@ kubectl logs -n openbao job/openbao-bootstrap
 kubectl port-forward -n openbao svc/openbao 8200:8200
 ```
 
-**Writing a secret.** Through the admin console at
-https://secret-service.tesserix.app — New secret, then namespace / app / name,
-then one key per field and Write version. This is the only route that works;
-there is no CLI equivalent, for the reasons below.
+**Writing a secret.** Through the console at
+https://console.tesserix.app/platform/secrets — New secret, then namespace / app
+/ name, then one key per field and Write version. Requires the
+`rotate-credentials` capability; `platform` alone can read the inventory and
+propose a grant but not write a value.
+
+This is the only ROUTINE route. There is a break-glass path for when the console
+is unavailable — [runbooks/openbao-break-glass.md](runbooks/openbao-break-glass.md)
+— which is deliberately more involved: it requires cluster access and an
+explicit, temporary privilege escalation, and it is not a substitute for the
+console.
 
 **Getting an admin token — currently not possible.** Both documented routes are
 dead ends as of 2026-08-15:
