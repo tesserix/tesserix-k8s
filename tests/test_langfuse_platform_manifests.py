@@ -178,10 +178,15 @@ def test_langfuse_pods_accept_only_gateway_and_application_traffic() -> None:
         }
     } in sources
     assert {
+        "namespaceSelector": {
+            "matchLabels": {"kubernetes.io/metadata.name": "evals-operator"}
+        }
+    } in sources
+    assert {
         "namespaceSelector": {"matchLabels": {"tesserix.io/tier": "application"}}
     } in sources
     assert {"podSelector": {}} in sources
-    assert len(sources) == 3
+    assert len(sources) == 4
 
 
 def test_secrets_routing_and_devai_export_are_wired() -> None:
