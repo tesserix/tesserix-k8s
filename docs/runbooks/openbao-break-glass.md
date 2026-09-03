@@ -3,9 +3,12 @@
 **Use this when the console is unavailable** — Zitadel is down, the console will
 not deploy, or you cannot sign in — and you need to read or rotate a secret.
 
-Everything below was executed against production on 2026-09-03, except the one
-step marked UNVERIFIED. Timings and exact responses are recorded so the next
-person can tell "this is broken" apart from "I did it wrong".
+**Every step below was executed against production on 2026-09-03**, including
+the escalation in step 4, whose artefacts were removed afterwards. Exact
+responses are recorded so the next person can tell "this is broken" apart from
+"I did it wrong".
+
+Steps 1-3 and 6 are re-checked daily; step 4 is not, because it writes.
 
 ---
 
