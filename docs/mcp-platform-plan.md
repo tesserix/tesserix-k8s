@@ -311,9 +311,14 @@ Registry-declared upstream `/mcp` path. JWT authorization, rate limits,
 telemetry, NetworkPolicy, and vault-backed `X-MCP-Key` injection remain in the
 gateway path.
 
-The bootstrap is pinned to DevAI `206f21fa`: changed Agent content uses the new
-immutable `1.0.3` revision and the Weather Blueprint publishes as
-`weather-workflow`, so re-seeding succeeds without weakening `409` conflict
+Gateway API hostname rewrites do not include the upstream port. Product
+runtimes therefore allowlist the exact short and fully-qualified service hosts
+both with and without `:8765`; wildcard hosts remain forbidden.
+
+The bootstrap is pinned to DevAI `d5f4d822`: changed Agent content uses the
+immutable `1.0.3` revision, the Weather Blueprint publishes as
+`weather-workflow`, and the four active product MCP declarations match their
+observed tool surfaces. Re-seeding succeeds without weakening `409` conflict
 enforcement.
 
 ---
@@ -461,16 +466,19 @@ Every one of these must be part of the platform test suite, deny cases first:
 The runtime, Customer AI Registry, ADK, DevAI registrations, shared product
 gateway, Stockpilot CLI, and Australis integration seam are merged.
 
-- GitOps PR `tesserix-k8s#869` is merged and reconciled.
+- GitOps PRs `tesserix-k8s#869` and `tesserix-k8s#895` are merged and
+  reconciled.
 - HomeChef, Mark8ly, platform, and Stockpilot run the same immutable
-  `mcp-gateway` digest through Tesserix MCP Runtime `v0.1.0-rc.6`; each is
+  `mcp-gateway` digest
+  `sha256:f15e2cd405220b830edcfc1331e95507320faf12d7349153332d985117482475`
+  through Tesserix MCP Runtime `v0.1.0-rc.6`; each is
   desired/ready/updated/available `1/1/1/1`.
 - Live probes prove unauthenticated `401`, authenticated `server/discover` and
   independent `tools/list` success on `2026-07-28`, and session rejection.
 - Dedicated Secret Manager keys exist for HomeChef, Mark8ly, Fanzone,
   Platform, Stockpilot, Gameverse, and Horoscope. Their values never belong in
   Git and existing keys were not rotated.
-- The bootstrap seed is pinned to DevAI commit `19fcda48`, which declares the
+- The bootstrap seed is pinned to DevAI commit `d5f4d822`, which declares the
   four active product MCPs with Tesserix annotations, stateless protocol
   metadata, and secret references for Customer AI Registry qualification and
   credential-brokered AgentGateway export.
