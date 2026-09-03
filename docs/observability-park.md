@@ -53,6 +53,9 @@ The `observability` node pool was deleted. It autoscaled `totalMinNodeCount: 3`,
 so it held three nodes regardless of how few pods it ran — parking pods alone
 would not have released them.
 
+The revived stateless `obs-api` and `obs-ui` run on the shared infrastructure
+pool; recreating this dedicated pool is not required for the public explorer.
+
 Recreate it before scaling anything back up, or the pods pend forever on the
 `workload=observability` taint:
 
