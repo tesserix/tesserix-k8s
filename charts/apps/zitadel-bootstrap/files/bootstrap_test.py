@@ -1591,5 +1591,115 @@ class MainTest(unittest.TestCase):
         self.assertIn("TESSERIX", str(caught.exception))
 
 
+class ProjectRoleCheckTest(unittest.TestCase):
+    @staticmethod
+    def _recording_request(calls, status=200, payload="{}"):
+        def _request(method, path, body=None, headers=None):
+            calls.append((method, path, body, headers))
+            return status, payload
+        return _request
+
+    def test_enables_when_desired_and_live_key_is_absent(self):
+        """protojson omits projectRoleCheck when false, so absent means OFF."""
+        calls = []
+        bootstrap.reconcile_project_role_check(
+            project_id="1",
+            project_name="mark8ly-admin",
+            live={"id": "1", "name": "mark8ly-admin"},  # no projectRoleCheck key
+            desired=True,
+            scope={},
+            request=self._recording_request(calls),
+        )
+        self.assertEqual(len(calls), 1)
+        method, path, body, _headers = calls[0]
+        self.assertEqual(method, "PUT")
+        self.assertEqual(path, "/management/v1/projects/1")
+        self.assertIs(body["projectRoleCheck"], True)
+        # PUT is a full replace, so name must be resent or it is wiped.
+        self.assertEqual(body["name"], "mark8ly-admin")
+
+    def test_no_write_when_already_correct(self):
+        calls = []
+        bootstrap.reconcile_project_role_check(
+            project_id="1",
+            project_name="mark8ly-admin",
+            live={"id": "1", "name": "mark8ly-admin", "projectRoleCheck": True},
+            desired=True,
+            scope={},
+            request=self._recording_request(calls),
+        )
+        self.assertEqual(calls, [])
+
+    def test_absent_and_not_desired_is_a_no_op(self):
+        calls = []
+        bootstrap.reconcile_project_role_check(
+            project_id="2",
+            project_name="mark8ly-storefront",
+            live={"id": "2", "name": "mark8ly-storefront"},
+            desired=False,
+            scope={},
+            request=self._recording_request(calls),
+        )
+        self.assertEqual(calls, [])
+
+    def test_disables_when_live_is_true_and_not_desired(self):
+        calls = []
+        bootstrap.reconcile_project_role_check(
+            project_id="2",
+            project_name="mark8ly-storefront",
+            live={"id": "2", "name": "mark8ly-storefront", "projectRoleCheck": True},
+            desired=False,
+            scope={},
+            request=self._recording_request(calls),
+        )
+        self.assertEqual(len(calls), 1)
+        self.assertIs(calls[0][2]["projectRoleCheck"], False)
+
+    def test_raises_on_write_failure(self):
+        with self.assertRaises(SystemExit):
+            bootstrap.reconcile_project_role_check(
+                project_id="1",
+                project_name="mark8ly-admin",
+                live={"id": "1", "name": "mark8ly-admin"},
+                desired=True,
+                scope={},
+                request=self._recording_request(
+                    [], status=403, payload='{"message":"nope"}'
+                ),
+            )
+
+    def test_unmanaged_when_desired_is_none_and_live_is_true(self):
+        """Regression: absent projectRoleCheck key means unmanaged, not desired=False.
+
+        Three existing projects (AgentGateway, AgentRegistry, Atlantis) have
+        projectRoleCheck: true on the live instance but don't declare the key in
+        values.yaml. Without this check, the reconciler would compute desired=False
+        and silently disable their "only authorized users" gate every 30 minutes.
+        """
+        calls = []
+        bootstrap.reconcile_project_role_check(
+            project_id="3",
+            project_name="AgentGateway",
+            live={"id": "3", "name": "AgentGateway", "projectRoleCheck": True},
+            desired=None,
+            scope={},
+            request=self._recording_request(calls),
+        )
+        self.assertEqual(calls, [])
+
+    def test_unmanaged_when_desired_is_none_and_live_is_absent(self):
+        """Absent key on both desired and live is unmanaged, produces no writes."""
+        calls = []
+        bootstrap.reconcile_project_role_check(
+            project_id="4",
+            project_name="mark8ly-storefront",
+            live={"id": "4", "name": "mark8ly-storefront"},
+            desired=None,
+            scope={},
+            request=self._recording_request(calls),
+        )
+        self.assertEqual(calls, [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
