@@ -53,19 +53,57 @@ langfuse:
   endpoint: http://langfuse-web.observability.svc.cluster.local:3000/api/public/otel/v1/traces
   externalSecret:
     storeName: gcp-secret-store
+    storeKind: ClusterSecretStore
+    dedicatedStoreName: otel-ingest-gcp
     refreshInterval: 1h
+    projectID: tesseracthub-480811
+    serviceAccount:
+      name: otel-ingest-secrets
+      gcpServiceAccount: otel-ingest-secrets@tesseracthub-480811.iam.gserviceaccount.com
+    workloadIdentity:
+      clusterLocation: asia-south1
+      clusterName: tesseract-prod-in-gke
+      clusterProjectID: tesseracthub-480811
 
-# One route per product: spans whose resource service.namespace matches
-# `product` go to that product's Langfuse project with its own key pair. The
-# evals-onboarding operator mirrors each pair to prod-<product>-langfuse-*;
-# until a pair exists the route's auth header is empty and Langfuse rejects it,
-# which shows up as otelcol_exporter_send_failed_spans{exporter="otlphttp/<product>"}.
+# Each route requires a product and deployment environment match. This keeps
+# sandbox/evaluation traces in the product's development project and prevents
+# a product-only match from crossing the dev/prod boundary. Unknown pairs are
+# dropped by the routing connector's default pipeline.
 routes:
-  - product: kora
-  - product: sre
-  - product: devai
-  - product: australis
-  - product: ocr
+  - name: kora-dev
+    product: kora
+    environment: dev
+    publicKeySecret: dev-kora-langfuse-public-key
+    secretKeySecret: dev-kora-langfuse-secret-key
+    secretStoreKind: SecretStore
+    secretStoreName: otel-ingest-gcp
+  - name: kora-prod
+    product: kora
+    environment: prod
+    publicKeySecret: prod-kora-langfuse-public-key
+    secretKeySecret: prod-kora-langfuse-secret-key
+    secretStoreKind: SecretStore
+    secretStoreName: otel-ingest-gcp
+  - name: sre-prod
+    product: sre
+    environment: prod
+    publicKeySecret: prod-sre-langfuse-public-key
+    secretKeySecret: prod-sre-langfuse-secret-key
+  - name: devai-prod
+    product: devai
+    environment: prod
+    publicKeySecret: prod-devai-langfuse-public-key
+    secretKeySecret: prod-devai-langfuse-secret-key
+  - name: australis-prod
+    product: australis
+    environment: prod
+    publicKeySecret: prod-australis-langfuse-public-key
+    secretKeySecret: prod-australis-langfuse-secret-key
+  - name: ocr-prod
+    product: ocr
+    environment: prod
+    publicKeySecret: prod-ocr-langfuse-public-key
+    secretKeySecret: prod-ocr-langfuse-secret-key
 
 processors:
   memoryLimiter:

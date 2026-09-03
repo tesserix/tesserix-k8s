@@ -3522,6 +3522,26 @@ service_accounts = [
   },
 
   # ===========================================================================
+  # OBSERVABILITY - Project-scoped Langfuse route credentials only.
+  # ===========================================================================
+  {
+    name          = "otel-ingest-secrets"
+    display_name  = "OTel ingest Langfuse secrets"
+    description   = "Reads only project-scoped Langfuse keys used by the observability ingest routes"
+    project_roles = []
+    workload_identity_bindings = [
+      { namespace = "observability", kubernetes_service_account = "otel-ingest-secrets" }
+    ]
+    bucket_bindings = []
+    secret_bindings = [
+      { secret_id = "dev-kora-langfuse-public-key", role = "roles/secretmanager.secretAccessor" },
+      { secret_id = "dev-kora-langfuse-secret-key", role = "roles/secretmanager.secretAccessor" },
+      { secret_id = "prod-kora-langfuse-public-key", role = "roles/secretmanager.secretAccessor" },
+      { secret_id = "prod-kora-langfuse-secret-key", role = "roles/secretmanager.secretAccessor" }
+    ]
+  },
+
+  # ===========================================================================
   # OPENBAO - Secret store. Three accounts, one job each, so a compromised
   # snapshot pod cannot write recovery keys and vice versa.
   # ===========================================================================

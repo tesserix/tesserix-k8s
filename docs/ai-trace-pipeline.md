@@ -9,25 +9,33 @@ components run on `optimized-v2` (`workload=infrastructure`).
 
 | Hop | Component | What it does |
 |---|---|---|
-| 1 | `ai-agents` `agent_telemetry` | One OTLP trace per ADK run: agent root span, a generation per model call, a tool span per tool call, a point event per refusal or error. Trace and span ids derive from the run id; message content is never exported. Resource carries `service.namespace=<product>`, `service.name`, `tesserix.signal=ai`. Fail-open behind a batch queue. |
+| 1 | `ai-agents` `agent_telemetry` | One OTLP trace per ADK run: agent root span, a generation per model call, a tool span per tool call, a point event per refusal or error. Trace and span ids derive from the run id; message content is never exported. Resource carries `service.namespace=<product>`, `deployment.environment.name=<environment>`, `service.name`, and `tesserix.signal=ai`. Fail-open behind a batch queue. |
 | 2 | `otel-gateway` (StatefulSet ×2, 20Gi spool each) | OTLP in on 4317/4318. Every signal is copied to the observability topics; a second trace pipeline uses `filter/ai` so only marked spans reach `ai.traces`. Both Kafka exporters use an on-disk queue, `required_acks=-1`, and retry forever. |
 | 3 | `redpanda` (×3, RF=3, 40Gi each) | Topics `ai.traces`, `otel.logs`, `otel.traces`, and `otel.metrics`, each with 6 partitions and 7-day retention. Auto-create is off. |
-| 4 | `otel-ingest` (Deployment ×2, two consumer groups) | The ClickHouse group writes all three general signals with replicated schema creation. The independent Langfuse group routes AI traces by `service.namespace`; unknown products go to `nop`. |
-| 5 | Langfuse v4 | One project per product. Traces filter by project, then by tag (`product`, agent name, service) or metadata (`tenant`, `run_id`, `state`, `definition_revision`). |
+| 4 | `otel-ingest` (Deployment ×2, two consumer groups) | The ClickHouse group writes all three general signals with replicated schema creation. The independent Langfuse group requires an allowlisted product and environment pair; unknown pairs go to `nop`. |
+| 5 | Langfuse v4 | Separate development and production projects contain traces for each product. Traces then filter by tag (`product`, agent name, service) or metadata (`tenant`, `run_id`, `state`, `definition_revision`). |
 
-## Per-product keys
+## Per-product and environment keys
 
-Each route reads `prod-<product>-langfuse-public-key` / `-secret-key` from
-Secret Manager through an ExternalSecret whose template emits the base64 Basic
-value. The evals-onboarding operator mirrors those pairs once its claim is
-Ready (`k8s/operators/evals-onboarding/claims/<product>.yaml`); that needs the
-org-scoped Langfuse key in `prod-langfuse-org-*` first. A route whose Secret is
-missing still renders: the env is `optional`, Langfuse answers 401, the batch is
-counted in `otelcol_exporter_send_failed_spans{exporter="otlphttp/<product>"}`
-and dropped after `exporter.retry.maxElapsedTime`. Redpanda keeps the data.
+Each route names its two project-scoped Secret Manager resources explicitly.
+Kora development reads `dev-kora-langfuse-public-key` and
+`dev-kora-langfuse-secret-key`; Kora production reads the corresponding
+`prod-kora-*` pair. Those two routes use a namespaced `SecretStore` that assumes
+the dedicated `otel-ingest-secrets` workload identity. The identity has
+secret-level access only to those four Kora project keys and cannot read
+organization onboarding keys. Agent and sandbox pods receive neither key type.
+Existing production routes continue through the cluster store until their
+project keys exist and each route can be migrated to its own reviewed identity.
 
-Routes today: `kora`, `sre`, `devai`, `australis`, `ocr` (`charts/thirdparty/otel-ingest/values.yaml`).
-Adding a product is one list entry plus its claim.
+Missing credentials do not block unrelated routes: the env reference is
+optional, the affected exporter receives a 401, and failures are counted in
+`otelcol_exporter_send_failed_spans{exporter="otlphttp/<product>-<environment>"}`.
+The exporter gives up after its bounded retry window; Redpanda retains seven
+days for controlled replay.
+
+Routes today are Kora development plus production routes for Kora, SRE, DevAI,
+Australis, and OCR (`charts/thirdparty/otel-ingest/values.yaml`). Adding another
+environment requires a separate project key pair and an explicit route.
 
 ## Replay
 
