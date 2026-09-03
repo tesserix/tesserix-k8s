@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 import subprocess
 
@@ -6,6 +7,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 RESOURCES = ROOT / "k8s/operators/evals-onboarding/resources.yaml"
+TFVARS = (ROOT / "terraform-new/environments/prod/terraform.tfvars").read_text()
+WORKLOAD_IDENTITY = (ROOT / "terraform-new/stacks/06-workload-identity/main.tf").read_text()
 
 
 def documents(path: Path) -> list[dict]:
@@ -36,8 +39,8 @@ def test_operator_mounts_org_key_and_grader_password_from_gcp() -> None:
     items = documents(RESOURCES)
     org = resource(items, "ExternalSecret", "langfuse-org-credentials")
     assert {d["remoteRef"]["key"] for d in org["spec"]["data"]} == {
-        "prod-langfuse-org-public-key",
-        "prod-langfuse-org-secret-key",
+        "prod-evals-langfuse-org-public-key",
+        "prod-evals-langfuse-org-secret-key",
     }
     db = resource(items, "ExternalSecret", "evals-db-credentials")
     assert db["spec"]["data"][0]["remoteRef"]["key"] == "prod-grader-postgresql-password"
@@ -49,6 +52,26 @@ def test_operator_mounts_org_key_and_grader_password_from_gcp() -> None:
     assert {m["mountPath"] for m in container["volumeMounts"]} == {"/var/run/langfuse-org", "/var/run/evals-db"}
     account = resource(items, "ServiceAccount", "evals-onboarding-operator")
     assert account["metadata"]["annotations"]["iam.gke.io/gcp-service-account"].startswith("evals-onboarding-operator@")
+
+
+def test_org_credentials_have_secret_level_gitops_ownership() -> None:
+    match = re.search(
+        r'\{\s*name\s*=\s*"evals-onboarding-operator"(?P<body>.*?)\n\s*\},',
+        TFVARS,
+        re.DOTALL,
+    )
+    assert match is not None
+    body = match.group("body")
+    assert 'namespace = "evals-operator"' in body
+    assert 'kubernetes_service_account = "evals-onboarding-operator"' in body
+    assert 'secret_id = "prod-evals-langfuse-org-public-key"' in body
+    assert 'secret_id = "prod-evals-langfuse-org-secret-key"' in body
+    assert body.count('role = "roles/secretmanager.secretAccessor"') == 2
+    assert "project_roles              = []" in body
+    assert (
+        'google_service_account.workload_identity["evals-onboarding-operator"]'
+        in WORKLOAD_IDENTITY
+    )
 
 
 def test_global_postgres_admits_evals_operator() -> None:

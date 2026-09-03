@@ -11,8 +11,12 @@ and `eval.datasets` rows on `evals_db` (australis ADR-0003). Source:
    API Keys -> create, then store both halves:
 
    ```bash
-   printf '%s' 'pk-lf-...' | gcloud secrets create prod-langfuse-org-public-key --project=tesseracthub-480811 --data-file=-
-   printf '%s' 'sk-lf-...' | gcloud secrets create prod-langfuse-org-secret-key --project=tesseracthub-480811 --data-file=-
+   gcloud secrets create prod-evals-langfuse-org-public-key --project=tesseracthub-480811 \
+     --replication-policy=user-managed --locations=asia-south1 \
+     --data-file=/secure/path/langfuse-public-secret
+   gcloud secrets create prod-evals-langfuse-org-secret-key --project=tesseracthub-480811 \
+     --replication-policy=user-managed --locations=asia-south1 \
+     --data-file=/secure/path/langfuse-secret
    ```
 
 2. GCP identity (mirrors `analytics-onboarding-operator`):

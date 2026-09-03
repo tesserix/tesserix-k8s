@@ -32,6 +32,11 @@ resource "google_service_account" "workload_identity" {
   project      = var.project_id
 }
 
+import {
+  to = google_service_account.workload_identity["evals-onboarding-operator"]
+  id = "projects/tesseracthub-480811/serviceAccounts/evals-onboarding-operator@tesseracthub-480811.iam.gserviceaccount.com"
+}
+
 # =============================================================================
 # Workload Identity Bindings (GSA to KSA)
 # =============================================================================
