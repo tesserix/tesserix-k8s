@@ -1,23 +1,16 @@
 # OTel Collector ingest tier — defaults. Prod overrides go inline in
 # argocd/prod/infrastructure/otel-ingest.yaml (the redis-global pattern).
 
-# Consumers in one Kafka consumer group. Scaling this up to the partition count
-# (6) increases ingest parallelism; beyond that the extra pods idle.
-# PARKED 2026-08-01 at 0 for cost — restore to 2 to revive; see docs/observability-park.md
-replicaCount: 0
+# Consumers in one Kafka consumer group. Scaling up to the partition count (6)
+# increases parallelism; beyond that the extra pods idle.
+# Revived 2026-09-03 as the Kafka -> Langfuse router (docs/ai-trace-pipeline.md).
+replicaCount: 2
 
 image:
   # Pulled through the GAR docker.io mirror rather than docker.io directly.
-  # On a Spot pool every preemption re-pulls this image, so keeping the pull
-  # inside asia-south1 removes both the egress cost and a slow cold start.
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/otel/opentelemetry-collector-contrib
   tag: "0.156.0"
-  # IfNotPresent, deliberately. This is a third-party image on a pinned tag, so
-  # the content behind that tag never changes and re-pulling gains nothing.
-  # It matters here because the stack runs on a Spot pool: Always would re-pull
-  # from GAR on every pod restart, and preemptions make restarts routine.
-  # Our own images (obs-api, obs-ui) use Always instead, because they track a
-  # moving `main` tag that genuinely does change.
+  # Pinned third-party tag: re-pulling gains nothing.
   pullPolicy: IfNotPresent
 
 ports:
@@ -27,48 +20,33 @@ ports:
 kafka:
   brokers:
     - redpanda.observability.svc.cluster.local:9092
-  # protocol_version is deliberately NOT set. It declares the MINIMUM
-  # API versions the client demands, and every value we tried was above
-  # what this Redpanda offers for JoinGroup (key 11): 2.8.0 and 2.5.0
-  # both map to v7, the broker caps at v6, and the consumer group could
-  # never form -- it sat Dead with 0 members while topics filled up.
-  # The collector default is empty, which makes franz-go negotiate the
-  # highest version the broker actually supports. Do not pin it again
-  # without checking the broker's advertised API versions first.
-  # One group across all replicas: Redpanda then assigns partitions between
-  # them and rebalances automatically when a Spot node is preempted.
+  # protocol_version is deliberately NOT set: it is a MINIMUM and every value
+  # tried exceeded what this Redpanda offers for JoinGroup, so the group never
+  # formed. Empty lets franz-go negotiate.
   groupID: otel-ingest
-  # On a first start with no committed offset, read the whole retained backlog
-  # rather than only new messages — otherwise a rebuild silently skips data.
+  # First start with no committed offset reads the whole retained backlog.
   initialOffset: earliest
   topics:
-    logs: otel.logs
-    traces: otel.traces
-    metrics: otel.metrics
+    traces: ai.traces
 
-clickhouse:
-  endpoint: "tcp://clickhouse.observability.svc.cluster.local:9000?dial_timeout=10s"
-  database: otel
-  username: default
-  # MUST match clickhouse-ha's clusterName. If it does not, the exporter
-  # silently creates plain MergeTree tables and replication does nothing.
-  clusterName: otel
-  # ReplicatedMergeTree with no explicit parameters: ClickHouse fills them from
-  # its default_replica_path/default_replica_name settings, which resolve
-  # through the {shard} and {replica} macros the clickhouse-ha init container
-  # generates per pod.
-  tableEngine: ReplicatedMergeTree
-  createSchema: true
-  # Retention. TTL is applied to tables the exporter creates; changing it later
-  # requires an ALTER TABLE ... MODIFY TTL on the existing tables.
-  ttl: 720h
-  # Batches rows server-side, which suits many small inserts from several
-  # consumers far better than one synchronous insert per batch.
-  asyncInsert: true
-  compress: lz4
-  env:
-    secretName: clickhouse-secrets
-    secretKey: clickhouse-password
+langfuse:
+  # In-cluster Langfuse OTLP endpoint; the exporter appends nothing.
+  endpoint: http://langfuse-web.observability.svc.cluster.local:3000/api/public/otel/v1/traces
+  externalSecret:
+    storeName: gcp-secret-store
+    refreshInterval: 1h
+
+# One route per product: spans whose resource service.namespace matches
+# `product` go to that product's Langfuse project with its own key pair. The
+# evals-onboarding operator mirrors each pair to prod-<product>-langfuse-*;
+# until a pair exists the route's auth header is empty and Langfuse rejects it,
+# which shows up as otelcol_exporter_send_failed_spans{exporter="otlphttp/<product>"}.
+routes:
+  - product: kora
+  - product: sre
+  - product: devai
+  - product: australis
+  - product: ocr
 
 processors:
   memoryLimiter:
@@ -76,16 +54,28 @@ processors:
     limitPercentage: 80
     spikeLimitPercentage: 25
   batch:
-    sendBatchSize: 8192
-    sendBatchMaxSize: 16384
-    timeout: 10s
+    sendBatchSize: 512
+    sendBatchMaxSize: 1024
+    timeout: 5s
+
+exporter:
+  timeout: 15s
+  # Memory-only queue: the durable copy is Redpanda and offsets commit only
+  # after export, so a restart re-consumes rather than loses.
+  queueSize: 5000
+  retry:
+    initialInterval: 5s
+    maxInterval: 60s
+    # Give up after this long so one product's outage never wedges the
+    # consumer group for the others; the batch stays in Redpanda for replay.
+    maxElapsedTime: 900s
 
 # Memory-only per platform policy: no CPU requests or limits anywhere.
 resources:
   requests:
-    memory: 1Gi
+    memory: 512Mi
   limits:
-    memory: 1536Mi
+    memory: 1Gi
 
 podAnnotations:
   prometheus.io/scrape: "true"
@@ -116,10 +106,6 @@ podDisruptionBudget:
   minAvailable: 1
 
 nodeSelector:
-  workload: observability
+  workload: infrastructure
 
-tolerations:
-  - key: workload
-    operator: Equal
-    value: observability
-    effect: NoSchedule
+tolerations: []

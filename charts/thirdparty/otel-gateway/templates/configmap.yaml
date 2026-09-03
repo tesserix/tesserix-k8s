@@ -84,33 +84,20 @@ data:
           - sources:
               - from: connection
 
-      # Give SDK-reported telemetry a product.
-      #
-      # Applications set service.name themselves, but almost none set
-      # service.namespace, so traces arrived with a blank product while scraped
-      # logs (enriched by otel-agent) had one. That asymmetry meant a product
-      # filter worked on logs and not on traces, and the trace list could not be
-      # grouped by product at all.
-      #
-      # k8sattributes above has already resolved k8s.namespace.name from the pod
-      # association, so this just promotes it. Namespaces ARE the products in
-      # this estate, and service.namespace is the OTel-standard attribute for
-      # the grouping.
-      #
-      # service.name is deliberately NOT touched: the SDK is authoritative for
-      # it, and overwriting an application's own service name with a Kubernetes
-      # workload name would be a downgrade.
+      # Drop anything that is not an AI trace before it touches the buffer.
+      # Agents stamp the marker on their resource (ai-agents agent_telemetry).
+      filter/ai:
+        error_mode: ignore
+        traces:
+          span:
+            - resource.attributes[{{ .Values.aiFilter.attribute | quote }}] != {{ .Values.aiFilter.value | quote }}
+
+      # Agents set service.namespace to their product, which is what the ingest
+      # tier routes on. Anything that arrives without one is grouped under its
+      # Kubernetes namespace so it can still be found, never silently lost.
       transform/product:
         error_mode: ignore
         trace_statements:
-          - context: resource
-            statements:
-              - set(attributes["service.namespace"], attributes["k8s.namespace.name"]) where attributes["service.namespace"] == nil and attributes["k8s.namespace.name"] != nil
-        log_statements:
-          - context: resource
-            statements:
-              - set(attributes["service.namespace"], attributes["k8s.namespace.name"]) where attributes["service.namespace"] == nil and attributes["k8s.namespace.name"] != nil
-        metric_statements:
           - context: resource
             statements:
               - set(attributes["service.namespace"], attributes["k8s.namespace.name"]) where attributes["service.namespace"] == nil and attributes["k8s.namespace.name"] != nil
@@ -129,14 +116,8 @@ data:
           - {{ . | quote }}
           {{- end }}
         client_id: otel-gateway
-        logs:
-          topic: {{ .Values.kafka.topics.logs | quote }}
-          encoding: otlp_proto
         traces:
           topic: {{ .Values.kafka.topics.traces | quote }}
-          encoding: otlp_proto
-        metrics:
-          topic: {{ .Values.kafka.topics.metrics | quote }}
           encoding: otlp_proto
         producer:
           required_acks: {{ .Values.kafka.requiredAcks }}
@@ -167,15 +148,7 @@ data:
       pipelines:
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, transform/product, batch]
-          exporters: [kafka]
-        logs:
-          receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, transform/product, batch]
-          exporters: [kafka]
-        metrics:
-          receivers: [otlp]
-          processors: [memory_limiter, k8sattributes, transform/product, batch]
+          processors: [memory_limiter, filter/ai, k8sattributes, transform/product, batch]
           exporters: [kafka]
       telemetry:
         metrics:

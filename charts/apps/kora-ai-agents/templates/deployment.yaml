@@ -68,6 +68,17 @@ spec:
               value: {{ .Values.config.maxPromptChars | quote }}
             - name: KORA_AGENTS_REQUEST_TIMEOUT_SECONDS
               value: {{ .Values.config.requestTimeoutSeconds | quote }}
+            # Langfuse tracing through the AI-trace pipeline (docs/ai-trace-pipeline.md).
+            - name: AGENT_TELEMETRY_ENDPOINT
+              value: {{ .Values.telemetry.endpoint | quote }}
+            - name: AGENT_TELEMETRY_PRODUCT
+              value: {{ .Values.telemetry.product | quote }}
+            - name: AGENT_TELEMETRY_SERVICE_NAME
+              value: {{ .Values.telemetry.serviceName | quote }}
+            - name: AGENT_TELEMETRY_ENVIRONMENT
+              value: {{ .Values.telemetry.environment | quote }}
+            - name: AGENT_TELEMETRY_RELEASE
+              value: {{ printf "%s-%s" .Values.image.tag (trunc 12 (trimPrefix "sha256:" (default "" .Values.image.digest))) | quote }}
           readinessProbe:
             httpGet:
               path: /readyz

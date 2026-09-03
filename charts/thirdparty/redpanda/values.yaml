@@ -3,9 +3,8 @@
 
 # Three brokers is the minimum that supports RF=3 with a tolerable failure of
 # one. MUST stay odd for Raft leadership.
-# PARKED 2026-08-01 at 0 for cost — restore to 3 to revive; PVCs are retained
-# so the Raft state and topic data survive; see docs/observability-park.md
-replicaCount: 0
+# Revived 2026-09-03 as the AI-trace buffer (docs/ai-trace-pipeline.md).
+replicaCount: 3
 
 image:
   # Pulled through the GAR docker.io mirror rather than docker.io directly.
@@ -53,38 +52,29 @@ runtime:
   smp: 1
   # Seastar allocates this up front. Kept meaningfully below the container
   # memory limit so the Go/C++ heap outside Seastar's arena has room.
-  memory: "1400M"
+  memory: "1000M"
   reserveMemory: "0M"
 
 # Topics created by the post-install hook. 6 partitions gives the ingest tier
 # room to scale to 6 consumers before partitions become the bottleneck.
 topics:
-  - name: otel.logs
+  # AI traces only (australis ADR-0003 D5). Seven days lets a Langfuse outage or
+  # a missing project key be replayed from the buffer once fixed.
+  - name: ai.traces
     partitions: 6
-    retentionMs: 86400000 # 24h — the window an ingest outage can be replayed from
-  - name: otel.traces
-    partitions: 6
-    retentionMs: 86400000
-  - name: otel.metrics
-    partitions: 6
-    retentionMs: 86400000
-  - name: otel.events
-    partitions: 3
-    retentionMs: 259200000 # 72h — low volume, and the most useful signal to look back on
+    retentionMs: 604800000
 
 persistence:
-  # 24h of retention at the measured ~11.7GiB/day, times RF=3 spread over 3
-  # brokers, is ~12GiB per broker. 40Gi covers a retention bump or an ingest
-  # outage that lets the backlog build.
-  size: 40Gi
+  # AI traces are tens of MiB per day; 10Gi holds far more than the 7d retention.
+  size: 10Gi
   storageClassName: standard-rwo-retain
 
 # Memory-only per platform policy: no CPU requests or limits anywhere.
 resources:
   requests:
-    memory: 2Gi
+    memory: 1536Mi
   limits:
-    memory: 2560Mi
+    memory: 1792Mi
 
 podAnnotations:
   prometheus.io/scrape: "true"
@@ -119,10 +109,6 @@ podDisruptionBudget:
   minAvailable: 2
 
 nodeSelector:
-  workload: observability
+  workload: infrastructure
 
-tolerations:
-  - key: workload
-    operator: Equal
-    value: observability
-    effect: NoSchedule
+tolerations: []

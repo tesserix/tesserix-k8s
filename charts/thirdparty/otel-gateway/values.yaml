@@ -4,8 +4,8 @@
 # Two replicas so a Spot preemption never leaves the estate with no OTLP
 # endpoint. Each keeps its own disk queue, so they are not interchangeable
 # mid-flight — hence a StatefulSet rather than a Deployment.
-# PARKED 2026-08-01 at 0 for cost — restore to 2 to revive; see docs/observability-park.md
-replicaCount: 0
+# Revived 2026-09-03 as the AI-trace gateway only (docs/ai-trace-pipeline.md).
+replicaCount: 2
 
 image:
   # contrib distribution: the kafka exporter and k8sattributes processor are
@@ -42,9 +42,7 @@ kafka:
   # highest version the broker actually supports. Do not pin it again
   # without checking the broker's advertised API versions first.
   topics:
-    logs: otel.logs
-    traces: otel.traces
-    metrics: otel.metrics
+    traces: ai.traces
   # -1 = wait for all in-sync replicas. With RF=3 this is the setting that
   # makes an acknowledged produce durable against a broker loss. Do not relax
   # it for throughput; the buffer exists precisely to absorb that cost.
@@ -67,6 +65,12 @@ queue:
   # survive a process restart, which page cache already covers.
   fsync: false
 
+# Only spans whose resource carries this marker pass; everything else is dropped
+# at the door so Langfuse and Redpanda hold AI traces and nothing else.
+aiFilter:
+  attribute: tesserix.signal
+  value: ai
+
 persistence:
   # Holds only the spool. 20Gi is ~2 hours of total estate telemetry at the
   # measured rate, which comfortably outlasts a broker replacement.
@@ -86,9 +90,9 @@ processors:
 # Memory-only per platform policy: no CPU requests or limits anywhere.
 resources:
   requests:
-    memory: 1Gi
+    memory: 512Mi
   limits:
-    memory: 1536Mi
+    memory: 1Gi
 
 service:
   type: ClusterIP
@@ -128,10 +132,6 @@ podDisruptionBudget:
   minAvailable: 1
 
 nodeSelector:
-  workload: observability
+  workload: infrastructure
 
-tolerations:
-  - key: workload
-    operator: Equal
-    value: observability
-    effect: NoSchedule
+tolerations: []

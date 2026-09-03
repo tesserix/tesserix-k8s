@@ -11,8 +11,6 @@ data:
         endpoint: 0.0.0.0:{{ .Values.ports.health }}
 
     receivers:
-      # One receiver serves all three pipelines; the per-signal blocks select
-      # which topic feeds which. (Pre-0.150 this needed one alias per signal.)
       kafka:
         brokers:
           {{- range .Values.kafka.brokers }}
@@ -21,22 +19,13 @@ data:
         client_id: otel-ingest
         group_id: {{ .Values.kafka.groupID | quote }}
         initial_offset: {{ .Values.kafka.initialOffset }}
-        logs:
-          topics: [{{ .Values.kafka.topics.logs | quote }}]
-          encoding: otlp_proto
         traces:
           topics: [{{ .Values.kafka.topics.traces | quote }}]
           encoding: otlp_proto
-        metrics:
-          topics: [{{ .Values.kafka.topics.metrics | quote }}]
-          encoding: otlp_proto
         message_marking:
-          # Commit the offset only AFTER the batch has been exported. This is
-          # the setting that makes a crash replay instead of lose: the default
-          # commits on receipt, which drops anything in flight.
+          # Commit only AFTER the batch was handed to the exporters, so a crash
+          # replays instead of loses.
           after: true
-          # Do not commit on error either — a failed write must be retried, not
-          # skipped.
           on_error: false
 
     processors:
@@ -50,53 +39,57 @@ data:
         send_batch_max_size: {{ .Values.processors.batch.sendBatchMaxSize }}
         timeout: {{ .Values.processors.batch.timeout }}
 
+    connectors:
+      # Each product's spans go to that product's Langfuse project. Anything
+      # without a known product is counted and dropped, never mixed in.
+      routing:
+        default_pipelines: [traces/unrouted]
+        error_mode: ignore
+        table:
+          {{- range .Values.routes }}
+          - context: resource
+            condition: attributes["service.namespace"] == {{ .product | quote }}
+            pipelines: [traces/{{ .product }}]
+          {{- end }}
+
     exporters:
-      clickhouse:
-        endpoint: {{ .Values.clickhouse.endpoint | quote }}
-        database: {{ .Values.clickhouse.database | quote }}
-        username: {{ .Values.clickhouse.username | quote }}
-        # Resolved from the env var wired to the Secret in deployment.yaml, so
-        # the password never appears in the ConfigMap.
-        password: ${env:CLICKHOUSE_PASSWORD}
-        # These two together are what produce a replicated schema. Without
-        # cluster_name the exporter creates local MergeTree tables and the
-        # second replica stays permanently empty.
-        cluster_name: {{ .Values.clickhouse.clusterName | quote }}
-        table_engine:
-          name: {{ .Values.clickhouse.tableEngine | quote }}
-        create_schema: {{ .Values.clickhouse.createSchema }}
-        ttl: {{ .Values.clickhouse.ttl }}
-        async_insert: {{ .Values.clickhouse.asyncInsert }}
-        compress: {{ .Values.clickhouse.compress }}
+      {{- range .Values.routes }}
+      otlphttp/{{ .product }}:
+        traces_endpoint: {{ $.Values.langfuse.endpoint | quote }}
+        headers:
+          # Basic pk:sk, base64-encoded by the ExternalSecret template.
+          Authorization: "Basic ${env:LANGFUSE_{{ .product | upper }}_AUTH}"
+        timeout: {{ $.Values.exporter.timeout }}
+        compression: gzip
         sending_queue:
           enabled: true
-          # Memory-only queue is correct here: the durable copy is Redpanda,
-          # and offsets are not committed until the write lands, so anything
-          # lost from this queue is simply re-consumed.
-          queue_size: 5000
+          queue_size: {{ $.Values.exporter.queueSize }}
         retry_on_failure:
           enabled: true
-          initial_interval: 5s
-          max_interval: 60s
-          # Retry forever. A permanent give-up would commit past unwritten data.
-          max_elapsed_time: 0
+          initial_interval: {{ $.Values.exporter.retry.initialInterval }}
+          max_interval: {{ $.Values.exporter.retry.maxInterval }}
+          max_elapsed_time: {{ $.Values.exporter.retry.maxElapsedTime }}
+      {{- end }}
+      nop: {}
 
     service:
       extensions:
         - health_check
       pipelines:
-        traces:
+        traces/in:
           receivers: [kafka]
-          processors: [memory_limiter, batch]
-          exporters: [clickhouse]
-        logs:
-          receivers: [kafka]
-          processors: [memory_limiter, batch]
-          exporters: [clickhouse]
-        metrics:
-          receivers: [kafka]
-          processors: [memory_limiter, batch]
-          exporters: [clickhouse]
+          processors: [memory_limiter]
+          exporters: [routing]
+        {{- range .Values.routes }}
+        traces/{{ .product }}:
+          receivers: [routing]
+          processors: [batch]
+          exporters: [otlphttp/{{ .product }}]
+        {{- end }}
+        traces/unrouted:
+          receivers: [routing]
+          processors: []
+          exporters: [nop]
       telemetry:
         metrics:
           readers:

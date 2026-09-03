@@ -82,14 +82,14 @@ spec:
                 # growing silently rehashes keys across partitions.
                 echo "exists, reconciling retention"
                 rpk topic alter-config {{ .name }} \
-                  --set retention.ms={{ .retentionMs }} \
+                  --set retention.ms={{ .retentionMs | int64 }} \
                   -X brokers="${BROKERS}"
               else
                 echo "creating"
                 rpk topic create {{ .name }} \
                   --partitions {{ .partitions }} \
                   --replicas {{ $.Values.cluster.defaultTopicReplications }} \
-                  --topic-config retention.ms={{ .retentionMs }} \
+                  --topic-config retention.ms={{ .retentionMs | int64 }} \
                   -X brokers="${BROKERS}"
               fi
               {{- end }}

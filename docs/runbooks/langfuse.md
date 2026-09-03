@@ -73,6 +73,14 @@ Each live mutation requires explicit approval. Use Argo CD, not `kubectl apply`.
 7. Roll DevAI, run a known suite, and match run ID/pass rate/scorer dimensions
    between DevAI Analytics and Langfuse.
 
+## AI traces from the agents
+
+Every ADK agent (Kora, SRE, supervisor) exports one trace per run through
+`otel-gateway` → Redpanda `ai.traces` → `otel-ingest` → this Langfuse, one
+project per product, routed on `service.namespace`. DevAI still posts directly
+because it also writes scores. Filtering, buffering, replay and per-product keys
+are described in `docs/ai-trace-pipeline.md`.
+
 ## Validation and rollback
 
 Run the focused pytest, Helm lint/template, official Langfuse chart render,

@@ -58,13 +58,16 @@ spec:
           args:
             - --config=/conf/config.yaml
           env:
-            # Same Secret the ClickHouse StatefulSet reads, so the exporter and
-            # the server can never disagree about the password.
-            - name: CLICKHOUSE_PASSWORD
+            {{- range .Values.routes }}
+            # Optional: a product whose key pair is not mirrored yet must not
+            # keep the other products' traces from flowing.
+            - name: LANGFUSE_{{ .product | upper }}_AUTH
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.clickhouse.env.secretName }}
-                  key: {{ .Values.clickhouse.env.secretKey }}
+                  name: {{ include "otel-ingest.name" $ }}-langfuse-{{ .product }}
+                  key: auth
+                  optional: true
+            {{- end }}
           ports:
             - name: metrics
               containerPort: {{ .Values.ports.metrics }}
