@@ -674,6 +674,37 @@ def assert_org_memberships(org_memberships):
         log(f"org membership {membership['login']} in {membership['org']}: in sync")
 
 
+def reconcile_project_role_check(
+    project_id, project_name, live, desired, scope, request=request
+):
+    """Assert a project's "only authorized users can authenticate" gate.
+
+    protojson omits projectRoleCheck from the response when it is false, so an
+    absent key means OFF, not "unset". Comparing with .get(..., False) is what
+    makes absent and false the same thing, deliberately.
+
+    The management API has no partial update for a project: PUT replaces the
+    whole resource, so name and roleAssertion are resent unchanged.
+    """
+    current = bool(live.get("projectRoleCheck", False))
+    if current == bool(desired):
+        return
+
+    body = {
+        "name": project_name,
+        "projectRoleAssertion": bool(live.get("projectRoleAssertion", False)),
+        "projectRoleCheck": bool(desired),
+        "hasProjectCheck": bool(live.get("hasProjectCheck", False)),
+    }
+    status, payload = request(
+        "PUT", f"/management/v1/projects/{project_id}", body, headers=scope
+    )
+    if status != 200:
+        raise SystemExit(
+            f"project {project_name!r} role-check update failed: {status} {payload!r}"
+        )
+
+
 def reconcile_platform_project(desired):
     """Reconcile a platform resource-server project without managing secrets.
 
@@ -710,6 +741,14 @@ def reconcile_platform_project(desired):
             f"the committed JWT audience {desired['expectedId']}"
         )
     project_id = project["id"]
+
+    reconcile_project_role_check(
+        project_id=project_id,
+        project_name=desired["name"],
+        live=project,
+        desired=desired.get("projectRoleCheck", False),
+        scope=scope,
+    )
 
     wanted_apps = desired.get("oidcApps", [])
     if wanted_apps:
