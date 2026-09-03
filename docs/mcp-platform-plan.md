@@ -446,12 +446,11 @@ change pass, but production is not yet fully testable:
 - HomeChef, Mark8ly, and platform each retain one ready mutable-image replica,
   while the immutable `main-0bd8899` replica fails closed because
   `MCP_AUTH_KEY` was not injected.
-- The HomeChef, Mark8ly, and Fanzone Secret Manager keys already exist.
-  Platform, Stockpilot, Gameverse, and Horoscope keys must be created before
-  the GitOps rollout can complete. Creating production credentials requires a
-  separately approved operation; no values belong in Git.
-- Stockpilot remains intentionally scaled to zero and needs separate approval
-  before it can be made testable.
+- Dedicated Secret Manager keys exist for HomeChef, Mark8ly, Fanzone,
+  Platform, Stockpilot, Gameverse, and Horoscope. Their values never belong in
+  Git.
+- Stockpilot MCP is configured for one replica so its stateless tool surface
+  can be qualified and tested after reconciliation.
 - No OpenPanel MCP implementation or authoritative manifest was found, so no
   server or Registry entry was fabricated. Scrapper has no active direct MCP
   workload and remains unverified and unrouted.
