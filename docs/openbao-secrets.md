@@ -134,34 +134,27 @@ Rules that are not negotiable:
 
 ### The admin console
 
-`secret-service.tesserix.app` (repo `tesserix/secret-service`, chart
-`charts/apps/secret-service/`) is the one identity that writes secrets and the
-one that mints grants without a commit. Two named administrators sign in with
-Google; the email allowlist lives in `adminEmails` in the chart's `values.yaml`
-and is re-checked on every request. The client id and secret come from GCP
-`prod-secret-service-google-client-id` / `-google-client-secret`, and the
-callback `https://secret-service.tesserix.app/api/auth/callback` has to be added
-to the OAuth client by hand — the Cloud Console will not take it by API.
+The console at `console.tesserix.app` (`charts/apps/console/`) is the one
+identity that writes secrets and the one that mints grants without a commit.
 
-**The console cannot read a secret value, and no administrator can make it.**
-That is enforced by its own OpenBao policy, which holds `create`/`update`/
-`delete` on `kv/data/*` and no `read`: a fully compromised console still gets
-nothing back. It sees `kv/metadata` only — versions, timestamps, and the sorted
-key names it records itself in `custom_metadata` — so the UI can show a secret's
-shape without its contents. Deleting and destroying are allowed.
+It authenticates operators through **Zitadel**, and the API behind it
+(`secret-service-api`) verifies a Zitadel bearer token — see
+`secrets-api/internal/api/middleware/bearer.go` in tesserix-home. Two
+capabilities gate it: `platform` to read and to PROPOSE a grant, and
+additionally `rotate-credentials` to change live state or merge a proposal.
 
-Its grants are kept out of the bootstrap Job's way: the console only creates
-policies and roles named `app-<namespace>_<app>`, a prefix the Job never
-reconciles, so the two cannot fight over the same object. The separator is an
-underscore because a DNS label cannot contain one, which makes the name split
-back unambiguously. Each grant is scoped to `kv/data/<namespace>/<app>/*` — one
-app, one path prefix, one named service account, read only. That path is also
-where the console writes, so a secret is only ever reachable by the app it was
-written for.
+An earlier version of this section described a separate app at
+`secret-service.tesserix.app`, two administrators signing in with Google, and an
+`adminEmails` allowlist in the chart. All of that was retired in
+tesserix-home#274: the separate host, its login and its allowlist no longer
+exist, and `adminEmails` appears nowhere in this chart. The service also no
+longer authenticates to GitHub as a person — it uses a scoped GitHub App with
+no administration rights (tesserix-home#464), so branch protection binds it.
 
-Roles declared in `charts/thirdparty/openbao/values.yaml` remain the right place
-for anything that must exist before the console does, including the console's
-own `secret-service` role.
+**If the console is unavailable**, see
+[the break-glass runbook](runbooks/openbao-break-glass.md). Do not reach for the
+`root_token` field in `prod-openbao-recovery-keys`; it is revoked by design and
+fails with a bare `permission denied`.
 
 ### The whitelist lives in Git
 
@@ -416,10 +409,17 @@ kubectl logs -n openbao job/openbao-bootstrap
 kubectl port-forward -n openbao svc/openbao 8200:8200
 ```
 
-**Writing a secret.** Through the admin console at
-https://secret-service.tesserix.app — New secret, then namespace / app / name,
-then one key per field and Write version. This is the only route that works;
-there is no CLI equivalent, for the reasons below.
+**Writing a secret.** Through the console at
+https://console.tesserix.app/platform/secrets — New secret, then namespace / app
+/ name, then one key per field and Write version. Requires the
+`rotate-credentials` capability; `platform` alone can read the inventory and
+propose a grant but not write a value.
+
+This is the only ROUTINE route. There is a break-glass path for when the console
+is unavailable — [runbooks/openbao-break-glass.md](runbooks/openbao-break-glass.md)
+— which is deliberately more involved: it requires cluster access and an
+explicit, temporary privilege escalation, and it is not a substitute for the
+console.
 
 **Getting an admin token — currently not possible.** Both documented routes are
 dead ends as of 2026-08-15:
