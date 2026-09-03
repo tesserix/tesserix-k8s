@@ -290,6 +290,25 @@ desired:
         isAutoUpdate: false
         autoLinking: AUTO_LINKING_OPTION_EMAIL
 
+  # Every project this instance reconciles, of two kinds.
+  #
+  #   kind: platform  (the default, and what the list was originally for)
+  #     An internal resource server — AgentGateway, AgentRegistry, Atlantis.
+  #     Its roles describe what a TESSERIX OPERATOR may do, so both platform
+  #     admins hold every role it declares, asserted by
+  #     `test_platform_admins_receive_every_declared_project_role`.
+  #
+  #   kind: product
+  #     A customer-facing product's project. Its roles describe MERCHANTS and
+  #     STOREFRONT CUSTOMERS, not operators, so the admin-grants invariant does
+  #     not apply and `humanGrants` is normally absent. Granting an operator
+  #     `mark8ly.staff` would be a real access change to a closed merchant
+  #     surface, and `mark8ly.customer` would make them a shopper.
+  #
+  # A new entry that omits `kind` is treated as `platform` and therefore
+  # REQUIRES grants for both admins — deliberately, so adding a product project
+  # without saying so fails loudly instead of quietly widening the invariant.
+  # `kind` is read only by the tests; bootstrap.py ignores unknown keys.
   platformProjects:
     - org: TESSERIX
       name: AgentGateway
@@ -411,6 +430,10 @@ desired:
     - org: TESSERIX
       name: mark8ly-admin
       expectedId: "389070376568619523"
+      # A PRODUCT project, not a platform one. Its roles describe merchants and
+      # storefront customers, so the platform operators do not hold them: see
+      # `kind` in the platformProjects preamble above.
+      kind: product
       # Closed product: a user holding no role here cannot obtain a token for
       # it at all. This is what keeps storefront customers out of the merchant
       # admin surface, enforced by Zitadel rather than by our own checks.
@@ -437,6 +460,7 @@ desired:
     - org: TESSERIX
       name: mark8ly-storefront
       expectedId: "389070377390703107"
+      kind: product
       # Open product: any TESSERIX user may authenticate. This matches the
       # current open MP-Customer pool; see spec D2 for the accepted risk.
       projectRoleCheck: false
