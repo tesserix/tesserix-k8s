@@ -37,6 +37,38 @@ spec:
         crds:
           enabled: false
 
+        # ── PHASE 2.5: components GKE manages and does not expose ──
+        # Verified on this cluster after phase 1: up{job="kube-controller-manager"},
+        # up{job="kube-scheduler"} and up{job="kube-proxy"} all return ZERO
+        # series. GKE runs those in the managed control plane, so there is
+        # nothing to scrape and the chart's default alerts for them can never
+        # be satisfied — KubeControllerManagerDown, KubeSchedulerDown and
+        # KubeProxyDown were all pending at CRITICAL severity within minutes
+        # of phase 1.
+        #
+        # Left in, phase 3's critical-only routing would deliver three alerts
+        # that can never clear, on day one. That is the fastest way to teach
+        # everyone to ignore the channel, and it would discredit the alerts
+        # underneath them that are real.
+        #
+        # etcd is disabled for the same reason: managed, unexposed.
+        kubeControllerManager:
+          enabled: false
+        kubeScheduler:
+          enabled: false
+        kubeProxy:
+          enabled: false
+        kubeEtcd:
+          enabled: false
+
+        defaultRules:
+          rules:
+            kubeControllerManager: false
+            kubeSchedulerAlerting: false
+            kubeSchedulerRecording: false
+            kubeProxy: false
+            etcd: false
+
         # ── Out of scope for this work ──
         # A parked Grafana already exists in this namespace; dashboards are a
         # separate decision (design doc, "Out of scope").
