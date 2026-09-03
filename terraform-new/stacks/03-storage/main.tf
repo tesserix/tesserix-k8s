@@ -17,6 +17,10 @@ data "google_project" "project" {
   project_id = var.project_id
 }
 
+data "google_storage_project_service_account" "gcs" {
+  project = var.project_id
+}
+
 # =============================================================================
 # KMS Keyring
 # =============================================================================
@@ -130,7 +134,20 @@ resource "google_storage_bucket" "buckets" {
 
   labels = merge(var.common_labels, each.value.labels)
 
-  depends_on = [data.terraform_remote_state.foundation]
+  depends_on = [
+    data.terraform_remote_state.foundation,
+    google_kms_crypto_key_iam_member.bucket_service_agent,
+  ]
+}
+
+resource "google_kms_crypto_key_iam_member" "bucket_service_agent" {
+  for_each = local.bucket_cmek_keys
+
+  crypto_key_id = each.value
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:${data.google_storage_project_service_account.gcs.email_address}"
+
+  depends_on = [google_kms_crypto_key.keys]
 }
 
 # Bucket IAM bindings
@@ -396,6 +413,10 @@ resource "google_artifact_registry_repository" "docker_remote" {
 # =============================================================================
 
 locals {
+  bucket_cmek_keys = toset(compact([
+    for bucket in var.buckets : bucket.kms_key_name
+  ]))
+
   bucket_iam_bindings = flatten([
     for bucket in var.buckets : [
       for binding in bucket.iam_bindings : {
