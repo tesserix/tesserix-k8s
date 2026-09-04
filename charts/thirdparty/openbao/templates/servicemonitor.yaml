@@ -1,0 +1,46 @@
+{{- if .Values.openbao.serverTelemetry.allPodsServiceMonitor.enabled }}
+# =============================================================================
+# ServiceMonitor — ALL OpenBao pods, not just the leader.
+# =============================================================================
+# The upstream chart's ServiceMonitor selects `openbao-active: "true"`, which
+# resolves to the single active pod. Prometheus therefore saw one of three
+# nodes, and `count(vault_core_unsealed{namespace="openbao"} == 1)` could
+# never exceed 1 — leaving OpenBaoQuorumAtRisk permanently firing and real
+# quorum loss undetectable.
+#
+# `openbao-internal` is the headless Service covering every pod (verified:
+# 3 endpoints). All three answer /v1/sys/metrics with HTTP 200 and report
+# vault_core_unsealed=1; standbys additionally report vault_core_active=0,
+# so `sum(vault_core_active) == 0` stays a correct no-leader test.
+#
+# Endpoint settings mirror the upstream template exactly so only the pod
+# selection changes.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: openbao-all-pods
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: openbao
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openbao
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      openbao-internal: "true"
+  endpoints:
+    - port: http
+      scheme: http
+      path: /v1/sys/metrics
+      params:
+        format:
+          - prometheus
+      interval: {{ .Values.openbao.serverTelemetry.allPodsServiceMonitor.interval }}
+      scrapeTimeout: {{ .Values.openbao.serverTelemetry.allPodsServiceMonitor.scrapeTimeout }}
+      tlsConfig:
+        insecureSkipVerify: true
+{{- end }}
