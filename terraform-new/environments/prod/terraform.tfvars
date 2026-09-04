@@ -393,6 +393,62 @@ buckets = [
     iam_bindings                = []
   },
   {
+    name                        = "kora-dev-doc-quarantine-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/kora-document-data-key"
+    labels                      = { product = "kora", environment = "sandbox", purpose = "document-quarantine", region = "in", data_class = "synthetic" }
+    lifecycle_rules             = [{ action = { type = "Delete" }, condition = { age = 1 } }]
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "kora-dev-doc-accepted-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/kora-document-data-key"
+    labels                      = { product = "kora", environment = "sandbox", purpose = "document-source", region = "in", data_class = "synthetic" }
+    lifecycle_rules             = [{ action = { type = "Delete" }, condition = { age = 1 } }]
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "kora-dev-doc-derived-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/kora-document-data-key"
+    labels                      = { product = "kora", environment = "sandbox", purpose = "document-derived", region = "in", data_class = "synthetic" }
+    lifecycle_rules             = [{ action = { type = "Delete" }, condition = { age = 1 } }]
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "kora-dev-doc-results-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/kora-document-data-key"
+    labels                      = { product = "kora", environment = "sandbox", purpose = "document-results", region = "in", data_class = "synthetic" }
+    lifecycle_rules             = [{ action = { type = "Delete" }, condition = { age = 1 } }]
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
     name                        = "doc-int-prod-sandbox-in"
     location                    = "asia-south1"
     storage_class               = "STANDARD"
@@ -2928,9 +2984,60 @@ service_accounts = [
     project_roles              = []
     workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "kora-doc-signer" }]
     bucket_bindings = [
-      { bucket = "kora-prod-doc-quarantine-in", role = "roles/storage.objectCreator" }
+      { bucket = "kora-prod-doc-quarantine-in", role = "roles/storage.objectCreator" },
+      { bucket = "kora-prod-doc-quarantine-in", role = "roles/storage.objectViewer" }
     ]
     secret_bindings = []
+  },
+  {
+    name                       = "kora-dev-doc-signer"
+    display_name               = "Kora sandbox document upload signer"
+    description                = "Signs and verifies short-lived synthetic Kora sandbox uploads"
+    self_token_creator         = true
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "kora-dev-doc-signer" }]
+    bucket_bindings = [
+      { bucket = "kora-dev-doc-quarantine-in", role = "roles/storage.objectCreator" },
+      { bucket = "kora-dev-doc-quarantine-in", role = "roles/storage.objectViewer" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "kora-dev-doc-scanner"
+    display_name               = "Kora sandbox document scanner"
+    description                = "Scans synthetic sandbox documents before acceptance"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "kora-dev-doc-scanner" }]
+    bucket_bindings = [
+      { bucket = "kora-dev-doc-quarantine-in", role = "roles/storage.objectAdmin" },
+      { bucket = "kora-dev-doc-accepted-in", role = "roles/storage.objectCreator" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "kora-dev-doc-worker"
+    display_name               = "Kora sandbox document worker"
+    description                = "Processes synthetic sandbox sources with the managed OCR fallback"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "kora-dev-doc-worker" }]
+    bucket_bindings = [
+      { bucket = "kora-dev-doc-accepted-in", role = "roles/storage.objectViewer" },
+      { bucket = "kora-dev-doc-derived-in", role = "roles/storage.objectAdmin" },
+      { bucket = "kora-dev-doc-results-in", role = "roles/storage.objectCreator" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "kora-dev-doc-result-api"
+    display_name               = "Kora sandbox document result API"
+    description                = "Reads synthetic sandbox normalized document results"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "kora-dev-doc-result-api" }]
+    bucket_bindings            = [{ bucket = "kora-dev-doc-results-in", role = "roles/storage.objectViewer" }]
+    secret_bindings            = []
   },
   {
     name                       = "kora-doc-scanner"

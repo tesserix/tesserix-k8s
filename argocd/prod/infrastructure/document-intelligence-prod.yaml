@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: document-intelligence-prod
+  namespace: argocd
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+  labels: {app.kubernetes.io/part-of: document-intelligence, environment: prod}
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/document-intelligence
+    helm:
+      releaseName: document-intelligence-prod
+      valueFiles: [values-prod.yaml]
+  destination: {server: https://kubernetes.default.svc, namespace: document-intelligence}
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+    retry: {limit: 5, backoff: {duration: 5s, factor: 2, maxDuration: 3m}}

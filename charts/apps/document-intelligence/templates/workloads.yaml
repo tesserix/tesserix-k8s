@@ -1,0 +1,73 @@
+{{- $labels := include "document-intelligence.labels" . }}
+{{- $apiEnv := list
+  (dict "name" "DATABASE_URL" "valueFrom" (dict "secretKeyRef" (dict "name" .Values.database.secretName "key" "DATABASE_URL")))
+  (dict "name" "OCR_WORKLOAD_IDENTITY_KEYS" "valueFrom" (dict "secretKeyRef" (dict "name" .Values.identity.secretName "key" "OCR_WORKLOAD_IDENTITY_KEYS")))
+  (dict "name" "OCR_WORKLOAD_IDENTITY_CLOCK_SKEW_SECONDS" "value" .Values.identity.clockSkewSeconds)
+  (dict "name" "DEPLOYMENT_ENVIRONMENT" "value" .Values.environment)
+  (dict "name" "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT" "value" .Values.telemetry.endpoint)
+  (dict "name" "OTEL_SERVICE_NAME" "value" .Values.telemetry.serviceName) }}
+{{- $workerEnv := list
+  (dict "name" "DATABASE_URL" "valueFrom" (dict "secretKeyRef" (dict "name" .Values.database.secretName "key" "DATABASE_URL")))
+  (dict "name" "DEPLOYMENT_ENVIRONMENT" "value" .Values.environment)
+  (dict "name" "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT" "value" .Values.telemetry.endpoint)
+  (dict "name" "OTEL_SERVICE_NAME" "value" .Values.telemetry.serviceName)
+  (dict "name" "TEMPORAL_TARGET" "value" .Values.temporal.target)
+  (dict "name" "TEMPORAL_NAMESPACE" "value" .Values.temporal.namespace)
+  (dict "name" "TEMPORAL_TASK_QUEUE" "value" .Values.temporal.taskQueue) }}
+{{- range $workload := list
+  (dict "name" "upload-api" "sa" $.Values.serviceAccounts.upload "command" (list "/app/ocr-service") "replicas" 2 "resources" $.Values.resources.api "env" (concat $apiEnv (list (dict "name" "OCR_API_CAPABILITY" "value" "uploads") (dict "name" "QUARANTINE_BUCKETS" "value" (printf "%s=%s" $.Values.product $.Values.buckets.quarantine)))) "port" true)
+  (dict "name" "job-api" "sa" $.Values.serviceAccounts.jobs "command" (list "/app/ocr-service") "replicas" 2 "resources" $.Values.resources.api "env" (concat $apiEnv (list (dict "name" "OCR_API_CAPABILITY" "value" "jobs") (dict "name" "RESULT_BUCKETS" "value" (printf "%s=%s" $.Values.product $.Values.buckets.results)))) "port" true)
+  (dict "name" "dispatch-worker" "sa" $.Values.serviceAccounts.dispatch "command" (list "/app/ocr-dispatch-worker") "replicas" 1 "resources" $.Values.resources.worker "env" (concat $workerEnv (list (dict "name" "WORK_SCOPE_DATABASE_URL" "valueFrom" (dict "secretKeyRef" (dict "name" $.Values.database.secretName "key" "DATABASE_URL"))) (dict "name" "QUARANTINE_BUCKETS" "value" (printf "%s=%s" $.Values.product $.Values.buckets.quarantine)) (dict "name" "SOURCE_BUCKETS" "value" (printf "%s=%s" $.Values.product $.Values.buckets.source)) (dict "name" "CLAMD_ADDRESS" "value" "127.0.0.1:3310") (dict "name" "PARSER_EXECUTABLE" "value" "/app/ocr-parser-sandbox") (dict "name" "WORKER_ID" "value" (printf "dispatch-%s" $.Values.environment)))) "clamd" true)
+  (dict "name" "execution-worker" "sa" $.Values.serviceAccounts.execution "command" (list "/app/ocr-execution-worker") "replicas" 1 "resources" $.Values.resources.worker "env" (concat $workerEnv (list (dict "name" "SOURCE_BUCKETS" "value" (printf "%s=%s" $.Values.product $.Values.buckets.source)) (dict "name" "PAGE_BUCKETS" "value" (printf "%s=%s" $.Values.product $.Values.buckets.pages)) (dict "name" "RESULT_BUCKETS" "value" (printf "%s=%s" $.Values.product $.Values.buckets.results)) (dict "name" "DOCUMENT_AI_PROJECT_ID" "value" $.Values.documentAi.projectId) (dict "name" "DOCUMENT_AI_LOCATION" "value" $.Values.documentAi.location) (dict "name" "DOCUMENT_AI_PROCESSOR_ID" "value" $.Values.documentAi.processorId) (dict "name" "WORKER_ID" "value" (printf "execution-%s" $.Values.environment)))) ) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "document-intelligence.fullname" $ }}-{{ $workload.name }}
+  namespace: {{ $.Release.Namespace }}
+  labels: {{ $labels | nindent 4 }}
+spec:
+  replicas: {{ $workload.replicas }}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app.kubernetes.io/component: {{ $workload.name | quote }}, app.kubernetes.io/instance: {{ $.Release.Name | quote }}}}
+  template:
+    metadata:
+      labels:
+        {{- $labels | nindent 8 }}
+        app.kubernetes.io/component: {{ $workload.name }}
+    spec:
+      serviceAccountName: {{ $workload.sa }}
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 45
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: app
+          image: {{ include "document-intelligence.image" $ }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: {{ toJson $workload.command }}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          {{- if $workload.port }}
+          ports: [{name: http, containerPort: 8080, protocol: TCP}]
+          startupProbe: {httpGet: {path: /healthz, port: http}, failureThreshold: 18, periodSeconds: 5, timeoutSeconds: 2}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 10, timeoutSeconds: 2}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20, timeoutSeconds: 2}
+          {{- end }}
+          env: {{ toYaml $workload.env | nindent 12 }}
+          resources: {{ toYaml $workload.resources | nindent 12 }}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+        {{- if $workload.clamd }}
+        - name: clamd
+          image: {{ $.Values.clamav.image }}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          ports: [{name: clamd, containerPort: 3310, protocol: TCP}]
+          resources: {{ toYaml $.Values.resources.clamd | nindent 12 }}
+          volumeMounts: [{name: clamd-data, mountPath: /var/lib/clamav}, {name: tmp, mountPath: /tmp}]
+        {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if $workload.clamd }}
+        - name: clamd-data
+          emptyDir: {}
+        {{- end }}
+{{- end }}

@@ -1,0 +1,50 @@
+image:
+  repository: ghcr.io/tesserix/document-intelligence/ocr-service
+  tag: main
+  pullPolicy: IfNotPresent
+
+clamav:
+  image: docker.io/clamav/clamav@sha256:629a3050df6a706aedb31859fbb8139e9aaf8f56b0ffefbf251b8358a7c9e76c
+
+environment: prod
+product: kora
+temporal:
+  target: http://temporal-frontend.temporal-system.svc.cluster.local:7233
+  namespace: document-intelligence-prod
+  taskQueue: document-intelligence-kora-prod
+documentAi:
+  projectId: tesseracthub-480811
+  location: asia-south1
+  processorId: 395d58b2596d5031
+buckets:
+  quarantine: kora-prod-doc-quarantine-in
+  source: kora-prod-doc-accepted-in
+  pages: kora-prod-doc-derived-in
+  results: kora-prod-doc-results-in
+serviceAccounts:
+  upload: kora-doc-signer
+  jobs: kora-doc-result-api
+  dispatch: kora-doc-scanner
+  execution: kora-doc-worker
+database:
+  secretName: document-intelligence-prod-db
+  secretManagerKey: prod-document-intelligence-db-password
+  user: document_intelligence
+  name: document_intelligence_db
+identity:
+  secretName: document-intelligence-prod-api-identity
+  secretManagerKey: prod-kora-ocr-workload-identity-keys
+  clockSkewSeconds: "60"
+telemetry:
+  endpoint: http://otel-gateway.observability.svc.cluster.local:4318/v1/traces
+  serviceName: document-intelligence
+resources:
+  api:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}
+  worker:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 1Gi}
+  clamd:
+    requests: {cpu: 100m, memory: 384Mi}
+    limits: {memory: 768Mi}

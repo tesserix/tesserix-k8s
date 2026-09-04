@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "document-intelligence.fullname" . }}-runtime
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name | quote }}}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: global}}
+      ports: [{port: 5432, protocol: TCP}]
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: temporal-system}}
+      ports: [{port: 7233, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
+      ports: [{port: 443, protocol: TCP}]
+---
+{{- range $name := list "upload-api" "job-api" }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "document-intelligence.fullname" $ }}-{{ $name }}
+  namespace: {{ $.Release.Namespace }}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/instance: {{ $.Release.Name | quote }}, app.kubernetes.io/component: {{ $name | quote }}}}
+{{- end }}
