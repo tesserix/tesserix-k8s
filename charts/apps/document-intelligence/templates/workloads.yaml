@@ -63,7 +63,7 @@ spec:
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsUser: 0, runAsGroup: 0, runAsNonRoot: false, capabilities: {drop: ["ALL"], add: ["CHOWN", "SETGID", "SETUID"]}}
           ports: [{name: clamd, containerPort: 3310, protocol: TCP}]
           resources: {{ toYaml $.Values.resources.clamd | nindent 12 }}
-          volumeMounts: [{name: clamd-data, mountPath: /var/lib/clamav}, {name: clamd-run, mountPath: /run/clamav}, {name: clamd-lock, mountPath: /var/lock}, {name: tmp, mountPath: /tmp}]
+          volumeMounts: [{name: clamd-data, mountPath: /var/lib/clamav}, {name: clamd-run, mountPath: /run/clamav}, {name: clamd-lock, mountPath: /var/lock}, {name: clamd-log, mountPath: /var/log/clamav}, {name: tmp, mountPath: /tmp}]
         {{- end }}
       volumes:
         - name: tmp
@@ -74,6 +74,8 @@ spec:
         - name: clamd-run
           emptyDir: {}
         - name: clamd-lock
+          emptyDir: {}
+        - name: clamd-log
           emptyDir: {}
         {{- end }}
 {{- end }}
