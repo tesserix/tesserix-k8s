@@ -288,6 +288,32 @@ class TemporalPlatformManifestTests(unittest.TestCase):
         self.assertEqual(1, len(internal_rules))
         self.assertNotIn("to", internal_rules[0])
 
+    def test_document_intelligence_workload_identities_are_authorized(self):
+        documents = render_resources()
+        policy = resource(
+            documents,
+            "AuthorizationPolicy",
+            "temporal-platform",
+            "temporal-system",
+        )
+        principals = {
+            principal
+            for rule in policy["spec"]["rules"]
+            if rule.get("to", [{}])[0].get("operation", {}).get("ports") == ["7233"]
+            for principal in rule.get("from", [{}])[0]
+            .get("source", {})
+            .get("principals", [])
+        }
+
+        self.assertTrue(
+            {
+                "cluster.local/ns/document-intelligence/sa/kora-dev-doc-scanner",
+                "cluster.local/ns/document-intelligence/sa/kora-dev-doc-worker",
+                "cluster.local/ns/document-intelligence/sa/kora-doc-scanner",
+                "cluster.local/ns/document-intelligence/sa/kora-doc-worker",
+            }.issubset(principals)
+        )
+
     def test_alerts_cover_availability_persistence_and_failures(self):
         documents = render_resources()
         rule = resource(
