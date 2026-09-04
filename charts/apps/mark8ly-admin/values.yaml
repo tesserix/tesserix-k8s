@@ -103,3 +103,32 @@ strategy:
   rollingUpdate:
     maxSurge: 0
     maxUnavailable: 1
+
+# The tesserix-home platform API, which serves this app's platform SUPPORT
+# TICKETS (tesserix-home#152). Announcements still come from apps/web's
+# internal channel above, and will until an announcements module exists.
+#
+# Set HERE rather than in a values-prod.yaml because this chart has none — its
+# ArgoCD Application loads values.yaml alone. Mirrors consoleCatalog in
+# mark8ly-marketplace-api-admin, which is configured the same way.
+# NAMED tesserixPlatformApi, not platformApi, because `platformApiUrl` above
+# is mark8ly's OWN platform-api and the two are different services. The near
+# miss is real: a Helm path of `.Values.platformApi` is a PREFIX of
+# `.Values.platformApiUrl`, so a careless edit touches both.
+tesserixPlatformApi:
+  # The in-cluster Service in the tesserix namespace. NOT tesserix.app: the
+  # platform API has no public path and no VirtualService, and the public
+  # ingress would reject the Bearer token anyway (its RequestAuthentication
+  # policy is what forced the X-Internal-Token workaround on the old channel).
+  url: http://platform-api.tesserix.svc.cluster.local
+  issuer: https://auth.tesserix.app
+  # The Platform Console project — both the audience the token must carry and
+  # the project whose roles it asserts.
+  projectId: "386377618200461939"
+  # THE SAME identity marketplace-api-admin uses for the plan and promo
+  # catalogs. mark8ly-catalog-reader now also holds product-support, so one
+  # machine user serves both — which means rotating this secret rotates two
+  # consumers, and both must be redeployed.
+  secretName: mark8ly-console-catalog
+  clientIdKey: CONSOLE_CATALOG_CLIENT_ID
+  clientSecretKey: CONSOLE_CATALOG_CLIENT_SECRET
