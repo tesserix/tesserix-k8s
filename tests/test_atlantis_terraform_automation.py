@@ -27,6 +27,7 @@ LIVE_STATE_PREFIXES = {
     "stacks/prod/github-arc",
     "stacks/prod/identity-platform",
     "stacks/prod/vertex",
+    "stacks/prod/document-intelligence-iam",
     "stacks/prod/cloud-run",
     "state/devtest",
     "state/prod",

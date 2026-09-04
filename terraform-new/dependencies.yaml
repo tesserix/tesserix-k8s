@@ -151,6 +151,14 @@ stacks:
     dependencies: [02-network]
     timeout: 15m
 
+  13-document-intelligence-iam:
+    name: document-intelligence-iam
+    description: Isolated IAM required for document intelligence source promotion
+    path: stacks/13-document-intelligence-iam
+    state_prefix: stacks/prod/document-intelligence-iam
+    dependencies: [06-workload-identity]
+    timeout: 10m
+
 execution_order:
   - phase: 1
     stacks: [00-state-bootstrap]
@@ -163,12 +171,13 @@ execution_order:
   - phase: 5
     stacks: [05-k8s-bootstrap, 06-workload-identity]
   - phase: 6
-    stacks: [07-app-secrets]
+    stacks: [07-app-secrets, 13-document-intelligence-iam]
   - phase: 7
     stacks: [09-github-arc]
 
 destroy_order:
   - 09-github-arc
+  - 13-document-intelligence-iam
   - 07-app-secrets
   - 06-workload-identity
   - 05-k8s-bootstrap
