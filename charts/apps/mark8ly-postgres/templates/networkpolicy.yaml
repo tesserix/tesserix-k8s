@@ -39,6 +39,13 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+        # Ambient: ztunnel reaches this pod on HBONE 15008 and forwards to
+        # 5432 internally, PRESERVING the original client pod IP as the
+        # source. So each source allowed 5432 needs 15008 too — and an
+        # istio-system selector does NOT work, because the packets do not
+        # appear to come from ztunnel.
+        - protocol: TCP
+          port: 15008
     {{- if .Values.allowedCrossNamespaceSources }}
     # Cross-namespace clients (defaults to none — set in values-prod-style
     # overrides only when needed). Prod allows tesserix.* services into
@@ -60,6 +67,13 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+        # Ambient: ztunnel reaches this pod on HBONE 15008 and forwards to
+        # 5432 internally, PRESERVING the original client pod IP as the
+        # source. So each source allowed 5432 needs 15008 too — and an
+        # istio-system selector does NOT work, because the packets do not
+        # appear to come from ztunnel.
+        - protocol: TCP
+          port: 15008
     {{- end }}
     {{- end }}
     # Allow the CNPG operator to manage and probe instances.
@@ -70,6 +84,13 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+        # Ambient: ztunnel reaches this pod on HBONE 15008 and forwards to
+        # 5432 internally, PRESERVING the original client pod IP as the
+        # source. So each source allowed 5432 needs 15008 too — and an
+        # istio-system selector does NOT work, because the packets do not
+        # appear to come from ztunnel.
+        - protocol: TCP
+          port: 15008
         - protocol: TCP
           port: 8000
         - protocol: TCP
@@ -85,13 +106,6 @@ spec:
     # pod's migrate init container failed with "failed to open database",
     # while pods created minutes earlier kept working on their existing
     # connections — so it looked like an app regression, not a mesh change.
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: istio-system
-      ports:
-        - protocol: TCP
-          port: 15008
     # Preserve Prometheus scraping of CNPG metrics when ingress isolation
     # is enabled for the database pods.
     - from:
