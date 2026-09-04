@@ -147,3 +147,24 @@ strategy:
   rollingUpdate:
     maxSurge: 0
     maxUnavailable: 1
+
+# Zitadel identity. platform-api owns password reset, account deletion and —
+# since #679 — provisioning invited teammates (Zitadel user + project grant +
+# FGA tuples). It was left on GIP when admin/storefront flipped, so those
+# paths were still talking to GIP for users that only exist in Zitadel.
+#
+# `enabled` makes config.ValidateZitadel mandatory: issuer, login-client
+# token, org id and adminProjectId must all be present or the pod refuses to
+# boot. That is deliberate — the optional-config failure mode IS the bug
+# (accept succeeds, grant silently skipped, teammate cannot sign in).
+zitadel:
+  enabled: true
+  issuer: https://auth.tesserix.app
+  # TESSERIX org on the shared instance.
+  orgId: "386377229942128837"
+  # mark8ly-admin project. Has projectRoleCheck=true, so every user needs a
+  # grant on it or OIDC finalize returns 403 AFTER a successful password check.
+  adminProjectId: "389070376568619523"
+  # staffRoleKey defaults to mark8ly.staff in code; override here if it changes.
+  # Credentials come from the existing mark8ly-zitadel ExternalSecret.
+  secretName: mark8ly-zitadel
