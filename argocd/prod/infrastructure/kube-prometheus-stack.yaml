@@ -522,6 +522,28 @@ spec:
                     - namespace = ""
                     - severity = "critical"
                   receiver: slack-alerts
+
+                # ── Plan-catalog parity (mark8ly) ──
+                # Routed by alertname, not by severity, and that is the whole
+                # point. Every route above matches severity="critical", so a
+                # `warning` is evaluated in Prometheus and delivered to the
+                # null receiver — which would have left these two alerts
+                # exactly as unwatched as the log line they were added to
+                # replace (tesserix-home#328 gap 3).
+                #
+                # They are honestly `warning`: a catalog difference costs
+                # nobody a payment today, because the compiled fallback is
+                # only consulted when the console is unreachable. It is
+                # precisely that which makes it invisible for weeks, and worth
+                # a message rather than a page.
+                #
+                # Named explicitly rather than opening severity="warning" for
+                # the namespace: mark8ly's rules carry warnings nobody has
+                # tuned, and this file's stated policy is narrow, deliberate
+                # routing. Same shape as the Watchdog route above.
+                - matchers:
+                    - alertname =~ "CatalogParityDifference|CatalogParityStale"
+                  receiver: slack-alerts
             receivers:
               - name: "null"
               - name: slack-alerts

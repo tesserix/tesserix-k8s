@@ -1,0 +1,113 @@
+# =============================================================================
+# PLAN CATALOG PARITY — alert rules
+# =============================================================================
+# marketplace-api compares the console's published plan catalog against the
+# catalog compiled into the binary (internal/billing/pricing/catalog_data.go)
+# every 15m in production. Until now its only output was a log line, so a
+# difference in production was written somewhere durable and read by nobody.
+#
+# Since the compiled catalog became GENERATED from the console (mark8ly #648),
+# a difference means something narrow: the console moved and nobody
+# regenerated, or a generated file was hand-edited. Neither shows up in
+# day-to-day behaviour, because the compiled catalog is only consulted when the
+# console is unreachable — the failure is silent until the day it is
+# load-bearing.
+#
+# Metrics referenced (registered by internal/billing/consolecatalog/metrics.go,
+# and ONLY on a pod where the parallel run is configured):
+#   mark8ly_catalog_parity_differences
+#   mark8ly_catalog_parity_last_success_timestamp_seconds
+#   mark8ly_catalog_parity_check_failures_total
+#
+# # Why TWO alerts
+#
+# The differences gauge alone is unreliable by construction. It describes the
+# LAST COMPLETED comparison, so if the monitor stops being able to reach the
+# console it holds its last value and reads "fine" forever: a monitor that has
+# stopped checking would be indistinguishable from one that keeps finding
+# nothing. CatalogParityStale is the half that closes that, and it is why
+# silence from CatalogParityDifference can be believed.
+#
+# # Why the series may be absent, and why that is not alerted on
+#
+# consolecatalog registers its metrics only after the console credentials
+# check passes, so an absent series means "the parallel run is switched off on
+# this pod", which is a supported configuration and not a fault. A pod that IS
+# configured stamps the timestamp on its first check seconds after boot, so
+# present-and-stale is the state worth alerting on. A pod that has vanished
+# entirely is covered by the ordinary target-down alerts, not by this file.
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: catalog-parity-rules
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+    app.kubernetes.io/part-of: subscription-observability
+    app.kubernetes.io/component: monitoring
+    product: mark8ly
+spec:
+  groups:
+    - name: catalog.parity.alerts
+      interval: 30s
+      rules:
+        # The console and the compiled fallback disagree. Expected value is a
+        # flat zero: they are generated from one another.
+        #
+        # `for: 30m` means two consecutive 15m comparisons must both disagree,
+        # so a regeneration landing between a console publish and the next
+        # check cannot fire this.
+        #
+        # Deliberately NOT guarded on freshness. A >0 reading left behind by a
+        # monitor that has since gone stale is still a real difference someone
+        # observed and has not fixed; CatalogParityStale fires alongside and
+        # says the count is no longer being refreshed.
+        - alert: CatalogParityDifference
+          expr: mark8ly_catalog_parity_differences > 0
+          for: 30m
+          labels:
+            severity: warning
+            component: billing-catalog
+          annotations:
+            summary: "Console plan catalog and the compiled fallback disagree"
+            description: >-
+              {{ $value }} price row(s) differ. DO: regenerate the fallback from the
+              console — `cd services/marketplace-api && go run ./internal/billing/pricing/cmd/gencatalog
+              -source=console` — then establish WHY it drifted before merging. Since #648
+              the fallback is generated, so a difference means the console moved with no
+              regeneration, or a generated file was hand-edited. The offending lookup_key
+              and field are in the marketplace-api logs as `consolecatalog: parity difference`.
+
+        # Nothing has been compared for a long time: the monitor is wedged, or
+        # the console has been unreachable from marketplace-api for hours.
+        # Without this, silence from the alert above is ambiguous.
+        #
+        # N = 2h, chosen from the real 15m cadence: it tolerates EIGHT
+        # consecutive missed comparisons, far more than a rollout costs (Kargo
+        # polls every 5m and a deployment rolls in minutes) or a transient
+        # console blip. `for: 30m` on top requires the condition to hold across
+        # two further comparisons, so nothing here fires on a deploy. A check
+        # that cries wolf on day one is one people learn to ignore, and this
+        # one is meant to be believed for years.
+        #
+        # A never-successful pod reads the gauge at 0 — i.e. "last compared in
+        # 1970" — and so fires after the 30m `for`, which is the correct answer
+        # for a pod that is configured and has failed every read since boot.
+        - alert: CatalogParityStale
+          expr: time() - mark8ly_catalog_parity_last_success_timestamp_seconds > 7200
+          for: 30m
+          labels:
+            severity: warning
+            component: billing-catalog
+          annotations:
+            summary: "No plan-catalog parity comparison has completed in over 2h"
+            description: >-
+              The 15m comparison has not completed for over 2h, so
+              mark8ly_catalog_parity_differences describes the past and CatalogParityDifference
+              cannot be trusted to be quiet for a good reason. DO: check
+              rate(mark8ly_catalog_parity_check_failures_total[1h]) — rising means the pod is
+              running and cannot read the console (check CONSOLE_CATALOG_* credentials and the
+              console's /api/billing/catalog endpoint); flat means the ticker is wedged, so
+              restart marketplace-api and look for `consolecatalog: parallel run enabled` at boot.
