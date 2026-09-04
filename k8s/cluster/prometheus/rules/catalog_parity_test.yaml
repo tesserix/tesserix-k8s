@@ -1,0 +1,117 @@
+# =============================================================================
+# promtool unit tests for catalog_parity.yaml
+# =============================================================================
+# Run (from this directory):
+#
+#   d=$(mktemp -d) && yq '.spec' catalog_parity.yaml > "$d/catalog_parity.yaml" \
+#     && cp catalog_parity_test.yaml "$d" \
+#     && promtool test rules "$d/catalog_parity_test.yaml"
+#
+# The `.spec` extraction is required: promtool parses a bare Prometheus
+# RuleGroups document and rejects a PrometheusRule CRD's apiVersion/kind/
+# metadata/spec wrapper outright. subscription_test.yaml's header advertises
+# the direct `promtool test rules subscription_test.yaml`; that form does not
+# work today (verified with promtool 3.14.0, 2026-09-04) and is left alone
+# here rather than fixed in passing.
+#
+# Scenarios:
+#   1. CatalogParityDifference stays quiet on a clean catalog, and fires 30m
+#      after the two sources start disagreeing.
+#   2. CatalogParityStale stays quiet while comparisons keep completing, and
+#      fires once none has completed for 2h (+ the 30m `for`).
+#   3. A monitor that keeps comparing and keeps finding nothing NEVER trips
+#      CatalogParityStale — the control that proves the staleness alert is
+#      measuring "has stopped checking" and not merely "found nothing".
+# =============================================================================
+rule_files:
+  - catalog_parity.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # ---------------------------------------------------------------------------
+  # 1. A clean catalog, then a divergence at t=31m. `for: 30m` holds the alert
+  #    pending until t=61m.
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'mark8ly_catalog_parity_differences{namespace="mark8ly"}'
+        values: '0x30 3x120'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CatalogParityDifference
+        exp_alerts: []
+      # Still pending 15m into the divergence — one disagreeing comparison is
+      # not enough, by design.
+      - eval_time: 45m
+        alertname: CatalogParityDifference
+        exp_alerts: []
+      - eval_time: 65m
+        alertname: CatalogParityDifference
+        exp_alerts:
+          - exp_labels:
+              alertname: CatalogParityDifference
+              namespace: mark8ly
+              severity: warning
+              component: billing-catalog
+            exp_annotations:
+              summary: "Console plan catalog and the compiled fallback disagree"
+              description: "3 price row(s) differ. DO: regenerate the fallback from the console — `cd services/marketplace-api && go run ./internal/billing/pricing/cmd/gencatalog -source=console` — then establish WHY it drifted before merging. Since #648 the fallback is generated, so a difference means the console moved with no regeneration, or a generated file was hand-edited. The offending lookup_key and field are in the marketplace-api logs as `consolecatalog: parity difference`."
+
+  # ---------------------------------------------------------------------------
+  # 2. The timestamp tracks wall clock until t=120m (the monitor is comparing),
+  #    then freezes at 7260s (t=121m) — the pod is up and scraped, but no
+  #    comparison completes again.
+  #
+  #    Staleness passes 2h at time() > 7260 + 7200 = 14460s = 241m; the 30m
+  #    `for` puts the fire at 271m.
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'mark8ly_catalog_parity_last_success_timestamp_seconds{namespace="mark8ly"}'
+        values: '60+60x120 7260x300'
+    alert_rule_test:
+      # Comparisons are landing — nothing to say.
+      - eval_time: 100m
+        alertname: CatalogParityStale
+        exp_alerts: []
+      # Frozen for ~2h but not yet past the threshold plus `for`. This is the
+      # assertion that keeps a rollout or a brief console outage quiet.
+      - eval_time: 240m
+        alertname: CatalogParityStale
+        exp_alerts: []
+      - eval_time: 275m
+        alertname: CatalogParityStale
+        exp_alerts:
+          - exp_labels:
+              alertname: CatalogParityStale
+              namespace: mark8ly
+              severity: warning
+              component: billing-catalog
+            exp_annotations:
+              summary: "No plan-catalog parity comparison has completed in over 2h"
+              description: "The 15m comparison has not completed for over 2h, so mark8ly_catalog_parity_differences describes the past and CatalogParityDifference cannot be trusted to be quiet for a good reason. DO: check rate(mark8ly_catalog_parity_check_failures_total[1h]) — rising means the pod is running and cannot read the console (check CONSOLE_CATALOG_* credentials and the console's /api/billing/catalog endpoint); flat means the ticker is wedged, so restart marketplace-api and look for `consolecatalog: parallel run enabled` at boot."
+
+  # ---------------------------------------------------------------------------
+  # 3. The control. A monitor that keeps comparing and keeps finding nothing:
+  #    differences pinned at 0 for eight hours while the success timestamp
+  #    advances with the clock. NEITHER alert may fire.
+  #
+  #    This is the pair the whole design exists to keep apart. If the two were
+  #    ever collapsed — if a failed read stamped the timestamp, or reset the
+  #    difference count — scenario 2 and this one would report the same thing,
+  #    and the alerts would be measuring nothing.
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'mark8ly_catalog_parity_differences{namespace="mark8ly"}'
+        values: '0x480'
+      - series: 'mark8ly_catalog_parity_last_success_timestamp_seconds{namespace="mark8ly"}'
+        values: '60+60x480'
+    alert_rule_test:
+      - eval_time: 480m
+        alertname: CatalogParityDifference
+        exp_alerts: []
+      - eval_time: 480m
+        alertname: CatalogParityStale
+        exp_alerts: []
