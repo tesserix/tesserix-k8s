@@ -4,6 +4,18 @@ metadata:
   name: {{ .Values.name }}
   namespace: {{ .Values.namespace }}
   labels:
+    # Bypass the namespace L7 waypoint. Measured on 2026-09-04: identical
+    # calls to this namespace took ~4000ms routed via the waypoint and 0ms
+    # routed straight to the pod, and the waypoint was idle (8m CPU) — so it
+    # is a flat per-connection penalty, not saturation. With several internal
+    # hops per request that compounds into user-visible hangs and timeouts.
+    #
+    # Nothing here needs L7: every AuthorizationPolicy on these workloads is
+    # L4 only (principals / namespaces / ports), which ztunnel enforces
+    # natively, and mTLS is unaffected. The only waypoint-scoped policies in
+    # this namespace targetRef Service/mark8ly-mcp, which keeps its waypoint.
+    # Same fix as temporal's gRPC frontend and devai-api's services.
+    istio.io/use-waypoint: "none"
     app.kubernetes.io/name: {{ .Values.name }}
     app.kubernetes.io/part-of: mark8ly
 spec:
