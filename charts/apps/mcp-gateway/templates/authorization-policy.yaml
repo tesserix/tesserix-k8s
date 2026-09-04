@@ -16,6 +16,7 @@ spec:
             notPrincipals:
               - cluster.local/ns/agentgateway-system/sa/agentgateway-mcp
               - cluster.local/ns/support-platform/sa/support-platform-slm-router
+              - cluster.local/ns/{{ .Values.namespace }}/sa/waypoint
       to:
         - operation:
             ports: ["8765"]
@@ -38,6 +39,7 @@ spec:
             principals:
               - cluster.local/ns/agentgateway-system/sa/agentgateway-mcp
               - cluster.local/ns/support-platform/sa/support-platform-slm-router
+              - cluster.local/ns/{{ .Values.namespace }}/sa/waypoint
       to:
         - operation:
             ports: ["8765"]
@@ -55,3 +57,49 @@ spec:
       {{- include "mcp-gateway.selectorLabels" . | nindent 6 }}
   mtls:
     mode: STRICT
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "mcp-gateway.name" . }}-waypoint-deny-untrusted
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "mcp-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: {{ include "mcp-gateway.name" . }}
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/agentgateway-system/sa/agentgateway-mcp
+              - cluster.local/ns/support-platform/sa/support-platform-slm-router
+      to:
+        - operation:
+            ports: ["8765"]
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "mcp-gateway.name" . }}-waypoint-allow-callers
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "mcp-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: {{ include "mcp-gateway.name" . }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/agentgateway-system/sa/agentgateway-mcp
+              - cluster.local/ns/support-platform/sa/support-platform-slm-router
+      to:
+        - operation:
+            ports: ["8765"]
