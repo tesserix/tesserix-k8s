@@ -5,4 +5,26 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   mtls:
-    mode: STRICT
+    # PERMISSIVE, matching every peer namespace in the estate (homechef,
+    # marketplace, tesserix, devai, kagent-system, ...). mark8ly was the
+    # only one on STRICT.
+    #
+    # Until the namespace moved to ambient this setting was INERT: the pods
+    # had no sidecar (istio-injection: disabled), so nothing enforced it and
+    # all traffic to them was plaintext. Ambient enrolled them, STRICT became
+    # real for the first time, and every request from the ingress gateway
+    # started failing — istio-ingress is not in the mesh, so it presents
+    # plaintext:
+    #
+    #   dst.workload="mark8ly-admin-..." direction="inbound"
+    #   error="connection closed due to policy rejection: explicitly denied
+    #          by: istio-system/istio_converted_static_strict"
+    #
+    # PERMISSIVE is therefore NOT a downgrade from what was actually enforced
+    # yesterday (nothing). It accepts mTLS where both ends are in the mesh —
+    # which is now most in-namespace traffic — and plaintext from the gateway.
+    # The end state worth reaching is STRICT again once istio-ingress is in
+    # the mesh; that belongs with the ambient rollout, not with this outage
+    # fix. Workload-level STRICT policies (e.g. mark8ly-mcp-strict-mtls) still
+    # override this for the workloads that set them.
+    mode: PERMISSIVE
