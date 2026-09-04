@@ -78,8 +78,9 @@ spec:
               #   --max-time 110   — hard timeout slightly below activeDeadlineSeconds
               #   -w               — append status + timing summary for log forensics
               #   -o /tmp/body.out — capture response body so we can print it
-              #   -f               — fail on non-2xx so a regression in the endpoint
-              #                      surfaces as a Job failure rather than silent success
+              # NOTE: an earlier version of this comment claimed `-f` was
+              # used. It is not, and never was — the case statement below
+              # is what decides the exit code.
               command:
                 - /bin/sh
                 - -c
@@ -97,12 +98,50 @@ spec:
                   echo "tracking-sync: response:"
                   cat /tmp/body.out || true
                   echo
-                  # Fail the Job on anything other than 2xx so GKE
-                  # marks the pod Failed and the CronJob's
-                  # failedJobsHistoryLimit surfaces the tail.
+                  # Exit policy. Read the two cases below together — the
+                  # distinction is the whole point.
+                  #
+                  # This check CANNOT see a sync error. The handler has
+                  # exactly one response path, `c.JSON(http.StatusOK,
+                  # summary)`, and says so deliberately: per-shipment
+                  # failures come back as `errors` INSIDE a 200 body,
+                  # because "a 5xx would fire CronJob-level alerts that
+                  # drown real outages in noise". So a non-2xx here only
+                  # ever means transport or auth, never a bad sync.
+                  #
+                  # And status 000 (could not connect) is expected: this
+                  # Job calls the very Deployment it is deployed beside,
+                  # every 2 minutes, and Kargo promotes on every merge.
+                  # Measured on 2026-09-04: 4 of the 5 retained failures
+                  # began 9-23s after a ReplicaSet creation, across 11
+                  # rollouts in 7.5 hours.
+                  #
+                  # Failing the Job on that made the Application read
+                  # Degraded almost permanently, so the mechanism built to
+                  # make failures visible is what destroyed the signal
+                  # (mark8ly#651). A missed tick is harmless — the next is
+                  # 120s away and the sync is a full scan of open
+                  # shipments, not an incremental queue.
+                  #
+                  # Persistent inability to sync is caught by the
+                  # TrackingSyncStale alert in prometheusrule.yaml, which
+                  # is the medium that suits "this has not run" far better
+                  # than a health state does.
                   case "${HTTP_STATUS}" in
-                    2*) exit 0 ;;
-                    *) echo "tracking-sync: FAILED with status ${HTTP_STATUS}"; exit 1 ;;
+                    2*)
+                      exit 0
+                      ;;
+                    000|"")
+                      echo "tracking-sync: could not reach the endpoint (status='${HTTP_STATUS}') — skipping this tick; TrackingSyncStale covers a persistent outage"
+                      exit 0
+                      ;;
+                    *)
+                      # A real HTTP response that is not 2xx: an endpoint
+                      # regression, a bad route, or X-Internal-Auth being
+                      # rejected. That IS worth failing on.
+                      echo "tracking-sync: FAILED with status ${HTTP_STATUS}"
+                      exit 1
+                      ;;
                   esac
               resources:
                 requests:
