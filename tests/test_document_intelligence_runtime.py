@@ -111,3 +111,19 @@ def test_runtime_remains_internal_hardened_and_secret_free() -> None:
                 if item["name"] in {"DATABASE_URL", "OCR_WORKLOAD_IDENTITY_KEYS"}:
                     assert "value" not in item
                     assert "valueFrom" in item
+
+
+def test_clamd_has_a_writable_runtime_directory_with_a_read_only_root() -> None:
+    dispatch = deployment(render("sandbox"), "document-intelligence-sandbox-dispatch-worker")
+    clamd = next(
+        container
+        for container in dispatch["spec"]["template"]["spec"]["containers"]
+        if container["name"] == "clamd"
+    )
+
+    assert clamd["securityContext"]["readOnlyRootFilesystem"] is True
+    assert dispatch["spec"]["template"]["spec"]["securityContext"]["fsGroup"] == 10001
+    assert {mount["mountPath"] for mount in clamd["volumeMounts"]} >= {
+        "/run/clamav",
+        "/var/lib/clamav",
+    }

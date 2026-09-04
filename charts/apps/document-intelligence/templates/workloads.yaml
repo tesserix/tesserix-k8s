@@ -39,7 +39,7 @@ spec:
       serviceAccountName: {{ $workload.sa }}
       automountServiceAccountToken: true
       terminationGracePeriodSeconds: 45
-      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, fsGroupChangePolicy: OnRootMismatch, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: app
           image: {{ include "document-intelligence.image" $ }}
@@ -61,13 +61,15 @@ spec:
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
           ports: [{name: clamd, containerPort: 3310, protocol: TCP}]
           resources: {{ toYaml $.Values.resources.clamd | nindent 12 }}
-          volumeMounts: [{name: clamd-data, mountPath: /var/lib/clamav}, {name: tmp, mountPath: /tmp}]
+          volumeMounts: [{name: clamd-data, mountPath: /var/lib/clamav}, {name: clamd-run, mountPath: /run/clamav}, {name: tmp, mountPath: /tmp}]
         {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
         {{- if $workload.clamd }}
         - name: clamd-data
+          emptyDir: {}
+        - name: clamd-run
           emptyDir: {}
         {{- end }}
 {{- end }}
