@@ -508,5 +508,14 @@ namespaceWhitelist:
     apps:
       - name: helivanta-api
         serviceAccount: helivanta-api
-      - name: scope-probe
-        serviceAccount: scope-probe
+      # `scope-probe` was REMOVED 2026-09-04. It was verification
+      # scaffolding for the OpenBao rollout — a dummy path round-tripped
+      # to prove a namespace grant worked. Its ServiceAccount was deleted
+      # once that was shown, but this entry stayed, so the generated
+      # SecretStore helivanta/openbao-scope-probe sat in
+      # InvalidProviderConfig ("unable to create client") for 15 days and
+      # held the whole openbao Application at Degraded — which means a
+      # REAL degradation there would have looked identical (mark8ly#651
+      # is the same failure mode on a different app).
+      #
+      # Checked before removing: 0 of 245 ExternalSecrets referenced it.
