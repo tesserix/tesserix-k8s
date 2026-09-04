@@ -27,10 +27,11 @@ organization onboarding keys. Agent and sandbox pods receive neither key type.
 Existing production routes continue through the cluster store until their
 project keys exist and each route can be migrated to its own reviewed identity.
 
-Missing credentials do not block unrelated routes: the env reference is
-optional, the affected exporter receives a 401, and failures are counted in
-`otelcol_exporter_send_failed_spans{exporter="otlphttp/<product>-<environment>"}`.
-The exporter gives up after its bounded retry window; Redpanda retains seven
+A route remains disabled until its product-scoped key pair is provisioned and
+its ExternalSecret is Ready. Disabled routes are absent from the collector
+configuration, so they cannot create a degraded ExternalSecret or export a
+batch with an empty authorization value. Their traffic is dropped by the
+explicit `traces/unrouted` pipeline; Redpanda retains seven
 days for controlled replay.
 
 Routes today are Kora development plus production routes for Kora, SRE, DevAI,

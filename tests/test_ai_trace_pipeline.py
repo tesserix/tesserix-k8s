@@ -86,10 +86,7 @@ def test_ingest_routes_each_product_to_its_own_langfuse_project() -> None:
     routes = [
         ("kora-dev", "kora", "dev"),
         ("kora-prod", "kora", "prod"),
-        ("sre-prod", "sre", "prod"),
         ("devai-prod", "devai", "prod"),
-        ("australis-prod", "australis", "prod"),
-        ("ocr-prod", "ocr", "prod"),
     ]
     receiver = config["receivers"]["kafka/ai"]
     assert receiver["traces"]["topics"] == ["ai.traces"]
@@ -131,8 +128,15 @@ def test_ingest_routes_each_product_to_its_own_langfuse_project() -> None:
         ]
     assert config["service"]["pipelines"]["traces/unrouted"]["exporters"] == ["nop"]
 
+    # A route is deliberately absent until its product-scoped key pair exists.
+    # This prevents a missing Secret Manager object from degrading the shared
+    # ingest application or sending a batch with an empty Authorization value.
+    for name in ("sre-prod", "australis-prod", "ocr-prod"):
+        assert f"otlphttp/{name}" not in config["exporters"]
+        assert f"traces/{name}" not in config["service"]["pipelines"]
 
-def test_ingest_builds_basic_auth_from_mirrored_keys_and_tolerates_missing_ones() -> None:
+
+def test_ingest_builds_basic_auth_only_for_enabled_product_routes() -> None:
     docs = render("charts/thirdparty/otel-ingest", "otel-ingest", "observability")
     deployment = resource(docs, "Deployment", "otel-ingest")
     container = deployment["spec"]["template"]["spec"]["containers"][0]
@@ -145,11 +149,10 @@ def test_ingest_builds_basic_auth_from_mirrored_keys_and_tolerates_missing_ones(
     assert [d["remoteRef"]["key"] for d in secret["spec"]["data"]] == [
         "dev-kora-langfuse-public-key", "dev-kora-langfuse-secret-key"
     ]
-    sre_secret = resource(docs, "ExternalSecret", "otel-ingest-langfuse-sre-prod")
-    assert sre_secret["spec"]["secretStoreRef"] == {
-        "kind": "ClusterSecretStore",
-        "name": "gcp-secret-store",
-    }
+    assert all(
+        document.get("metadata", {}).get("name") != "otel-ingest-langfuse-sre-prod"
+        for document in docs
+    )
     template = secret["spec"]["target"]["template"]
     assert template["engineVersion"] == "v2"
     assert template["data"]["auth"] == '{{ printf "%s:%s" .publicKey .secretKey | b64enc }}'

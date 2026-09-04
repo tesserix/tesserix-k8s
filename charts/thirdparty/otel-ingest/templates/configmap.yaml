@@ -68,9 +68,11 @@ data:
         error_mode: ignore
         table:
           {{- range .Values.routes }}
+          {{- if .enabled }}
           - context: resource
             condition: attributes["service.namespace"] == {{ .product | quote }} and attributes["deployment.environment.name"] == {{ .environment | quote }}
             pipelines: [traces/{{ .name }}]
+          {{- end }}
           {{- end }}
 
     exporters:
@@ -96,6 +98,7 @@ data:
           max_elapsed_time: 0
 
       {{- range .Values.routes }}
+      {{- if .enabled }}
       otlphttp/{{ .name }}:
         traces_endpoint: {{ $.Values.langfuse.endpoint | quote }}
         headers:
@@ -111,6 +114,7 @@ data:
           initial_interval: {{ $.Values.exporter.retry.initialInterval }}
           max_interval: {{ $.Values.exporter.retry.maxInterval }}
           max_elapsed_time: {{ $.Values.exporter.retry.maxElapsedTime }}
+      {{- end }}
       {{- end }}
       nop: {}
 
@@ -135,10 +139,12 @@ data:
           processors: [memory_limiter]
           exporters: [routing]
         {{- range .Values.routes }}
+        {{- if .enabled }}
         traces/{{ .name }}:
           receivers: [routing]
           processors: [batch]
           exporters: [otlphttp/{{ .name }}]
+        {{- end }}
         {{- end }}
         traces/unrouted:
           receivers: [routing]
