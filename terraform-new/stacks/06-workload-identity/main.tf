@@ -178,6 +178,18 @@ resource "google_secret_manager_secret_iam_member" "secret_access" {
   member    = "serviceAccount:${google_service_account.workload_identity[each.value.sa_name].email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "evals_onboarding_langfuse_access" {
+  for_each = toset([
+    "prod-evals-langfuse-org-public-key",
+    "prod-evals-langfuse-org-secret-key",
+  ])
+
+  project   = var.project_id
+  secret_id = each.value
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:evals-onboarding-operator@${var.project_id}.iam.gserviceaccount.com"
+}
+
 # =============================================================================
 # Locals
 # =============================================================================

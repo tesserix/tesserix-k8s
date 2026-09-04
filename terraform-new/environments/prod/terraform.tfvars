@@ -3088,10 +3088,7 @@ service_accounts = [
     project_roles              = []
     workload_identity_bindings = [{ namespace = "evals-operator", kubernetes_service_account = "evals-onboarding-operator" }]
     bucket_bindings            = []
-    secret_bindings = [
-      { secret_id = "prod-evals-langfuse-org-public-key", role = "roles/secretmanager.secretAccessor" },
-      { secret_id = "prod-evals-langfuse-org-secret-key", role = "roles/secretmanager.secretAccessor" }
-    ]
+    secret_bindings            = []
   },
   # ===========================================================================
   # GLOBAL - Core Platform Service Accounts
