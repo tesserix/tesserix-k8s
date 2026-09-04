@@ -165,6 +165,8 @@ class TemporalPlatformManifestTests(unittest.TestCase):
             {
                 "agentic-registry",
                 "devai",
+                "document-intelligence-prod",
+                "document-intelligence-sandbox",
                 "dwellm8",
                 "homechef",
                 "kora",
@@ -209,6 +211,7 @@ class TemporalPlatformManifestTests(unittest.TestCase):
             {
                 "agentregistry-system",
                 "devai",
+                "document-intelligence",
                 "dwellm8",
                 "homechef",
                 "kora",
