@@ -131,7 +131,7 @@ def test_clamd_has_a_writable_runtime_directory_with_a_read_only_root() -> None:
     assert clamd["securityContext"]["runAsUser"] == 0
     assert clamd["securityContext"]["runAsNonRoot"] is False
     assert clamd["securityContext"]["capabilities"] == {
-        "add": ["CHOWN", "SETGID", "SETUID"],
+        "add": ["CHOWN", "DAC_OVERRIDE", "SETGID", "SETUID"],
         "drop": ["ALL"],
     }
     assert dispatch["spec"]["template"]["spec"]["securityContext"]["fsGroup"] == 10001
