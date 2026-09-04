@@ -15,6 +15,26 @@
 # renames them (e.g. to cnpg_backends_replication_lag_seconds) the
 # promQL here must be updated in lockstep.
 # =============================================================================
+# THE `cluster` LABEL DOES NOT EXIST ON THESE METRICS.
+#
+# Every rule below selected `{cluster="mark8ly-postgres"}`. `cnpg_pg_stat_
+# replication_*` carries `namespace`, `job`, `pod` and `application_name` —
+# no `cluster`. A `cluster` label does exist elsewhere in this estate (its
+# values include `mark8ly-postgres`), which is presumably where the selector
+# came from, but not on these series. So all three alerts matched nothing and
+# none of them could ever fire. Measured 2026-09-04, the day the rules were
+# first applied to the cluster at all.
+#
+# Corrected to `namespace="mark8ly"`, which returns the real series
+# (application_name=mark8ly-postgres-2, pod=mark8ly-postgres-3).
+#
+# CNPGSyncStandbyMissing additionally needed `or absent(...)`: `count by (...)`
+# over an empty vector returns nothing, so `< 1` cannot match when the series
+# disappears — which is exactly the shape of "the standby is gone". Without it
+# the alert was unable to detect the one condition it is named for. Verified
+# against production: quiet today (mark8ly-postgres is 2/2 healthy with a live
+# standby at 0s lag), and the same expression against a namespace with no CNPG
+# fires, so the absent() branch is live rather than decorative.
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -34,7 +54,7 @@ spec:
         # ─── Alerts ────────────────────────────────────────────────────
         - alert: CNPGSyncStandbyLagHigh
           expr: |
-            max by (cluster)(cnpg_pg_stat_replication_write_lag_seconds{cluster="mark8ly-postgres"}) > 5
+            max by (namespace)(cnpg_pg_stat_replication_write_lag_seconds{namespace="mark8ly"}) > 5
           for: 1m
           labels:
             severity: warning
@@ -55,7 +75,7 @@ spec:
 
         - alert: CNPGSyncStandbyReplayLagHigh
           expr: |
-            max by (cluster)(cnpg_pg_stat_replication_replay_lag_seconds{cluster="mark8ly-postgres"}) > 30
+            max by (namespace)(cnpg_pg_stat_replication_replay_lag_seconds{namespace="mark8ly"}) > 30
           for: 2m
           labels:
             severity: warning
@@ -74,7 +94,9 @@ spec:
 
         - alert: CNPGSyncStandbyMissing
           expr: |
-            count by (cluster)(cnpg_pg_stat_replication_write_lag_seconds{cluster="mark8ly-postgres"}) < 1
+            count by (namespace)(cnpg_pg_stat_replication_write_lag_seconds{namespace="mark8ly"}) < 1
+              or
+            absent(cnpg_pg_stat_replication_write_lag_seconds{namespace="mark8ly"})
           for: 5m
           labels:
             severity: critical
