@@ -524,6 +524,53 @@ spec:
                       {{ range .Alerts }}{{ if ne .Labels.severity "none" }}*{{ .Labels.severity }}* — {{ end }}{{ if .Annotations.summary }}{{ .Annotations.summary }}{{ else if .Annotations.description }}{{ .Annotations.description }}{{ else }}no summary{{ end }}
                       {{ if .Labels.namespace }}ns=`{{ .Labels.namespace }}` {{ end }}{{ if .Labels.cluster }}cluster=`{{ .Labels.cluster }}` {{ end }}{{ if .Labels.pod }}pod=`{{ .Labels.pod }}`{{ end }}
                       {{ end }}
+
+        # ── PHASE 5: prometheus-server stays resolvable ──
+        # `prometheus-server.monitoring.svc` is hard-coded in 155 files —
+        # Grafana and Kiali datasources, KEDA ScaledObjects, the volume
+        # autoscaler, devai-sre. Retiring the community release deletes the
+        # Service of that name, so without this alias every one of them
+        # breaks, and most fail SILENTLY (a KEDA trigger that cannot reach
+        # Prometheus just stops scaling).
+        #
+        # Rewriting 155 files would be a large, risky diff for no benefit.
+        # One alias Service keeps every consumer working and makes the name
+        # mean what callers already assume it means.
+        #
+        # Only one live consumer needed checking: the fingpt-inference
+        # ScaledObject in `stockpilot`. Its query returns NO DATA on BOTH
+        # instances today, so there is nothing to regress. Grafana is at
+        # replicas=0 and Kiali has no pods; devai-sre is running and keeps
+        # working through this alias.
+        #
+        # The selector pins the kps pod specifically: the retired community
+        # pod also carried app.kubernetes.io/name=prometheus, so that label
+        # alone would have been ambiguous while both existed.
+        extraManifests:
+          - apiVersion: v1
+            kind: Service
+            metadata:
+              name: prometheus-server
+              namespace: monitoring
+              labels:
+                app.kubernetes.io/name: prometheus
+                app.kubernetes.io/component: server
+                tesserix.io/alias-for: kps-kube-prometheus-stack-prometheus
+              annotations:
+                tesserix.io/note: >-
+                  Compatibility alias. Points the long-standing
+                  prometheus-server name at kube-prometheus-stack after the
+                  community release was retired (phase 5, 2026-09-04).
+            spec:
+              type: ClusterIP
+              ports:
+                - name: http
+                  port: 80
+                  protocol: TCP
+                  targetPort: 9090
+              selector:
+                app.kubernetes.io/name: prometheus
+                prometheus: kps-kube-prometheus-stack-prometheus
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
