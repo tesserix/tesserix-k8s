@@ -257,6 +257,30 @@ kms_keys = [
     }
     iam_bindings = []
   },
+  {
+    name             = "kora-document-data-key"
+    rotation_period  = "7776000s"
+    purpose          = "ENCRYPT_DECRYPT"
+    protection_level = "SOFTWARE"
+    labels = {
+      tier    = "product"
+      product = "kora"
+      purpose = "document-encryption"
+    }
+    iam_bindings = []
+  },
+  {
+    name             = "document-intelligence-eval-key"
+    rotation_period  = "7776000s"
+    purpose          = "ENCRYPT_DECRYPT"
+    protection_level = "SOFTWARE"
+    labels = {
+      tier    = "platform"
+      product = "document-intelligence"
+      purpose = "evaluation-encryption"
+    }
+    iam_bindings = []
+  },
   # OpenBao auto-unseal. Rotation is safe: gcpckms encrypts with the primary
   # version and decrypts with whichever version sealed the key ring.
   {
@@ -312,6 +336,160 @@ kms_keys = [
 default_bucket_location = "asia-south1"
 
 buckets = [
+  {
+    name                        = "kora-prod-doc-quarantine-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/kora-document-data-key"
+    labels                      = { product = "kora", purpose = "document-quarantine", region = "in", data_class = "restricted" }
+    lifecycle_rules             = [{ action = { type = "Delete" }, condition = { age = 7 } }]
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "kora-prod-doc-accepted-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/kora-document-data-key"
+    labels                      = { product = "kora", purpose = "document-source", region = "in", data_class = "restricted" }
+    lifecycle_rules             = [{ action = { type = "Delete" }, condition = { age = 30 } }]
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "kora-prod-doc-derived-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/kora-document-data-key"
+    labels                      = { product = "kora", purpose = "document-derived", region = "in", data_class = "restricted" }
+    lifecycle_rules             = [{ action = { type = "Delete" }, condition = { age = 2 } }]
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "kora-prod-doc-results-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/kora-document-data-key"
+    labels                      = { product = "kora", purpose = "document-results", region = "in", data_class = "restricted" }
+    lifecycle_rules             = [{ action = { type = "Delete" }, condition = { age = 30 } }]
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "doc-int-prod-sandbox-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/document-intelligence-eval-key"
+    labels                      = { product = "document-intelligence", purpose = "sandbox", region = "in", data_class = "restricted" }
+    lifecycle_rules             = [{ action = { type = "Delete" }, condition = { age = 7 } }]
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "doc-int-prod-candidates-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/document-intelligence-eval-key"
+    labels                      = { product = "document-intelligence", purpose = "model-candidates", region = "in", data_class = "restricted" }
+    lifecycle_rules             = [{ action = { type = "Delete" }, condition = { age = 30 } }]
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "doc-int-prod-train-cal-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/document-intelligence-eval-key"
+    labels                      = { product = "document-intelligence", purpose = "training-calibration", region = "in", data_class = "restricted" }
+    lifecycle_rules             = []
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "doc-int-prod-dev-eval-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/document-intelligence-eval-key"
+    labels                      = { product = "document-intelligence", purpose = "development-evaluation", region = "in", data_class = "restricted" }
+    lifecycle_rules             = []
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "doc-int-prod-eval-results-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/document-intelligence-eval-key"
+    labels                      = { product = "document-intelligence", purpose = "evaluation-results", region = "in", data_class = "restricted" }
+    lifecycle_rules             = [{ action = { type = "Delete" }, condition = { age = 90 } }]
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "doc-int-prod-model-staging-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/document-intelligence-eval-key"
+    labels                      = { product = "document-intelligence", purpose = "model-staging", region = "in", data_class = "restricted" }
+    lifecycle_rules             = []
+    cors                        = []
+    iam_bindings                = []
+  },
+  {
+    name                        = "doc-int-prod-golden-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = true
+    kms_key_name                = "projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/document-intelligence-eval-key"
+    labels                      = { product = "document-intelligence", purpose = "protected-golden", region = "in", data_class = "restricted" }
+    lifecycle_rules             = []
+    cors                        = []
+    iam_bindings                = []
+  },
   # ===========================================================================
   # GLOBAL - Core Platform Buckets
   # ===========================================================================
@@ -2742,6 +2920,166 @@ argocd_repo_auth_method  = "github-app"
 enable_workload_identity = true
 
 service_accounts = [
+  {
+    name                       = "kora-doc-signer"
+    display_name               = "Kora document upload signer"
+    description                = "Signs create-only uploads into the Kora quarantine bucket"
+    self_token_creator         = true
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "kora-doc-signer" }]
+    bucket_bindings = [
+      { bucket = "kora-prod-doc-quarantine-in", role = "roles/storage.objectCreator" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "kora-doc-scanner"
+    display_name               = "Kora document malware scanner"
+    description                = "Scans Kora quarantine objects before accepting them"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "kora-doc-scanner" }]
+    bucket_bindings = [
+      { bucket = "kora-prod-doc-quarantine-in", role = "roles/storage.objectAdmin" },
+      { bucket = "kora-prod-doc-accepted-in", role = "roles/storage.objectCreator" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "kora-doc-worker"
+    display_name               = "Kora document intelligence worker"
+    description                = "Reads accepted Kora sources and writes derived pages and normalized results"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "kora-doc-worker" }]
+    bucket_bindings = [
+      { bucket = "kora-prod-doc-accepted-in", role = "roles/storage.objectViewer" },
+      { bucket = "kora-prod-doc-derived-in", role = "roles/storage.objectAdmin" },
+      { bucket = "kora-prod-doc-results-in", role = "roles/storage.objectCreator" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "kora-doc-result-api"
+    display_name               = "Kora document result API"
+    description                = "Reads normalized Kora document results through authenticated service endpoints"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "kora-doc-result-api" }]
+    bucket_bindings = [
+      { bucket = "kora-prod-doc-results-in", role = "roles/storage.objectViewer" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "kora-doc-lifecycle"
+    display_name               = "Kora document lifecycle controller"
+    description                = "Deletes expired Kora document objects under retention and legal-hold policy"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "kora-doc-lifecycle" }]
+    bucket_bindings = [
+      { bucket = "kora-prod-doc-quarantine-in", role = "roles/storage.objectAdmin" },
+      { bucket = "kora-prod-doc-accepted-in", role = "roles/storage.objectAdmin" },
+      { bucket = "kora-prod-doc-derived-in", role = "roles/storage.objectAdmin" },
+      { bucket = "kora-prod-doc-results-in", role = "roles/storage.objectAdmin" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "doc-int-sandbox"
+    display_name               = "Document Intelligence sandbox runner"
+    description                = "Runs isolated short-lived OCR experiments"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "doc-int-sandbox" }]
+    bucket_bindings = [
+      { bucket = "doc-int-prod-sandbox-in", role = "roles/storage.objectAdmin" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "doc-int-curator"
+    display_name               = "Document Intelligence dataset curator"
+    description                = "Promotes approved redacted examples into versioned development datasets"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "doc-int-curator" }]
+    bucket_bindings = [
+      { bucket = "doc-int-prod-sandbox-in", role = "roles/storage.objectViewer" },
+      { bucket = "doc-int-prod-train-cal-in", role = "roles/storage.objectCreator" },
+      { bucket = "doc-int-prod-dev-eval-in", role = "roles/storage.objectCreator" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "doc-int-trainer"
+    display_name               = "Document Intelligence trainer"
+    description                = "Reads training data and writes candidate artifacts without evaluation access"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "doc-int-trainer" }]
+    bucket_bindings = [
+      { bucket = "doc-int-prod-train-cal-in", role = "roles/storage.objectViewer" },
+      { bucket = "doc-int-prod-candidates-in", role = "roles/storage.objectCreator" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "doc-int-nightly-eval"
+    display_name               = "Document Intelligence nightly evaluator"
+    description                = "Evaluates candidates against development cases"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "doc-int-nightly-eval" }]
+    bucket_bindings = [
+      { bucket = "doc-int-prod-dev-eval-in", role = "roles/storage.objectViewer" },
+      { bucket = "doc-int-prod-candidates-in", role = "roles/storage.objectViewer" },
+      { bucket = "doc-int-prod-eval-results-in", role = "roles/storage.objectCreator" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "doc-int-protected-eval"
+    display_name               = "Document Intelligence protected evaluator"
+    description                = "Reads frozen golden versions without mutation rights"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "doc-int-protected-eval" }]
+    bucket_bindings = [
+      { bucket = "doc-int-prod-golden-in", role = "roles/storage.objectViewer" },
+      { bucket = "doc-int-prod-candidates-in", role = "roles/storage.objectViewer" },
+      { bucket = "doc-int-prod-eval-results-in", role = "roles/storage.objectCreator" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "doc-int-promoter"
+    display_name               = "Document Intelligence promotion controller"
+    description                = "Promotes approved immutable candidate objects to model staging"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "doc-int-promoter" }]
+    bucket_bindings = [
+      { bucket = "doc-int-prod-candidates-in", role = "roles/storage.objectViewer" },
+      { bucket = "doc-int-prod-model-staging-in", role = "roles/storage.objectCreator" }
+    ]
+    secret_bindings = []
+  },
+  {
+    name                       = "doc-int-lifecycle"
+    display_name               = "Document Intelligence evaluation lifecycle controller"
+    description                = "Deletes only expiring sandbox, candidate and evaluation result objects"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "doc-int-lifecycle" }]
+    bucket_bindings = [
+      { bucket = "doc-int-prod-sandbox-in", role = "roles/storage.objectAdmin" },
+      { bucket = "doc-int-prod-candidates-in", role = "roles/storage.objectAdmin" },
+      { bucket = "doc-int-prod-eval-results-in", role = "roles/storage.objectAdmin" }
+    ]
+    secret_bindings = []
+  },
   # ===========================================================================
   # GLOBAL - Core Platform Service Accounts
   # ===========================================================================
