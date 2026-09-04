@@ -39,6 +39,32 @@ spec:
       ports: [{port: 15008, protocol: TCP}]
     - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
       ports: [{port: 443, protocol: TCP}]
+{{- if .Values.apiClientPrincipals }}
+{{- range $component := list "upload-api" "job-api" }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "document-intelligence.fullname" $ }}-{{ $component }}-clients
+  namespace: {{ $.Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name | quote }}
+      app.kubernetes.io/component: {{ $component | quote }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              {{- range $.Values.apiClientPrincipals }}
+              - {{ . | quote }}
+              {{- end }}
+      to:
+        - operation:
+            ports: ["8080"]
+{{- end }}
+{{- end }}
 ---
 {{- range $name := list "upload-api" "job-api" }}
 ---

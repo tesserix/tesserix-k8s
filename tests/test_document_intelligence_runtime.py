@@ -214,6 +214,39 @@ def test_sandbox_allows_the_devai_test_console_without_exposing_the_api() -> Non
     ]
 
 
+def test_sandbox_allows_only_devai_api_mesh_identity_to_ocr_apis() -> None:
+    resources = render("sandbox")
+    policies = {
+        resource["metadata"]["name"]: resource
+        for resource in resources
+        if resource["kind"] == "AuthorizationPolicy"
+    }
+
+    for component in ("upload-api", "job-api"):
+        policy = policies[f"document-intelligence-sandbox-{component}-clients"]
+        assert policy["spec"] == {
+            "selector": {
+                "matchLabels": {
+                    "app.kubernetes.io/instance": "document-intelligence",
+                    "app.kubernetes.io/component": component,
+                }
+            },
+            "action": "ALLOW",
+            "rules": [
+                {
+                    "from": [
+                        {
+                            "source": {
+                                "principals": ["cluster.local/ns/devai/sa/devai-api"]
+                            }
+                        }
+                    ],
+                    "to": [{"operation": {"ports": ["8080"]}}],
+                }
+            ],
+        }
+
+
 def test_global_cnpg_ingress_explicitly_allows_document_intelligence() -> None:
     values = yaml.safe_load(ISTIO_CONFIG_VALUES.read_text())
 
