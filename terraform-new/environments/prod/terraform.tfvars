@@ -1532,6 +1532,42 @@ buckets = [
       }
     ]
   },
+  {
+    name                        = "devai-sandbox-ocr-quarantine-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = false
+    labels = {
+      purpose   = "ocr-sandbox-quarantine"
+      product   = "devai"
+      retention = "24-hours"
+      sensitive = "true"
+    }
+    lifecycle_rules = [{ action = { type = "Delete" }, condition = { age = 1 } }]
+    cors            = []
+    iam_bindings    = []
+  },
+  {
+    name                        = "devai-sandbox-ocr-results-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "enforced"
+    versioning                  = false
+    labels = {
+      purpose   = "ocr-sandbox-results"
+      product   = "devai"
+      retention = "24-hours"
+      sensitive = "true"
+    }
+    lifecycle_rules = [{ action = { type = "Delete" }, condition = { age = 1 } }]
+    cors            = []
+    iam_bindings    = []
+  },
 
   # ===========================================================================
   # BLOG - Engineering Blog Assets (public read, upload-only for blog SA)
@@ -3589,6 +3625,20 @@ service_accounts = [
       { namespace = "secret-service", kubernetes_service_account = "secret-service-api" }
     ]
     bucket_bindings = []
+    secret_bindings = []
+  }
+  , {
+    name          = "devai-ocr-sandbox"
+    display_name  = "DevAI OCR Sandbox"
+    description   = "Accesses only the disposable DevAI OCR sandbox buckets"
+    project_roles = []
+    workload_identity_bindings = [
+      { namespace = "devai", kubernetes_service_account = "devai-ocr-sandbox" }
+    ]
+    bucket_bindings = [
+      { bucket = "devai-sandbox-ocr-quarantine-in", role = "roles/storage.objectUser" },
+      { bucket = "devai-sandbox-ocr-results-in", role = "roles/storage.objectUser" }
+    ]
     secret_bindings = []
   }
 ]
