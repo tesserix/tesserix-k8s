@@ -302,19 +302,16 @@ mongoExternalAccess: {}   # fanzone — DECOMMISSIONED 2026-07-23
 # Ambient mesh — waypoint proxies for namespaces needing L7 features
 # (AuthorizationPolicies, DestinationRules, EnvoyFilters)
 #
-# mark8ly is intentionally absent — the namespace runs with
-# `istio-injection: disabled` and no ambient enrollment (managed by the
-# mark8ly-namespace chart). The ambient bootstrap blocked the waypoint
-# from getting a workload cert (chicken-and-egg: waypoint → istiod call
-# rejected for having no SPIFFE identity), which took the entire public
-# ingress offline on 2026-04-11 while the v0.1 prod deploy was landing.
-# Re-enroll when the cluster-wide strict-mTLS bootstrap story is fixed.
+# mark8ly's Namespace remains owned by the mark8ly-namespace chart. Only its
+# waypoint is declared here so server-side apply never has two field managers
+# competing over the Namespace labels.
 ambient:
   waypointNamespaces:
     - global
     - marketplace
     # - fanzone   # DECOMMISSIONED 2026-07-23
     - homechef
+    - mark8ly
     # kora (Nutrition API) had the same gap as agentregistry/kagent:
     # no waypoint → public-endpoints-kora L7-stripped in ztunnel + EDS 404 at
     # the gateway. Onboarded 2026-07-29. APPLY IN A WATCHED WINDOW — ambient
@@ -346,11 +343,6 @@ ambient:
     # Re-enroll when the cluster-wide strict-mTLS bootstrap story is fixed.
 
 # Namespaces to enroll in Ambient mesh (replaces sidecar injection)
-#
-# mark8ly is intentionally absent — see the note on `ambient.waypointNamespaces`
-# above. The mark8ly-namespace chart declares the namespace with only
-# `istio-injection: disabled` and no ambient label, which is the mode the
-# service topology was originally deployed with.
 #
 # `ambientExcluded` keeps a namespace declared here (so it still gets the
 # istio-injection=disabled, name, and database-access labels) but skips the
