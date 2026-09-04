@@ -1,0 +1,65 @@
+{{- if .Values.trackingSyncCron.prometheusRule.enabled }}
+# =============================================================================
+# tracking-sync staleness
+# =============================================================================
+# Replaces "the CronJob's exit code defines Application health" with a signal
+# that survives rollouts and still catches a genuinely broken sync.
+#
+# Deliberately NOT written on kube_job_failed: `count(kube_job_failed > 0)`
+# returns 5 right now, which is exactly failedJobsHistoryLimit — the retention
+# cap read back as data, not a failure rate. Any rule counting retained Jobs
+# measures its own history limit.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ .Values.name }}-tracking-sync
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}-tracking-sync
+    app.kubernetes.io/part-of: mark8ly
+spec:
+  groups:
+    - name: tracking-sync
+      rules:
+        # No successful run in 15 minutes = 7 consecutive missed ticks.
+        # A rollout costs at most one or two, so this cannot fire for the
+        # reason the old exit-code check kept firing.
+        - alert: TrackingSyncStale
+          expr: >-
+            time() - max(kube_job_status_completion_time{namespace="{{ .Values.namespace }}",
+            job_name=~"{{ .Values.name }}-tracking-sync-.*"}) > {{ .Values.trackingSyncCron.prometheusRule.staleAfterSeconds }}
+          for: 5m
+          labels:
+            severity: critical
+            # max() DROPS every label, so the alert would carry no
+            # namespace and match no Alertmanager route. Set explicitly.
+            namespace: {{ .Values.namespace }}
+            product: mark8ly
+          annotations:
+            summary: "Shipment tracking sync has not succeeded in over {{ div .Values.trackingSyncCron.prometheusRule.staleAfterSeconds 60 }} minutes"
+            description: >-
+              No tracking-sync Job has completed successfully recently.
+              Customer-facing tracking status is going stale. Check:
+              kubectl -n {{ .Values.namespace }} get jobs | grep tracking-sync
+              and the logs of the most recent pod.
+
+        # The expression above depends on a series existing. If it stops,
+        # the rule evaluates to nothing and goes quiet — indistinguishable
+        # from healthy. Make that loud instead.
+        - alert: TrackingSyncMetricsMissing
+          expr: >-
+            absent(kube_job_status_completion_time{namespace="{{ .Values.namespace }}",
+            job_name=~"{{ .Values.name }}-tracking-sync-.*"})
+          for: 30m
+          labels:
+            severity: critical
+            namespace: {{ .Values.namespace }}
+            product: mark8ly
+          annotations:
+            summary: "tracking-sync job metrics have disappeared"
+            description: >-
+              kube-state-metrics is no longer reporting completion times for
+              tracking-sync Jobs, so TrackingSyncStale cannot fire and the
+              sync is UNMONITORED. Check kube-state-metrics and whether the
+              CronJob still exists.
+{{- end }}
