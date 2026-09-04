@@ -166,6 +166,29 @@ spec:
         controller:
           enabled: true
           logLevel: INFO
+          # Expose the controller's Prometheus metrics (mark8ly#644 phase 4).
+          #
+          # Kargo exports nothing scraped today: no metrics port, no metrics
+          # Service, no annotations. A failed promotion is therefore invisible
+          # to monitoring — which is how, on 2026-09-03, a sigstore TUF 403
+          # broke image signing on main, no Freight formed, and migration
+          # 000129 sat undeployed until it was noticed by hand.
+          #
+          # A ServiceMonitor rather than prometheus.io/* annotations: the
+          # scrape job carried over from the community release uses
+          # `role: pod` and reads POD annotations, so annotations on the
+          # metrics Service would be ignored. The operator consumes
+          # ServiceMonitors natively, which is what it is for.
+          #
+          # This phase only makes the metrics exist and be scraped. The alert
+          # rule follows, written against metric names read from the live
+          # output — a rule referencing a metric nothing exports would be one
+          # more thing that looks wired and reaches nothing.
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
+              interval: 30s
           argocd:
             # In-cluster ArgoCD; Kargo will create AppProject-scoped
             # service tokens itself when it needs to mutate Argo CD
