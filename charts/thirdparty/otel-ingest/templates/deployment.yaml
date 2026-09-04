@@ -64,6 +64,7 @@ spec:
                   name: {{ .Values.clickhouse.env.secretName }}
                   key: {{ .Values.clickhouse.env.secretKey }}
             {{- range .Values.routes }}
+            {{- if .enabled }}
             # Optional: a product whose key pair is not mirrored yet must not
             # keep the other products' traces from flowing.
             - name: LANGFUSE_{{ .name | upper | replace "-" "_" }}_AUTH
@@ -72,6 +73,7 @@ spec:
                   name: {{ include "otel-ingest.name" $ }}-langfuse-{{ .name }}
                   key: auth
                   optional: true
+            {{- end }}
             {{- end }}
           ports:
             - name: metrics
