@@ -86,11 +86,19 @@ spec:
         # for 48h" as a tripwire). False positives: a quiet period
         # (no sunsets happening) reads the same. Rare enough that an
         # info-level alert is fine.
+        # Guarded on prior existence, for the reason recorded on
+        # NoDunningEmailsFor48h in subscription.yaml: the underlying
+        # `white_label_app_lifecycle_transition_total` is a CounterVec, so it
+        # publishes no series until a transition actually happens. Measured
+        # against production on 2026-09-04: no series, and the unguarded
+        # expression returned a result — this alert would have fired from the
+        # moment the rule loaded and stayed firing. The 7d term is the retention
+        # window; see that comment for the trade it makes.
         - alert: WhiteLabelLifecycleQuietFor48h
           expr: |
-            absent_over_time(
-              white_label_app:lifecycle_transitions:rate1h[48h]
-            )
+            absent_over_time(white_label_app:lifecycle_transitions:rate1h[48h])
+              and on()
+            (count(count_over_time(white_label_app:lifecycle_transitions:rate1h[7d])) > 0)
           for: 1h
           labels:
             severity: info
@@ -112,12 +120,25 @@ spec:
         # when the current 1h rate is >3× the 24h median over 10m
         # sustained. Noise-tolerant: random doubling is common; a
         # sustained 3× of median is unusual and warrants investigation.
+        # THE MATCHING MODIFIER BELONGS TO THE COMPARISON, NOT THE MULTIPLY.
+        #
+        # This previously read `3 * ignoring(type) group_left median24h`, which
+        # does not parse: `3 * <vector>` is scalar-vector, and PromQL allows a
+        # vector-matching modifier only between two instant vectors. Prometheus
+        # rejected it with `vector matching only allowed between instant
+        # vectors`, so this alert has never been able to load.
+        #
+        # Moving the modifier onto the `>` — which is vector-to-vector — keeps
+        # the author's intent exactly. `group_left()` with an explicit empty
+        # label list is what the original already meant: its `group_left` was
+        # followed by the operand on the next line, so it carried no label list
+        # either. The empty parens are required only because `group_left (3 * x)`
+        # parses the parenthesis as the grouping label list.
         - alert: WhiteLabelCredentialAccessSpike
           expr: |
             white_label_app:credential_accessed:rate1h
-              >
-            (3 * ignoring(type) group_left
-              white_label_app:credential_accessed:median24h)
+              > ignoring(type) group_left()
+            (3 * white_label_app:credential_accessed:median24h)
             and
             white_label_app:credential_accessed:rate1h > 0.5
           for: 10m

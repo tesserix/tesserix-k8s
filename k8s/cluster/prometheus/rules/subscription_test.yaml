@@ -65,6 +65,26 @@ tests:
               description: "mark8ly_subscription_dunning_emails_sent_total is absent. Check P6 dunning CronJob and the tenants-in-arrears query."
 
   # ---------------------------------------------------------------------------
+  # 2b. The same dead-man's switch must stay SILENT when the metric never
+  #     existed. `mark8ly_subscription_dunning_emails_sent_total` is a
+  #     CounterVec, so it publishes no series until the first dunning email is
+  #     sent — without the count_over_time guard this alert fires from the
+  #     moment the rule loads and never stops, which is what it did in
+  #     production on 2026-09-04.
+  #
+  #     The unrelated input series exists only so the group has data; nothing
+  #     in it is referenced by the alert under test.
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'up{job="unrelated"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 49h
+        alertname: NoDunningEmailsFor48h
+        exp_alerts: []
+
+  # ---------------------------------------------------------------------------
   # 3. Trial signup anomaly — counter ticks once, rate over 24h stays >0 for
   #    the window. Alert requires `for: 15m` of sustained truth.
   # ---------------------------------------------------------------------------
