@@ -134,6 +134,7 @@ def test_clamd_has_a_writable_runtime_directory_with_a_read_only_root() -> None:
         "/run/clamav",
         "/var/lock",
         "/var/lib/clamav",
+        "/var/log/clamav",
     }
 
 
@@ -156,6 +157,11 @@ def test_runtime_allows_only_required_dns_and_workload_identity_egress() -> None
     assert any(
         rule.get("to") == [{"ipBlock": {"cidr": "169.254.169.252/32"}}]
         and {port["port"] for port in rule["ports"]} == {988}
+        for rule in egress
+    )
+    assert any(
+        rule.get("to") == [{"ipBlock": {"cidr": "10.20.0.0/16"}}]
+        and {port["port"] for port in rule["ports"]} == {15008}
         for rule in egress
     )
 
