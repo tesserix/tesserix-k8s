@@ -2853,6 +2853,12 @@ secrets = [
     labels                = { tier = "database", type = "certificate", environment = "prod", namespace = "marketplace" }
     annotations           = { "managed-by" = "terraform", "description" = "Marketplace PostgreSQL server key" }
     replication_locations = [{ location = "asia-south1" }]
+  },
+  {
+    secret_id             = "dev-kora-document-intelligence-signing-key"
+    labels                = { tier = "product", product = "kora", environment = "dev", service = "document-intelligence" }
+    annotations           = { "managed-by" = "terraform", "description" = "Kora development-only document-intelligence request signing key" }
+    replication_locations = [{ location = "asia-south1" }]
   }
 ]
 
