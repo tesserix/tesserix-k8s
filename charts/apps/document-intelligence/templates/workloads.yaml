@@ -42,6 +42,15 @@ spec:
       automountServiceAccountToken: true
       terminationGracePeriodSeconds: 45
       securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001, fsGroupChangePolicy: OnRootMismatch, seccompProfile: {type: RuntimeDefault}}
+      {{- if $workload.clamd }}
+      initContainers:
+        - name: clamd-volume-owner
+          image: {{ $.Values.clamav.image }}
+          command: ["/bin/sh", "-ec", "chown -R 100:101 /var/lib/clamav /run/clamav /var/lock"]
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsUser: 0, runAsGroup: 0, runAsNonRoot: false, capabilities: {drop: ["ALL"], add: ["CHOWN"]}}
+          resources: {{ toYaml $.Values.resources.clamd | nindent 12 }}
+          volumeMounts: [{name: clamd-data, mountPath: /var/lib/clamav}, {name: clamd-run, mountPath: /run/clamav}, {name: clamd-lock, mountPath: /var/lock}]
+      {{- end }}
       containers:
         - name: app
           image: {{ include "document-intelligence.image" $ }}
