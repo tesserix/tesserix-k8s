@@ -113,7 +113,7 @@ def test_kora_sandbox_runtime_isolated_from_production_and_expires_in_one_day() 
         assert "kora-prod-doc-" not in body
     expected = {
         "kora-dev-doc-signer": {("kora-dev-doc-quarantine-in", "roles/storage.objectCreator"), ("kora-dev-doc-quarantine-in", "roles/storage.objectViewer")},
-        "kora-dev-doc-scanner": {("kora-dev-doc-quarantine-in", "roles/storage.objectAdmin"), ("kora-dev-doc-accepted-in", "roles/storage.objectCreator")},
+        "kora-dev-doc-scanner": {("kora-dev-doc-quarantine-in", "roles/storage.objectAdmin"), ("kora-dev-doc-accepted-in", "roles/storage.objectCreator"), ("kora-dev-doc-accepted-in", "roles/storage.objectViewer")},
         "kora-dev-doc-worker": {("kora-dev-doc-accepted-in", "roles/storage.objectViewer"), ("kora-dev-doc-derived-in", "roles/storage.objectAdmin"), ("kora-dev-doc-results-in", "roles/storage.objectCreator")},
         "kora-dev-doc-result-api": {("kora-dev-doc-results-in", "roles/storage.objectViewer")},
     }
