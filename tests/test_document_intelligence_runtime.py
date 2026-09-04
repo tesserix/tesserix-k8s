@@ -6,6 +6,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 CHART = ROOT / "charts/apps/document-intelligence"
+ISTIO_CONFIG_VALUES = ROOT / "charts/thirdparty/istio-config/values.yaml"
 
 
 def render(environment: str) -> list[dict]:
@@ -127,3 +128,38 @@ def test_clamd_has_a_writable_runtime_directory_with_a_read_only_root() -> None:
         "/run/clamav",
         "/var/lib/clamav",
     }
+
+
+def test_runtime_allows_only_required_dns_and_workload_identity_egress() -> None:
+    resources = render("sandbox")
+    policy = next(resource for resource in resources if resource["kind"] == "NetworkPolicy")
+    egress = policy["spec"]["egress"]
+
+    assert any(
+        rule.get("to") == [{"ipBlock": {"cidr": "10.30.0.10/32"}}]
+        and {port["port"] for port in rule["ports"]} == {53}
+        for rule in egress
+    )
+    assert any(
+        {target["ipBlock"]["cidr"] for target in rule.get("to", []) if "ipBlock" in target}
+        == {"169.254.169.254/32", "169.254.0.0/16"}
+        and {port["port"] for port in rule["ports"]} == {80}
+        for rule in egress
+    )
+
+    for name in {
+        "document-intelligence-sandbox-upload-api",
+        "document-intelligence-sandbox-job-api",
+        "document-intelligence-sandbox-dispatch-worker",
+        "document-intelligence-sandbox-execution-worker",
+    }:
+        annotations = deployment(resources, name)["spec"]["template"]["metadata"]["annotations"]
+        assert annotations["traffic.istio.io/excludeOutboundIPRanges"] == (
+            "169.254.169.254/32,169.254.0.0/16"
+        )
+
+
+def test_global_cnpg_ingress_explicitly_allows_document_intelligence() -> None:
+    values = yaml.safe_load(ISTIO_CONFIG_VALUES.read_text())
+
+    assert "document-intelligence" in values["globalIngressExtraNamespaces"]
