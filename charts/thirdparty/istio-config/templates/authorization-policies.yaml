@@ -62,6 +62,14 @@ spec:
             namespaces:
               - {{ $ns }}
     {{- end }}
+    # Namespaces with their own restrictive egress policy still require an
+    # explicit destination-side mesh authorization path to shared services.
+    {{- range $ns := .Values.globalIngressExtraNamespaces }}
+    - from:
+        - source:
+            namespaces:
+              - {{ $ns }}
+    {{- end }}
     # Allow infrastructure namespaces that connect to global DB
     {{- range $key, $ns := .Values.infrastructureNamespaces }}
     - from:
