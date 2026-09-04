@@ -81,8 +81,75 @@ spec:
         # and then they get enabled deliberately.
         nodeExporter:
           enabled: false
+
+        # ── PHASE 4b: kube-state-metrics ──
+        # Enabled for one reason that nothing else can serve: a failed Kargo
+        # promotion is invisible to metrics without it.
+        #
+        # Kargo v1.11.1 exports ONLY controller-runtime metrics — verified
+        # against the live /metrics after phase 4a. And crucially
+        # `controller_runtime_reconcile_errors_total{controller="promotion"}`
+        # reads 0 while SEVEN Promotions sit in phase `Errored`: the
+        # controller reconciles a promotion into the error phase
+        # SUCCESSFULLY, so the failure is domain-level and invisible to
+        # controller metrics. An alert on reconcile errors would never fire
+        # for the case this exists to catch.
+        #
+        # The ground truth is the Promotion CR's status.phase, which only
+        # kube-state-metrics can turn into a series.
+        #
+        # Side effect, deliberate: 45 of 259 alerting rules reference kube_*
+        # series and are dormant today (36 chart, 9 the estate wrote). They
+        # start evaluating. That is contained by design — routing is
+        # mark8ly-only and critical-only, so newly-live rules become visible
+        # in Prometheus without paging anyone.
         kubeStateMetrics:
-          enabled: false
+          enabled: true
+
+        kube-state-metrics:
+          resources:
+            requests:
+              memory: 128Mi
+          # Teach KSM about Kargo Promotions. Emits
+          # kube_customresource_kargo_promotion_phase{phase=...} = 1 for the
+          # phase each Promotion is currently in.
+          #
+          # No extraArgs: the chart passes the config file itself when
+          # customResourceState.enabled is set, and a hand-added flag that
+          # duplicates or contradicts it would crashloop the exporter.
+          rbac:
+            extraRules:
+              - apiGroups: ["kargo.akuity.io"]
+                resources: ["promotions"]
+                verbs: ["list", "watch"]
+          customResourceState:
+            enabled: true
+            config:
+              spec:
+                resources:
+                  - groupVersionKind:
+                      group: kargo.akuity.io
+                      version: v1alpha1
+                      kind: Promotion
+                    labelsFromPath:
+                      namespace: [metadata, namespace]
+                      promotion: [metadata, name]
+                      stage: [spec, stage]
+                    metrics:
+                      - name: kargo_promotion_phase
+                        help: "Current phase of a Kargo Promotion"
+                        each:
+                          type: StateSet
+                          stateSet:
+                            labelName: phase
+                            path: [status, phase]
+                            list:
+                              - Pending
+                              - Running
+                              - Succeeded
+                              - Failed
+                              - Errored
+                              - Aborted
 
         prometheus:
           prometheusSpec:
