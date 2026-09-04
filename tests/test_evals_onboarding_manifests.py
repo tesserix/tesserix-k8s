@@ -64,13 +64,25 @@ def test_org_credentials_have_secret_level_gitops_ownership() -> None:
     body = match.group("body")
     assert 'namespace = "evals-operator"' in body
     assert 'kubernetes_service_account = "evals-onboarding-operator"' in body
-    assert 'secret_id = "prod-evals-langfuse-org-public-key"' in body
-    assert 'secret_id = "prod-evals-langfuse-org-secret-key"' in body
-    assert body.count('role = "roles/secretmanager.secretAccessor"') == 2
     assert "project_roles              = []" in body
+    assert "secret_bindings            = []" in body
+    iam = re.search(
+        r'resource "google_secret_manager_secret_iam_member" "evals_onboarding_langfuse_access" \{(?P<body>.*?)\n\}',
+        WORKLOAD_IDENTITY,
+        re.DOTALL,
+    )
+    assert iam is not None
+    iam_body = iam.group("body")
+    secret_ids = re.search(r"for_each = toset\(\[(?P<ids>.*?)\]\)", iam_body, re.DOTALL)
+    assert secret_ids is not None
+    assert set(re.findall(r'"([^"]+)"', secret_ids.group("ids"))) == {
+        "prod-evals-langfuse-org-public-key",
+        "prod-evals-langfuse-org-secret-key",
+    }
+    assert 'role      = "roles/secretmanager.secretAccessor"' in iam_body
     assert (
-        'google_service_account.workload_identity["evals-onboarding-operator"]'
-        in WORKLOAD_IDENTITY
+        'member    = "serviceAccount:evals-onboarding-operator@${var.project_id}.iam.gserviceaccount.com"'
+        in iam_body
     )
 
 
