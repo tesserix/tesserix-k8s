@@ -149,8 +149,13 @@ def test_runtime_allows_only_required_dns_and_workload_identity_egress() -> None
     )
     assert any(
         {target["ipBlock"]["cidr"] for target in rule.get("to", []) if "ipBlock" in target}
-        == {"169.254.169.254/32", "169.254.0.0/16"}
+        == {"169.254.169.254/32"}
         and {port["port"] for port in rule["ports"]} == {80}
+        for rule in egress
+    )
+    assert any(
+        rule.get("to") == [{"ipBlock": {"cidr": "169.254.169.252/32"}}]
+        and {port["port"] for port in rule["ports"]} == {988}
         for rule in egress
     )
 
@@ -162,7 +167,7 @@ def test_runtime_allows_only_required_dns_and_workload_identity_egress() -> None
     }:
         annotations = deployment(resources, name)["spec"]["template"]["metadata"]["annotations"]
         assert annotations["traffic.istio.io/excludeOutboundIPRanges"] == (
-            "169.254.169.254/32,169.254.0.0/16"
+            "169.254.169.254/32,169.254.169.252/32"
         )
 
 
