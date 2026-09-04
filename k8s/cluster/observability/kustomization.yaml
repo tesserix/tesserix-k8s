@@ -5,9 +5,9 @@
 # Bundles:
 #   1. PrometheusRule   (k8s/cluster/prometheus/rules)
 #   2. AlertmanagerConfig (k8s/cluster/alertmanager)
-#   3. Grafana dashboard ConfigMap (k8s/cluster/grafana/dashboards)
 #
-# All three land in the `monitoring` namespace.
+# Both land in the `monitoring` namespace. The Grafana dashboards that used to
+# be listed here are not — see the note on `resources` below.
 # =============================================================================
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -16,4 +16,23 @@ namespace: monitoring
 resources:
   - ../prometheus/rules
   - ../alertmanager
-  - ../grafana/dashboards
+  # ../grafana/dashboards is NOT here, and removing it is what makes this
+  # Application buildable at all.
+  #
+  # That kustomization's configMapGenerator reads five JSON files at the REPO
+  # ROOT (`../../../../grafana/dashboards/*.json`), which kustomize refuses:
+  # "security; file ... is not in or below". The Application carries
+  # `LoadRestrictionsNone=true` under `syncPolicy.syncOptions`, but that is not
+  # a sync option — ArgoCD takes the load restrictor from
+  # `kustomize.buildOptions` in `argocd-cm`, which is empty here. So the flag
+  # never applied and this path has never built. Verified 2026-09-04 from the
+  # Application's own ComparisonError, on the first sync after the Application
+  # was finally listed in argocd/prod/infrastructure/kustomization.yaml.
+  #
+  # The five subscription dashboards were therefore never shipped. They are no
+  # worse off for this removal, and the working pattern already exists next
+  # door: `k8s/cluster/grafana/product-dashboards` keeps its JSON locally, has
+  # no `../` escape, needs no flag, and is applied by the `grafana-dashboards`
+  # Application (Synced/Healthy, shipping three ConfigMaps). Moving these five
+  # there is the fix, and it is tracked separately rather than bundled into a
+  # change whose job is to get the PrometheusRules applied.
