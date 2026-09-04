@@ -42,10 +42,8 @@ spec:
     targetRevision: HEAD
     path: k8s/cluster/observability
     kustomize:
-      # Dashboard JSON lives at repo root (grafana/dashboards/) while the
-      # ConfigMap generator kustomization is nested under
-      # k8s/cluster/grafana/dashboards/. Root-relative file references
-      # require loosening the default load restriction.
+      # This bundle no longer includes the Grafana dashboards, so it needs no
+      # loosened load restriction and builds under the default restrictor.
       commonAnnotations:
         mark8ly/observability-slice: "p17"
   destination:
@@ -58,9 +56,13 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-      # LoadRestrictionsNone allows configMapGenerator to reference files
-      # outside the kustomization directory (grafana/dashboards/*.json).
-      - LoadRestrictionsNone=true
+      # NOTE: `LoadRestrictionsNone=true` used to sit here. It never did
+      # anything — ArgoCD's syncOptions has no such option, and the kustomize
+      # load restrictor comes from `kustomize.buildOptions` in `argocd-cm`,
+      # which is empty on this cluster. The first sync after this Application
+      # was actually listed failed with a ComparisonError proving it
+      # (2026-09-04). The path it was meant to enable is no longer part of
+      # this bundle; see k8s/cluster/observability/kustomization.yaml.
     retry:
       limit: 5
       backoff:
