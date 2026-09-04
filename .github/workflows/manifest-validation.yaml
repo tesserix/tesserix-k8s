@@ -1,0 +1,147 @@
+# =============================================================================
+# Manifest Validation — kustomize build + promtool for k8s/
+#
+# WHY THIS EXISTS
+#
+# `pr-validation.yaml` is path-filtered to charts/**, argocd/**,
+# .github/workflows/** and scripts/gke-upgrade/**. `k8s/**` is on none of them,
+# so until now nothing in that tree was validated on a PR: no `kustomize
+# build`, no `promtool`. Four defects merged through that gap and were found
+# only when the manifests reached a cluster for the first time on 2026-09-04:
+#
+#   1. k8s/cluster/observability could not build at all — a configMapGenerator
+#      reached outside its root, and the option meant to permit it was declared
+#      in a field ArgoCD does not read (tesserix-k8s#945).
+#   2. WhiteLabelCredentialAccessSpike did not parse — a vector-matching
+#      modifier on a scalar multiply. Its whole rule group was unloadable.
+#   3. Two dead-man's-switch alerts fired from the moment they loaded, because
+#      their CounterVecs publish no series until first use (tesserix-k8s#944).
+#   4. All three cnpg alerts selected a `cluster` label those metrics do not
+#      carry, so none could ever fire (tesserix-k8s#947).
+#
+# WHAT THIS ACTUALLY CATCHES — measured, not assumed:
+#
+#   1  YES. `kustomize build` fails on it.
+#   2  YES. `promtool check rules` reports
+#          "parse error: vector matching only allowed between instant vectors".
+#   3  NO.  Needs live metrics: the expression is valid, and whether it fires
+#          depends on whether a CounterVec has ever been incremented.
+#   4  NO.  Also valid. I fed the exact historical expression to promtool and
+#          it returned SUCCESS — a selector on a label the metric does not
+#          carry is syntactically perfect and matches nothing.
+#
+# So this closes two of the four. The other two are only visible against a
+# running Prometheus, and no PR-time check will find them. Do not read a green
+# run here as "the alerts work"; it means they parse and the manifests build.
+#
+# This is the same finding repo-tests.yaml records for tests/ (#782): a check
+# that nothing runs drifts from what it guards, and nobody is told.
+# =============================================================================
+name: Manifest Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'k8s/**'
+      - '.github/workflows/manifest-validation.yaml'
+
+env:
+  # Pinned deliberately. promtool renders floats into alert annotations, and
+  # subscription_test.yaml asserts one of those strings — a different build
+  # emits a different format and reds the row on formatting alone. See the
+  # note on scenario 3 in that file.
+  PROMETHEUS_VERSION: '3.14.0'
+  KUSTOMIZE_VERSION: '5.4.3'
+
+jobs:
+  kustomize-build:
+    name: Kustomize Build
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize
+        run: |
+          curl -sSL -o /tmp/kustomize.tar.gz \
+            "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_amd64.tar.gz"
+          tar -xzf /tmp/kustomize.tar.gz -C /usr/local/bin kustomize
+          kustomize version
+
+      - name: Build every kustomization under k8s/
+        run: |
+          set -uo pipefail
+          fail=0; ok=0
+          # Default load restrictor on purpose: a kustomization that needs
+          # LoadRestrictionsNone is one ArgoCD cannot build either, because
+          # kustomize.buildOptions is empty on this cluster. That is exactly
+          # how k8s/cluster/observability shipped broken.
+          while IFS= read -r dir; do
+            if out=$(kustomize build "$dir" 2>&1); then
+              ok=$((ok+1))
+            else
+              fail=$((fail+1))
+              echo "::error file=$dir/kustomization.yaml::kustomize build failed"
+              echo "--- $dir ---"; echo "$out" | head -20
+            fi
+          done < <(find k8s -name kustomization.yaml -exec dirname {} \; | sort)
+          echo "built ok=$ok failed=$fail"
+          [ "$fail" -eq 0 ]
+
+  prometheus-rules:
+    name: Prometheus Rules
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install promtool
+        run: |
+          curl -sSL -o /tmp/prom.tar.gz \
+            "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz"
+          tar -xzf /tmp/prom.tar.gz -C /tmp
+          sudo install "/tmp/prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool" /usr/local/bin/promtool
+          promtool --version
+
+      - name: Extract rule groups from PrometheusRule CRDs
+        run: |
+          python3 -m pip install --quiet pyyaml
+          mkdir -p /tmp/rules
+          python3 - <<'PY'
+          import yaml, glob, os, sys
+          n = 0
+          for f in glob.glob("k8s/**/*.yaml", recursive=True):
+              if f.endswith("kustomization.yaml") or "_test" in os.path.basename(f):
+                  continue
+              try:
+                  docs = list(yaml.safe_load_all(open(f)))
+              except Exception:
+                  continue          # not our file to parse; kustomize-build owns YAML validity
+              for doc in docs:
+                  if doc and doc.get("kind") == "PrometheusRule":
+                      out = os.path.join("/tmp/rules", os.path.basename(f))
+                      yaml.safe_dump(doc["spec"], open(out, "w"), sort_keys=False)
+                      n += 1
+          print(f"extracted {n} PrometheusRule spec(s)")
+          # A repo with no PrometheusRule is a repo where this job proves
+          # nothing. Fail rather than pass vacuously.
+          sys.exit(0 if n else 1)
+          PY
+
+      - name: promtool check rules
+        run: promtool check rules /tmp/rules/*.yaml
+
+      - name: promtool unit tests
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          tests=(k8s/cluster/prometheus/rules/*_test.yaml)
+          if [ ${#tests[@]} -eq 0 ]; then echo "no *_test.yaml found"; exit 0; fi
+          cp "${tests[@]}" /tmp/rules/
+          fail=0
+          for t in /tmp/rules/*_test.yaml; do
+            echo "--- $(basename "$t") ---"
+            promtool test rules "$t" || { fail=1; echo "::error file=k8s/cluster/prometheus/rules/$(basename "$t")::promtool test rules failed"; }
+          done
+          [ "$fail" -eq 0 ]

@@ -85,7 +85,15 @@ tests:
         exp_alerts: []
 
   # ---------------------------------------------------------------------------
-  # 3. Trial signup anomaly — counter ticks once, rate over 24h stays >0 for
+  # 3. Trial signup anomaly
+  #
+  #    The expected `Rate:` string is how PROMTOOL renders the float, not a
+  #    number we chose — promtool 3.14.0 emits `1.1574074074074073e-05` where
+  #    an older build emitted the long decimal form this test used to expect.
+  #    That mismatch was the file's only failure for as long as nothing ran it.
+  #    The workflow pins promtool so this stays deterministic; if you bump the
+  #    pin and this row reds on formatting alone, update the string, do not
+  #    loosen the assertion. — counter ticks once, rate over 24h stays >0 for
   #    the window. Alert requires `for: 15m` of sustained truth.
   # ---------------------------------------------------------------------------
   - interval: 1m
@@ -106,4 +114,4 @@ tests:
               alertname: TrialSignupAnomaly
             exp_annotations:
               summary: "Trial signup anomaly threshold tripped in 24h window"
-              description: 'Rate: 0.0000115740740740740740/s. Check arbitrage flags + IP distribution. §5.1 flags >50/day as anomalous at our stage.'
+              description: 'Rate: 1.1574074074074073e-05/s. Check arbitrage flags + IP distribution. §5.1 flags >50/day as anomalous at our stage.'
