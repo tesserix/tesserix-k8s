@@ -209,7 +209,8 @@ class DevAIMCPIngressTests(unittest.TestCase):
             for peer in rule["to"]
         }
         self.assertEqual(
-            {"homechef", "mark8ly", "stockpilot", "support-platform"}, destinations
+            {"homechef", "kora", "mark8ly", "stockpilot", "support-platform"},
+            destinations,
         )
 
         homechef = render_chart(
@@ -222,6 +223,23 @@ class DevAIMCPIngressTests(unittest.TestCase):
             for peer in rule["from"]
         }
         self.assertIn("agentgateway-system", homechef_sources)
+
+        kora_policy = resource(homechef, "NetworkPolicy", "allow-kora-ingress")
+        kora_gateway_rule = next(
+            rule
+            for rule in kora_policy["spec"]["ingress"]
+            if any(
+                peer.get("namespaceSelector", {}).get("matchLabels", {}).get(
+                    "kubernetes.io/metadata.name"
+                )
+                == "agentgateway-system"
+                for peer in rule["from"]
+            )
+        )
+        self.assertEqual(
+            {(8765, "TCP"), (15008, "TCP")},
+            {(port["port"], port["protocol"]) for port in kora_gateway_rule["ports"]},
+        )
 
         support = render_chart(
             "charts/apps/support-platform-namespace",
