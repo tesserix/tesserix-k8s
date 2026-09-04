@@ -85,6 +85,21 @@ spec:
                   name: {{ .Values.homechefBffHmacSecret.name | default "homechef-api-secrets" }}
                   key: {{ .Values.homechefBffHmacSecret.key }}
             {{- end }}
+            {{- if or .Values.allowMutations (has .Values.tenant (list "homechef" "mark8ly" "platform")) }}
+            # Gateway registers mutating tools only when this is set. Driven by
+            # the CHART so Kargo's image promotion can't drop it.
+            - name: MCP_ALLOW_MUTATIONS
+              value: "true"
+            {{- end }}
+            {{- if or .Values.koraInternalKeySecret.enabled (eq .Values.tenant "kora") }}
+            # Service key for kora-api GET /internal/v1/foods (search_nutrition).
+            - name: KORA_INTERNAL_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.koraInternalKeySecret.name | default "kora-mcp-internal" }}
+                  key: {{ .Values.koraInternalKeySecret.key }}
+                  optional: true
+            {{- end }}
             {{- if .Values.openapi.headers.secret.enabled }}
             # Project the secret value as an env var so the
             # MCP_OPENAPI_HEADERS template below can interpolate it
