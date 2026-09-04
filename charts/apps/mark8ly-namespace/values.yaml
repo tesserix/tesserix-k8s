@@ -1,11 +1,19 @@
 namespace: mark8ly
 # Namespaces whose workloads are allowed to initiate traffic into mark8ly.
-# Ingress comes through istio-system (gateway). Intra-namespace traffic is also allowed.
+# Ingress comes through the istio-ingress gateways. Intra-namespace traffic is also allowed.
 # tesserix is the super-admin / company namespace whose auth-bff and Next.js
 # apps reuse mark8ly-postgres, mark8ly-openfga, and the marketplace APIs
 # cross-namespace. Service-specific AuthorizationPolicies on those workloads
 # narrow this further by principal where appropriate.
 allowedSources:
   - istio-system
+  # The ingress gateways actually run in istio-ingress, not istio-system
+  # (istio-ingressgateway + custom-ingressgateway). This entry was missing
+  # and the omission was invisible until the namespace moved to ambient:
+  # the mark8ly pods had no sidecar, so this policy never applied to them
+  # and gateway traffic was never evaluated against it. Ambient enrolled
+  # them and every request from the gateway started being refused with
+  # "allow policies exist, but none allowed".
+  - istio-ingress
   - mark8ly
   - tesserix
