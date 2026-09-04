@@ -125,6 +125,10 @@ def test_clamd_has_a_writable_runtime_directory_with_a_read_only_root() -> None:
     assert clamd["securityContext"]["readOnlyRootFilesystem"] is True
     assert clamd["securityContext"]["runAsUser"] == 0
     assert clamd["securityContext"]["runAsNonRoot"] is False
+    assert clamd["securityContext"]["capabilities"] == {
+        "add": ["CHOWN"],
+        "drop": ["ALL"],
+    }
     assert dispatch["spec"]["template"]["spec"]["securityContext"]["fsGroup"] == 10001
     assert {mount["mountPath"] for mount in clamd["volumeMounts"]} >= {
         "/run/clamav",
