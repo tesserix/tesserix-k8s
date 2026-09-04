@@ -155,6 +155,8 @@ resource "google_storage_bucket_iam_member" "bucket_access" {
   for_each = {
     for binding in local.bucket_bindings :
     "${binding.sa_name}-${binding.bucket}-${binding.role}" => binding
+    # Managed by the isolated document-intelligence IAM state.
+    if "${binding.sa_name}-${binding.bucket}-${binding.role}" != "kora-dev-doc-scanner-kora-dev-doc-accepted-in-roles/storage.objectViewer"
   }
 
   bucket = each.value.bucket
