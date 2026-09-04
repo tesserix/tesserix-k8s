@@ -248,7 +248,18 @@ class DevAIMCPIngressTests(unittest.TestCase):
         mark8ly_sources = set(
             mark8ly_policy["spec"]["rules"][0]["from"][0]["source"]["namespaces"]
         )
-        self.assertIn("agentgateway-system", mark8ly_sources)
+        self.assertNotIn("agentgateway-system", mark8ly_sources)
+
+        mark8ly_mcp = render_chart(
+            "charts/apps/mcp-gateway", "mark8ly-mcp", "mark8ly"
+        )
+        mark8ly_mcp_allow = resource(
+            mark8ly_mcp, "AuthorizationPolicy", "required-override-mcp-allow-callers"
+        )
+        principals = mark8ly_mcp_allow["spec"]["rules"][0]["from"][0]["source"][
+            "principals"
+        ]
+        self.assertIn(GATEWAY_PRINCIPAL, principals)
 
         stockpilot = render_chart(
             "charts/thirdparty/istio-config", "istio-config", "istio-system"
