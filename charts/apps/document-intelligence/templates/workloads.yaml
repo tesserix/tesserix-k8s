@@ -33,7 +33,7 @@ spec:
   template:
     metadata:
       annotations:
-        traffic.istio.io/excludeOutboundIPRanges: "169.254.169.254/32,169.254.0.0/16"
+        traffic.istio.io/excludeOutboundIPRanges: "169.254.169.254/32,169.254.169.252/32"
       labels:
         {{- $labels | nindent 8 }}
         app.kubernetes.io/component: {{ $workload.name }}
@@ -63,7 +63,7 @@ spec:
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsUser: 0, runAsGroup: 0, runAsNonRoot: false, capabilities: {drop: ["ALL"], add: ["CHOWN"]}}
           ports: [{name: clamd, containerPort: 3310, protocol: TCP}]
           resources: {{ toYaml $.Values.resources.clamd | nindent 12 }}
-          volumeMounts: [{name: clamd-data, mountPath: /var/lib/clamav}, {name: clamd-run, mountPath: /run/clamav}, {name: tmp, mountPath: /tmp}]
+          volumeMounts: [{name: clamd-data, mountPath: /var/lib/clamav}, {name: clamd-run, mountPath: /run/clamav}, {name: clamd-lock, mountPath: /var/lock}, {name: tmp, mountPath: /tmp}]
         {{- end }}
       volumes:
         - name: tmp
@@ -72,6 +72,8 @@ spec:
         - name: clamd-data
           emptyDir: {}
         - name: clamd-run
+          emptyDir: {}
+        - name: clamd-lock
           emptyDir: {}
         {{- end }}
 {{- end }}
