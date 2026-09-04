@@ -142,9 +142,10 @@ def test_clamd_has_a_writable_runtime_directory_with_a_read_only_root() -> None:
         "/var/log/clamav",
     }
     mounts = {mount["mountPath"]: mount["name"] for mount in clamd["volumeMounts"]}
-    assert mounts["/var/lib/clamav"] == mounts["/var/log/clamav"] == "clamd-data"
+    assert mounts["/var/lib/clamav"] == "clamd-data"
+    assert mounts["/var/log/clamav"] == "clamd-logs"
     init_mounts = {mount["mountPath"]: mount["name"] for mount in init["volumeMounts"]}
-    assert init_mounts["/var/log/clamav"] == "clamd-data"
+    assert init_mounts["/var/log/clamav"] == "clamd-logs"
     assert "/var/log/clamav" in init["command"][2]
 
 
