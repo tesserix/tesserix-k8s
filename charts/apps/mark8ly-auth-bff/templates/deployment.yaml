@@ -139,8 +139,22 @@ spec:
                   name: {{ .Values.emailOtp.secretName }}
                   key: {{ .Values.emailOtp.secretKey }}
                   optional: true
-            # Zitadel identity. ExternalSecret-created, unread until phase 2.
-            # Optional so pod starts even if the Secret hasn't synced yet.
+            # Zitadel identity. ZITADEL_ENABLED mounts the Zitadel login
+            # routes AND makes config.ValidateZitadel mandatory — every
+            # value in this block must be present or the pod refuses to
+            # boot by design.
+            - name: ZITADEL_ENABLED
+              value: {{ .Values.zitadel.enabled | quote }}
+            - name: ZITADEL_ORG_ID
+              value: {{ .Values.zitadel.orgId | quote }}
+            - name: ZITADEL_GOOGLE_IDP_ID
+              value: {{ .Values.zitadel.googleIdpId | quote }}
+            # Kept separate on purpose: a merchant-provisioned storefront
+            # origin must never be a valid successUrl for an ADMIN sign-in.
+            - name: ZITADEL_RETURN_URL_ALLOWED_HOSTS_ADMIN
+              value: {{ .Values.zitadel.returnUrlAllowedHostsAdmin | quote }}
+            - name: ZITADEL_RETURN_URL_ALLOWED_SUFFIXES_STOREFRONT
+              value: {{ .Values.zitadel.returnUrlAllowedSuffixesStorefront | quote }}
             - name: ZITADEL_ISSUER
               value: {{ .Values.zitadel.issuer | quote }}
             - name: ZITADEL_ADMIN_PROJECT_ID

@@ -80,12 +80,50 @@ gip:
   platformTenantId: "Platform-9bu14"
 oauth:
   clientId: "849928263410-eq63i2v34j61mbaghf0opu9fubmrkqua.apps.googleusercontent.com"
-# Zitadel identity. Present but UNREAD until phase 2 lands the login client.
-# GIP remains the live provider; nothing here changes behaviour.
+# Zitadel identity. `enabled` mounts auth-bff's Zitadel login routes and
+# makes config.ValidateZitadel mandatory — every value below must be
+# correct or the pod refuses to boot (deliberate: a half-configured auth
+# service must fail loudly, not serve). A crashlooping new pod does not
+# replace a healthy one during a rolling update, so the blast radius of a
+# bad value here is a stuck rollout, not an outage.
+#
+# The storefront/admin apps still select their provider at BUILD time via
+# NEXT_PUBLIC_AUTH_PROVIDER (baked into the bundle), so enabling this
+# mounts the routes without changing which provider the UIs call.
 zitadel:
+  enabled: true
   issuer: https://auth.tesserix.app
   adminProjectId: "389070376568619523"
   storefrontProjectId: "389070377390703107"
+  # TESSERIX org on the shared instance.
+  orgId: "386377229942128837"
+  # Google IDP template, org-owned and active.
+  googleIdpId: "386381087862948767"
+  # Return-URL allowlists. These MUST stay separate: tenant subdomains under
+  # the storefront list are merchant-self-provisioned, so admitting them to
+  # the admin list would make a merchant-controlled origin a valid successUrl
+  # for an ADMIN sign-in (see cmd/server/main.go's newZitadelHandlers doc).
+  # That is why admin does NOT simply use ".mark8ly.com".
+  #
+  # Real host shapes: admin is {slug}-admin.mark8ly.com (e.g.
+  # the-bondi-store-admin.mark8ly.com), storefront is {slug}.mark8ly.com,
+  # onboarding is the apex mark8ly.com.
+  #
+  # Matching is exact for hosts, and for suffixes NewReturnURLAllowlist
+  # normalises every entry to "."+domain — so a MID-LABEL suffix like
+  # "-admin.mark8ly.com" becomes ".-admin.mark8ly.com" and can never match
+  # the-bondi-store-admin.mark8ly.com. Verified against the real matcher,
+  # not assumed. Admin therefore has to enumerate its hosts:
+  # ".mark8ly.com" would work but is exactly the escalation above, since it
+  # also admits every merchant storefront origin.
+  #
+  # CONSEQUENCE (follow-up before general merchant onboarding): each new
+  # merchant's {slug}-admin host must be added here, or their admin
+  # sign-in return URL is refused. Fine for the current handful of stores;
+  # it does not scale, and the durable fix is to let the allowlist express
+  # a label-suffix pattern rather than to loosen this to ".mark8ly.com".
+  returnUrlAllowedHostsAdmin: "admin.mark8ly.com,mark8ly.com,the-bondi-store-admin.mark8ly.com"
+  returnUrlAllowedSuffixesStorefront: ".mark8ly.com"
   # Credentials come from the mark8ly-zitadel ExternalSecret.
   secretName: mark8ly-zitadel
 session:
