@@ -78,24 +78,48 @@ def test_each_product_mcp_allows_only_the_two_trusted_spiffe_principals() -> Non
             documents, "PeerAuthentication", f"{tenant}-mcp-strict-mtls"
         )
         expected_principals = [GATEWAY_PRINCIPAL, ROUTER_PRINCIPAL]
+        workload_principals = [
+            *expected_principals,
+            f"cluster.local/ns/{namespace}/sa/waypoint",
+        ]
 
         assert allow["spec"]["selector"]["matchLabels"] == {
             "app.kubernetes.io/name": f"{tenant}-mcp"
         }
         assert allow["spec"]["rules"] == [
             {
-                "from": [{"source": {"principals": expected_principals}}],
+                "from": [{"source": {"principals": workload_principals}}],
                 "to": [{"operation": {"ports": ["8765"]}}],
             }
         ]
         assert deny["spec"]["action"] == "DENY"
         assert deny["spec"]["rules"] == [
             {
-                "from": [{"source": {"notPrincipals": expected_principals}}],
+                "from": [{"source": {"notPrincipals": workload_principals}}],
                 "to": [{"operation": {"ports": ["8765"]}}],
             }
         ]
         assert peer_authentication["spec"]["mtls"]["mode"] == "STRICT"
+
+        for action, suffix, source_key in (
+            ("DENY", "waypoint-deny-untrusted", "notPrincipals"),
+            ("ALLOW", "waypoint-allow-callers", "principals"),
+        ):
+            policy = resource(
+                documents, "AuthorizationPolicy", f"{tenant}-mcp-{suffix}"
+            )
+            assert policy["spec"]["action"] == action
+            assert policy["spec"]["targetRefs"] == [
+                {"group": "", "kind": "Service", "name": f"{tenant}-mcp"}
+            ]
+            assert policy["spec"]["rules"] == [
+                {
+                    "from": [
+                        {"source": {source_key: expected_principals}}
+                    ],
+                    "to": [{"operation": {"ports": ["8765"]}}],
+                }
+            ]
 
 
 def test_mark8ly_is_ambient_enrolled() -> None:
