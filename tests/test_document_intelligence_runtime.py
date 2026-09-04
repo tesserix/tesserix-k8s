@@ -134,6 +134,10 @@ def test_clamd_has_a_writable_runtime_directory_with_a_read_only_root() -> None:
         "add": ["CHOWN", "DAC_OVERRIDE", "SETGID", "SETUID"],
         "drop": ["ALL"],
     }
+    assert clamd["resources"] == {
+        "limits": {"memory": "2Gi"},
+        "requests": {"cpu": "100m", "memory": "1Gi"},
+    }
     assert dispatch["spec"]["template"]["spec"]["securityContext"]["fsGroup"] == 10001
     assert {mount["mountPath"] for mount in clamd["volumeMounts"]} >= {
         "/run/clamav",
