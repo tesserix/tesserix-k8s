@@ -151,6 +151,107 @@ spec:
                               - Errored
                               - Aborted
 
+                      # Promotion CRs are RETAINED after they finish, so
+                      # phase="Errored" is not an event — it is permanent
+                      # history. Measured on the live series: 91 errored
+                      # Promotions estate-wide, 7 of them in kargo-mark8ly,
+                      # some months old. An alert on the phase alone would
+                      # fire 7 times the instant it was deployed, for
+                      # failures nobody can act on any more, and would then
+                      # never clear.
+                      #
+                      # This gauge is what makes the alert about NOW.
+                      - name: kargo_promotion_created
+                        help: "Unix creation timestamp of a Kargo Promotion"
+                        each:
+                          type: Gauge
+                          gauge:
+                            path: [metadata, creationTimestamp]
+
+        # ── PHASE 4c: the Kargo promotion alert ──
+        # Carried in this Application rather than a standalone
+        # PrometheusRule: k8s/cluster/prometheus/rules/ is NOT deployed
+        # (its `subscription-observability` Application is absent from
+        # argocd/prod/infrastructure/kustomization.yaml), so a rule added
+        # there would sit in git and never evaluate. Rules here ship with
+        # the release and are matched by `ruleSelector: {}`.
+        additionalPrometheusRulesMap:
+          kargo-promotions:
+            groups:
+              - name: kargo-promotions
+                rules:
+                  # The alert this whole effort was for: a promotion fails,
+                  # the image tag silently stops advancing, and prod keeps
+                  # serving the old build while main looks green.
+                  #
+                  # Deliberately NOT written on
+                  # controller_runtime_reconcile_errors_total: that reads 0
+                  # while 7 Promotions sit Errored, because Kargo reconciles
+                  # a promotion INTO the error phase successfully.
+                  - alert: KargoPromotionFailed
+                    expr: |
+                      (
+                        kube_customresource_kargo_promotion_phase{namespace="kargo-mark8ly", phase=~"Errored|Failed"} == 1
+                      )
+                      and on (namespace, promotion)
+                      (
+                        time() - kube_customresource_kargo_promotion_created < 7200
+                      )
+                    for: 10m
+                    labels:
+                      severity: critical
+                      product: mark8ly
+                    annotations:
+                      summary: "Kargo promotion to {{ $labels.stage }} is {{ $labels.phase }}"
+                      description: >-
+                        Promotion {{ $labels.promotion }} to stage {{ $labels.stage }}
+                        ({{ $labels.namespace }}) ended in phase {{ $labels.phase }}.
+                        The deployed image tag will NOT advance until this is
+                        resolved — prod keeps serving the previous build while
+                        main appears green. Check: kubectl -n {{ $labels.namespace }}
+                        get promotion {{ $labels.promotion }} -o yaml
+
+                  # ── Two self-checks ──
+                  # KargoPromotionFailed depends on a join between two
+                  # metrics. If either side stops existing, the join yields
+                  # nothing and the alert goes quiet — indistinguishable
+                  # from healthy, and precisely the failure mode this work
+                  # has been removing. These make that loud instead.
+                  #
+                  # They carry an explicit namespace label because absent()
+                  # returns a bare series with no labels of its own, so
+                  # without it they would fire in Prometheus and match no
+                  # Alertmanager route.
+                  - alert: KargoPromotionMetricsMissing
+                    expr: absent(kube_customresource_kargo_promotion_phase)
+                    for: 30m
+                    labels:
+                      severity: critical
+                      namespace: kargo-mark8ly
+                      product: mark8ly
+                    annotations:
+                      summary: "Kargo promotion metrics have disappeared"
+                      description: >-
+                        kube-state-metrics is no longer exporting Kargo
+                        Promotion phases, so KargoPromotionFailed cannot fire.
+                        Promotion failures are currently UNMONITORED. Check the
+                        kube-state-metrics pod and its customResourceState config.
+
+                  - alert: KargoPromotionCreatedMetricMissing
+                    expr: absent(kube_customresource_kargo_promotion_created)
+                    for: 30m
+                    labels:
+                      severity: critical
+                      namespace: kargo-mark8ly
+                      product: mark8ly
+                    annotations:
+                      summary: "Kargo promotion creation timestamps are missing"
+                      description: >-
+                        The creation-timestamp gauge is absent, so the recency
+                        join in KargoPromotionFailed matches nothing and that
+                        alert can never fire. Promotion failures are currently
+                        UNMONITORED.
+
         prometheus:
           prometheusSpec:
             # Evaluate every PrometheusRule in the cluster, not just ones
@@ -378,6 +479,12 @@ spec:
                 # that belong to other owners — paging them from here would
                 # be presumptuous and noisy.
                 #
+                # kargo-mark8ly is included because the Kargo promotion
+                # metrics carry namespace="kargo-mark8ly" (the CR's own
+                # namespace) — VERIFIED on the live series. With a bare
+                # namespace="mark8ly" matcher, KargoPromotionFailed would
+                # fire in Prometheus and reach nobody.
+                #
                 # namespace="mark8ly" is VERIFIED to match: mark8ly's rules
                 # define only cluster+severity, but alerts inherit the series
                 # labels, and cnpg_* series carry namespace="mark8ly"
@@ -385,7 +492,7 @@ spec:
                 # matched nothing would give exactly the false confidence
                 # this is meant to prevent.
                 - matchers:
-                    - namespace = "mark8ly"
+                    - namespace =~ "mark8ly|kargo-mark8ly"
                     - severity = "critical"
                   receiver: slack-alerts
             receivers:
