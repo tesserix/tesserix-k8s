@@ -125,6 +125,11 @@ identical environment — defined once here so the two never drift.
       name: devai-langfuse-secrets
       key: DEVAI_LANGFUSE_SECRET_KEY
       optional: true
+- name: DEVAI_DOCUMENT_INTELLIGENCE_SIGNING_KEY
+  valueFrom:
+    secretKeyRef:
+      name: devai-document-intelligence-kora-dev
+      key: DEVAI_DOCUMENT_INTELLIGENCE_SIGNING_KEY
 # Database — password must be defined before URL for $(VAR) expansion
 - name: DB_PASSWORD
   valueFrom:
