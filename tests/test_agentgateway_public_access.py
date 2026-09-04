@@ -427,6 +427,7 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
         self.assertEqual(
             {"memory": "128Mi"}, parameters["spec"]["resources"]["requests"]
         )
+        self.assertNotIn("istio", parameters["spec"])
         listeners = {
             listener["name"]: listener["port"]
             for listener in gateway["spec"]["listeners"]
