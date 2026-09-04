@@ -107,6 +107,10 @@ def test_runtime_remains_internal_hardened_and_secret_free() -> None:
     for resource in resources:
         if resource["kind"] != "Deployment":
             continue
+        annotations = resource["spec"]["template"]["metadata"]["annotations"]
+        assert annotations["secret.reloader.stakater.com/reload"] == (
+            "document-intelligence-prod-db,document-intelligence-prod-api-identity"
+        )
         for container in resource["spec"]["template"]["spec"]["containers"]:
             for item in container.get("env", []):
                 if item["name"] in {"DATABASE_URL", "OCR_WORKLOAD_IDENTITY_KEYS"}:
