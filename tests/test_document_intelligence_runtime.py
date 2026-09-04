@@ -136,6 +136,8 @@ def test_clamd_has_a_writable_runtime_directory_with_a_read_only_root() -> None:
         "/var/lib/clamav",
         "/var/log/clamav",
     }
+    mounts = {mount["mountPath"]: mount["name"] for mount in clamd["volumeMounts"]}
+    assert mounts["/var/lib/clamav"] == mounts["/var/log/clamav"] == "clamd-data"
 
 
 def test_runtime_allows_only_required_dns_and_workload_identity_egress() -> None:
