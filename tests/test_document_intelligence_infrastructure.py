@@ -8,6 +8,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 TFVARS = (ROOT / "terraform-new/environments/prod/terraform.tfvars").read_text()
 STORAGE = (ROOT / "terraform-new/stacks/03-storage/main.tf").read_text()
+FOUNDATION = (ROOT / "terraform-new/stacks/01-foundation/main.tf").read_text()
 PLATFORM = ROOT / "k8s/platform/document-intelligence"
 
 
@@ -186,6 +187,14 @@ def test_cloud_storage_service_agent_can_use_each_bucket_cmek() -> None:
         STORAGE.index("# Bucket IAM bindings")
     ]
     assert "depends_on = [google_kms_crypto_key.keys]" in key_grant
+
+
+def test_managed_ocr_processor_is_generic_and_worker_scoped() -> None:
+    assert '"documentai.googleapis.com"' in FOUNDATION
+    assert 'resource "google_document_ai_processor" "generic_ocr"' in FOUNDATION
+    assert 'type         = "OCR_PROCESSOR"' in FOUNDATION
+    assert 'role    = "roles/documentai.apiUser"' in FOUNDATION
+    assert 'kora-doc-worker@${var.project_id}.iam.gserviceaccount.com' in FOUNDATION
 
 
 def test_platform_service_accounts_are_dedicated_and_keyless() -> None:
