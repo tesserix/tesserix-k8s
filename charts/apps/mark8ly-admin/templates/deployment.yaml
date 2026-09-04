@@ -138,6 +138,45 @@ spec:
                   name: {{ .Values.tesserixInternal.secretName }}
                   key: INTERNAL_API_TOKEN
             {{- end }}
+            {{- if .Values.tesserixPlatformApi }}
+            # The TESSERIX platform API (tesserix-home#152), which replaces the shared
+            # bearer above for TICKETS. Announcements still use it, so both
+            # blocks are live until an announcements module exists.
+            #
+            # The URL is an in-cluster Service in the tesserix namespace, not
+            # tesserix.app: the platform API has no public path. The token is a
+            # Zitadel machine token this pod mints for itself with the
+            # credentials below, and the API scopes every ticket read and write
+            # to the product that token resolves to.
+            #
+            # TESSERIX_-PREFIXED, and the prefix is load-bearing. This container
+            # already carries a PLATFORM_API_URL pointing at mark8ly's OWN
+            # platform-api, which middleware.ts uses to resolve stores and
+            # tenants on every request. A second entry of that name would win
+            # (Kubernetes keeps the last) and silently repoint the middleware at
+            # tesserix-home — a whole-app outage from a name collision.
+            #
+            # SAME credentials as marketplace-api-admin's consoleCatalog block,
+            # deliberately: mark8ly-catalog-reader is one machine identity that
+            # now carries product-support alongside its two catalog roles.
+            # Rotating it rotates both consumers.
+            - name: TESSERIX_PLATFORM_API_URL
+              value: {{ .Values.tesserixPlatformApi.url | quote }}
+            - name: TESSERIX_PLATFORM_OIDC_ISSUER
+              value: {{ .Values.tesserixPlatformApi.issuer | quote }}
+            - name: TESSERIX_PLATFORM_OIDC_PROJECT_ID
+              value: {{ .Values.tesserixPlatformApi.projectId | quote }}
+            - name: TESSERIX_PLATFORM_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.tesserixPlatformApi.secretName }}
+                  key: {{ .Values.tesserixPlatformApi.clientIdKey }}
+            - name: TESSERIX_PLATFORM_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.tesserixPlatformApi.secretName }}
+                  key: {{ .Values.tesserixPlatformApi.clientSecretKey }}
+            {{- end }}
           # Probes hit a static API health route, not /. Hitting /
           # forces the auth middleware to redirect unauthenticated probe
           # traffic to /login, which kubelet logs as
