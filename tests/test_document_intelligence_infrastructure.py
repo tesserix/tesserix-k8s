@@ -289,6 +289,37 @@ def test_platform_is_default_deny_with_no_public_service_or_ingress() -> None:
     }
 
 
+def test_global_mesh_authorizes_document_intelligence_database_access() -> None:
+    rendered = subprocess.run(
+        [
+            "helm",
+            "template",
+            "istio-config",
+            str(ROOT / "charts/thirdparty/istio-config"),
+            "--namespace",
+            "istio-system",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    resources = [item for item in yaml.safe_load_all(rendered) if item]
+    policy = next(
+        item
+        for item in resources
+        if item["kind"] == "AuthorizationPolicy"
+        and item["metadata"]["name"] == "allow-apps-to-global"
+    )
+    namespaces = {
+        namespace
+        for rule in policy["spec"]["rules"]
+        for source in rule.get("from", [])
+        for namespace in source.get("source", {}).get("namespaces", [])
+    }
+
+    assert "document-intelligence" in namespaces
+
+
 def test_platform_argocd_application_is_registered_without_direct_apply() -> None:
     app_path = ROOT / "argocd/prod/infrastructure/document-intelligence-platform.yaml"
     app = yaml.safe_load(app_path.read_text())
