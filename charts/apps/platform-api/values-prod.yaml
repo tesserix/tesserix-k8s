@@ -62,6 +62,32 @@ env:
   # be able to take the service down. Unset, every principal is recorded as a
   # service and the API says so once at startup, at WARN.
   ZITADEL_CONSOLE_CLIENT_ID: "386382971877196703"
+
+  # Which product a machine caller speaks for (tesserix-home#152).
+  #
+  # PRODUCT_SCOPE_PRODUCTS is the declaration and the whole mechanism, exactly
+  # as FEDERATION_PRODUCTS is: a product is scoped because it is NAMED here,
+  # not because a related variable happens to be set, so configuration left by
+  # a rollback cannot quietly re-enable one.
+  #
+  # The SUBJECT, not the client id. A client_credentials token for
+  # mark8ly-catalog-reader carries `client_id: mark8ly-catalog-reader` and
+  # `sub: 388414281508455697`, and the registry matches on `sub` — the readable
+  # name would silently match nothing, which presents as "this machine is not
+  # configured for any product" and reads like a missing grant rather than a
+  # wrong value. Taken from a minted token on 2026-09-05, not from the console
+  # UI.
+  #
+  # A LIST per product, because a product may legitimately run more than one
+  # machine user. mark8ly runs one today: the catalog reader also carries
+  # product-support, which is why it appears here and not a new identity.
+  #
+  # Fails closed in both directions and in either order with the Zitadel grant:
+  # a subject named here without the role is refused at the capability gate,
+  # and the role without an entry here is refused as "configured for no
+  # product". Neither half alone opens anything.
+  PRODUCT_SCOPE_PRODUCTS: "mark8ly"
+  PRODUCT_SCOPE_MARK8LY_SUBJECTS: "388414281508455697"
   # Turns the health module's Kubernetes reads ON. Set only now that the
   # Role/RoleBinding from #591/#592 are confirmed live in the cluster —
   # `auth can-i list deployments --as=system:serviceaccount:tesserix:platform-api`
