@@ -49,7 +49,7 @@ spec:
           command: ["/bin/sh", "-ec", "chown -R 100:101 /var/lib/clamav /var/log/clamav /run/clamav /run/lock"]
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsUser: 0, runAsGroup: 0, runAsNonRoot: false, capabilities: {drop: ["ALL"], add: ["CHOWN"]}}
           resources: {{ toYaml $.Values.resources.clamd | nindent 12 }}
-          volumeMounts: [{name: clamd-data, mountPath: /var/lib/clamav}, {name: clamd-data, mountPath: /var/log/clamav}, {name: clamd-run, mountPath: /run/clamav}, {name: clamd-lock, mountPath: /run/lock}]
+          volumeMounts: [{name: clamd-data, mountPath: /var/lib/clamav}, {name: clamd-logs, mountPath: /var/log/clamav}, {name: clamd-run, mountPath: /run/clamav}, {name: clamd-lock, mountPath: /run/lock}]
       {{- end }}
       containers:
         - name: app
@@ -72,13 +72,15 @@ spec:
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsUser: 0, runAsGroup: 0, runAsNonRoot: false, capabilities: {drop: ["ALL"], add: ["CHOWN", "SETGID", "SETUID"]}}
           ports: [{name: clamd, containerPort: 3310, protocol: TCP}]
           resources: {{ toYaml $.Values.resources.clamd | nindent 12 }}
-          volumeMounts: [{name: clamd-data, mountPath: /var/lib/clamav}, {name: clamd-run, mountPath: /run/clamav}, {name: clamd-lock, mountPath: /run/lock}, {name: clamd-data, mountPath: /var/log/clamav}, {name: tmp, mountPath: /tmp}]
+          volumeMounts: [{name: clamd-data, mountPath: /var/lib/clamav}, {name: clamd-run, mountPath: /run/clamav}, {name: clamd-lock, mountPath: /run/lock}, {name: clamd-logs, mountPath: /var/log/clamav}, {name: tmp, mountPath: /tmp}]
         {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
         {{- if $workload.clamd }}
         - name: clamd-data
+          emptyDir: {}
+        - name: clamd-logs
           emptyDir: {}
         - name: clamd-run
           emptyDir: {}
