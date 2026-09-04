@@ -116,6 +116,11 @@ def test_runtime_remains_internal_hardened_and_secret_free() -> None:
 
 def test_clamd_has_a_writable_runtime_directory_with_a_read_only_root() -> None:
     dispatch = deployment(render("sandbox"), "document-intelligence-sandbox-dispatch-worker")
+    init = next(
+        container
+        for container in dispatch["spec"]["template"]["spec"]["initContainers"]
+        if container["name"] == "clamd-volume-owner"
+    )
     clamd = next(
         container
         for container in dispatch["spec"]["template"]["spec"]["containers"]
@@ -138,6 +143,9 @@ def test_clamd_has_a_writable_runtime_directory_with_a_read_only_root() -> None:
     }
     mounts = {mount["mountPath"]: mount["name"] for mount in clamd["volumeMounts"]}
     assert mounts["/var/lib/clamav"] == mounts["/var/log/clamav"] == "clamd-data"
+    init_mounts = {mount["mountPath"]: mount["name"] for mount in init["volumeMounts"]}
+    assert init_mounts["/var/log/clamav"] == "clamd-data"
+    assert "/var/log/clamav" in init["command"][2]
 
 
 def test_runtime_allows_only_required_dns_and_workload_identity_egress() -> None:
