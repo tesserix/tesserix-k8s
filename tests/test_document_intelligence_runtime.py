@@ -196,6 +196,24 @@ def test_runtime_allows_only_required_dns_and_workload_identity_egress() -> None
         )
 
 
+def test_sandbox_allows_the_devai_test_console_without_exposing_the_api() -> None:
+    resources = render("sandbox")
+    policy = next(resource for resource in resources if resource["kind"] == "NetworkPolicy")
+
+    assert policy["spec"]["ingress"] == [
+        {
+            "from": [
+                {
+                    "namespaceSelector": {
+                        "matchLabels": {"kubernetes.io/metadata.name": "devai"}
+                    }
+                }
+            ],
+            "ports": [{"port": 8080, "protocol": "TCP"}, {"port": 15008, "protocol": "TCP"}],
+        }
+    ]
+
+
 def test_global_cnpg_ingress_explicitly_allows_document_intelligence() -> None:
     values = yaml.safe_load(ISTIO_CONFIG_VALUES.read_text())
 
