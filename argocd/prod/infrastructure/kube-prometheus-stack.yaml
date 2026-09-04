@@ -495,6 +495,26 @@ spec:
                     - namespace =~ "mark8ly|kargo-mark8ly"
                     - severity = "critical"
                   receiver: slack-alerts
+
+                # ── Criticals that carry NO namespace label ──
+                # Every namespace-scoped route above is blind to these, so
+                # without this they fire in Prometheus and reach nobody —
+                # the exact silent gap this whole effort has been closing.
+                #
+                # Measured, not assumed: the only unlabelled critical firing
+                # today is ZitadelLoginDown, whose entire label set is
+                # {severity="critical"}. It is estate-wide auth
+                # infrastructure, so it belongs in this channel.
+                #
+                # `namespace = ""` matches an ABSENT label as well as an
+                # empty one. That is what keeps this from becoming a
+                # severity-only catch-all: helivanta's OpenFGADown carries
+                # namespace="helivanta" and is deliberately NOT routed here
+                # — paging another team's critical stays their call.
+                - matchers:
+                    - namespace = ""
+                    - severity = "critical"
+                  receiver: slack-alerts
             receivers:
               - name: "null"
               - name: slack-alerts
