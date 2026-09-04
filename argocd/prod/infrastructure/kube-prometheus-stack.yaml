@@ -491,8 +491,15 @@ spec:
                 # (job="mark8ly/mark8ly-postgres"). A matcher that silently
                 # matched nothing would give exactly the false confidence
                 # this is meant to prevent.
+                # openbao is included because it is OUR secrets backend —
+                # carrier credentials today, break-glass credentials per the
+                # activation design. Its four criticals (Sealed, NoLeader,
+                # SnapshotJobFailed, SnapshotStale) previously routed to
+                # nobody. Note the split: NoLeader and SnapshotStale use
+                # sum()/max(), which DROP the namespace label, so those two
+                # arrive via the unlabelled-critical route below instead.
                 - matchers:
-                    - namespace =~ "mark8ly|kargo-mark8ly"
+                    - namespace =~ "mark8ly|kargo-mark8ly|openbao"
                     - severity = "critical"
                   receiver: slack-alerts
 

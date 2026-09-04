@@ -224,12 +224,22 @@ openbao:
       # Ambient namespace — make it explicit that no sidecar is wanted.
       sidecar.istio.io/inject: "false"
   serverTelemetry:
+    # DISABLED in favour of templates/servicemonitor.yaml — see that file.
+    # The upstream ServiceMonitor hardcodes `openbao-active: "true"`, so it
+    # scrapes ONLY the leader. That silently breaks quorum monitoring:
+    # count(vault_core_unsealed == 1) can never exceed 1, so the
+    # OpenBaoQuorumAtRisk rule below (`< 3`) is permanently true and two
+    # dead standbys would be invisible.
+    #
+    # Replaced rather than supplemented: two ServiceMonitors would scrape
+    # the leader twice and make the count 4.
     serviceMonitor:
+      enabled: false
+    # Our replacement — see templates/servicemonitor.yaml.
+    allPodsServiceMonitor:
       enabled: true
       interval: 30s
       scrapeTimeout: 10s
-      selectors:
-        release: prometheus
     grafanaDashboard:
       enabled: true
   # The upstream snapshot agent only writes to S3. Ours writes to GCS below.
