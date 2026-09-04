@@ -61,16 +61,16 @@ data:
         timeout: {{ .Values.processors.batch.timeout }}
 
     connectors:
-      # Each product's spans go to that product's Langfuse project. Anything
-      # without a known product is counted and dropped, never mixed in.
+      # Both attributes are required. A missing or unknown environment is
+      # dropped instead of falling through to another project's credentials.
       routing:
         default_pipelines: [traces/unrouted]
         error_mode: ignore
         table:
           {{- range .Values.routes }}
           - context: resource
-            condition: attributes["service.namespace"] == {{ .product | quote }}
-            pipelines: [traces/{{ .product }}]
+            condition: attributes["service.namespace"] == {{ .product | quote }} and attributes["deployment.environment.name"] == {{ .environment | quote }}
+            pipelines: [traces/{{ .name }}]
           {{- end }}
 
     exporters:
@@ -96,11 +96,11 @@ data:
           max_elapsed_time: 0
 
       {{- range .Values.routes }}
-      otlphttp/{{ .product }}:
+      otlphttp/{{ .name }}:
         traces_endpoint: {{ $.Values.langfuse.endpoint | quote }}
         headers:
           # Basic pk:sk, base64-encoded by the ExternalSecret template.
-          Authorization: "Basic ${env:LANGFUSE_{{ .product | upper }}_AUTH}"
+          Authorization: "Basic ${env:LANGFUSE_{{ .name | upper | replace "-" "_" }}_AUTH}"
         timeout: {{ $.Values.exporter.timeout }}
         compression: gzip
         sending_queue:
@@ -135,10 +135,10 @@ data:
           processors: [memory_limiter]
           exporters: [routing]
         {{- range .Values.routes }}
-        traces/{{ .product }}:
+        traces/{{ .name }}:
           receivers: [routing]
           processors: [batch]
-          exporters: [otlphttp/{{ .product }}]
+          exporters: [otlphttp/{{ .name }}]
         {{- end }}
         traces/unrouted:
           receivers: [routing]

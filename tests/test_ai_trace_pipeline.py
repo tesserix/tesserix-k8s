@@ -83,7 +83,14 @@ def test_redpanda_has_safe_memory_and_durable_topics_for_both_consumers() -> Non
 def test_ingest_routes_each_product_to_its_own_langfuse_project() -> None:
     docs = render("charts/thirdparty/otel-ingest", "otel-ingest", "observability")
     config = collector_config(docs, "otel-ingest-config")
-    products = ["kora", "sre", "devai", "australis", "ocr"]
+    routes = [
+        ("kora-dev", "kora", "dev"),
+        ("kora-prod", "kora", "prod"),
+        ("sre-prod", "sre", "prod"),
+        ("devai-prod", "devai", "prod"),
+        ("australis-prod", "australis", "prod"),
+        ("ocr-prod", "ocr", "prod"),
+    ]
     receiver = config["receivers"]["kafka/ai"]
     assert receiver["traces"]["topics"] == ["ai.traces"]
     assert receiver["message_marking"] == {"after": True, "on_error": False}
@@ -99,7 +106,11 @@ def test_ingest_routes_each_product_to_its_own_langfuse_project() -> None:
     assert clickhouse["create_schema"] is True
     table = config["connectors"]["routing"]["table"]
     assert [row["condition"] for row in table] == [
-        f'attributes["service.namespace"] == "{p}"' for p in products
+        (
+            f'attributes["service.namespace"] == "{product}" and '
+            f'attributes["deployment.environment.name"] == "{environment}"'
+        )
+        for _, product, environment in routes
     ]
     assert config["connectors"]["routing"]["default_pipelines"] == ["traces/unrouted"]
     assert config["service"]["pipelines"]["traces/ai"] == {
@@ -108,15 +119,15 @@ def test_ingest_routes_each_product_to_its_own_langfuse_project() -> None:
     assert config["service"]["pipelines"]["traces/observability"]["exporters"] == ["clickhouse"]
     assert config["service"]["pipelines"]["logs"]["exporters"] == ["clickhouse"]
     assert config["service"]["pipelines"]["metrics"]["exporters"] == ["clickhouse"]
-    for product in products:
-        exporter = config["exporters"][f"otlphttp/{product}"]
+    for name, _, _ in routes:
+        exporter = config["exporters"][f"otlphttp/{name}"]
         assert exporter["traces_endpoint"].endswith("/api/public/otel/v1/traces")
         auth = exporter["headers"]["Authorization"]
-        assert auth == f"Basic ${{env:LANGFUSE_{product.upper()}_AUTH}}"
+        assert auth == f"Basic ${{env:LANGFUSE_{name.upper().replace('-', '_')}_AUTH}}"
         assert exporter["sending_queue"]["enabled"] is True
         assert exporter["retry_on_failure"]["max_elapsed_time"] == "900s"
-        assert config["service"]["pipelines"][f"traces/{product}"]["exporters"] == [
-            f"otlphttp/{product}"
+        assert config["service"]["pipelines"][f"traces/{name}"]["exporters"] == [
+            f"otlphttp/{name}"
         ]
     assert config["service"]["pipelines"]["traces/unrouted"]["exporters"] == ["nop"]
 
@@ -126,18 +137,60 @@ def test_ingest_builds_basic_auth_from_mirrored_keys_and_tolerates_missing_ones(
     deployment = resource(docs, "Deployment", "otel-ingest")
     container = deployment["spec"]["template"]["spec"]["containers"][0]
     env = {entry["name"]: entry for entry in container["env"]}
-    assert env["LANGFUSE_KORA_AUTH"]["valueFrom"]["secretKeyRef"] == {
-        "name": "otel-ingest-langfuse-kora", "key": "auth", "optional": True
+    assert env["LANGFUSE_KORA_DEV_AUTH"]["valueFrom"]["secretKeyRef"] == {
+        "name": "otel-ingest-langfuse-kora-dev", "key": "auth", "optional": True
     }
-    secret = resource(docs, "ExternalSecret", "otel-ingest-langfuse-sre")
-    assert secret["spec"]["secretStoreRef"] == {"kind": "ClusterSecretStore", "name": "gcp-secret-store"}
+    secret = resource(docs, "ExternalSecret", "otel-ingest-langfuse-kora-dev")
+    assert secret["spec"]["secretStoreRef"] == {"kind": "SecretStore", "name": "otel-ingest-gcp"}
     assert [d["remoteRef"]["key"] for d in secret["spec"]["data"]] == [
-        "prod-sre-langfuse-public-key", "prod-sre-langfuse-secret-key"
+        "dev-kora-langfuse-public-key", "dev-kora-langfuse-secret-key"
     ]
+    sre_secret = resource(docs, "ExternalSecret", "otel-ingest-langfuse-sre-prod")
+    assert sre_secret["spec"]["secretStoreRef"] == {
+        "kind": "ClusterSecretStore",
+        "name": "gcp-secret-store",
+    }
     template = secret["spec"]["target"]["template"]
     assert template["engineVersion"] == "v2"
     assert template["data"]["auth"] == '{{ printf "%s:%s" .publicKey .secretKey | b64enc }}'
     assert deployment["spec"]["template"]["spec"]["nodeSelector"] == {"workload": "infrastructure"}
+
+    service_account = resource(docs, "ServiceAccount", "otel-ingest-secrets")
+    assert service_account["metadata"]["annotations"] == {
+        "iam.gke.io/gcp-service-account": (
+            "otel-ingest-secrets@tesseracthub-480811.iam.gserviceaccount.com"
+        )
+    }
+    store = resource(docs, "SecretStore", "otel-ingest-gcp")
+    assert store["spec"]["provider"]["gcpsm"] == {
+        "projectID": "tesseracthub-480811",
+        "auth": {
+            "workloadIdentity": {
+                "clusterLocation": "asia-south1",
+                "clusterName": "tesseract-prod-in-gke",
+                "clusterProjectID": "tesseracthub-480811",
+                "serviceAccountRef": {"name": "otel-ingest-secrets"},
+            }
+        },
+    }
+
+
+def test_ingest_secret_identity_has_only_route_project_keys() -> None:
+    terraform = (ROOT / "terraform-new/environments/prod/terraform.tfvars").read_text()
+    start = terraform.index('name          = "otel-ingest-secrets"')
+    block = terraform[start : terraform.index("\n  },", start)]
+    expected = {
+        f"{environment}-kora-langfuse-{key}-key"
+        for environment in ("dev", "prod")
+        for key in ("public", "secret")
+    }
+    assert {
+        line.split('secret_id = "', 1)[1].split('"', 1)[0]
+        for line in block.splitlines()
+        if 'secret_id = "' in line
+    } == expected
+    assert "langfuse-org" not in block
+    assert "project_roles = []" in block
 
 
 def test_every_ai_agent_exports_to_the_gateway_with_its_product_and_may_reach_it() -> None:
