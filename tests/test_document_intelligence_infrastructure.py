@@ -73,7 +73,8 @@ def test_document_buckets_are_regional_private_versioned_and_cmek_encrypted() ->
 def test_kora_runtime_identities_cannot_access_shared_corpora() -> None:
     expected = {
         "kora-doc-signer": {
-            ("kora-prod-doc-quarantine-in", "roles/storage.objectCreator")
+            ("kora-prod-doc-quarantine-in", "roles/storage.objectCreator"),
+            ("kora-prod-doc-quarantine-in", "roles/storage.objectViewer"),
         },
         "kora-doc-scanner": {
             ("kora-prod-doc-quarantine-in", "roles/storage.objectAdmin"),
@@ -96,6 +97,28 @@ def test_kora_runtime_identities_cannot_access_shared_corpora() -> None:
         assert actual == allowed
         assert not ({bucket for bucket, _ in actual} & SHARED_BUCKETS)
         assert "roles/storage.admin" not in {role for _, role in actual}
+
+
+def test_kora_sandbox_runtime_isolated_from_production_and_expires_in_one_day() -> None:
+    sandbox = {
+        "kora-dev-doc-quarantine-in",
+        "kora-dev-doc-accepted-in",
+        "kora-dev-doc-derived-in",
+        "kora-dev-doc-results-in",
+    }
+    for name in sandbox:
+        body = object_body(name)
+        assert 'environment = "sandbox"' in body
+        assert 'condition = { age = 1 }' in body
+        assert "kora-prod-doc-" not in body
+    expected = {
+        "kora-dev-doc-signer": {("kora-dev-doc-quarantine-in", "roles/storage.objectCreator"), ("kora-dev-doc-quarantine-in", "roles/storage.objectViewer")},
+        "kora-dev-doc-scanner": {("kora-dev-doc-quarantine-in", "roles/storage.objectAdmin"), ("kora-dev-doc-accepted-in", "roles/storage.objectCreator")},
+        "kora-dev-doc-worker": {("kora-dev-doc-accepted-in", "roles/storage.objectViewer"), ("kora-dev-doc-derived-in", "roles/storage.objectAdmin"), ("kora-dev-doc-results-in", "roles/storage.objectCreator")},
+        "kora-dev-doc-result-api": {("kora-dev-doc-results-in", "roles/storage.objectViewer")},
+    }
+    for identity, allowed in expected.items():
+        assert grants(identity) == allowed
 
 
 def test_shared_identities_cannot_access_kora_runtime_or_cross_golden_boundary() -> None:
@@ -147,6 +170,10 @@ def test_shared_identities_cannot_access_kora_runtime_or_cross_golden_boundary()
 
 def test_every_identity_is_bound_to_one_dedicated_service_account() -> None:
     identities = {
+        "kora-dev-doc-signer",
+        "kora-dev-doc-scanner",
+        "kora-dev-doc-worker",
+        "kora-dev-doc-result-api",
         "kora-doc-signer",
         "kora-doc-scanner",
         "kora-doc-worker",
@@ -207,6 +234,10 @@ def test_platform_service_accounts_are_dedicated_and_keyless() -> None:
     resources = [item for item in yaml.safe_load_all(rendered) if item]
     accounts = [item for item in resources if item["kind"] == "ServiceAccount"]
     expected = {
+        "kora-dev-doc-signer",
+        "kora-dev-doc-scanner",
+        "kora-dev-doc-worker",
+        "kora-dev-doc-result-api",
         "kora-doc-signer",
         "kora-doc-scanner",
         "kora-doc-worker",

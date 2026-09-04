@@ -33,6 +33,14 @@ resource "google_project_iam_member" "document_intelligence_worker_document_ai_u
   depends_on = [google_document_ai_processor.generic_ocr]
 }
 
+resource "google_project_iam_member" "document_intelligence_sandbox_worker_document_ai_user" {
+  project = var.project_id
+  role    = "roles/documentai.apiUser"
+  member  = "serviceAccount:kora-dev-doc-worker@${var.project_id}.iam.gserviceaccount.com"
+
+  depends_on = [google_document_ai_processor.generic_ocr]
+}
+
 resource "google_project_iam_member" "github_actions_compute_network_viewer" {
   project = var.project_id
   role    = "roles/compute.networkViewer"
