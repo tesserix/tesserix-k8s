@@ -90,7 +90,22 @@ variable "apis" {
     # Translation & Communication
     "translate.googleapis.com",
     "gmail.googleapis.com",
+
+    # Document Intelligence
+    "documentai.googleapis.com",
   ]
+}
+
+variable "document_ai_location" {
+  description = "Regional Document AI location for the generic OCR processor"
+  type        = string
+  default     = "asia-south1"
+}
+
+variable "document_ai_processor_display_name" {
+  description = "Display name for the shared provider-neutral OCR processor"
+  type        = string
+  default     = "document-intelligence-generic-ocr"
 }
 
 variable "disable_on_destroy" {
