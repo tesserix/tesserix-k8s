@@ -193,8 +193,29 @@ spec:
         # Dead-man's switch on the dunning cron. P6 emits at least one email
         # per cycle per tenant in arrears; an absence beyond 48h indicates
         # the cron is dead or the tenants-in-arrears query broke.
+        # GUARDED SO "NEVER STARTED" DOES NOT READ AS "STOPPED".
+        #
+        # `mark8ly_subscription_dunning_emails_sent_total` is a CounterVec
+        # labelled by `day` (internal/metrics/registry.go). A CounterVec with no
+        # observed label combination publishes NO series at all — unlike a plain
+        # Counter, which publishes 0 — so before the first dunning email is ever
+        # sent, `absent_over_time` is true and this alert fires from the moment
+        # the rule loads. Measured against production on 2026-09-04: the metric
+        # had no series, and the unguarded expression returned a result.
+        #
+        # The `count_over_time(...[7d]) > 0` term requires the metric to have
+        # existed at some point in the retention window, so the alert means "the
+        # cron was working and stopped" rather than "the cron has never run".
+        #
+        # THE TRADE, and it is bounded by retention: Prometheus here retains 7d
+        # (kps-kube-prometheus-stack-prometheus `retention=7d`). A stoppage that
+        # outlasts the window stops alerting, because the evidence it ever ran
+        # ages out. It fires for the days in between, which is when a dead cron
+        # is still news. Raising retention widens this automatically.
         - alert: NoDunningEmailsFor48h
           expr: absent_over_time(mark8ly_subscription_dunning_emails_sent_total[48h])
+              and on()
+            (count(count_over_time(mark8ly_subscription_dunning_emails_sent_total[7d])) > 0)
           for: 0m
           labels:
             severity: warning
