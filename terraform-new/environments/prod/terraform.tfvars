@@ -3080,6 +3080,19 @@ service_accounts = [
     ]
     secret_bindings = []
   },
+  {
+    name                       = "evals-onboarding-operator"
+    display_name               = "Evals onboarding operator"
+    description                = "Registers evaluation projects and datasets with purpose-scoped credentials"
+    self_token_creator         = false
+    project_roles              = []
+    workload_identity_bindings = [{ namespace = "evals-operator", kubernetes_service_account = "evals-onboarding-operator" }]
+    bucket_bindings            = []
+    secret_bindings = [
+      { secret_id = "prod-evals-langfuse-org-public-key", role = "roles/secretmanager.secretAccessor" },
+      { secret_id = "prod-evals-langfuse-org-secret-key", role = "roles/secretmanager.secretAccessor" }
+    ]
+  },
   # ===========================================================================
   # GLOBAL - Core Platform Service Accounts
   # ===========================================================================

@@ -793,6 +793,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             {"prod-kora-ai-agents-api-key", "prod-kora-ai-gateway-api-key"},
             remote_keys,
         )
+        self.assertFalse(any("langfuse-org" in key for key in remote_keys))
         gateway_egress = network_policy["spec"]["egress"][1]
         self.assertEqual(8080, gateway_egress["ports"][0]["port"])
 
