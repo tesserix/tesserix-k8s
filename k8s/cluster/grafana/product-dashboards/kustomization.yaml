@@ -43,5 +43,32 @@ configMapGenerator:
     files:
       - fe3dr-homechef.json
 
+  # Subscription observability — the five dashboards that pair with
+  # k8s/cluster/prometheus/rules/subscription.yaml and white_label_app.yaml.
+  #
+  # These lived at the REPO ROOT and were generated from a kustomization under
+  # k8s/cluster/grafana/dashboards/ via `../../../../`. Kustomize refuses that
+  # ("security; file ... is not in or below"), and the LoadRestrictionsNone
+  # option meant to permit it was declared under `syncPolicy.syncOptions`,
+  # which ArgoCD does not read for that purpose — `kustomize.buildOptions` in
+  # argocd-cm is the real setting and is empty here. The result: these five
+  # never shipped. Verified from the Application's own ComparisonError on
+  # 2026-09-04, the first time it ever attempted a sync.
+  #
+  # Kept here, beside the dashboards that already work, so there is no `../`
+  # escape and no flag to remember.
+  - name: subscription-dashboards
+    options:
+      labels:
+        grafana_dashboard: "1"
+        app.kubernetes.io/part-of: subscription-observability
+        product: mark8ly
+    files:
+      - subscription-health.json
+      - webhook-pipeline.json
+      - trial-activation-funnel.json
+      - arbitrage-operations.json
+      - white-label-app.json
+
 generatorOptions:
   disableNameSuffixHash: true
