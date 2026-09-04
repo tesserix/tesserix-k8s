@@ -106,11 +106,32 @@ resources:
   # Messaging (NATS)
   - nats.yaml
 
-  # Monitoring Stack (disabled - using GCP native monitoring or re-enable when needed)
+  # Monitoring Stack
   - prometheus-operator-crds.yaml
-  - prometheus.yaml
   - kube-prometheus-stack.yaml
   - grafana.yaml
+
+  # PHASE 5 — the community `prometheus` release is RETIRED (2026-09-04).
+  # kube-prometheus-stack replaced it and measured at parity or better on
+  # every metric that matters:
+  #
+  #                                        community    kps
+  #   container_memory_working_set_bytes        1478   1442
+  #   apiserver_request_total                   1069    993
+  #   istio_requests_total                      2464   2464
+  #   cnpg_pg_replication_lag                      0     17
+  #   up                                         205    267
+  #
+  # The five jobs that appeared "missing" (kubernetes-nodes,
+  # -cadvisor, -service-endpoints, -apiservers, prometheus) were NAME
+  # differences, not lost data — kps scrapes the same endpoints through
+  # its own ServiceMonitors, which is why the metric counts above match.
+  #
+  # argocd/prod/infrastructure/prometheus.yaml is DELETED rather than left
+  # unreferenced: an Application manifest that no kustomization builds is
+  # exactly the silent-failure shape CI rejects — ArgoCD would report
+  # Synced while the resource never existed. `git revert` restores the
+  # manifest and this list entry together, so rollback is unaffected.
 
   # otel-collector (single-node) — DECOMMISSIONED 2026-07-26. Superseded by
   # the otel-gateway -> Redpanda -> otel-ingest pipeline. All 11 app charts
