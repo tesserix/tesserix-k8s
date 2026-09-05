@@ -261,6 +261,22 @@ spec:
                   name: {{ .Values.consoleCatalog.secretName }}
                   key: {{ .Values.consoleCatalog.clientSecretKey }}
                   optional: true
+            # Promo-code catalog (mark8ly#726). A SECOND endpoint on the same
+            # console, read with the SAME machine identity: the console gates it
+            # on the `read-promo-catalog` role, which rides in the token's roles
+            # claim alongside `read-plan-catalog`. Verified 2026-09-06 — a token
+            # minted from this client carries both roles and the endpoint
+            # answers 200. So there is deliberately no second client id, secret,
+            # token URL or scope here; only the path differs.
+            #
+            # Gated on the value rather than only on `consoleCatalog`, so an
+            # installation with the plan catalog configured but not this one
+            # leaves the promo ingest a no-op instead of pointing it at an
+            # empty string.
+            {{- if .Values.consoleCatalog.promoUrl }}
+            - name: CONSOLE_PROMO_CATALOG_URL
+              value: {{ .Values.consoleCatalog.promoUrl | quote }}
+            {{- end }}
             {{- end }}
             # S3: Stripe Billing
             {{- if .Values.stripeBilling }}
