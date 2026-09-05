@@ -91,6 +91,25 @@ def test_sandbox_uses_dev_credentials_and_ephemeral_document_buckets() -> None:
     assert environment(execution)["RESULT_BUCKETS"] == "kora=kora-dev-doc-results-in"
 
 
+def test_execution_capacity_is_bounded_and_survives_one_pod_loss() -> None:
+    resources = render("sandbox")
+    execution = deployment(resources, "document-intelligence-sandbox-execution-worker")
+
+    assert execution["spec"]["replicas"] == 2
+    assert environment(execution)["PAGE_BATCH_SIZE"] == "4"
+    assert environment(execution)["PAGE_CONCURRENCY"] == "2"
+    assert environment(execution)["FINALIZATION_CONCURRENCY"] == "2"
+
+    pdb = next(
+        resource
+        for resource in resources
+        if resource["kind"] == "PodDisruptionBudget"
+        and resource["metadata"]["name"]
+        == "document-intelligence-sandbox-execution-worker"
+    )
+    assert pdb["spec"]["minAvailable"] == 1
+
+
 def test_runtime_remains_internal_hardened_and_secret_free() -> None:
     resources = render("prod")
     assert not any(
