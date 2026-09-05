@@ -135,6 +135,39 @@ spec:
             port:
               number: {{ .Values.apiHost.servicePort }}
       timeout: 30s
+    # Stripe billing webhook (mark8ly#696). Same shape and same reason as the
+    # Resend route above: the handler is mounted on the ADMIN engine — only
+    # that Deployment carries STRIPE_BILLING_SECRET_KEY and
+    # STRIPE_BILLING_WEBHOOK_SECRET, and `main.go` mounts the route only when
+    # the webhook secret is set — so it needs an explicit rule BEFORE the
+    # storefront fallthrough.
+    #
+    # WITHOUT THIS RULE THE PATH 404s. `api.mark8ly.com/webhooks/stripe-billing`
+    # matched no rule and fell through to the catch-all at the bottom, which
+    # sends `/` to the STOREFRONT service. The storefront has no Stripe env, so
+    # the handler is nil there and the route is never registered. Verified
+    # 2026-09-05 by POSTing the live URL: `404 page not found`.
+    #
+    # That had gone unnoticed because no Stripe webhook endpoint had ever been
+    # configured to call it, so no delivery had ever failed. Nothing was
+    # broken-looking; the path simply had no traffic.
+    #
+    # Like Resend, the caller holds no session and no internal secret: Stripe
+    # authenticates with an HMAC signature over the raw body, verified
+    # in-handler against STRIPE_BILLING_WEBHOOK_SECRET. Hence its own path
+    # rather than /api/v1/platform/*, which is HMAC-signed by the CONSOLE under
+    # a different scheme.
+    - match:
+        - authority:
+            exact: "api.mark8ly.com"
+          uri:
+            prefix: /webhooks/stripe-billing
+      route:
+        - destination:
+            host: {{ .Values.apiHost.adminServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.apiHost.servicePort }}
+      timeout: 30s
     # Tesserix platform console admin surface (mark8ly#274/#275/#276).
     # The console's endpoints live under /api/v1/platform/admin/* — their own
     # prefix, deliberately NOT the /api/v1/admin/* the merchant admin API uses.
