@@ -615,6 +615,42 @@ publishCatalog:
   # than publishing the live catalog into a sandbox.
   stripeWriteKeyLive: prod-tesserix-stripe-write-key-live
 
+  # GSM secret holding the TEST-mode Stripe WRITE key. Added for
+  # tesserix-home#540: `WRITE_KEY_ENV` has always named STRIPE_WRITE_KEY_TEST,
+  # but no secret backed it, so a publish to test failed with
+  # StripeWriteUnavailableError before it started. The mode designed as the
+  # safe rehearsal was the only one that did not work, which is why #327's
+  # first live publish had to go straight to live.
+  #
+  # NOT THE SAME STRIPE ACCOUNT AS THE LIVE KEY ABOVE, and that is the part
+  # worth reading twice. The console's test catalog lives in
+  # acct_1SgwbhE1SGxvhzVd (a separate account), while live lives in
+  # acct_1SgwbFCyiazmanuP. #540 describes this key as "the mirror of
+  # STRIPE_WRITE_KEY_LIVE", which reads as same-account-other-mode; it is not.
+  # A key minted on the live account's test mode would authenticate fine and
+  # publish into a surface holding no Mark8ly catalog at all — the root of
+  # mark8ly#696.
+  #
+  # VERIFIED 2026-09-05 without creating anything: `rk_test_` restricted key;
+  # resolves lookup_key `mark8ly_pro_monthly_developed_v1` (1 match, so it is
+  # on the sandbox account, since the live account's test mode has none); holds
+  # write on Products, Prices AND Coupons — empty POSTs answer
+  # `parameter_missing`, where a read-only key answers
+  # `more_permissions_required` — and is denied on Customers, so it is not
+  # broader than the publish path needs.
+  #
+  # COUPONS IS NOT REDUNDANT. #540 asks only for Products and Prices, but
+  # `stripe-write.ts`'s `createCoupon` runs through the same `client(mode)`;
+  # tesserix-home#521's promo minting and #331's per-tenant overrides both
+  # depend on it. Without the grant, catalog publishing works and coupon
+  # publishing fails in test with a credential error.
+  #
+  # `announcedMode()` refuses a key whose prefix contradicts its slot, so an
+  # `rk_live_` value here fails loudly rather than publishing the sandbox
+  # catalog into the live account. Note it guards MODE, not ACCOUNT — the
+  # two-account split above is exactly what it cannot catch.
+  stripeWriteKeyTest: ""
+
 # Rollout strategy. Unset, Kubernetes defaults to 25%/25%, which for any small
 # replica count rounds to maxSurge 1 / maxUnavailable 0 — the surge-first shape
 # that deadlocks a rollout on a memory-saturated cluster (#709), silently,
