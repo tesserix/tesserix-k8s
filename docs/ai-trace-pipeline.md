@@ -23,9 +23,11 @@ Kora development reads `dev-kora-langfuse-public-key` and
 `prod-kora-*` pair. Those two routes use a namespaced `SecretStore` that assumes
 the dedicated `otel-ingest-secrets` workload identity. The identity has
 secret-level access only to those four Kora project keys and cannot read
-organization onboarding keys. Agent and sandbox pods receive neither key type.
-Existing production routes continue through the cluster store until their
-project keys exist and each route can be migrated to its own reviewed identity.
+organization onboarding keys. The DevAI Kora OCR test adapter receives only the
+development Kora pair through its isolated ExternalSecret; it never receives a
+Kora production pair. Existing production routes continue through the cluster
+store until their project keys exist and each route can be migrated to its own
+reviewed identity.
 
 A route remains disabled until its product-scoped key pair is provisioned and
 its ExternalSecret is Ready. Disabled routes are absent from the collector
