@@ -317,7 +317,7 @@ class AtlantisRepositoryConfigurationTests(unittest.TestCase):
         repo_config = yaml.safe_load(self.values["atlantis"]["repoConfig"])
         repository = repo_config["repos"][0]
         self.assertEqual(
-            {"mergeable", "undiverged"},
+            {"approved", "mergeable", "undiverged"},
             set(repository["apply_requirements"]),
         )
         self.assertEqual(
