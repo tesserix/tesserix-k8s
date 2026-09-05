@@ -249,9 +249,11 @@ def test_secrets_routing_and_devai_export_are_wired() -> None:
     devai_items = [item for item in yaml.safe_load_all(devai_render.stdout) if item]
     for deployment_name in ("devai-api", "devai-api-worker"):
         deployment = resource(devai_items, "Deployment", deployment_name)
-        assert deployment["spec"]["template"]["metadata"]["annotations"][
-            "secret.reloader.stakater.com/reload"
-        ] == "devai-langfuse-secrets"
+        assert set(
+            deployment["spec"]["template"]["metadata"]["annotations"][
+                "secret.reloader.stakater.com/reload"
+            ].split(",")
+        ) == {"devai-langfuse-secrets", "devai-document-intelligence-kora-dev"}
     devai = resource(
         documents("external-secrets/prod/devai/externalsecret.yaml"),
         "ExternalSecret",
