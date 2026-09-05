@@ -244,12 +244,39 @@ federation:
       # and now conversions (cmd/server/main.go — see each module's Register
       # call); declaring outside that set is noise that reads like a
       # capability.
+      #
+      # `email-templates` added 2026-09-05 for tesserix-home#588, under the
+      # same discipline. Probed against the DEPLOYED marketplace-api revision
+      # (main-477ef28), not against mark8ly's main:
+      #
+      #   /admin/email-templates                         401   mounted, signature rejected
+      #   /admin/email-templates/orderdoc_invoice_email  401   mounted, signature rejected
+      #   POST /admin/email-templates/x/test-send        401   mounted, signature rejected
+      #   /admin/inbox                                   401   positive control, known-mounted
+      #   /admin/email-templates-nope                    404   control, same prefix
+      #   /admin/not-a-real-route                        404   control
+      #
+      # Note this endpoint is ABSENT from mark8ly's admin-conformance.json and
+      # always will be: that file's vocabulary is a closed set of seventeen ids
+      # and an unknown key throws, so mark8ly records these routes in its
+      # docs/admin-conformance.md "genuinely undeclarable" table instead. Do
+      # not read the absence as "not shipped" — this list is the one that
+      # governs what platform-api calls, exactly as the paragraph above says.
+      #
+      # This declares the MARKETPLACE half only. mark8ly's platform-api owns
+      # the auth templates (welcome, password_reset, login_otp, invitation,
+      # email_verification, new_device_login) in a mirrored table, and is not
+      # federated at all — mark8ly#720. Until that lands the console editor
+      # covers order, gift-card and billing mail, and the auth templates stay
+      # in apps/web. A reader who assumes this entry covers every mark8ly
+      # template will be wrong.
       endpoints:
         - outbox
         - onboarding
         - billing
         - inbox
         - conversions
+        - email-templates
 
     # Kora (kora#430, kora#458). Registered 2026-08-26.
     #
