@@ -110,6 +110,23 @@ def test_execution_capacity_is_bounded_and_survives_one_pod_loss() -> None:
     assert pdb["spec"]["minAvailable"] == 1
 
 
+def test_runtime_images_use_in_region_artifact_registry_mirrors() -> None:
+    resources = render("sandbox")
+    deployments = [resource for resource in resources if resource["kind"] == "Deployment"]
+    images = [
+        container["image"]
+        for resource in deployments
+        for container in (
+            resource["spec"]["template"]["spec"].get("initContainers", [])
+            + resource["spec"]["template"]["spec"]["containers"]
+        )
+    ]
+
+    assert all(image.startswith("asia-south1-docker.pkg.dev/") for image in images)
+    assert any("/ghcr-remote/tesserix/document-intelligence/ocr-service:" in image for image in images)
+    assert any("/docker-remote/clamav/clamav@sha256:" in image for image in images)
+
+
 def test_runtime_remains_internal_hardened_and_secret_free() -> None:
     resources = render("prod")
     assert not any(
