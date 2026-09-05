@@ -3017,7 +3017,8 @@ service_accounts = [
     workload_identity_bindings = [{ namespace = "document-intelligence", kubernetes_service_account = "kora-dev-doc-scanner" }]
     bucket_bindings = [
       { bucket = "kora-dev-doc-quarantine-in", role = "roles/storage.objectAdmin" },
-      { bucket = "kora-dev-doc-accepted-in", role = "roles/storage.objectCreator" }
+      { bucket = "kora-dev-doc-accepted-in", role = "roles/storage.objectCreator" },
+      { bucket = "kora-dev-doc-accepted-in", role = "roles/storage.objectViewer" }
     ]
     secret_bindings = []
   },

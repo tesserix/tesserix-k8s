@@ -10,6 +10,8 @@ TFVARS = (ROOT / "terraform-new/environments/prod/terraform.tfvars").read_text()
 STORAGE = (ROOT / "terraform-new/stacks/03-storage/main.tf").read_text()
 FOUNDATION = (ROOT / "terraform-new/stacks/01-foundation/main.tf").read_text()
 PLATFORM = ROOT / "k8s/platform/document-intelligence"
+WORKLOAD_IDENTITY = ROOT / "terraform-new/stacks/06-workload-identity/main.tf"
+DOCUMENT_INTELLIGENCE_IAM = ROOT / "terraform-new/stacks/13-document-intelligence-iam"
 
 
 KORA_BUCKETS = {
@@ -113,12 +115,27 @@ def test_kora_sandbox_runtime_isolated_from_production_and_expires_in_one_day() 
         assert "kora-prod-doc-" not in body
     expected = {
         "kora-dev-doc-signer": {("kora-dev-doc-quarantine-in", "roles/storage.objectCreator"), ("kora-dev-doc-quarantine-in", "roles/storage.objectViewer")},
-        "kora-dev-doc-scanner": {("kora-dev-doc-quarantine-in", "roles/storage.objectAdmin"), ("kora-dev-doc-accepted-in", "roles/storage.objectCreator")},
+        "kora-dev-doc-scanner": {("kora-dev-doc-quarantine-in", "roles/storage.objectAdmin"), ("kora-dev-doc-accepted-in", "roles/storage.objectCreator"), ("kora-dev-doc-accepted-in", "roles/storage.objectViewer")},
         "kora-dev-doc-worker": {("kora-dev-doc-accepted-in", "roles/storage.objectViewer"), ("kora-dev-doc-derived-in", "roles/storage.objectAdmin"), ("kora-dev-doc-results-in", "roles/storage.objectCreator")},
         "kora-dev-doc-result-api": {("kora-dev-doc-results-in", "roles/storage.objectViewer")},
     }
     for identity, allowed in expected.items():
         assert grants(identity) == allowed
+
+
+def test_sandbox_source_promotion_verification_iam_has_dedicated_state() -> None:
+    shared = WORKLOAD_IDENTITY.read_text()
+    main = (DOCUMENT_INTELLIGENCE_IAM / "main.tf").read_text()
+    backend = (DOCUMENT_INTELLIGENCE_IAM / "backend.tf").read_text()
+    atlantis = (ROOT / "atlantis.yaml").read_text()
+
+    assert '"kora-dev-doc-scanner-kora-dev-doc-accepted-in-roles/storage.objectViewer"' in shared
+    assert "google_storage_bucket_iam_member" in main
+    assert 'account_id = "kora-dev-doc-scanner"' in main
+    assert re.search(r'bucket\s+=\s+"kora-dev-doc-accepted-in"', main)
+    assert re.search(r'role\s+=\s+"roles/storage.objectViewer"', main)
+    assert 'prefix = "stacks/prod/document-intelligence-iam"' in backend
+    assert "name: 13-document-intelligence-iam" in atlantis
 
 
 def test_shared_identities_cannot_access_kora_runtime_or_cross_golden_boundary() -> None:
