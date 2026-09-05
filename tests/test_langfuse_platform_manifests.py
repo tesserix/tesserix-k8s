@@ -263,8 +263,8 @@ def test_secrets_routing_and_devai_export_are_wired() -> None:
         item["secretKey"]: item["remoteRef"]["key"] for item in devai["spec"]["data"]
     }
     assert devai_keys == {
-        "DEVAI_LANGFUSE_PUBLIC_KEY": "prod-devai-langfuse-public-key",
-        "DEVAI_LANGFUSE_SECRET_KEY": "prod-devai-langfuse-secret-key",
+        "DEVAI_LANGFUSE_PUBLIC_KEY": "dev-kora-langfuse-public-key",
+        "DEVAI_LANGFUSE_SECRET_KEY": "dev-kora-langfuse-secret-key",
     }
 
 
