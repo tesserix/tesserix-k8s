@@ -161,6 +161,37 @@ spec:
               value: {{ .Values.zitadel.adminProjectId | quote }}
             - name: ZITADEL_STOREFRONT_PROJECT_ID
               value: {{ .Values.zitadel.storefrontProjectId | quote }}
+            # Mobile token issuance (mark8ly#686). The mobile login routes
+            # exchange the completed login's authorization code for OAuth
+            # tokens, because marketplace-api verifies a bearer JWT and a
+            # native client can use neither a session cookie nor a callback
+            # URL. That exchange authenticates as the mark8ly-admin
+            # confidential client, so it needs this id/secret pair.
+            #
+            # These two were removed in #1007 as "env vars no code reads",
+            # which was true at that moment: mark8ly#709 established that
+            # nothing consumed them. mark8ly#740 makes auth-bff the first
+            # reader, so they come back — please do not drop them again
+            # without checking `ZitadelAdminClientID` in auth-bff's config.
+            - name: ZITADEL_ADMIN_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.zitadel.secretName }}
+                  key: ZITADEL_ADMIN_CLIENT_ID
+                  optional: true
+            - name: ZITADEL_ADMIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.zitadel.secretName }}
+                  key: ZITADEL_ADMIN_CLIENT_SECRET
+                  optional: true
+            # MUST byte-match the redirect the auth request is created with
+            # or Zitadel refuses the exchange with a bare invalid_grant that
+            # names nothing. It is the admin WEB client's registered
+            # redirect: no browser is involved on the mobile path, so this
+            # is never navigated to — it only has to agree on both calls.
+            - name: ZITADEL_ADMIN_REDIRECT_URI
+              value: {{ .Values.zitadel.adminRedirectUri | quote }}
             - name: ZITADEL_LOGIN_CLIENT_TOKEN
               valueFrom:
                 secretKeyRef:
