@@ -36,7 +36,7 @@ def test_devai_uses_a_kora_dev_only_ocr_signing_key_and_sandbox_endpoint() -> No
     )
     assert values["env"]["DEVAI_DOCUMENT_INTELLIGENCE_KEY_ID"] == "kora-dev-v1"
     assert values["podAnnotations"]["secret.reloader.stakater.com/reload"] == (
-        "devai-langfuse-secrets,devai-document-intelligence-kora-dev"
+        "devai-langfuse-secrets"
     )
 
 
