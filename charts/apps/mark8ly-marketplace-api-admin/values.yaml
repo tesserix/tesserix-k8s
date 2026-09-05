@@ -422,3 +422,24 @@ strategy:
   rollingUpdate:
     maxSurge: 0
     maxUnavailable: 1
+
+# Mobile bearer verification (mark8ly#686).
+#
+# `enabled` selects which issuer the mobile admin routes verify; `dualIssuer`
+# makes them accept BOTH, so already-installed apps holding GIP tokens keep
+# working while new versions authenticate against Zitadel. That pairing is
+# the whole point — enabling Zitadel alone would break every existing
+# install at once, and a store-distributed app cannot be force-updated.
+#
+# Drain progress is observable on
+# `mobile_admin_token_verified_total{issuer="zitadel"|"gip"}`. GIP holding at
+# zero for longer than the app's update tail is the signal that the GIP path
+# can be retired (mark8ly#708). Note the counter only moves once dualIssuer
+# is on: flat because unused is NOT the same as flat because drained.
+zitadel:
+  enabled: true
+  dualIssuer: true
+  issuer: https://auth.tesserix.app
+  # Pins the token's `aud`, so a storefront token — same issuer, same signing
+  # key, same human — cannot be replayed as an admin credential.
+  adminProjectId: "389070376568619523"

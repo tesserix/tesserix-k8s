@@ -102,6 +102,31 @@ spec:
               value: {{ .Values.authBffUrl | quote }}
             - name: GIP_PROJECT_ID
               value: {{ .Values.gipProjectId | quote }}
+            # Mobile bearer verification (mark8ly#686, #722).
+            #
+            # Without ZITADEL_ENABLED the mobile admin routes verify GIP
+            # id_tokens ONLY, so a Zitadel access token — which the app now
+            # obtains from the sign-in front door — can never be accepted,
+            # and every authenticated call fails after a login that looked
+            # like it worked.
+            #
+            # ZITADEL_DUAL_ISSUER makes it accept BOTH issuers at once,
+            # which is what turns the cutover into a rollout: installs still
+            # holding GIP tokens keep working while new versions use
+            # Zitadel. Never flip enabled ON without dual during the drain,
+            # or every existing install breaks at the same moment.
+            #
+            # issuer and adminProjectId are REQUIRED whenever enabled is
+            # true — config.Load calls ValidateZitadel unconditionally, so a
+            # missing value panics at boot rather than degrading.
+            - name: ZITADEL_ENABLED
+              value: {{ .Values.zitadel.enabled | quote }}
+            - name: ZITADEL_DUAL_ISSUER
+              value: {{ .Values.zitadel.dualIssuer | quote }}
+            - name: ZITADEL_ISSUER
+              value: {{ .Values.zitadel.issuer | quote }}
+            - name: ZITADEL_ADMIN_PROJECT_ID
+              value: {{ .Values.zitadel.adminProjectId | quote }}
             # Full Google API Keys v2 resource name. Pulled from the
             # mark8ly-gip K8s secret (synced from GCP Secret Manager)
             # instead of inlining the UUID-bearing string in chart
