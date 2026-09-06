@@ -99,6 +99,18 @@ spec:
               # application's — while the app itself was correct and its
               # unauthenticated path answered 401 normally.
               - "386377618200461939"
+              # mark8ly-admin project. The MOBILE admin app authenticates
+              # against Zitadel now (mark8ly#686) and calls api.mark8ly.com
+              # with a bearer token carrying this audience — marketplace-api
+              # pins `aud` to this project precisely so a storefront token
+              # cannot be replayed as an admin credential.
+              #
+              # Same lesson as the console entry above: without this the
+              # gateway rejects the token before marketplace-api ever sees it,
+              # and the app shows "No access" while every service log looks
+              # clean, because the 403 is Envoy's and is never logged by the
+              # application.
+              - "389070376568619523"
             restrictToHosts:
               - "mcp.tesserix.app"
               - "agentgateway.tesserix.app"
@@ -121,6 +133,13 @@ spec:
               # agentgateway token reaching this host is still refused by the
               # application.
               - "console.tesserix.app"
+              # The mobile admin app's API host (mark8ly#686). Required in
+              # ADDITION to the audience above: this list generates an
+              # issuer-keyed DENY, so without the host a Zitadel token clears
+              # JWT validation and is then refused by RBAC — reported as
+              # `RBAC: access denied`, which names neither the host nor the
+              # audience. Exactly the trap the console entry above records.
+              - "api.mark8ly.com"
 
         # Frontend apps - these need to be accessible without authentication
         # for initial page load (login page, static assets, etc.)
