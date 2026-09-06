@@ -1,6 +1,27 @@
 # =============================================================================
 # PLAN CATALOG PARITY — alert rules
 # =============================================================================
+# THIS CHECK NEVER TOUCHES STRIPE. Read that first, because the name does not
+# say it and the assumption is expensive.
+#
+# There are two unrelated comparisons in this estate both reasonably called
+# "catalog parity", and for a long time only this one was alerted — so an
+# operator seeing CatalogParityDifference working could reasonably conclude
+# the console's Stripe parity was covered. It was not (tesserix-home#579).
+#
+#   this file                    mark8ly's compiled catalog_data.go fallback
+#   (mark8ly_catalog_parity_*)   vs what the CONSOLE serves. Answers "is the
+#                                baked fallback still in step with the
+#                                console". Every 15m, in marketplace-api.
+#
+#   console_stripe_parity.yaml   the console's published catalog vs the LIVE
+#   (tesserix_console_stripe_    STRIPE PRICES, per (mode, source). Answers
+#    parity_*)                   "does Stripe charge what the catalog says".
+#                                Nightly. This is the check #327 revokes
+#                                mark8ly's Stripe write key on the strength of.
+#
+# A quiet CatalogParityDifference says nothing about whether Stripe agrees
+# with anybody.
 # marketplace-api compares the console's published plan catalog against the
 # catalog compiled into the binary (internal/billing/pricing/catalog_data.go)
 # every 15m in production. Until now its only output was a log line, so a
