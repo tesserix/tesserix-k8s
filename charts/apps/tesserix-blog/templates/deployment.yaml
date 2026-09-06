@@ -70,7 +70,7 @@ spec:
             - name: OPENPANEL_SCRIPT_URL
               value: {{ .Values.openpanel.scriptUrl | quote }}
             {{- end }}
-            {{- $secretKeys := list "MONGODB_URI" "SESSION_SECRET" "SENDGRID_API_KEY" "RESEND_API_KEY" }}
+            {{- $secretKeys := list "MONGODB_URI" "SESSION_SECRET" "RESEND_API_KEY" }}
             {{- range $key, $value := .Values.env }}
             {{- if not (and $.Values.externalSecrets.enabled (has $key $secretKeys)) }}
             - name: {{ $key }}
@@ -98,15 +98,17 @@ spec:
                   name: {{ .Release.Name }}-secrets
                   key: SESSION_SECRET
                   optional: true
-            - name: SENDGRID_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Release.Name }}-secrets
-                  key: SENDGRID_API_KEY
-                  optional: true
-            # Resend — always-on fallback email provider behind SendGrid.
-            # Optional so the pod still starts before the secret syncs;
-            # the app then runs SendGrid-only and logs a warning.
+            # Resend is the ONLY provider. The SendGrid account was closed and
+            # its key removed rather than left wired: lib/email.ts hardcodes
+            # SendGrid as primary with Resend as its fallback, so with both
+            # keys present every subscriber send paid a failed SendGrid attempt
+            # first. See #1014.
+            #
+            # With no SendGrid key, resolveProviders takes its else branch and
+            # logs "using Resend as the only provider" — accurate, and there is
+            # now nothing behind Resend if it fails.
+            #
+            # Optional so the pod still starts before the secret syncs.
             - name: RESEND_API_KEY
               valueFrom:
                 secretKeyRef:
