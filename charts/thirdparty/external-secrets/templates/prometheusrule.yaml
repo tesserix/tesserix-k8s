@@ -1,0 +1,75 @@
+{{- if .Values.monitoring.enabled }}
+# =============================================================================
+# EXTERNAL SECRETS — alert on a sync that has stopped working
+# =============================================================================
+# WHY THIS IS WORTH ALERTING ON AT ALL, given nothing breaks immediately.
+#
+# ESO writes the Kubernetes Secret; a running pod holds its environment from
+# the LAST SUCCESSFUL sync. So a broken ExternalSecret takes nothing down when
+# it breaks — it takes something down at the next pod RESTART, which may be
+# days later and will present as an unrelated deploy failure. That delay is
+# exactly why this needs an alert rather than someone noticing.
+#
+# It also has to be believed. 18 ExternalSecrets were Ready=False for six
+# months (tesserix-k8s#1032) because nothing scraped ESO and nothing watched
+# it. They were orphans and nothing broke, which is precisely why nobody
+# looked — and the same silence covers a live one.
+#
+# THE ORPHANS WERE DELETED RATHER THAN EXCLUDED. A rule with a permanent
+# `namespace != "default"` carve-out would have fired forever on day one and
+# been muted, reproducing the original problem with extra steps. The `default`
+# namespace now holds ZERO ExternalSecrets (verified: 250 -> 219 total, 18
+# failing -> 0), so this rule starts quiet and any firing is real.
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: external-secrets-health
+  namespace: {{ .Release.Namespace }}
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+    app.kubernetes.io/name: external-secrets
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  groups:
+    - name: external-secrets.health
+      interval: 30s
+      rules:
+        # `condition="Ready", status="False"` is 1 exactly when that
+        # ExternalSecret is NOT ready — ESO emits both the True and the False
+        # series for every object, so this is a direct read and not an
+        # inversion. Confirmed against the live endpoint: 219 Ready/True at 1
+        # and 219 Ready/False at 0 while everything is healthy.
+        #
+        # `for: 15m` because a provider blip that resolves on the next
+        # reconcile is not worth a message, and nothing is broken in the
+        # meantime — the pods are still holding the last good Secret. It is
+        # short relative to the harm, which only lands at the next restart.
+        #
+        # `component: secrets` is what ROUTES this. Every other route in
+        # `argocd/prod/infrastructure/kube-prometheus-stack.yaml` matches
+        # `severity: critical`, and this is honestly a warning — so without
+        # being named there it would be evaluated and delivered to the null
+        # receiver, leaving it as unwatched as the six months of silence it
+        # exists to end. See that file's Watchdog and catalog-parity routes
+        # for the same argument.
+        - alert: ExternalSecretNotReady
+          expr: externalsecret_status_condition{condition="Ready", status="False"} == 1
+          for: 15m
+          labels:
+            severity: warning
+            component: secrets
+          annotations:
+            summary: "ExternalSecret {{ `{{ $labels.namespace }}` }}/{{ `{{ $labels.name }}` }} is not syncing"
+            description: >-
+              This ExternalSecret has been Ready=False for 15m, so the Kubernetes Secret it
+              writes is now stale. NOTHING BREAKS UNTIL A POD RESTARTS — the running pods still
+              hold the last good values — which is why this is easy to miss and worth acting on
+              before the next deploy rather than during it. DO: `kubectl describe externalsecret
+              {{ `{{ $labels.name }}` }} -n {{ `{{ $labels.namespace }}` }}` and read the
+              condition message. "could not get secret data from provider" usually means the
+              referenced key was renamed or deleted in GCP Secret Manager. Note ESO resolves a
+              spec's `data` as a UNIT, so ONE dangling remoteRef parks the WHOLE secret and
+              every other key in it goes stale too.
+{{- end }}

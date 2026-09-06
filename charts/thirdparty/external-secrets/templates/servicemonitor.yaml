@@ -1,0 +1,45 @@
+{{- if .Values.monitoring.enabled }}
+# =============================================================================
+# ServiceMonitor — the External Secrets Operator's own metrics
+# =============================================================================
+# ESO was running unscraped: `metrics.service.enabled` was already true and the
+# `external-secrets-metrics` Service had existed for 163 days, but nothing
+# collected from it. So `externalsecret_status_condition` — the operator's own
+# statement of which ExternalSecrets are Ready — existed and was thrown away,
+# and a failing sync was visible only to somebody running `kubectl get
+# externalsecret` by hand.
+#
+# That is not hypothetical: 18 ExternalSecrets sat Ready=False for SIX MONTHS
+# before anyone looked (tesserix-k8s#1032). They turned out to be orphans of
+# the pre-migration estate and were deleted, so nothing was broken — but the
+# silence they sat in is the same silence a live one would fail into.
+#
+# Prometheus selects every ServiceMonitor in every namespace
+# (`serviceMonitorSelector: {}` / `serviceMonitorNamespaceSelector: {}` on the
+# kps Prometheus, verified live), so no label matching is required here and
+# adding one is enough to be scraped.
+#
+# The `metrics` PORT NAME, not 8080: the Service maps `targetPort: metrics`,
+# and naming the port keeps this correct if the upstream chart renumbers it.
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: external-secrets
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: external-secrets
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: external-secrets
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+{{- end }}

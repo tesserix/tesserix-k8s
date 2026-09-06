@@ -544,6 +544,46 @@ spec:
                 - matchers:
                     - alertname =~ "CatalogParityDifference|CatalogParityStale"
                   receiver: slack-alerts
+
+                # ── Console catalog <-> Stripe parity ──
+                # The same argument as the route directly above, for the
+                # check one layer over: these compare the console's published
+                # catalog against LIVE STRIPE PRICES, which is the check #327
+                # revokes mark8ly's Stripe WRITE key on the strength of.
+                #
+                # ADDED LATE, AND THAT IS THE POINT. tesserix-home#579 shipped
+                # the metrics and the rules and reported the check as "now
+                # watched". It was not: the alerts carry severity="warning"
+                # and namespace="tesserix" (inherited from the console pod's
+                # series), so they matched no route above and went to the null
+                # receiver. Recorded, not delivered — the exact failure the
+                # catalog-parity route above was created to fix, repeated
+                # because the routing is by name and nobody added the name.
+                #
+                # If you add an authored alert and want it seen, it needs a
+                # line here. That is the cost of narrow routing and it is
+                # being paid deliberately; see the mark8ly-criticals comment
+                # for why the alternative was rejected.
+                - matchers:
+                    - alertname =~ "ConsoleStripeParityDifference|ConsoleStripeParityStale"
+                  receiver: slack-alerts
+
+                # ── External Secrets health ──
+                # An ExternalSecret that stops syncing breaks nothing when it
+                # breaks: ESO writes the Kubernetes Secret and running pods
+                # keep the values from the last good sync. It breaks at the
+                # next pod RESTART, days later, looking like an unrelated
+                # deploy failure. So this is honestly a `warning` and equally
+                # honestly worth delivering.
+                #
+                # Eighteen of them sat Ready=False for SIX MONTHS before
+                # anyone looked (tesserix-k8s#1032), because ESO was not
+                # scraped at all. They were orphans of the pre-migration
+                # estate and were deleted rather than excluded, so this rule
+                # starts quiet: anything it says now is real.
+                - matchers:
+                    - alertname = "ExternalSecretNotReady"
+                  receiver: slack-alerts
             receivers:
               - name: "null"
               - name: slack-alerts
