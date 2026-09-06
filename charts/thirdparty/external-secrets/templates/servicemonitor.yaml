@@ -42,4 +42,23 @@ spec:
     - port: metrics
       interval: 30s
       path: /metrics
+      # KEEP ESO'S OWN `namespace` LABEL. Without this, Prometheus resolves the
+      # collision between the target's namespace (external-secrets, where the
+      # OPERATOR runs) and the metric's own namespace (where the ExternalSECRET
+      # lives) by renaming the scraped one to `exported_namespace` — and the
+      # target's value wins.
+      #
+      # That is wrong for every per-object series ESO emits, and it is wrong in
+      # the direction that costs an operator time: `ExternalSecretNotReady`
+      # would have said "namespace=external-secrets" for an object in
+      # `default`, and its runbook `kubectl describe externalsecret <name> -n
+      # <namespace>` would have answered "not found".
+      #
+      # Caught by deliberately breaking one (tesserix-k8s#1032's acceptance
+      # criterion) — the rule was green, loaded, and quietly mislabelled, which
+      # no amount of rendering or linting would have shown.
+      #
+      # Metrics with no namespace of their own still receive the target's, so
+      # ESO's operator-level series are unaffected.
+      honorLabels: true
 {{- end }}
