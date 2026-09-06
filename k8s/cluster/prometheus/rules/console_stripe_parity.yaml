@@ -1,0 +1,142 @@
+# =============================================================================
+# CONSOLE CATALOG <-> STRIPE PARITY — alert rules
+# =============================================================================
+# NOT THE SAME CHECK AS `catalog_parity.yaml` IN THIS DIRECTORY. Two unrelated
+# comparisons are both reasonably called "catalog parity", and until now only
+# the other one was watched — so an operator could see CatalogParityDifference
+# working and conclude Stripe parity was covered. It is not, and never was.
+# That confusion is half of what tesserix-home#579 was filed about.
+#
+#   catalog_parity.yaml         mark8ly's compiled catalog_data.go fallback
+#   (mark8ly_catalog_parity_*)  vs what the CONSOLE serves. Never touches
+#                               Stripe. Runs every 15m in marketplace-api.
+#
+#   this file                   the console's PUBLISHED catalog in
+#   (tesserix_console_stripe_   `plan_catalog_parity_runs` vs the live Stripe
+#    parity_*)                  Prices, per (mode, source). Runs NIGHTLY as
+#                               the console-parity-check CronJob.
+#
+# The metric names carry the distinction so a reader of either file, or of
+# either alert, can tell which two things disagreed.
+#
+# WHY THIS MATTERS MORE THAN THE OTHER ONE. #327 revokes mark8ly's Stripe
+# WRITE key on the evidence of a 7-day window of consecutive clean runs of
+# THIS check. Before these rules, a red day was visible only to a human who
+# happened to open /platform/billing/catalog.
+#
+# Metrics come from the console's own `/api/internal/metrics`
+# (tesserix-home#579), which reads the same rows the surface renders. The
+# CronJob that writes them exits and cannot be scraped, so the database is the
+# shared source of truth and the console Deployment is the reader.
+#
+# # The nightly cadence is what sets the thresholds below
+#
+# The gauge is re-read on every scrape but only CHANGES once a day, so it
+# holds a red verdict all day rather than flapping. That makes `for:` here a
+# guard against deploys and scrape gaps, not against noisy data.
+#
+# # Absence is covered elsewhere, deliberately
+#
+# Every expression below compares a metric to a threshold, and an absent
+# series never fires — the failure that let ten namespaces go dark for 32h
+# (tesserix-k8s#1018). `scrape_health.yaml`'s TargetDown is what makes silence
+# from these two believable; do not re-implement it per metric here.
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: console-stripe-parity-rules
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+    app.kubernetes.io/part-of: subscription-observability
+    app.kubernetes.io/component: monitoring
+    product: tesserix
+spec:
+  groups:
+    - name: console.stripe.parity.alerts
+      interval: 30s
+      rules:
+        # The catalog and Stripe disagree, for a pair that actually compared
+        # them. Expected value is a flat zero.
+        #
+        # THIS ALERT CANNOT FIRE FOR A RUN THAT FAILED, and that is on purpose,
+        # not a gap. A `failed` row stores difference_count = 0 because it
+        # compared nothing, so the endpoint emits NaN rather than 0 — emitting
+        # 0 would assert an agreement nobody observed, on the series a key
+        # revocation is argued from. NaN satisfies no `> 0` comparison.
+        # `ConsoleStripeParityStale` below is what covers that pair, because its
+        # last-clean timestamp stops advancing. The two alerts are a pair; do
+        # not deploy one without the other.
+        #
+        # `for: 30m` guards against a deploy or a scrape gap, not against noisy
+        # data — the value changes once a night (see the header).
+        - alert: ConsoleStripeParityDifference
+          expr: tesserix_console_stripe_parity_differences > 0
+          for: 30m
+          labels:
+            severity: warning
+            component: billing-catalog
+          annotations:
+            summary: "Console catalog and Stripe disagree ({{ $labels.mode }}/{{ $labels.source }})"
+            description: >-
+              {{ $value }} price row(s) differ between the console's published catalog and
+              live Stripe Prices for mode={{ $labels.mode }} source={{ $labels.source }}.
+              This breaks #327's 7-day clean window, which gates revoking mark8ly's Stripe
+              WRITE key. DO: open /platform/billing/catalog — the offending lookup_keys are
+              listed per pair under the observation window, and a failed run's reason is
+              shown there too (tesserix-home#591). Establish WHY the catalog moved before
+              republishing; a difference means Stripe and the console disagree about what
+              customers are charged.
+
+        # No CLEAN run for this pair in over 36h.
+        #
+        # This is the half that makes silence from the alert above mean
+        # something. It catches every way a pair stops agreeing that the
+        # difference gauge cannot express: a `failed` run (NaN, see above),
+        # `not_bootstrapped`, a CronJob that stopped firing, and a pair that
+        # has NEVER run clean.
+        #
+        # 36h from the real cadence: the CronJob runs once a day at 02:15 UTC,
+        # so this tolerates ONE fully missed night plus half a day of slack. A
+        # single red night therefore surfaces within the same day rather than
+        # a week later, which matters because one red day resets the window
+        # #327 is counting. A 48h threshold would let two consecutive misses
+        # pass unnoticed.
+        #
+        # A pair that has never run clean reports the gauge as 0 — "last clean
+        # in 1970" — and so fires after the `for`. That is the correct answer
+        # for a pair configured to be checked and never once clean, and it is
+        # the same reading CatalogParityStale relies on next door.
+        - alert: ConsoleStripeParityStale
+          expr: time() - tesserix_console_stripe_parity_last_clean_timestamp_seconds > 129600
+          for: 30m
+          labels:
+            severity: warning
+            component: billing-catalog
+          annotations:
+            summary: "No clean console<->Stripe parity run in over 36h ({{ $labels.mode }}/{{ $labels.source }})"
+            description: >-
+              mode={{ $labels.mode }} source={{ $labels.source }} has not recorded a CLEAN
+              parity run in over 36h, so #327's window is not accruing for it and
+              ConsoleStripeParityDifference cannot be trusted to be quiet for a good reason.
+              A value near 1970 means this pair has NEVER run clean. DO: check the pair's
+              latest outcome and its stored reason on /platform/billing/catalog. If the run
+              is failing rather than differing, the reason is displayed there; if nothing has
+              run at all, check the console-parity-check CronJob in the tesserix namespace
+              (`kubectl get cronjob -n tesserix console-parity-check`) and its last Job's logs.
+
+        # DELIBERATELY NOT ALERTED: tesserix_console_stripe_parity_window_satisfied.
+        #
+        # #327's gate is legitimately unsatisfied for long stretches — it needs
+        # SEVEN consecutive clean days across every pair, so it reads 0 for a
+        # week after any red day and for the whole period before the first
+        # window completes. An alert on it would fire for days at a time for a
+        # condition nobody intends to change today, which is how a check
+        # teaches people to ignore it.
+        #
+        # The series is exported for dashboards and for answering "is the gate
+        # satisfied right now" without opening the console. The two alerts
+        # above are what actually watch it: the gate cannot be satisfied while
+        # either is firing.

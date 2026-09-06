@@ -31,7 +31,33 @@ serviceAccount:
   annotations: {}
   name: ""
 
-podAnnotations: {}
+# Prometheus scrape of the console's catalog<->Stripe parity metrics
+# (tesserix-home#579). The `kubernetes-pods` job discovers targets by these
+# annotations; without them the endpoint exists and nothing reads it, which is
+# the state #579 was filed about one layer up.
+#
+# Port 3000 is the Next.js server itself (`service.targetPort`), not a separate
+# metrics listener: the route is an ordinary App Router handler and there is no
+# second port to expose.
+#
+# INBOUND IS ALREADY PERMITTED, verified against the live cluster rather than
+# assumed — the mistake that caused tesserix-k8s#1018's follow-up outage:
+#   - `allow-console-public` is `action: ALLOW` with `rules: [{}]`, an
+#     unconditional match selecting app.kubernetes.io/name=console, so the
+#     mesh-wide `deny-all-default` does not refuse the scrape even though
+#     `podLabels` below enrol these pods in ambient;
+#   - `tesserix-mtls` is PERMISSIVE, so a plaintext scrape is admitted too.
+# The NetworkPolicy already admits the `monitoring` namespace (see
+# templates/network-policy.yaml, "Prometheus scrape and Istio control plane").
+#
+# The route is unauthenticated BY DESIGN — Prometheus cannot mint a console
+# session — so those three controls are what stands in for auth. The endpoint
+# emits counts and timestamps only; see its header in tesserix-home for the
+# rule it holds itself to and the test that proves it.
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "3000"
+  prometheus.io/path: "/api/internal/metrics"
 # Enrol ONLY the console's pods in the ambient mesh, rather than labelling the
 # whole `tesserix` namespace.
 #
