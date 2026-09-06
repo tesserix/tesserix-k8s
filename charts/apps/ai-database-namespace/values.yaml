@@ -13,6 +13,14 @@ allowedSources:
   # Support platform's RAG pipeline (embedder + reranker) is the intended
   # second consumer once it moves off pgvector.
   - support-platform
+  # Prometheus scrapes this namespace's workloads. Added 2026-09-06 with the
+  # ambient enrollment of `monitoring` (tesserix-k8s#1018): before that its
+  # scrapes were plaintext and never reached authorization at all — mesh-wide
+  # STRICT rejected them at the PeerAuthentication layer. Now that Prometheus
+  # has a mesh identity the connection gets this far, and without this entry
+  # the catch-all `default-deny` refuses it instead, which looks identical
+  # from the outside: a dead target and a silent alert.
+  - monitoring
 
 # mTLS mode for the namespace. STRICT means every caller must be in the mesh
 # (ambient or sidecar); a non-mesh caller gets a connection reset with no
