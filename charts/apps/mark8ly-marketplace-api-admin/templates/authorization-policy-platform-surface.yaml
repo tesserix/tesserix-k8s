@@ -1,0 +1,65 @@
+{{/*
+  The HMAC-signed platform admin surface, reachable from outside the mesh.
+
+  WHY THIS EXISTS, because it looks like a hole and is not one.
+
+  `allow-marketplace-api-admin-callers` (beside this file) admits callers by
+  SPIFFE principal, and it already names `cluster.local/ns/tesserix/sa/platform-api`.
+  That entry has never matched: `tesserix` is NOT in the ambient mesh, so its
+  workloads present no identity at all, and ztunnel closes the connection with
+  "allow policies exist, but none allowed" — surfacing to the caller as a bare
+  TCP reset rather than a 403. Every console page backed by mark8ly federation
+  fails this way (tesserix/tesserix-k8s#1020).
+
+  The obvious repair — enrol `tesserix` in ambient so the principal starts
+  matching — is BLOCKED BY A DOCUMENTED OUTAGE. `tesserix` sits in
+  `ambientExcluded` in charts/thirdparty/istio-config/values.yaml deliberately:
+  ztunnel drained the per-pod proxy on every ArgoCD reconcile of the
+  namespace-wide policies, hitting all blog pods at once and producing 15-30s
+  503 bursts at the edge. Re-enrolling would reintroduce that, now with the
+  console in the blast radius.
+
+  Source-IP scoping was considered and REJECTED as theatre: pod CIDRs here are
+  per-node, not per-namespace (mark8ly pods 10.20.0.161 / 10.20.5.87, tesserix
+  10.20.1.214 / 10.20.3.217), so an ipBlocks rule would admit every pod in the
+  cluster while reading like a restriction.
+
+  So this rule is honest about what it does: it admits traffic to the platform
+  admin prefix WITHOUT a mesh identity, and leans on the surface's real
+  authentication.
+
+  THAT AUTHENTICATION IS HMAC, NOT THE MESH. Every route under
+  /api/v1/platform is wrapped in RequirePlatformAuth: a signature over the
+  request with a shared secret, plus a nonce store for replay. That is the
+  documented reason the surface is mounted under /api/v1/platform and NOT
+  /api/v1/admin — the Istio AuthorizationPolicy on the latter expects a JWT
+  this surface does not carry. See platformadmin/routes.go:225-245. An
+  unsigned request reaching the app answers 401; this rule changes which
+  requests get to be refused, not which are accepted.
+
+  Scoped as tightly as the mesh allows: this one path prefix, on the HTTP
+  port. L7 path matching is enforceable because mark8ly has a waypoint —
+  without one it would be silently stripped to L4 and this would open the
+  whole workload.
+
+  REMOVE THIS when `tesserix` can carry a mesh identity. At that point the
+  principal already listed next door starts matching and this becomes dead
+  weight that quietly widens the surface.
+*/}}
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-platform-admin-hmac-surface
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.name }}
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            paths:
+              - /api/v1/platform/*
+            ports:
+              - "{{ .Values.service.targetPort | default 8080 }}"
