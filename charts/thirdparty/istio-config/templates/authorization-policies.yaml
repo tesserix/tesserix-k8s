@@ -612,3 +612,51 @@ spec:
 {{- end }}
 
 {{- end }}
+
+# =============================================================================
+# MONITORING — the allow-list its ambient enrollment requires
+# =============================================================================
+# `monitoring` joined ambient on 2026-09-06 so Prometheus could scrape the mesh
+# (tesserix-k8s#1018). Enrolling a namespace also puts its OWN workloads behind
+# the mesh-wide `deny-all-default` in istio-system — an ALLOW with no rules,
+# which denies everything not explicitly permitted. `monitoring` had no allow
+# policy of its own, because until now it never needed one.
+#
+# The result was immediate and I caused it: prometheus.tesserix.app started
+# answering 503, and Prometheus could no longer scrape alertmanager,
+# kube-state-metrics or the kps operator INSIDE its own namespace. ztunnel
+# named it precisely — "allow policies exist, but none allowed".
+#
+# THE GENERAL LESSON, because the next namespace to be enrolled hits this too:
+# ambient enrollment is not only "this namespace can now be reached over mTLS".
+# It is also "this namespace is now subject to the mesh-wide deny". Enrolling
+# and allow-listing must land in the SAME change, not one after the other.
+#
+# Sources below are the ones actually observed being refused, not a guess:
+#   istio-ingress / istio-system  the gateways serving prometheus.tesserix.app
+#   monitoring                    Prometheus scraping its own namespace
+#   opencost, keda, kube-system   real clients that query Prometheus; KEDA in
+#                                 particular drives autoscaling off it, so a
+#                                 denial here stalls scaling silently
+{{- if .Values.features.authorizationPolicies.enabled }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-monitoring-sources
+  namespace: monitoring
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces:
+              - monitoring
+              - istio-ingress
+              - istio-system
+              - opencost
+              - keda
+              - kube-system
+{{- end }}
