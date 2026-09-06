@@ -379,6 +379,32 @@ sidecarInjection:
     # - photon  # DISABLED: High network cost for planet data download
     # - nats           # DISABLED: NATS handles its own TLS and doesn't need Istio sidecar
     - typesense
+    # monitoring — enrolled 2026-09-06 so Prometheus SCRAPES over HBONE mTLS.
+    #
+    # Not for its own sake: mesh-wide mtls.mode is STRICT, so ztunnel rejects
+    # every plaintext inbound connection. Prometheus had no mesh identity, so
+    # its scrapes were refused by `istio-system/istio_converted_static_strict`
+    # at TEN ambient namespaces at once — temporal-system, homechef, global,
+    # agentgateway-system, mark8ly, planning-poker, ai-database, devai, postiz
+    # and kora were ALL unscrapeable, and mark8ly ran 32h with no metrics
+    # before anybody noticed (tesserix-k8s#1018).
+    #
+    # Enrolling the CLIENT is what fixes that: with an identity Prometheus
+    # originates HBONE and satisfies STRICT everywhere, in one change instead
+    # of a per-namespace, per-port `portLevelMtls` exception that has to be
+    # remembered every time a workload changes its metrics port.
+    #
+    # DELIBERATELY NOT in ambient.waypointNamespaces. A waypoint is for L7
+    # AuthorizationPolicy enforcement on INBOUND traffic; nothing here needs
+    # that, and the waypoint is the component whose enrollment took the shared
+    # ingress offline twice (mark8ly 04-11, gameverse 05-03).
+    #
+    # Inbound to this namespace was already safe before this change:
+    # `monitoring-mtls` (peer-authentication.yaml, live 162d, commented
+    # "for scraping") is PERMISSIVE, so the ingress chain serving
+    # grafana/prometheus/alertmanager.tesserix.app and the kube-apiserver's
+    # call to the kps admission webhook on :443 both keep working in plaintext.
+    - monitoring
     # Database namespaces removed — CNPG runs in app namespaces (already listed above)
   # Namespaces that need database access (adds database-access=allowed label for NetworkPolicy)
   databaseAccessNamespaces:
@@ -415,6 +441,12 @@ sidecarInjection:
     kora: application
     scrapper: application
     agentregistry-system: infrastructure
+    # Moved here from k8s/cluster/namespace-protection.yaml in the same commit
+    # that added `monitoring` above. Both apps use the same SSA field manager,
+    # so a namespace declared in BOTH loses one app's labels on every sync and
+    # flaps ambient enrollment — the prod outage of 2026-08-02 that the comment
+    # above this block records.
+    monitoring: infrastructure
   # Namespaces where sidecar injection should be explicitly disabled
   disabledNamespaces:
     - nats

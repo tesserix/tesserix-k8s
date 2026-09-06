@@ -17,3 +17,11 @@ allowedSources:
   - istio-ingress
   - mark8ly
   - tesserix
+  # Prometheus scrapes this namespace's workloads. Added 2026-09-06 with the
+  # ambient enrollment of `monitoring` (tesserix-k8s#1018): before that its
+  # scrapes were plaintext and never reached authorization at all — mesh-wide
+  # STRICT rejected them at the PeerAuthentication layer. Now that Prometheus
+  # has a mesh identity the connection gets this far, and without this entry
+  # the catch-all `default-deny` refuses it instead, which looks identical
+  # from the outside: a dead target and a silent alert.
+  - monitoring
