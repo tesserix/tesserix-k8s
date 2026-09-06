@@ -1,3 +1,23 @@
+# ⚠️  THIS FILE IS NOT LOADED BY ANYTHING. ⚠️
+#
+# The prod Application (argocd/prod/infrastructure/external-secrets.yaml) sets
+# `helm.valueFiles: ["values.yaml"]` and carries its prod overrides INLINE in
+# `helm.values`. Nothing anywhere references this file — verified by grepping
+# argocd/ for it.
+#
+# It reads as authoritative and is not, which cost real time: a
+# `monitoring.enabled: true` added here for tesserix-k8s#1032 rendered nothing,
+# and ArgoCD correctly reported `Synced`/`Healthy` because there was genuinely
+# nothing to create. Put prod settings in the Application's inline `values`.
+#
+# It is also STALE: the serviceAccount annotation below names
+# `...@tesserix.iam.gserviceaccount.com`, while the live workload uses
+# `app-secrets-ext-secrets-prod@tesseracthub-480811.iam.gserviceaccount.com`.
+# Kept rather than deleted only so this warning has something to attach to;
+# deleting it outright is the better end state.
+#
+# Original header follows.
+#
 # Production overrides for external-secrets
 # Use with: helm upgrade --values values.yaml --values values-prod.yaml
 
@@ -19,10 +39,3 @@ serviceAccount:
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
-
-# The kps Prometheus Operator runs here, so the ServiceMonitor and
-# PrometheusRule from templates/ are appliable and wanted. See
-# templates/prometheusrule.yaml for why an unscraped ESO went unnoticed for
-# six months.
-monitoring:
-  enabled: true
