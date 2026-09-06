@@ -191,12 +191,11 @@ fail because Apple credentials are misconfigured.
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: APPLE_SIGNIN_PRIVATE_KEY_B64
       optional: true
-- name: SENDGRID_API_KEY
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "homechef-api.fullname" . }}-secrets
-      key: SENDGRID_API_KEY
-      optional: true
+# Resend only. homechef's InitEmailService (apps/api/services/email.go)
+# switches on ResendAPIKey alone and has no SendGrid branch, so the
+# SENDGRID_API_KEY that used to sit here was read by nothing. Removed with the
+# closed SendGrid account (#1014) rather than left as a dead credential that
+# reads like a fallback.
 - name: RESEND_API_KEY
   valueFrom:
     secretKeyRef:
