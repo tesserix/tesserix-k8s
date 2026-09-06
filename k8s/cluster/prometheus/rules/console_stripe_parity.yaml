@@ -37,10 +37,22 @@
 #
 # # Absence is covered elsewhere, deliberately
 #
-# Every expression below compares a metric to a threshold, and an absent
-# series never fires — the failure that let ten namespaces go dark for 32h
-# (tesserix-k8s#1018). `scrape_health.yaml`'s TargetDown is what makes silence
-# from these two believable; do not re-implement it per metric here.
+# Every expression below compares a metric to a threshold, and an absent series
+# never fires. What covers that is `TargetDown` in kube-prometheus-stack's
+# `general.rules` — the stack's OWN alert on `up`, which fires when more than
+# 10% of a job's targets are unscrapeable. It is already deployed and it works:
+# during the 32h scrape outage of tesserix-k8s#1018 it fired for
+# `job=kubernetes-pods namespace=mark8ly` at 13:56Z, 23 minutes after the
+# breakage, and stayed firing for the duration.
+#
+# So do NOT add `absent()` rules per metric here, and do not add a second
+# up-based rule — a duplicate of that alertname was briefly shipped in #1023
+# and removed again, because Alertmanager groups by alertname and the two read
+# as one alert with two meanings.
+#
+# The caveat worth knowing: silence from the built-in is only as believable as
+# the board it lands on. That rule fired for 32h and nobody acted, which is an
+# alerting-fatigue problem rather than a coverage one and is tracked separately.
 # =============================================================================
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
