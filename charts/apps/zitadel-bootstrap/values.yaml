@@ -119,8 +119,27 @@ desired:
   # would be reasonable to assume lockout is delegated the same way. It is not.
   # forceMfa is requirement evaluation, which Zitadel hands to the login
   # client; maxOtpAttempts is a failure counter inside the check command, which
-  # Zitadel applies regardless of who is calling. So the console does not need
-  # its own TOTP rate limiting, and this is why.
+  # Zitadel applies regardless of who is calling.
+  #
+  # THE CONSOLE DOES RATE-LIMIT ANYWAY, AND NOT FOR GUESSING. This block used
+  # to conclude "so the console does not need its own TOTP rate limiting". That
+  # was right about guessing and wrong about everything else, and
+  # tesserix-home#457 was split out of #445 to say so: a working lockout is
+  # also a weapon. Anyone holding an operator's password — leaked, shared,
+  # reused — can spend ten wrong codes in a second and put that operator in
+  # USER_STATE_LOCKED, and the console is where you would go to investigate an
+  # incident.
+  #
+  # Tuning this number cannot fix that. Raising it weakens the guessing bound;
+  # lowering it makes the denial of service cheaper. So the console gained a
+  # COOLDOWN (tesserix-home#457): after 5 failures for one login name in 15
+  # minutes it declines to forward the next attempt to Zitadel for 15 minutes,
+  # which means the counter below is never incremented fast enough to reach 10.
+  #
+  # The two controls are not alternatives and neither replaces the other. This
+  # one bounds guessing; that one bounds how fast the bound can be weaponised.
+  # DO NOT remove the console's cooldown on the strength of this policy
+  # existing — that is exactly the inference the old sentence invited.
   #
   # 0 means unlimited. An unpinned lockout policy drifting to 0 is the same
   # shape of failure as the 0s lifetimes above — silent, invisible, and working
