@@ -149,7 +149,40 @@ federation:
   enabled: true
   products:
     mark8ly:
-      baseURL: "http://mark8ly-marketplace-api-admin.mark8ly.svc.cluster.local:8080/api/v1/platform"
+      # PUBLIC host, not the cluster-internal Service, and that is deliberate.
+      #
+      # mark8ly is in the ambient mesh; `tesserix` is not, and cannot be — it
+      # sits in `ambientExcluded` after ztunnel drained its pods on every
+      # ArgoCD reconcile of the namespace-wide policies, producing 15-30s 503
+      # bursts at the edge (see istio-config values.yaml). So platform-api
+      # presents NO SPIFFE identity, and the principal this chart's sibling
+      # policy lists for it has never matched: ztunnel closed every connection
+      # with "allow policies exist, but none allowed", surfacing as a bare TCP
+      # reset. Every mark8ly console page failed this way (#1020).
+      #
+      # A path-scoped ALLOW policy was tried (#1022) and CANNOT work: a
+      # non-mesh caller's connection is plain TCP that ztunnel handles at L4,
+      # and `paths` is L7, so the rule can never match for the one caller it
+      # was written for. It was reverted in the same change that added this.
+      #
+      # Going out through the ingress gateway instead gives the request an
+      # identity the mesh already trusts, with no policy change at all. Cost:
+      # the call leaves the cluster and returns via Cloudflare, so it carries
+      # edge latency and an edge dependency that an in-cluster call would not.
+      # That is the price of the namespace not being in the mesh; remove it by
+      # fixing the drain and enrolling `tesserix`, at which point this should
+      # go back to the Service address.
+      #
+      # Verified against production before switching:
+      #   /api/v1/platform/admin/email-templates  401  reachable, HMAC enforced
+      #   /api/v1/platform/admin/kpis             401  reachable
+      #   /api/v1/platform/admin/not-real         404  router discriminating
+      #   /api/v1/admin/anything                  403  ingress JWT gate, as designed
+      #
+      # The 403 is the control that matters: it shows why this surface is
+      # mounted under /api/v1/platform and not /api/v1/admin, and that going
+      # via the edge does not smuggle past the gate on the other prefix.
+      baseURL: "https://api.mark8ly.com/api/v1/platform"
       secretName: mark8ly-federation
       secretKey: FEDERATION_MARK8LY_SECRET
       # The §3.4 entity types mark8ly serves. Read by
