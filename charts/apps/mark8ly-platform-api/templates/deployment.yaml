@@ -81,6 +81,24 @@ spec:
                 secretKeyRef:
                   name: mark8ly-platform-api-platform-admin
                   key: PLATFORM_API_PLATFORM_ADMIN_SECRET
+                  # optional, and this is load-bearing rather than defensive.
+                  #
+                  # Without it a missing Secret is CreateContainerConfigError:
+                  # the container cannot START, which is NOT the same as the
+                  # surface failing closed. This deployment is replicas=1 with
+                  # maxSurge=0/maxUnavailable=1, so the old pod is already gone
+                  # by then — the whole service is down, not just the console
+                  # surface. That is exactly what happened when this env was
+                  # first added (2026-09-07): the chart Application synced
+                  # before the external-secrets Application created the Secret,
+                  # and platform-api was down for ~83s.
+                  #
+                  # With optional, an absent Secret leaves the variable unset,
+                  # config trims it to "", and the platform surface answers
+                  # 503 not_configured while every other route serves normally
+                  # — which is the fail-closed behaviour that was intended and
+                  # claimed all along.
+                  optional: true
             - name: ADMIN_BASE_URL_TEMPLATE
               value: {{ .Values.adminBaseUrlTemplate | quote }}
             - name: STOREFRONT_BASE_URL_TEMPLATE
