@@ -71,6 +71,16 @@ spec:
               value: {{ .Values.openfga.apiUrl | quote }}
             - name: FGA_STORE_ID
               value: {{ .Values.openfga.storeId | quote }}
+            # The console contract surface's HMAC key (tesserix/mark8ly#720).
+            # Absent, the surface stays mounted and answers 503
+            # not_configured — it fails closed rather than serving unsigned
+            # callers, so this is safe to add before or after the image that
+            # reads it.
+            - name: PLATFORM_API_PLATFORM_ADMIN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-platform-api-platform-admin
+                  key: PLATFORM_API_PLATFORM_ADMIN_SECRET
             - name: ADMIN_BASE_URL_TEMPLATE
               value: {{ .Values.adminBaseUrlTemplate | quote }}
             - name: STOREFRONT_BASE_URL_TEMPLATE

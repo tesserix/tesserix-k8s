@@ -206,6 +206,39 @@ spec:
             port:
               number: {{ .Values.apiHost.servicePort }}
       timeout: 30s
+    # mark8ly's SECOND platform-admin front door (tesserix/mark8ly#720).
+    #
+    # A separate HOST, not a path under api.mark8ly.com, and that is forced:
+    # both services answer the SAME path — `/api/v1/platform/admin/
+    # email-templates` — because the template registry is split between them
+    # (marketplace-api owns the order/billing keys, platform-api owns the auth
+    # keys). Two services on one path cannot be told apart by a URI match.
+    #
+    # And it must NOT rewrite. The console signs the path it sends and this
+    # surface verifies the path it receives (c.Request.URL.Path), so a rewrite
+    # at the gateway makes the two canonical strings differ and every signed
+    # request 401s with nothing in either side's logs to say why.
+    #
+    # No Gateway or Certificate change is needed: Cloudflare Tunnel terminates
+    # TLS and the gateway's :80 server accepts hosts "*", so routing here is
+    # purely by Host header. Verified before adding this — the host already
+    # resolves and reaches Envoy (x-envoy-upstream-service-time present on a
+    # 404), so DNS and TLS were never the missing piece.
+    #
+    # The ingress gateway is permitted to reach this workload by the
+    # namespace-wide `allow-known-sources` policy, which allows sources in
+    # istio-ingress. No AuthorizationPolicy change is required — checked,
+    # because the failure mode when it is wrong is a bare TCP reset from
+    # ztunnel ("allow policies exist, but none allowed") with no service log.
+    - match:
+        - authority:
+            exact: "platform-api.mark8ly.com"
+      route:
+        - destination:
+            host: {{ .Values.apiHost.platformApiServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.apiHost.platformApiServicePort }}
+      timeout: 30s
     - match:
         - authority:
             exact: "api.mark8ly.com"
