@@ -233,6 +233,27 @@ federation:
           # both are read by this one pod.
           secretName: mark8ly-federation
           secretKey: FEDERATION_MARK8LY_PLATFORM_API_SECRET
+          # Declared only now that the surface actually answers, and verified
+          # in production before declaring rather than after
+          # (mark8ly#806 rolled out as main-e1b975c):
+          #
+          #   /api/v1/platform/admin/email-templates          401  mounted, HMAC enforced
+          #   /api/v1/platform/admin/email-templates/welcome   401  the auth half is reachable
+          #   /api/v1/platform/admin/not-a-real-route          404  router discriminating
+          #
+          # The 401-vs-404 split is the control: both answering 404 would mean
+          # nothing was mounted. An over-declared endpoint answers 404 to the
+          # console and renders to an operator as "mark8ly could not be read",
+          # on a surface whose whole value is being trustworthy.
+          #
+          # This is the SAME endpoint marketplace-api declares above, and that
+          # is the point of tesserix/mark8ly#720 rather than a mistake: the
+          # registry is split, so the console must call both and merge. The
+          # federation client returns every matching service for a fan-out and
+          # fails closed on a single-response read, so a caller that has not
+          # been taught to merge gets an error instead of half the registry.
+          endpoints:
+            - email-templates
       # The §3.4 entity types mark8ly serves. Read by
       # federation.Registry.SlugsServing, which the tenants module uses instead
       # of Slugs() — `{type}` is product-defined, so a product federating audit
