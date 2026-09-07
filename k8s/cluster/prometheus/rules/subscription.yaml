@@ -19,7 +19,7 @@
 #
 # The plan (2026-04-18-p17-observability.md) enumerates a broader metric set
 # (subscription_state_count, webhook_processing_duration_seconds_bucket,
-# subscription_arbitrage_flagged, reconciliation_drift, etc.) that belongs to
+# reconciliation_drift, etc.) that belongs to
 # Tasks 1/2/3/10/11 — deferred to a later round. Rules/alerts that depend on
 # those metrics are intentionally NOT authored here; they will land alongside
 # the Go collectors they reference.
@@ -138,11 +138,6 @@ spec:
           expr: |
             sum by (currency, reason) (rate(mark8ly_subscription_refund_issued_total[1h]))
 
-        # Arbitrage flag emissions — §8 anti-arbitrage gate (P8).
-        - record: subscription:arbitrage_flagged:rate1h
-          expr: |
-            sum by (reason) (rate(mark8ly_subscription_arbitrage_flagged_total[1h]))
-
         # Stripe reconciliation drift — P17-Go T10. Zero is expected.
         - record: subscription:reconciliation_drift:rate1h
           expr: |
@@ -250,7 +245,7 @@ spec:
             security: "true"
           annotations:
             summary: "Trial signup anomaly threshold tripped in 24h window"
-            description: "Rate: {{ $value }}/s. Check arbitrage flags + IP distribution. §5.1 flags >50/day as anomalous at our stage."
+            description: "Rate: {{ $value }}/s. Check signup IP distribution and card/billing country spread. §5.1 flags >50/day as anomalous at our stage. (Arbitrage flags were retired in mark8ly#704 — that table no longer exists.)"
 
     # -----------------------------------------------------------------------
     # P8 / P10 / P17-Go alerts — metrics just shipped by marketplace-api.
@@ -295,20 +290,6 @@ spec:
           annotations:
             summary: "Stripe↔local subscription drift detected"
             description: "drift_type={{ $labels.drift_type }} rate={{ $value }}/s over 1h. Investigate via audit.subscription.reconciliation_drift rows."
-
-        # Arbitrage flag spike — §8. Sustained flagging suggests a fraud
-        # attack or a legitimate traffic pattern that needs policy review.
-        - alert: ArbitrageFlagSpike
-          expr: subscription:arbitrage_flagged:rate1h > 0.01
-          for: 30m
-          labels:
-            severity: warning
-            component: subscription
-            security: "true"
-            runbook: https://runbooks.mark8ly.internal/subscription/arbitrage-spike
-          annotations:
-            summary: "Arbitrage flagging rate >1/100s over 30m"
-            description: "reason={{ $labels.reason }}. §8 triangulation is tripping — review flagged rows in subscription_arbitrage_audit."
 
         # Billing archive retention gauge — P17-Go T11. Alerts ops to
         # run the sweeper before rows actually expire.
