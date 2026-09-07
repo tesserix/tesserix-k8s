@@ -156,6 +156,21 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.internalAuthSecret.secretName }}
                   key: {{ .Values.internalAuthSecret.secretKey }}
+            # Break-glass IP fingerprinting key (#642). Raw caller IPs must
+            # never reach the audit log or break_glass_lockouts.
+            #
+            # optional, deliberately: an absent Secret leaves this unset and
+            # HMACIPHash degrades to a guessable-but-working hash, whereas a
+            # required ref would make a missing Secret CreateContainerConfigError
+            # and take the whole admin API down. That is not hypothetical —
+            # tesserix-k8s#1042 did exactly that to platform-api for 83s, and
+            # #1043 fixed it the same way.
+            - name: BREAK_GLASS_IP_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mark8ly-break-glass
+                  key: BREAK_GLASS_IP_HMAC_KEY
+                  optional: true
             # Platform console admin surface HMAC key (mark8ly#275).
             # optional:true so the pod still starts before the
             # ExternalSecret is provisioned — the surface then answers
