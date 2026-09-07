@@ -185,6 +185,54 @@ federation:
       baseURL: "https://api.mark8ly.com/api/v1/platform"
       secretName: mark8ly-federation
       secretKey: FEDERATION_MARK8LY_SECRET
+      # mark8ly serves the console from TWO front doors (tesserix/mark8ly#720).
+      # The email-template registry is split: marketplace-api owns the order
+      # and billing keys, platform-api owns the auth keys (welcome,
+      # email_verification, invitation, password_reset, login_otp,
+      # new_device_login). Neither service alone is the product, which is why
+      # this is a service map under one slug rather than a second product —
+      # console-core's ESTATE is keyed on product, and an operator thinks of
+      # both as mark8ly. Otto becomes a third entry here (tesserix/mark8ly#330).
+      #
+      # The product-level baseURL/secret above are still emitted during the
+      # rollout. LoadRegistry ignores them once `services` is present and logs
+      # a warning naming them; remove the pair once every environment is on an
+      # image that reads the map.
+      defaultService: marketplace-api
+      services:
+        # Where a call carrying no endpoint or entity goes — the contract
+        # endpoints every federating product serves (audit-logs, KPIs), which
+        # no single service opts into. Keeping this on marketplace-api means
+        # today's behaviour is unchanged for every existing call.
+        - name: marketplace-api
+          baseURL: "https://api.mark8ly.com/api/v1/platform"
+          secretName: mark8ly-federation
+          secretKey: FEDERATION_MARK8LY_SECRET
+          entities:
+            - tenants
+          endpoints:
+            - outbox
+            - onboarding
+            - billing
+            - inbox
+            - conversions
+            - email-templates
+        # Its OWN host, not a path under api.mark8ly.com: both services answer
+        # the same `/admin/email-templates` path, so a URI match cannot tell
+        # them apart, and a gateway rewrite would break the HMAC (the caller
+        # signs the path it sends, the surface verifies the path it receives).
+        #
+        # `email-templates` is DELIBERATELY absent until the surface serves it.
+        # An over-declared endpoint answers 404 and renders to an operator as
+        # "mark8ly could not be read" on a surface that is meant to be
+        # trustworthy; an under-declared one is a visibly missing source.
+        - name: platform-api
+          baseURL: "https://platform-api.mark8ly.com/api/v1/platform"
+          # Same K8s Secret as marketplace-api above, different key: the
+          # tesserix mark8ly-federation ExternalSecret carries both, since
+          # both are read by this one pod.
+          secretName: mark8ly-federation
+          secretKey: FEDERATION_MARK8LY_PLATFORM_API_SECRET
       # The §3.4 entity types mark8ly serves. Read by
       # federation.Registry.SlugsServing, which the tenants module uses instead
       # of Slugs() — `{type}` is product-defined, so a product federating audit

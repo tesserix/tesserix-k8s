@@ -138,6 +138,55 @@ spec:
             - name: FEDERATION_{{ $slug | upper }}_ENDPOINTS
               value: {{ join "," $cfg.endpoints | quote }}
             {{- end }}
+            {{- if $cfg.services }}
+            # A product with more than one platform-admin front door
+            # (tesserix/mark8ly#720). mark8ly serves the console from BOTH
+            # marketplace-api and platform-api: the email-template registry is
+            # split across them, so neither one alone is the product.
+            #
+            # The product-level BASE_URL/SECRET above are still emitted while
+            # this rolls out. LoadRegistry ignores them once SERVICES is
+            # present and LOGS A WARNING naming them — deliberately not a boot
+            # error, because the env necessarily carries both shapes for the
+            # window between this chart landing and the image that reads it.
+            # Remove the product-level pair once that window closes.
+            - name: FEDERATION_{{ $slug | upper }}_SERVICES
+              value: {{ range $i, $svc := $cfg.services }}{{ if $i }},{{ end }}{{ $svc.name }}{{ end }}
+            # Where a call with no endpoint or entity context goes — the
+            # contract endpoints EVERY federating product serves (audit-logs,
+            # KPIs) and which therefore no single service opts into.
+            #
+            # Required once SERVICES names more than one: LoadRegistry aborts
+            # startup without it rather than letting a selector-less call
+            # become a 500 a user finds before an operator does.
+            - name: FEDERATION_{{ $slug | upper }}_DEFAULT_SERVICE
+              value: {{ required (printf "federation.products.%s sets services but no defaultService" $slug) $cfg.defaultService | quote }}
+            {{- range $svc := $cfg.services }}
+            # NOTE THE ASYMMETRY, it is not a typo. The SLUG segment above is
+            # `upper` and nothing else, because the Go side builds it with
+            # strings.ToUpper(slug). The SERVICE segment here is upper AND
+            # hyphen-to-underscore, because the Go side builds THAT with
+            # strings.ToUpper(strings.ReplaceAll(name, "-", "_")). Applying
+            # either rule to the other half emits a variable that is visibly
+            # present in the manifest and invisible to the service.
+            {{- $seg := $svc.name | upper | replace "-" "_" }}
+            - name: FEDERATION_{{ $slug | upper }}_{{ $seg }}_BASE_URL
+              value: {{ $svc.baseURL | quote }}
+            - name: FEDERATION_{{ $slug | upper }}_{{ $seg }}_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $svc.secretName | quote }}
+                  key: {{ $svc.secretKey | quote }}
+            {{- if $svc.entities }}
+            - name: FEDERATION_{{ $slug | upper }}_{{ $seg }}_ENTITIES
+              value: {{ join "," $svc.entities | quote }}
+            {{- end }}
+            {{- if $svc.endpoints }}
+            - name: FEDERATION_{{ $slug | upper }}_{{ $seg }}_ENDPOINTS
+              value: {{ join "," $svc.endpoints | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             {{- end }}
             {{- end }}
           {{- if and .Values.livenessProbe .Values.livenessProbe.enabled }}
