@@ -247,6 +247,43 @@ spec:
                       name: {{ include "console.fullname" . }}-secrets
                       key: STRIPE_RESTRICTED_READ_KEY_LIVE
                       optional: true
+                # Entitlement parity (tesserix-home#618, serving #146) reaches a
+                # product's plan-feature matrix through platform-api, and that
+                # read needs a MACHINE identity: the operator path resolves a
+                # Zitadel token from a session, and this job has none.
+                #
+                # Deliberately named rather than `envFrom: console-secrets`,
+                # matching the two Stripe keys above. This job holds a database
+                # credential and runs unattended at 02:15; handing it the whole
+                # console secret set to add one capability would widen its blast
+                # radius far past what it needs.
+                #
+                # `optional: true` throughout, for the reason the Stripe block
+                # gives: a missing key must degrade to a recorded outcome, not a
+                # CreateContainerConfigError that stops the PRICE parity run too.
+                # An absent credential makes the entitlement check report
+                # unattributable; it does not stop the job.
+                - name: ZITADEL_MACHINE_CLIENT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "console.fullname" . }}-secrets
+                      key: ZITADEL_MACHINE_CLIENT_ID
+                      optional: true
+                - name: ZITADEL_MACHINE_CLIENT_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "console.fullname" . }}-secrets
+                      key: ZITADEL_MACHINE_CLIENT_SECRET
+                      optional: true
+                # Non-secret, and read from the same values the Deployment uses
+                # so the two cannot drift into disagreeing about which Zitadel
+                # project a token is minted against.
+                - name: ZITADEL_ISSUER
+                  value: {{ .Values.env.ZITADEL_ISSUER | quote }}
+                - name: ZITADEL_PROJECT_ID
+                  value: {{ .Values.env.ZITADEL_PROJECT_ID | quote }}
+                - name: PLATFORM_API_ORIGIN
+                  value: {{ .Values.env.PLATFORM_API_ORIGIN | quote }}
                 - name: NODE_ENV
                   value: "production"
               # Small and fixed. The job holds one pg connection and one page of
