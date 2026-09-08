@@ -208,8 +208,23 @@ federation:
           baseURL: "https://api.mark8ly.com/api/v1/platform"
           secretName: mark8ly-federation
           secretKey: FEDERATION_MARK8LY_SECRET
+          # `users` declared 2026-09-08, on the same 401-vs-404 control this
+          # file requires of every other declaration. Probed against the
+          # deployed revision:
+          #
+          #   /api/v1/platform/admin/entities/users           401  mounted, HMAC enforced
+          #   /api/v1/platform/admin/entities/tenants         401  the known-good comparison
+          #   /api/v1/platform/admin/entities/not-a-real-type 404  router discriminating on {type}
+          #   /api/v1/platform/admin/not-a-real-route         404  router discriminating on the path
+          #
+          # The third probe is the one that matters here and is stronger than
+          # the fourth: it rules out a catch-all under /admin/entities/ that
+          # would answer 401 for any type at all, which is exactly how an
+          # over-declared entity type would hide until an operator opened the
+          # surface.
           entities:
             - tenants
+            - users
           endpoints:
             - outbox
             - onboarding
@@ -260,10 +275,28 @@ federation:
       # logs does not necessarily have tenants, and asking one that does not
       # would answer 404 and surface to an operator as a failed source.
       #
-      # `tenants` only, for now: mark8ly#277 shipped and is conformance-passing
-      # against production, while its entities/users counterpart (mark8ly#278)
-      # is unblocked but not built. Adding `users` here before that endpoint
-      # exists would turn a missing feature into a failed source.
+      # `tenants` AND `users`. This said "`tenants` only, for now" and gave as
+      # its reason that "its entities/users counterpart (mark8ly#278) is
+      # unblocked but not built". That stopped being true when mark8ly#278
+      # shipped — `/admin/entities/users` is mounted at
+      # `internal/handlers/platformadmin/entities_users.go` and answers 401
+      # against the deployed revision. Corrected rather than deleted, because
+      # the withheld declaration was deliberate and a future reader is owed
+      # the reason it was lifted.
+      #
+      # The console has shipped the consuming surface the whole time —
+      # console-core declares `entities: ["tenants", "users"]` for mark8ly and
+      # routes `/mark8ly/users` — so the only thing standing between an
+      # operator and that page was this list. Until now it rendered the
+      # "not federated here" callout, which is honest but reads to an operator
+      # as a product that was never wired up.
+      #
+      # Kept in step with `services[marketplace-api].entities` above, which is
+      # what LoadRegistry actually reads once `services:` is present. This
+      # product-level copy is still emitted during the rollout and is what an
+      # image predating the service map would read, so the two must not
+      # disagree — a rollback that re-enabled the old reader must not also
+      # silently narrow the estate.
       #
       # Without this line the tenants surface answers 501 not_implemented,
       # which is the intended fail-closed behaviour rather than an empty list:
@@ -271,6 +304,7 @@ federation:
       # has no tenants".
       entities:
         - tenants
+        - users
       # §3.2. Read by federation.Registry.SlugsImplementing, which is a
       # SEPARATE list from mark8ly's admin-conformance.json: the conformance
       # declaration governs what the nightly conformance suite checks against
