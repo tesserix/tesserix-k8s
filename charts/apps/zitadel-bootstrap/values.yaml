@@ -219,6 +219,27 @@ desired:
         than an instance-wide viewer role. Its PAT lives in GCP Secret Manager
         as prod-console-identity-reader-pat; see docs/zitadel.md.
       accessTokenType: ACCESS_TOKEN_TYPE_BEARER
+    - org: TESSERIX
+      username: console-entitlements-reader
+      name: console-entitlements-reader
+      description: >-
+        Lets the console read a product's plan-feature matrix through
+        platform-api without an operator present (tesserix-home#618, serving
+        the entitlement parity check in #146). Holds the read-entitlements
+        project role on platform-console and nothing else.
+
+        NOT console-identity-reader, which is a different direction: that one
+        reads Zitadel's own Management API and holds ORG_OWNER_VIEWER. This one
+        holds no org membership at all — it is a caller of platform-api, and
+        its whole authority is one project role.
+
+        ACCESS_TOKEN_TYPE_JWT, and that is load-bearing rather than a copy of
+        its neighbour. platform-api verifies a token's signature against
+        Zitadel's JWKS and has no introspection path by design (ADR-003 D8,
+        platform-auth/verify.go), so an opaque bearer token cannot be validated
+        there at all. Issued as BEARER it would authenticate fine to Zitadel and
+        then be refused by platform-api with a 401 that reads as a bad secret.
+      accessTokenType: ACCESS_TOKEN_TYPE_JWT
 
   # Machine users allowed to hold instance-wide IAM_OWNER. Anything else with
   # that role fails the run: a machine user with IAM_OWNER can create and
