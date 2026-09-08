@@ -29,18 +29,52 @@ imagePullSecrets:
 service:
   type: ClusterIP
   port: 8080
-# Slice 1: in-memory rate limiter pinned to a single replica to avoid
-# the per-replica bucket multiplication problem (spec §14.8 + §14.16).
-# TODO(slice-2): unpin once Redis-backed rate limiter ships. Tracking
-# issue: <SLICE2_TICKET_TBD>.
+# TWO replicas, and the second one is what removes a deploy-time outage.
+#
+# This was pinned to ONE from the slice-1 scaffold: "in-memory rate limiter
+# pinned to a single replica to avoid the per-replica bucket multiplication
+# problem (spec §14.8 + §14.16). TODO(slice-2): unpin once Redis-backed rate
+# limiter ships."
+#
+# Both halves of that note have since expired, and mark8ly#846 records the
+# measurement:
+#
+#   - The pin combined with `maxSurge: 0` below meant the ONLY pod was scaled
+#     to zero before its replacement started, so every deploy of this service
+#     took the whole platform-admin surface offline for the length of an image
+#     pull (~40s observed, longer on a cold mirror). Every federated read from
+#     the tesserix console failed for that window, and the tenants page
+#     rendered its rows while showing "Mark8ly did not supply its reason
+#     codes" — the directory and the vocabularies are two sequential federated
+#     reads, and a restart between them hits only the second.
+#   - The slice-2 remedy is not coming: Redis was removed from marketplace-api
+#     entirely and is not in its go.mod.
+#
+# So the bucket-multiplication problem was fixed rather than waited on. The
+# break-glass 3-strike window — the one limiter on this engine where per-pod
+# counting was a real weakening, since N replicas meant 3N strikes — is now
+# durable in Postgres (break_glass_login_attempts, mark8ly#848). The threshold
+# is a property of the estate, so the replica count is free.
+#
+# The OTHER in-memory limiters on this binary (PerIP, PromoPerIP, per-user,
+# api-key) stay per-pod, and that is unchanged rather than overlooked: the
+# storefront deployment already runs the same binary at up to 5 replicas, and
+# promo.go states the tradeoff explicitly — "With N replicas the effective
+# ceiling is N times this… That is accepted: this is a brake on code-guessing,
+# not an accounting control."
+#
+# PRECONDITION, if this is ever re-applied from scratch: mark8ly#848 must be
+# DEPLOYED, not merely merged. Raising the count while the window is still
+# per-pod is the security regression this ordering exists to avoid.
 keda:
   enabled: true
   pollingInterval: 15
   cooldownPeriod: 300
-  minReplicaCount: 1
-  maxReplicaCount: 1
-  # Min=max=1, so the trigger never scales anything — it exists only to
-  # give the ScaledObject a valid spec.
+  minReplicaCount: 2
+  maxReplicaCount: 2
+  # Min=max=2, so the trigger never scales anything — it exists only to
+  # give the ScaledObject a valid spec. Two is a floor for availability
+  # during a roll, not a capacity estimate.
   #
   # It must still be a trigger that RESOLVES. The previous prometheus
   # trigger pointed at a Prometheus that is not running (the
@@ -410,10 +444,13 @@ auditIngest:
 # serving. On 2026-08-30 that left seven mark8ly deployments stuck and
 # production a day behind main, with nothing alerting.
 #
-# The cost is honest and accepted: on a single-replica service this is a
-# brief 503 during each rollout, where surge-first gave none. Deploys that
-# always complete are worth more than a few seconds of downtime on an
-# operator-timed rollout. Same remedy as temporal (#538) and devai (#600).
+# The cost WAS a brief 503 during each rollout, where surge-first gave none,
+# and that was accepted as worth it for deploys that always complete. Same
+# remedy as temporal (#538) and devai (#600).
+#
+# That cost is now gone rather than accepted: at the 2 replicas configured
+# above, `maxSurge: 0` costs nothing at all — one pod keeps serving while the
+# other is replaced (see the note directly below, which anticipated this).
 #
 # At 2+ replicas there is no downtime at all: one pod stays up while the
 # other is replaced.
