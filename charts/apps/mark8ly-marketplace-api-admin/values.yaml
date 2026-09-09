@@ -236,7 +236,22 @@ consoleCatalog:
   promoUrl: https://console.tesserix.app/api/v1/promo-catalog
   tokenUrl: https://auth.tesserix.app/oauth/v2/token
   scope: "openid urn:zitadel:iam:org:project:id:386377618200461939:aud urn:zitadel:iam:org:projects:roles"
-  mode: test
+  # live since 2026-09-09 (tesserix/mark8ly#366, #371).
+  #
+  # Moves in the SAME commit as the ExternalSecret's swap to the `-live`
+  # Stripe credentials, and must keep doing so. The two select the same thing
+  # from opposite ends: this picks WHICH catalog is read, the key picks WHICH
+  # account it is spent against. `live` here with a sandbox key resolves live
+  # lookup keys against the sandbox account; `test` with a live key does the
+  # reverse. Both fail closed — but only once a merchant has tried to pay.
+  #
+  # Verified before the switch, creating nothing: acct_1SgwbFCyiazmanuP live
+  # holds 3 products and 42 active prices, every one carrying a lookup_key,
+  # and `mark8ly_pro_monthly_developed_v1` resolves to
+  # price_1U94tnCyiazmanuPNl50Jo78 (usd, 11900) — the exact lookup
+  # FindPriceByLookupKey performs, and the one that returned ErrNotFound for
+  # every plan in mark8ly#696.
+  mode: live
   interval: 15m
   secretName: mark8ly-console-catalog
   clientIdKey: CONSOLE_CATALOG_CLIENT_ID
