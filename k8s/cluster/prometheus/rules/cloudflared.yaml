@@ -1,0 +1,175 @@
+# =============================================================================
+# Cloudflare Tunnel observability — alert rules
+# =============================================================================
+# Applied by the `subscription-observability` ArgoCD Application via
+# kustomization.yaml in this directory.
+#
+# Every public hostname in this estate reaches the cluster through cloudflared:
+# there is no public ingress IP for them, so a tunnel failure is a total
+# outage of tesserix.app, mark8ly.com and every tenant domain. The tunnel has
+# been scraped by a ServiceMonitor for 228 days and, until this file, NOTHING
+# READ THOSE METRICS — there was no PrometheusRule anywhere in this repo
+# mentioning cloudflare, tunnel or ingress.
+#
+# ══ WHAT THESE RULES DO NOT COVER, SAID FIRST ══
+#
+# These alerts would NOT have fired during the 2026-09-21 incident, and it is
+# important that nobody reads them as though they would.
+#
+# That day, public requests from Australia failed roughly 35% of the time for
+# ~4 hours while, throughout:
+#
+#   cloudflared_tunnel_ha_connections  = 4      (healthy, never dipped)
+#   cloudflared_tunnel_request_errors  = 0      (zero increase over 8h)
+#   up{job="cloudflared"}              = 1      (never down)
+#
+# The requests died at Cloudflare's edge and never reached the tunnel, so the
+# tunnel was genuinely, measurably healthy while users were down. No
+# tunnel-side metric can see that failure mode — only an external check from
+# outside Cloudflare can, which is what Cloudflare Health Checks are for.
+#
+# What these rules DO cover is the failure mode that has actually bitten this
+# estate twice, where the tunnel itself degrades:
+#   - 2026-09-17: "Unable to reach the origin service ... lookup
+#     istio-ingressgateway.istio-ingress.svc.cluster.local: i/o timeout"
+#   - the QUIC receive-buffer degradation recorded in the cloudflared
+#     Application's own values, which produced ~50% failures over ~24h and is
+#     why `protocol: http2` is pinned there.
+# Both would have raised connections or errors here.
+#
+# ══ THE JOB SELECTOR IS LOAD-BEARING ══
+#
+# Every cloudflared pod is scraped TWICE: once by its ServiceMonitor
+# (job="cloudflared" / "cloudflared-helivanta" / "cloudflared-homechef") and
+# once by a pod-annotation scrape (job="kubernetes-pods"). Measured
+# 2026-09-21: `cloudflared_tunnel_ha_connections` returns 12 series unpinned
+# and 6 pinned, for 6 pods.
+#
+# So every expression below pins `job=~"cloudflared.*"`. Without it any
+# count/sum double-counts, and a threshold chosen against the true pod count
+# silently means half what it says. This is the same class of defect
+# cnpg.yaml's header records, where a wrong selector made three alerts unable
+# to fire at all.
+#
+# ══ NO SINGLE-METRO ALERT, DELIBERATELY ══
+#
+# All connections currently terminate in Mumbai (edge_location bom03, bom06,
+# bom08, bom10 — four colos, one metro), which is a real single-region
+# dependency for a global audience. It is NOT alerted here because it is the
+# steady state: the rule would fire immediately and stay firing until the
+# architecture changes, and a permanently-firing alert trains people to
+# ignore the receiver it lands on. It is a decision to take, not a page.
+# =============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cloudflared-tunnel-rules
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+    app.kubernetes.io/part-of: subscription-observability
+    app.kubernetes.io/component: monitoring
+spec:
+  groups:
+    - name: cloudflared-tunnel
+      rules:
+        # ── The tunnel is gone entirely ──────────────────────────────────────
+        #
+        # `absent()` is not decorative here. If every cloudflared pod dies, or
+        # the ServiceMonitor stops matching, the series disappears — and a
+        # comparison against a vector that returns nothing can never be true,
+        # so `ha_connections == 0` would go quiet exactly when the outage is
+        # total. The same omission made CNPGSyncStandbyMissing unable to
+        # detect the one condition it was named for.
+        - alert: CloudflaredTunnelAbsent
+          expr: absent(up{job=~"cloudflared.*"})
+          for: 5m
+          labels:
+            severity: critical
+            component: ingress
+          annotations:
+            summary: "No cloudflared scrape target exists"
+            description: >-
+              Prometheus has no `up` series for any cloudflared job. Either
+              every tunnel pod is gone or the ServiceMonitor no longer
+              matches. Every public hostname in this estate reaches the
+              cluster through this tunnel, so treat as a total outage until
+              proven otherwise.
+            runbook: >-
+              kubectl get pods -n cloudflared; kubectl get servicemonitor -n
+              cloudflared. The tunnel serves tesserix.app, mark8ly.com and
+              every tenant custom domain.
+
+        - alert: CloudflaredTunnelDown
+          expr: up{job=~"cloudflared.*"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: ingress
+          annotations:
+            summary: "cloudflared {{ $labels.pod }} is not scrapeable"
+            description: >-
+              The metrics endpoint on {{ $labels.pod }} has been unreachable
+              for 5 minutes. With replicas the tunnel may still be serving,
+              but capacity is reduced.
+
+        # ── The tunnel is up but carrying fewer connections than it should ──
+        #
+        # cloudflared maintains 4 HA connections to the edge per replica; that
+        # is its default and the measured steady state here (6/6 pods at 4 on
+        # 2026-09-21). Fewer means connections are being dropped and not
+        # re-established, which is what the 2026-09-17 origin-DNS episode and
+        # the QUIC degradation both looked like from this metric.
+        #
+        # Warning rather than critical at <4, because losing one of four
+        # degrades throughput rather than availability; 0 is the critical case
+        # and is caught below.
+        - alert: CloudflaredTunnelConnectionsDegraded
+          expr: cloudflared_tunnel_ha_connections{job=~"cloudflared.*"} < 4
+          for: 15m
+          labels:
+            severity: warning
+            component: ingress
+          annotations:
+            summary: "cloudflared {{ $labels.pod }} holds {{ $value }} of 4 edge connections"
+            description: >-
+              {{ $labels.pod }} has held fewer than its 4 edge connections for
+              15 minutes. Connections are being dropped faster than they are
+              re-established. Check the pod's logs for "Lost connection with
+              the edge" and "Unable to reach the origin service".
+
+        - alert: CloudflaredTunnelNoConnections
+          expr: cloudflared_tunnel_ha_connections{job=~"cloudflared.*"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            component: ingress
+          annotations:
+            summary: "cloudflared {{ $labels.pod }} holds NO edge connections"
+            description: >-
+              {{ $labels.pod }} has no connection to Cloudflare's edge. It is
+              serving nothing. If every replica is in this state, every public
+              hostname is down.
+
+        # ── The tunnel is reaching the edge but failing to serve ────────────
+        #
+        # Counts a request cloudflared accepted and could not fulfil — which
+        # in practice means it could not reach the in-cluster origin
+        # (istio-ingressgateway). Measured 2026-09-21: a flat zero over 8
+        # hours in normal operation, so any sustained non-zero rate is signal
+        # rather than noise.
+        - alert: CloudflaredTunnelOriginErrors
+          expr: sum by (job) (rate(cloudflared_tunnel_request_errors{job=~"cloudflared.*"}[5m])) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+            component: ingress
+          annotations:
+            summary: "cloudflared {{ $labels.job }} is failing requests to the origin"
+            description: >-
+              {{ $labels.job }} has been failing more than 0.1 requests/sec for
+              10 minutes. The tunnel is connected to the edge but cannot serve
+              — usually the in-cluster origin
+              (istio-ingressgateway.istio-ingress) being unreachable or slow.
+              This is the shape of the 2026-09-17 origin-DNS episode.
