@@ -45,23 +45,6 @@ locals {
 }
 
 # =============================================================================
-# Notification channels
-# =============================================================================
-resource "google_monitoring_notification_channel" "email" {
-  for_each = toset(var.alert_emails)
-
-  project      = var.project_id
-  display_name = "Uptime alerts — ${each.value}"
-  type         = "email"
-
-  labels = {
-    email_address = each.value
-  }
-
-  user_labels = local.common_labels
-}
-
-# =============================================================================
 # The checks
 # =============================================================================
 resource "google_monitoring_uptime_check_config" "public" {
@@ -161,7 +144,7 @@ resource "google_monitoring_alert_policy" "endpoint_down" {
     }
   }
 
-  notification_channels = [for c in google_monitoring_notification_channel.email : c.id]
+  notification_channels = var.alert_notification_channels
 
   alert_strategy {
     # Auto-close well after a real incident would be noticed, so a flapping

@@ -20,24 +20,43 @@ variable "environment" {
 # =============================================================================
 # Who gets told
 # =============================================================================
-# REQUIRED, with no default, and that is deliberate.
+# EXISTING Cloud Monitoring notification channel IDs, in the full form
+# "projects/<project>/notificationChannels/<id>".
 #
-# An alert policy with no notification channel is worse than no alert policy:
-# it renders green in the console, satisfies a review, and tells nobody. The
-# estate already has one instance of that shape — a ServiceMonitor scraping
-# the Cloudflare tunnel for 228 days with no rule reading it — and this stack
-# exists because of it. `terraform apply` failing until somebody names a
-# recipient is the point.
+# This stack REFERENCES channels rather than creating them, so no Slack token
+# or personal email address is committed to this repository.
 #
-# Supply via tfvars (which is gitignored) rather than a default here, so no
-# personal address is committed to this repository.
-variable "alert_emails" {
-  description = "Email addresses notified when a public endpoint goes down. Must not be empty."
+# The estate's alert destination is Slack #falco-events, reached today by
+# Alertmanager posting to the incoming webhook in Secret Manager
+# (prod-falco-slack-webhook). GCP CANNOT REUSE THAT URL: a Slack incoming
+# webhook accepts only {"text": ...} or Block Kit, while a Cloud Monitoring
+# webhook channel posts its own incident JSON, which Slack rejects with
+# invalid_payload. Wiring it that way yields a channel that reads as
+# configured and delivers nothing — the precise failure this stack exists to
+# end.
+#
+# So the Slack channel must be created once in Cloud Monitoring (Alerting ->
+# Notification channels -> Slack -> authorize the Google Cloud Monitoring app
+# against #falco-events), after which its ID goes here and terraform manages
+# the wiring from then on.
+#
+# REQUIRED, with no default, deliberately: an alert policy with no channel
+# renders green, satisfies a review, and tells nobody. The estate already had
+# one of those — a ServiceMonitor scraping the Cloudflare tunnel for 228 days
+# with no rule reading it — and this stack exists because of it. A failing
+# plan until somebody names a recipient is the point.
+variable "alert_notification_channels" {
+  description = "Existing Cloud Monitoring notification channel IDs to notify on outage. Must not be empty."
   type        = list(string)
 
   validation {
-    condition     = length(var.alert_emails) > 0
-    error_message = "alert_emails must contain at least one address, or these alerts notify nobody."
+    condition     = length(var.alert_notification_channels) > 0
+    error_message = "alert_notification_channels must contain at least one channel, or these alerts notify nobody."
+  }
+
+  validation {
+    condition     = alltrue([for c in var.alert_notification_channels : can(regex("^projects/[^/]+/notificationChannels/[0-9]+$", c))])
+    error_message = "Each channel must be a full ID like projects/<project>/notificationChannels/<numeric-id>."
   }
 }
 

@@ -10,5 +10,5 @@ output "monitored_hosts" {
 
 output "notification_channel_ids" {
   description = "Notification channels wired to every alert policy in this stack."
-  value       = [for c in google_monitoring_notification_channel.email : c.id]
+  value       = var.alert_notification_channels
 }
