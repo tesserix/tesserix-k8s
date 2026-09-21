@@ -13,7 +13,20 @@ service:
   port: 4202
 keda:
   enabled: true
-  minReplicaCount: 1
+  # Floor of 2, deliberately, NOT a surge change.
+  #
+  # strategy is maxSurge:0 / maxUnavailable:1 — kept that way on purpose
+  # (#709: cluster memory requests sit at 98-99%, so surging deadlocked
+  # seven deployments on 2026-08-30). The cost that comment accepts is
+  # downtime on a SINGLE-replica service, and with minReplicaCount:1 that
+  # is exactly what every rollout did: the one pod was terminated before
+  # its replacement started. Three deploys on 2026-09-21 took the
+  # customer-facing path down three times in 51 minutes.
+  #
+  # A floor of 2 removes the outage without surging: one pod drains while
+  # the other serves. Steady-state cost is one extra 128Mi request, not a
+  # rollout-time burst, so it does not reintroduce the #709 deadlock.
+  minReplicaCount: 2
   maxReplicaCount: 10
   pollingInterval: 15
   cooldownPeriod: 300
