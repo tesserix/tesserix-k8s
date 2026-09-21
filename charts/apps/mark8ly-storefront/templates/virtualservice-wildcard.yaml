@@ -63,6 +63,46 @@ spec:
             port:
               number: {{ .Values.adminServicePort }}
       timeout: 30s
+    # auth.mark8ly.com/internal/* → 404 at the edge. These routes mint
+    # sessions and read/delete users, guarded only by the
+    # MARKETPLACE_INTERNAL_AUTH_SECRET shared header — no mTLS, no rate
+    # limit, no lockout — so whoever holds that string can mint a valid
+    # session for ANY user_id in ANY tenant. They were publicly reachable:
+    # the catch-all route below has no URI filter, and a live probe of
+    # POST https://auth.mark8ly.com/internal/mint-session answered 401 with
+    # the handler's own body (not 404), i.e. armed at the edge.
+    #
+    # This MUST be blocked here rather than with an AuthorizationPolicy:
+    # the auth-bff Service sets istio.io/use-waypoint "none" (deliberately —
+    # see its service.yaml, ~4000ms waypoint penalty), so in ambient mesh
+    # there is no L7 proxy on that path and a path-based policy would never
+    # be enforced. The ingress gateway is a real Envoy and is where the
+    # external traffic actually enters.
+    #
+    # Every legitimate caller is in-mesh and unaffected — verified on the
+    # running deployments, all using AUTH_BFF_URL=http://mark8ly-auth-bff:8087,
+    # which never traverses this gateway:
+    #   marketplace-api → mint-session, DELETE users/:id, users/:id/display-name
+    #   storefront      → users/:id/providers
+    - match:
+        - authority:
+            exact: "auth.mark8ly.com"
+          uri:
+            prefix: /internal/
+        - authority:
+            exact: "auth.mark8ly.com"
+          uri:
+            exact: /internal
+      fault:
+        abort:
+          percentage:
+            value: 100
+          httpStatus: 404
+      route:
+        - destination:
+            host: {{ .Values.authBffServiceName }}.{{ .Values.namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.authBffServicePort }}
     # auth.mark8ly.com → auth-bff (customer sign-in/sign-out OAuth
     # flow). The storefront's lib/auth.ts builds login/logout URLs
     # that point here; the browser visits auth-bff directly, and the
