@@ -86,7 +86,15 @@ spec:
               value: {{ .Values.otel.exporterOtlpEndpoint | quote }}
             {{- end }}
 {{ include "mark8ly-marketplace-api-storefront.dbEnv" . | indent 12 }}
-            - name: STOREFRONT_KEY
+            # MARKETPLACE_STOREFRONT_KEY, not STOREFRONT_KEY: pkg/config
+            # reads `envconfig:"MARKETPLACE_STOREFRONT_KEY"`, and the name
+            # here was the other one. The secret synced, the pod carried
+            # it, and cfg.StorefrontKey was empty — which makes
+            # RequireStorefrontKey a no-op, so every /storefront/stores/*
+            # route served 200 to a request with no key or a wrong one.
+            # The Next.js app opposite already uses this name against the
+            # same secret and has always sent the header.
+            - name: MARKETPLACE_STOREFRONT_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.storefrontKey.secretName }}

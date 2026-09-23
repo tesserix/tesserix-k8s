@@ -62,9 +62,15 @@ database:
   secretName: mark8ly-postgres-marketplace-api
   sslmode: require
 mode: storefront
-# Storefront trust-boundary shared secret — consumed by the storefront
-# engine to validate requests from the mark8ly-storefront Next.js app
-# before serving any response. See spec §13.1.2 + §14.8.
+# Storefront trust-boundary shared secret — compared by the storefront
+# engine against the X-Storefront-Key header on every
+# /api/v1/storefront/stores/* request. See spec §13.1.2 + §14.8.
+#
+# secretKey below is the key INSIDE the Kubernetes Secret and is shared
+# with the mark8ly-storefront chart. It is NOT the env var name: the
+# binary reads MARKETPLACE_STOREFRONT_KEY, which deployment.yaml sets.
+# Those two were different until 2026-09-23, and the gap was invisible
+# from here — this comment claimed validation that was not happening.
 storefrontKey:
   secretName: mark8ly-marketplace-api-storefront-key
   secretKey: STOREFRONT_KEY
