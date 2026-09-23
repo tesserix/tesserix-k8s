@@ -26,7 +26,23 @@ keda:
   enabled: true
   pollingInterval: 15
   cooldownPeriod: 300
-  minReplicaCount: 1
+  # Floor of 2, deliberately, NOT a surge change — same reasoning as #1064,
+  # which raised the four customer-facing services and left this one at 1
+  # because platform-api serves no browser directly.
+  #
+  # That reading of the blast radius was wrong. marketplace-api-admin's
+  # platform-admin surfaces proxy to this service, so when it is down they
+  # answer 503 upstream_unavailable. On 2026-09-23 a cold image pull held
+  # the single pod's replacement for 17 minutes; with maxSurge:0 the old
+  # pod was already gone, so platform-api was simply absent. The 06:20 UTC
+  # admin-conformance job ran inside that window, failed six checks, and
+  # left mark8ly-marketplace-api-admin Degraded — an outage in a service
+  # nobody had classified as customer-facing.
+  #
+  # A floor of 2 removes the outage without surging: one pod drains while
+  # the other serves. Steady-state cost is one extra 128Mi request, not a
+  # rollout-time burst, so it does not reintroduce the #709 deadlock.
+  minReplicaCount: 2
   maxReplicaCount: 5
 resources:
   requests:
@@ -134,6 +150,25 @@ strategy:
   rollingUpdate:
     maxSurge: 0
     maxUnavailable: 1
+
+# 30 minutes, up from the Kubernetes default of 600s.
+#
+# A promotion updates all eight mark8ly apps at once, and kubelet pulls
+# images one at a time per node. On 2026-09-23 this deployment's pull
+# reported "6m16s (17m39s including waiting)" — roughly eleven minutes
+# queued behind the other seven, then six pulling 31MB. The Deployment blew
+# the 600s deadline while the pull was still running, so Argo reported
+# `Deployment "mark8ly-platform-api" exceeded its progress deadline`, the
+# sync operation failed, and the Kargo promotion errored — on a rollout
+# that was progressing normally and went on to succeed.
+#
+# The cost is honest: a genuinely stuck rollout now takes 30 minutes to be
+# declared failed rather than 10. That is the right trade while a cold pull
+# can legitimately take 18, and it should come back down once image pulls
+# are fixed at the source — pre-pulling, parallel pulls on the node, or
+# publishing to Artifact Registry directly instead of through the
+# ghcr-remote pull-through cache.
+progressDeadlineSeconds: 1800
 
 # Zitadel identity. platform-api owns password reset, account deletion and —
 # since #679 — provisioning invited teammates (Zitadel user + project grant +
