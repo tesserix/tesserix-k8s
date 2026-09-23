@@ -119,6 +119,23 @@ projects:
         - "../../environments/prod/terraform.tfvars"
       enabled: true
 
+  # 2026-09-21 — external uptime probes for the public estate. No
+  # `depends_on`: this stack creates only Cloud Monitoring resources and
+  # reads nothing another stack produces, so it can plan in any order.
+  - name: 14-uptime-monitoring
+    dir: terraform-new/stacks/14-uptime-monitoring
+    execution_order_group: 6
+    autoplan:
+      when_modified:
+        - "*.tf"
+        # This stack keeps its own tfvars rather than putting a single-stack
+        # value in the shared file every project watches — see that file's own
+        # comment. It has to be watched here, or changing the alert recipient
+        # would silently plan nothing.
+        - "terraform.tfvars"
+        - "../../environments/prod/terraform.tfvars"
+      enabled: true
+
   - name: atlantis-failure-smoke
     dir: terraform-new/tests/atlantis-failure
     autoplan:
