@@ -4338,3 +4338,18 @@ devai_workload_sa_email = "app-secrets-devai-prod@tesseracthub-480811.iam.gservi
 agentgateway_ksa        = "agentgateway-system/agentgateway"
 kora_agentgateway_ksa   = "agentgateway-system/kora-ai"
 devai_agentgateway_ksa  = "agentgateway-system/ai-gateway"
+
+# =============================================================================
+# 14-uptime-monitoring — where an outage is announced
+# =============================================================================
+# A Slack notification channel created once by hand in Cloud Monitoring
+# (Alerting -> Notification channels -> Slack), authorized against
+# #falco-events — the channel Alertmanager already posts to, so an uptime
+# failure and a cluster alert land in the same place rather than two.
+#
+# It is created outside terraform because the Slack authorization is an OAuth
+# handshake, not an API field: terraform can reference the resulting channel
+# but cannot perform the consent. From here on the wiring is managed.
+alert_notification_channels = [
+  "projects/tesseracthub-480811/notificationChannels/157714601067988204",
+]
