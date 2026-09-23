@@ -115,3 +115,69 @@ tests:
             exp_annotations:
               summary: "Trial signup anomaly threshold tripped in 24h window"
               description: 'Rate: 1.1574074074074073e-05/s. Check signup IP distribution and card/billing country spread. §5.1 flags >50/day as anomalous at our stage. (Arbitrage flags were retired in mark8ly#704 — that table no longer exists.)'
+
+  # ---------------------------------------------------------------------------
+  # 4. http:error_rate:ratio5m must EXIST at zero.
+  #
+  #    sum(rate(X{status=~"5.."}[5m])) over a selector matching nothing yields
+  #    an empty vector, not 0, and empty / anything is empty. Before the
+  #    `or vector(0)`, this series therefore existed only DURING an error
+  #    episode: live Prometheus held 19 series of http_requests_total and none
+  #    of this rule, with promtool reporting health=ok, because there was no
+  #    5xx to divide.
+  #
+  #    The control is the first assertion: traffic flowing, zero 5xx, and the
+  #    rule still reports. That is the state it spends nearly all its time in
+  #    and the one it used to be unable to describe.
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      # 2 req/s of 200s and nothing else — a healthy service.
+      - series: 'http_requests_total{status="200", method="GET", path="/healthz"}'
+        values: '0+120x30'
+    promql_expr_test:
+      - expr: http:error_rate:ratio5m
+        eval_time: 20m
+        exp_samples:
+          - labels: 'http:error_rate:ratio5m'
+            value: 0
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: HTTPErrorRateHigh
+        exp_alerts: []
+
+  # ---------------------------------------------------------------------------
+  # 5. ...and must still report the real ratio once 5xx appear.
+  #
+  #    1 req/s of 503 against 1 req/s of 200 is a 50% error rate. The
+  #    denominator clamp floors the divisor at 1 req/s; here total rate is
+  #    2/s, above the floor, so the clamp does not distort and the ratio is
+  #    the true 0.5. Well past the 5% threshold, so HTTPErrorRateHigh fires
+  #    after its `for: 15m`.
+  # ---------------------------------------------------------------------------
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{status="200", method="POST", path="/api/v1/checkout"}'
+        values: '0+60x60'
+      - series: 'http_requests_total{status="503", method="POST", path="/api/v1/checkout"}'
+        values: '0+60x60'
+    promql_expr_test:
+      - expr: http:error_rate:ratio5m
+        eval_time: 20m
+        exp_samples:
+          - labels: 'http:error_rate:ratio5m'
+            value: 0.5
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: HTTPErrorRateHigh
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: HTTPErrorRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: api
+              alertname: HTTPErrorRateHigh
+            exp_annotations:
+              summary: "HTTP 5xx rate >5% over 15m"
+              description: "Current: 50%. Break down by path via http_requests_total."
