@@ -278,8 +278,41 @@ spec:
             summary: "Stripe webhook failure rate >1/100s (excluding CAS races)"
             description: "event_type={{ $labels.event_type }} rate={{ $value }}/s. Check handler logs."
 
+        # The reconciliation pass stopped running at all.
+        #
+        # StripeReconciliationDrift below cannot cover this. It fires on
+        # drift > 0, so a cron that never runs produces no drift, no alert,
+        # and a dashboard that looks exactly like a clean estate — which is
+        # the state it is in almost every night, so the difference is
+        # invisible precisely when it matters.
+        #
+        # max() is load-bearing: two replicas serve marketplace-api-admin
+        # and only the one that wins the advisory lock runs the pass, so the
+        # loser's gauge legitimately stays behind. A per-series comparison
+        # would page every night against a deployment working as designed.
+        #
+        # 26h, not 24h: the pass is scheduled at 02:15, and a threshold
+        # equal to the period alerts on ordinary jitter.
+        - alert: StripeReconciliationStale
+          expr: |
+            time() - max(mark8ly_subscription_reconciliation_last_success_timestamp_seconds) > 26 * 3600
+          for: 1h
+          labels:
+            severity: warning
+            component: subscription
+            runbook: https://runbooks.mark8ly.internal/subscription/reconciliation-drift
+          annotations:
+            summary: "Stripe reconciliation has not completed a pass in over 26h"
+            description: "Last completed pass was {{ $value | humanizeDuration }} ago. The 02:15 cron runs in-process inside marketplace-api-admin; check its logs for 'reconciliation cron failed' or 'reconciliation: batch complete'."
+
         # Reconciliation drift — should be zero in steady state. Any drift
         # indicates our local status has fallen out of sync with Stripe.
+        #
+        # Every drift_type is published at zero from process start, so this
+        # evaluates over a real vector rather than an absent one. It did not
+        # until 2026-09-23: the counter is a CounterVec and a CounterVec with
+        # no children exports nothing, so live Prometheus held zero series
+        # for it and this alert compared an absent vector against zero.
         - alert: StripeReconciliationDrift
           expr: subscription:reconciliation_drift:rate1h > 0
           for: 1h
