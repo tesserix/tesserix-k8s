@@ -32,8 +32,14 @@
 # every zone on this account is on the Free plan (verified 2026-09-21 via the
 # zones API) and standalone Health Checks need Pro or above.
 #
-# COST: the free tier covers 1M check executions per month. Five endpoints at
-# the 5-minute default across GCP's probe regions stays well inside it.
+# COST: the free tier covers 1M check executions per month. This stack does NOT
+# use the 5-minute default — see `period` below, set to 60s so an intermittent
+# failure is not sampled past. Five endpoints at 60s across every probe region
+# is roughly 1.3M executions/month, modestly OVER the free allotment. That is
+# accepted deliberately: the cadence is what makes the check able to see the
+# failure it exists for, and an earlier draft of this comment quoted the
+# 5-minute figure while the resource ran at 60s, which would have been read
+# back as "this is free" for as long as nobody checked the bill.
 # =============================================================================
 
 locals {
