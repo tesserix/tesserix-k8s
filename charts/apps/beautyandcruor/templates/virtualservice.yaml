@@ -1,0 +1,37 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  hosts:
+    - {{ .Values.domains.primary | quote }}
+    {{- range .Values.domains.aliases }}
+    - {{ . | quote }}
+    {{- end }}
+  gateways:
+    - {{ .Values.tls.gatewayNamespace }}/{{ .Release.Name }}-gateway
+  http:
+    # Health check — no redirect, no auth, cheapest possible path.
+    - match:
+        - uri:
+            prefix: /healthz
+      route:
+        - destination:
+            host: {{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+
+    # Everything else is static HTML from nginx. Retries are safe here because
+    # every route is a GET of an immutable file — there is nothing to replay.
+    - route:
+        - destination:
+            host: {{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local
+            port:
+              number: {{ .Values.service.port }}
+      timeout: 15s
+      retries:
+        attempts: 3
+        perTryTimeout: 5s
+        retryOn: 5xx,reset,connect-failure

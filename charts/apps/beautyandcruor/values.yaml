@@ -1,0 +1,202 @@
+# beautyandcruor.com
+#
+# NOTE ON WHICH FILE PROD READS: the ArgoCD Application loads values.yaml plus
+# ../global-config.yaml and never values-prod.yaml — the same wiring the blog
+# chart carries a warning about. So THIS file is production. There is
+# deliberately no values-prod.yaml; a second file here would look authoritative
+# and be ignored.
+#
+# This is a fully static site: a Next.js `output: 'export'` build served by
+# nginx-unprivileged. No Node process at runtime, no database, no session, no
+# auth. Consequences that differ from every other Next.js chart in this repo:
+#   - port 8080, not 3000 (nginx-unprivileged binds above 1024 so it can run
+#     as uid 101 under a read-only root filesystem)
+#   - health path /healthz, not /api/health — see nginx.conf in the app repo
+#   - no ExternalSecret: the app holds no credentials at all
+#   - only /tmp needs to be writable; there is no .next/cache to mount
+
+replicaCount: 1
+
+cloudRun:
+  enabled: false
+
+# =============================================================================
+# Domain
+# =============================================================================
+domains:
+  primary: beautyandcruor.com
+  # The apex is canonical. www redirects to it at the edge (Cloudflare), so the
+  # VirtualService only has to answer for both hosts.
+  aliases:
+    - www.beautyandcruor.com
+
+# =============================================================================
+# Container image
+# =============================================================================
+image:
+  # In-region Artifact Registry mirror of ghcr.io, as per the other charts.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/beautyandcruor
+  pullPolicy: Always
+  tag: "latest"
+
+imagePullSecrets:
+  - name: ghcr-secret
+nameOverride: ""
+fullnameOverride: ""
+
+# =============================================================================
+# Service account
+# No Workload Identity binding: the running site never talks to GCP. Assets are
+# uploaded to GCS by CI, not by the pod — so there is no gcp-service-account
+# annotation here, unlike the blog which writes uploads at runtime.
+# =============================================================================
+serviceAccount:
+  create: true
+  automount: false
+  annotations: {}
+  name: ""
+
+# =============================================================================
+# Pod
+# =============================================================================
+podAnnotations:
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 101
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 101      # nginx-unprivileged
+  runAsGroup: 101
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# Intentionally unset, matching the blog: traffic arrives via the Istio
+# ingress gateway, not Kong. Kong crash-looped at the edge here.
+ingress: null
+
+# =============================================================================
+# Resources — memory only. CPU requests/limits are omitted across every chart
+# in this repo; workloads burst freely on shared spot nodes. nginx serving
+# ~2 MB of static files needs very little.
+# =============================================================================
+resources:
+  limits:
+    memory: 128Mi
+  requests:
+    memory: 64Mi
+
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+# preStop bridges the gap between endpoint removal and SIGTERM, same rationale
+# as the blog: Istio endpoint discovery lags pod termination and in-flight
+# requests RST during that window.
+terminationGracePeriodSeconds: 30
+lifecycle:
+  preStop:
+    sleep:
+      seconds: 10
+
+# =============================================================================
+# Probes — /healthz is a literal `return 200` in nginx.conf, no filesystem hit.
+# nginx starts in well under a second, so the startup probe is generous only to
+# cover the Istio sidecar coming up alongside it.
+# =============================================================================
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /healthz
+    port: http
+  periodSeconds: 3
+  timeoutSeconds: 2
+  failureThreshold: 10
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 0
+  periodSeconds: 30
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# =============================================================================
+# Autoscaling — off. This is a brochure site for a single artist; one pod
+# serving static files is ample, and KEDA on memory would never fire.
+# =============================================================================
+autoscaling:
+  enabled: false
+keda:
+  enabled: false
+
+# No minAvailable — the template falls back to maxUnavailable: 1, which stays
+# evictable at one replica. minAvailable: 2 would pin disruptionsAllowed at 0
+# and block every node drain, which is what bit the blog.
+pdb:
+  enabled: true
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# =============================================================================
+# TLS — a dedicated Gateway and Certificate for this external domain.
+#
+# Named SANs, NOT a wildcard. beautyandcruor.com's CAA records at Cloudflare
+# historically restricted `issuewild` to pki.goog and globalsign.com, which
+# would have left a wildcard Certificate stuck un-Ready with the cause in DNS
+# rather than the cluster. `0 issuewild "letsencrypt.org"` is present as of
+# 2026-09-23 so a wildcard would work today, but this site only needs two
+# hosts and named SANs cannot regress if that record is ever removed.
+# =============================================================================
+tls:
+  enabled: true
+  issuer: letsencrypt-prod
+  secretName: beautyandcruor-com-tls
+  gatewayNamespace: istio-ingress
+
+# =============================================================================
+# Environment
+# The asset CDN base URL is deliberately ABSENT here. It is baked into the HTML
+# at build time (static export), so it belongs to the Docker build as
+# NEXT_PUBLIC_ASSET_BASE_URL and setting it at runtime would change nothing.
+# Putting it here would imply a control this chart does not have.
+# =============================================================================
+env: {}
+
+externalSecrets:
+  enabled: false
+
+vpa:
+  enabled: false
+
+gcp:
+  projectId: ""
+  namespace: "tesserix"
