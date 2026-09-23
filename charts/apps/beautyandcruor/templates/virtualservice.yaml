@@ -11,7 +11,14 @@ spec:
     - {{ . | quote }}
     {{- end }}
   gateways:
+    {{- if .Values.tls.enabled }}
+    # This chart's own Gateway, for the real domain with its own certificate.
     - {{ .Values.tls.gatewayNamespace }}/{{ .Release.Name }}-gateway
+    {{- else }}
+    # Shared gateways: TLS is terminated by Cloudflare at the edge and the
+    # tunnel forwards plain HTTP, so there is nothing for this chart to certify.
+    {{- toYaml .Values.gateways | nindent 4 }}
+    {{- end }}
   http:
     # Health check — no redirect, no auth, cheapest possible path.
     - match:
