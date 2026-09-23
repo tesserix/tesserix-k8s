@@ -16,6 +16,7 @@ spec:
   strategy:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+  progressDeadlineSeconds: {{ .Values.progressDeadlineSeconds | default 600 }}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ .Values.name }}
@@ -85,10 +86,11 @@ spec:
                   #
                   # Without it a missing Secret is CreateContainerConfigError:
                   # the container cannot START, which is NOT the same as the
-                  # surface failing closed. This deployment is replicas=1 with
-                  # maxSurge=0/maxUnavailable=1, so the old pod is already gone
-                  # by then — the whole service is down, not just the console
-                  # surface. That is exactly what happened when this env was
+                  # surface failing closed. With maxSurge:0 a replacement pod
+                  # that cannot start leaves fewer pods serving than intended
+                  # — at the floor of 1 this chart used to carry, that meant
+                  # the whole service was down, not just the console surface.
+                  # That is exactly what happened when this env was
                   # first added (2026-09-07): the chart Application synced
                   # before the external-secrets Application created the Secret,
                   # and platform-api was down for ~83s.
