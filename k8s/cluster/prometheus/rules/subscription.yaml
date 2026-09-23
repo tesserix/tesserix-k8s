@@ -8,14 +8,20 @@
 #   http_requests_total{method,path,status}
 #   http_request_duration_seconds_bucket{method,path}
 #   orders_created_total{store_id}
-#   webhook_received_total{provider,event_type}
-#   outbox_events_pending
 #   outbox_events_published_total
 #   mark8ly_trial_signup_anomaly_alerts_total
 #   mark8ly_trial_activation_day30_total
 #   mark8ly_subscription_dunning_emails_sent_total{day}
 #   mark8ly_subscription_payment_action_reminders_sent_total{offset}
 #   mark8ly_subscription_dunning_suppressed_refund_window_total
+#
+# Two entries were removed from that list on 2026-09-23 because they were
+# not, in fact, shipped:
+#   webhook_received_total   -- defined and registered in Go, incremented by
+#                               nothing. Deleted in mark8ly#916.
+#   outbox_events_pending    -- never defined in Go at all. The Webhook
+#                               Pipeline dashboard still has a panel reading
+#                               it, which has therefore always been blank.
 #
 # The plan (2026-04-18-p17-observability.md) enumerates a broader metric set
 # (subscription_state_count, webhook_processing_duration_seconds_bucket,
@@ -80,12 +86,6 @@ spec:
         # 24h rate of trial signup anomaly alerts — used by pager alert.
         - record: subscription:trial_signup_anomalies:rate24h
           expr: rate(mark8ly_trial_signup_anomaly_alerts_total[24h])
-
-        # Webhook receive rate by event_type. Provider label preserved for
-        # breakdowns in dashboards.
-        - record: webhook:received:rate5m
-          expr: |
-            sum by (provider, event_type) (rate(webhook_received_total[5m]))
 
         # HTTP request rate by status class (2xx/4xx/5xx).
         - record: http:requests:rate5m
