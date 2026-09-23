@@ -95,9 +95,29 @@ spec:
         # HTTP error rate — 5xx fraction of total. Anchor for webhook/API
         # failure alerts given the path-agnostic nature of outbox/webhook
         # endpoints on marketplace-api.
+        #
+        # `or vector(0)` is load-bearing. sum(rate(X{status=~"5.."}[5m]))
+        # over a selector that currently matches nothing returns an EMPTY
+        # vector, not zero, and empty / anything is empty — so before this,
+        # the series existed only during an error episode. Verified against
+        # live Prometheus 2026-09-23: http_requests_total had 19 series and
+        # this rule had none, while promtool reported health=ok, because
+        # there was no 5xx to divide.
+        #
+        # HTTPErrorRateHigh could still fire (the series appears exactly when
+        # it crosses), so this is not a dead alert. What was missing is the
+        # steady state: you could not graph "errors are zero", could not tell
+        # a healthy service from one whose instrumentation had stopped, and
+        # any rule wanting to alert on the ABSENCE of data had nothing to
+        # read. A ratio is meaningful at zero and should exist at zero.
+        #
+        # clamp_min on the denominator is kept deliberately: it floors the
+        # divisor at 1 req/s so a single failed request against an idle
+        # service cannot read as a 100% error rate. It costs sensitivity at
+        # genuinely low traffic, which is the right trade for a 5% threshold.
         - record: http:error_rate:ratio5m
           expr: |
-            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            (sum(rate(http_requests_total{status=~"5.."}[5m])) or vector(0))
               / clamp_min(sum(rate(http_requests_total[5m])), 1)
 
         # Outbox publish throughput.
