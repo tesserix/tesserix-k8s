@@ -55,7 +55,18 @@ image:
   # In-region Artifact Registry mirror of ghcr.io, as per the other charts.
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/beautyandcruor
   pullPolicy: Always
-  tag: "latest"
+  # PINNED to the build tag, not "latest".
+  #
+  # "latest" is currently unresolvable through the mirror: kubelet requested it
+  # for 22 minutes before CI had pushed anything, and Artifact Registry
+  # negative-cached the 404. A fresh tag resolves immediately — main-a282da0
+  # returns 200 through the same mirror while latest still returns
+  # MANIFEST_UNKNOWN. Pinning sidesteps the stale cache entirely.
+  #
+  # It is also the house pattern: the blog pins main-<sha7> and lets Kargo
+  # rewrite it on promotion. Until this app has a Kargo Project, bump this by
+  # hand when deploying a new build.
+  tag: "main-a282da0"
 
 imagePullSecrets:
   - name: ghcr-secret
