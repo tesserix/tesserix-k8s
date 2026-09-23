@@ -23,12 +23,30 @@ cloudRun:
 # =============================================================================
 # Domain
 # =============================================================================
+# STAGING HOST, not the real domain yet.
+#
+# beautyandcruor.com still resolves to the old WordPress site at Hostinger and
+# will until the rebuild is finished and a cutover is planned. Serving from a
+# tesserix.app subdomain in the meantime means the new site is publicly
+# reachable without touching a client's live DNS.
+#
+# When the cutover happens: set primary to beautyandcruor.com, add
+# www.beautyandcruor.com as an alias, flip tls.enabled to true (which brings
+# back this chart's own Gateway and Certificate) and empty `gateways`.
 domains:
-  primary: beautyandcruor.com
-  # The apex is canonical. www redirects to it at the edge (Cloudflare), so the
-  # VirtualService only has to answer for both hosts.
-  aliases:
-    - www.beautyandcruor.com
+  primary: beautyandcruor.tesserix.app
+  aliases: []
+
+# Gateways the VirtualService binds to when this chart is NOT carrying its own.
+#
+# *.tesserix.app arrives through the Cloudflare Tunnel in the cloudflared
+# namespace, which terminates TLS at Cloudflare's edge and forwards plain HTTP
+# to the ingress gateway. That is why blog.tesserix.app has no Certificate in
+# the cluster and neither does this — asking cert-manager for one would leave
+# it stuck pending forever, since the challenge could never be answered.
+gateways:
+  - istio-ingress/tesseract-gateway
+  - istio-ingress/custom-domain-gateway
 
 # =============================================================================
 # Container image
@@ -176,8 +194,17 @@ affinity: {}
 # 2026-09-23 so a wildcard would work today, but this site only needs two
 # hosts and named SANs cannot regress if that record is ever removed.
 # =============================================================================
+# OFF while the app serves from tesserix.app — see `domains` above.
+#
+# Leaving this on would create a Gateway and a Certificate for
+# beautyandcruor.com, and cert-manager would retry an HTTP-01 challenge that
+# cannot succeed: the domain still points at Hostinger, so Let's Encrypt would
+# reach the old WordPress site instead of this cluster. A permanently pending
+# Certificate in production is noise that teaches people to ignore alerts.
+#
+# Flip to true as part of the domain cutover, not before.
 tls:
-  enabled: true
+  enabled: false
   issuer: letsencrypt-prod
   secretName: beautyandcruor-com-tls
   gatewayNamespace: istio-ingress
