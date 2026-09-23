@@ -28,6 +28,11 @@ LIVE_STATE_PREFIXES = {
     "stacks/prod/identity-platform",
     "stacks/prod/vertex",
     "stacks/prod/document-intelligence-iam",
+    # Created by this stack's first apply, which Atlantis runs on merge. Listed
+    # here for the same reason every other prefix is: this set is what the
+    # graph is allowed to claim ownership of, and a stack whose state nothing
+    # acknowledges is the orphan this test exists to catch.
+    "stacks/prod/uptime-monitoring",
     "stacks/prod/cloud-run",
     "state/devtest",
     "state/prod",

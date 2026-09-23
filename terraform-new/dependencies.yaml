@@ -159,6 +159,17 @@ stacks:
     dependencies: [06-workload-identity]
     timeout: 10m
 
+  14-uptime-monitoring:
+    name: uptime-monitoring
+    description: External uptime checks and alert policies for the public estate
+    path: stacks/14-uptime-monitoring
+    state_prefix: stacks/prod/uptime-monitoring
+    # Nothing: this stack creates only Cloud Monitoring resources and reads no
+    # output another stack produces, so it can plan in any order. The phase
+    # below is therefore about mirroring atlantis.yaml, not about sequencing.
+    dependencies: []
+    timeout: 10m
+
 execution_order:
   - phase: 1
     stacks: [00-state-bootstrap]
@@ -171,12 +182,13 @@ execution_order:
   - phase: 5
     stacks: [05-k8s-bootstrap, 06-workload-identity]
   - phase: 6
-    stacks: [07-app-secrets, 13-document-intelligence-iam]
+    stacks: [07-app-secrets, 13-document-intelligence-iam, 14-uptime-monitoring]
   - phase: 7
     stacks: [09-github-arc]
 
 destroy_order:
   - 09-github-arc
+  - 14-uptime-monitoring
   - 13-document-intelligence-iam
   - 07-app-secrets
   - 06-workload-identity
