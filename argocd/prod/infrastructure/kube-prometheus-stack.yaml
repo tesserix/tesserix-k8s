@@ -498,8 +498,26 @@ spec:
                 # nobody. Note the split: NoLeader and SnapshotStale use
                 # sum()/max(), which DROP the namespace label, so those two
                 # arrive via the unlabelled-critical route below instead.
+                # cloudflared is included because mark8ly.com's public
+                # traffic reaches the cluster through that tunnel — it was one
+                # of the hosts that failed on 2026-09-21 — and #1065 adds the
+                # first PrometheusRules it has ever had, after 228 days of
+                # being scraped with no rule reading the series.
+                #
+                # VERIFIED on the live series, as the entries above were:
+                # up{job=~"cloudflared.*"} returns 6 series, every one carrying
+                # namespace="cloudflared". Without this, CloudflaredTunnelDown
+                # and CloudflaredTunnelNoConnections fire in Prometheus and
+                # route to "null" — a rule nobody hears, which reads as
+                # coverage on a dashboard and is worse than the no-rule state
+                # #1065 set out to fix.
+                #
+                # Its two `warning` rules (ConnectionsDegraded, OriginErrors)
+                # stay silent: this route is critical-only, and the broader
+                # "every warning is discarded" problem is its own piece of
+                # work, not something to half-solve here.
                 - matchers:
-                    - namespace =~ "mark8ly|kargo-mark8ly|openbao"
+                    - namespace =~ "mark8ly|kargo-mark8ly|openbao|cloudflared"
                     - severity = "critical"
                   receiver: slack-alerts
 
