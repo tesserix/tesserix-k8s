@@ -23,8 +23,19 @@ spec:
         - values.yaml
       values: |
         # Production environment overrides
-        image:
-          tag: "2026.2.0"
+        #
+        # NO `image.tag` HERE, DELIBERATELY. It used to pin "2026.2.0", and
+        # these inline values OVERRIDE the chart — so when the chart's
+        # values.yaml was bumped to "2026.3.0" (with a comment explaining
+        # that 2026.2.0 logged "Your version is outdated" and had stuck
+        # "Incoming request ended abruptly: context canceled" episodes),
+        # that bump was a silent no-op. Production still ran 2026.2.0,
+        # while ArgoCD reported Synced and Healthy, and git read as though
+        # the fix had shipped. Verified on the cluster 2026-09-21.
+        #
+        # The tag now lives in the chart's values.yaml and nowhere else, so
+        # the file you edit is the file that takes effect. Do not reintroduce
+        # a tag override here without deleting the chart's.
 
         # Tunnel configuration
         tunnel:

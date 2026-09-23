@@ -8,11 +8,48 @@
 # Deployment configuration
 replicaCount: 2
 
+# Replace before surging (mark8ly-platform-api#709, and the same remedy as
+# temporal #538 and devai #600).
+#
+# This chart had NO strategy block, so it inherited Kubernetes' 25%/25%
+# default — which at 2 replicas rounds to maxSurge=1, maxUnavailable=0: the
+# new pod must SCHEDULE BEFORE an old one dies. On a cluster whose memory
+# requests sit near 100% the new pod pends forever and the rollout deadlocks,
+# with the Deployment still reporting Available=True because the old pods keep
+# serving. That left seven mark8ly deployments stuck on 2026-08-30 with
+# nothing alerting.
+#
+# For cloudflared specifically that failure mode is worse than for an app: a
+# deadlocked rollout means the tunnel silently stays on the old image, which
+# is exactly how 2026.2.0 survived a bump to 2026.3.0 in git. And there is no
+# downtime cost here — at 2+ replicas one connector keeps serving while the
+# other is replaced, and the PDB (minAvailable: 1) enforces that independently.
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 0
+    maxUnavailable: 1
+
 image:
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/cloudflare/cloudflared
   # 2026.2.0 logged "Your version is outdated" since 07:37 UTC and
   # had several stuck "Incoming request ended abruptly: context
   # canceled" episodes. Bump to the upstream-recommended release.
+  #
+  # THIS IS NOW THE ONLY PLACE THE TAG IS SET. Until 2026-09-21 the prod
+  # ArgoCD Application carried inline `image.tag: "2026.2.0"`, which
+  # overrides this file — so the bump above sat in git looking shipped
+  # while production ran 2026.2.0 and ArgoCD reported Synced. That
+  # override is gone; see argocd/prod/infrastructure/cloudflared.yaml.
+  #
+  # NOT on 2026.9.1, which cloudflared itself recommends, and that is a
+  # deliberate hold rather than an oversight: 2026.8.0 strips trailing
+  # slashes from requests to HTTP origins and 2026.8.1 normalizes paths,
+  # both of which reach this tunnel's origin (istio-ingressgateway, plain
+  # HTTP) and both of which broke real applications upstream. 2026.8.2+
+  # resolved them, but moving there wants a deliberate check of path and
+  # trailing-slash handling against the Next.js apps, not a same-day jump
+  # during an incident. Tracked separately.
   tag: "2026.3.0"
   pullPolicy: IfNotPresent
 
