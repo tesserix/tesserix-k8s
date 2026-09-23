@@ -4338,16 +4338,3 @@ devai_workload_sa_email = "app-secrets-devai-prod@tesseracthub-480811.iam.gservi
 agentgateway_ksa        = "agentgateway-system/agentgateway"
 kora_agentgateway_ksa   = "agentgateway-system/kora-ai"
 devai_agentgateway_ksa  = "agentgateway-system/ai-gateway"
-
-# =============================================================================
-# 14-uptime-monitoring — external uptime checks for the public estate
-# =============================================================================
-# The Slack notification channel created in Cloud Monitoring against
-# #falco-events (Tesserix Pty Ltd workspace). Referenced, not created here, so
-# no Slack OAuth token lands in this repository — the token stays in the
-# channel resource, which the console owns.
-#
-# The variable has no default on purpose: an alert policy with no channel
-# renders green, satisfies a review and tells nobody, so the plan fails until
-# a recipient is named.
-alert_notification_channels = ["projects/tesseracthub-480811/notificationChannels/157714601067988204"]
