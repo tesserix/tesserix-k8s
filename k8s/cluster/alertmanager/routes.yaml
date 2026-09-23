@@ -1,17 +1,49 @@
 # =============================================================================
 # ALERTMANAGER ROUTING — subscription observability
 # =============================================================================
-# Route tree (top-to-bottom matching with `continue: true` on security):
-#   1. security="true"         → #security-alerts (continue: true)
-#   2. pagerduty_route=subscription → pagerduty-subscription (10s groupWait, 1h repeat)
-#   3. severity=critical       → pagerduty-platform (10s groupWait, 1h repeat)
-#   4. severity=warning        → #platform-alerts (default 4h repeat)
-#   5. severity=info           → #platform-alerts with 24h repeat
-#   * default                  → #platform-alerts
+# This file was REJECTED WHOLESALE for 19 days. The prometheus-operator's own
+# words, from its log:
 #
-# Secrets (synced by ESO from GCP Secret Manager):
-#   - Secret `slack-webhooks` — keys: platform, security
-#   - Secret `pagerduty-keys` — keys: platform, subscription
+#   AlertmanagerConfig subscription-routes was rejected due to invalid
+#   configuration: unable to get secret "slack-webhooks": secrets
+#   "slack-webhooks" not found
+#
+# An AlertmanagerConfig is all-or-nothing. One missing secret reference did
+# not disable one receiver; it threw away the whole tree — the severity
+# fan-out, the security branch, both PagerDuty paths. Nothing here had ever
+# taken effect. What delivered instead was only kube-prometheus-stack's own
+# inline config: Watchdog, severity=critical in four namespaces, and three
+# alerts routed by name. Everything else reached the "null" receiver.
+#
+# That is why "Alertmanager discards every severity: warning" looked true
+# from the outside. It was not a policy. It was this file never loading.
+#
+# So every secret named below is one that EXISTS IN THE CLUSTER and is
+# verified synced, rather than one that ought to. The single webhook is the
+# one Alertmanager already posts criticals to, so a warning and a critical
+# now land in the same place instead of one landing nowhere.
+#
+# Route tree (top-to-bottom; `continue: true` on security):
+#   1. security="true"   → #falco-events, tagged [SECURITY], falls through
+#   2. severity=critical → #falco-events, 1h repeat
+#   3. severity=warning  → #falco-events, 4h repeat
+#   4. severity=info     → #falco-events, 24h repeat
+#   * default            → #falco-events
+#
+# Secret (synced by ESO from GCP Secret Manager, ExternalSecret
+# `alertmanager-slack` in this namespace):
+#   - Secret `alertmanager-slack-webhook` — key: SLACK_WEBHOOKURL
+#
+# DELIBERATELY NO PAGERDUTY. The previous version routed criticals to
+# `pagerduty-keys`, a secret that does not exist in the cluster or in GCP
+# Secret Manager, and that reference is half of why this file never loaded.
+# A PagerDuty path that cannot resolve its routing key is not redundancy; it
+# is the same failure one layer down. Restore it in one commit when the keys
+# are actually provisioned.
+#
+# NOTE ON CHANNEL: every receiver posts to the channel the webhook itself is
+# bound to. A Slack incoming webhook has a fixed destination, so `channel:`
+# here is documentation, not a selector — it cannot redirect the message.
 # =============================================================================
 apiVersion: monitoring.coreos.com/v1alpha1
 kind: AlertmanagerConfig
@@ -24,7 +56,7 @@ metadata:
     product: mark8ly
 spec:
   route:
-    receiver: platform-default
+    receiver: platform-slack
     groupBy:
       - alertname
       - component
@@ -32,29 +64,20 @@ spec:
     groupInterval: 5m
     repeatInterval: 4h
     routes:
-      # --- Security-flagged alerts always page #security-alerts. ------------
-      # `continue: true` lets the alert fall through to the severity tree so
-      # a security+critical event also hits PagerDuty.
+      # --- Security-flagged alerts get their own, louder message. -----------
+      # `continue: true` lets the alert fall through to the severity tree, so
+      # a security+critical event is announced twice rather than swallowed by
+      # whichever branch matched first.
       - matchers:
           - name: security
             value: "true"
         receiver: security-slack
         continue: true
 
-      # --- Explicit PagerDuty route for subscription-owned criticals. -------
-      - matchers:
-          - name: pagerduty_route
-            value: subscription
-        receiver: pagerduty-subscription
-        groupWait: 10s
-        groupInterval: 5m
-        repeatInterval: 1h
-
-      # --- Generic severity fan-out. ----------------------------------------
       - matchers:
           - name: severity
             value: critical
-        receiver: pagerduty-platform
+        receiver: platform-slack
         groupWait: 10s
         groupInterval: 5m
         repeatInterval: 1h
@@ -73,15 +96,16 @@ spec:
 
   receivers:
     # -----------------------------------------------------------------------
-    # platform-default — catch-all. Mirrors platform-slack formatting so
-    # unlabelled alerts still produce a readable Slack payload.
+    # platform-slack — the one webhook that is actually synced. Also the
+    # root receiver, so an alert carrying no severity label is announced
+    # rather than silently dropped.
     # -----------------------------------------------------------------------
-    - name: platform-default
+    - name: platform-slack
       slackConfigs:
         - apiURL:
-            name: slack-webhooks
-            key: platform
-          channel: "#platform-alerts"
+            name: alertmanager-slack-webhook
+            key: SLACK_WEBHOOKURL
+          channel: "#falco-events"
           sendResolved: true
           title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
           text: |
@@ -92,32 +116,17 @@ spec:
             {{ end }}
 
     # -----------------------------------------------------------------------
-    # platform-slack — #platform-alerts receiver for severity=warning|info.
-    # -----------------------------------------------------------------------
-    - name: platform-slack
-      slackConfigs:
-        - apiURL:
-            name: slack-webhooks
-            key: platform
-          channel: "#platform-alerts"
-          sendResolved: true
-          title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
-          text: |
-            {{ range .Alerts }}*{{ .Annotations.summary }}*
-            {{ .Annotations.description }}
-            *Severity:* {{ .Labels.severity }} | *Component:* {{ .Labels.component }}
-            {{ end }}
-
-    # -----------------------------------------------------------------------
-    # security-slack — #security-alerts. Branches on `security=true` label
-    # regardless of severity.
+    # security-slack — same webhook, distinct [SECURITY] title so the branch
+    # is visible in the channel. It used to point at #security-alerts via a
+    # secret that does not exist, which meant security-flagged alerts went
+    # nowhere at all. One channel that works beats two that do not.
     # -----------------------------------------------------------------------
     - name: security-slack
       slackConfigs:
         - apiURL:
-            name: slack-webhooks
-            key: security
-          channel: "#security-alerts"
+            name: alertmanager-slack-webhook
+            key: SLACK_WEBHOOKURL
+          channel: "#falco-events"
           sendResolved: true
           title: '[SECURITY] {{ .CommonLabels.alertname }}'
           text: |
@@ -126,44 +135,3 @@ spec:
             *Component:* {{ .Labels.component }} | *Severity:* {{ .Labels.severity }}
             {{ if .Labels.runbook }}*Runbook:* {{ .Labels.runbook }}{{ end }}
             {{ end }}
-
-    # -----------------------------------------------------------------------
-    # pagerduty-platform — general platform on-call rotation. Routing key
-    # fetched from the `pagerduty-keys` secret (key: platform).
-    # -----------------------------------------------------------------------
-    - name: pagerduty-platform
-      pagerdutyConfigs:
-        - routingKey:
-            name: pagerduty-keys
-            key: platform
-          sendResolved: true
-          severity: '{{ .CommonLabels.severity }}'
-          description: '{{ .CommonAnnotations.summary }}'
-          details:
-            - key: component
-              value: '{{ .CommonLabels.component }}'
-            - key: runbook
-              value: '{{ .CommonLabels.runbook }}'
-            - key: firing_count
-              value: '{{ len .Alerts.Firing }}'
-
-    # -----------------------------------------------------------------------
-    # pagerduty-subscription — subscription-domain on-call. Fixed critical
-    # severity because this route is gated on pagerduty_route=subscription
-    # which by convention is only set on critical-impact alerts.
-    # -----------------------------------------------------------------------
-    - name: pagerduty-subscription
-      pagerdutyConfigs:
-        - routingKey:
-            name: pagerduty-keys
-            key: subscription
-          sendResolved: true
-          severity: critical
-          description: '{{ .CommonAnnotations.summary }}'
-          details:
-            - key: component
-              value: '{{ .CommonLabels.component }}'
-            - key: runbook
-              value: '{{ .CommonLabels.runbook }}'
-            - key: firing_count
-              value: '{{ len .Alerts.Firing }}'
