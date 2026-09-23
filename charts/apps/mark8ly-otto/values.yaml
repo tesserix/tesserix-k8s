@@ -103,3 +103,23 @@ strategy:
   rollingUpdate:
     maxSurge: 0
     maxUnavailable: 1
+
+# 30 minutes, up from the Kubernetes default of 600s.
+#
+# A promotion updates all eight mark8ly apps at once and kubelet pulls
+# images one at a time per node, so whichever app is last in that queue
+# waits behind the rest. On 2026-09-23 platform-api's pull reported
+# "6m16s (17m39s including waiting)": it blew the 600s deadline while the
+# pull was still running, Argo reported "exceeded its progress deadline",
+# the sync failed and the Kargo promotion errored — on a rollout that was
+# progressing normally and went on to succeed. Any of the eight can draw
+# that short straw, so the deadline is raised on all of them rather than
+# only the one that did (#1068 raised platform-api first).
+#
+# The cost is honest: a genuinely stuck rollout now takes 30 minutes to be
+# declared failed rather than 10. That is the right trade while a cold pull
+# can legitimately take 18, and it should come back down once image pulls
+# are fixed at the source — pre-pulling, parallel pulls on the node, or
+# publishing to Artifact Registry directly instead of through the
+# ghcr-remote pull-through cache.
+progressDeadlineSeconds: 1800

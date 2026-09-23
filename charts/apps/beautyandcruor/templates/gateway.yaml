@@ -1,0 +1,43 @@
+{{- if .Values.tls.enabled }}
+# Dedicated Gateway for this external domain, following the per-domain pattern
+# already used by primasyss-com-gateway and yahvismartfarm-com-gateway.
+#
+# It lives in istio-ingress, not in the app namespace, because that is where
+# the gateway workload and its TLS secrets are. The AppProject must therefore
+# permit istio-ingress as a destination as well as tesserix.
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Release.Name }}-gateway
+  namespace: {{ .Values.tls.gatewayNamespace }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  selector:
+    istio: custom-ingressgateway
+  servers:
+    - port:
+        number: 443
+        name: https-beautyandcruor-com
+        protocol: HTTPS
+      tls:
+        mode: SIMPLE
+        credentialName: {{ .Values.tls.secretName }}
+        minProtocolVersion: TLSV1_2
+      hosts:
+        - {{ .Values.domains.primary | quote }}
+        {{- range .Values.domains.aliases }}
+        - {{ . | quote }}
+        {{- end }}
+    - port:
+        number: 80
+        name: http-beautyandcruor-com
+        protocol: HTTP
+      tls:
+        httpsRedirect: true
+      hosts:
+        - {{ .Values.domains.primary | quote }}
+        {{- range .Values.domains.aliases }}
+        - {{ . | quote }}
+        {{- end }}
+{{- end }}

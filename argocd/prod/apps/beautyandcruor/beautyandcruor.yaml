@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: beautyandcruor
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: beautyandcruor
+    app.kubernetes.io/component: web
+    environment: prod
+spec:
+  project: beautyandcruor
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/beautyandcruor
+    helm:
+      # values.yaml is production — there is deliberately no values-prod.yaml
+      # in this chart, because this list is what actually gets loaded.
+      valueFiles:
+        - values.yaml
+        - ../global-config.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tesserix
+  syncPolicy:
+    automated:
+      # `prune: false` is never written in this repo: false is the zero value,
+      # the API server drops the key, and the app-of-apps then pins the app
+      # OutOfSync forever. Omit it to mean false.
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
