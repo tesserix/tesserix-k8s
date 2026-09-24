@@ -207,6 +207,22 @@ sentryDsn:
 otel:
   exporterOtlpEndpoint: "http://otel-gateway.observability.svc.cluster.local:4317"
 # ── S3: Stripe Billing ──────────────────────────────────────────
+# Opens the routes that can charge a card: POST /subscription/cancel and
+# POST /billing/subscription. Everything else — checkout, the billing
+# portal, viewing a plan — is unaffected and was never gated.
+#
+# THIS IS THE FLAG THAT ALLOWS MONEY TO MOVE. The gate's own comment in
+# handlers/admin/billing_writes_gate.go asks for an end-to-end run against a
+# live-mode subscription (subscribe, cancel, un-cancel, let a period roll)
+# and a read of the merchant-facing copy before it is turned on, and records
+# that nothing had been charged to date.
+#
+# Note the ordering trap: the run it asks for REQUIRES this flag, because
+# subscribe and cancel are the routes it gates. So the flag goes on first
+# and the run happens immediately after, with this set back to false if the
+# run finds anything. It is one line to reverse.
+billingWritesEnabled: true
+
 stripeBilling:
   secretName: mark8ly-stripe-billing
   secretKeyKey: STRIPE_BILLING_SECRET_KEY

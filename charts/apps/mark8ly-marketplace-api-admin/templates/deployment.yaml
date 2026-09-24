@@ -324,6 +324,17 @@ spec:
                   key: {{ .Values.stripeBilling.webhookSecretKey }}
                   optional: true
             {{- end }}
+            # Opens the routes that can move real money: POST
+            # /subscription/cancel and POST /billing/subscription.
+            #
+            # Rendered only when true, so the binary's own fail-closed
+            # default (config default false) is what applies when this is
+            # off — rather than an explicit "false" that reads as a
+            # considered setting when it is just the absence of one.
+            {{- if .Values.billingWritesEnabled }}
+            - name: BILLING_WRITES_ENABLED
+              value: "true"
+            {{- end }}
             # Marketing M4 — Campaign email dispatch.
             #
             # SENDGRID_API_KEY is deliberately NOT set. internal/email builds
