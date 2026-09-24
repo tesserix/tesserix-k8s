@@ -448,6 +448,33 @@ spec:
             # manifest, in `helm template`, or in ArgoCD's rendered diff.
             secrets:
               - alertmanager-slack-webhook
+            # Do NOT scope AlertmanagerConfig routes to their own namespace.
+            #
+            # The operator's default, OnNamespace, injects
+            # `namespace="<the AlertmanagerConfig's namespace>"` into every
+            # route it merges. subscription-routes lives in `monitoring`,
+            # while the alerts it exists to route carry namespace="mark8ly",
+            # "helivanta", "ate-system" and so on — so its entire tree
+            # matched almost nothing.
+            #
+            # Measured 2026-09-24, after #1081 had already fixed the
+            # config being REJECTED outright:
+            #
+            #   94 alerts -> "null"        (dropped)
+            #    3 alerts -> slack-alerts
+            #    1 alert  -> subscription-routes/platform-slack
+            #
+            # 96% of the estate's alerts were being discarded, and the fix
+            # that was supposed to end that covered one alert. This is the
+            # second layer of the same bug: first the routes did not load,
+            # then they loaded and did not match.
+            #
+            # None means routes match on exactly the matchers they declare.
+            # That is what subscription-routes was written assuming — its
+            # branches key on severity and a security label, both of which
+            # are cross-namespace by nature.
+            alertmanagerConfigMatcherStrategy:
+              type: None
           config:
             # PHASE 3 — narrow, deliberate routing. Default stays "null":
             # everything not explicitly matched below is evaluated and
