@@ -68,9 +68,43 @@ spec:
             memory: 256Mi
 
         # Autoscaling - production setup
+        #
+        # minReplicas is the ONLY knob that actually sets tunnel capacity
+        # here, so it is set deliberately and not left at the chart default.
+        #
+        # Each cloudflared replica registers 4 HA connections to the edge
+        # (cloudflared_tunnel_ha_connections == 4 per pod), and every
+        # hostname on this tunnel shares them: mark8ly.com, tesserix.app and
+        # api.dwellm8.com, ~64k requests per pod per 18h. At 2 replicas that
+        # is 8 connections for the whole estate. Because `protocol: http2`
+        # above pins the transport to TCP, all streams on a connection share
+        # one congestion window, so a single stalled connection blocks every
+        # request multiplexed onto it.
+        #
+        # Measured on 2026-09-24 against auth.tesserix.app, from outside:
+        # serial requests were 0.35s apart from one 27s outlier, but 8
+        # concurrent requests for the same asset returned in 0.37s x5, then
+        # 5.5s, 65s and 73s -- while Istio reported
+        # x-envoy-upstream-service-time of 6-17ms for those same requests.
+        # The origin was answering in milliseconds; the time was spent in the
+        # tunnel. Cloudflare served intermittent 520s throughout. The Zitadel
+        # login UI pulls 28 assets, so this rendered as a blank page with a
+        # spinner for tens of seconds, and looked like "Zitadel is down" when
+        # blog.tesserix.app was degraded identically.
+        #
+        # 2 -> 4 doubles the edge connections to 16.
+        #
+        # The HPA CANNOT do this on its own and never has -- zero scaling
+        # events in 231 days. It targets memory at 80% and cloudflared sits
+        # at 24% (~31Mi of a 128Mi request) while saturating its connections,
+        # because a network proxy runs out of sockets, not heap. Memory is
+        # nonetheless the only usable target: the chart sets no cpu request
+        # (estate-wide rule for memory-only resources), and an HPA cannot
+        # compute cpu utilisation without one. So treat maxReplicas as a
+        # ceiling that will not be reached and set the floor by hand.
         autoscaling:
           enabled: true
-          minReplicas: 2
+          minReplicas: 4
           maxReplicas: 5
   destination:
     server: https://kubernetes.default.svc
