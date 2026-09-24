@@ -262,8 +262,20 @@ enquiry:
   # to the wrong guess; narrow this to one once the answer is in.
   to: "info@beautyandcruor.com,info@beautycruor.com"
 
-  # Must be a domain verified in Resend, or every send is refused.
-  from: "Beauty & Cruor <enquiries@beautyandcruor.com>"
+  # MUST be a domain verified in the Resend account the key belongs to, or
+  # every send is refused.
+  #
+  # tesserix.app is verified today — the blog sends from noreply@tesserix.app
+  # on the same key — and beautyandcruor.com is not. That costs nothing here:
+  # this mail goes to HER inbox to tell her an enquiry arrived, and reply_to
+  # carries the producer's address, so the From domain is seen only by her and
+  # replying still reaches the right person.
+  #
+  # Verify beautyandcruor.com and switch this only if the site ever mails the
+  # enquirer — a confirmation, say — where the sender is customer-facing. That
+  # is a new domain on the Resend account, and on the free tier a second
+  # domain means a second account and therefore a second key below.
+  from: "Beauty & Cruor <noreply@tesserix.app>"
 
   secretName: beautyandcruor-enquiry
   secretKey: RESEND_API_KEY
@@ -271,8 +283,11 @@ enquiry:
   externalSecret:
     enabled: true
     secretStoreRef: gcp-secret-store
-    # Platform-wide shared key, not product-prefixed — same remote the blog
+    # Platform-wide shared key, not product-prefixed — the same remote the blog
     # reads (#1014).
+    #
+    # Point this at a product-specific secret if beautyandcruor ever gets its
+    # own Resend account: only this value changes, not the template.
     remoteKey: prod-resend-api-key
 
   # It wakes up for a form post and is otherwise idle.
