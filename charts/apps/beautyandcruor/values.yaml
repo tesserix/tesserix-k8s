@@ -305,6 +305,49 @@ enquiry:
     # own Resend account: only this value changes, not the template.
     remoteKey: prod-resend-api-key
 
+  # ---------------------------------------------------------------------------
+  # The credits and running-order editor.
+  #
+  # Parimiti signs in at /admin with one password and edits her credits or the
+  # order her work appears in. A save is a commit to the site repo, which CI
+  # builds and Kargo promotes, so a correction is live in minutes without
+  # anyone being asked.
+  #
+  # OFF until the three secrets exist. The binary already refuses to route
+  # /admin without ADMIN_PASSWORD_HASH, so the contact form is unaffected
+  # either way — but the deployment mounts those secrets by reference, and a
+  # secretKeyRef to a Secret that is not there stops the pod starting. So this
+  # flag is the second of two steps, not the first:
+  #
+  #   1. create prod-bac-admin-password-hash, -session-key and -github-token
+  #      in Secret Manager (see the site repo's deploy/README.md)
+  #   2. set enabled: true here
+  #
+  # The GitHub token should be fine-grained, THIS REPOSITORY ONLY, Contents:
+  # read and write, nothing else. The service refuses to write any path outside
+  # its own allowlist — credits, curation, alt text — so a stolen session
+  # cannot reach the workflow that deploys the site; keep the token narrow
+  # anyway, because that half is enforced by GitHub rather than by us.
+  admin:
+    enabled: false
+
+    githubRepo: tesserix/beautyandcruor
+    githubBranch: main
+
+    # Leave empty to take the binary's default, which is the same bucket the
+    # site Dockerfile defaults to. Both move together at the domain cutover.
+    assetBaseUrl: ""
+
+    secretName: beautyandcruor-admin
+
+    externalSecret:
+      enabled: true
+      secretStoreRef: gcp-secret-store
+      keys:
+        passwordHash: prod-bac-admin-password-hash
+        sessionKey: prod-bac-admin-session-key
+        githubToken: prod-bac-admin-github-token
+
   # It wakes up for a form post and is otherwise idle.
   resources:
     requests:

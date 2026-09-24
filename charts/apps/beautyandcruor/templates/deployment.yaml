@@ -121,6 +121,42 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.enquiry.secretName }}
                   key: {{ .Values.enquiry.secretKey }}
+            {{- if .Values.enquiry.admin.enabled }}
+            # The credits and running-order editor. All of this is gated: the
+            # binary leaves /admin unrouted when ADMIN_PASSWORD_HASH is unset,
+            # so the enquiry form comes up either way, but a secretKeyRef to a
+            # Secret that does not exist yet would stop the pod starting at
+            # all. Turning it on is therefore two steps in order — create the
+            # secrets, then flip this — rather than one that half-works.
+            - name: ADMIN_PASSWORD_HASH
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.enquiry.admin.secretName }}
+                  key: password-hash
+            - name: ADMIN_SESSION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.enquiry.admin.secretName }}
+                  key: session-key
+            - name: ADMIN_GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.enquiry.admin.secretName }}
+                  key: github-token
+            - name: ADMIN_GITHUB_REPO
+              value: {{ .Values.enquiry.admin.githubRepo | quote }}
+            - name: ADMIN_GITHUB_BRANCH
+              value: {{ .Values.enquiry.admin.githubBranch | quote }}
+            {{- with .Values.enquiry.admin.assetBaseUrl }}
+            # Must match the site image's ASSET_BASE_URL build arg: the
+            # running-order pickers load thumbnails from the bucket, because
+            # public/img is excluded from the site image and there is nothing
+            # same-origin to point at. Left unset, the binary defaults to the
+            # same bucket the Dockerfile does.
+            - name: ADMIN_ASSET_BASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
           # Deliberately no probe.
           #
           # An httpGet probe is run by the kubelet, from the node — it cannot
