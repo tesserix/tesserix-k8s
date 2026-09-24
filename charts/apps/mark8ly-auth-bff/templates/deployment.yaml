@@ -118,6 +118,19 @@ spec:
                   name: {{ .Values.emailOtp.secretName }}
                   key: {{ .Values.emailOtp.secretKey }}
                   optional: true
+            {{- if .Values.demoLoginEmails }}
+            # Accounts that skip the new-device email-OTP step-up and the
+            # new-device alert. Rendered ONLY when set, so the default
+            # deployment carries no such variable at all rather than an
+            # empty one that reads as a configured-but-blank allowlist.
+            #
+            # A plain value, not a Secret: these are the addresses of
+            # deliberately-shared demo accounts, and the auth-bff logs
+            # print them at startup anyway. Treating them as secret would
+            # imply a confidentiality this list does not have.
+            - name: DEMO_LOGIN_EMAILS
+              value: {{ .Values.demoLoginEmails | quote }}
+            {{- end }}
             # Zitadel identity. ZITADEL_ENABLED mounts the Zitadel login
             # routes AND makes config.ValidateZitadel mandatory — every
             # value in this block must be present or the pod refuses to
