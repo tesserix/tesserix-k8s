@@ -121,16 +121,22 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.enquiry.secretName }}
                   key: {{ .Values.enquiry.secretKey }}
-          # Loopback, so the probe has to come from inside the same pod. The
-          # binary is on scratch with no shell, so this is the HTTP check
-          # against its own listener rather than an exec.
-          readinessProbe:
-            httpGet:
-              path: /healthz
-              port: {{ .Values.enquiry.port }}
-              host: 127.0.0.1
-            initialDelaySeconds: 2
-            periodSeconds: 10
+          # Deliberately no probe.
+          #
+          # An httpGet probe is run by the kubelet, from the node — it cannot
+          # see this listener, which binds to loopback inside the pod so that
+          # nothing outside can reach it. Pointing the probe at 127.0.0.1 made
+          # the kubelet dial its own loopback and fail; dropping `host` would
+          # make it dial the pod IP, where nothing is bound either. Binding
+          # wider to satisfy a probe would trade away the isolation that is the
+          # whole reason this runs as a sidecar. An exec probe is out too: the
+          # binary sits on scratch with no shell.
+          #
+          # And readiness here would be wrong even if it worked. A container's
+          # readiness gates the whole pod, so an unhealthy enquiry service
+          # would pull the entire site out of rotation. The site is a portfolio
+          # first: if this process is down the form returns 502 and every page
+          # still serves, which is the behaviour to want.
           resources:
             {{- toYaml .Values.enquiry.resources | nindent 12 }}
         {{- end }}
