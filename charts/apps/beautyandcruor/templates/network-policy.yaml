@@ -112,3 +112,18 @@ spec:
         - port: 443
           protocol: TCP
     {{- end }}
+    {{- if and .Values.enquiry.enabled .Values.enquiry.admin.uploads.enabled }}
+    # The metadata server, and only when uploads are on.
+    #
+    # It is carved out of the range above on purpose, so this is the one rule
+    # that lets anything in this pod reach it. Under Workload Identity the
+    # metadata server hands back a token for THIS pod's service account — one
+    # that can create objects in a single private bucket and do nothing else —
+    # not the node's credentials.
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - port: 80
+          protocol: TCP
+    {{- end }}
