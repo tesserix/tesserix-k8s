@@ -34,8 +34,8 @@
 #
 # COST: the free tier covers 1M check executions per month. This stack does NOT
 # use the 5-minute default — see `period` below, set to 60s so an intermittent
-# failure is not sampled past. Five endpoints at 60s across every probe region
-# is roughly 1.3M executions/month, modestly OVER the free allotment. That is
+# failure is not sampled past. Six endpoints at 60s across every probe region
+# is roughly 1.56M executions/month, OVER the free allotment. That is
 # accepted deliberately: the cadence is what makes the check able to see the
 # failure it exists for, and an earlier draft of this comment quoted the
 # 5-minute figure while the resource ran at 60s, which would have been read
@@ -61,7 +61,7 @@ resource "google_monitoring_uptime_check_config" "public" {
 
   # 60s is the shortest GCP offers and the difference matters here: the
   # 2026-09-21 failure was intermittent (roughly a third of requests), so a
-  # slow cadence would have sampled its way past it. At five endpoints this
+  # slow cadence would have sampled its way past it. At six endpoints this
   # is still far inside the free tier.
   period  = "60s"
   timeout = "10s"
