@@ -1,0 +1,30 @@
+# Second Slack webhook, for the #mark8ly-supports channel.
+#
+# A SECOND SECRET rather than a second `channel:` field: a Slack incoming
+# webhook has a fixed destination baked into the URL, so Alertmanager's
+# `channel:` is documentation and cannot redirect a message. Routing product
+# alerts somewhere separate therefore needs its own webhook, not a config
+# change — and a `channel:` pointing at a channel the webhook does not serve
+# is precisely the kind of setting that reads as configured and delivers
+# nothing.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: alertmanager-slack-mark8ly
+  namespace: monitoring
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: alertmanager-slack-mark8ly-webhook
+    creationPolicy: Owner
+  data:
+    - secretKey: SLACK_WEBHOOKURL
+      remoteRef:
+        # Create this in GCP Secret Manager with the incoming-webhook URL
+        # for #mark8ly-supports. Until it exists the ExternalSecret stays
+        # NotReady and the receiver below is never usable — which is loud,
+        # and better than a route that silently posts nowhere.
+        key: prod-mark8ly-supports-slack-webhook
