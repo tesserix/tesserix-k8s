@@ -97,6 +97,43 @@ spec:
             - name: tmp
               mountPath: /tmp
           {{- end }}
+        {{- if .Values.enquiry.enabled }}
+        # The enquiry sidecar. Listens on loopback only — nginx proxies
+        # /api/enquiry to it — so it is never routable from outside the pod
+        # and needs no Service of its own. It exists because the site is a
+        # static export: nothing in the browser can hold the Resend key.
+        - name: enquiry
+          image: "{{ .Values.enquiry.image.repository }}:{{ .Values.enquiry.image.tag }}"
+          imagePullPolicy: {{ .Values.enquiry.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: ENQUIRY_ADDR
+              value: "127.0.0.1:{{ .Values.enquiry.port }}"
+            - name: ENQUIRY_TO
+              value: {{ .Values.enquiry.to | quote }}
+            - name: ENQUIRY_FROM
+              value: {{ .Values.enquiry.from | quote }}
+            - name: RESEND_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.enquiry.secretName }}
+                  key: {{ .Values.enquiry.secretKey }}
+          # Loopback, so the probe has to come from inside the same pod. The
+          # binary is on scratch with no shell, so this is the HTTP check
+          # against its own listener rather than an exec.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.enquiry.port }}
+              host: 127.0.0.1
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.enquiry.resources | nindent 12 }}
+        {{- end }}
       {{- if .Values.securityContext.readOnlyRootFilesystem }}
       volumes:
         - name: tmp
