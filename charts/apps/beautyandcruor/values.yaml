@@ -344,31 +344,6 @@ enquiry:
 
     secretName: beautyandcruor-admin
 
-    # Image upload.
-    #
-    # She uploads an original; it goes to a PRIVATE bucket, never the public
-    # one. Publishing is a separate step, because an original is not a
-    # publishable image: scripts/images.mjs turns it into seven widths in AVIF
-    # and WebP plus a blur placeholder, and only those derivatives are ever
-    # served. The private bucket is also the backup the originals never had —
-    # until now the only copy of 225MB of her work was one laptop.
-    #
-    # Reaching GCS needs a Workload Identity token from the metadata server,
-    # which this pod's NetworkPolicy otherwise denies. Both are opened by this
-    # flag and by nothing else, so the site container's posture is unchanged
-    # when uploads are off.
-    #
-    # The identity can only CREATE objects in that one bucket. It cannot read
-    # them back, overwrite them, delete them, or touch the public assets
-    # bucket, and it holds no project-level role.
-    uploads:
-      enabled: false
-      bucket: beautyandcruor-prod-originals-in
-      gcpServiceAccount: bac-originals-writer@tesseracthub-480811.iam.gserviceaccount.com
-      # A string, not a number: Helm renders a large integer in scientific
-      # notation ("2.62144e+07"), which nothing downstream can parse.
-      maxBytes: "26214400" # 25MB — a phone photograph with room to spare
-
     externalSecret:
       enabled: true
       secretStoreRef: gcp-secret-store
@@ -376,6 +351,44 @@ enquiry:
         passwordHash: prod-bac-admin-password-hash
         sessionKey: prod-bac-admin-session-key
         githubToken: prod-bac-admin-github-token
+
+    # Image upload.
+    #
+    # She uploads an original; it lands in the SAME bucket that serves the
+    # site, under an uploads/ prefix, beside the img/ derivatives. One bucket,
+    # not two.
+    #
+    # The prefix is not a convention anyone has to remember. The identity this
+    # pod runs as holds objectCreator with an IAM CONDITION limiting it to
+    # resource names starting uploads/, so it cannot write img/ at all — and
+    # objectCreator rather than objectAdmin means it cannot read an object
+    # back, overwrite one, or delete one either. An upload can add to the pile
+    # and can never alter what is already published.
+    #
+    # The bucket is world-READABLE but not world-LISTABLE: allUsers holds
+    # legacyObjectReader, which is storage.objects.get and NOT
+    # storage.objects.list. Someone who knows an exact object name can fetch
+    # it; nobody can enumerate what is there. An upload is therefore not
+    # secret, and not discoverable, and only whoever holds the admin password
+    # can put anything there.
+    #
+    # It does not appear on the site. The site serves only the derivatives —
+    # seven widths in AVIF and WebP — and producing those needs libvips and
+    # minutes of CPU, which is a separate step.
+    #
+    # Reaching GCS needs a Workload Identity token from the metadata server,
+    # which this pod's NetworkPolicy otherwise denies. That rule, the
+    # ServiceAccount annotation and the mounted token all appear with this
+    # flag and with nothing else.
+    uploads:
+      # On. The identity and its condition were checked before this was
+      # flipped: objectCreator scoped to uploads/, no project-level role.
+      enabled: true
+      bucket: beautyandcruor-prod-assets-in
+      gcpServiceAccount: bac-uploads-writer@tesseracthub-480811.iam.gserviceaccount.com
+      # A string, not a number: Helm renders a large integer in scientific
+      # notation ("2.62144e+07"), which nothing downstream can parse.
+      maxBytes: "26214400" # 25MB — a phone photograph with room to spare
 
   # It wakes up for a form post and is otherwise idle.
   resources:
