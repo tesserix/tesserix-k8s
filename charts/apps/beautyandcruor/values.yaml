@@ -64,8 +64,11 @@ image:
   # MANIFEST_UNKNOWN. Pinning sidesteps the stale cache entirely.
   #
   # It is also the house pattern: the blog pins main-<sha7> and lets Kargo
-  # rewrite it on promotion. Until this app has a Kargo Project, bump this by
-  # hand when deploying a new build.
+  # rewrite it on promotion. This app has a Kargo Project now, so promotion
+  # writes spec.source.helm.parameters on the Application and that overrides
+  # this value. What is written here is what a fresh install would use before
+  # the first promotion — it is no longer what is running, so do not read it
+  # as the deployed version.
   tag: "main-415c768"
 
 imagePullSecrets:
@@ -254,7 +257,9 @@ enquiry:
   image:
     repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/beautyandcruor-enquiry
     pullPolicy: Always
-    # PINNED for the same reason the site image is — see the note above it.
+    # Promoted in lockstep with the site image: one Freight carries both tags,
+    # so the endpoint the form posts to is always from the same build as the
+    # form. Same caveat as above — overridden on the Application.
     tag: "main-415c768"
 
   # Her own inbox, which is the address that actually receives.
