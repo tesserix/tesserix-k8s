@@ -94,5 +94,21 @@ variable "monitored_endpoints" {
       host                  = "helivanta.app"
       expected_status_class = "STATUS_CLASS_3XX"
     }
+    # The Zitadel IdP. Added after the 2026-09-24 Cloudflare APAC incident,
+    # during which auth.tesserix.app served the login UI as a blank page with
+    # 10-90s stalls and intermittent 520/525 for anyone entering at an affected
+    # edge, and NOTHING alerted -- this stack was the thing that should have,
+    # and it was not watching this host.
+    #
+    # Probes the OIDC discovery document rather than "/", which answers 302.
+    # That is deliberate beyond avoiding a 3XX class: discovery requires
+    # Zitadel to resolve the instance from its database, so a 200 here means
+    # the IdP is genuinely serving, whereas a 302 on "/" can be produced by
+    # Istio alone while Zitadel is down. Measured 200 in 91ms from inside the
+    # cluster on 2026-09-24.
+    auth = {
+      host = "auth.tesserix.app"
+      path = "/.well-known/openid-configuration"
+    }
   }
 }
