@@ -69,42 +69,52 @@ spec:
 
         # Autoscaling - production setup
         #
-        # minReplicas is the ONLY knob that actually sets tunnel capacity
-        # here, so it is set deliberately and not left at the chart default.
+        # minReplicas was raised 2 -> 4 on 2026-09-24 (#1101) and reverted the
+        # same day (#1106). Recorded so nobody spends the afternoon again:
+        # MORE CONNECTORS DO NOT FIX A SLOW TUNNEL. Each replica registers 4
+        # edge connections, so this took the estate from 8 to 16, and changed
+        # nothing measurable. Restarting every connector changed nothing
+        # either.
         #
-        # Each cloudflared replica registers 4 HA connections to the edge
-        # (cloudflared_tunnel_ha_connections == 4 per pod), and every
-        # hostname on this tunnel shares them: mark8ly.com, tesserix.app and
-        # api.dwellm8.com, ~64k requests per pod per 18h. At 2 replicas that
-        # is 8 connections for the whole estate. Because `protocol: http2`
-        # above pins the transport to TCP, all streams on a connection share
-        # one congestion window, so a single stalled connection blocks every
-        # request multiplexed onto it.
+        # The symptom was auth.tesserix.app serving the Zitadel login UI as a
+        # blank page, 10-90s stalls and intermittent 520/525. What it actually
+        # turned out to be: the SAME tunnel answers in 130ms when the request
+        # enters at Cloudflare's Mumbai edge (verified from inside the cluster,
+        # cf-ray ...-BOM, cf-cache-status DYNAMIC, 8/8) and fails 6-of-8 from
+        # Sydney. Origin was answering in 6-17ms throughout
+        # (x-envoy-upstream-service-time), cluster egress was clean (20/20 new
+        # TLS conns to Cloudflare, 5-13ms connect), and the GKE LB was rock
+        # steady at 0.70s when addressed directly.
         #
-        # Measured on 2026-09-24 against auth.tesserix.app, from outside:
-        # serial requests were 0.35s apart from one 27s outlier, but 8
-        # concurrent requests for the same asset returned in 0.37s x5, then
-        # 5.5s, 65s and 73s -- while Istio reported
-        # x-envoy-upstream-service-time of 6-17ms for those same requests.
-        # The origin was answering in milliseconds; the time was spent in the
-        # tunnel. Cloudflare served intermittent 520s throughout. The Zitadel
-        # login UI pulls 28 assets, so this rendered as a blank page with a
-        # spinner for tens of seconds, and looked like "Zitadel is down" when
-        # blog.tesserix.app was degraded identically.
+        # CONFIRMED CAUSE: Cloudflare's own status page carried an active
+        # incident, "Network Performance Degradation - Asia-Pacific" (Network,
+        # Identified), on 2026-09-24. Both ends were healthy; the fault was
+        # inside Cloudflare's APAC network and nothing in this repo could fix
+        # it. The tell was that the failure tracked the ENTRY EDGE rather than
+        # anything about the request: identical URL, tunnel and origin, fast
+        # from BOM, broken from SYD. Check status.cloudflare.com before
+        # changing infrastructure next time -- it would have cost one minute
+        # and saved two wrong root causes (connector capacity, then Cloud NAT).
         #
-        # 2 -> 4 doubles the edge connections to 16.
+        # Ruled out along the way, so they need not be re-tested: connector
+        # count, connector restarts, cloudflared 2026.3.0 (homechef and
+        # helivanta had run it 25 days and degraded identically), Cloud NAT
+        # (OUT_OF_RESOURCES drops are real and chronic but egress proved
+        # healthy, and they were far worse earlier in the week while the estate
+        # was fine), and a geo rule (tesserix.app's only country rule is a
+        # `skip` that INCLUDES AU, unchanged since 2026-03-26; 60 days of
+        # Cloudflare audit log show no country change on either zone).
         #
-        # The HPA CANNOT do this on its own and never has -- zero scaling
-        # events in 231 days. It targets memory at 80% and cloudflared sits
-        # at 24% (~31Mi of a 128Mi request) while saturating its connections,
-        # because a network proxy runs out of sockets, not heap. Memory is
-        # nonetheless the only usable target: the chart sets no cpu request
-        # (estate-wide rule for memory-only resources), and an HPA cannot
-        # compute cpu utilisation without one. So treat maxReplicas as a
-        # ceiling that will not be reached and set the floor by hand.
+        # Still unverified, because no available API token can read them:
+        # account-level rulesets, mark8ly.com's custom rules, and Regional
+        # Services / Data Localization. Check those in the dashboard first if
+        # this recurs.
         autoscaling:
           enabled: true
-          minReplicas: 4
+          # Two connectors = 8 edge connections, which measurement showed is
+          # not the constraint. Raise this only for connector REDUNDANCY, never
+          # to chase latency.
+          minReplicas: 2
           maxReplicas: 5
   destination:
     server: https://kubernetes.default.svc
