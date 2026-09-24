@@ -5,9 +5,10 @@
 # images are fetched by the visitor's browser from the CDN, never by this
 # pod), no Google API, no OIDC.
 #
-# The one exception is the enquiry sidecar, which calls api.resend.com. That
-# is the only reason this pod has any egress to the internet at all, and it is
-# opened only when the sidecar is enabled.
+# The one exception is the enquiry sidecar: api.resend.com to send an enquiry,
+# and api.github.com to commit an edit when the editor is on. That is the only
+# reason this pod has any egress to the internet at all, and it is opened only
+# when the sidecar is enabled.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -93,10 +94,12 @@ spec:
         - port: 15008
           protocol: TCP
     {{- if .Values.enquiry.enabled }}
-    # The enquiry sidecar reaching Resend. NetworkPolicy cannot express a
-    # hostname, so this is 443 to anywhere outside the cluster, with the RFC
-    # 1918 ranges and the metadata server carved back out — the pod still
-    # cannot reach another workload or the node's credentials this way.
+    # The enquiry sidecar reaching Resend, and GitHub when the editor is on.
+    # NetworkPolicy cannot express a hostname, so this is 443 to anywhere
+    # outside the cluster, with the RFC 1918 ranges and the metadata server
+    # carved back out — the pod still cannot reach another workload or the
+    # node's credentials this way. No change is needed to switch the editor
+    # on; it already has the egress it needs.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
