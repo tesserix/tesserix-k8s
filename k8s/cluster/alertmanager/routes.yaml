@@ -24,7 +24,7 @@
 # now land in the same place instead of one landing nowhere.
 #
 # Route tree (top-to-bottom; `continue: true` on security):
-#   0. namespace=~mark8ly.*  → #mark8ly-supports (its own webhook)
+#   0. component=~subscription|billing|api → #mark8ly-supports (own webhook)
 #   1. security="true"   → #falco-events, tagged [SECURITY], falls through
 #   2. severity=critical → #falco-events, 1h repeat
 #   3. severity=warning  → #falco-events, 4h repeat
@@ -66,19 +66,32 @@ spec:
     groupInterval: 5m
     repeatInterval: 4h
     routes:
-      # --- mark8ly's own alerts go to the product channel. ------------------
-      # First, and WITHOUT continue: an alert about mark8ly belongs to the
-      # people who run mark8ly, not in the estate-wide channel as well.
-      # Matching on namespace is right here and wrong in the severity
-      # branches below: this route is about WHOSE alert it is, while those
-      # are about how loud it is.
+      # --- Product alerts go to the product channel. ------------------------
+      # First, and WITHOUT continue.
       #
-      # kargo-mark8ly is included because a failed promotion to mark8ly is a
-      # mark8ly problem, whatever namespace the controller runs in.
+      # Split on COMPONENT, not namespace. Namespace answers "where does
+      # this run", which is not the question: a crash-looping pod and an
+      # unreconciled subscription both live in `mark8ly`, and they want
+      # different people. component answers "what is this about".
+      #
+      #   subscription  trials, dunning, cancellation, reconciliation drift
+      #   billing       catalog and Stripe price parity
+      #   api           HTTP error rate on the merchant-facing surface
+      #
+      # Everything else — cnpg, ingress, monitoring, and the whole
+      # kube-prometheus-stack default set, which carries no component label
+      # at all — falls through to the severity fan-out and lands in
+      # #falco-events. That is the infrastructure channel and this is the
+      # product one.
+      #
+      # These three labels are load-bearing, so a new product rule must set
+      # one or it routes to infra by default. That failure is at least
+      # visible: the alert still arrives, in the wrong channel, rather than
+      # vanishing.
       - matchers:
-          - name: namespace
+          - name: component
             matchType: =~
-            value: "mark8ly|kargo-mark8ly|mark8ly-uat"
+            value: "subscription|billing|api"
         receiver: mark8ly-slack
         groupWait: 30s
         groupInterval: 5m
