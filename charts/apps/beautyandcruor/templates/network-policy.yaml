@@ -3,7 +3,11 @@
 # Much smaller than the other charts in this repo: nginx serving pre-built
 # files makes no outbound call at all. No database, no GCS at runtime (the
 # images are fetched by the visitor's browser from the CDN, never by this
-# pod), no Google API, no OIDC. So egress is DNS plus mesh, and nothing else.
+# pod), no Google API, no OIDC.
+#
+# The one exception is the enquiry sidecar, which calls api.resend.com. That
+# is the only reason this pod has any egress to the internet at all, and it is
+# opened only when the sidecar is enabled.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -88,3 +92,20 @@ spec:
       ports:
         - port: 15008
           protocol: TCP
+    {{- if .Values.enquiry.enabled }}
+    # The enquiry sidecar reaching Resend. NetworkPolicy cannot express a
+    # hostname, so this is 443 to anywhere outside the cluster, with the RFC
+    # 1918 ranges and the metadata server carved back out — the pod still
+    # cannot reach another workload or the node's credentials this way.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 169.254.169.254/32
+      ports:
+        - port: 443
+          protocol: TCP
+    {{- end }}

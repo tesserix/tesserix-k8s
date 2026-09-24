@@ -66,7 +66,7 @@ image:
   # It is also the house pattern: the blog pins main-<sha7> and lets Kargo
   # rewrite it on promotion. Until this app has a Kargo Project, bump this by
   # hand when deploying a new build.
-  tag: "main-12a7fcf"
+  tag: "main-682f0ee"
 
 imagePullSecrets:
   - name: ghcr-secret
@@ -238,3 +238,63 @@ vpa:
 gcp:
   projectId: ""
   namespace: "tesserix"
+
+# ---------------------------------------------------------------------------
+# Enquiry sidecar
+#
+# The site is a static export, so the browser cannot hold the Resend key and
+# nginx cannot build Resend's payload on its own. This runs the smallest
+# process that can, on loopback beside nginx. See enquiry/main.go in the app
+# repo for the spam handling and why the recipient is not an input.
+# ---------------------------------------------------------------------------
+enquiry:
+  enabled: true
+  port: 8081
+
+  image:
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/beautyandcruor-enquiry
+    pullPolicy: Always
+    # PINNED for the same reason the site image is — see the note above it.
+    tag: "main-682f0ee"
+
+  # TODO(client): OPEN-QUESTIONS #5. The live site publishes two addresses and
+  # nobody knows which one works. Both are listed so an enquiry cannot be lost
+  # to the wrong guess; narrow this to one once the answer is in.
+  to: "info@beautyandcruor.com,info@beautycruor.com"
+
+  # MUST be a domain verified in the Resend account the key belongs to, or
+  # every send is refused.
+  #
+  # tesserix.app is verified today — the blog sends from noreply@tesserix.app
+  # on the same key — and beautyandcruor.com is not. That costs nothing here:
+  # this mail goes to HER inbox to tell her an enquiry arrived, and reply_to
+  # carries the producer's address, so the From domain is seen only by her and
+  # replying still reaches the right person.
+  #
+  # Verify beautyandcruor.com and switch this only if the site ever mails the
+  # enquirer — a confirmation, say — where the sender is customer-facing. That
+  # is a new domain on the Resend account, and on the free tier a second
+  # domain means a second account and therefore a second key below.
+  from: "Beauty & Cruor <noreply@tesserix.app>"
+
+  secretName: beautyandcruor-enquiry
+  secretKey: RESEND_API_KEY
+
+  externalSecret:
+    enabled: true
+    secretStoreRef: gcp-secret-store
+    # Platform-wide shared key, not product-prefixed — the same remote the blog
+    # reads (#1014).
+    #
+    # Point this at a product-specific secret if beautyandcruor ever gets its
+    # own Resend account: only this value changes, not the template.
+    remoteKey: prod-resend-api-key
+
+  # It wakes up for a form post and is otherwise idle.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 200m
+      memory: 64Mi
