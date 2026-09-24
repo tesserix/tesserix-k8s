@@ -24,6 +24,7 @@
 # now land in the same place instead of one landing nowhere.
 #
 # Route tree (top-to-bottom; `continue: true` on security):
+#   0. namespace=~mark8ly.*  → #mark8ly-supports (its own webhook)
 #   1. security="true"   → #falco-events, tagged [SECURITY], falls through
 #   2. severity=critical → #falco-events, 1h repeat
 #   3. severity=warning  → #falco-events, 4h repeat
@@ -33,6 +34,7 @@
 # Secret (synced by ESO from GCP Secret Manager, ExternalSecret
 # `alertmanager-slack` in this namespace):
 #   - Secret `alertmanager-slack-webhook` — key: SLACK_WEBHOOKURL
+#   - Secret `alertmanager-slack-mark8ly-webhook` — key: SLACK_WEBHOOKURL
 #
 # DELIBERATELY NO PAGERDUTY. The previous version routed criticals to
 # `pagerduty-keys`, a secret that does not exist in the cluster or in GCP
@@ -64,6 +66,24 @@ spec:
     groupInterval: 5m
     repeatInterval: 4h
     routes:
+      # --- mark8ly's own alerts go to the product channel. ------------------
+      # First, and WITHOUT continue: an alert about mark8ly belongs to the
+      # people who run mark8ly, not in the estate-wide channel as well.
+      # Matching on namespace is right here and wrong in the severity
+      # branches below: this route is about WHOSE alert it is, while those
+      # are about how loud it is.
+      #
+      # kargo-mark8ly is included because a failed promotion to mark8ly is a
+      # mark8ly problem, whatever namespace the controller runs in.
+      - matchers:
+          - name: namespace
+            matchType: =~
+            value: "mark8ly|kargo-mark8ly|mark8ly-uat"
+        receiver: mark8ly-slack
+        groupWait: 30s
+        groupInterval: 5m
+        repeatInterval: 4h
+
       # --- Security-flagged alerts get their own, louder message. -----------
       # `continue: true` lets the alert fall through to the severity tree, so
       # a security+critical event is announced twice rather than swallowed by
@@ -112,6 +132,30 @@ spec:
             {{ range .Alerts }}*{{ .Annotations.summary }}*
             {{ .Annotations.description }}
             *Severity:* {{ .Labels.severity }} | *Component:* {{ .Labels.component }}
+            {{ if .Labels.runbook }}*Runbook:* {{ .Labels.runbook }}{{ end }}
+            {{ end }}
+
+    # -----------------------------------------------------------------------
+    # mark8ly-slack — #mark8ly-supports, via its OWN webhook.
+    #
+    # A separate secret, not a different `channel:` on the shared one: a
+    # Slack incoming webhook has a fixed destination baked into the URL, so
+    # `channel` here is documentation and cannot redirect anything. Pointing
+    # it at a channel the webhook does not serve would read as configured
+    # and deliver to the wrong place.
+    # -----------------------------------------------------------------------
+    - name: mark8ly-slack
+      slackConfigs:
+        - apiURL:
+            name: alertmanager-slack-mark8ly-webhook
+            key: SLACK_WEBHOOKURL
+          channel: "#mark8ly-supports"
+          sendResolved: true
+          title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+          text: |
+            {{ range .Alerts }}*{{ .Annotations.summary }}*
+            {{ .Annotations.description }}
+            *Severity:* {{ .Labels.severity }} | *Namespace:* {{ .Labels.namespace }}
             {{ if .Labels.runbook }}*Runbook:* {{ .Labels.runbook }}{{ end }}
             {{ end }}
 
