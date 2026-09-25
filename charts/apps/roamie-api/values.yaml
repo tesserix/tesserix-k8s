@@ -1,0 +1,37 @@
+replicaCount: 2
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/roamie-api
+  # Kargo sets this to main-<sha7> on promotion.
+  tag: "latest"
+
+podAnnotations: {}
+
+gcp:
+  serviceAccount: roamie-api-prod@tesseracthub-480811.iam.gserviceaccount.com
+
+env:
+  RUST_LOG: info
+  GCP_PROJECT: tesseracthub-480811
+  VERTEX_LOCATION: global
+  GEMINI_MODEL: gemini-2.5-flash
+  OCR_UPLOAD_URL: http://document-intelligence-prod-upload-api.document-intelligence.svc.cluster.local:8080
+  OCR_JOB_URL: http://document-intelligence-prod-job-api.document-intelligence.svc.cluster.local:8080
+  # Must match the roamie-v1 entry document-intelligence loads (identity.extraKeys).
+  OCR_KEY_ID: roamie-v1
+  OCR_TENANT: ten_roamie_public
+
+secretEnv:
+  OCR_KEY_SECRET: ocr_key_secret
+  PLACES_API_KEY: places_api_key
+
+# Secret Manager names synced into <fullname>-secrets.
+secrets:
+  ocr_key_secret: prod-roamie-api-ocr-key
+  places_api_key: prod-roamie-api-places-key
+
+resources:
+  requests:
+    memory: 64Mi
+  limits:
+    memory: 256Mi

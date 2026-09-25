@@ -1,0 +1,37 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: roamie-app-of-apps
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: roamie
+    app.kubernetes.io/component: roamie-services
+    environment: prod
+spec:
+  project: roamie
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: argocd/prod/apps/roamie
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  # Kargo writes image.tag onto the child Application; the parent must not revert it.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jsonPointers:
+        - /spec/source/helm/parameters
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
