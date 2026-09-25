@@ -81,6 +81,7 @@ def test_kora_runtime_identities_cannot_access_shared_corpora() -> None:
         "kora-doc-scanner": {
             ("kora-prod-doc-quarantine-in", "roles/storage.objectAdmin"),
             ("kora-prod-doc-accepted-in", "roles/storage.objectCreator"),
+            ("kora-prod-doc-accepted-in", "roles/storage.objectViewer"),
         },
         "kora-doc-worker": {
             ("kora-prod-doc-accepted-in", "roles/storage.objectViewer"),
