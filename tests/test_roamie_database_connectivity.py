@@ -18,3 +18,12 @@ def test_cnpg_ports_are_allowed_without_http_attributes():
     assert spec['selector']['matchLabels'] == {'cnpg.io/cluster': 'roamie-postgres'}
     assert spec['action'] == 'ALLOW'
     assert spec['rules'] == [{'to': [{'operation': {'ports': ['5432', '8000', '9187']}}]}]
+
+
+def test_rollout_backup_is_scoped_to_roamie():
+    docs = list(yaml.safe_load_all(subprocess.check_output(
+        ['helm', 'template', 'roamie-postgres', str(ROOT / 'charts/apps/roamie-postgres')], text=True)))
+    backup = next(d for d in docs if d and d['kind'] == 'Backup')
+    assert backup['spec']['cluster']['name'] == 'roamie-postgres'
+    assert backup['spec']['method'] == 'barmanObjectStore'
+    assert backup['spec']['target'] == 'prefer-standby'
