@@ -1,0 +1,50 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: roamie-postgres
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: {{ .Values.clusterName }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: roamie-api
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ .Values.clusterName }}
+      ports:
+        - { protocol: TCP, port: 5432 }
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - { protocol: TCP, port: 8000 }
+        - { protocol: TCP, port: 5432 }
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - { protocol: TCP, port: 9187 }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ .Values.clusterName }}
+      ports:
+        - { protocol: TCP, port: 5432 }
+    - ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+        - { protocol: TCP, port: 443 }
+    - to:
+        - ipBlock: { cidr: 169.254.169.254/32 }
+        - ipBlock: { cidr: 169.254.169.252/32 }
+      ports:
+        - { protocol: TCP, port: 80 }
+        - { protocol: TCP, port: 988 }
