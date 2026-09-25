@@ -156,10 +156,11 @@ cluster_labels = {
 # =============================================================================
 # Node Pool Configuration - On-Demand under 3-year E2 CUD
 # =============================================================================
-# Commitment e2-cud-asia-south1 covers 30 vCPU / 120 GB (GENERAL_PURPOSE_E2,
-# 36-month, ends 2029-08-30). CUDs only apply to STANDARD provisioning, so the
-# single worker pool runs on-demand: 3-5 x e2-standard-8 = 24-40 vCPU /
-# 96-160 GB, with 30/120 at the committed rate and any remainder on-demand.
+# E2 CUDs (36-month, console-purchased, not managed here): e2-cud-asia-south1
+# 30 vCPU / 120 GB to 2029-08-30, commitment-20260925-133025 18 vCPU to
+# 2029-09-26. CUDs only apply to STANDARD provisioning, so the single worker
+# pool runs on-demand: 3-7 x e2-standard-8 = 24-56 vCPU / 96-224 GB, with the
+# committed slice at the discounted rate and any remainder on-demand.
 # Memory requests run close to allocatable — the autoscaler is expected to
 # sit at 4+ nodes; do not lower total_max_count without right-sizing first.
 #
@@ -183,7 +184,7 @@ node_pools = [
     min_count                   = 0 # Per-zone min (using total counts instead)
     max_count                   = 0 # Per-zone max (using total counts instead)
     total_min_count             = 3 # 24 vCPU / 96 GB floor; autoscaler adds nodes up to max
-    total_max_count             = 6 # 2 per zone — zonal PVs need headroom in their own zone
+    total_max_count             = 7 # 2 per zone plus one; raised 2026-09-25 when memory requests hit 98%
     location_policy             = "BALANCED"
     max_pods_per_node           = 110
     auto_repair                 = true
