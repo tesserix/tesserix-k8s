@@ -31,3 +31,20 @@ def test_runtime_uses_non_owner_and_migration_precedes_rollout():
     assert credentials['PGPASSWORD']['valueFrom']['secretKeyRef']['name'] == 'roamie-postgres-app'
     assert credentials['PGUSER']['valueFrom']['secretKeyRef']['name'] == 'roamie-postgres-app'
     assert job['spec']['activeDeadlineSeconds'] <= 300
+
+
+def test_digest_pin_takes_precedence_over_kargo_tag():
+    digest = 'sha256:' + 'a' * 64
+    docs = list(yaml.safe_load_all(subprocess.check_output([
+        'helm', 'template', 'roamie-api', str(ROOT / 'charts/apps/roamie-api'),
+        '--set', 'database.enabled=true', '--set', 'image.tag=main-old',
+        '--set', 'image.repository=example.test/roamie-api', '--set', f'image.digest={digest}'
+    ], text=True)))
+    for doc in docs:
+        if doc and doc['kind'] in ['Deployment', 'Job']:
+            assert doc['spec']['template']['spec']['containers'][0]['image'] == f'example.test/roamie-api@{digest}'
+
+
+def test_argocd_does_not_skip_migration_hooks():
+    app = yaml.safe_load((ROOT / 'argocd/prod/apps/roamie/roamie-api.yaml').read_text())
+    assert 'ApplyOutOfSyncOnly=true' not in app['spec']['syncPolicy']['syncOptions']

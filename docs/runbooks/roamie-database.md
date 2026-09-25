@@ -32,3 +32,32 @@ Do not prune the CNPG application or delete PVCs as a rollback procedure.
 
 Validation: Helm lint/template, Kubernetes app kustomization, live CNPG CRD JSON
 schema, and Terraform validate in all three modified stacks.
+
+## API integration and release recovery
+
+The API uses `roamie-postgres-runtime` and mounts only the public CNPG CA from
+`roamie-postgres-ca`. The `roamie-api-migrate` Argo Sync hook runs at wave -1 with
+owner credentials, before the Deployment. Selective sync is disabled because it
+can skip hooks. Migrations are additive, transactional and replay-safe; a failed
+job blocks rollout without replacing the healthy API pods. Inspect its logs and
+retry the GitOps sync after correcting the cause; do not delete data or migration
+history. The hook has a five-minute deadline and one retry.
+
+Readiness `/readyz` checks PostgreSQL; `/healthz` remains independent. Verify
+`pg_stat_ssl` for `roamie_app` after rollout, confirm runtime has no superuser,
+createdb or createrole privileges, and confirm both instances are healthy.
+
+The September 2026 rollout uses a digest pin in `image.digest` because GitHub's
+hosted runners refused jobs due to account billing. GCP Cloud Build builds the
+exact reviewed source into the existing `global` Artifact Registry repository.
+The pin takes precedence over Kargo's `image.tag`; subsequent tag promotions do
+not replace the pinned image. To return to normal delivery, first restore GitHub
+billing, publish a verified database-capable image through the normal workflow,
+then in one reviewed GitOps change restore the `ghcr-remote` repository and clear
+`image.digest`. Confirm the Kargo tag identifies that verified image before sync.
+Do not clear the pin while Kargo still identifies the pre-database release.
+
+A one-time GitOps `Backup` resource verifies the repaired backup path; daily
+scheduled backups continue separately. An isolated restore drill is still
+required before closing Roamie #85. No production failover or restore is performed
+implicitly by the rollout.
