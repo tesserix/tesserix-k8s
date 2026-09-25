@@ -1,6 +1,7 @@
 # Roamie customer identity onboarding
 
-Status: staged locally, not deployed. This extends the existing HomeChef public
+Status: operator source merged in tesserix-operators#14; production provisioning
+approved on 2026-09-25. GitOps deployment remains pending tesserix-k8s#1114. This extends the existing HomeChef public
 native-client pattern in `k8s/operators/zitadel/claims/`. It does not create a
 customer organization per traveller or change TESSERIX password policy.
 
@@ -35,8 +36,8 @@ the normal release pipeline; do not invent an image tag before it is built.
 
 ## GitOps rollout sequence
 
-The named production operator/API rollout needs approval under the workspace
-AGENTS.md. Target: GCP `tesseracthub-480811`, context
+The operator and Roamie claim rollout is approved under the workspace AGENTS.md.
+Customer API rollout remains a later approval stage. Target: GCP `tesseracthub-480811`, context
 `gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke`; identity resources in
 `identity-operator` and `zitadel`, API in `roamie`. Recheck active identity and
 context immediately before applying. Production was audited using account
@@ -47,11 +48,10 @@ context immediately before applying. Production was audited using account
 3. Confirm all three claims have `Ready=True` for their current generation. Read
    `ZitadelProject/roamie.status.projectId` and each application's `status.clientId`.
 4. Put these public IDs and the verified Facebook provider ID in the existing
-   `charts/apps/roamie-api/values.yaml` environment entries. Empty IDs currently
-   make the protected API fail readiness, deliberately.
+   `charts/apps/roamie-api/values.yaml` environment entries. The protected API fails readiness until all identity configuration is populated.
 5. Add the **actual Roamie project ID** to the existing Zitadel entry's `audiences`
-   in `argocd/prod/infrastructure/istio-auth-policies.yaml`. The host is staged in
-   `restrictToHosts`. Do not add a second JWT rule for the same issuer. Until the
+   in `argocd/prod/infrastructure/istio-auth-policies.yaml`. Add the API host to
+   `restrictToHosts` in that customer rollout. Do not add a second JWT rule for the same issuer. Until the
    real audience is added, Envoy will reject Roamie bearer tokens before the API.
 6. Promote the protected API via Kargo/Argo CD. `/healthz` is liveness; `/readyz`
    requires identity configuration. `/v1/auth/config` exposes public IDs only.
