@@ -27,3 +27,24 @@ app.kubernetes.io/part-of: roamie
 app.kubernetes.io/name: {{ include "roamie-api.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{- define "roamie-api.databaseEnv" -}}
+- name: PGHOST
+  value: {{ .values.database.host | quote }}
+- name: PGPORT
+  value: "5432"
+- name: PGDATABASE
+  value: {{ .values.database.name | quote }}
+- name: PGUSER
+  valueFrom:
+    secretKeyRef:
+      name: {{ .secret }}
+      key: username
+- name: PGPASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ .secret }}
+      key: password
+- name: PGSSLROOTCERT
+  value: /etc/postgres/ca.crt
+{{- end }}

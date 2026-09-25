@@ -15,3 +15,9 @@ resource "google_storage_bucket_iam_member" "roamie_database_backup_objects" {
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.roamie_database_backup.email}"
 }
+
+resource "google_storage_bucket_iam_member" "roamie_database_backup_metadata" {
+  bucket = "${var.project_id}-roamie-db-backups-${var.environment}"
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${google_service_account.roamie_database_backup.email}"
+}
