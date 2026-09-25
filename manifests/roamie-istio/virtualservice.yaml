@@ -1,0 +1,35 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: roamie-api
+  namespace: roamie
+  labels:
+    app.kubernetes.io/part-of: roamie
+    app.kubernetes.io/component: networking
+  annotations:
+    external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - roamie-api.tesserix.app
+  http:
+    - match:
+        - uri:
+            prefix: /
+      headers:
+        request:
+          set:
+            x-forwarded-host: roamie-api.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: roamie-api.roamie.svc.cluster.local
+            port:
+              number: 8080
+      # Sign OCR can take up to OCR_DEADLINE_SECS (40s) plus translation.
+      timeout: 70s
+      retries:
+        attempts: 2
+        perTryTimeout: 65s
+        retryOn: connect-failure,refused-stream
