@@ -1,0 +1,122 @@
+{{- if not .Values.hibernate }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.clusterName }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/part-of: roamie
+    app.kubernetes.io/component: database
+{{- if lt (int .Values.instances) 2 }}
+{{- fail "Roamie requires at least two database instances" }}
+{{- end }}
+spec:
+  instances: {{ .Values.instances }}
+  imageName: {{ .Values.imageName }}
+
+  bootstrap:
+    initdb:
+      database: {{ .Values.bootstrap.database }}
+      owner: {{ .Values.bootstrap.owner }}
+      encoding: UTF8
+      localeCType: C
+      localeCollate: C
+      secret:
+        name: {{ .Values.bootstrap.secret }}
+      {{- if .Values.bootstrap.postInitSQL }}
+      postInitSQL:
+        {{- range .Values.bootstrap.postInitSQL }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- end }}
+
+  storage:
+    size: {{ .Values.storageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  walStorage:
+    size: {{ .Values.walStorageSize }}
+    storageClass: {{ .Values.storageClass }}
+    resizeInUseVolumes: true
+
+  resources:
+{{ toYaml .Values.resources | indent 4 }}
+
+  postgresql:
+    parameters:
+      {{- range $key, $value := .Values.postgresql }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+
+  minSyncReplicas: {{ .Values.replication.minSyncReplicas }}
+  maxSyncReplicas: {{ .Values.replication.maxSyncReplicas }}
+
+  replicationSlots:
+    highAvailability:
+      enabled: true
+      slotPrefix: "_cnpg_"
+    updateInterval: 30
+
+  enableSuperuserAccess: false
+  managed:
+    roles:
+      - name: {{ .Values.application.username }}
+        ensure: present
+        login: true
+        superuser: false
+        createdb: false
+        createrole: false
+        passwordSecret:
+          name: {{ .Values.application.secret }}
+
+  {{- if .Values.backup.enabled }}
+  backup:
+    barmanObjectStore:
+      destinationPath: {{ .Values.backup.destinationPath | quote }}
+      {{- with .Values.backup.serverName }}
+      serverName: {{ . | quote }}
+      {{- end }}
+      googleCredentials:
+        gkeEnvironment: true
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        immediateCheckpoint: true
+        jobs: 2
+    retentionPolicy: {{ .Values.backup.retentionPolicy | quote }}
+    target: prefer-standby
+  {{- end }}
+
+  {{- if .Values.backup.enabled }}
+  serviceAccountTemplate:
+    metadata:
+      annotations:
+        iam.gke.io/gcp-service-account: {{ .Values.backup.serviceAccount }}
+  {{- end }}
+
+  monitoring:
+    enablePodMonitor: {{ .Values.monitoring.enablePodMonitor }}
+    disableDefaultQueries: false
+
+  inheritedMetadata:
+    annotations:
+      cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+      traffic.sidecar.istio.io/excludeInboundPorts: "5432,8000"
+      traffic.istio.io/excludeInboundPorts: "5432,8000"
+    {{- with .Values.inheritedLabels }}
+    labels:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+  affinity:
+    podAntiAffinityType: {{ .Values.affinity.podAntiAffinityType | default "preferred" }}
+
+  primaryUpdateStrategy: unsupervised
+  failoverDelay: 0
+  switchoverDelay: 3600
+
+  enablePDB: true
+{{- end }}
