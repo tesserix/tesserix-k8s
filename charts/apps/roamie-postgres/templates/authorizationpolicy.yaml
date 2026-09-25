@@ -1,0 +1,15 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: roamie-postgres
+  namespace: {{ .Values.namespace }}
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: {{ .Values.clusterName }}
+  action: ALLOW
+  # The operator is outside ambient; NetworkPolicy restricts source namespaces.
+  rules:
+    - to:
+        - operation:
+            ports: ["5432", "8000", "9187"]
