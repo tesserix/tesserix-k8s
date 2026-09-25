@@ -37,6 +37,15 @@ spec:
           labelSelector:
             matchLabels:
               {{- include "roamie-api.selectorLabels" . | nindent 14 }}
+      {{- if .Values.database.enabled }}
+      volumes:
+        - name: postgres-ca
+          secret:
+            secretName: {{ .Values.database.caSecret }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+      {{- end }}
       containers:
         - name: roamie-api
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -59,6 +68,15 @@ spec:
                   name: {{ include "roamie-api.fullname" $ }}-secrets
                   key: {{ $key }}
             {{- end }}
+            {{- if .Values.database.enabled }}
+            {{- include "roamie-api.databaseEnv" (dict "values" .Values "secret" .Values.database.runtimeSecret) | nindent 12 }}
+            {{- end }}
+          {{- if .Values.database.enabled }}
+          volumeMounts:
+            - name: postgres-ca
+              mountPath: /etc/postgres
+              readOnly: true
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
@@ -68,8 +86,9 @@ spec:
               drop: ["ALL"]
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: {{ ternary "/readyz" "/healthz" .Values.database.enabled }}
               port: http
+            timeoutSeconds: 5
             periodSeconds: 10
           livenessProbe:
             httpGet:
