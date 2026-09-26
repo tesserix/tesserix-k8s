@@ -81,3 +81,14 @@ def test_leaving_validation_mode_requires_both_verification_flags():
         result = subprocess.run(['helm','template','roamie-ai',str(ROOT / 'charts/apps/roamie-ai'),'--set','enabled=true','--set','validationOnly=false','--set',f'profileBoundaryVerified={profile}','--set',f'registryRoutesVerified={registry}'],capture_output=True,text=True)
         assert result.returncode != 0
         assert 'must be verified' in result.stderr
+
+
+def test_roamie_workloads_accept_only_waypoint_transport_identity():
+    resources = render("roamie-ai", "enabled=true", "validationOnly=true")
+    policies = {d['metadata']['name']: d for d in resources if d['kind'] == 'AuthorizationPolicy'}
+    for name in ('roamie-trip-manager', 'roamie-agents', 'roamie-travel-mcp'):
+        policy = policies[name + '-waypoint-transport']['spec']
+        assert policy['selector']['matchLabels'] == {'app.kubernetes.io/name': name}
+        assert policy['rules'][0]['from'][0]['source']['principals'] == ['cluster.local/ns/roamie/sa/waypoint']
+        assert policy['rules'][0]['to'][0]['operation']['ports'] == ['8080']
+    assert policies['roamie-trip-manager']['spec']['action'] == 'DENY'

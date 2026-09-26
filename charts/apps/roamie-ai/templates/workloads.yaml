@@ -171,6 +171,23 @@ spec:
             ports: ["8080"]
   {{- end }}
 ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ $name }}-waypoint-transport
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/roamie/sa/waypoint"]
+    to:
+    - operation:
+        ports: ["8080"]
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
