@@ -1701,5 +1701,16 @@ class ProjectRoleCheckTest(unittest.TestCase):
         self.assertEqual(calls, [])
 
 
+class MachineRoleBoundaryTests(unittest.TestCase):
+    def test_machine_roles_cannot_be_granted_to_humans(self):
+        desired = {"roles": [{"key":"ordinary"}], "machineRoles":[{"key":"roamie.manager"}], "humanGrants":[{"login":"operator", "roles":["ordinary","roamie.manager"]}]}
+        with self.assertRaisesRegex(ValueError,"machine-only"):
+            bootstrap.project_roles(desired)
+
+    def test_machine_roles_preserve_existing_operator_roles(self):
+        desired = {"roles":[{"key":"ordinary"}],"machineRoles":[{"key":"roamie.manager"}],"humanGrants":[{"login":"operator","roles":["ordinary"]}]}
+        self.assertEqual(["ordinary","roamie.manager"],[role["key"] for role in bootstrap.project_roles(desired)])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
