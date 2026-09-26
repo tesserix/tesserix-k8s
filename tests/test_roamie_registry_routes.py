@@ -49,7 +49,7 @@ def test_roamie_routes_are_imported_through_registry_and_bind_exact_subjects():
     assert '/v0/agentgateway/import' in script
 
 
-def test_roamie_routes_stay_disabled_by_default():
+def test_roamie_route_import_can_be_disabled_without_direct_crs():
     result = render(enabled=False)
     assert result.returncode == 0
     assert 'name: roamie-registry-gateway-seed' not in result.stdout

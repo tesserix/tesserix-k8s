@@ -5,8 +5,8 @@ The existing route-sync identity imports eight native resources through Registry
 directly. Route-sync subsequently reconciles the registry export; the existing
 27-resource platform seed and pruning floor are unchanged.
 
-`roamieSeed.enabled` remains false until all eight workload subjects have been
-provisioned and their OAuth tokens verified. The manager subject and seven
+This activation candidate enables `roamieSeed.enabled` after all eight workload
+subjects were provisioned and their OAuth tokens verified. The manager subject and seven
 specialist subjects must be distinct numeric Zitadel IDs. Manager-only A2A/MCP
 policies verify the exact subject and the TESSERIX organization in the project's
 `roamie.manager` role claim. Model access accepts only those eight subjects and
@@ -23,8 +23,8 @@ against the running gateway before enabling the API bridge.
 
 Gateway resources were validated against the installed CRD schemas with server
 dry-run only; this does not prove live routing or authorization. Test subjects
-are fixture values, never production configuration. No AI workloads or routes
-are enabled by the default chart values.
+are fixture values, never production configuration. The seed enables the declared gateway routes; AI workloads and the customer API
+bridge remain disabled in their separate charts.
 
 Activation changes shared route-sync configuration and the gateway's upstream
 secret inventory, so it requires a named production rollout approval. Rollback
@@ -36,4 +36,5 @@ and independently verified with real signed OAuth tokens: issuer, project
 audience, exact subject, token lifetime, role set and organization membership.
 Initial client secrets and workload keys are stored in Secret Manager. No
 existing credentials were rotated. The source chart now includes those verified
-public subjects but keeps the import disabled pending activation approval.
+public subjects and enables the import in this unmerged activation candidate.
+Do not merge until the named production rollout is approved.
