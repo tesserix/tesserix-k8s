@@ -1,0 +1,118 @@
+{{- if .Values.roamieSeed.enabled }}
+{{- $subjects := concat (list .Values.roamieSeed.managerSubject) .Values.roamieSeed.specialistSubjects }}
+{{- if or (ne (len $subjects) 8) (ne (len (uniq $subjects)) 8) }}
+{{- fail "Roamie requires eight distinct machine subjects" }}
+{{- end }}
+{{- range $subject := $subjects }}
+{{- if not (regexMatch "^[0-9]+$" (toString $subject)) }}
+{{- fail "Roamie requires provisioned numeric machine subjects" }}
+{{- end }}
+{{- end }}
+{{- $items := list }}
+{{- range $path, $_ := .Files.Glob "files/roamie/*.yaml" }}
+{{- $items = append $items (fromYaml (tpl ($.Files.Get $path) $)) }}
+{{- end }}
+{{- $resources := dict "apiVersion" "v1" "kind" "List" "items" $items | toPrettyJson }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: roamie-registry-gateway-resources
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+data:
+  resources.json: |
+    {{- $resources | nindent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: roamie-registry-gateway-seed
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "agentgateway-route-sync.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
+    checksum/platform-resources: {{ $resources | sha256sum }}
+spec:
+  ttlSecondsAfterFinished: {{ .Values.registryPlatformSeed.ttlSecondsAfterFinished }}
+  backoffLimit: {{ .Values.registryPlatformSeed.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.registryPlatformSeed.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "agentgateway-route-sync.labels" . | nindent 8 }}
+      annotations:
+        checksum/platform-resources: {{ $resources | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seed
+          image: "{{ .Values.images.curl.repository }}@{{ .Values.images.curl.digest }}"
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              curl --silent --show-error --fail-with-body --max-time 30 \
+                --request POST \
+                --header "Authorization: Bearer ${REGISTRY_DEPLOY_KEY}" \
+                --header "Content-Type: application/json" \
+                --data-binary @/seed/resources.json \
+                "{{ .Values.registry.endpoint }}/v0/agentgateway/import"
+              echo "seeded eight reviewed Roamie gateway resources"
+          env:
+            - name: REGISTRY_DEPLOY_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.registry.authSecret.name }}
+                  key: {{ .Values.registry.authSecret.key }}
+          volumeMounts:
+            - name: seed
+              mountPath: /seed
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: seed
+          configMap:
+            name: roamie-registry-gateway-resources
+{{- end }}
+{{- if .Values.roamieSeed.enabled }}
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: roamie-agent-upstream
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: gcp-secret-store
+    kind: ClusterSecretStore
+  target:
+    name: roamie-agent-upstream
+  data:
+    - secretKey: token
+      remoteRef:
+        key: prod-roamie-agents-api-key
+{{- end }}
