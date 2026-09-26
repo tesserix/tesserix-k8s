@@ -14,6 +14,23 @@ spec:
   hosts:
     - roamie-api.tesserix.app
   http:
+    # Rendering is expensive and not idempotent, so it is never retried; Cloudflare caps origin responses at 100s.
+    - match:
+        - uri:
+            exact: /v1/memories/render
+      headers:
+        request:
+          set:
+            x-forwarded-host: roamie-api.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: roamie-api.roamie.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 95s
+      retries:
+        attempts: 0
     - match:
         - uri:
             prefix: /
