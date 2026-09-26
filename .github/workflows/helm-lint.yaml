@@ -141,7 +141,8 @@ jobs:
           fi
           mapfile -t changed_files < <(git diff --name-only "$BASE_SHA" HEAD)
           check_version=$(python3 scripts/chart_version_policy.py "${changed_files[@]}")
-          ct lint --config .github/ct.yaml \
+          git update-ref refs/remotes/origin/chart-lint-base "$BASE_SHA"
+          ct lint --config .github/ct.yaml --target-branch=chart-lint-base \
             --check-version-increment="$check_version"
 
   validate:
