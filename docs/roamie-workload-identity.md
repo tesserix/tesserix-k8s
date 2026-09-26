@@ -25,3 +25,16 @@ Activation additionally requires immutable images, synced workload secrets,
 registry-owned route acceptance, the Roamie profile migration and an end-to-end
 identity probe. Obtain explicit approval before deploying this identity change
 or applying the production profile migration.
+
+## Runtime configuration follow-up
+
+The AI chart binds the manager and specialists to separate refreshing OAuth
+credential maps, shares only the A2A delegation key, and supplies the API and
+manager with the same stable personal identity key. The namespace-local
+waypoint is created before enrolled workloads so service authorization policies
+can enforce their caller identities. The MCP requires the manager's exact
+Zitadel subject and TESSERIX organization.
+
+The chart remains disabled until registry routes and the authenticated profile
+boundary have been verified. Rendering with test overrides is not production
+verification. Agent image digests are from successful Publish run 36220844786.

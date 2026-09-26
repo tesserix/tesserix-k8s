@@ -6,7 +6,7 @@ secretStore: gcp-secret-store
 workloads:
   roamie-trip-manager:
     repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/ai-agents-roamie-manager
-    digest: "sha256:662d02d133a2fdba087c9c6e853a7df5a46df1cf040f44d96f9346b7d653c0ba"
+    digest: "sha256:d7bc9f69bd2981f1f6e4b57909106529c890a726e1453586f24f05770619d5a3"
     healthPath: /healthz
     config:
       ROAMIE_MANAGER_GATEWAY_BASE_URL: http://ai-gateway.agentgateway-system.svc.cluster.local:8080/roamie/v1
@@ -16,15 +16,15 @@ workloads:
       ROAMIE_MANAGER_A2A_GATEWAY_ORIGIN: http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8082
     secrets:
       ROAMIE_MANAGER_API_KEY: prod-roamie-manager-api-key
-      ROAMIE_MANAGER_GATEWAY_API_KEY: prod-roamie-ai-gateway-api-key
+      ROAMIE_MANAGER_GATEWAY_CLIENTS: prod-roamie-manager-gateway-clients
+      ROAMIE_MANAGER_DELEGATION_KEY: prod-roamie-delegation-key
       ROAMIE_MANAGER_MCP_SCHEMA_DIGEST: prod-roamie-travel-schema-digest
-      ROAMIE_MANAGER_WORKER_API_KEY: prod-roamie-manager-runtime-token
       ROAMIE_MANAGER_PROFILE_SIGNING_KEY: prod-roamie-profile-signing-key
       ROAMIE_MANAGER_IDENTITY_KEY: prod-roamie-manager-identity-key
     callerPrincipal: cluster.local/ns/roamie/sa/roamie-api
   roamie-agents:
     repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/ai-agents-roamie
-    digest: "sha256:be44af41e3f07b2d5de4d38a19b0dd21c173be439c55a4746a78e859f8c056a1"
+    digest: "sha256:2d57379ff1458f3671e35a32d83f167ef25bc7d24714a66579eb6a231a7e7955"
     healthPath: /healthz
     config:
       ROAMIE_AGENTS_GATEWAY_BASE_URL: http://ai-gateway.agentgateway-system.svc.cluster.local:8080/roamie/v1
@@ -33,26 +33,29 @@ workloads:
       ROAMIE_AGENTS_MCP_GATEWAY_PATH: /mcp/roamie/roamie-travel-mcp
     secrets:
       ROAMIE_AGENTS_API_KEY: prod-roamie-agents-api-key
-      ROAMIE_AGENTS_GATEWAY_API_KEY: prod-roamie-ai-gateway-api-key
+      ROAMIE_AGENTS_GATEWAY_CLIENTS: prod-roamie-agents-gateway-clients
+      ROAMIE_AGENTS_DELEGATION_KEY: prod-roamie-delegation-key
       ROAMIE_AGENTS_MCP_SCHEMA_DIGEST: prod-roamie-travel-schema-digest
     callerPrincipal: cluster.local/ns/agentgateway-system/sa/agentgateway-mcp
   roamie-travel-mcp:
     repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/roamie-travel-mcp
-    digest: "sha256:dcc72504dd6fc780787cde725f18eda65bf342ed257f722ffb057a631eb69d70"
+    digest: "sha256:3a0445cc796b910b8702075c9f9dfbe93f62105a39dca469cd5d540ad926fb04"
     healthPath: /livez
     config:
       ROAMIE_MCP_LISTEN_HOST: 0.0.0.0
       ROAMIE_MCP_ALLOWED_HOSTS: roamie-travel-mcp.roamie.svc.cluster.local,roamie-travel-mcp
       ROAMIE_MCP_ALLOWED_ORIGINS: https://mcp.tesserix.app
+      ROAMIE_MCP_ISSUER: "https://auth.tesserix.app"
+      ROAMIE_MCP_AUDIENCE: "387190457387450503"
+      ROAMIE_MCP_JWKS_URL: "https://auth.tesserix.app/oauth/v2/keys"
+      ROAMIE_MCP_JWKS_HOSTS: "auth.tesserix.app"
+      ROAMIE_MCP_GATEWAY_CIDRS: "10.20.0.0/16"
+      ROAMIE_MCP_ORGANIZATION: "386377229942128837"
       ROAMIE_MCP_API_ORIGIN: http://roamie-api.roamie.svc.cluster.local:8080
     secrets:
       ROAMIE_MCP_KEY: prod-roamie-travel-mcp-key
       ROAMIE_MCP_API_TOKEN: prod-roamie-mcp-api-token
-      ROAMIE_MCP_ISSUER: prod-roamie-mcp-issuer
-      ROAMIE_MCP_AUDIENCE: prod-roamie-mcp-audience
-      ROAMIE_MCP_JWKS_URL: prod-roamie-mcp-jwks-url
-      ROAMIE_MCP_JWKS_HOSTS: prod-roamie-mcp-jwks-hosts
-      ROAMIE_MCP_GATEWAY_CIDRS: prod-roamie-mcp-gateway-cidrs
+      ROAMIE_MCP_MANAGER_SUBJECT: prod-roamie-manager-subject
     callerPrincipal: cluster.local/ns/agentgateway-system/sa/agentgateway-mcp
 resources:
   requests:
