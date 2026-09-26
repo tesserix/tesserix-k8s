@@ -1,0 +1,62 @@
+enabled: false
+profileBoundaryVerified: false
+registryRoutesVerified: false
+replicaCount: 2
+secretStore: gcp-secret-store
+workloads:
+  roamie-trip-manager:
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/ai-agents-roamie-manager
+    digest: ""
+    healthPath: /healthz
+    config:
+      ROAMIE_MANAGER_GATEWAY_BASE_URL: http://ai-gateway.agentgateway-system.svc.cluster.local:8080/roamie/v1
+      ROAMIE_MANAGER_GATEWAY_MODEL: roamie-auto
+      ROAMIE_MANAGER_MCP_GATEWAY_ORIGIN: https://mcp.tesserix.app
+      ROAMIE_MANAGER_MCP_GATEWAY_PATH: /mcp/roamie/roamie-travel-mcp
+      ROAMIE_MANAGER_A2A_GATEWAY_ORIGIN: http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8082
+    secrets:
+      ROAMIE_MANAGER_API_KEY: prod-roamie-manager-api-key
+      ROAMIE_MANAGER_GATEWAY_API_KEY: prod-roamie-ai-gateway-api-key
+      ROAMIE_MANAGER_MCP_SCHEMA_DIGEST: prod-roamie-travel-schema-digest
+      ROAMIE_MANAGER_WORKER_API_KEY: prod-roamie-manager-runtime-token
+      ROAMIE_MANAGER_PROFILE_SIGNING_KEY: prod-roamie-profile-signing-key
+      ROAMIE_MANAGER_IDENTITY_KEY: prod-roamie-manager-identity-key
+    callerPrincipal: cluster.local/ns/roamie/sa/roamie-api
+  roamie-agents:
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/ai-agents-roamie
+    digest: ""
+    healthPath: /healthz
+    config:
+      ROAMIE_AGENTS_GATEWAY_BASE_URL: http://ai-gateway.agentgateway-system.svc.cluster.local:8080/roamie/v1
+      ROAMIE_AGENTS_GATEWAY_MODEL: roamie-auto
+      ROAMIE_AGENTS_MCP_GATEWAY_ORIGIN: https://mcp.tesserix.app
+      ROAMIE_AGENTS_MCP_GATEWAY_PATH: /mcp/roamie/roamie-travel-mcp
+    secrets:
+      ROAMIE_AGENTS_API_KEY: prod-roamie-agents-api-key
+      ROAMIE_AGENTS_GATEWAY_API_KEY: prod-roamie-ai-gateway-api-key
+      ROAMIE_AGENTS_MCP_SCHEMA_DIGEST: prod-roamie-travel-schema-digest
+    callerPrincipal: cluster.local/ns/agentgateway-system/sa/agentgateway-mcp
+  roamie-travel-mcp:
+    repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/roamie-travel-mcp
+    digest: ""
+    healthPath: /livez
+    config:
+      ROAMIE_MCP_LISTEN_HOST: 0.0.0.0
+      ROAMIE_MCP_ALLOWED_HOSTS: roamie-travel-mcp.roamie.svc.cluster.local,roamie-travel-mcp
+      ROAMIE_MCP_ALLOWED_ORIGINS: https://mcp.tesserix.app
+      ROAMIE_MCP_API_ORIGIN: http://roamie-api.roamie.svc.cluster.local:8080
+    secrets:
+      ROAMIE_MCP_KEY: prod-roamie-travel-mcp-key
+      ROAMIE_MCP_API_TOKEN: prod-roamie-mcp-api-token
+      ROAMIE_MCP_ISSUER: prod-roamie-mcp-issuer
+      ROAMIE_MCP_AUDIENCE: prod-roamie-mcp-audience
+      ROAMIE_MCP_JWKS_URL: prod-roamie-mcp-jwks-url
+      ROAMIE_MCP_JWKS_HOSTS: prod-roamie-mcp-jwks-hosts
+      ROAMIE_MCP_GATEWAY_CIDRS: prod-roamie-mcp-gateway-cidrs
+    callerPrincipal: cluster.local/ns/agentgateway-system/sa/agentgateway-mcp
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi

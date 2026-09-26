@@ -54,7 +54,16 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+          {{- if .Values.tripManager.enabled }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.tripManager.secretName }}
+          {{- end }}
           env:
+            {{- if .Values.tripManager.enabled }}
+            - name: TRIP_MANAGER_ORIGIN
+              value: {{ .Values.tripManager.origin | quote }}
+            {{- end }}
             - name: PORT
               value: "8080"
             {{- range $key, $value := .Values.env }}
