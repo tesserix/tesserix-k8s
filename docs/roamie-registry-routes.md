@@ -30,3 +30,10 @@ Activation changes shared route-sync configuration and the gateway's upstream
 secret inventory, so it requires a named production rollout approval. Rollback
 must restore the previous registry desired state through its owning seed; merely
 disabling this additive importer does not delete previously imported objects.
+
+On 2026-09-26 all eight machine subjects were provisioned by Zitadel bootstrap
+and independently verified with real signed OAuth tokens: issuer, project
+audience, exact subject, token lifetime, role set and organization membership.
+Initial client secrets and workload keys are stored in Secret Manager. No
+existing credentials were rotated. The source chart now includes those verified
+public subjects but keeps the import disabled pending activation approval.
