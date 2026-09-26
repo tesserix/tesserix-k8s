@@ -35,3 +35,13 @@ def test_api_and_manager_share_stable_personal_identity_key():
 
 def test_unverified_ai_configuration_remains_disabled():
     assert render('roamie-ai') == []
+
+
+def test_mcp_uses_the_verified_cluster_and_zitadel_boundary():
+    docs = render('roamie-ai', 'enabled=true', 'profileBoundaryVerified=true', 'registryRoutesVerified=true')
+    deployment = next(d for d in docs if d['kind'] == 'Deployment' and d['metadata']['name'] == 'roamie-travel-mcp')
+    env = {e['name']: e['value'] for e in deployment['spec']['template']['spec']['containers'][0]['env']}
+    assert env['ROAMIE_MCP_GATEWAY_CIDRS'] == '10.20.0.0/16'
+    assert env['ROAMIE_MCP_ISSUER'] == 'https://auth.tesserix.app'
+    assert env['ROAMIE_MCP_AUDIENCE'] == '387190457387450503'
+    assert env['ROAMIE_MCP_ORGANIZATION'] == '386377229942128837'
