@@ -49,8 +49,7 @@ steps from a reviewed branch before allowing the Argo CD Application to sync.
 3. Create the GCP Secret Manager entries listed below through the approved
    secret-management process. Do not create placeholder Kubernetes Secrets.
 4. Create and install the GitHub App, configure repository protections, and
-   confirm the approval relay has `issues: write` through its scoped
-   `GITHUB_TOKEN` permission.
+   confirm operators can post PR comments through their GitHub access.
 5. After an explicitly approved rollout, allow the production infrastructure
    app-of-apps to create the `atlantis` Application. Verify the ExternalSecrets
    are Ready, the PVC is Bound, the pod uses the `atlantis` KSA, and
@@ -139,9 +138,9 @@ External Secrets maps them to `atlantis-vcs`, `atlantis-basic-auth`, and
 Reviewer approval is optional for apply. Set the `main-protection` ruleset to
 zero required approving reviews and disable required code-owner review. Keep
 PRs, deletion protection, force-push protection, and `atlantis/apply` required.
-The relay requires a successful current-head `atlantis/plan` Check or legacy
-commit status and all other checks to complete without failure. It excludes
-its own check and the apply check, which cannot finish before apply is requested.
+Apply is manual: comment `atlantis apply` to apply all saved plans, or
+`atlantis apply -p <project>` for one project. Do not append wildcard stars.
+No workflow posts apply comments automatically; planning remains automatic.
 
 Atlantis server-side configuration is authoritative: repository overrides are
 disabled, forks and drafts are ignored, and apply requires `mergeable` and
@@ -236,14 +235,13 @@ For a harmless first test, change formatting or a description in one Terraform
 stack and confirm the following order:
 
 1. Atlantis publishes a successful plan status.
-2. Nothing applies before the plan and validation checks succeed.
-3. With no reviewer approval, exactly one relay comment appears after checks succeed.
+2. No apply is requested automatically when planning and CI finish.
+3. Without reviewer approval, comment `atlantis apply -p <project>`.
 4. Atlantis applies the saved plan and only then merges the PR.
 
 If apply fails, Atlantis does not merge. Fix the branch, wait for a fresh plan,
-and wait for successful checks. The relay intentionally does not retry
-the same head commit. Use a manual `atlantis apply` comment only
-after investigating the failure. Use `atlantis unlock` only after confirming no
+and wait for successful checks. Retry with a manual `atlantis apply` comment
+only after investigating the failure. Use `atlantis unlock` only after confirming no
 plan or apply is running.
 
 To suspend changes without deleting data, set `atlantis.disableApply: true` in

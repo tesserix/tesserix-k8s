@@ -7,11 +7,10 @@ The active workflows are:
 
 - `.github/workflows/terraform.yml`: formatting and offline Terraform
   validation only.
-- `.github/workflows/atlantis-auto-apply.yml`: after a successful current-head
-  Atlantis plan Check or commit status and successful checks, posts one idempotent
-  `atlantis apply` comment.
 - Atlantis: enforces mergeability and branch freshness (review is optional for apply); applies the
-  saved plan; merges after all affected projects apply successfully.
+  saved plan only when someone comments `atlantis apply` (all planned projects)
+  or `atlantis apply -p <project>`; merges after all affected projects apply
+  successfully. No workflow posts apply comments automatically.
 
 GitHub App permissions, webhooks, Secret Manager inputs, bootstrap ordering,
 and failure handling are documented in
