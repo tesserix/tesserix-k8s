@@ -38,10 +38,6 @@ spec:
             matchLabels:
               {{- include "roamie-api.selectorLabels" . | nindent 14 }}
       volumes:
-        # Memory-video frames and ffmpeg output; the root filesystem is read-only.
-        - name: tmp
-          emptyDir:
-            sizeLimit: {{ .Values.tmpSizeLimit }}
         {{- if .Values.database.enabled }}
         - name: postgres-ca
           secret:
@@ -50,6 +46,10 @@ spec:
               - key: ca.crt
                 path: ca.crt
         {{- end }}
+        # Memory-video frames and ffmpeg output; the root filesystem is read-only.
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmpSizeLimit }}
       containers:
         - name: roamie-api
           image: {{ include "roamie-api.image" . | quote }}
@@ -85,13 +85,13 @@ spec:
             {{- include "roamie-api.databaseEnv" (dict "values" .Values "secret" .Values.database.runtimeSecret) | nindent 12 }}
             {{- end }}
           volumeMounts:
-            - name: tmp
-              mountPath: /tmp
             {{- if .Values.database.enabled }}
             - name: postgres-ca
               mountPath: /etc/postgres
               readOnly: true
             {{- end }}
+            - name: tmp
+              mountPath: /tmp
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
