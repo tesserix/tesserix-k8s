@@ -1,6 +1,6 @@
 # fe3dr persistent OpenBao access — phase 1
 
-Status: approved for GitOps rollout; deployment and live verification pending. No application secret values or GCP references change in this phase.
+Status: read-only ACLs and stores deployed via PR #1157; scoped ambient egress correction and final connectivity verification in progress. No application secret values or GCP references change in this phase.
 
 ## Access contract
 
@@ -19,7 +19,7 @@ The bootstrap ConfigMap renders the ACLs and Kubernetes auth bindings. Its conte
 
 Assets are app credentials and encryption keys. A compromised API, BFF, another application, or an unintended service account must not read another app's prefix. Kubernetes auth binds the exact service account and namespace; ACLs scope paths; NetworkPolicy scopes pod labels and destination port; Istio admits the API's mesh principal. A pod label alone does not authorize reading a secret.
 
-Direct ingress to OpenBao and egress from HomeChef select `app.kubernetes.io/name: homechef-api` in `homechef`, covering API and worker. Destination is OpenBao pods on TCP 8200. Add the ambient identity `cluster.local/ns/homechef/sa/homechef-api`. Do not admit the whole HomeChef namespace or Raft port 8201. The BFF continues using ESO and receives no direct network allowance. Existing other-product networking is unchanged.
+Direct ingress to OpenBao and egress from HomeChef select `app.kubernetes.io/name: homechef-api` in `homechef`, covering API and worker. Destination is OpenBao pods on TCP 8200 and ambient HBONE transport TCP 15008. Add the ambient identity `cluster.local/ns/homechef/sa/homechef-api`. Do not admit the whole HomeChef namespace or Raft port 8201. The transport port is required because both namespaces are ambient-enrolled; restricting egress to 8200 alone caused the live probe to time out despite correct ACLs and DNS. The BFF continues using ESO and receives no direct network allowance. Existing other-product networking is unchanged.
 
 ## Rollout and verification
 

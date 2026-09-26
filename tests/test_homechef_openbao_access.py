@@ -122,6 +122,9 @@ def test_only_api_and_worker_have_direct_openbao_network_access():
                     },
                 }
             ],
-            "ports": [{"protocol": "TCP", "port": 8200}],
+            "ports": [
+                {"protocol": "TCP", "port": 8200},
+                {"protocol": "TCP", "port": 15008},
+            ],
         }
     ]
