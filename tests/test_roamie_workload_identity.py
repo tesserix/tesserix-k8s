@@ -49,7 +49,7 @@ def test_mcp_uses_the_verified_cluster_and_zitadel_boundary():
 
 def test_mesh_candidate_uses_published_images_and_internal_mcp_origin():
     values = yaml.safe_load((ROOT / 'charts/apps/roamie-ai/values.yaml').read_text())
-    expected = {'roamie-trip-manager': 'sha256:c2aad4bd3c8c59ad5eae1c70591ebb8bb4e9d1e83c0ab079d72b077c29025857', 'roamie-agents': 'sha256:7deb690266a9a0e558db304966c35a56b52bc4638e010d7f2e25528a60271c6c'}
+    expected = {'roamie-trip-manager': 'sha256:e738ca06fe9be291730aba6d2c708bf80a6b15a625a91ce4123985bd252655aa', 'roamie-agents': 'sha256:d9d2574905759be6ee620513f7acee6d04ff4c4ef843351f0f936fe981cdbbb5'}
     for name, prefix in [('roamie-trip-manager', 'ROAMIE_MANAGER_'), ('roamie-agents', 'ROAMIE_AGENTS_')]:
         workload = values['workloads'][name]
         assert workload['digest'] == expected[name]
@@ -92,3 +92,13 @@ def test_roamie_workloads_accept_only_waypoint_transport_identity():
         assert policy['rules'][0]['from'][0]['source']['principals'] == ['cluster.local/ns/roamie/sa/waypoint']
         assert policy['rules'][0]['to'][0]['operation']['ports'] == ['8080']
     assert policies['roamie-trip-manager']['spec']['action'] == 'DENY'
+
+
+def test_weather_and_entry_have_separate_model_only_identities():
+    text = (ROOT / 'charts/apps/zitadel-bootstrap/values.yaml').read_text()
+    for name in ('roamie-weather', 'roamie-entry-guidance'):
+        assert 'username: ' + name in text
+        assert 'login: ' + name + '\n          roles: [roamie.models]' in text
+    values = yaml.safe_load((ROOT / 'charts/apps/roamie-ai/values.yaml').read_text())
+    assert values['workloads']['roamie-trip-manager']['secrets']['ROAMIE_MANAGER_WEATHER_API_KEY'] == 'prod-homechef-google-weather-api-key'
+    assert 'ROAMIE_AGENTS_WEATHER_API_KEY' not in values['workloads']['roamie-agents']['secrets']
