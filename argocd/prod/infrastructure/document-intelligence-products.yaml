@@ -1,0 +1,41 @@
+# One OCR release per product: each charts/apps/document-intelligence/products/<product>-<env>.yaml
+# becomes document-intelligence-<product>-<env> with its own buckets, identities, database and task queue.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: document-intelligence-products
+  namespace: argocd
+  labels: {app.kubernetes.io/part-of: document-intelligence, environment: prod}
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/tesserix/tesserix-k8s.git
+        revision: HEAD
+        files:
+          - path: charts/apps/document-intelligence/products/*.yaml
+  # Kargo promotes by writing the image tag onto the Application; keep the generator from reverting it.
+  ignoreApplicationDifferences:
+    - jsonPointers: [/spec/source/helm/parameters]
+  template:
+    metadata:
+      name: 'document-intelligence-{{ .product }}-{{ .environment }}'
+      finalizers: [resources-finalizer.argocd.argoproj.io]
+      labels: {app.kubernetes.io/part-of: document-intelligence, environment: prod, tesserix.io/product: '{{ .product }}'}
+      annotations:
+        kargo.akuity.io/authorized-stage: kargo-document-intelligence:prod
+    spec:
+      project: infrastructure
+      source:
+        repoURL: https://github.com/tesserix/tesserix-k8s.git
+        targetRevision: HEAD
+        path: charts/apps/document-intelligence
+        helm:
+          releaseName: 'document-intelligence-{{ .product }}-{{ .environment }}'
+          valueFiles: ['products/{{ .path.filename }}']
+      destination: {server: https://kubernetes.default.svc, namespace: document-intelligence}
+      syncPolicy:
+        automated: {prune: true, selfHeal: true}
+        syncOptions: [CreateNamespace=true, ServerSideApply=true]
+        retry: {limit: 5, backoff: {duration: 5s, factor: 2, maxDuration: 3m}}
