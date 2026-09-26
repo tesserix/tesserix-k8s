@@ -90,8 +90,14 @@ jobs:
 
       - name: List changed charts
         id: list-changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          changed=$(ct list-changed --config .github/ct.yaml 2>/dev/null || echo "")
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || [[ "$BASE_SHA" =~ ^0+$ ]]; then
+            BASE_SHA=HEAD^
+          fi
+          git update-ref refs/remotes/origin/chart-lint-base "$BASE_SHA"
+          changed=$(ct list-changed --config .github/ct.yaml --target-branch=chart-lint-base)
           if [[ -n "$changed" ]]; then
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "Changed charts:"
