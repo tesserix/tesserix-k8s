@@ -45,3 +45,12 @@ def test_mcp_uses_the_verified_cluster_and_zitadel_boundary():
     assert env['ROAMIE_MCP_ISSUER'] == 'https://auth.tesserix.app'
     assert env['ROAMIE_MCP_AUDIENCE'] == '387190457387450503'
     assert env['ROAMIE_MCP_ORGANIZATION'] == '386377229942128837'
+
+
+def test_mesh_candidate_uses_published_images_and_internal_mcp_origin():
+    values = yaml.safe_load((ROOT / 'charts/apps/roamie-ai/values.yaml').read_text())
+    expected = {'roamie-trip-manager': 'sha256:577572a975df94729ad82523f1c0f316e736a366fbe8818917e31d5f3ced1255', 'roamie-agents': 'sha256:4746b726f9641910db037cd98e7ae90798f431644f4054484b82f02207981f6d'}
+    for name, prefix in [('roamie-trip-manager', 'ROAMIE_MANAGER_'), ('roamie-agents', 'ROAMIE_AGENTS_')]:
+        workload = values['workloads'][name]
+        assert workload['digest'] == expected[name]
+        assert workload['config'][prefix+'MCP_GATEWAY_ORIGIN'] == 'http://agentgateway-mcp.agentgateway-system.svc.cluster.local:8082'
