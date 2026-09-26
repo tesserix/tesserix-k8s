@@ -323,7 +323,7 @@ class AtlantisRepositoryConfigurationTests(unittest.TestCase):
         repo_config = yaml.safe_load(self.values["atlantis"]["repoConfig"])
         repository = repo_config["repos"][0]
         self.assertEqual(
-            {"approved", "mergeable", "undiverged"},
+            {"mergeable", "undiverged"},
             set(repository["apply_requirements"]),
         )
         self.assertEqual(
@@ -686,41 +686,19 @@ class AtlantisPlatformTests(unittest.TestCase):
         self.assertIn({"ipBlock": {"cidr": "10.30.0.10/32"}}, dns_rule["to"])
 
 
-class AtlantisApprovalRelayTests(unittest.TestCase):
-    def test_new_workflows_pin_every_action_to_a_commit(self):
-        for filename in ("terraform.yml", "atlantis-auto-apply.yml"):
-            workflow = (ROOT / ".github/workflows" / filename).read_text()
-            actions = re.findall(r"^\s*uses:\s*([^\s]+)$", workflow, re.MULTILINE)
-            self.assertTrue(actions, filename)
-            for action in actions:
-                self.assertRegex(action, r"@[0-9a-f]{40}$", action)
+class AtlantisManualApplyTests(unittest.TestCase):
+    def test_validation_workflow_pins_every_action_to_a_commit(self):
+        workflow = (ROOT / ".github/workflows/terraform.yml").read_text()
+        actions = re.findall(r"^\s*uses:\s*([^\s]+)$", workflow, re.MULTILINE)
+        self.assertTrue(actions)
+        for action in actions:
+            self.assertRegex(action, r"@[0-9a-f]{40}$")
 
-    def test_relay_is_pinned_and_rechecks_approval_plan_and_checks(self):
-        workflow = (ROOT / ".github/workflows/atlantis-auto-apply.yml").read_text()
-        self.assertIn(
-            "actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd",
-            workflow,
-        )
-        for guard in (
-            "pull_request_review",
-            "workflow_run",
-            "head.repo.fork",
-            "APPROVED",
-            "atlantis/plan",
-            "atlantis apply",
-        ):
-            self.assertIn(guard, workflow)
-
-    def test_relay_serializes_every_event_for_the_same_head(self):
-        workflow = load_yaml(ROOT / ".github/workflows/atlantis-auto-apply.yml")
-        concurrency_group = workflow["concurrency"]["group"]
-        for head_sha in (
-            "github.event.pull_request.head.sha",
-            "github.event.check_run.head_sha",
-            "github.event.workflow_run.head_sha",
-            "github.event.sha",
-        ):
-            self.assertIn(head_sha, concurrency_group)
+    def test_no_workflow_posts_an_automatic_apply_comment(self):
+        self.assertFalse((ROOT / ".github/workflows/atlantis-auto-apply.yml").exists())
+        for path in (ROOT / ".github/workflows").glob("*.y*ml"):
+            workflow = path.read_text()
+            self.assertNotRegex(workflow, r"body:.*atlantis apply", str(path))
 
     def test_github_app_permissions_allow_atlantis_to_merge(self):
         runbook = (TERRAFORM_ROOT / "docs/ATLANTIS_RUNBOOK.md").read_text()

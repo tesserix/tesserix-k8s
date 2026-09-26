@@ -1,5 +1,10 @@
 # Terraform in a pull request: how Atlantis changed our infrastructure work
 
+> Historical rollout account. The current policy makes reviewer approval optional
+> for apply. Apply now requires an explicit `atlantis apply` PR comment; the
+> automatic apply relay has been removed. Planning remains automatic. See
+> [the runbook](../terraform-new/docs/ATLANTIS_RUNBOOK.md) for current behavior.
+
 We moved our production Terraform onto Atlantis on 24 August 2026. Before that,
 changing infrastructure meant running `terraform apply` from a laptop or firing
 a GitHub Actions workflow by hand. Now the pull request is the whole interface.
