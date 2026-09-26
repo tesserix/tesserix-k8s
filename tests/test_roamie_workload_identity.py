@@ -49,7 +49,7 @@ def test_mcp_uses_the_verified_cluster_and_zitadel_boundary():
 
 def test_mesh_candidate_uses_published_images_and_internal_mcp_origin():
     values = yaml.safe_load((ROOT / 'charts/apps/roamie-ai/values.yaml').read_text())
-    expected = {'roamie-trip-manager': 'sha256:13f494f2a588569021fd5778fb14103880c36fb61842452ad0141b4f982af70e', 'roamie-agents': 'sha256:7fc89787b70f589d5d1f7587f770736f64eebd23e38fd2982b66e1b69b3ab0b2'}
+    expected = {'roamie-trip-manager': 'sha256:25dde8c319d4a22ea1156a1ab337a6aa1dd696bc3b27cf3fb55ad467cc45f59c', 'roamie-agents': 'sha256:20c2a4437c28b5ca9a36fa9c75f48c2dd2c4ff4fc812bc16244eb0525e3e2201'}
     for name, prefix in [('roamie-trip-manager', 'ROAMIE_MANAGER_'), ('roamie-agents', 'ROAMIE_AGENTS_')]:
         workload = values['workloads'][name]
         assert workload['digest'] == expected[name]
