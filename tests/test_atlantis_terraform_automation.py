@@ -323,7 +323,7 @@ class AtlantisRepositoryConfigurationTests(unittest.TestCase):
         repo_config = yaml.safe_load(self.values["atlantis"]["repoConfig"])
         repository = repo_config["repos"][0]
         self.assertEqual(
-            {"approved", "mergeable", "undiverged"},
+            {"mergeable", "undiverged"},
             set(repository["apply_requirements"]),
         )
         self.assertEqual(
@@ -695,7 +695,7 @@ class AtlantisApprovalRelayTests(unittest.TestCase):
             for action in actions:
                 self.assertRegex(action, r"@[0-9a-f]{40}$", action)
 
-    def test_relay_is_pinned_and_rechecks_approval_plan_and_checks(self):
+    def test_relay_is_pinned_and_rechecks_plan_and_checks(self):
         workflow = (ROOT / ".github/workflows/atlantis-auto-apply.yml").read_text()
         self.assertIn(
             "actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd",
@@ -705,7 +705,6 @@ class AtlantisApprovalRelayTests(unittest.TestCase):
             "pull_request_review",
             "workflow_run",
             "head.repo.fork",
-            "APPROVED",
             "atlantis/plan",
             "atlantis apply",
         ):

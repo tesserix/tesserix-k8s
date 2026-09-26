@@ -136,17 +136,17 @@ External Secrets maps them to `atlantis-vcs`, `atlantis-basic-auth`, and
 
 ## Repository protections
 
-Keep code-owner review required on `main`, require at least one approval, and
-dismiss stale approvals when new commits are pushed. Require the existing
-validation checks appropriate to the changed paths. The relay independently
-requires an `APPROVED` review tied to the current head, a successful
-`atlantis/plan`, and all other checks to be complete without failure.
+Reviewer approval is optional for apply. Set the `main-protection` ruleset to
+zero required approving reviews and disable required code-owner review. Keep
+PRs, deletion protection, force-push protection, and `atlantis/apply` required.
+The relay requires a successful current-head `atlantis/plan` Check or legacy
+commit status and all other checks to complete without failure. It excludes
+its own check and the apply check, which cannot finish before apply is requested.
 
-Atlantis server-side configuration is authoritative: the repository cannot
-override its workflow, fork and draft PRs are ignored, and apply/import require
-`approved`, `mergeable`, and `undiverged`. The apply step consumes the saved
-plan. `automerge: true` merges only after every affected project applies
-successfully.
+Atlantis server-side configuration is authoritative: repository overrides are
+disabled, forks and drafts are ignored, and apply requires `mergeable` and
+`undiverged`. Import still requires `approved` as well. Apply consumes the saved
+plan; `automerge: true` merges after every affected project applies successfully.
 
 ## Stack-scoped projects and commands
 
@@ -236,13 +236,13 @@ For a harmless first test, change formatting or a description in one Terraform
 stack and confirm the following order:
 
 1. Atlantis publishes a successful plan status.
-2. Nothing applies before a current-head approval exists.
-3. After approval and successful checks, exactly one relay comment appears.
+2. Nothing applies before the plan and validation checks succeed.
+3. With no reviewer approval, exactly one relay comment appears after checks succeed.
 4. Atlantis applies the saved plan and only then merges the PR.
 
 If apply fails, Atlantis does not merge. Fix the branch, wait for a fresh plan,
-and obtain a new current-head approval. The relay intentionally does not retry
-the same head/review combination. Use a manual `atlantis apply` comment only
+and wait for successful checks. The relay intentionally does not retry
+the same head commit. Use a manual `atlantis apply` comment only
 after investigating the failure. Use `atlantis unlock` only after confirming no
 plan or apply is running.
 

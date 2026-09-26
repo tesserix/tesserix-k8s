@@ -11,6 +11,7 @@ name: Atlantis Auto Apply
       - Terraform Static Validation
       - PR Validation
       - Helm Lint
+      - Repository Tests
     types: [completed]
 
 permissions:
@@ -78,28 +79,6 @@ jobs:
               return;
             }
 
-            const reviews = await github.paginate(github.rest.pulls.listReviews, {
-              owner,
-              repo,
-              pull_number: pullNumber,
-              per_page: 100,
-            });
-            const latestReviewByUser = new Map();
-            for (const review of reviews) {
-              if (!review.user || review.state === "COMMENTED") continue;
-              const previous = latestReviewByUser.get(review.user.id);
-              if (!previous || review.id > previous.id) {
-                latestReviewByUser.set(review.user.id, review);
-              }
-            }
-            const approvals = [...latestReviewByUser.values()].filter(
-              (review) => review.state === "APPROVED" && review.commit_id === pull.head.sha,
-            );
-            if (approvals.length === 0) {
-              core.info("No APPROVED review exists for the current head commit.");
-              return;
-            }
-
             const combined = await github.rest.repos.getCombinedStatusForRef({
               owner,
               repo,
@@ -110,13 +89,6 @@ jobs:
             const planStatuses = statuses.filter((status) =>
               status.context.startsWith("atlantis/plan"),
             );
-            if (
-              planStatuses.length === 0 ||
-              planStatuses.some((status) => status.state !== "success")
-            ) {
-              core.info("The atlantis/plan status is missing or is not successful.");
-              return;
-            }
             const blockingStatuses = statuses.filter(
               (status) =>
                 !status.context.startsWith("atlantis/") && status.state !== "success",
@@ -133,12 +105,26 @@ jobs:
               filter: "latest",
               per_page: 100,
             });
+            const planChecks = checkRuns.filter((check) =>
+              check.name === "atlantis/plan" || check.name.startsWith("atlantis/plan:"),
+            );
+            if (
+              (planStatuses.length === 0 && planChecks.length === 0) ||
+              planStatuses.some((status) => status.state !== "success") ||
+              planChecks.some((check) =>
+                check.status !== "completed" || check.conclusion !== "success",
+              )
+            ) {
+              core.info("The atlantis/plan result is missing or is not successful.");
+              return;
+            }
             const acceptedConclusions = new Set(["success", "neutral", "skipped"]);
             const blockingChecks = checkRuns.filter((check) => {
               const ownCheck =
                 check.name === "request-apply" ||
                 check.name.startsWith("Atlantis Auto Apply");
-              return !ownCheck &&
+              const applyCheck = check.name === "atlantis/apply" || check.name.startsWith("atlantis/apply:");
+              return !ownCheck && !applyCheck &&
                 (check.status !== "completed" || !acceptedConclusions.has(check.conclusion));
             });
             if (blockingChecks.length > 0) {
@@ -146,8 +132,7 @@ jobs:
               return;
             }
 
-            const approvalToken = approvals.map((review) => review.id).sort().join("-");
-            const marker = `<!-- atlantis-auto-apply:${pull.head.sha}:${approvalToken} -->`;
+            const marker = `<!-- atlantis-auto-apply:${pull.head.sha} -->`;
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner,
               repo,

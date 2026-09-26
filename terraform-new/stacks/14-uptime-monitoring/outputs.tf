@@ -1,3 +1,4 @@
+# Atlantis diagnostic: a comment-only change exercises stack-scoped autoplan.
 output "uptime_check_ids" {
   description = "Uptime check IDs, keyed by endpoint name."
   value       = { for k, v in google_monitoring_uptime_check_config.public : k => v.uptime_check_id }
