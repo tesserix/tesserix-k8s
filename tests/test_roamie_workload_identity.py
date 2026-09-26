@@ -49,7 +49,7 @@ def test_mcp_uses_the_verified_cluster_and_zitadel_boundary():
 
 def test_mesh_candidate_uses_published_images_and_internal_mcp_origin():
     values = yaml.safe_load((ROOT / 'charts/apps/roamie-ai/values.yaml').read_text())
-    expected = {'roamie-trip-manager': 'sha256:e738ca06fe9be291730aba6d2c708bf80a6b15a625a91ce4123985bd252655aa', 'roamie-agents': 'sha256:d9d2574905759be6ee620513f7acee6d04ff4c4ef843351f0f936fe981cdbbb5'}
+    expected = {'roamie-trip-manager': 'sha256:4dd398163cde8386e657c472d49281c0eda56234457d8c33fa5778be60c0e845', 'roamie-agents': 'sha256:1048bcf2d724244de73e760486cbdfb9fd677b94f435d13dd83b744801f51ec0'}
     for name, prefix in [('roamie-trip-manager', 'ROAMIE_MANAGER_'), ('roamie-agents', 'ROAMIE_AGENTS_')]:
         workload = values['workloads'][name]
         assert workload['digest'] == expected[name]
@@ -60,7 +60,7 @@ def test_mcp_schema_contract_is_explicit_and_not_a_credential():
     values = yaml.safe_load((ROOT / 'charts/apps/roamie-ai/values.yaml').read_text())
     for name, prefix in [('roamie-trip-manager', 'ROAMIE_MANAGER_'), ('roamie-agents', 'ROAMIE_AGENTS_')]:
         workload = values['workloads'][name]
-        assert workload['config'][prefix+'MCP_SCHEMA_DIGEST'] == '840c0cd115f52ce031f71bb806770d6612becf4b6097852e7d091c8b2baac015'
+        assert workload['config'][prefix+'MCP_SCHEMA_DIGEST'] == '975514e8cc220cc78183121a1f4e61efe7a52f431019718dac35aa5ad3226270'
         assert prefix+'MCP_SCHEMA_DIGEST' not in workload['secrets']
 
 
@@ -102,3 +102,13 @@ def test_weather_and_entry_have_separate_model_only_identities():
     values = yaml.safe_load((ROOT / 'charts/apps/roamie-ai/values.yaml').read_text())
     assert values['workloads']['roamie-trip-manager']['secrets']['ROAMIE_MANAGER_WEATHER_API_KEY'] == 'prod-homechef-google-weather-api-key'
     assert 'ROAMIE_AGENTS_WEATHER_API_KEY' not in values['workloads']['roamie-agents']['secrets']
+
+
+def test_validation_access_is_opt_in_and_preserves_api_only_identity():
+    default = render('roamie-ai', 'enabled=true', 'validationOnly=true')
+    policy = next(doc for doc in default if doc and doc.get('kind') == 'AuthorizationPolicy' and doc['metadata']['name'] == 'roamie-trip-manager')
+    assert policy['spec']['action'] == 'DENY'
+    validation = render('roamie-ai', 'enabled=true', 'validationOnly=true', 'validationApiAccess=true')
+    policy = next(doc for doc in validation if doc and doc.get('kind') == 'AuthorizationPolicy' and doc['metadata']['name'] == 'roamie-trip-manager')
+    assert policy['spec']['action'] == 'ALLOW'
+    assert policy['spec']['rules'][0]['from'][0]['source']['principals'] == ['cluster.local/ns/roamie/sa/roamie-api']
