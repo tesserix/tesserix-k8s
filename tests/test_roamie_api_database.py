@@ -48,3 +48,19 @@ def test_digest_pin_takes_precedence_over_kargo_tag():
 def test_argocd_does_not_skip_migration_hooks():
     app = yaml.safe_load((ROOT / 'argocd/prod/apps/roamie/roamie-api.yaml').read_text())
     assert 'ApplyOutOfSyncOnly=true' not in app['spec']['syncPolicy']['syncOptions']
+
+
+def test_production_requires_roamie_customer_authentication():
+    docs = list(yaml.safe_load_all(subprocess.check_output([
+        'helm', 'template', 'roamie-api', str(ROOT / 'charts/apps/roamie-api')
+    ], text=True)))
+    deployment = next(d for d in docs if d and d['kind'] == 'Deployment')
+    env = {e['name']: e.get('value') for e in deployment['spec']['template']['spec']['containers'][0]['env']}
+    assert env['AUTH_ENABLED'] == 'true'
+    assert env['ZITADEL_ISSUER'] == 'https://auth.tesserix.app'
+    assert env['ZITADEL_ORG_ID'] == '386377229942128837'
+    assert env['ZITADEL_PROJECT_ID'] == '392328861469115174'
+    assert env['ZITADEL_IOS_CLIENT_ID'] == '392328865646707494'
+    assert env['ZITADEL_ANDROID_CLIENT_ID'] == '392328864774226726'
+    assert env['ZITADEL_GOOGLE_IDP_ID'] == '386381087862948767'
+    assert env['ZITADEL_APPLE_IDP_ID'] == '389173155337339395'

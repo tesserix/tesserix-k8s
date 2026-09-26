@@ -21,13 +21,14 @@ Apply order, after scoped production approval:
    CNPG ready instances on distinct nodes with streaming replication.
 4. Verify a successful scheduled/manual backup and WAL archiving; perform a
    restore to an isolated test cluster before declaring recovery verified.
-5. Wire the API persistence implementation with TLS verify-full and the CNPG CA,
-   account-scoped queries and versioned migrations. The current API and trip
-   implementation still use local device storage; provisioning is not persistence.
+5. Wire API persistence with TLS verify-full and the CNPG CA, account-scoped
+   queries and versioned migrations. Shared mobile trip synchronization is a
+   separate release; provisioning alone does not synchronize device data.
 
 Backups use a dedicated private GCS bucket, Workload Identity, daily base backups,
 continuous WAL and seven-day retention. Storage resources prevent destruction.
-No live resources have been provisioned by preparing this worktree.
+The two-instance cluster and API database connection were verified during the
+September 2026 rollout; inspect current Argo and CNPG status before maintenance.
 Do not prune the CNPG application or delete PVCs as a rollback procedure.
 
 Validation: Helm lint/template, Kubernetes app kustomization, live CNPG CRD JSON
@@ -61,3 +62,33 @@ A one-time GitOps `Backup` resource verifies the repaired backup path; daily
 scheduled backups continue separately. An isolated restore drill is still
 required before closing Roamie #85. No production failover or restore is performed
 implicitly by the rollout.
+
+## Customer authentication and audit migration
+
+The authenticated API requires `AUTH_ENABLED=true` and the Roamie native-client
+IDs from the reconciled identity-operator resources. The issuer is
+`https://auth.tesserix.app`, project `392328861469115174`, TESSERIX organization
+`386377229942128837`. Google and Apple use the existing organization providers;
+Facebook is omitted until its setup and callback have been verified. No provider
+credentials are stored in Helm values. Public endpoints are `/healthz`, `/readyz`
+and `/v1/auth/config`; every business route requires a verified customer token.
+
+The same wave -1 owner hook applies `202609260001`, creating accounts,
+case-insensitive unique emails, eight travel-style reference rows and audit
+triggers. It never loads the separate synthetic development fixture. Verify
+three successful rows in `_sqlx_migrations`, eight rows in `travel_styles`, and
+no runtime INSERT/UPDATE/DELETE/TRUNCATE privilege on `audit_events`. Mutations
+capture column names without copying profile values into audit payloads.
+
+After sync, confirm two healthy API replicas, runtime TLS sessions, health and
+readiness HTTP 200, and missing/forged credentials HTTP 401 on protected routes.
+An actual successful social callback remains a separate device verification;
+an HTTP 401 smoke test does not prove that journey. Keep the local debug bypass
+on a loopback/local database only, and point unsigned development builds at that
+local API. The public production backend does not accept the development bypass.
+
+Retain the schema on application rollback. Do not restore the previous public
+unauthenticated API as an ordinary rollback; use a corrected authenticated image
+or a separately approved maintenance response. Account/audit migration is
+forward-only, without a destructive down migration. Per-customer rate limits,
+retention policy and a tested restore remain explicit release follow-ups.
