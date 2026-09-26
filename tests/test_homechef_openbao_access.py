@@ -96,6 +96,13 @@ def test_only_api_and_worker_have_direct_openbao_network_access():
     ]
     assert "cluster.local/ns/homechef/sa/homechef-api" in principals
     assert "cluster.local/ns/homechef/sa/homechef-auth-bff" not in principals
+    for rule in auth["spec"]["rules"]:
+        if any(
+            "cluster.local/ns/homechef/sa/homechef-api"
+            in source["source"].get("principals", [])
+            for source in rule.get("from", [])
+        ):
+            assert rule["to"] == [{"operation": {"ports": ["8200"]}}]
     result = subprocess.run(
         ["kubectl", "kustomize", str(ROOT / "manifests/homechef-istio")],
         capture_output=True,
