@@ -164,7 +164,7 @@ def test_publisher_route_requires_exact_github_identity():
             "when": [
                 {
                     "key": "request.auth.claims[event_name]",
-                    "notValues": ["workflow_dispatch"],
+                    "notValues": ["workflow_dispatch", "push"],
                 }
             ],
         },
