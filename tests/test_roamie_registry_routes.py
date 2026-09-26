@@ -12,14 +12,14 @@ def render(enabled=True, subjects=True):
     args = ['helm', 'template', 'routes', str(CHART), '--set', f'roamieSeed.enabled={str(enabled).lower()}']
     if subjects:
         args += ['--set-string', 'roamieSeed.managerSubject=100']
-        for index in range(7):
+        for index in range(9):
             args += ['--set-string', f'roamieSeed.specialistSubjects[{index}]={101 + index}']
     else:
         args += ['--set-string', 'roamieSeed.managerSubject=']
     return subprocess.run(args, capture_output=True, text=True)
 
 
-def test_routes_require_eight_real_distinct_subjects():
+def test_routes_require_ten_real_distinct_subjects():
     result = render(subjects=False)
     assert result.returncode != 0
     assert 'Roamie' in result.stderr
@@ -40,7 +40,7 @@ def test_roamie_routes_are_imported_through_registry_and_bind_exact_subjects():
         assert 'jwt.sub' in expression and '"100"' in expression
         assert '386377229942128837' in expression and role in expression
         if role == 'roamie.models':
-            assert all(f'"{i}"' in expression for i in range(101,108))
+            assert all(f'"{i}"' in expression for i in range(101,110))
         else:
             assert '"101"' not in expression
     assert not any(d['kind'] in ['HTTPRoute', 'AgentgatewayBackend', 'AgentgatewayPolicy'] and d['metadata']['name'].startswith('roamie') for d in docs)
@@ -68,7 +68,7 @@ def test_upstream_secrets_bind_gateway_to_the_same_workload_keys():
 def test_roamie_rejects_duplicate_and_malformed_machine_subjects():
     for subject in ('101', 'not-an-id'):
         args = ['helm', 'template', 'routes', str(CHART), '--set', 'roamieSeed.enabled=true', '--set-string', f'roamieSeed.managerSubject={subject}']
-        for index in range(7):
+        for index in range(9):
             args += ['--set-string', f'roamieSeed.specialistSubjects[{index}]={101 + index}']
         result = subprocess.run(args, capture_output=True, text=True)
         assert result.returncode != 0
