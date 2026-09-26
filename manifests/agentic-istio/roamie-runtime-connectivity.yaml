@@ -1,0 +1,179 @@
+# Ambient traffic uses HBONE; namespace paths retain workload identity checks at waypoints.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: roamie-gateway-egress
+  namespace: agentgateway-system
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: agentgateway-mcp
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: roamie
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: roamie-runtime-egress
+  namespace: roamie
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: roamie
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: agentgateway-system
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: roamie-runtime-ingress
+  namespace: roamie
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/part-of
+      operator: In
+      values:
+      - roamie
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: agentgateway-system
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: roamie-waypoint-ingress
+  namespace: roamie
+spec:
+  podSelector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: waypoint
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: agentgateway-system
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: roamie-gateway-ingress
+  namespace: agentgateway-system
+spec:
+  podSelector:
+    matchExpressions:
+    - key: gateway.networking.k8s.io/gateway-name
+      operator: In
+      values:
+      - waypoint
+      - ai-gateway
+      - agentgateway-mcp
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: roamie
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: roamie-registry-egress
+  namespace: roamie
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: roamie-trip-manager
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: agentregistry-system
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: roamie-registry-ingress
+  namespace: agentregistry-system
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: roamie
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: roamie-trip-manager
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: roamie-registry-read
+  namespace: agentregistry-system
+spec:
+  targetRefs:
+  - kind: Gateway
+    group: gateway.networking.k8s.io
+    name: waypoint
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/roamie/sa/roamie-trip-manager
+    to:
+    - operation:
+        methods:
+        - GET
+        paths:
+        - /v0/agents/roamie-*
+        ports:
+        - '12121'
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: roamie-model-invocation
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - kind: Gateway
+    group: gateway.networking.k8s.io
+    name: waypoint
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/roamie/sa/roamie-trip-manager
+        - cluster.local/ns/roamie/sa/roamie-agents
+    to:
+    - operation:
+        methods:
+        - POST
+        paths:
+        - /roamie/*
+        ports:
+        - '8080'
