@@ -204,3 +204,40 @@ coverage rejects file-output flags. The retry succeeded.
 
 This is staging evidence, not proof of live ESO cutover, provider functionality,
 restore, outage handling or observation-window completion. Keep #1159 open.
+
+
+## Reviewed batch extension
+
+The user subsequently authorized migration of the reviewed application candidates
+and deletion of their GCP sources only after successful migration. The 36
+candidates have been staged to 38 exact paths (admin allowlist and HMAC have both
+API and BFF copies). Copying is not consumer cutover: 18 direct-runtime entries
+and six coordinated entries remain dependent on their existing GCP consumers.
+
+`scripts/migrate_fe3dr_reviewed.py` accepts a local metadata-only JSON plan:
+
+```json
+[{"source":"prod-homechef-jwt-secret","version":"1","targets":["homechef/homechef-api/fe3dr-jwt-secret"]}]
+```
+
+It allows only reviewed production app names and exact matching identifiers under
+the API/BFF prefixes. Platform, held, development and shared-service entries are
+rejected. `--policy` produces the exact-path create/read ACL for an operator-issued
+`fe3dr-migrate-reviewed` token; `--execute --account <account> --journal <file>`
+copies and verifies each target and records metadata only, revoking the token
+in a finally block. Reruns refuse changed destinations. Runtime writers must be
+quiesced or reconciled at their future cutover; staging alone is not authority to
+delete the GCP source.
+
+The static batch switches 11 API keys and two BFF keys (12 unique GCP entries).
+API and worker use `openbao.staticSecrets.enabled`; BFF mappings are explicit
+per-key sourceRef entries in the namespace ExternalSecret. Unrelated/shared keys
+stay on GCP. Pod-template annotations force a fresh API/worker/BFF rollout to
+verify startup with the unchanged values. Rollback requires reverting both API
+production enablement and the two BFF source mappings through GitOps.
+
+Deletion must follow live ESO source/refresh checks, target equality and healthy
+fresh workloads, an all-namespace consumer scan, source version recheck and a
+verified recoverable capture. Record exact deleted sources and recovery location
+in #1159. Staged runtime/coordinated entries are excluded from static-batch
+cleanup. No platform, unknown-use or unverified secret may be deleted by inference.

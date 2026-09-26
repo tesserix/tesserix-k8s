@@ -17,7 +17,7 @@ def chart(tmp_path):
     return tmp_path / "homechef-api"
 
 
-def render(chart, enabled):
+def render(chart, enabled, static=False):
     result = subprocess.run(
         [
             "helm",
@@ -30,6 +30,8 @@ def render(chart, enabled):
             str(chart / "values-prod.yaml"),
             "--set",
             f"openbao.exchangeRatePilot.enabled={str(enabled).lower()}",
+            "--set",
+            f"openbao.staticSecrets.enabled={str(static).lower()}",
         ],
         check=True,
         capture_output=True,
@@ -104,3 +106,70 @@ def test_pilot_cannot_read_production_secret_from_another_environment(chart):
     )
     assert result.returncode != 0
     assert "exchange-rate pilot is restricted to prod/homechef" in result.stderr
+
+
+STATIC_KEYS = {
+    "OPENEXCHANGERATES_APP_ID": "openexchangerates-app-id",
+    "EXCHANGERATES_API_KEY": "exchangerates-api-key",
+    "GOOGLE_MAPS_API_KEY": "google-maps-api-key",
+    "MAPPLS_CLIENT_ID": "mappls-client-id",
+    "MAPPLS_CLIENT_SECRET": "mappls-client-secret",
+    "DELIVERY_SURGE_PIN_KEY": "delivery-surge-pin-key",
+    "JWT_SECRET": "jwt-secret",
+    "JWT_REFRESH_SECRET": "jwt-refresh-secret",
+    "SUPER_ADMIN_EMAILS": "admin-allowed-emails",
+    "APPLE_KEY_ID": "apple-key-id",
+    "APPLE_SIGNIN_PRIVATE_KEY_B64": "apple-signin-private-key-b64",
+}
+
+
+def test_static_batch_moves_only_reviewed_keys_and_preserves_all_other_resources(chart):
+    baseline = render(chart, False)
+    migrated = render(chart, False, static=True)
+    old = next(d for d in baseline if d["kind"] == "ExternalSecret")
+    new = next(d for d in migrated if d["kind"] == "ExternalSecret")
+    original = {d["secretKey"]: d for d in old["spec"]["data"]}
+    for entry in new["spec"]["data"]:
+        key = entry["secretKey"]
+        if key not in STATIC_KEYS:
+            assert entry == original[key]
+            continue
+        assert entry["sourceRef"]["storeRef"] == {
+            "kind": "SecretStore",
+            "name": "openbao-homechef-api",
+        }
+        assert entry["remoteRef"] == {
+            "key": "homechef/homechef-api/fe3dr-" + STATIC_KEYS[key],
+            "property": "value",
+        }
+        entry.clear()
+        entry.update(original[key])
+    assert migrated == baseline
+
+
+def test_bff_static_keys_use_its_own_store_and_prefix():
+    docs = list(
+        yaml.safe_load_all(
+            (ROOT / "external-secrets/prod/homechef/externalsecret.yaml").read_text()
+        )
+    )
+    resource = next(
+        d for d in docs if d["metadata"]["name"] == "homechef-auth-bff-secrets"
+    )
+    expected = {
+        "SESSION_ENCRYPT_KEY": "session-encrypt-key",
+        "HOMECHEF_ADMIN_ALLOWED_EMAILS": "admin-allowed-emails",
+    }
+    for entry in resource["spec"]["data"]:
+        if entry["secretKey"] in expected:
+            assert entry["sourceRef"]["storeRef"] == {
+                "kind": "SecretStore",
+                "name": "openbao-homechef-auth-bff",
+            }
+            assert entry["remoteRef"] == {
+                "key": "homechef/homechef-auth-bff/fe3dr-"
+                + expected[entry["secretKey"]],
+                "property": "value",
+            }
+        else:
+            assert "sourceRef" not in entry

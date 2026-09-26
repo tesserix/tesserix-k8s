@@ -72,7 +72,11 @@ class OpenBao:
             with self.opener.open(request, timeout=20) as response:
                 return json.loads(response.read() or b"{}")
         except urllib.error.HTTPError as error:
-            if error.code == 404 and method == "GET" and path == DESTINATION:
+            if (
+                error.code == 404
+                and method == "GET"
+                and path.startswith("kv/data/homechef/")
+            ):
                 return None
             raise MigrationError(
                 f"OpenBao {method} failed (HTTP {error.code}); response withheld"
@@ -83,12 +87,12 @@ class OpenBao:
             ) from None
 
 
-def validate_token(data):
+def validate_token(data, policy=POLICY):
     policies = set(data.get("policies", [])) | set(data.get("identity_policies", []))
     if (
         not 0 < data.get("ttl", 0) <= 900
-        or POLICY not in policies
-        or policies - {POLICY, "default"}
+        or policy not in policies
+        or policies - {policy, "default"}
     ):
         raise MigrationError(
             "Require a <=15-minute token with only the pilot policy and optional default policy"
@@ -108,7 +112,7 @@ def destination_value(response):
         ) from None
 
 
-def copy_secret(request, source):
+def copy_secret(request, source, destination=DESTINATION):
     try:
         value = source.decode("utf-8")
     except UnicodeDecodeError:
@@ -117,7 +121,7 @@ def copy_secret(request, source):
         ) from None
     if not source:
         raise MigrationError("Refusing an empty source credential")
-    existing = request("GET", DESTINATION)
+    existing = request("GET", destination)
     if existing is not None:
         current, version = destination_value(existing)
         if not hmac.compare_digest(source, current):
@@ -125,9 +129,9 @@ def copy_secret(request, source):
         return "unchanged", version
     # CAS=0 prevents replacing an existing, concurrently created or soft-deleted key.
     written = request(
-        "POST", DESTINATION, {"options": {"cas": 0}, "data": {"value": value}}
+        "POST", destination, {"options": {"cas": 0}, "data": {"value": value}}
     )
-    verified = request("GET", DESTINATION)
+    verified = request("GET", destination)
     if verified is None:
         raise MigrationError("Copy verification failed; destination unavailable")
     current, version = destination_value(verified)
