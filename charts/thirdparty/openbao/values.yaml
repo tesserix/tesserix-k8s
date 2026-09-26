@@ -300,13 +300,11 @@ bootstrap:
     - name: snapshot
       hcl: |
         path "sys/storage/raft/snapshot" { capabilities = ["read"] }
-    # One read-only policy per consuming namespace. The path prefix is the
-    # namespace name, so `kv/data/homechef/api/db` belongs to homechef and to
-    # nothing else.
+    # Keep the legacy API role compatible without granting access to BFF secrets.
     - name: read-homechef
       hcl: |
-        path "kv/data/homechef/*"     { capabilities = ["read"] }
-        path "kv/metadata/homechef/*" { capabilities = ["read", "list"] }
+        path "kv/data/homechef/homechef-api/*"     { capabilities = ["read"] }
+        path "kv/metadata/homechef/homechef-api/*" { capabilities = ["read", "list"] }
     - name: read-ai-database
       hcl: |
         path "kv/data/ai-database/*"     { capabilities = ["read"] }
@@ -474,10 +472,8 @@ clusterSecretStore:
 # which namespaces the ClusterSecretStore will serve at all. The secret-service
 # console proposes changes here as a pull request — it never edits the cluster.
 #
-# The matching OpenBao policy and auth role (`app-<namespace>_<app>`) are minted
-# by the console, not by the bootstrap Job, so the two never reconcile the same
-# object. An entry here without a grant reads nothing; a grant without an entry
-# has no store to be read through.
+# The bootstrap Job persists each app policy and role from this list, so
+# rebuilding OpenBao restores the grants referenced by these SecretStores.
 #
 # A new namespace also needs a `destinations` entry in
 # argocd/prod/projects/security.yaml, or ArgoCD refuses to render its store.
@@ -486,6 +482,8 @@ namespaceWhitelist:
     apps:
       - name: homechef-api
         serviceAccount: homechef-api
+      - name: homechef-auth-bff
+        serviceAccount: homechef-auth-bff
   - namespace: ai-database
     apps:
       - name: qdrant
