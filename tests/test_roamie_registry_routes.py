@@ -87,3 +87,17 @@ def test_mcp_transport_is_registry_owned_with_a_separate_upstream_key():
     route=next(d for d in resources if d['kind']=='HTTPRoute' and d['metadata']['name']=='roamie-roamie-travel-mcp')
     assert route['spec']['parentRefs'] == [{'name':'agentgateway-mcp','sectionName':'runtime'}]
     assert route['spec']['rules'][0]['matches'][0]['path']['value']=='/mcp/roamie/roamie-travel-mcp'
+
+
+def test_planning_deadlines_and_new_specialist_routes():
+    docs = [d for d in yaml.safe_load_all(render().stdout) if d]
+    config = next(d for d in docs if d['kind'] == 'ConfigMap' and d['metadata']['name'] == 'roamie-registry-gateway-resources')
+    resources = json.loads(config['data']['resources.json'])['items']
+    for name in ('roamie-agents-access', 'roamie-model-access'):
+        policy = next(d for d in resources if d['metadata']['name'] == name)
+        assert policy['spec']['traffic']['timeouts']['request'] == '65s'
+    route = next(d for d in resources if d['kind'] == 'HTTPRoute' and d['metadata']['name'] == 'roamie-agents')
+    paths = {match['path']['value'] for rule in route['spec']['rules'] for match in rule['matches']}
+    assert '/a2a/v1/roamie-weather' in paths
+    assert '/a2a/v1/roamie-entry-guidance' in paths
+    assert all(rule['timeouts']['request'] == '65s' for rule in route['spec']['rules'])
