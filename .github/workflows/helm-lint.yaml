@@ -90,8 +90,14 @@ jobs:
 
       - name: List changed charts
         id: list-changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          changed=$(ct list-changed --config .github/ct.yaml 2>/dev/null || echo "")
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || [[ "$BASE_SHA" =~ ^0+$ ]]; then
+            BASE_SHA=HEAD^
+          fi
+          git update-ref refs/remotes/origin/chart-lint-base "$BASE_SHA"
+          changed=$(ct list-changed --config .github/ct.yaml --target-branch=chart-lint-base)
           if [[ -n "$changed" ]]; then
             echo "changed=true" >> $GITHUB_OUTPUT
             echo "Changed charts:"
@@ -141,7 +147,8 @@ jobs:
           fi
           mapfile -t changed_files < <(git diff --name-only "$BASE_SHA" HEAD)
           check_version=$(python3 scripts/chart_version_policy.py "${changed_files[@]}")
-          ct lint --config .github/ct.yaml \
+          git update-ref refs/remotes/origin/chart-lint-base "$BASE_SHA"
+          ct lint --config .github/ct.yaml --target-branch=chart-lint-base \
             --check-version-increment="$check_version"
 
   validate:
