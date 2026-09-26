@@ -1,3 +1,7 @@
+# Lint defaults only; every release sets both (values-*.yaml or products/<product>-<env>.yaml).
+product: example
+environment: dev
+
 image:
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/document-intelligence/ocr-service
   tag: main
@@ -6,39 +10,17 @@ image:
 clamav:
   image: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/clamav/clamav@sha256:629a3050df6a706aedb31859fbb8139e9aaf8f56b0ffefbf251b8358a7c9e76c
 
-environment: prod
-product: kora
 temporal:
   target: http://temporal-frontend.temporal-system.svc.cluster.local:7233
-  namespace: document-intelligence-prod
-  taskQueue: document-intelligence-kora-prod
 documentAi:
   projectId: tesseracthub-480811
   location: asia-south1
   processorId: 395d58b2596d5031
-buckets:
-  quarantine: kora-prod-doc-quarantine-in
-  source: kora-prod-doc-accepted-in
-  pages: kora-prod-doc-derived-in
-  results: kora-prod-doc-results-in
-serviceAccounts:
-  upload: kora-doc-signer
-  jobs: kora-doc-result-api
-  dispatch: kora-doc-scanner
-  execution: kora-doc-worker
-database:
-  secretName: document-intelligence-prod-db
-  secretManagerKey: prod-document-intelligence-db-password
-  user: document_intelligence
-  name: document_intelligence_db
 identity:
-  secretName: document-intelligence-prod-api-identity
-  secretManagerKey: prod-kora-ocr-workload-identity-keys
   clockSkewSeconds: "60"
-  extraKeys:
-    - {keyId: roamie-v1, secretManagerKey: prod-roamie-api-ocr-key}
-apiClientNamespaces: [roamie]
-apiClientPrincipals: ["cluster.local/ns/roamie/sa/roamie-api"]
+# Releases for products onboarded through products/*.yaml own their Kubernetes
+# service accounts; the legacy kora releases use k8s/platform ones.
+createServiceAccounts: true
 telemetry:
   endpoint: http://otel-gateway.observability.svc.cluster.local:4318/v1/traces
   serviceName: document-intelligence
