@@ -31,7 +31,7 @@ def test_roamie_routes_are_imported_through_registry_and_bind_exact_subjects():
     docs = [d for d in yaml.safe_load_all(result.stdout) if d]
     config = next(d for d in docs if d['kind'] == 'ConfigMap' and d['metadata']['name'] == 'roamie-registry-gateway-resources')
     resources = json.loads(config['data']['resources.json'])['items']
-    assert len(resources) == 8
+    assert len(resources) == 10
     for name, role in [('roamie-agents-access', 'roamie.manager'), ('roamie-mcp-access', 'roamie.manager'), ('roamie-model-access', 'roamie.models')]:
         policy = next(d for d in resources if d['metadata']['name'] == name)
         traffic = policy['spec']['traffic']
@@ -73,3 +73,17 @@ def test_roamie_rejects_duplicate_and_malformed_machine_subjects():
         result = subprocess.run(args, capture_output=True, text=True)
         assert result.returncode != 0
         assert 'Roamie requires' in result.stderr
+
+
+def test_mcp_transport_is_registry_owned_with_a_separate_upstream_key():
+    result = render()
+    docs = [d for d in yaml.safe_load_all(result.stdout) if d]
+    config = next(d for d in docs if d['kind']=='ConfigMap' and d['metadata']['name']=='roamie-registry-gateway-resources')
+    resources=json.loads(config['data']['resources.json'])['items']
+    backend=next(d for d in resources if d['kind']=='AgentgatewayBackend' and d['metadata']['name']=='roamie-roamie-travel-mcp')
+    target=backend['spec']['mcp']['targets'][0]['static']
+    assert (target['host'],target['port'],target['path']) == ('roamie-travel-mcp.roamie.svc.cluster.local',8080,'/mcp')
+    assert target['policies']['auth'] == {'passthrough': {}, 'credentials': [{'secretRef': {'name':'product-mcp-upstream-keys','key':'ROAMIE_TRAVEL_MCP_KEY'}, 'location': {'header': {'name':'X-MCP-Key'}}}]}
+    route=next(d for d in resources if d['kind']=='HTTPRoute' and d['metadata']['name']=='roamie-roamie-travel-mcp')
+    assert route['spec']['parentRefs'] == [{'name':'agentgateway-mcp','sectionName':'runtime'}]
+    assert route['spec']['rules'][0]['matches'][0]['path']['value']=='/mcp/roamie/roamie-travel-mcp'

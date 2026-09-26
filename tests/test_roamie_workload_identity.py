@@ -62,3 +62,22 @@ def test_mcp_schema_contract_is_explicit_and_not_a_credential():
         workload = values['workloads'][name]
         assert workload['config'][prefix+'MCP_SCHEMA_DIGEST'] == '840c0cd115f52ce031f71bb806770d6612becf4b6097852e7d091c8b2baac015'
         assert prefix+'MCP_SCHEMA_DIGEST' not in workload['secrets']
+
+
+def test_validation_workloads_start_but_the_manager_denies_user_traffic():
+    docs = render('roamie-ai', 'enabled=true', 'validationOnly=true')
+    assert len([d for d in docs if d['kind'] == 'Deployment']) == 3
+    manager = next(d for d in docs if d['kind'] == 'AuthorizationPolicy' and d['metadata']['name'] == 'roamie-trip-manager')
+    assert manager['spec']['action'] == 'DENY'
+    assert manager['spec']['rules'] == [{}]
+    for name in ['roamie-agents', 'roamie-travel-mcp']:
+        policy = next(d for d in docs if d['kind'] == 'AuthorizationPolicy' and d['metadata']['name'] == name)
+        assert policy['spec']['action'] == 'ALLOW'
+        assert policy['spec']['rules'][0]['from'][0]['source']['principals'] == ['cluster.local/ns/agentgateway-system/sa/agentgateway-mcp']
+
+
+def test_leaving_validation_mode_requires_both_verification_flags():
+    for profile, registry in [('false','false'),('true','false'),('false','true')]:
+        result = subprocess.run(['helm','template','roamie-ai',str(ROOT / 'charts/apps/roamie-ai'),'--set','enabled=true','--set','validationOnly=false','--set',f'profileBoundaryVerified={profile}','--set',f'registryRoutesVerified={registry}'],capture_output=True,text=True)
+        assert result.returncode != 0
+        assert 'must be verified' in result.stderr
