@@ -38,3 +38,8 @@ Zitadel subject and TESSERIX organization.
 The chart remains disabled until registry routes and the authenticated profile
 boundary have been verified. Rendering with test overrides is not production
 verification. Agent image digests are from successful Publish run 36220844786.
+
+The final disabled candidate uses the exact internal MCP gateway address allowed
+by ai-agents #46. Image digests were extracted from successful release logs:
+agent Publish run 36221634982 and Roamie MCP run 36221141781. The API database
+migration 202609260002 was verified present and successful in production.
