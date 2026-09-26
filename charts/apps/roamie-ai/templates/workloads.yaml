@@ -1,8 +1,8 @@
 {{- if .Values.enabled }}
-{{- if not .Values.profileBoundaryVerified }}
+{{- if and (not .Values.validationOnly) (not .Values.profileBoundaryVerified) }}
 {{- fail "authenticated profile boundary must be verified before enabling Roamie AI" }}
 {{- end }}
-{{- if not .Values.registryRoutesVerified }}
+{{- if and (not .Values.validationOnly) (not .Values.registryRoutesVerified) }}
 {{- fail "registry-generated routes must be verified before enabling Roamie AI" }}
 {{- end }}
 {{- range $name, $workload := .Values.workloads }}
@@ -157,6 +157,10 @@ spec:
     - group: ""
       kind: Service
       name: {{ $name }}
+  {{- if and $.Values.validationOnly (eq $name "roamie-trip-manager") }}
+  action: DENY
+  rules: [{}]
+  {{- else }}
   action: ALLOW
   rules:
     - from:
@@ -165,6 +169,7 @@ spec:
       to:
         - operation:
             ports: ["8080"]
+  {{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
