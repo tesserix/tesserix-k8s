@@ -1,3 +1,4 @@
+# Manual apply smoke: use -var=trigger_failure=false to save an empty plan.
 terraform {
   required_version = ">= 1.5.0, < 2.0.0"
 }
