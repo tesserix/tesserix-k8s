@@ -1,3 +1,4 @@
+{{- $c := include "document-intelligence.config" . | fromYaml }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -7,9 +8,9 @@ spec:
   podSelector:
     matchLabels: {app.kubernetes.io/instance: {{ .Release.Name | quote }}}
   policyTypes: [Ingress, Egress]
-  {{- if .Values.apiClientNamespaces }}
+  {{- if $c.apiClientNamespaces }}
   ingress:
-    {{- range .Values.apiClientNamespaces }}
+    {{- range $c.apiClientNamespaces }}
     - from:
         - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ . | quote }}}}
       ports: [{port: 8080, protocol: TCP}, {port: 15008, protocol: TCP}]
@@ -39,7 +40,7 @@ spec:
       ports: [{port: 15008, protocol: TCP}]
     - to: [{ipBlock: {cidr: 0.0.0.0/0}}]
       ports: [{port: 443, protocol: TCP}]
-{{- if .Values.apiClientPrincipals }}
+{{- if $c.apiClientPrincipals }}
 {{- range $component := list "upload-api" "job-api" }}
 ---
 apiVersion: security.istio.io/v1
@@ -57,7 +58,7 @@ spec:
     - from:
         - source:
             principals:
-              {{- range $.Values.apiClientPrincipals }}
+              {{- range $c.apiClientPrincipals }}
               - {{ . | quote }}
               {{- end }}
       to:

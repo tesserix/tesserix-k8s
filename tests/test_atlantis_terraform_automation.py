@@ -33,6 +33,7 @@ LIVE_STATE_PREFIXES = {
     # graph is allowed to claim ownership of, and a stack whose state nothing
     # acknowledges is the orphan this test exists to catch.
     "stacks/prod/uptime-monitoring",
+    "stacks/prod/document-intelligence-products",
     "stacks/prod/cloud-run",
     "state/devtest",
     "state/prod",
