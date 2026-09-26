@@ -742,6 +742,18 @@ def reconcile_project_role_check(
         )
 
 
+def project_roles(desired):
+    machine = desired.get("machineRoles", [])
+    machine_keys = {role["key"] for role in machine}
+    for grant in desired.get("humanGrants", []):
+        if machine_keys.intersection(grant["roles"]):
+            raise ValueError("machine-only project roles cannot be granted to humans")
+    roles = desired.get("roles", []) + machine
+    if len({role["key"] for role in roles}) != len(roles):
+        raise ValueError("duplicate project role declarations")
+    return roles
+
+
 def reconcile_platform_project(desired):
     """Reconcile a platform resource-server project without managing secrets.
 
@@ -750,6 +762,7 @@ def reconcile_platform_project(desired):
     will reject. Machine client secrets remain one-time credentials in Secret
     Manager and are deliberately outside this periodic reconciler.
     """
+    declared_roles = project_roles(desired)
     org = next((item for item in list_orgs() if item["name"] == desired["org"]), None)
     if not org:
         raise SystemExit(f"platform project org {desired['org']!r} does not exist")
@@ -897,7 +910,7 @@ def reconcile_platform_project(desired):
     if status != 200:
         raise SystemExit(f"platform project role search failed: {status} {payload!r}")
     live_roles = {item["key"]: item for item in json.loads(payload).get("result", [])}
-    for role in desired.get("roles", []):
+    for role in declared_roles:
         if role["key"] in live_roles:
             log(f"platform project {desired['name']} role {role['key']}: in sync")
             continue
