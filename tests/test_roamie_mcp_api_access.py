@@ -16,3 +16,15 @@ def test_mcp_api_access_is_configured_without_enabling_customer_manager():
     secret = next(d for d in docs if d and d['kind'] == 'ExternalSecret')
     data = {e['secretKey']: e['remoteRef']['key'] for e in secret['spec']['data']}
     assert data['travel_mcp_api_key'] == 'prod-roamie-mcp-api-token'
+
+
+def test_customer_planning_keeps_authentication_and_signed_manager_bridge():
+    docs = list(yaml.safe_load_all(subprocess.check_output(
+        ['helm', 'template', 'roamie-api', str(ROOT/'charts/apps/roamie-api')], text=True)))
+    deployment = next(d for d in docs if d and d['kind'] == 'Deployment')
+    container = deployment['spec']['template']['spec']['containers'][0]
+    env = {e['name']: e for e in container['env']}
+    assert env['TRIP_MANAGER_CUSTOMER_ENABLED']['value'] == 'true'
+    assert env['AUTH_ENABLED']['value'] == 'true'
+    assert env['ZITADEL_ISSUER']['value'] == 'https://auth.tesserix.app'
+    assert {'secretRef': {'name': 'roamie-trip-manager-bridge'}} in container['envFrom']
