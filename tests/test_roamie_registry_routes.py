@@ -14,6 +14,8 @@ def render(enabled=True, subjects=True):
         args += ['--set-string', 'roamieSeed.managerSubject=100']
         for index in range(7):
             args += ['--set-string', f'roamieSeed.specialistSubjects[{index}]={101 + index}']
+    else:
+        args += ['--set-string', 'roamieSeed.managerSubject=']
     return subprocess.run(args, capture_output=True, text=True)
 
 
