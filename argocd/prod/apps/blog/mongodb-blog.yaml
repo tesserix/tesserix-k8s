@@ -18,14 +18,15 @@ spec:
     helm:
       valueFiles:
         - values.yaml
+      # Kargo owns the parameters array; these settings must reconcile separately.
+      valuesObject:
+        externalSecrets:
+          provider: openbao
+          secretStoreRef: openbao-blog-production
+        storage:
+          # Match the existing disk without replacing the StatefulSet.
+          storageClassName: standard
       parameters:
-        # Match the existing PVC; never replace a database to change its class.
-        - name: storage.storageClassName
-          value: "standard"
-        - name: externalSecrets.provider
-          value: "openbao"
-        - name: externalSecrets.secretStoreRef
-          value: "openbao-blog-production"
         - name: externalSecrets.secretPrefix
           value: "prod"
   destination:
