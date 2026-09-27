@@ -1,0 +1,94 @@
+{{- if .Values.recovery.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: openbao-console-recovery
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: batch/v1
+    kind: CronJob
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [jobs]
+  matchConditions:
+    - name: console-recovery-namespace
+      expression: "request.userInfo.username == 'system:serviceaccount:secret-service:secret-service-api' && request.namespace == 'openbao-recovery'"
+  variables:
+    - name: operation
+      expression: "has(object.metadata.labels) && 'recovery-operation' in object.metadata.labels ? object.metadata.labels['recovery-operation'] : ''"
+    - name: templateOperation
+      expression: "params.metadata.name == 'openbao-verified-backup' ? 'backup' : 'restore-test'"
+  validations:
+    - expression: "variables.operation in ['backup', 'restore-test']"
+      message: Only backup and isolated restore-test operations are permitted.
+    - expression: "object.metadata.name.matches('^openbao-(verified-backup|restore-test)-[a-f0-9]{24}$')"
+      message: A deterministic recovery operation name is required.
+    - expression: "!has(object.metadata.annotations) || size(object.metadata.annotations) == 0"
+      message: Custom job annotations are forbidden.
+    - expression: "!has(object.metadata.ownerReferences) || size(object.metadata.ownerReferences) == 0"
+      message: Custom owners are forbidden.
+    - expression: "!has(object.metadata.finalizers) || size(object.metadata.finalizers) == 0"
+      message: Custom finalizers are forbidden.
+    - expression: "variables.operation != variables.templateOperation || (object.metadata.name.startsWith(params.metadata.name + '-') && object.spec.template.spec == params.spec.jobTemplate.spec.template.spec)"
+      message: Recovery pods must exactly match their approved CronJob template.
+    - expression: "variables.operation != variables.templateOperation || object.spec.template.metadata.annotations == params.spec.jobTemplate.spec.template.metadata.annotations"
+      message: Pod annotations must match the approved template.
+    - expression: "object.spec.template.metadata.labels.all(k, k in ['app.kubernetes.io/name', 'recovery-operation', 'batch.kubernetes.io/controller-uid', 'batch.kubernetes.io/job-name', 'controller-uid', 'job-name']) && object.spec.template.metadata.labels['app.kubernetes.io/name'] == 'openbao-recovery' && object.spec.template.metadata.labels['recovery-operation'] == variables.operation"
+      message: Pod labels must match the approved recovery operation.
+    - expression: "object.spec.parallelism == 1 && object.spec.completions == 1 && object.spec.backoffLimit == 0 && object.spec.activeDeadlineSeconds == 900 && object.spec.completionMode == 'NonIndexed' && (!has(object.spec.manualSelector) || !object.spec.manualSelector) && (!has(object.spec.suspend) || !object.spec.suspend)"
+      message: Recovery job execution limits cannot be overridden.
+    - expression: "has(object.spec.ttlSecondsAfterFinished) && object.spec.ttlSecondsAfterFinished == 172800"
+      message: Recovery jobs must expire after two days.
+{{- range $template := list "openbao-verified-backup" "openbao-restore-test" }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: openbao-console-{{ $template }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  policyName: openbao-console-recovery
+  validationActions: [Deny]
+  paramRef:
+    name: {{ $template }}
+    namespace: openbao-recovery
+    parameterNotFoundAction: Deny
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openbao-console-recovery
+  namespace: openbao-recovery
+rules:
+  - apiGroups: [batch]
+    resources: [cronjobs]
+    resourceNames: [openbao-verified-backup, openbao-restore-test]
+    verbs: [get]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openbao-console-recovery
+  namespace: openbao-recovery
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openbao-console-recovery
+subjects:
+  - kind: ServiceAccount
+    name: secret-service-api
+    namespace: secret-service
+{{- end }}

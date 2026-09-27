@@ -66,7 +66,7 @@ spec:
             summary: "OpenBao raft volume is filling"
             description: "{{`{{ $labels.persistentvolumeclaim }}`}} is over {{ .Values.alerts.volumeUsedRatio }} full. A raft store with no room stops accepting writes."
 
-{{- if .Values.backup.enabled }}
+{{- if and .Values.backup.enabled (not .Values.backup.suspend) }}
         # A backup nobody watches is not a backup.
         - alert: OpenBaoSnapshotJobFailed
           expr: kube_job_failed{namespace="{{ .Release.Namespace }}", job_name=~"openbao-snapshot-backup-.*"} > 0
