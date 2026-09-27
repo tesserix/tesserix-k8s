@@ -87,3 +87,16 @@ verified without modifying runtime references. The temporary migration writer
 is removed from desired policy, role, and ServiceAccount configuration after
 successful staging; its live role/policy must also be removed because bootstrap
 only upserts declared entries.
+
+## Completed 2026-09-27
+
+Runtime PR mark8ly#958 and deployment #1216 are merged and running. All 61
+reviewed GCP originals were deleted after verified encrypted recovery capture,
+byte-equal staging, namespace isolation checks, writer retirement and a verified
+backup/isolated restore (17.184 seconds; three verified backups retained).
+Post-deletion checks passed: 40 bindings, 33 fresh reconciliations and unchanged
+whole-Secret hashes; all service health checks, authenticated storefront product
+read and unauthenticated denial checks passed. Three Bao tenant references
+resolved; three slots were empty. Critical shared registry/control-plane sources
+remain in GCP. Private deletion journal and acceptance evidence are under
+`/tmp/remaining-openbao-evidence/mark8ly/`.

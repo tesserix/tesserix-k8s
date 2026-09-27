@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postiz-production-reader
+  namespace: postiz
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-postiz-production
+  namespace: postiz
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-postiz-postiz-production
+          serviceAccountRef:
+            name: postiz-production-reader
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postiz-migration-writer
+  namespace: openbao
+automountServiceAccountToken: false
