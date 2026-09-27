@@ -134,3 +134,21 @@ def test_reader_owner_project_permits_every_destination_and_resource_kind():
             r["group"] in ("*", group) and r["kind"] in ("*", kind)
             for r in project.get("namespaceResourceBlacklist", [])
         )
+
+
+def test_postgres_remote_defaults_do_not_restore_old_atomic_data_on_sync():
+    secret = resource(
+        render("charts/apps/homechef-postgres"),
+        "ExternalSecret",
+        "homechef-postgres-app-credentials",
+    )
+    entry = secret["spec"]["data"][0]
+    remote = entry["remoteRef"]
+    # RespectIgnoreDifferences reapplies ignored defaults to the atomic data list.
+    # Render the API defaults so normalization cannot restore the old GCP entry.
+    assert remote["conversionStrategy"] == "Default"
+    assert remote["decodingStrategy"] == "None"
+    assert remote["metadataPolicy"] == "None"
+    assert remote["key"] == "homechef/homechef-api/fe3dr-postgresql-password"
+    assert remote["property"] == "value"
+    assert entry["sourceRef"]["storeRef"]["name"] == "openbao-homechef-api"
