@@ -57,3 +57,27 @@ Threat model: application and per-tenant credentials must remain inaccessible to
 other namespaces and tenant owners. GCP IAM, Kubernetes identity, exact OpenBao
 ACLs and server-derived tenant scope are the authorization boundaries. Migration
 logs contain counts and metadata, never payloads.
+
+## Staging and consumer cutover
+
+The encrypted recovery archive now includes all 61 reviewed sources (55 named
+application/UAT sources and six unreferenced legacy tenant test sources):
+`gs://tesseract-prod-backups-in/openbao/mark8ly-migration/20260927T125206Z/gcp-sources.json.gz.kms`.
+The archive includes source metadata, IAM, and enabled versions; encrypted object
+readback and KMS decryption match byte-for-byte. Private tenant identifiers are
+retained only in the encrypted archive and restricted local evidence.
+
+The consumer change redirects all 40 observed bindings across six namespaces to
+namespaced, exact-path OpenBao readers. It preserves target names/keys and shared
+platform mappings. A rendered test checks every captured binding in its owning
+Kustomize or Helm source. No source deletion is authorized by this manifest alone:
+live readback, application acceptance, and a fresh verified backup/isolated restore
+must succeed before the reviewed retirement step.
+
+Mark8ly runtime PR https://github.com/tesserix/mark8ly/pull/958 removes the remaining
+mobile-app credential writer's GCP/in-memory fallback. Runtime deployment and
+operational-script updates remain part of issue #1209 acceptance.
+
+All 55 named paths were staged and read back successfully. Six namespace reader
+identities passed byte equality, read-only capabilities, and out-of-scope denial
+checks. The temporary staging token was revoked. Consumer rollout is pending.

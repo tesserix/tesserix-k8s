@@ -145,6 +145,17 @@ class ProductMCPAuthenticationTests(unittest.TestCase):
                         "key": "homechef/homechef-api/fe3dr-mcp-key",
                         "property": "value",
                     }
+                if tenant == "mark8ly":
+                    expected["sourceRef"] = {
+                        "storeRef": {
+                            "kind": "SecretStore",
+                            "name": "openbao-mark8ly-production",
+                        }
+                    }
+                    expected["remoteRef"] = {
+                        "key": "mark8ly/app/mark8ly-mcp-key",
+                        "property": "value",
+                    }
                 self.assertEqual([expected], external_secret["spec"]["data"])
 
     def test_router_authenticates_every_product_mcp_request(self):
@@ -199,6 +210,8 @@ class ProductMCPAuthenticationTests(unittest.TestCase):
                 self.assertEqual(
                     "homechef/homechef-api/fe3dr-mcp-key"
                     if tenant == "homechef"
+                    else "mark8ly/app/mark8ly-mcp-key"
+                    if tenant == "mark8ly"
                     else f"prod-support-platform-{tenant}-mcp-key",
                     remote_keys[env_name],
                 )
