@@ -1,0 +1,213 @@
+{{- if .Values.recovery.enabled }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openbao-recovery
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    istio-injection: disabled
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openbao-recovery-runner
+  namespace: openbao-recovery
+data:
+  recovery.py: |
+{{ .Files.Get "files/recovery.py" | indent 4 }}
+{{- range $operation := list "backup" "restore-test" }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openbao-{{ $operation }}
+  namespace: openbao-recovery
+  annotations:
+    iam.gke.io/gcp-service-account: {{ if eq $operation "backup" }}{{ $.Values.recovery.backupServiceAccount }}{{ else }}{{ $.Values.recovery.restoreServiceAccount }}{{ end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: openbao-recovery-{{ $operation }}-tokenreview
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: openbao-{{ $operation }}
+    namespace: openbao-recovery
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ if eq $operation "backup" }}openbao-verified-backup{{ else }}openbao-restore-test{{ end }}
+  namespace: openbao-recovery
+spec:
+  schedule: {{ $.Values.recovery.schedule | quote }}
+  timeZone: Etc/UTC
+  suspend: {{ eq $operation "restore-test" }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 1800
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: openbao-recovery
+            recovery-operation: {{ $operation }}
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          serviceAccountName: openbao-{{ $operation }}
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 45
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: openbao-binary
+              image: {{ $.Values.recovery.baoImage | quote }}
+              command: ["/bin/sh", "-ec", "cp /bin/bao /tools/bao && chmod 0555 /tools/bao"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  memory: 128Mi
+              volumeMounts:
+                - name: tools
+                  mountPath: /tools
+          containers:
+            - name: recovery
+              image: {{ $.Values.recovery.runnerImage | quote }}
+              command: ["python3", "/runner/recovery.py", {{ $operation | quote }}]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: CLOUDSDK_CONFIG
+                  value: /tmp/gcloud
+                - name: BACKUP_BUCKET
+                  value: {{ $.Values.recovery.bucket | quote }}
+                - name: BACKUP_KMS_KEY
+                  value: {{ $.Values.recovery.kmsKey | quote }}
+                - name: BAO_ADDR
+                  value: http://openbao-active.{{ $.Release.Namespace }}.svc:8200
+                - name: BAO_VERSION
+                  value: {{ $.Chart.AppVersion | quote }}
+                - name: GCP_PROJECT
+                  value: {{ $.Values.recovery.project | quote }}
+                - name: KMS_REGION
+                  value: asia-south1
+                - name: KMS_RING
+                  value: tesseract-prod-in-keyring
+                - name: UNSEAL_KEY
+                  value: openbao-unseal-key
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                  ephemeral-storage: 512Mi
+                limits:
+                  memory: 2Gi
+                  ephemeral-storage: 3Gi
+              volumeMounts:
+                - name: runner
+                  mountPath: /runner
+                  readOnly: true
+                - name: tools
+                  mountPath: /tools
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: runner
+              configMap:
+                name: openbao-recovery-runner
+            - name: tools
+              emptyDir:
+                sizeLimit: 256Mi
+            - name: tmp
+              emptyDir:
+                sizeLimit: 2Gi
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: recovery-isolation
+  namespace: openbao-recovery
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+        - ipBlock:
+            cidr: 10.30.0.10/32
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
+      ports:
+        - protocol: TCP
+          port: 8200
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 80
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.252/32
+      ports:
+        - protocol: TCP
+          port: 988
+    - to:
+        - ipBlock:
+            cidr: 172.16.0.0/28
+        - ipBlock:
+            cidr: 10.30.0.1/32
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}

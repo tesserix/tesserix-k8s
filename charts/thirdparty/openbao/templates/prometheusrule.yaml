@@ -88,4 +88,24 @@ spec:
             summary: "No OpenBao snapshot completed recently"
             description: "The last successful snapshot is older than {{ div .Values.alerts.snapshotStaleSeconds 3600 }}h against a daily schedule."
 {{- end }}
+{{- if .Values.recovery.enabled }}
+        - alert: OpenBaoVerifiedBackupFailed
+          expr: kube_job_failed{namespace="openbao-recovery", job_name=~"openbao-(verified-backup|restore-test)-.*"} > 0
+          for: 5m
+          labels:
+            severity: critical
+            owner: platform
+          annotations:
+            summary: "OpenBao backup or isolated restore verification failed"
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/openbao-recovery.md
+        - alert: OpenBaoVerifiedBackupStale
+          expr: (time() - max(kube_job_status_completion_time{namespace="openbao-recovery", job_name=~"openbao-verified-backup-.*"}) > 50400) or absent(kube_job_status_completion_time{namespace="openbao-recovery", job_name=~"openbao-verified-backup-.*"})
+          for: 15m
+          labels:
+            severity: critical
+            owner: platform
+          annotations:
+            summary: "No restore-verified OpenBao backup completed in 14 hours"
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/openbao-recovery.md
+{{- end }}
 {{- end }}
