@@ -33,28 +33,12 @@ def test_readers_only_access_their_namespace_app_dependencies():
         assert set(re.findall(r"capabilities = \[([^]]+)\]", policy)) == {'"read"'}
 
 
-def test_staging_writer_cannot_overwrite_or_read_user_credentials():
-    from migrate_devai_secrets import TARGETS
-
+def test_temporary_writer_is_retired_after_staging():
     config = resource(
         render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap"
     )["data"]
-    policy = config["policy-devai-migrate-reviewed.hcl"]
-    assert set(re.findall(r'path "([^"]+)"', policy)) == {
-        *("kv/data/" + target for target in TARGETS.values()),
-        "auth/token/lookup-self",
-        "auth/token/revoke-self",
-    }
-    for path, capabilities in re.findall(
-        r'path "([^"]+)" \{ capabilities = \[([^]]+)\] \}', policy
-    ):
-        if path.startswith("kv/"):
-            assert capabilities == '"create", "read"'
-    role = json.loads(config["role-devai-migrate-reviewed.json"])
-    assert role["bound_service_account_names"] == ["devai-migration-writer"]
-    assert role["bound_service_account_namespaces"] == ["openbao"]
-    assert role["token_policies"] == ["devai-migrate-reviewed"]
-    assert role["token_ttl"] == "15m"
+    assert "policy-devai-migrate-reviewed.hcl" not in config
+    assert "role-devai-migrate-reviewed.json" not in config
 
 
 def test_stores_are_namespaced_and_included_in_gitops():
@@ -63,10 +47,10 @@ def test_stores_are_namespaced_and_included_in_gitops():
             (ROOT / "external-secrets/prod/devai-openbao-readers.yaml").read_text()
         )
     )
-    assert len(stores) == 13
-    writer = resource(stores, "ServiceAccount", "devai-migration-writer")
-    assert writer["metadata"]["namespace"] == "openbao"
-    assert writer["automountServiceAccountToken"] is False
+    assert len(stores) == 12
+    assert not any(
+        doc["metadata"]["name"] == "devai-migration-writer" for doc in stores
+    )
     for namespace in {item["namespace"] for item in CONSUMERS}:
         docs = [doc for doc in stores if doc["metadata"]["namespace"] == namespace]
         assert (

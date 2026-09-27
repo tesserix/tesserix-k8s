@@ -80,6 +80,7 @@ class OpenBao:
                         "kv/data/homechef/",
                         "kv/data/homechef-development/",
                         "kv/data/blog/app/",
+                        "kv/data/devai/app/",
                         "kv/data/kora/app/",
                         "kv/data/kora-development/app/",
                         "kv/data/roamie/app/",

@@ -4,10 +4,22 @@ Tracking: [#1201](https://github.com/tesserix/tesserix-k8s/issues/1201).
 
 ## Status — 2026-09-27
 
-Inventory and phase-one access changes are prepared locally. No DevAI source
-has been copied or deleted, no consumer switched, and no database reference
-changed. Deployment, copy verification, functional acceptance and cleanup remain
-open. This document is not a completion record.
+Phase one is staged: all 38 named app secrets were created in OpenBao and
+verified byte-for-byte. All six namespace readers passed archived-value equality,
+exact read-only capabilities and actual HTTP 403 checks for unrelated platform,
+product and user paths. The staging token was revoked automatically.
+
+Access deployed through PR #1202, commit `b56e0e46`. This cleanup revision removes
+the temporary writer from GitOps; live role/policy removal and final confirmation
+are recorded in #1201 after reconciliation. Consumer cutover, the two private user
+credentials, database reference updates and GCP deletion are still pending.
+No GCP sources have been deleted. This is not a full migration completion record.
+
+Encrypted recovery archive (download/decrypt/byte comparison passed):
+`gs://tesseract-prod-backups-in/openbao/devai-migration/20260927T103333Z/gcp-sources.json.gz.kms`.
+Object generation: `1790505220290838`; CMEK `openbao-backup-key`, version 1.
+Private staging and reader-verification journals are under
+`/tmp/devai-openbao-evidence/`.
 
 Read-only discovery used account `unidevidp@gmail.com`, project
 `tesseracthub-480811`, context
@@ -48,18 +60,17 @@ Private source-version and user-reference metadata is in
 copied credential payloads and is not a recovery archive. User identifiers and
 runtime mappings must not enter public issues, logs, fixtures, or this repo.
 
-## Phase one — reviewable access and staging tools
+## Phase one — access and staging tools
 
 - Six `devai-production-reader` ServiceAccounts and
   `openbao-devai-production` SecretStores.
 - Roles bind both the specific namespace and ServiceAccount. Policies grant
   only `read` on that namespace's observed app-secret paths; no user paths,
   wildcard, metadata listing, writes, or deletion.
-- Temporary `devai-migrate-reviewed` policy grants `create,read` on the 38
-  explicit app destinations. Its Kubernetes login role binds only
-  `openbao/devai-migration-writer`, with 15 minutes TTL. A token must have this
-  policy only (plus optional default). Remove the role, account and policy
-  after staging and revoke issued tokens.
+- Staging used `devai-migrate-reviewed`, with `create,read` on the 38 explicit
+  destinations, bound only to `openbao/devai-migration-writer` for 15 minutes.
+  The migration token was revoked. This cleanup revision removes its role,
+  account and policy; persistent namespace readers remain read-only.
 - `scripts/migrate_devai_secrets.py` rejects platform and user sources,
   duplicate sources, nonnumeric versions and mismatched destinations. It reuses
   the existing staging implementation: verifies the active account and source
@@ -91,9 +102,9 @@ Do not issue a root token or widen the writer on a permission error.
 
 ## Subsequent phases and acceptance gates
 
-1. Archive the approved source payloads with the existing KMS-backed backup
-   mechanism, record the object/generation and restore evidence privately;
-   copy the 38 named candidates and verify exact bytes and scope.
+1. Completed for the 38 named sources: encrypted archive, remote recovery
+   round-trip, create-only copies, byte equality and six namespace scope checks.
+   The two private user credentials remain outside this staging plan.
 2. Prepare coordinated GitOps cutovers for DevAI API/auth BFF/registry, shared
    gateways (including Kora), kagent, global databases, Langfuse and OTel.
    Preserve mixed platform references, Secret target names/keys, transformations
@@ -139,3 +150,18 @@ the local dependencies resolved both setup issues; no test assertions changed.
 `mypy --follow-imports=skip scripts/migrate_devai_secrets.py`, `py_compile`, the
 38-source CLI dry run, and `git diff --check` also passed. No strict typing or
 application functional cutover acceptance is claimed by these infrastructure checks.
+
+
+## Staging correction and cleanup validation
+
+The first staging attempt stopped on an absent destination (HTTP 404), before
+any write, and revoked its token. The shared client was missing the approved
+`kv/data/devai/app/` prefix in its create-on-missing handling. A regression test
+reproduced this, then passed after the narrow prefix addition. The retry created
+all 38 destinations; it did not overwrite any existing value.
+
+Cleanup/fix validation: 540 repository tests and 48 subtests passed, with the same
+four existing CI quarantines. Helm lint, Ruff and diff checks passed. DevAI API
+health/readiness remained HTTP 200 after staging. Runtime consumer cutover has
+not happened, so these checks do not establish that the application reads its
+new app secrets from OpenBao yet.
