@@ -138,53 +138,23 @@ Pick Zitadel unless the product genuinely has no notion of a customer
 organization. A product that starts on GIP and later needs enterprise SSO pays
 for the migration twice.
 
-**2. Which secret store — and there are two answers, not one.**
+**2. Application and tenant secrets use OpenBao by default.**
 
-Every product needs *both* halves decided, because they are different subjects:
+Use OpenBao for every new and existing product's database credentials, OAuth
+client secrets, provider keys, session/signing keys and tenant/user credentials.
+Use `<product>-<secret-name>` identifiers with separate production/development/UAT
+paths. Application configuration uses namespaced ESO readers; tenant/user secrets
+use runtime access with server-derived ownership. Update writers and rotation jobs.
 
-| Subject | Store | What you build |
-|---|---|---|
-| The product's **own** credentials — DB password, OIDC client secret, registry token, session key | **GCP Secret Manager** | `ExternalSecret` in `external-secrets/prod/<ns>/`, naming `{env}-{service}-{secret}` |
-| The product's **customers'** secrets — a tenant's API key, webhook secret, PSP credential, BYO key | **OpenBao** | Path `products/<product>/tenants/<tenant-uuid>/<scope>/<name>`, read at runtime via the broker-token model — **not** ESO |
+GCP Secret Manager is reserved for critical platform/bootstrap/recovery material:
+OpenBao recovery keys, shared registry/CI credentials, infrastructure restore
+credentials and shared control-plane authority. Product ownership is what matters;
+a product's `platform-api` service is not itself an exception.
 
-A product whose customers never store a secret still answers this: the answer is
-"none yet, and when that changes it is OpenBao". Writing a customer secret into
-GCP Secret Manager is the failure this table exists to prevent.
+Full policy and migration gates: [`docs/application-secret-policy.md`](docs/application-secret-policy.md).
+Runtime tenant boundaries: [`docs/tenant-secrets.md`](docs/tenant-secrets.md).
 
-Details: [`docs/tenant-secrets.md`](docs/tenant-secrets.md) for the path
-standard and why not ESO; [`docs/onboarding-api.md`](docs/onboarding-api.md)
-for onboarding the product itself.
-
----
-
-## Secret stores — pick by *whose* secret it is
-
-Two stores, one rule, no exceptions. Before creating any secret, ask who the
-subject is:
-
-| The secret belongs to… | Store | Read by |
-|---|---|---|
-| **The platform** — infra, our own accounts, one value for the whole estate: DB superuser passwords, GHCR/registry tokens, OAuth client credentials, API keys we bought, signing/session keys, TLS material | **GCP Secret Manager** | ESO via `gcp-secret-store` |
-| **A product's customers or end users** — anything scoped to a tenant, merchant, vendor or person: per-tenant API keys and webhook secrets, customer payment/PSP credentials, user tokens, BYO-key material, per-tenant encryption keys | **OpenBao** (`kv/`) | ESO via the Vault provider, or the service at runtime |
-
-Restated so it cannot be missed:
-
-- **Never** put a customer's, tenant's or end user's secret in GCP Secret
-  Manager. It is a flat, project-wide namespace with no per-tenant boundary —
-  one IAM grant reads every tenant's data, and it has no dynamic secrets, no
-  leases and no per-tenant audit trail.
-- **Never** put a platform credential in OpenBao as the source of truth. GCP
-  Secret Manager is the root of trust: it holds OpenBao's own recovery keys, so
-  a platform secret stored only in OpenBao is unrecoverable exactly when
-  OpenBao is what's broken.
-- Tenant count is not a reason to switch stores. One tenant today is still a
-  tenant; it goes in OpenBao.
-- If a secret looks like both, split it. A shared PSP *platform* account key is
-  Secret Manager; each merchant's connected-account credential is OpenBao.
-
-Path conventions and the ESO wiring for each: [`docs/openbao-secrets.md`](docs/openbao-secrets.md).
-
-### GCP Secret Manager
+### GCP Secret Manager — retained platform exceptions
 
 Project `tesseracthub-480811`. Naming: `{env}-{service}-{secret-name}` —
 e.g. `dev-blog-mongodb-uri`, `prod-ghcr-token`, `dev-auth-bff-session-secret`.
@@ -221,8 +191,8 @@ New-service template checklist:
 - [ ] `service.yaml` — ClusterIP
 - [ ] `serviceaccount.yaml` — Workload Identity annotation
 - [ ] `ingress.yaml` — Kong (dev) / Istio (prod)
-- [ ] `externalsecret.yaml` — platform secrets from GCP Secret Manager; any
-      tenant- or user-scoped secret from OpenBao instead (see Secret stores)
+- [ ] `externalsecret.yaml` — application credentials from OpenBao through a
+      namespace-bound reader; retain GCP only for reviewed platform exceptions
 - [ ] `network-policy.yaml` — default deny + explicit allows
 - [ ] `authorization-policy.yaml` — Istio RBAC
 - [ ] `scaledobject.yaml` — KEDA (conditional)
@@ -368,8 +338,8 @@ guess a default:
 2. **Where do its tenants' secrets live — OpenBao or nowhere?**
    - A product that holds anything scoped to a customer (per-tenant API keys,
      webhook secrets, BYO keys, PSP credentials) gets an OpenBao policy and an
-     ESO Vault-provider ExternalSecret. **Never GCP Secret Manager** — see
-     *Secret stores* above.
+     runtime owner-scoped access. **Never GCP Secret Manager** — see
+     `docs/application-secret-policy.md`.
    - A product with only platform credentials says so explicitly and gets none.
 
 The answers become `identity` and `tenantSecrets` on the product record, and the
@@ -427,5 +397,5 @@ console emits the matching git manifests (bootstrap values, ExternalSecret,
 - **Auth:** Google Identity Platform + OpenFGA (marketplace) / GIP (blog)
 - **Infra:** GKE, Istio, ArgoCD, Helm, KEDA, cert-manager
 - **Messaging:** Google Pub/Sub · **Caching:** Redis
-- **Secrets:** GCP Secret Manager via External Secrets Operator
+- **Secrets:** OpenBao by default; ESO for app configuration, runtime access for tenant/user secrets; GCP SM only for platform/bootstrap/recovery exceptions
 - **CI/CD:** GitHub Actions → GHCR → GKE (ArgoCD for Helm sync)

@@ -20,6 +20,9 @@ tenant is and which tier may hold secrets at all.
 
 ---
 
+Critical platform/bootstrap/recovery credentials retain GCP Secret Manager;
+see [the storage policy](application-secret-policy.md).
+
 ## 1. Why ESO cannot do this job
 
 Not a criticism of ESO — a different job.
@@ -42,10 +45,10 @@ data that only one HTTP handler ever reads, on demand, for one tenant at a time.
 
 ```
    ┌────────────────────────────────────────────────────────────────┐
-   │ PLATFORM secrets — must exist before the process does          │
-   │   DB password · room-token HMAC key · GHCR token · TLS         │
+   │ APPLICATION configuration — available before the process starts          │
+   │   Product DB password · session key · provider API key         │
    │                                                                │
-   │   GCP Secret Manager ──► ESO ──► K8s Secret ──► pod env        │
+   │   OpenBao ──► namespaced ESO ──► K8s Secret ──► pod env        │
    └────────────────────────────────────────────────────────────────┘
 
    ┌────────────────────────────────────────────────────────────────┐

@@ -17,41 +17,26 @@ Secrets into application namespaces. Applications never hold an OpenBao token.
 
 ## What belongs here, and what does not
 
-The split is by *subject*, not by sensitivity — both stores are equally secret.
-Ask who the secret is about.
+OpenBao is the default for application, tenant and user secrets in every new and
+existing product. This includes product database passwords, OAuth credentials,
+provider API keys, session/signing keys and product-owned service credentials.
+Use `<product>-<secret-name>` identifiers and separate environment paths.
+Application configuration uses namespace-bound ESO readers; tenant/user values
+remain owner-scoped and are read at runtime.
 
-**GCP Secret Manager — the platform's own credentials.** One value for the whole
-estate, owned by us, rotated by us: database superuser passwords, GHCR and
-registry tokens, OAuth client id/secret pairs, third-party API keys we bought,
-session and signing keys, TLS material, and OpenBao's own recovery keys. It is
-the root of trust and it stays that way.
+GCP Secret Manager retains only critical platform/bootstrap/recovery exceptions:
+OpenBao recovery material, shared registry and CI access, infrastructure restore
+credentials and shared control-plane authority. Credentials needed to recover
+OpenBao must remain available when OpenBao is unavailable.
 
-**OpenBao — anything scoped to a customer, tenant or end user.** Per-tenant API
-keys and webhook signing secrets, merchant/vendor PSP and connected-account
-credentials, BYO-key material a customer uploaded, per-tenant encryption keys,
-and any user-held token we must store at rest.
-
-Why the boundary is absolute, not a preference:
-
-- Secret Manager has no tenant boundary. It is one flat namespace per project,
-  and IAM grants are per-secret at best — the pattern in practice is one grant
-  covering a service's whole prefix. Put two tenants' keys there and any
-  principal that can read one can read the other. OpenBao gives a path prefix
-  per tenant and a policy that stops at it.
-- Secret Manager has no leases, no dynamic secrets and no per-read audit entry
-  naming the identity. When a customer asks who touched their key, only OpenBao
-  can answer.
-- Deleting a tenant means deleting `kv/<namespace>/<app>/<tenant>/` — one
-  prefix. In Secret Manager it means finding every secret whose *name* encodes
-  that tenant and hoping the naming held.
-- Conversely, a platform credential kept only in OpenBao is unreachable during
-  an OpenBao outage — including the credentials you would need to fix it.
+See [the application secret policy](application-secret-policy.md) for migration
+and deletion gates. A product service named `platform-api` remains product-owned.
 
 Path convention, matching the authorization model below:
 
 ```
 kv/<namespace>/<app>/<tenant-or-user-id>/<secret-name>
-kv/mark8ly/marketplace-api/store-4f2a/stripe-connect
+kv/mark8ly/marketplace-api/store-4f2a/mark8ly-stripe-connect
 ```
 
 The policy a grant creates stops at `kv/data/<namespace>/<app>/*`, so tenant
@@ -558,9 +543,9 @@ recovery keys and the seal key have to live outside it.
    copy the values across, flip `secretStoreRef` from `gcp-secret-store` to the
    namespace's `openbao` store, confirm the Secret still reconciles, then delete
    the GCP secret.
-3. `gcp-secret-store` stays for good, holding exactly three things: the recovery
-   keys, the CI tokens ArgoCD itself needs before OpenBao is up, and the
-   `@tesserix/web` / GHCR credentials CI uses outside the cluster.
+3. `gcp-secret-store` remains for reviewed critical platform/bootstrap/recovery
+   exceptions defined in `application-secret-policy.md`. Preserve these while
+   migrating application-owned dependencies.
 
 Bootstrap ordering is the reason for rule 3. Anything needed to *start* the
 cluster cannot be stored in something the cluster starts.

@@ -1,16 +1,4 @@
-# Repository visibility
-
-`tesserix/tesserix-k8s` must always remain public. Never make it private, including as part of a temporary public/CI/private workflow. This is a persistent user instruction.
-
-# fe3dr secrets
-
-Use in-cluster OpenBao as the default destination for fe3dr application secrets, with identifiers starting `fe3dr-`. Keep platform bootstrap, infrastructure and recovery secrets in GCP Secret Manager. Track remaining consumer cutovers and shared-secret coordination in issue #1159.
-
-# Roamie secrets
-
-Use in-cluster OpenBao for Roamie application secrets, with `roamie-` identifiers and separate production/development paths. Keep platform bootstrap, infrastructure and recovery secrets in GCP Secret Manager. See `docs/roamie-openbao-migration.md` and issue #1176.
-
-# Application secret storage
+# Application secret storage policy
 
 OpenBao is the default for every new and existing Tesserix product's application,
 tenant and user secrets. Use product-prefixed identifiers (`<product>-<secret>`),
@@ -28,3 +16,8 @@ Migrate one product at a time: archive recoverable state, copy pinned versions
 without overwriting different values, switch readers and writers through GitOps,
 verify functional behavior and isolated restore, then delete only verified,
 approved GCP originals. See `docs/application-secret-policy.md`.
+
+This policy supersedes older guidance that placed all product-owned credentials
+in GCP Secret Manager. Historical runbooks describe their original deployment;
+they do not authorize new GCP application secrets. Existing runtime producers
+must be migrated and tested before their sources are retired.
