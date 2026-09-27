@@ -147,3 +147,11 @@ Rollback the scheduling/chart change through Git. Keep the new bucket and keys.
 The legacy backup schedule is suspended after successful acceptance and can be
 re-enabled through Git. No production
 Raft rollback is required to disable failed backup automation.
+
+### Alert regression checks
+
+With Helm, PyYAML and Prometheus 2.55 `promtool` installed, run
+`python3 scripts/test-openbao-recovery-alerts.py`. The scenarios verify that
+successful backups resolve older failures and that a backup success cannot hide
+an independent restore-test failure. Each operation compares the creation time
+of its latest failed and successful Jobs; an operation with no success still alerts.

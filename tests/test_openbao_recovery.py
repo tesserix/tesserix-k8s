@@ -144,6 +144,10 @@ def test_recovery_chart_is_isolated_and_runs_twice_daily():
     jobs = {d["metadata"]["name"]: d for d in documents if d["kind"] == "CronJob"}
     backup = jobs["openbao-verified-backup"]
     assert backup["metadata"]["namespace"] == "openbao-recovery"
+    assert (
+        backup["spec"]["jobTemplate"]["metadata"]["labels"]["recovery-operation"]
+        == "backup"
+    )
     assert backup["spec"]["schedule"] == "0 3,15 * * *"
     assert backup["spec"]["timeZone"] == "Etc/UTC"
     spec = backup["spec"]["jobTemplate"]["spec"]
