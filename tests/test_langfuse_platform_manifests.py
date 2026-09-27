@@ -210,8 +210,8 @@ def test_secrets_routing_and_devai_export_are_wired() -> None:
     }
     assert external["spec"]["target"]["deletionPolicy"] == "Retain"
     assert mappings["postgres-password"] == "prod-langfuse-postgresql-password"
-    assert mappings["project-public-key"] == "prod-devai-langfuse-public-key"
-    assert mappings["project-secret-key"] == "prod-devai-langfuse-secret-key"
+    assert mappings["project-public-key"] == "devai/app/devai-langfuse-public-key"
+    assert mappings["project-secret-key"] == "devai/app/devai-langfuse-secret-key"
     assert mappings["zitadel-client-id"] == "prod-langfuse-zitadel-client-id"
     assert mappings["zitadel-client-secret"] == "prod-langfuse-zitadel-client-secret"
     assert "google-client-id" not in mappings

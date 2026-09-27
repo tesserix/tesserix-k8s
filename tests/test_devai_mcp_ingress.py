@@ -81,7 +81,8 @@ class DevAIMCPIngressTests(unittest.TestCase):
             [
                 {
                     "secretKey": "token",
-                    "remoteRef": {"key": "prod-devai-mcp-hub-service-token"},
+                    "remoteRef": {"key": "devai/app/devai-mcp-hub-service-token", "property": "value"},
+                    "sourceRef": {"storeRef": {"name": "openbao-devai-production", "kind": "SecretStore"}},
                 }
             ],
             external_secret["spec"]["data"],

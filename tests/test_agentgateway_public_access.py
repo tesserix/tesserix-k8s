@@ -268,9 +268,9 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
         }
         self.assertEqual(
             {
-                "anthropicApiKey": "prod-devai-anthropic-api-key",
-                "openaiApiKey": "prod-devai-openai-api-key",
-                "geminiApiKey": "prod-devai-gemini-api-key",
+                "anthropicApiKey": "devai/app/devai-anthropic-api-key",
+                "openaiApiKey": "devai/app/devai-openai-api-key",
+                "geminiApiKey": "devai/app/devai-gemini-api-key",
             },
             {
                 key: remote_refs[key]

@@ -228,7 +228,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         remote_refs = {
             entry["remoteRef"]["key"] for entry in provider_secret["spec"]["data"]
         }
-        self.assertIn("prod-devai-anthropic-api-key", remote_refs)
+        self.assertIn("devai/app/devai-anthropic-api-key", remote_refs)
         self.assertNotIn("prod-kora-xai-api-key", remote_refs)
 
         backends = [

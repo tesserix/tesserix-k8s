@@ -16,4 +16,10 @@ spec:
   data:
     - secretKey: {{ .Values.registry.authSecret.key }}
       remoteRef:
-        key: {{ .Values.externalSecret.registryDeployKey }}
+{{- $bao := index (default dict $.Values.openbao) (.Values.externalSecret.registryDeployKey) }}
+        key: {{ default (.Values.externalSecret.registryDeployKey) $bao }}
+{{- if $bao }}
+        property: value
+      sourceRef:
+        storeRef: {name: openbao-devai-production, kind: SecretStore}
+{{- end }}

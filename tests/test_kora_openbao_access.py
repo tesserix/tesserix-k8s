@@ -56,6 +56,8 @@ def test_kora_producer_and_console_have_disjoint_exact_permissions():
     assert set(re.findall(r'path "([^"]+)"', writer)) == {
         "kv/data/kora/app/kora-langfuse-public-key",
         "kv/data/kora/app/kora-langfuse-secret-key",
+        "kv/data/devai/app/devai-langfuse-public-key",
+        "kv/data/devai/app/devai-langfuse-secret-key",
         "auth/token/revoke-self",
     }
     metadata = config["policy-company-kora-key-metadata.hcl"]
