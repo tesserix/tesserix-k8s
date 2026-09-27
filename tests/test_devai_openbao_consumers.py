@@ -40,3 +40,13 @@ def test_devai_stack_local_dependencies_match_child_versions():
         if dependency['repository'].startswith('file://') and dependency['version'][0].isdigit():
             child = parent.parent / dependency['repository'][7:] / 'Chart.yaml'
             assert dependency['version'] == yaml.safe_load(child.read_text())['version']
+
+
+def test_devai_fresh_pods_keep_kargo_image_parameters():
+    for owner, names in [('devai-api', ['devai-api', 'devai-api-worker']), ('devai-auth-bff', ['devai-auth-bff'])]:
+        app = yaml.safe_load((ROOT/f'argocd/prod/apps/ai-apps/{owner}.yaml').read_text())
+        assert app['spec']['source']['helm']['parameters']
+        docs = render_app(app)
+        for name in names:
+            pod = resource(docs, 'Deployment', name)['spec']['template']
+            assert pod['metadata']['annotations']['secrets.tesserix.app/migration'] == 'devai-openbao-20260927'
