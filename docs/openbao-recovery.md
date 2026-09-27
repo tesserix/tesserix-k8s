@@ -173,3 +173,14 @@ key version, KMS calls and two short recovery Jobs per day on existing GKE
 capacity. Storage and object/API operations are usage billed; isolated tests do
 not provision additional clusters or persistent disks. Historical shared-bucket
 backups retain their existing storage cost until their own lifecycle expires.
+
+## Chart dependency availability
+
+The upstream OpenBao Helm chart 0.29.1 is vendored unchanged at
+`charts/thirdparty/openbao/charts/openbao-0.29.1.tgz`. Its SHA-256
+`646d932f597632a7328bd300994e66c2cabaa1b6763372cbabb559cd84ff3f2f`
+matches the GitHub release asset digest. The regression test pins that digest.
+Update the chart lock, archive, ignore exception and digest together on an
+upstream chart upgrade. This avoids release-asset download timeouts blocking
+Argo reconciliation during recovery. The security AppProject explicitly allows
+the same upstream Helm repository for dependency resolution.
