@@ -29,7 +29,7 @@ def test_production_api_and_worker_use_openbao_while_paused():
         env = {e["name"]: e.get("value") for e in container["env"]}
         assert env["APP_SECRET_WRITES_PAUSED"] == "true"
         assert env["APP_SECRET_STORE"] == "openbao"
-        assert env["PII_SECRET_STORE"] == "gcp"
+        assert env["PII_SECRET_STORE"] == "openbao"
         assert env["OPENBAO_ROLE"] == "runtime-fe3dr-payment"
         assert env["OPENBAO_PII_ROLE"] == "app-homechef_homechef-api"
         assert env["OPENBAO_ADDR"] == "http://openbao.openbao.svc.cluster.local:8200"
