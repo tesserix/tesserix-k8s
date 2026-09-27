@@ -85,6 +85,11 @@ SHARED_APPLICATION_SOURCES = {
 
 
 def identifier(source):
+    if re.fullmatch(
+        r"dev-homechef-vendor-payment-[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}-upi-id",
+        source,
+    ):
+        return "fe3dr-" + source.removeprefix("dev-homechef-")
     if source in SHARED_APPLICATION_SOURCES:
         return "fe3dr-" + source.removeprefix("prod-")
     if source == "shadowfax-api-token":
@@ -115,11 +120,13 @@ def validate_plan(plan):
         targets = item["targets"]
         if not targets or len(targets) != len(set(targets)):
             raise ValueError("Targets must be non-empty and unique")
+        approved = (
+            {f"homechef-development/homechef-api/{name}"}
+            if item["source"].startswith("dev-")
+            else {f"homechef/homechef-api/{name}", f"homechef/homechef-auth-bff/{name}"}
+        )
         for target in targets:
-            if target not in {
-                f"homechef/homechef-api/{name}",
-                f"homechef/homechef-auth-bff/{name}",
-            }:
+            if target not in approved:
                 raise ValueError("Target must match the source and approved app prefix")
 
 
