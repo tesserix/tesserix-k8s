@@ -14,6 +14,8 @@ tesserix.io/product: {{ .Values.product }}
 {{- define "document-intelligence.config" -}}
 {{- $p := required "product is required" .Values.product -}}
 {{- $e := required "environment is required" .Values.environment -}}
+{{- $scope := ternary $p (printf "%s-%s" $p (ternary "development" $e (eq $e "dev"))) (eq $e "prod") -}}
+{{- $reader := printf "openbao-%s-%s" $p (ternary "production" (ternary "development" $e (eq $e "dev")) (eq $e "prod")) -}}
 {{- $name := .Values.fullname | default (printf "document-intelligence-%s-%s" $p $e) -}}
 {{- $defaults := dict
   "fullname" $name
@@ -30,10 +32,11 @@ tesserix.io/product: {{ .Values.product }}
     "execution" (printf "%s-%s-ocr-worker" $p $e))
   "database" (dict
     "secretName" (printf "%s-db" $name)
-    "secretManagerKey" (printf "%s-document-intelligence-%s-db-password" $e $p)
+    "openbaoKey" (printf "%s/app/%s-document-intelligence-db-password" $scope $p)
+    "openbaoStore" $reader
     "user" (printf "document_intelligence_%s_%s" $p $e)
     "name" (printf "document_intelligence_%s_%s_db" $p $e))
-  "identity" (dict "secretName" (printf "%s-api-identity" $name))
+  "identity" (dict "secretName" (printf "%s-api-identity" $name) "openbaoKey" (printf "%s/app/%s-ocr-workload-identity-keys" $scope $p) "openbaoStore" $reader)
   "apiClientNamespaces" (list)
   "apiClientPrincipals" (list) -}}
 {{- range .Values.clients }}
@@ -41,7 +44,14 @@ tesserix.io/product: {{ .Values.product }}
 {{- $_ := set $defaults "apiClientPrincipals" (append $defaults.apiClientPrincipals (printf "cluster.local/ns/%s/sa/%s" .namespace .serviceAccount)) }}
 {{- end }}
 {{- $explicit := pick (deepCopy .Values) "temporal" "buckets" "serviceAccounts" "database" "identity" "apiClientNamespaces" "apiClientPrincipals" -}}
-{{- mergeOverwrite $defaults $explicit | toYaml }}
+{{- $config := mergeOverwrite $defaults $explicit -}}
+{{- range list $config.database $config.identity }}
+{{- if eq (.secretBackend | default "openbao") "gcp" }}
+{{- $_ := unset . "openbaoKey" -}}
+{{- $_ := unset . "openbaoStore" -}}
+{{- end }}
+{{- end }}
+{{- $config | toYaml }}
 {{- end }}
 
 {{- define "document-intelligence.fullname" -}}
@@ -59,6 +69,6 @@ remoteRef:
   property: value
 {{- else }}
 remoteRef:
-  key: {{ .secretManagerKey | quote }}
+  key: {{ required "Explicit legacy GCP secretManagerKey or OpenBao key/store is required" .secretManagerKey | quote }}
 {{- end }}
 {{- end }}

@@ -6,7 +6,7 @@ locals {
     for f in fileset(local.registry_dir, "*.yaml") : trimsuffix(f, ".yaml") => yamldecode(file("${local.registry_dir}/${f}"))
   }
   gcp_secret_releases = {
-    for name, r in local.releases : name => r if try(r.secretBackend, "gcp") != "openbao"
+    for name, r in local.releases : name => r if try(r.secretBackend, "openbao") == "gcp"
   }
   products = toset([for r in local.releases : r.product])
 
