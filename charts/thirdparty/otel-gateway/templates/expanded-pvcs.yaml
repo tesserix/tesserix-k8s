@@ -1,0 +1,22 @@
+{{- if and .Values.queue.enabled .Values.persistence.expandedSize }}
+{{- range $ordinal := until (int .Values.replicaCount) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: queue-{{ include "otel-gateway.name" $ }}-{{ $ordinal }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "otel-gateway.labels" $ | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false,ServerSideApply=true
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ $.Values.persistence.storageClassName }}
+  resources:
+    requests:
+      storage: {{ $.Values.persistence.expandedSize }}
+{{- end }}
+{{- end }}
