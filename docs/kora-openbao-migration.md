@@ -60,3 +60,9 @@ Kora's gateway also consumes `prod-devai-anthropic-api-key`; that shared DevAI-o
 Both existing development and production Langfuse project key pairs include surrounding whitespace. Raw Basic authentication returns 401; trimming the same keys returns 200 with distinct project scopes. OpenBao preserves the source bytes. ESO trims only the two DevAI Langfuse environment values and the inputs to the two OTel Basic-auth strings. These four rendered fields across three Kubernetes Secrets intentionally differ from the old hash baseline. All other fields must match exactly. The evals reconciler trims the public key when comparing it with Langfuse's API listing, preventing an unnecessary rotation. No new credentials are minted.
 
 The pre-existing evals onboarding organization API 403 is tracked separately in #1194. Project-scoped credentials work after trimming; the organization permission failure is a separate platform dependency.
+
+### Runtime verification follow-up
+
+The agents' pinned GHCR OCI index was no longer available, preventing fresh pods from starting. The cached linux/amd64 manifest and config were recovered read-only from a running node; all ten compressed layers were fetched from GHCR and SHA-256 checked against that manifest. The identical platform image is preserved in GAR at `global/recovered/ai-agents@sha256:c65f8c5af90c21b895e11d0b47f910bb0bd99b2dc05e393c38cb40a2a790b152`. No application code or credential changed during image recovery.
+
+OTel ingest requires a pod-template change to consume the normalized Langfuse credentials because its existing environment variables are fixed at pod startup. The `openbao-v1` annotation triggers that rollout through GitOps. End-to-end trace delivery must pass after rollout before source deletion.
