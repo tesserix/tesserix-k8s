@@ -83,3 +83,10 @@ resource "google_storage_bucket_iam_member" "openbao_recovery_console_catalog" {
     expression  = "resource.name == 'projects/_/buckets/${google_storage_bucket.openbao_recovery.name}/objects/catalog.json'"
   }
 }
+
+resource "google_kms_crypto_key_iam_member" "openbao_recovery_unseal_metadata" {
+  for_each      = google_service_account.openbao_recovery
+  crypto_key_id = "${local.openbao_recovery_ring}/cryptoKeys/openbao-unseal-key"
+  role          = "roles/cloudkms.viewer"
+  member        = "serviceAccount:${each.value.email}"
+}

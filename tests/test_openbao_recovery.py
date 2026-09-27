@@ -342,3 +342,14 @@ def test_cli_reports_safe_failure_reason_without_echoing_input(monkeypatch, caps
     output = capsys.readouterr().out
     assert "invalid-private-input" not in output
     assert json.loads(output)["error"] == "Invalid recovery bucket"
+
+
+def test_restore_identities_can_read_unseal_key_metadata_at_key_scope():
+    root = SCRIPT.parents[4]
+    source = (root / "terraform-new/stacks/03-storage/openbao-recovery.tf").read_text()
+    block = source.split(
+        'resource "google_kms_crypto_key_iam_member" "openbao_recovery_unseal_metadata" {'
+    )[1].split("\n}")[0]
+    assert 'role          = "roles/cloudkms.viewer"' in block
+    assert "cryptoKeys/openbao-unseal-key" in block
+    assert "for_each      = google_service_account.openbao_recovery" in block
