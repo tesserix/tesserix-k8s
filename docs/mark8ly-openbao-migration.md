@@ -81,3 +81,9 @@ operational-script updates remain part of issue #1209 acceptance.
 All 55 named paths were staged and read back successfully. Six namespace reader
 identities passed byte equality, read-only capabilities, and out-of-scope denial
 checks. The temporary staging token was revoked. Consumer rollout is pending.
+
+The six legacy tenant test credentials are staged in isolated test subtrees and
+verified without modifying runtime references. The temporary migration writer
+is removed from desired policy, role, and ServiceAccount configuration after
+successful staging; its live role/policy must also be removed because bootstrap
+only upserts declared entries.

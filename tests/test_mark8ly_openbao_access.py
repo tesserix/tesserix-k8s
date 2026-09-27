@@ -34,21 +34,12 @@ def test_readers_only_access_their_namespace_app_dependencies():
         assert set(re.findall(r"capabilities = \[([^]]+)\]", policy)) == {'"read"'}
 
 
-def test_temporary_writer_only_creates_reviewed_paths():
-    from migrate_product_secrets import targets_for
-
+def test_temporary_writer_is_retired_after_staging():
     config = resource(
         render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap"
     )["data"]
-    role = json.loads(config["role-mark8ly-migrate-reviewed.json"])
-    assert role["bound_service_account_namespaces"] == ["openbao"]
-    assert role["bound_service_account_names"] == ["mark8ly-migration-writer"]
-    assert role["token_ttl"] == "15m"
-    policy = config["policy-mark8ly-migrate-reviewed.hcl"]
-    assert set(re.findall(r'path "(kv/data/[^"]+)"', policy)) == {
-        "kv/data/" + p for p in targets_for("mark8ly").values()
-    }
-    assert '"delete"' not in policy and "*" not in policy
+    assert "policy-mark8ly-migrate-reviewed.hcl" not in config
+    assert "role-mark8ly-migrate-reviewed.json" not in config
 
 
 def test_stores_are_namespaced_and_included_in_gitops():
@@ -57,10 +48,10 @@ def test_stores_are_namespaced_and_included_in_gitops():
             (ROOT / "external-secrets/prod/mark8ly-openbao-readers.yaml").read_text()
         )
     )
-    assert len(stores) == 13
+    assert len(stores) == 12
     assert (
         sum(doc["metadata"]["name"] == "mark8ly-migration-writer" for doc in stores)
-        == 1
+        == 0
     )
     for namespace in {item["namespace"] for item in CONSUMERS}:
         docs = [doc for doc in stores if doc["metadata"]["namespace"] == namespace]
