@@ -9,8 +9,11 @@ rotation must update this single destination, never independent product copies.
 Consumers: homechef, dwellm8, mark8ly, support-platform, tesserix and stockpilot.
 Dormant recovery manifests for fanzone, gameverse, horoscope and postsocial also
 reference OpenBao, with namespace reader manifests beside their recovery files.
-No dormant workload is enabled. Dwellm8's three sandbox Cashfree fields read the
-existing fe3dr sandbox pair, pending the separate runtime writer handoff.
+No dormant workload is enabled. Dwellm8's three sandbox Cashfree fields stay on GCP while the fe3dr runtime
+writer remains there. Set `payments.cashfree.openbao=true` only after the GCP
+writer is paused and drained, alongside the runtime OpenBao cutover. Its Resend
+field independently uses OpenBao. This avoids diverging credentials during
+updates between staging and runtime handoff.
 
 Target Kubernetes Secret names, field names, payloads and refresh intervals stay
 unchanged. Readiness and byte equality must pass for all live ESO consumers.
