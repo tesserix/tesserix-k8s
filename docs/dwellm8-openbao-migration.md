@@ -50,3 +50,16 @@ rendering still omits ESO. The retired Cashfree GCP fallback is removed because
 its originals are already deleted; tests now enforce the OpenBao-only behavior.
 Product credential staging, live reader verification, writer retirement and
 post-cutover functional/restore acceptance remain required before deletion.
+
+## Completion
+
+PRs #1222 and #1223 are deployed. All ten originals were deleted and confirmed
+absent after acceptance. Post-deletion fresh reconciliation passed for eleven
+bindings and seven target Secrets with unchanged whole-Secret hashes. Workload
+images and captured Argo parameters were preserved. Health/readiness/public
+listing checks returned 200; unauthenticated identity lookup returned 401.
+Temporary migration ServiceAccount, role and policy are absent.
+
+Verified snapshot `20260927T143934Z-7e06dbda07f8` restored in isolation in
+20.661 seconds. Three verified backups remained and pruned objects were absent.
+The encrypted archive above retains recovery state for the deleted originals.

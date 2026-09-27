@@ -25,3 +25,12 @@ compare whole-Secret hashes and deployed images; repeat functionality checks and
 an isolated snapshot restore. No credentials enter repository files or logs.
 Existing reader references provide rollback until deletion; thereafter recovery
 requires the encrypted archive and KMS access. No persistent service is added.
+
+The reviewed consumer cutover retains all six target Secrets, selecting the
+namespaced OpenBao reader for each owned key. Shared fe3dr and Mark8ly paths and
+other products' pending MCP credentials retain their ownership. The temporary
+migration identity is removed from desired configuration; live retirement must
+confirm the ServiceAccount, role and policy are absent before source deletion.
+
+Verified recovery capture:
+`gs://tesseract-prod-backups-in/openbao/support-platform-migration/20260927T150750Z/gcp-sources.json.gz.kms`.
