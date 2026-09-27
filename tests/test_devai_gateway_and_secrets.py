@@ -413,7 +413,7 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             rules[("serving.knative.dev",)]["resources"],
         )
 
-    def test_devai_production_pins_adk_images_by_digest(self):
+    def test_devai_pins_chart_defaults_and_preserves_promoted_app_images(self):
         release_tag = "fix-multi-provider-user-routing-c5d89ea"
         api_tag = (
             f"{release_tag}@"
@@ -470,10 +470,13 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
 
         expected_parameters = {
             "argocd/prod/apps/ai-apps/devai-api.yaml": {
-                "image.tag": api_tag,
-                "k8sRuntime.runnerImage": runner_image,
+                "image.tag": "main-5714b54",
+                "k8sRuntime.runnerImage": (
+                    "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/"
+                    "tesserix/devai/devai-runner:main-5714b54"
+                ),
             },
-            "argocd/prod/apps/ai-apps/devai-sre.yaml": {"image.tag": sre_tag},
+            "argocd/prod/apps/ai-apps/devai-sre.yaml": {"image.tag": "main-5714b54"},
         }
         for relative_path, expected in expected_parameters.items():
             application = yaml.safe_load(
