@@ -55,3 +55,17 @@ def test_rejects_duplicate_sources():
     }
     with pytest.raises(ValueError):
         migration.validate_plan([item, item])
+
+
+def test_missing_devai_destination_can_be_created(monkeypatch):
+    import urllib.error
+
+    from migrate_fe3dr_secret import OpenBao
+
+    bao = OpenBao("http://127.0.0.1:18200", "synthetic-token")
+
+    def missing(request, timeout):
+        raise urllib.error.HTTPError(request.full_url, 404, "not found", {}, None)
+
+    monkeypatch.setattr(bao.opener, "open", missing)
+    assert bao.request("GET", "kv/data/devai/app/devai-openai-api-key") is None
