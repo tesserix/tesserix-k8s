@@ -18,7 +18,7 @@ def test_roamie_database_handoff_preserves_remote_credentials():
 
 def test_document_database_handoff_excludes_openbao_products():
     text = (ROOT / "15-document-intelligence-products/main.tf").read_text()
-    assert 'try(r.secretBackend, "gcp") != "openbao"' in text
+    assert 'try(r.secretBackend, "openbao") == "gcp"' in text
     assert text.count("for_each = local.gcp_secret_releases") == 3
     for kind in (
         "random_password",

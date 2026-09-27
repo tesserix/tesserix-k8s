@@ -38,3 +38,10 @@ Already-migrated fe3dr database and Kora development signing sources are exclude
 from resource, version and IAM loops so old tfvars cannot recreate them. Do not
 apply unrelated Terraform drift during a secret migration; review the actual
 plan and require only the scoped, intended actions.
+
+Document-intelligence product releases default to OpenBao in both Helm and
+Terraform. Create the namespace-bound reader and populate product-prefixed paths
+before onboarding; production uses `<product>/app/` and development uses
+`<product>-development/app/`. Existing shared Kora processing database readers
+are explicitly retained on GCP until their migration is verified in #1209.
+A missing backend field must never provision a new application credential in GCP.
