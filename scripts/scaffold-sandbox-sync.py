@@ -10,11 +10,12 @@ Reads the claim and generates everything it needs that is fully determined:
     mirror the source migration before merging)
 
 Prints ready-to-paste snippets for the two files it will not edit in place
-(source cluster managedRoles, istio-config appNamespaces) and the gcloud
-commands for the Secret Manager entries. tests/test_sandbox_sync_wiring.py is
+(source cluster managedRoles, istio-config appNamespaces) and the scoped OpenBao
+reader policy/role and application paths. tests/test_sandbox_sync_wiring.py is
 the merge gate: run pytest afterwards to see what is still missing.
 """
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -22,7 +23,9 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-EVALS_SQL = ROOT / "charts/apps/db-schema-bootstrap/schemas/global/global/devai_evals_db.sql"
+EVALS_SQL = (
+    ROOT / "charts/apps/db-schema-bootstrap/schemas/global/global/devai_evals_db.sql"
+)
 
 
 def load_claim(path: Path) -> dict:
@@ -34,11 +37,15 @@ def load_claim(path: Path) -> dict:
 
 
 def register(kustomization: Path, resource: str) -> bool:
-    data = yaml.safe_load(kustomization.read_text()) if kustomization.exists() else {
-        "apiVersion": "kustomize.config.k8s.io/v1beta1",
-        "kind": "Kustomization",
-        "resources": [],
-    }
+    data = (
+        yaml.safe_load(kustomization.read_text())
+        if kustomization.exists()
+        else {
+            "apiVersion": "kustomize.config.k8s.io/v1beta1",
+            "kind": "Kustomization",
+            "resources": [],
+        }
+    )
     if resource in data.get("resources", []):
         return False
     data.setdefault("resources", []).append(resource)
@@ -46,11 +53,48 @@ def register(kustomization: Path, resource: str) -> bool:
     return True
 
 
+def validate_name(value: str) -> None:
+    if len(value) > 63 or not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", value):
+        raise ValueError("Require a DNS label for namespace and secret names")
+
+
+def product_name(ns: str) -> str:
+    validate_name(ns)
+    return "fe3dr" if ns in {"homechef", "homechef-development"} else ns
+
+
 def externalsecrets_yaml(ns: str, sync_secret: str) -> str:
+    product = product_name(ns)
+    validate_name(sync_secret)
     return f"""\
 # DevAI sandbox evals sync credentials (k8s/operators/db-anonymise).
-# URLs live whole in GCP Secret Manager; their embedded passwords must match
+# URLs live whole in OpenBao; their embedded passwords must match
 # the reader/writer role password secrets — GitOps cannot enforce that.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {ns}-sandbox-secret-reader
+  namespace: {ns}
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-{ns}-sandbox-sync
+  namespace: {ns}
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-{ns}-sandbox-sync
+          serviceAccountRef:
+            name: {ns}-sandbox-secret-reader
+---
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
@@ -59,8 +103,8 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    name: gcp-secret-store
-    kind: ClusterSecretStore
+    name: openbao-{ns}-sandbox-sync
+    kind: SecretStore
   target:
     name: {ns}-postgres-sandbox-reader
     creationPolicy: Owner
@@ -73,7 +117,8 @@ spec:
   data:
     - secretKey: password
       remoteRef:
-        key: prod-{ns}-sandbox-reader-password
+        key: {ns}/sandbox-sync/{product}-sandbox-reader-password
+        property: value
 ---
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
@@ -83,21 +128,24 @@ metadata:
 spec:
   refreshInterval: 1h
   secretStoreRef:
-    name: gcp-secret-store
-    kind: ClusterSecretStore
+    name: openbao-{ns}-sandbox-sync
+    kind: SecretStore
   target:
     name: {sync_secret}
     creationPolicy: Owner
   data:
     - secretKey: source-url
       remoteRef:
-        key: prod-{ns}-sandbox-sync-source-url
+        key: {ns}/sandbox-sync/{product}-sandbox-sync-source-url
+        property: value
     - secretKey: target-url
       remoteRef:
-        key: prod-{ns}-sandbox-sync-target-url
+        key: {ns}/sandbox-sync/{product}-sandbox-sync-target-url
+        property: value
     - secretKey: anonymization-salt
       remoteRef:
-        key: prod-{ns}-sandbox-anonymization-salt
+        key: {ns}/sandbox-sync/{product}-sandbox-anonymization-salt
+        property: value
 """
 
 
@@ -127,6 +175,8 @@ def main() -> None:
     claim = load_claim(claim_path)
     ns = claim["metadata"]["namespace"]
     sync_secret = claim["spec"]["source"]["secretRef"]["name"]
+    product = product_name(ns)
+    validate_name(sync_secret)
     schemas = {t["target"].split(".", 1)[0] for t in claim["spec"]["tables"]}
 
     if register(claim_path.parent / "kustomization.yaml", claim_path.name):
@@ -143,9 +193,15 @@ def main() -> None:
     sql = EVALS_SQL.read_text()
     for schema in sorted(schemas):
         if f"CREATE SCHEMA IF NOT EXISTS {schema}" not in sql:
-            tables = [t for t in claim["spec"]["tables"] if t["target"].startswith(f"{schema}.")]
+            tables = [
+                t
+                for t in claim["spec"]["tables"]
+                if t["target"].startswith(f"{schema}.")
+            ]
             EVALS_SQL.write_text(EVALS_SQL.read_text() + sql_block(schema, tables))
-            print(f"appended schema {schema} to devai_evals_db.sql — SET THE COLUMN TYPES")
+            print(
+                f"appended schema {schema} to devai_evals_db.sql — SET THE COLUMN TYPES"
+            )
 
     print(f"""
 Manual steps the tests will hold you to:
@@ -159,15 +215,44 @@ Manual steps the tests will hold you to:
          comment: SELECT-only reader for the DevAI sandbox evals sync
 2. Mesh path — ensure `{ns}: {ns}` is under appNamespaces in
    charts/thirdparty/istio-config/values.yaml (bump chart version).
-3. Secret Manager (values never in Git; compose URLs in shell vars only):
-     gcloud secrets create prod-{ns}-sandbox-reader-password --replication-policy=automatic
-     gcloud secrets create prod-{ns}-sandbox-sync-source-url --replication-policy=automatic
-     gcloud secrets create prod-{ns}-sandbox-sync-target-url --replication-policy=automatic
-     gcloud secrets create prod-{ns}-sandbox-anonymization-salt --replication-policy=automatic
+3. OpenBao (payloads never in Git or CLI arguments):
+   Add the exact reader policy and Kubernetes role printed below to the OpenBao
+   bootstrap values through GitOps. Grant a temporary writer only these four paths,
+   write field `value` through stdin/API bodies, verify reader access, then revoke it.
+   Production and development namespaces must have separate paths and identities.
    target-url points at devai_evals_db on global-postgres-rw as devai_evals.
 4. Fix the TODO column types in devai_evals_db.sql, then run:
      python3 -m pytest tests/test_sandbox_sync_wiring.py
 """)
+    suffixes = (
+        "sandbox-reader-password",
+        "sandbox-sync-source-url",
+        "sandbox-sync-target-url",
+        "sandbox-anonymization-salt",
+    )
+    policy = "\n".join(
+        f'path "kv/data/{ns}/sandbox-sync/{product}-{suffix}" {{ capabilities = ["read"] }}'
+        for suffix in suffixes
+    )
+    print(
+        yaml.safe_dump(
+            {
+                "bootstrap": {
+                    "policies": [{"name": f"read-{ns}-sandbox-sync", "hcl": policy}],
+                    "kubernetesRoles": [
+                        {
+                            "name": f"read-{ns}-sandbox-sync",
+                            "serviceAccounts": [f"{ns}-sandbox-secret-reader"],
+                            "namespaces": [ns],
+                            "policies": [f"read-{ns}-sandbox-sync"],
+                            "ttl": "15m",
+                        }
+                    ],
+                }
+            },
+            sort_keys=False,
+        )
+    )
     subprocess.run(
         [sys.executable, "-m", "pytest", "tests/test_sandbox_sync_wiring.py", "-q"],
         cwd=ROOT,
