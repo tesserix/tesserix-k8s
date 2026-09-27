@@ -1,63 +1,65 @@
-# Remaining fe3dr secret migration
+# fe3dr secret ownership and recovery
 
-Live metadata review: 2026-09-27, GCP project `tesseracthub-480811`, production
-GKE context, namespace `homechef`. Tracks #1159. The baseline inventory has 78
-entries; 18 verified static/coordinated sources are already deleted. A fresh
-scan found 60 remaining entries and no additional fe3dr entries beyond that
-inventory. Values were not printed or stored in this document.
+OpenBao is the default for fe3dr application secrets. Identifiers start with
+`fe3dr-`. GCP Secret Manager retains only the 16 platform exclusions below.
+Execution evidence and final deletion status are tracked in
+[issue #1159](https://github.com/tesserix/tesserix-k8s/issues/1159).
 
-OpenBao is the intended default for **all application secrets**, including
-legacy and development entries. Copying a value is staging, not a completed
-consumer cutover. Platform exclusions and shared ownership are distinct:
-shared application secrets still require coordinated migration.
+## Application scope
 
-| Remaining group | Count | Disposition |
-|---|---:|---|
-| Runtime application secrets | 18 | Staged; API/worker still use GCP. Draft Home-Chef-App#1217 has passing CI, tested pause controls and separate payment/PII backend selectors. Complete writer handoff, onboarding error semantics, release selection, shared Cashfree consumers and PII compatibility/restore tests. |
-| BFF identity bundle | 4 | Migrate `gip-web-api-key`, `customer-client-secret`, `business-client-secret`, `internal-client-secret` to the BFF OpenBao prefix, preserving all target values. Delete GCP sources only after recovery capture and post-cutover verification. |
-| Legacy/dormant application entries | 15 | Eligible for OpenBao, not platform exclusions. Establish any remaining external/CI/mobile readers and their cutover before deleting GCP sources. No current ESO reader was observed. |
-| Development payment entries | 2 | Eligible, with separate development paths and identities. Never put development bank/UPI values under the production API prefix. |
-| Shared application dependencies | 5 | Coordinate the single source and all consumers; do not create independent per-product copies that drift during rotation. |
-| Platform/infrastructure/recovery | 16 | Retain in GCP; excluded from application migration. |
+The reviewed scope contains 62 application sources and 64 OpenBao destinations:
+22 initial static/coordinated/BFF sources, 15 legacy application sources,
+five shared application dependencies, two development payment sources and
+18 runtime sources (10 Cashfree, six vendor-bank fields and two PII keys).
 
-The expanded application scope is therefore **62 entries** (78 minus 16
-platform exclusions), including five shared dependencies. The original 36
-candidate count was only the first reviewed execution scope. This table is a
-pre-batch inventory; current completion and deletion evidence belongs in #1159.
+- Production API static/PII: `kv/homechef/homechef-api/fe3dr-*` with the
+  read-only `app-homechef_homechef-api` role.
+- Production payments: the same product prefix, using
+  `runtime-fe3dr-payment` bound only to `homechef/homechef-api`. It may update
+  explicit gateway fields and vendor/driver payment fields; metadata deletion
+  is restricted to owner-payment paths. It cannot read static, PII, BFF or
+  development entries.
+- BFF: `kv/homechef/homechef-auth-bff/fe3dr-*`, separate read-only identity.
+- Development: `kv/homechef-development/homechef-api/fe3dr-*`, separate
+  `read-fe3dr-development` identity. No development workload was activated.
+- Shared dependencies use canonical API paths and exact-path namespace readers;
+  see [shared consumers](fe3dr-openbao-shared.md).
 
-## Legacy and development application entries
+API and worker select OpenBao independently for `APP_SECRET_STORE` and
+`PII_SECRET_STORE`. PII encryption stays enabled; GCP KMS still unwraps the same
+DEK. This secret migration does not change the existing PII column migration
+phase or remove plaintext columns.
 
-Unless qualified, these have the `prod-homechef-` prefix:
+The runtime client handles short-lived Kubernetes authentication. Payout
+onboarding waits for secret writes and reports failure rather than false
+success. A failed multi-field write requires resubmitting the complete field
+set; there is no cross-store/database atomicity guarantee.
 
-- BFF legacy: `bff-backup-code-hmac-key`, `bff-csrf-secret`,
-  `bff-session-secret`, `bff-totp-encryption-key`.
-- Old app identity: `keycloak-client-secret`, `internal-keycloak-client-secret`.
-- Razorpay: `razorpay-key-id`, `razorpay-key-secret`, `razorpay-webhook-secret`,
-  `razorpay-test-key-id`, `razorpay-test-key-secret`, `razorpay-test-webhook-secret`.
-- Historical app integration/connection: `google-places-api-key`, `postgresql-url`.
-- `shadowfax-api-token` (identified by its application label).
-- Two `dev-homechef-vendor-payment-<owner-id>-upi-id` entries; exact owner
-  identifiers remain in the private execution inventory.
+## Verification and recovery
 
-Enabling a dormant provider is not part of moving its stored credential.
-Current project IAM metadata exposes no project-level audit configuration;
-absence of access-log evidence would not establish non-use. Current API,
-worker and BFF images remain `main-c93dc10`.
+The approved handoff paused credential mutations and vendor erasure, drained
+old writers, compared all latest source versions, switched payments and
+Dwellm8 Cashfree together, then switched PII independently before resuming
+writes. No credential rotation, provider activation or real payment was part
+of this migration. The existing live Cashfree slot points to sandbox and its
+warning remains unchanged.
 
-## Shared application dependencies
+The final runtime recovery location is
+`gs://tesseract-prod-backups-in/openbao/fe3dr-migration/20260927T031554Z/`:
 
-- `prod-resend-api-key`: six products/namespaces consume it.
-- `prod-github-feedback-token`: one live ESO consumer observed, but its owning
-  chart explicitly documents a cross-repository PAT and one shared rotation
-  surface. Treat it as shared until ownership is resolved.
-- `prod-support-platform-otto-internal-auth`: four namespace consumers.
-- `prod-support-platform-postgres-username` and `...-password`: four namespace
-  consumers each.
+- `runtime-source-recovery.encrypted.json`: 18 sources, metadata/IAM and
+  27 enabled versions; KMS encrypt/decrypt and upload/download equality checked.
+- `verified-source.snap`: fresh full OpenBao snapshot. An isolated OpenBao
+  2.6.2 restore with KMS auto-unseal verified all 64 values and versions;
+  uploaded snapshot bytes matched the tested copy.
 
-The API defaults to its OpenBao store once both static and coordinated batches
-are enabled. Resend and GitHub feedback explicitly select the shared GCP store
-until their coordinated migration. The BFF bundle defaults entirely to its
-own OpenBao store. Existing read-only policies remain unchanged.
+Earlier batch archives and restore evidence are listed in #1159. Temporary
+migration grants and verifier identities are removed after use.
+
+**Rollback after OpenBao accepts new writes requires reverse reconciliation.**
+Recreate any deleted GCP sources from encrypted recovery, merge newer OpenBao
+values back under a credential-write pause, verify consumers, and only then
+select GCP. An environment-variable rollback alone would lose newer values.
 
 ## Platform exclusions
 
@@ -70,8 +72,7 @@ own OpenBao store. Existing read-only policies remain unchanged.
 - `prod-homechef-mongodb-backup-gcs-client-email` and
   `prod-homechef-mongodb-backup-gcs-private-key`.
 - `prod-postgresql-homechef-ca-cert`, `...-server-cert`, `...-server-key`
-  (historical infrastructure TLS; not application keys).
+  (historical infrastructure TLS).
 
-OpenBao KMS auto-unseal, snapshots and recovery access stay independently
-recoverable. No credential rotation, provider activation or production database
-restore is implied by this migration.
+OpenBao KMS auto-unseal, snapshots and recovery access remain independently
+recoverable. Repository visibility must remain public, as recorded in AGENTS.md.
