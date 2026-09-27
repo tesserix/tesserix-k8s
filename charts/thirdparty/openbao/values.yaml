@@ -284,6 +284,23 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: read-support-platform-support-platform-production
+      hcl: |
+        path "kv/data/support-platform/app/support-platform-hf-token" { capabilities = ["read"] }
+        path "kv/data/support-platform/app/support-platform-otto-session-secret" { capabilities = ["read"] }
+        path "kv/data/support-platform/app/support-platform-platform-mcp-key" { capabilities = ["read"] }
+        path "kv/data/support-platform/app/support-platform-sendgrid-api-key" { capabilities = ["read"] }
+    - name: read-support-platform-agentgateway-system-production
+      hcl: |
+        path "kv/data/support-platform/app/support-platform-platform-mcp-key" { capabilities = ["read"] }
+    - name: support-platform-migrate-reviewed
+      hcl: |
+        path "kv/data/support-platform/app/support-platform-hf-token" { capabilities = ["create", "read"] }
+        path "kv/data/support-platform/app/support-platform-otto-session-secret" { capabilities = ["create", "read"] }
+        path "kv/data/support-platform/app/support-platform-platform-mcp-key" { capabilities = ["create", "read"] }
+        path "kv/data/support-platform/app/support-platform-sendgrid-api-key" { capabilities = ["create", "read"] }
+        path "auth/token/lookup-self" { capabilities = ["read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-dwellm8-dwellm8-production
       hcl: |
         path "kv/data/dwellm8/app/dwellm8-api-postgresql-password" { capabilities = ["read"] }
@@ -704,6 +721,21 @@ bootstrap:
         path "kv/data/roamie/app/roamie-travel-mcp-key" { capabilities = ["read"] }
 
   kubernetesRoles:
+    - name: read-support-platform-support-platform-production
+      serviceAccounts: ["support-platform-production-reader"]
+      namespaces: ["support-platform"]
+      policies: ["read-support-platform-support-platform-production"]
+      ttl: "1h"
+    - name: read-support-platform-agentgateway-system-production
+      serviceAccounts: ["support-platform-production-reader"]
+      namespaces: ["agentgateway-system"]
+      policies: ["read-support-platform-agentgateway-system-production"]
+      ttl: "1h"
+    - name: support-platform-migrate-reviewed
+      serviceAccounts: ["support-platform-migration-writer"]
+      namespaces: ["openbao"]
+      policies: ["support-platform-migrate-reviewed"]
+      ttl: "15m"
     - name: read-dwellm8-dwellm8-production
       serviceAccounts: ["dwellm8-production-reader"]
       namespaces: ["dwellm8"]

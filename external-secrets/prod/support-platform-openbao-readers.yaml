@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: support-platform-production-reader
+  namespace: support-platform
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-support-platform-production
+  namespace: support-platform
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-support-platform-support-platform-production
+          serviceAccountRef:
+            name: support-platform-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: support-platform-production-reader
+  namespace: agentgateway-system
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-support-platform-production
+  namespace: agentgateway-system
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-support-platform-agentgateway-system-production
+          serviceAccountRef:
+            name: support-platform-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: support-platform-migration-writer
+  namespace: openbao
+automountServiceAccountToken: false
