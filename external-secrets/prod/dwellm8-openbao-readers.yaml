@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dwellm8-production-reader
+  namespace: dwellm8
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-dwellm8-production
+  namespace: dwellm8
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-dwellm8-dwellm8-production
+          serviceAccountRef:
+            name: dwellm8-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dwellm8-migration-writer
+  namespace: openbao
+automountServiceAccountToken: false
