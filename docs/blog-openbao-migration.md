@@ -44,3 +44,30 @@ Baseline: blog homepage and health return 200. MongoDB is healthy but Argo attem
 an immutable storage-class change. The legacy identity Argo app references a
 removed chart. MongoDB backup Jobs are failing their existing deadline. Record
 migration acceptance and disposition of these findings before closing #1187.
+
+## Staging evidence (2026-09-27)
+
+All five destination values at KV version 1 were compared byte-for-byte with the
+pinned sources. The migration token was revoked. The writer role/policy and KSA
+are removed from desired state in the consumer rollout; explicitly remove the
+orphaned OpenBao role/policy after that rollout, since bootstrap upserts grants
+but does not prune omitted grants. No permanent application write grant remains.
+
+Source metadata, IAM and all enabled versions are archived at:
+`gs://tesseract-prod-backups-in/openbao/blog-migration/20260927T072511Z/gcp-sources.json.gz.kms`.
+The archive is gzip JSON encrypted with `openbao-backup-key`, additionally stored
+with GCS CMEK and the bucket's existing retention. Its decryption round trip was
+verified in memory. Restore by KMS decrypting then gunzipping in a controlled
+process; never print payloads. Disabled/destroyed historical versions have metadata
+only. Preserve the KMS key and archive until the recovery window closes.
+
+The runtime has no direct GCP Secret Manager client. MongoDB URI and OIDC are
+active app credentials. Session and Keycloak secrets are retained for compatibility
+(the current app does not reference SESSION_SECRET in its source). Shared Resend
+stays in OpenBao under its existing coordinated path. Old seed-script comment
+examples using `gcloud secrets versions access prod-blog-mongodb-uri` must instead
+obtain MONGODB_URI from the synchronized `tesserix/tesserix-blog-secrets` Secret or
+the scoped OpenBao reader; do not reintroduce a GCP runtime dependency.
+
+Existing backup/legacy identity infrastructure findings are tracked separately in
+#1189. They predate migration; published-post API baseline is 21 posts, HTTP 200.

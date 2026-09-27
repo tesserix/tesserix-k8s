@@ -29,3 +29,23 @@ def test_blog_readers_cannot_write_or_read_other_products():
             "kv/data/blog/app/blog-" + suffix for suffix in suffixes
         }
         assert set(re.findall(r"capabilities = \[([^]]+)\]", policy)) == {'"read"'}
+
+
+def test_blog_migration_writer_is_not_a_persistent_grant():
+    config = resource(
+        render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap"
+    )["data"]
+    assert "policy-blog-migrate-reviewed.hcl" not in config
+    assert "role-blog-migrate-reviewed.json" not in config
+    import yaml
+    from pathlib import Path
+
+    docs = list(
+        yaml.safe_load_all(
+            (
+                Path(__file__).parents[1]
+                / "external-secrets/prod/blog-openbao-readers.yaml"
+            ).read_text()
+        )
+    )
+    assert all(d["metadata"]["name"] != "blog-migration-writer" for d in docs if d)

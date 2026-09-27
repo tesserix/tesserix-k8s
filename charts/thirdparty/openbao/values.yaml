@@ -284,16 +284,6 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
-    # Temporary exact-path writer for blog migration #1187; remove after copying.
-    - name: blog-migrate-reviewed
-      hcl: |
-        path "kv/data/blog/app/blog-keycloak-client-secret" { capabilities = ["create", "read"] }
-        path "kv/data/blog/app/blog-mongodb-root-password" { capabilities = ["create", "read"] }
-        path "kv/data/blog/app/blog-mongodb-uri" { capabilities = ["create", "read"] }
-        path "kv/data/blog/app/blog-oidc-client-secret" { capabilities = ["create", "read"] }
-        path "kv/data/blog/app/blog-session-secret" { capabilities = ["create", "read"] }
-        path "auth/token/lookup-self" { capabilities = ["read"] }
-        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-blog-tesserix-production
       hcl: |
         path "kv/data/blog/app/blog-mongodb-uri" { capabilities = ["read"] }
@@ -516,11 +506,6 @@ bootstrap:
         path "kv/data/roamie/app/roamie-travel-mcp-key" { capabilities = ["read"] }
 
   kubernetesRoles:
-    - name: blog-migrate-reviewed
-      serviceAccounts: ["blog-migration-writer"]
-      namespaces: ["openbao"]
-      policies: ["blog-migrate-reviewed"]
-      ttl: 15m
     - name: read-blog-tesserix-production
       serviceAccounts: ["blog-production-reader"]
       namespaces: ["tesserix"]
