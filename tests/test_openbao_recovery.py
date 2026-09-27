@@ -150,6 +150,7 @@ def test_recovery_chart_is_isolated_and_runs_twice_daily():
     assert spec["activeDeadlineSeconds"] == 900
     pod = spec["template"]["spec"]
     assert pod["serviceAccountName"] == "openbao-backup"
+    assert "cp /usr/bin/bao /tools/bao" in pod["initContainers"][0]["command"][2]
     assert pod["securityContext"]["runAsNonRoot"] is True
     assert all(
         "@sha256:" in c["image"] for c in pod["containers"] + pod["initContainers"]
