@@ -56,3 +56,8 @@ def test_cashfree_reader_can_move_with_openbao_writer_after_drain():
             "homechef/homechef-api/fe3dr-cashfree-test-"
         )
         assert data[field]["remoteRef"]["property"] == "value"
+
+
+def test_deployed_cashfree_defaults_to_openbao_after_writer_handoff():
+    values = yaml.safe_load((ROOT / "charts/apps/dwellm8-api/values.yaml").read_text())
+    assert values["payments"]["cashfree"]["openbao"] is True
