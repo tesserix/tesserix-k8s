@@ -228,3 +228,22 @@ def test_cli_copies_verifies_revokes_then_prepares_app(tmp_path, failure):
     assert ("enabled: true" in target.read_text()) == (failure is None)
     for sensitive in (secret.strip(), "test-only-token", "sensitive-error-payload"):
         assert sensitive not in result.stdout + result.stderr
+
+
+def test_missing_development_destination_is_createable_but_other_paths_fail(
+    monkeypatch,
+):
+    import urllib.error
+
+    bao = migration.OpenBao("http://127.0.0.1:18200", "test-token")
+
+    def missing(request, timeout):
+        raise urllib.error.HTTPError(request.full_url, 404, "not found", {}, None)
+
+    monkeypatch.setattr(bao.opener, "open", missing)
+    assert (
+        bao.request("GET", "kv/data/homechef-development/homechef-api/fe3dr-test")
+        is None
+    )
+    with pytest.raises(migration.MigrationError):
+        bao.request("GET", "kv/data/platform/something")
