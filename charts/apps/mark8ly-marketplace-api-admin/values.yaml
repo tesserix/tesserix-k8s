@@ -18,7 +18,7 @@ image:
   # Cloud NAT data-processing charges on every image pull. See
   # docs/artifact-registry-mirror.md.
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/mark8ly-marketplace-api
-  tag: "sha-493c3652c68d"
+  tag: "main-f111cf0"
   pullPolicy: IfNotPresent
   # Same image, different entrypoint via Dockerfile target. The migrate
   # init container uses the `migrate` target; the main container uses
@@ -170,23 +170,9 @@ mediaPublicBaseURL: "https://cdn.mark8ly.com"
 mediaCacheControl: "public, max-age=31536000, immutable"
 # ── P0: Security & encryption ────────────────────────────────────
 encryptionMode: "aes"
-# Carrier credentials (Delhivery, Razorpay, TaxJar, etc.).
-#
-# "bao" (mark8ly#319 phase 2): NEW WRITES go to OpenBao at
-# kv/data/mark8ly/marketplace-api/tenants/<tenant>/<domain>/<provider>/<field>
-# and persist a bao:// reference. Existing gsm:// rows keep resolving through
-# GCP Secret Manager — ChainStore routes on the reference PREFIX, not on this
-# mode, so old and new coexist and nothing needs migrating up front.
-#
-# Only this ADMIN deployment writes credentials. The storefront is left on
-# "gcpsm" deliberately: its OpenBao role is read-only by design, it still
-# resolves bao:// references by prefix, and leaving it here halves the blast
-# radius of this flip.
-#
-# ROLLBACK: set this back to "gcpsm" and LEAVE OPENBAO_ROLE/OPENBAO_ADDR SET.
-# Any row already migrated still carries a bao:// reference and still routes
-# to OpenBao; dropping the role would make those credentials unresolvable.
-# On the next save, MaybeRewrap migrates such a row back to gsm://.
+# Application/provider credentials use OpenBao by default. The admin role can
+# write its tenant subtree; the storefront role remains read-only. Preserve
+# OpenBao configuration and bao:// references during any image rollback.
 carrierSecretStore: "bao"
 gcpProjectId: "tesseracthub-480811"
 # Merchant device push (mobile-admin). Empty topic = publishing off.
