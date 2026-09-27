@@ -1,5 +1,12 @@
 # `onboarding-service` — the platform onboarding API and console
 
+> Storage policy update (2026-09-27): new product application credentials must
+> default to OpenBao with product-prefixed identifiers. GCP is reserved for
+> critical platform/bootstrap/recovery credentials. GCP-writing flows below
+> describe legacy behavior that must be migrated in the implementation; do not
+> copy them into new features. See [the policy](application-secret-policy.md).
+
+
 `https://onboard.tesserix.app` — one API that creates organizations, onboards
 products to them, and lets a customer connect their own SSO. A Next.js console
 on the same host for the platform team, and the identical REST surface for
