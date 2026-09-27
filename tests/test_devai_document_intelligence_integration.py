@@ -20,7 +20,8 @@ def test_devai_uses_a_kora_dev_only_ocr_signing_key_and_sandbox_endpoint() -> No
     assert secret["spec"]["data"] == [
         {
             "secretKey": "DEVAI_DOCUMENT_INTELLIGENCE_SIGNING_KEY",
-            "remoteRef": {"key": "dev-kora-document-intelligence-signing-key"},
+            "remoteRef": {"key": "kora-development/app/kora-document-intelligence-signing-key", "property": "value"},
+            "sourceRef": {"storeRef": {"name": "openbao-kora-development", "kind": "SecretStore"}},
         }
     ]
     helpers = DEVAI_HELPERS.read_text()

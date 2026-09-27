@@ -284,6 +284,16 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: company-kora-key-metadata
+      hcl: |
+        path "kv/metadata/kora/app/kora-gemini-api-key" { capabilities = ["read"] }
+        path "kv/metadata/kora/app/kora-openai-api-key" { capabilities = ["read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
+    - name: evals-onboarding-writer
+      hcl: |
+        path "kv/data/kora/app/kora-langfuse-public-key" { capabilities = ["create", "read", "update"] }
+        path "kv/data/kora/app/kora-langfuse-secret-key" { capabilities = ["create", "read", "update"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-kora-agentgateway-system-production
       hcl: |
         path "kv/data/kora/app/kora-ai-agents-api-key" { capabilities = ["read"] }
@@ -337,42 +347,6 @@ bootstrap:
       hcl: |
         path "kv/data/kora/app/kora-api-platform-admin" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-bff-internal-hmac-key" { capabilities = ["read"] }
-    - name: kora-migrate-reviewed
-      hcl: |
-        path "kv/data/kora-development/app/kora-document-intelligence-signing-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora-development/app/kora-langfuse-org-public-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora-development/app/kora-langfuse-org-secret-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora-development/app/kora-langfuse-public-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora-development/app/kora-langfuse-secret-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora-development/app/kora-ocr-workload-identity-keys" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-ai-agents-api-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-ai-gateway-api-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-api-platform-admin" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-apple-key-id" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-apple-private-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-apple-team-id" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-bff-internal-hmac-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-database-url" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-expo-access-token" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-gemini-api-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-langfuse-org-public-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-langfuse-org-secret-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-langfuse-public-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-langfuse-secret-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-mcp-internal-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-mcp-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-ocr-workload-identity-keys" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-openai-api-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-postgresql-password" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-registry-deploy-key" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-registry-deploy-key-sha256" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-sandbox-anonymization-salt" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-sandbox-reader-password" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-sandbox-sync-source-url" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-sandbox-sync-target-url" { capabilities = ["create", "read"] }
-        path "kv/data/kora/app/kora-vertex-api-key" { capabilities = ["create", "read"] }
-        path "auth/token/lookup-self" { capabilities = ["read"] }
-        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-blog-tesserix-production
       hcl: |
         path "kv/data/blog/app/blog-mongodb-uri" { capabilities = ["read"] }
@@ -595,6 +569,16 @@ bootstrap:
         path "kv/data/roamie/app/roamie-travel-mcp-key" { capabilities = ["read"] }
 
   kubernetesRoles:
+    - name: company-kora-key-metadata
+      serviceAccounts: ["company"]
+      namespaces: ["tesserix"]
+      policies: ["company-kora-key-metadata"]
+      ttl: 5m
+    - name: evals-onboarding-writer
+      serviceAccounts: ["evals-onboarding-operator"]
+      namespaces: ["evals-operator"]
+      policies: ["evals-onboarding-writer"]
+      ttl: 5m
     - name: read-kora-agentgateway-system-production
       serviceAccounts: ["kora-production-reader"]
       namespaces: ["agentgateway-system"]
@@ -644,11 +628,6 @@ bootstrap:
       serviceAccounts: ["kora-production-reader"]
       namespaces: ["tesserix"]
       policies: ["read-kora-tesserix-production"]
-      ttl: 15m
-    - name: kora-migrate-reviewed
-      serviceAccounts: ["kora-migration-writer"]
-      namespaces: ["openbao"]
-      policies: ["kora-migrate-reviewed"]
       ttl: 15m
     - name: read-blog-tesserix-production
       serviceAccounts: ["blog-production-reader"]

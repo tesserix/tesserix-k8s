@@ -114,6 +114,11 @@ spec:
   policyTypes: [Ingress, Egress]
   ingress: []
   egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: openbao}}
+          podSelector: {matchLabels: {app.kubernetes.io/name: openbao}}
+      ports:
+        - {protocol: TCP, port: 8200}
     # GKE NodeLocal DNS is host-networked and is not selected by namespace peers.
     - to:
         - ipBlock: {cidr: 10.30.0.10/32}
@@ -185,6 +190,7 @@ spec:
             - --langfuse-url=http://langfuse-web.observability.svc.cluster.local:3000
             - --gcp-project=tesseracthub-480811
             - --secret-prefix=prod-
+            - --openbao-products=kora
             - --evals-db-url=postgres://grader@global-postgres-pooler-rw.global.svc.cluster.local:5432/evals_db?sslmode=prefer
           ports: [{name: healthz, containerPort: 8081}]
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: [ALL]}}
