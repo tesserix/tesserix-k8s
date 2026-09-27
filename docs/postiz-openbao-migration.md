@@ -30,3 +30,18 @@ after deletion recovery requires the KMS-encrypted archive and key.
 The credentials are protected against cross-namespace reads by Kubernetes auth
 and exact-path ACLs. Logs and repository files contain no payloads. No new
 persistent workloads are needed; the additional KV records have negligible cost.
+
+## Reviewed cutover
+
+All 33 source records are captured in the verified recovery archive:
+`gs://tesseract-prod-backups-in/openbao/postiz-migration/20260927T140208Z/gcp-sources.json.gz.kms`.
+Sixteen have no versions at all; they are empty shells, not missing payloads.
+The other seventeen sources include all enabled historical versions, metadata
+and IAM. Authenticated API integration reads, `SELECT 1` through the deployed
+Prisma client, and authenticated R2 object listing passed before cutover.
+
+The consumer change preserves the two existing Secret targets and all sixteen
+bindings while selecting `openbao-postiz-production`. Registry access remains
+on its platform store. Optional-provider examples also use OpenBao paths.
+Temporary writer configuration is removed after successful staging. Bootstrap
+only upserts roles, so live role/policy retirement must additionally be verified.
