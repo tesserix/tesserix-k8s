@@ -30,3 +30,14 @@ def test_all_reviewed_live_bindings_render_with_namespaced_openbao_sources():
         source=c['source'];dev=source.startswith('dev-');name=source.removeprefix('prod-').removeprefix('dev-').replace('agentic-registry-kora-','kora-registry-').replace('support-platform-kora-','kora-')
         assert entry['remoteRef']=={'key':('kora-development' if dev else 'kora')+'/app/'+name,'property':'value'},c
         assert entry.get('sourceRef',{}).get('storeRef',secret['spec']['secretStoreRef'])=={'name':'openbao-kora-'+('development' if dev else 'production'),'kind':'SecretStore'},c
+
+
+def test_langfuse_env_consumers_trim_transport_whitespace():
+    docs = list(yaml.safe_load_all((ROOT/'external-secrets/prod/devai/externalsecret.yaml').read_text()))
+    secret = next(d for d in docs if d and d['metadata']['name']=='devai-langfuse-secrets')
+    template = secret['spec']['target']['template']
+    assert template['engineVersion'] == 'v2'
+    assert template['data'] == {
+        'DEVAI_LANGFUSE_PUBLIC_KEY': '{{ .DEVAI_LANGFUSE_PUBLIC_KEY | trim }}',
+        'DEVAI_LANGFUSE_SECRET_KEY': '{{ .DEVAI_LANGFUSE_SECRET_KEY | trim }}',
+    }

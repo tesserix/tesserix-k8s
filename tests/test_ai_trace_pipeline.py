@@ -155,7 +155,7 @@ def test_ingest_builds_basic_auth_only_for_enabled_product_routes() -> None:
     )
     template = secret["spec"]["target"]["template"]
     assert template["engineVersion"] == "v2"
-    assert template["data"]["auth"] == '{{ printf "%s:%s" .publicKey .secretKey | b64enc }}'
+    assert template["data"]["auth"] == '{{ printf "%s:%s" (.publicKey | trim) (.secretKey | trim) | b64enc }}'
     assert deployment["spec"]["template"]["spec"]["nodeSelector"] == {"workload": "infrastructure"}
 
     service_account = resource(docs, "ServiceAccount", "otel-ingest-secrets")
