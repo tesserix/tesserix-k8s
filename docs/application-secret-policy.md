@@ -21,3 +21,20 @@ This policy supersedes older guidance that placed all product-owned credentials
 in GCP Secret Manager. Historical runbooks describe their original deployment;
 they do not authorize new GCP application secrets. Existing runtime producers
 must be migrated and tested before their sources are retired.
+
+## Terraform provisioning guard
+
+The storage and legacy app-secrets stacks freeze the reviewed production GCP
+identifier inventory while migration continues. New entries are rejected unless
+`platform_exception_reason` explicitly explains a critical shared platform,
+bootstrap or recovery dependency (20–256 characters). The reason is stored as
+`tesserix.io/platform-secret-reason` metadata; never put credential values there.
+Product database passwords, signing keys and provider credentials do not qualify.
+Use the OpenBao scaffold and product namespace reader instead.
+
+This guard preserves existing unmigrated resources; it does not approve them as
+permanent platform exceptions. Retire their declarations alongside migration.
+Already-migrated fe3dr database and Kora development signing sources are excluded
+from resource, version and IAM loops so old tfvars cannot recreate them. Do not
+apply unrelated Terraform drift during a secret migration; review the actual
+plan and require only the scoped, intended actions.

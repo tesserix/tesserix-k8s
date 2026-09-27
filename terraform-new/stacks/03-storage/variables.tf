@@ -206,14 +206,15 @@ variable "remote_docker_repositories" {
 # =============================================================================
 
 variable "secrets" {
-  description = "Secret Manager secrets to create"
+  description = "Retained platform secrets only; new application credentials belong in OpenBao. New platform exceptions require a documented reason."
   type = list(object({
-    secret_id       = string
-    labels          = optional(map(string), {})
-    annotations     = optional(map(string), {})
-    expire_time     = optional(string)
-    ttl             = optional(string)
-    version_aliases = optional(map(string))
+    platform_exception_reason = optional(string, "")
+    secret_id                 = string
+    labels                    = optional(map(string), {})
+    annotations               = optional(map(string), {})
+    expire_time               = optional(string)
+    ttl                       = optional(string)
+    version_aliases           = optional(map(string))
     replication_locations = optional(list(object({
       location     = string
       kms_key_name = optional(string)
@@ -230,4 +231,112 @@ variable "secrets" {
     })), [])
   }))
   default = []
+
+  validation {
+    condition = alltrue([
+      for secret in var.secrets : contains([
+        "dev-kora-document-intelligence-signing-key",
+        "prod-admin-init-secret",
+        "prod-bookkeeping-postgresql-password",
+        "prod-cloudflare-api-token",
+        "prod-customer-api-keys",
+        "prod-customer-credentials",
+        "prod-customer-tenant-configs",
+        "prod-db-password",
+        "prod-encryption-key",
+        "prod-fanzone-admin-init-secret",
+        "prod-fanzone-auth-database-url",
+        "prod-fanzone-cricketdata-api-key",
+        "prod-fanzone-encryption-key",
+        "prod-fanzone-internal-api-key",
+        "prod-fanzone-jwt-refresh-secret",
+        "prod-fanzone-jwt-secret",
+        "prod-fanzone-klipy-api-key",
+        "prod-fanzone-mongodb-url",
+        "prod-fanzone-mysportsfeeds-api-key",
+        "prod-fanzone-oauth-google-client-id",
+        "prod-fanzone-oauth-google-client-secret",
+        "prod-fanzone-oauth-meta-client-id",
+        "prod-fanzone-oauth-meta-client-secret",
+        "prod-fanzone-oauth-twitter-client-id",
+        "prod-fanzone-oauth-twitter-client-secret",
+        "prod-fanzone-postgresql-password",
+        "prod-fanzone-postgresql-url",
+        "prod-fanzone-session-secret",
+        "prod-fanzone-twilio-account-sid",
+        "prod-fanzone-twilio-auth-token",
+        "prod-fanzone-twilio-service-sid",
+        "prod-fcm-credentials",
+        "prod-firebase-sa-key",
+        "prod-ghcr-token",
+        "prod-ghcr-username",
+        "prod-global-postgresql-password",
+        "prod-google-client-id",
+        "prod-google-client-secret",
+        "prod-homechef-postgresql-password",
+        "prod-infra-db-credentials",
+        "prod-infra-encryption-keys",
+        "prod-infra-jwt-secrets",
+        "prod-jwt-refresh-secret",
+        "prod-jwt-secret",
+        "prod-location-service-google-api-key",
+        "prod-location-service-locationiq-api-key",
+        "prod-location-service-mapbox-token",
+        "prod-maps-api-key",
+        "prod-marketplace-api-key",
+        "prod-marketplace-encryption-key",
+        "prod-marketplace-google-translate-api-key",
+        "prod-marketplace-jwt-secret",
+        "prod-marketplace-postgresql-password",
+        "prod-mautic-api-password",
+        "prod-mp-admin-client-secret",
+        "prod-mp-admin-csrf-secret",
+        "prod-mp-auth-bff-cookie-encryption-key",
+        "prod-mp-auth-bff-csrf-secret",
+        "prod-mp-growthbook-api-key",
+        "prod-mp-identity-platform-smtp-password",
+        "prod-mp-openfga-db-uri",
+        "prod-mp-openfga-marketplace-store-id",
+        "prod-mp-openfga-platform-store-id",
+        "prod-mp-openfga-preshared-key",
+        "prod-mp-platform-client-secret",
+        "prod-mp-shared-internal-service-key",
+        "prod-mp-storefront-client-secret",
+        "prod-mp-stripe-secret-key",
+        "prod-mp-stripe-webhook-secret",
+        "prod-mp-verification-encryption-key",
+        "prod-openbao-recovery-keys",
+        "prod-postal-admin-credentials",
+        "prod-postal-api-key",
+        "prod-postgresql-bookkeeping-ca-cert",
+        "prod-postgresql-bookkeeping-server-cert",
+        "prod-postgresql-bookkeeping-server-key",
+        "prod-postgresql-ca-cert",
+        "prod-postgresql-global-ca-cert",
+        "prod-postgresql-global-server-cert",
+        "prod-postgresql-global-server-key",
+        "prod-postgresql-marketplace-ca-cert",
+        "prod-postgresql-marketplace-server-cert",
+        "prod-postgresql-marketplace-server-key",
+        "prod-postgresql-server-cert",
+        "prod-postgresql-server-key",
+        "prod-rapidapi-key",
+        "prod-razorpay-key",
+        "prod-sendgrid-api-key",
+        "prod-ses-smtp-password",
+        "prod-ses-smtp-relay-password",
+        "prod-ses-smtp-relay-username",
+        "prod-ses-smtp-username",
+        "prod-stripe-key",
+        "prod-thirdparty-email",
+        "prod-thirdparty-messaging",
+        "prod-thirdparty-payment",
+        "prod-typesense-api-key",
+        "prod-verification-api-key",
+        "prod-verification-email-api-key",
+        "prod-verification-encryption-key"
+      ], secret.secret_id) || (length(trimspace(secret.platform_exception_reason)) >= 20 && length(secret.platform_exception_reason) <= 256)
+    ])
+    error_message = "Application secrets must use OpenBao. A new critical platform/bootstrap/recovery secret requires platform_exception_reason (20-256 characters); never include credential values. Existing legacy IDs are frozen pending migration."
+  }
 }
