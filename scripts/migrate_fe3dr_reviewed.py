@@ -142,9 +142,9 @@ def policy_for(plan):
     )
 
 
-def stage(plan, bao, account, record):
+def stage(plan, bao, account, record, *, policy=POLICY, target_namespace="homechef"):
     try:
-        validate_token(bao.request("GET", "auth/token/lookup-self")["data"], POLICY)
+        validate_token(bao.request("GET", "auth/token/lookup-self")["data"], policy)
         actual = (
             gcloud("auth", "list", "--filter=status:ACTIVE", "--format=value(account)")
             .decode()
@@ -152,7 +152,9 @@ def stage(plan, bao, account, record):
         )
         if actual != account:
             raise MigrationError("Active account differs from expected account")
-        print(f"Account: {account}; project: {PROJECT}; target namespaces: homechef")
+        print(
+            f"Account: {account}; project: {PROJECT}; target namespace: {target_namespace}"
+        )
         for item in plan:
             source, version = item["source"], item["version"]
             metadata = json.loads(

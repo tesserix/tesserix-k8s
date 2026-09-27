@@ -5,6 +5,9 @@ locals {
   releases = {
     for f in fileset(local.registry_dir, "*.yaml") : trimsuffix(f, ".yaml") => yamldecode(file("${local.registry_dir}/${f}"))
   }
+  gcp_secret_releases = {
+    for name, r in local.releases : name => r if try(r.secretBackend, "gcp") != "openbao"
+  }
   products = toset([for r in local.releases : r.product])
 
   # purpose => retentionDays key
@@ -157,18 +160,39 @@ resource "google_project_iam_member" "worker_document_ai" {
   member  = google_service_account.ocr[each.key].member
 }
 
-resource "random_password" "database" {
-  for_each = local.releases
+removed {
+  from = random_password.database
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = google_secret_manager_secret.database
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = google_secret_manager_secret_version.database
+  lifecycle {
+    destroy = false
+  }
+}
+
+resource "random_password" "database_gcp" {
+  for_each = local.gcp_secret_releases
 
   length  = 40
   special = false
 }
 
-resource "google_secret_manager_secret" "database" {
-  for_each = local.releases
+resource "google_secret_manager_secret" "database_gcp" {
+  for_each = local.gcp_secret_releases
 
   secret_id = "${each.value.environment}-document-intelligence-${each.value.product}-db-password"
-  labels    = { app = "document-intelligence", product = each.value.product, purpose = "database" }
+  labels    = { app = "document-intelligence", product = each.value.product, purpose = "database_gcp" }
   replication {
     auto {}
   }
@@ -177,9 +201,9 @@ resource "google_secret_manager_secret" "database" {
   }
 }
 
-resource "google_secret_manager_secret_version" "database" {
-  for_each = local.releases
+resource "google_secret_manager_secret_version" "database_gcp" {
+  for_each = local.gcp_secret_releases
 
-  secret      = google_secret_manager_secret.database[each.key].id
-  secret_data = random_password.database[each.key].result
+  secret      = google_secret_manager_secret.database_gcp[each.key].id
+  secret_data = random_password.database_gcp[each.key].result
 }

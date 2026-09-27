@@ -5,3 +5,7 @@
 # fe3dr secrets
 
 Use in-cluster OpenBao as the default destination for fe3dr application secrets, with identifiers starting `fe3dr-`. Keep platform bootstrap, infrastructure and recovery secrets in GCP Secret Manager. Track remaining consumer cutovers and shared-secret coordination in issue #1159.
+
+# Roamie secrets
+
+Use in-cluster OpenBao for Roamie application secrets, with `roamie-` identifiers and separate production/development paths. Keep platform bootstrap, infrastructure and recovery secrets in GCP Secret Manager. See `docs/roamie-openbao-migration.md` and issue #1176.

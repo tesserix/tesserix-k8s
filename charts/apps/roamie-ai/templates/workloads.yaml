@@ -24,7 +24,7 @@ spec:
   refreshInterval: 1h
   secretStoreRef:
     name: {{ $.Values.secretStore }}
-    kind: ClusterSecretStore
+    kind: SecretStore
   target:
     name: {{ $name }}
   data:
@@ -41,6 +41,7 @@ spec:
       {{- else }}
       remoteRef:
         key: {{ $remote }}
+        property: value
       {{- end }}
     {{- end }}
 ---
@@ -58,6 +59,8 @@ spec:
       app.kubernetes.io/name: {{ $name }}
   template:
     metadata:
+      annotations:
+        secrets.tesserix.app/source-revision: roamie-openbao-v1
       labels:
         app.kubernetes.io/name: {{ $name }}
         app.kubernetes.io/part-of: roamie
