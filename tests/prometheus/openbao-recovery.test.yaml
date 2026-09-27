@@ -1,0 +1,37 @@
+rule_files:
+- openbao-recovery-rules.yaml
+evaluation_interval: 1m
+tests:
+- interval: 1m
+  input_series:
+  - series: kube_job_created{namespace="openbao-recovery",job_name="openbao-verified-backup-old"}
+    values: 100+0x20
+  - series: kube_job_failed{namespace="openbao-recovery",job_name="openbao-verified-backup-old"}
+    values: 1+0x20
+  - series: kube_job_status_succeeded{namespace="openbao-recovery",job_name="openbao-verified-backup-old"}
+    values: 0+0x20
+  - series: kube_job_created{namespace="openbao-recovery",job_name="openbao-verified-backup-new"}
+    values: 200+0x20
+  - series: kube_job_failed{namespace="openbao-recovery",job_name="openbao-verified-backup-new"}
+    values: 0+0x20
+  - series: kube_job_status_succeeded{namespace="openbao-recovery",job_name="openbao-verified-backup-new"}
+    values: 1+0x20
+  - series: kube_job_created{namespace="openbao-recovery",job_name="openbao-restore-test-new"}
+    values: 300+0x20
+  - series: kube_job_failed{namespace="openbao-recovery",job_name="openbao-restore-test-new"}
+    values: 1+0x20
+  - series: kube_job_status_succeeded{namespace="openbao-recovery",job_name="openbao-restore-test-new"}
+    values: 0+0x20
+  alert_rule_test:
+  - eval_time: 10m
+    alertname: OpenBaoVerifiedBackupFailed
+    exp_alerts: []
+  - eval_time: 10m
+    alertname: OpenBaoRestoreTestFailed
+    exp_alerts:
+    - exp_labels:
+        severity: critical
+        owner: platform
+      exp_annotations:
+        summary: OpenBao restore-test failed after its last successful attempt
+        runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/openbao-recovery.md

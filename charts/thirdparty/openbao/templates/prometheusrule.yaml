@@ -89,15 +89,21 @@ spec:
             description: "The last successful snapshot is older than {{ div .Values.alerts.snapshotStaleSeconds 3600 }}h against a daily schedule."
 {{- end }}
 {{- if .Values.recovery.enabled }}
-        - alert: OpenBaoVerifiedBackupFailed
-          expr: kube_job_failed{namespace="openbao-recovery", job_name=~"openbao-(verified-backup|restore-test)-.*"} > 0
+{{- range $operation, $alert := dict "verified-backup" "OpenBaoVerifiedBackupFailed" "restore-test" "OpenBaoRestoreTestFailed" }}
+        - alert: {{ $alert }}
+          expr: >-
+            max(kube_job_created{namespace="openbao-recovery", job_name=~"openbao-{{ $operation }}-.*"}
+            and on(namespace, job_name) (kube_job_failed{namespace="openbao-recovery"} > 0))
+            > (max(kube_job_created{namespace="openbao-recovery", job_name=~"openbao-{{ $operation }}-.*"}
+            and on(namespace, job_name) (kube_job_status_succeeded{namespace="openbao-recovery"} > 0)) or vector(0))
           for: 5m
           labels:
             severity: critical
             owner: platform
           annotations:
-            summary: "OpenBao backup or isolated restore verification failed"
+            summary: "OpenBao {{ $operation }} failed after its last successful attempt"
             runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/openbao-recovery.md
+{{- end }}
         - alert: OpenBaoVerifiedBackupStale
           expr: (time() - max(kube_job_status_completion_time{namespace="openbao-recovery", job_name=~"openbao-verified-backup-.*"}) > 50400) or absent(kube_job_status_completion_time{namespace="openbao-recovery", job_name=~"openbao-verified-backup-.*"})
           for: 15m
