@@ -23,8 +23,11 @@ The identity does not automount into workload pods. Namespace administrators
 already control the resulting Kubernetes Secrets; the new store does not grant
 access to the rest of the API prefix or other consumers' credentials.
 
-OpenBao bootstrap persists the policies and roles; the same chart owns the
-reader ServiceAccounts and `openbao-fe3dr-shared` namespaced stores. ESO's
+OpenBao bootstrap persists the policies and roles. The
+`external-secrets-resources` application owns the reader ServiceAccounts and
+`openbao-fe3dr-shared` namespaced stores under its existing infrastructure
+project permissions. The security project intentionally cannot deploy to these
+consumer namespaces; do not widen it or put these stores in the OpenBao chart. ESO's
 existing network route to OpenBao is sufficient; consumers get no direct network
 grant. Existing API/BFF stores retain their own prefixes, including the BFF HMAC
 copy. This introduces five token identities and bounded per-refresh reads, not

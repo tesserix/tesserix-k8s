@@ -13,8 +13,24 @@ READERS = {
 
 
 def test_cross_namespace_consumers_have_only_exact_read_paths():
-    docs = render("charts/thirdparty/openbao")
-    config = resource(docs, "ConfigMap", "openbao-bootstrap")["data"]
+    import pathlib
+    import subprocess
+    import yaml
+
+    root = pathlib.Path(__file__).parents[1]
+    bao_docs = render("charts/thirdparty/openbao")
+    assert not any(
+        d["metadata"].get("name") == "openbao-fe3dr-shared" for d in bao_docs
+    )
+    docs = list(
+        yaml.safe_load_all(
+            subprocess.check_output(
+                ["kubectl", "kustomize", str(root / "external-secrets/prod")],
+                text=True,
+            )
+        )
+    )
+    config = resource(bao_docs, "ConfigMap", "openbao-bootstrap")["data"]
     for namespace, suffixes in READERS.items():
         role_name = "read-fe3dr-" + namespace
         policy = config["policy-" + role_name + ".hcl"]
@@ -87,3 +103,34 @@ def test_namespace_manifests_no_longer_reference_coordinated_gcp_sources():
                 )
                 switched.append(entry)
     assert len(switched) == 5
+
+
+def test_reader_owner_project_permits_every_destination_and_resource_kind():
+    import pathlib
+    import yaml
+
+    root = pathlib.Path(__file__).parents[1]
+    application = yaml.safe_load(
+        (
+            root / "argocd/prod/infrastructure/external-secrets-resources.yaml"
+        ).read_text()
+    )
+    assert application["spec"]["project"] == "infrastructure"
+    project = yaml.safe_load(
+        (root / "argocd/prod/projects/infrastructure.yaml").read_text()
+    )["spec"]
+    for namespace in READERS:
+        assert any(
+            d["namespace"] in ("*", namespace)
+            and d["server"] in ("*", "https://kubernetes.default.svc")
+            for d in project["destinations"]
+        )
+    for group, kind in [("", "ServiceAccount"), ("external-secrets.io", "SecretStore")]:
+        whitelist = project.get("namespaceResourceWhitelist")
+        assert not whitelist or any(
+            r["group"] in ("*", group) and r["kind"] in ("*", kind) for r in whitelist
+        )
+        assert not any(
+            r["group"] in ("*", group) and r["kind"] in ("*", kind)
+            for r in project.get("namespaceResourceBlacklist", [])
+        )
