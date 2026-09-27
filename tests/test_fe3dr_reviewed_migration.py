@@ -70,3 +70,30 @@ def test_reviewed_bff_identity_entries_use_product_prefixed_paths(suffix):
     policy = batch.policy_for(plan)
     assert 'path "kv/data/homechef/homechef-auth-bff/fe3dr-' + suffix + '"' in policy
     assert '"update"' not in policy.split('path "auth/token/lookup-self"')[0]
+
+
+@pytest.mark.parametrize("source,suffix", [
+    ("prod-homechef-bff-backup-code-hmac-key", "bff-backup-code-hmac-key"),
+    ("prod-homechef-bff-csrf-secret", "bff-csrf-secret"),
+    ("prod-homechef-bff-session-secret", "bff-session-secret"),
+    ("prod-homechef-bff-totp-encryption-key", "bff-totp-encryption-key"),
+    ("prod-homechef-keycloak-client-secret", "keycloak-client-secret"),
+    ("prod-homechef-internal-keycloak-client-secret", "internal-keycloak-client-secret"),
+    ("prod-homechef-razorpay-key-id", "razorpay-key-id"),
+    ("prod-homechef-razorpay-key-secret", "razorpay-key-secret"),
+    ("prod-homechef-razorpay-webhook-secret", "razorpay-webhook-secret"),
+    ("prod-homechef-razorpay-test-key-id", "razorpay-test-key-id"),
+    ("prod-homechef-razorpay-test-key-secret", "razorpay-test-key-secret"),
+    ("prod-homechef-razorpay-test-webhook-secret", "razorpay-test-webhook-secret"),
+    ("prod-homechef-google-places-api-key", "google-places-api-key"),
+    ("prod-homechef-postgresql-url", "postgresql-url"),
+    ("shadowfax-api-token", "shadowfax-api-token"),
+])
+def test_reviewed_legacy_app_names_can_be_staged_without_platform_access(source, suffix):
+    assert batch.identifier(source) == "fe3dr-" + suffix
+    app = "homechef-auth-bff" if suffix.startswith("bff-") else "homechef-api"
+    plan = [{"source": source, "version": "1", "targets": [f"homechef/{app}/fe3dr-{suffix}"]}]
+    policy = batch.policy_for(plan)
+    assert 'capabilities = ["create", "read"]' in policy
+    assert "*" not in policy
+    assert '"delete"' not in policy
