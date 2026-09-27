@@ -914,7 +914,7 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             hbone_rule["to"][0]["ipBlock"]["cidr"],
         )
 
-    def test_devai_temporal_payload_key_is_sourced_from_secret_manager(self):
+    def test_devai_temporal_payload_key_is_sourced_from_openbao(self):
         documents = list(
             yaml.safe_load_all(
                 (ROOT / "external-secrets/prod/devai/externalsecret.yaml").read_text()
@@ -926,7 +926,7 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
             for item in secret["spec"]["data"]
         }
         self.assertEqual(
-            "prod-devai-temporal-payload-key",
+            "devai/app/devai-temporal-payload-key",
             mappings["DEVAI_TEMPORAL_PAYLOAD_ENCRYPTION_KEY"],
         )
 

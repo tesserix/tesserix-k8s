@@ -284,6 +284,10 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: read-devai-fanzone-production
+      hcl: |
+        path "kv/data/devai/app/devai-openai-api-key" { capabilities = ["read"] }
+        path "kv/data/devai/app/devai-gemini-api-key" { capabilities = ["read"] }
     - name: read-devai-agentgateway-system-production
       hcl: |
         path "kv/data/devai/app/devai-anthropic-api-key" { capabilities = ["read"] }
@@ -339,6 +343,8 @@ bootstrap:
         path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: evals-onboarding-writer
       hcl: |
+        path "kv/data/devai/app/devai-langfuse-public-key" { capabilities = ["create", "read", "update"] }
+        path "kv/data/devai/app/devai-langfuse-secret-key" { capabilities = ["create", "read", "update"] }
         path "kv/data/kora/app/kora-langfuse-public-key" { capabilities = ["create", "read", "update"] }
         path "kv/data/kora/app/kora-langfuse-secret-key" { capabilities = ["create", "read", "update"] }
         path "auth/token/revoke-self" { capabilities = ["update"] }
@@ -617,6 +623,11 @@ bootstrap:
         path "kv/data/roamie/app/roamie-travel-mcp-key" { capabilities = ["read"] }
 
   kubernetesRoles:
+    - name: read-devai-fanzone-production
+      serviceAccounts: ["devai-production-reader"]
+      namespaces: ["fanzone"]
+      policies: ["read-devai-fanzone-production"]
+      ttl: 15m
     - name: read-devai-agentgateway-system-production
       serviceAccounts: ["devai-production-reader"]
       namespaces: ["agentgateway-system"]
