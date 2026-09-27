@@ -75,7 +75,9 @@ class OpenBao:
             if (
                 error.code == 404
                 and method == "GET"
-                and path.startswith("kv/data/homechef/")
+                and path.startswith(
+                    ("kv/data/homechef/", "kv/data/homechef-development/")
+                )
             ):
                 return None
             raise MigrationError(

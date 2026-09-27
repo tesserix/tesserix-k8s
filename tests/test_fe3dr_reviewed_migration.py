@@ -144,3 +144,27 @@ def test_shared_application_sources_have_exact_canonical_targets(suffix):
             }
         ]
     )
+
+
+def test_development_upi_requires_separate_environment_prefix():
+    source = "dev-homechef-vendor-payment-00000000-0000-0000-0000-000000000001-upi-id"
+    name = "fe3dr-vendor-payment-00000000-0000-0000-0000-000000000001-upi-id"
+    batch.validate_plan(
+        [
+            {
+                "source": source,
+                "version": "1",
+                "targets": ["homechef-development/homechef-api/" + name],
+            }
+        ]
+    )
+    with pytest.raises(ValueError):
+        batch.validate_plan(
+            [
+                {
+                    "source": source,
+                    "version": "1",
+                    "targets": ["homechef/homechef-api/" + name],
+                }
+            ]
+        )
