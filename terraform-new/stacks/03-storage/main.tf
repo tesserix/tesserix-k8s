@@ -166,7 +166,7 @@ resource "google_storage_bucket_iam_member" "members" {
 # =============================================================================
 
 resource "google_secret_manager_secret" "secrets" {
-  for_each = { for secret in var.secrets : secret.secret_id => secret }
+  for_each = { for secret in local.gcp_secrets : secret.secret_id => secret }
 
   secret_id   = each.value.secret_id
   project     = var.project_id
@@ -231,7 +231,7 @@ resource "google_secret_manager_secret" "secrets" {
 # Secret versions
 resource "google_secret_manager_secret_version" "versions" {
   for_each = {
-    for secret in var.secrets : secret.secret_id => secret
+    for secret in local.gcp_secrets : secret.secret_id => secret
     if secret.secret_data != null
   }
 
@@ -413,6 +413,15 @@ resource "google_artifact_registry_repository" "docker_remote" {
 # =============================================================================
 
 locals {
+  retired_application_secret_ids = toset([
+    "prod-homechef-postgresql-password",
+    "dev-kora-document-intelligence-signing-key",
+  ])
+  gcp_secrets = [
+    for secret in var.secrets : secret
+    if !contains(local.retired_application_secret_ids, secret.secret_id)
+  ]
+
   bucket_cmek_keys = toset(compact([
     for bucket in var.buckets : bucket.kms_key_name
   ]))
@@ -428,7 +437,7 @@ locals {
   ])
 
   secret_iam_bindings = flatten([
-    for secret in var.secrets : [
+    for secret in local.gcp_secrets : [
       for binding in secret.iam_bindings : {
         secret_id = secret.secret_id
         role      = binding.role
