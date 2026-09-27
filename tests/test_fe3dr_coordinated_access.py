@@ -136,19 +136,48 @@ def test_reader_owner_project_permits_every_destination_and_resource_kind():
         )
 
 
-def test_postgres_remote_defaults_do_not_restore_old_atomic_data_on_sync():
+def test_postgres_remote_reference_preserves_openbao_mapping():
+    import pathlib
+    import subprocess
+    import yaml
+
+    root = pathlib.Path(__file__).parents[1]
+    docs = list(yaml.safe_load_all(subprocess.check_output(
+        ["kubectl", "kustomize", str(root / "external-secrets/prod")], text=True
+    )))
     secret = resource(
-        render("charts/apps/homechef-postgres"),
+        docs,
         "ExternalSecret",
         "homechef-postgres-app-credentials",
     )
     entry = secret["spec"]["data"][0]
     remote = entry["remoteRef"]
-    # RespectIgnoreDifferences reapplies ignored defaults to the atomic data list.
-    # Render the API defaults so normalization cannot restore the old GCP entry.
     assert remote["conversionStrategy"] == "Default"
     assert remote["decodingStrategy"] == "None"
     assert remote["metadataPolicy"] == "None"
     assert remote["key"] == "homechef/homechef-api/fe3dr-postgresql-password"
     assert remote["property"] == "value"
     assert entry["sourceRef"]["storeRef"]["name"] == "openbao-homechef-api"
+
+
+def test_postgres_secret_has_one_gitops_owner_without_atomic_list_restore():
+    import pathlib
+    import subprocess
+    import yaml
+
+    root = pathlib.Path(__file__).parents[1]
+    postgres = render("charts/apps/homechef-postgres")
+    assert not any(d["kind"] == "ExternalSecret" for d in postgres)
+    docs = list(yaml.safe_load_all(subprocess.check_output(
+        ["kubectl", "kustomize", str(root / "external-secrets/prod")], text=True
+    )))
+    secret = resource(docs, "ExternalSecret", "homechef-postgres-app-credentials")
+    assert secret["metadata"]["namespace"] == "homechef"
+    assert secret["spec"]["target"]["name"] == "homechef-postgres-app-credentials"
+    assert secret["spec"]["target"]["template"]["data"] == {
+        "username": "homechef", "password": "{{ .password | trim }}"
+    }
+    app = yaml.safe_load((root / "argocd/prod/infrastructure/external-secrets-resources.yaml").read_text())
+    assert "RespectIgnoreDifferences=true" not in app["spec"]["syncPolicy"]["syncOptions"]
+    old_app = yaml.safe_load((root / "argocd/prod/apps/homechef/homechef-postgres.yaml").read_text())
+    assert not old_app["spec"]["syncPolicy"]["automated"].get("prune", False)

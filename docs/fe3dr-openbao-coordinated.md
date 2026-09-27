@@ -54,3 +54,11 @@ After deletion, recreate sources from the recovery capture before reversing.
 Removing a bootstrap entry does not delete its persisted role/policy; explicitly
 retire grants after consumers are removed instead of assuming pruning revokes
 access. Keep critical KMS/bootstrap/platform/recovery secrets in GCP.
+
+The CNPG application credential ExternalSecret is also owned by
+`external-secrets-resources`, while the database cluster remains owned by
+`homechef-postgres`. Its `RespectIgnoreDifferences=true` synchronization restored
+the old atomic `spec.data` entry even with remote defaults explicit (#1163).
+Moving the secret owner avoids that behavior without relaxing CNPG protections.
+The old application has pruning disabled; ownership transfers in place without
+deleting the ExternalSecret or its target.
