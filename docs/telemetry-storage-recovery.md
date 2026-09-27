@@ -1,4 +1,4 @@
-# Telemetry storage recovery — pending production approval
+# Telemetry storage recovery
 
 Kora OpenBao acceptance found intermittent trace delivery. On 2026-09-27,
 both OTel gateway replicas reported full persistent queues. Redpanda reported
@@ -30,8 +30,8 @@ This is metadata for recovery, not a backup of queued telemetry.
 
 ## Approval and acceptance
 
-The PR remains unmerged until the user explicitly approves production storage
-expansion. Argo reconciles the five PVCs after merge. A disk expansion cannot be
+The user approved production storage expansion on 2026-09-27. PR #1198 merged
+as `4d451d14`, and Argo reconciled all five PVCs. A disk expansion cannot be
 rolled back by shrinking: keep expanded claims if application code is reverted.
 Do not use a Git revert that requests a smaller size.
 
@@ -45,3 +45,24 @@ no telemetry latency SLO has been established by this repair.
 If errors persist, inspect throughput, topic retention and persistent-queue
 compaction. Expansion does not authorize deleting queue contents or shortening
 retention. Kora GCP-source deletion and the next product remain gated on acceptance.
+
+## Verified recovery — 2026-09-27
+
+All three broker claims reached 80 GiB and both gateway claims reached 40 GiB,
+with no remaining resize conditions. All five Pod UIDs stayed unchanged and all
+five pods remained Ready. Both Argo applications are Synced/Healthy. Redpanda
+reports Healthy with no high-disk nodes or under-replicated partitions; broker 0
+filesystem usage fell from 88% to 44% after expansion.
+
+Six exact synthetic spans (three through each gateway) reached Langfuse v4 in
+6.81–10.78 seconds. A further span sent from the running Kora agents pod also
+arrived. AI queues are empty and the AI consumer group is Stable with zero lag.
+No disk-full or export-timeout messages appeared in the post-expansion check.
+The older metrics queue on gateway 0 is still draining: 4,081 to 4,014 batches
+between samples. Do not claim the historical backlog has fully drained; keep
+#1197 open for backlog and capacity follow-up.
+
+CI: 529 tests and 48 subtests passed, four pre-existing quarantines unchanged;
+chart lint, template validation, Argo validation and security scans passed.
+Private evidence includes expanded claim state, pre-expansion pod identities,
+metrics samples and six trace receipts in `/tmp/kora-telemetry-storage-evidence`.
