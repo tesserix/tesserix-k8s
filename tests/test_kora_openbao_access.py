@@ -48,3 +48,29 @@ def test_kora_readers_are_exact_path_read_only_and_namespace_bound():
         policy = config["policy-" + name + ".hcl"]
         assert set(re.findall(r'path "([^"]+)"', policy)) == {"kv/data/" + p for p in paths}
         assert set(re.findall(r"capabilities = \[([^]]+)\]", policy)) == {'"read"'}
+
+
+def test_kora_producer_and_console_have_disjoint_exact_permissions():
+    config = resource(render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap")["data"]
+    writer = config["policy-evals-onboarding-writer.hcl"]
+    assert set(re.findall(r'path "([^"]+)"', writer)) == {
+        "kv/data/kora/app/kora-langfuse-public-key",
+        "kv/data/kora/app/kora-langfuse-secret-key",
+        "auth/token/revoke-self",
+    }
+    metadata = config["policy-company-kora-key-metadata.hcl"]
+    assert "kv/data/" not in metadata
+    assert set(re.findall(r'path "([^"]+)"', metadata)) == {
+        "kv/metadata/kora/app/kora-gemini-api-key",
+        "kv/metadata/kora/app/kora-openai-api-key",
+        "auth/token/revoke-self",
+    }
+    assert not any("kora-migrate-reviewed" in key for key in config)
+    for name, namespace, account in [
+        ("company-kora-key-metadata", "tesserix", "company"),
+        ("evals-onboarding-writer", "evals-operator", "evals-onboarding-operator"),
+    ]:
+        role = json.loads(config["role-" + name + ".json"])
+        assert role["bound_service_account_namespaces"] == [namespace]
+        assert role["bound_service_account_names"] == [account]
+        assert role["token_policies"] == [name]

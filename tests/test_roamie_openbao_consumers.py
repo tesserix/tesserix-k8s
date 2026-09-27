@@ -67,7 +67,7 @@ def test_document_intelligence_keeps_development_and_production_separate():
         if d["kind"] == "ExternalSecret"
         and d["metadata"]["name"].endswith("api-identity")
     )
-    assert identity["spec"]["secretStoreRef"]["name"] == "gcp-secret-store"
+    assert identity["spec"]["secretStoreRef"]["name"] == "openbao-kora-development"
     extra = next(e for e in identity["spec"]["data"] if e["secretKey"] == "extra_0")
     assert extra["sourceRef"]["storeRef"] == {
         "name": "openbao-roamie-development",

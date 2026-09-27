@@ -145,9 +145,9 @@ def test_ingest_builds_basic_auth_only_for_enabled_product_routes() -> None:
         "name": "otel-ingest-langfuse-kora-dev", "key": "auth", "optional": True
     }
     secret = resource(docs, "ExternalSecret", "otel-ingest-langfuse-kora-dev")
-    assert secret["spec"]["secretStoreRef"] == {"kind": "SecretStore", "name": "otel-ingest-gcp"}
+    assert secret["spec"]["secretStoreRef"] == {"kind": "SecretStore", "name": "openbao-kora-development"}
     assert [d["remoteRef"]["key"] for d in secret["spec"]["data"]] == [
-        "dev-kora-langfuse-public-key", "dev-kora-langfuse-secret-key"
+        "kora-development/app/kora-langfuse-public-key", "kora-development/app/kora-langfuse-secret-key"
     ]
     assert all(
         document.get("metadata", {}).get("name") != "otel-ingest-langfuse-sre-prod"
