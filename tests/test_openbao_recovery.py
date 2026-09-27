@@ -353,3 +353,82 @@ def test_restore_identities_can_read_unseal_key_metadata_at_key_scope():
     assert 'role          = "roles/cloudkms.viewer"' in block
     assert "cryptoKeys/openbao-unseal-key" in block
     assert "for_each      = google_service_account.openbao_recovery" in block
+
+
+def test_legacy_schedule_is_suspended_after_verified_backup_cutover():
+    import subprocess
+
+    import yaml
+
+    docs = list(
+        yaml.safe_load_all(
+            subprocess.check_output(
+                [
+                    "helm",
+                    "template",
+                    "openbao",
+                    str(SCRIPT.parents[1]),
+                    "--namespace",
+                    "openbao",
+                ],
+                text=True,
+            )
+        )
+    )
+    legacy = next(
+        d
+        for d in docs
+        if d
+        and d["kind"] == "CronJob"
+        and d["metadata"]["name"] == "openbao-snapshot-backup"
+    )
+    assert legacy["spec"]["suspend"] is True
+
+
+def test_console_job_creation_requires_admission_policies_for_both_templates():
+    import subprocess
+
+    import yaml
+
+    docs = [
+        d
+        for d in yaml.safe_load_all(
+            subprocess.check_output(
+                [
+                    "helm",
+                    "template",
+                    "openbao",
+                    str(SCRIPT.parents[1]),
+                    "--namespace",
+                    "openbao",
+                ],
+                text=True,
+            )
+        )
+        if d
+    ]
+    policy = next(d for d in docs if d["kind"] == "ValidatingAdmissionPolicy")
+    assert policy["spec"]["failurePolicy"] == "Fail"
+    assert (
+        "system:serviceaccount:secret-service:secret-service-api"
+        in policy["spec"]["matchConditions"][0]["expression"]
+    )
+    bindings = [d for d in docs if d["kind"] == "ValidatingAdmissionPolicyBinding"]
+    assert {b["spec"]["paramRef"]["name"] for b in bindings} == {
+        "openbao-verified-backup",
+        "openbao-restore-test",
+    }
+    assert all(
+        b["spec"]["validationActions"] == ["Deny"]
+        and b["spec"]["paramRef"]["parameterNotFoundAction"] == "Deny"
+        for b in bindings
+    )
+    role = next(
+        d
+        for d in docs
+        if d["kind"] == "Role" and d["metadata"]["name"] == "openbao-console-recovery"
+    )
+    assert role["metadata"]["namespace"] == "openbao-recovery"
+    assert all(
+        "secrets" not in r["resources"] and "*" not in r["verbs"] for r in role["rules"]
+    )

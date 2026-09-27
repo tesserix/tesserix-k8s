@@ -1,13 +1,23 @@
 # OpenBao verified recovery
 
-Status: implementation prepared; production deployment and acceptance are pending.
-Infrastructure PR: https://github.com/tesserix/tesserix-k8s/pull/1181.
+Status: production backup/restore acceptance passed on 2026-09-27. Console
+integration is being prepared. Infrastructure: #1181; recovery jobs: #1182;
+key metadata permission required by auto-unseal: #1183.
 
-Validation on 2026-09-27: the replacement targeted Atlantis plan contains
-**12 additions, zero updates, zero deletions**. The recovery and related OpenBao
-consumer suites passed **64 tests**; strict mypy, Ruff and both affected Helm
-chart lints passed. Production OpenBao had three ready pods. No new resources
-have been applied and no live isolated restore has been run yet.
+Four successful backups restored in 19.851, 19.884, 16.056 and 17.363 seconds.
+The bucket contained exactly three snapshot objects and three matching catalog
+entries after the fourth success. An independent restore under the read-only
+restore-test identity passed in 18.595 seconds. A truncated local copy was rejected
+without changing the catalog. Both Fe3dr/HomeChef and Roamie readiness endpoints
+returned HTTP 200 afterward. The production mount inventory contained only KV,
+cubbyhole, identity and system engines.
+
+CI for #1182 passed 498 tests and 48 subtests; four existing quarantined tests
+remained excluded by the repository workflow. Runner tests, strict mypy, Ruff,
+and Helm lint also passed. Private rollout manifests and job evidence are stored
+under `/tmp/openbao-recovery-pre-rollout` on the operator workstation. The first
+failed drill exposed missing `cloudkms.cryptoKeys.get`; #1183 added metadata read
+permission scoped to the original unseal key for both recovery identities.
 
 ## Scope and recovery objectives
 
@@ -58,12 +68,12 @@ The current acceptance must explicitly confirm that this is safe.
 1. Review a Terraform plan restricted to the recovery resources. The initial
    full `03-storage` plan included unrelated changes and **11 deletions**; do not
    apply it. Review the replacement plan, not just a green Atlantis status.
-2. Obtain named approval for applying the dedicated bucket, backup key, recovery
+2. Approval was granted for applying the dedicated bucket, backup key, recovery
    identities and bindings, and deploying the recovery Helm resources.
 3. Capture the existing backup CronJob manifest privately before changing its
    schedule. Keep the old backup running throughout verification.
 4. Merge infrastructure and chart changes through their owning GitOps paths.
-   Set `recovery.enabled=true` after infrastructure exists. The default is false.
+   `recovery.enabled=true` is the current deployed setting.
 5. Verify production bootstrap applied `recovery-backup` and `snapshot-verify`
    roles, and confirm the OpenBao mount inventory is safe for isolated restoration.
 6. Run four backups sequentially, then an independent restore test of a retained
@@ -99,14 +109,17 @@ snapshot, marker nonce, root token, projected service account token, or server l
 
 ## Console integration contract
 
-Console integration is pending. Reuse the secret-service backend's existing
+Console application integration is pending. The recovery chart supplies a fail-closed
+admission policy and two fixed CronJob parameter bindings. Its namespace-scoped
+role grants only fixed-template reads and Job get/list/create; no Secret or pod-log
+access is granted. Reuse the secret-service backend's existing
 operator authentication and audit trail. Its GCS identity has catalog-only read
 permission, not snapshot download permission. Expose catalog metadata, backup
 status, and fixed backup/restore-test operations. Each mutating request needs
 operator authorization, CSRF protection and an idempotency key.
 
-Before granting Job creation to that backend, enforce the approved pod templates
-at Kubernetes admission. Namespace-scoped `create jobs` alone lets a compromised
+The approved pod templates are enforced at Kubernetes admission before the
+backend RoleBinding is reconciled. Namespace-scoped `create jobs` alone lets a compromised
 backend select a privileged recovery service account and arbitrary code. Do not
 ship a console button until this boundary has an enforced denial test.
 Production restore must not be exposed as an ordinary restore-test action.
@@ -131,5 +144,6 @@ application authentication and secret access before routing clients or resuming
 writers. Record operator, snapshot generation, approval and application checks.
 
 Rollback the scheduling/chart change through Git. Keep the new bucket and keys.
-The legacy backup schedule remains available during acceptance. No production
+The legacy backup schedule is suspended after successful acceptance and can be
+re-enabled through Git. No production
 Raft rollback is required to disable failed backup automation.
