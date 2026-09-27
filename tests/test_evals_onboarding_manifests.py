@@ -19,7 +19,7 @@ def resource(items: list[dict], kind: str, name: str) -> dict:
     return next(item for item in items if item["kind"] == kind and item["metadata"]["name"] == name)
 
 
-def test_operator_reaches_only_langfuse_web_and_global_pooler() -> None:
+def test_operator_reaches_only_langfuse_pooler_openbao_and_dns() -> None:
     policy = resource(documents(RESOURCES), "NetworkPolicy", "evals-onboarding-operator")
     assert policy["spec"]["policyTypes"] == ["Ingress", "Egress"]
     assert policy["spec"]["ingress"] == []
@@ -30,7 +30,7 @@ def test_operator_reaches_only_langfuse_web_and_global_pooler() -> None:
         if "namespaceSelector" in peer
         for port in rule["ports"]
     }
-    assert namespaced == {("kube-system", 53), ("observability", 3000), ("global", 5432)}
+    assert namespaced == {("kube-system", 53), ("observability", 3000), ("global", 5432), ("openbao", 8200)}
     hbone = next(rule for rule in policy["spec"]["egress"] if {p["port"] for p in rule["ports"]} == {15008})
     assert hbone["to"] == [{"ipBlock": {"cidr": "10.20.0.0/16"}}]
 

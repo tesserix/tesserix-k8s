@@ -74,3 +74,18 @@ def test_kora_producer_and_console_have_disjoint_exact_permissions():
         assert role["bound_service_account_namespaces"] == [namespace]
         assert role["bound_service_account_names"] == [account]
         assert role["token_policies"] == [name]
+
+
+def test_kora_operator_and_metadata_reader_have_scoped_network_access():
+    import pathlib
+    import subprocess
+    import yaml
+    root = pathlib.Path(__file__).parents[1]
+    docs = render("charts/apps/openbao-namespace")
+    ingress = resource(docs, "NetworkPolicy", "allow-clients-to-openbao")
+    peers = ingress["spec"]["ingress"][0]["from"]
+    for namespace, app in [("evals-operator", "evals-onboarding-operator"), ("tesserix", "company")]:
+        assert {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": namespace}}, "podSelector": {"matchLabels": {"app.kubernetes.io/name": app}}} in peers
+    operator = list(yaml.safe_load_all((root/"k8s/operators/evals-onboarding/resources.yaml").read_text()))
+    policy = resource(operator, "NetworkPolicy", "evals-onboarding-operator")
+    assert any(rule.get("ports") == [{"protocol": "TCP", "port": 8200}] for rule in policy["spec"]["egress"])
