@@ -75,7 +75,18 @@ LEGACY_SUFFIXES = {
 }
 
 
+SHARED_APPLICATION_SOURCES = {
+    "prod-resend-api-key",
+    "prod-github-feedback-token",
+    "prod-support-platform-otto-internal-auth",
+    "prod-support-platform-postgres-username",
+    "prod-support-platform-postgres-password",
+}
+
+
 def identifier(source):
+    if source in SHARED_APPLICATION_SOURCES:
+        return "fe3dr-" + source.removeprefix("prod-")
     if source == "shadowfax-api-token":
         return "fe3dr-shadowfax-api-token"
     if source == "prod-support-platform-homechef-mcp-key":

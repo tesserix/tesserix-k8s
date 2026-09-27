@@ -205,14 +205,17 @@ def test_coordinated_api_batch_preserves_static_and_shared_entries(chart):
     assert changed == baseline
 
 
-def test_fully_migrated_api_defaults_to_openbao_with_explicit_shared_exceptions(chart):
+def test_fully_migrated_api_uses_openbao_for_own_and_shared_secrets(chart):
     docs = render(chart, True, static=True, coordinated=True)
     spec = next(d for d in docs if d["kind"] == "ExternalSecret")["spec"]
-    assert spec["secretStoreRef"] == {"kind": "SecretStore", "name": "openbao-homechef-api"}
+    assert spec["secretStoreRef"] == {
+        "kind": "SecretStore",
+        "name": "openbao-homechef-api",
+    }
     for entry in spec["data"]:
         store = entry.get("sourceRef", {}).get("storeRef", spec["secretStoreRef"])
         if entry["secretKey"] in {"RESEND_API_KEY", "GITHUB_FEEDBACK_TOKEN"}:
-            assert store == {"kind": "ClusterSecretStore", "name": "gcp-secret-store"}
+            assert store == {"kind": "SecretStore", "name": "openbao-fe3dr-appdeps"}
         else:
             assert store == spec["secretStoreRef"]
             assert entry["remoteRef"]["key"].startswith("homechef/homechef-api/fe3dr-")
@@ -220,11 +223,23 @@ def test_fully_migrated_api_defaults_to_openbao_with_explicit_shared_exceptions(
 
 
 def test_all_bff_bundle_entries_default_to_its_own_openbao_prefix():
-    docs = list(yaml.safe_load_all((ROOT / "external-secrets/prod/homechef/externalsecret.yaml").read_text()))
-    spec = next(d for d in docs if d["metadata"]["name"] == "homechef-auth-bff-secrets")["spec"]
-    assert spec["secretStoreRef"] == {"kind": "SecretStore", "name": "openbao-homechef-auth-bff"}
+    docs = list(
+        yaml.safe_load_all(
+            (ROOT / "external-secrets/prod/homechef/externalsecret.yaml").read_text()
+        )
+    )
+    spec = next(
+        d for d in docs if d["metadata"]["name"] == "homechef-auth-bff-secrets"
+    )["spec"]
+    assert spec["secretStoreRef"] == {
+        "kind": "SecretStore",
+        "name": "openbao-homechef-auth-bff",
+    }
     assert len(spec["data"]) == 7
     for entry in spec["data"]:
-        assert entry.get("sourceRef", {}).get("storeRef", spec["secretStoreRef"]) == spec["secretStoreRef"]
+        assert (
+            entry.get("sourceRef", {}).get("storeRef", spec["secretStoreRef"])
+            == spec["secretStoreRef"]
+        )
         assert entry["remoteRef"]["key"].startswith("homechef/homechef-auth-bff/fe3dr-")
         assert entry["remoteRef"]["property"] == "value"
