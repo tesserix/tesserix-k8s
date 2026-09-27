@@ -5,7 +5,7 @@ import yaml
 ROOT = pathlib.Path(__file__).parents[1]
 
 
-def test_production_api_and_worker_use_openbao_while_paused():
+def test_production_api_and_worker_use_openbao_with_writes_enabled():
     chart = ROOT / "charts/apps/homechef-api"
     docs = yaml.safe_load_all(
         subprocess.check_output(
@@ -27,7 +27,7 @@ def test_production_api_and_worker_use_openbao_while_paused():
     for deployment in deployments:
         container = deployment["spec"]["template"]["spec"]["containers"][0]
         env = {e["name"]: e.get("value") for e in container["env"]}
-        assert env["APP_SECRET_WRITES_PAUSED"] == "true"
+        assert env["APP_SECRET_WRITES_PAUSED"] == "false"
         assert env["APP_SECRET_STORE"] == "openbao"
         assert env["PII_SECRET_STORE"] == "openbao"
         assert env["OPENBAO_ROLE"] == "runtime-fe3dr-payment"
