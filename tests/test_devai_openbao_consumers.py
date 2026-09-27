@@ -32,3 +32,11 @@ def test_all_reviewed_live_bindings_render_with_namespaced_openbao_sources():
         from migrate_devai_secrets import TARGETS
         assert entry['remoteRef']=={'key':TARGETS[c['source']],'property':'value'},c
         assert entry.get('sourceRef',{}).get('storeRef',secret['spec']['secretStoreRef'])=={'name':'openbao-devai-production','kind':'SecretStore'},c
+
+
+def test_devai_stack_local_dependencies_match_child_versions():
+    parent = ROOT / 'charts/apps/devai-stack/Chart.lock'
+    for dependency in yaml.safe_load(parent.read_text())['dependencies']:
+        if dependency['repository'].startswith('file://') and dependency['version'][0].isdigit():
+            child = parent.parent / dependency['repository'][7:] / 'Chart.yaml'
+            assert dependency['version'] == yaml.safe_load(child.read_text())['version']
