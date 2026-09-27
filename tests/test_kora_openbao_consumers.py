@@ -19,6 +19,9 @@ def test_all_reviewed_live_bindings_render_with_namespaced_openbao_sources():
         command+=['-f','-']
         for p in helm.get('parameters',[]):command+=['--set-string',p['name']+'='+p['value']]
         rendered=list(yaml.safe_load_all(subprocess.check_output(command,input=yaml.safe_dump(helm.get('valuesObject',{})),text=True)))
+        if app['metadata']['name'] in {'kora-api','kora-ai-agents'}:
+            deployment = next(d for d in rendered if d and d.get('kind')=='Deployment')
+            assert deployment['spec']['template']['metadata']['annotations']['kora.tesserix.app/secret-source'] == 'openbao-v1'
         for d in rendered:
             if d and d.get('kind')=='ExternalSecret':d['metadata'].setdefault('namespace',ns);docs.append(d)
     for c in expected:
