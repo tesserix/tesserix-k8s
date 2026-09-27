@@ -1,8 +1,8 @@
 # Kora OpenBao migration
 
-Tracking: https://github.com/tesserix/tesserix-k8s/issues/1191
+Status: migration completed on 2026-09-27. Tracking: https://github.com/tesserix/tesserix-k8s/issues/1191
 
-Use KV v2 mount `kv`, field `value`. Production paths are `kora/app/kora-*`; development paths are `kora-development/app/kora-*`. Preserve existing Kubernetes Secret names and data keys. Registry credentials and shared platform credentials remain in GCP.
+Use KV v2 mount `kv`, field `value`. Production paths are `kora/app/kora-*`; development paths are `kora-development/app/kora-*`. Preserve existing Kubernetes Secret names and data keys. Shared registry/bootstrap credentials and platform credentials remain in GCP.
 
 | GCP source | Pinned version | OpenBao path | Consumer namespaces |
 |---|---:|---|---|
@@ -39,7 +39,7 @@ Use KV v2 mount `kv`, field `value`. Production paths are `kora/app/kora-*`; dev
 | prod-kora-vertex-api-key | 1 | kora/app/kora-vertex-api-key | agentgateway-system |
 | prod-support-platform-kora-mcp-key | 2 | kora/app/kora-mcp-key | agentgateway-system, kora |
 
-The evals onboarding operator creates/reads Langfuse credentials in GCP. The console credential-status tile checks GCP metadata. Complete these dependencies before deleting affected originals. Dormant direct-provider and Langfuse organization credentials require explicit ownership review; absence of an ESO consumer alone does not prove they are unused.
+The evals onboarding operator now reads/writes Kora project credentials in OpenBao; the console credential-status tile reads scoped OpenBao metadata. Dormant Kora-only provider and organization credentials were preserved in OpenBao after review; they are not granted broad runtime access.
 
 Stage using `scripts/migrate_kora_secrets.py --plan-json`: the plan pins enabled source versions and the CLI accepts only the reviewed mapping. Destinations use create-only CAS=0, policy validation, byte equality and token revocation from the shared migration implementation. Temporary writer permissions are create/read on exact paths, without update/delete.
 
@@ -73,8 +73,9 @@ OTel ingest requires a pod-template change to consume the normalized Langfuse cr
 All 34 live bindings use OpenBao and are Ready. All 22 Kubernetes Secret maps
 match the original hash baseline except the four reviewed Langfuse formatting
 corrections. No live ExternalSecret references any of the 32 GCP originals.
-All originals remain present; their latest enabled versions still match the
-migrated versions. Source deletion remains pending explicit named approval.
+Before deletion, all originals were present and their latest enabled versions
+matched the migrated versions. The user explicitly approved deletion of the
+32 named inventory entries; all were deleted and verified absent.
 
 Kora API, agents, company console, OTel ingest and OpenBao are Synced/Healthy.
 API readiness, signed BFF catalog and federation dependency checks passed;
@@ -98,8 +99,33 @@ bucket contained exactly three retained snapshots. The encrypted original-source
 archive above remains available. Temporary migration writer permissions and
 tokens were removed/revoked.
 
-Issue #1191 remains open until approved source deletion and post-deletion checks.
+Issue #1191 is complete after approved source deletion and post-deletion checks.
 Separate platform onboarding permissions (#1194), image retention (#1196),
 telemetry capacity/backlog (#1197), and historical sandbox-sync deadline failures
 are not represented as fixed by the secret migration. No interactive mobile or
 human sign-in session was exercised.
+
+
+## Approved source deletion and final verification
+
+On 2026-09-27, the user approved deleting all 32 GCP source resources listed in
+the inventory above. Before deletion, the remote encrypted archive was downloaded,
+compared byte-for-byte, decrypted, and checked against all current resource
+metadata, IAM policies and enabled versions. Every capture matched. Deletion
+was restricted to the exact reviewed inventory; the project listing subsequently
+confirmed all 32 originals absent. Private audit:
+`/tmp/kora-openbao-evidence/source-deletion-journal.jsonl`.
+
+All 22 ExternalSecrets freshly reconciled after deletion at
+`2026-09-27T10:04:48Z`. All 34 bindings remained Ready, and all target Secret maps
+matched the expected values. API readiness, signed BFF/federation calls, a real
+3072-dimension gateway embedding, MCP nutrition lookup, console metadata access,
+development/production Langfuse authentication and a trace from the running
+agents pod all passed. Invalid credentials/signatures and console payload access
+were rejected. The Kora applications and OpenBao remained Synced/Healthy.
+
+Final backup `20260927T100516Z-bb1833b41e3a` passed isolated restore in 18.573
+seconds and retained exactly three recovery points. The original-source encrypted
+archive remains at the recovery location documented above. Shared
+`prod-devai-anthropic-api-key` was verified still present; no platform/shared
+secret was included in this deletion. Separate platform follow-ups remain open.
