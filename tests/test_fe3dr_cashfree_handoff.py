@@ -26,15 +26,24 @@ def render(openbao):
     return {e["secretKey"]: e for e in secret["spec"]["data"]}
 
 
-def test_cashfree_reader_stays_with_gcp_writer_until_handoff():
+def test_retired_gcp_switch_cannot_restore_deleted_cashfree_sources():
     data = render(False)
     for field, source in [
-        ("CASHFREE_CLIENT_ID", "prod-homechef-cashfree-test-app-id"),
-        ("CASHFREE_CLIENT_SECRET", "prod-homechef-cashfree-test-secret-key"),
-        ("CASHFREE_WEBHOOK_SECRET", "prod-homechef-cashfree-test-secret-key"),
+        ("CASHFREE_CLIENT_ID", "homechef/homechef-api/fe3dr-cashfree-test-app-id"),
+        (
+            "CASHFREE_CLIENT_SECRET",
+            "homechef/homechef-api/fe3dr-cashfree-test-secret-key",
+        ),
+        (
+            "CASHFREE_WEBHOOK_SECRET",
+            "homechef/homechef-api/fe3dr-cashfree-test-secret-key",
+        ),
     ]:
         assert data[field]["remoteRef"]["key"] == source
-        assert "sourceRef" not in data[field]
+        assert data[field]["sourceRef"]["storeRef"] == {
+            "kind": "SecretStore",
+            "name": "openbao-fe3dr-appdeps",
+        }
     assert (
         data["RESEND_API_KEY"]["sourceRef"]["storeRef"]["name"]
         == "openbao-fe3dr-appdeps"
@@ -60,4 +69,8 @@ def test_cashfree_reader_can_move_with_openbao_writer_after_drain():
 
 def test_deployed_cashfree_defaults_to_openbao_after_writer_handoff():
     values = yaml.safe_load((ROOT / "charts/apps/dwellm8-api/values.yaml").read_text())
-    assert values["payments"]["cashfree"]["openbao"] is True
+    assert values["payments"]["cashfree"]["readerStore"] == "openbao-fe3dr-appdeps"
+    assert (
+        values["payments"]["cashfree"]["clientIdSecret"]
+        == "homechef/homechef-api/fe3dr-cashfree-test-app-id"
+    )
