@@ -1,7 +1,7 @@
 # OpenBao verified recovery
 
 Status: production backup/restore acceptance passed on 2026-09-27. Console
-integration is being prepared. Infrastructure: #1181; recovery jobs: #1182;
+implementation is merged in tesserix-home#635; rollout acceptance is pending. Infrastructure: #1181; recovery jobs: #1182;
 key metadata permission required by auto-unseal: #1183.
 
 Four successful backups restored in 19.851, 19.884, 16.056 and 17.363 seconds.
@@ -109,7 +109,16 @@ snapshot, marker nonce, root token, projected service account token, or server l
 
 ## Console integration contract
 
-Console application integration is pending. The recovery chart supplies a fail-closed
+The console page is `/platform/secrets/recovery` (Secrets → Backups).
+The backend receives `OPENBAO_RECOVERY_BUCKET` through its Helm deployment.
+GET `/api/recovery` requires platform permission; POST `/api/recovery/jobs`
+also requires rotate-credentials. It accepts only backup/restore-test plus an
+idempotency key. Reuse the same key after an uncertain response. Production
+restore is never accepted. Job records expire after two days, which bounds
+request deduplication. The UI shows retained recovery points and recent Job
+status; operators can refresh status after starting an operation.
+
+ The recovery chart supplies a fail-closed
 admission policy and two fixed CronJob parameter bindings. Its namespace-scoped
 role grants only fixed-template reads and Job get/list/create; no Secret or pod-log
 access is granted. Reuse the secret-service backend's existing
@@ -126,7 +135,8 @@ Production restore must not be exposed as an ordinary restore-test action.
 
 ## Alerts and response
 
-`OpenBaoVerifiedBackupFailed` alerts on failed backup/test jobs.
+`OpenBaoVerifiedBackupFailed` and `OpenBaoRestoreTestFailed` alert separately
+when the latest failed attempt is newer than the latest successful attempt.
 `OpenBaoVerifiedBackupStale` alerts when no successful backup metric exists or
 its age exceeds 14 hours, with a 15-minute alert debounce. Check job conditions,
 GCS/KMS availability, Workload Identity, TokenReview RBAC, and networking. Keep
@@ -155,3 +165,11 @@ With Helm, PyYAML and Prometheus 2.55 `promtool` installed, run
 successful backups resolve older failures and that a backup success cannot hide
 an independent restore-test failure. Each operation compares the creation time
 of its latest failed and successful Jobs; an operation with no success still alerts.
+
+## Operating cost
+
+This adds three small GCS snapshot objects, catalog operations, one symmetric KMS
+key version, KMS calls and two short recovery Jobs per day on existing GKE
+capacity. Storage and object/API operations are usage billed; isolated tests do
+not provision additional clusters or persistent disks. Historical shared-bucket
+backups retain their existing storage cost until their own lifecycle expires.
