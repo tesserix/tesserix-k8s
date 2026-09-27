@@ -139,7 +139,7 @@ def main():
         print(f"  clientSecret {created.get('clientSecret', '(none - public client)')}")
 
     print("\nNext, in order:")
-    print("  1. store the new secret:  gcloud secrets versions add <secret> --project=tesseracthub-480811 --data-file=-")
+    print("  1. store the new application secret in OpenBao at <product>/app/<product>-oidc-client-secret using a scoped temporary writer; see docs/application-secret-policy.md")
     print("  2. update the clientId in the app's Helm values, commit, let ArgoCD sync")
     print("  3. verify a real login, then delete the old project from", args.from_org)
     return 0
