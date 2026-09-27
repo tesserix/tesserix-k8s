@@ -262,7 +262,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
                 "KORA_MCP_KEY": "kora/app/kora-mcp-key",
                 "ROAMIE_TRAVEL_MCP_KEY": "roamie/app/roamie-travel-mcp-key",
                 "MARK8LY_MCP_KEY": "mark8ly/app/mark8ly-mcp-key",
-                "PLATFORM_MCP_KEY": "prod-support-platform-platform-mcp-key",
+                "PLATFORM_MCP_KEY": "support-platform/app/support-platform-platform-mcp-key",
                 "STOCKPILOT_MCP_KEY": "prod-support-platform-stockpilot-mcp-key",
             },
             {
