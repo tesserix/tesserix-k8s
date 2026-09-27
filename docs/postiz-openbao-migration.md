@@ -45,3 +45,18 @@ bindings while selecting `openbao-postiz-production`. Registry access remains
 on its platform store. Optional-provider examples also use OpenBao paths.
 Temporary writer configuration is removed after successful staging. Bootstrap
 only upserts roles, so live role/policy retirement must additionally be verified.
+
+## Completed 2026-09-27 UTC
+
+All seventeen usable credentials were staged and byte-verified. The namespace
+reader passed exact read-only and out-of-scope denial checks. Consumer PR #1220
+is deployed; all sixteen bindings freshly reconcile through OpenBao and both
+whole-Secret hashes are unchanged. Temporary role, policy and ServiceAccount
+are absent, with prior access configuration captured privately.
+
+Backup `20260927T140924Z-c466a0788998` passed isolated restore in 19.843 seconds;
+three verified backups are retained and the pruned object is absent. All 33
+reviewed GCP records were deleted. After deletion, fresh reconciliation, UI and
+registration checks, authenticated integration API reads, database `SELECT 1`,
+R2 object listing and unauthenticated denial checks passed. Social-provider
+interactive OAuth and publishing were not exercised.
