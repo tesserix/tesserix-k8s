@@ -57,14 +57,34 @@ STATIC_SUFFIXES = {
 }
 
 
+LEGACY_SUFFIXES = {
+    "bff-backup-code-hmac-key",
+    "bff-csrf-secret",
+    "bff-session-secret",
+    "bff-totp-encryption-key",
+    "keycloak-client-secret",
+    "internal-keycloak-client-secret",
+    "razorpay-key-id",
+    "razorpay-key-secret",
+    "razorpay-webhook-secret",
+    "razorpay-test-key-id",
+    "razorpay-test-key-secret",
+    "razorpay-test-webhook-secret",
+    "google-places-api-key",
+    "postgresql-url",
+}
+
+
 def identifier(source):
+    if source == "shadowfax-api-token":
+        return "fe3dr-shadowfax-api-token"
     if source == "prod-support-platform-homechef-mcp-key":
         return "fe3dr-mcp-key"
     prefix = "prod-homechef-"
     if not source.startswith(prefix):
         raise ValueError("Source is not a reviewed production app candidate")
     suffix = source[len(prefix) :]
-    if suffix not in STATIC_SUFFIXES and not re.fullmatch(
+    if suffix not in STATIC_SUFFIXES | LEGACY_SUFFIXES and not re.fullmatch(
         r"vendor-payment-[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}-bank-(?:account-name|account-number|ifsc)",
         suffix,
     ):
