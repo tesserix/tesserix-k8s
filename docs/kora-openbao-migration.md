@@ -1,0 +1,46 @@
+# Kora OpenBao migration
+
+Tracking: https://github.com/tesserix/tesserix-k8s/issues/1191
+
+Use KV v2 mount `kv`, field `value`. Production paths are `kora/app/kora-*`; development paths are `kora-development/app/kora-*`. Preserve existing Kubernetes Secret names and data keys. Registry credentials and shared platform credentials remain in GCP.
+
+| GCP source | Pinned version | OpenBao path | Consumer namespaces |
+|---|---:|---|---|
+| dev-kora-document-intelligence-signing-key | 2 | kora-development/app/kora-document-intelligence-signing-key | devai |
+| dev-kora-langfuse-org-public-key | 1 | kora-development/app/kora-langfuse-org-public-key |  |
+| dev-kora-langfuse-org-secret-key | 1 | kora-development/app/kora-langfuse-org-secret-key |  |
+| dev-kora-langfuse-public-key | 1 | kora-development/app/kora-langfuse-public-key | devai, observability |
+| dev-kora-langfuse-secret-key | 1 | kora-development/app/kora-langfuse-secret-key | devai, observability |
+| dev-kora-ocr-workload-identity-keys | 3 | kora-development/app/kora-ocr-workload-identity-keys | document-intelligence |
+| prod-agentic-registry-kora-deploy-key | 1 | kora/app/kora-registry-deploy-key | kora |
+| prod-agentic-registry-kora-deploy-key-sha256 | 4 | kora/app/kora-registry-deploy-key-sha256 | agentregistry-system |
+| prod-kora-ai-agents-api-key | 1 | kora/app/kora-ai-agents-api-key | agentgateway-system, kora |
+| prod-kora-ai-gateway-api-key | 1 | kora/app/kora-ai-gateway-api-key | agentgateway-system, kora |
+| prod-kora-api-platform-admin | 1 | kora/app/kora-api-platform-admin | kora, tesserix |
+| prod-kora-apple-key-id | 1 | kora/app/kora-apple-key-id | kora |
+| prod-kora-apple-private-key | 1 | kora/app/kora-apple-private-key | kora |
+| prod-kora-apple-team-id | 1 | kora/app/kora-apple-team-id | kora |
+| prod-kora-bff-internal-hmac-key | 1 | kora/app/kora-bff-internal-hmac-key | kora, tesserix |
+| prod-kora-database-url | 3 | kora/app/kora-database-url | kora |
+| prod-kora-expo-access-token | 1 | kora/app/kora-expo-access-token | kora |
+| prod-kora-gemini-api-key | 1 | kora/app/kora-gemini-api-key |  |
+| prod-kora-langfuse-org-public-key | 1 | kora/app/kora-langfuse-org-public-key |  |
+| prod-kora-langfuse-org-secret-key | 1 | kora/app/kora-langfuse-org-secret-key |  |
+| prod-kora-langfuse-public-key | 1 | kora/app/kora-langfuse-public-key | observability |
+| prod-kora-langfuse-secret-key | 1 | kora/app/kora-langfuse-secret-key | observability |
+| prod-kora-mcp-internal-key | 2 | kora/app/kora-mcp-internal-key | kora |
+| prod-kora-ocr-workload-identity-keys | 1 | kora/app/kora-ocr-workload-identity-keys | document-intelligence |
+| prod-kora-openai-api-key | 1 | kora/app/kora-openai-api-key |  |
+| prod-kora-postgresql-password | 1 | kora/app/kora-postgresql-password | global |
+| prod-kora-sandbox-anonymization-salt | 1 | kora/app/kora-sandbox-anonymization-salt | kora |
+| prod-kora-sandbox-reader-password | 1 | kora/app/kora-sandbox-reader-password | kora |
+| prod-kora-sandbox-sync-source-url | 1 | kora/app/kora-sandbox-sync-source-url | kora |
+| prod-kora-sandbox-sync-target-url | 1 | kora/app/kora-sandbox-sync-target-url | kora |
+| prod-kora-vertex-api-key | 1 | kora/app/kora-vertex-api-key | agentgateway-system |
+| prod-support-platform-kora-mcp-key | 2 | kora/app/kora-mcp-key | agentgateway-system, kora |
+
+The evals onboarding operator creates/reads Langfuse credentials in GCP. The console credential-status tile checks GCP metadata. Complete these dependencies before deleting affected originals. Dormant direct-provider and Langfuse organization credentials require explicit ownership review; absence of an ESO consumer alone does not prove they are unused.
+
+Stage using `scripts/migrate_kora_secrets.py --plan-json`: the plan pins enabled source versions and the CLI accepts only the reviewed mapping. Destinations use create-only CAS=0, policy validation, byte equality and token revocation from the shared migration implementation. Temporary writer permissions are create/read on exact paths, without update/delete.
+
+Acceptance: fresh ESO synchronization, byte equality (including rendered/derived Secret fields), ready workloads, API/database/AI/identity checks, writer retirement, and encrypted OpenBao backup plus isolated restore. Capture GCP resource metadata, IAM, enabled version payloads in a KMS-encrypted archive and verify it before approved source deletion. Keep the issue open until every criterion is met.
