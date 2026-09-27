@@ -82,6 +82,7 @@ class OpenBao:
                         "kv/data/blog/app/",
                         "kv/data/postiz/app/",
                         "kv/data/dwellm8/app/",
+                        "kv/data/support-platform/app/",
                         "kv/data/devai/app/",
                         "kv/data/mark8ly/app/",
                         "kv/data/mark8ly-uat/app/",

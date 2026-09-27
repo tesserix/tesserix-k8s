@@ -28,7 +28,7 @@ def test_support_platform_access_is_exact_and_namespace_bound():
             ).read_text()
         )
     )
-    for ns in ["support-platform", "agentgateway-system", "openbao"]:
+    for ns in ["support-platform", "agentgateway-system"]:
         writer = ns == "openbao"
         name = (
             "support-platform-migrate-reviewed"
@@ -73,3 +73,21 @@ def test_support_platform_access_is_exact_and_namespace_bound():
             assert (
                 store["spec"]["provider"]["vault"]["auth"]["kubernetes"]["role"] == name
             )
+
+
+def test_temporary_migration_writer_is_retired():
+    config = resource(
+        render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap"
+    )["data"]
+    assert "role-support-platform-migrate-reviewed.json" not in config
+    assert "policy-support-platform-migrate-reviewed.hcl" not in config
+    docs = list(
+        yaml.safe_load_all(
+            (
+                ROOT / "external-secrets/prod/support-platform-openbao-readers.yaml"
+            ).read_text()
+        )
+    )
+    assert all(
+        d["metadata"]["name"] != "support-platform-migration-writer" for d in docs if d
+    )
