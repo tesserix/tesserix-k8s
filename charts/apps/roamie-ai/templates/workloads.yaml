@@ -30,8 +30,18 @@ spec:
   data:
     {{- range $key, $remote := $workload.secrets }}
     - secretKey: {{ $key }}
+      {{- if eq $remote "prod-homechef-google-weather-api-key" }}
+      sourceRef:
+        storeRef:
+          kind: SecretStore
+          name: openbao-fe3dr-shared
+      remoteRef:
+        key: homechef/homechef-api/fe3dr-google-weather-api-key
+        property: value
+      {{- else }}
       remoteRef:
         key: {{ $remote }}
+      {{- end }}
     {{- end }}
 ---
 apiVersion: apps/v1

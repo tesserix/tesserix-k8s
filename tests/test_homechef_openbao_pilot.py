@@ -17,7 +17,7 @@ def chart(tmp_path):
     return tmp_path / "homechef-api"
 
 
-def render(chart, enabled, static=False):
+def render(chart, enabled, static=False, coordinated=False):
     result = subprocess.run(
         [
             "helm",
@@ -32,6 +32,8 @@ def render(chart, enabled, static=False):
             f"openbao.exchangeRatePilot.enabled={str(enabled).lower()}",
             "--set",
             f"openbao.staticSecrets.enabled={str(static).lower()}",
+            "--set",
+            f"openbao.coordinatedSecrets.enabled={str(coordinated).lower()}",
         ],
         check=True,
         capture_output=True,
@@ -159,6 +161,7 @@ def test_bff_static_keys_use_its_own_store_and_prefix():
     expected = {
         "SESSION_ENCRYPT_KEY": "session-encrypt-key",
         "HOMECHEF_ADMIN_ALLOWED_EMAILS": "admin-allowed-emails",
+        "BFF_INTERNAL_HMAC_KEY": "bff-internal-hmac-key",
     }
     for entry in resource["spec"]["data"]:
         if entry["secretKey"] in expected:
@@ -173,3 +176,30 @@ def test_bff_static_keys_use_its_own_store_and_prefix():
             }
         else:
             assert "sourceRef" not in entry
+
+
+def test_coordinated_api_batch_preserves_static_and_shared_entries(chart):
+    baseline = render(chart, False)
+    changed = render(chart, False, coordinated=True)
+    original = next(d for d in baseline if d["kind"] == "ExternalSecret")
+    current = next(d for d in changed if d["kind"] == "ExternalSecret")
+    keys = {
+        "DB_PASSWORD": "postgresql-password",
+        "BFF_INTERNAL_HMAC_KEY": "bff-internal-hmac-key",
+        "GOOGLE_WEATHER_API_KEY": "google-weather-api-key",
+    }
+    originals = {e["secretKey"]: e for e in original["spec"]["data"]}
+    for entry in current["spec"]["data"]:
+        if entry["secretKey"] in keys:
+            assert entry["sourceRef"]["storeRef"] == {
+                "kind": "SecretStore",
+                "name": "openbao-homechef-api",
+            }
+            assert entry["remoteRef"] == {
+                "key": "homechef/homechef-api/fe3dr-" + keys[entry["secretKey"]],
+                "property": "value",
+            }
+            old = originals[entry["secretKey"]]
+            entry.clear()
+            entry.update(old)
+    assert changed == baseline
