@@ -782,3 +782,12 @@ class AtlantisZitadelProjectTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_apply_can_satisfy_its_own_required_status_without_dropping_merge_checks():
+    documents = render_atlantis_chart()
+    statefulset = resource(documents, 'StatefulSet', 'atlantis')
+    container = next(c for c in statefulset['spec']['template']['spec']['containers'] if c['name'] == 'atlantis')
+    assert '--gh-allow-mergeable-bypass-apply' in container['args']
+    config = yaml.safe_load(load_yaml(ROOT / 'charts/thirdparty/atlantis/values.yaml')['atlantis']['repoConfig'])
+    assert config['repos'][0]['apply_requirements'] == ['mergeable', 'undiverged']
