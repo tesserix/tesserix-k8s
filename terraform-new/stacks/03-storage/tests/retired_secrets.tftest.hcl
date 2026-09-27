@@ -31,3 +31,28 @@ run "retired_application_credentials_are_not_recreated" {
     error_message = "Retired application IAM must not be recreated."
   }
 }
+
+run "new_application_secrets_require_openbao" {
+  command = plan
+  variables {
+    project_id         = "synthetic-project"
+    create_kms_keyring = false
+    enable_cmek        = false
+    secrets            = [{ secret_id = "prod-new-product-session-secret" }]
+  }
+  expect_failures = [var.secrets]
+}
+
+run "documented_platform_exception_is_retained" {
+  command = plan
+  variables {
+    project_id         = "synthetic-project"
+    create_kms_keyring = false
+    enable_cmek        = false
+    secrets            = [{ secret_id = "prod-synthetic-bootstrap", platform_exception_reason = "Shared control-plane recovery bootstrap" }]
+  }
+  assert {
+    condition     = google_secret_manager_secret.secrets["prod-synthetic-bootstrap"].annotations["tesserix.io/platform-secret-reason"] == "Shared control-plane recovery bootstrap"
+    error_message = "An explicit platform exception must remain reviewable in resource metadata."
+  }
+}

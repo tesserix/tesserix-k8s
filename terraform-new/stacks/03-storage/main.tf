@@ -168,10 +168,13 @@ resource "google_storage_bucket_iam_member" "members" {
 resource "google_secret_manager_secret" "secrets" {
   for_each = { for secret in local.gcp_secrets : secret.secret_id => secret }
 
-  secret_id   = each.value.secret_id
-  project     = var.project_id
-  labels      = merge(var.common_labels, each.value.labels)
-  annotations = each.value.annotations
+  secret_id = each.value.secret_id
+  project   = var.project_id
+  labels    = merge(var.common_labels, each.value.labels)
+
+  annotations = merge(each.value.annotations, trimspace(each.value.platform_exception_reason) == "" ? {} : {
+    "tesserix.io/platform-secret-reason" = each.value.platform_exception_reason
+  })
   expire_time = each.value.expire_time
   ttl         = each.value.ttl
 

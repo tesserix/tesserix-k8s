@@ -29,6 +29,10 @@ resource "google_secret_manager_secret" "app_secrets" {
   secret_id = each.value.name
   project   = var.project_id
 
+  annotations = merge({}, trimspace(each.value.platform_exception_reason) == "" ? {} : {
+    "tesserix.io/platform-secret-reason" = each.value.platform_exception_reason
+  })
+
   labels = merge(var.common_labels, {
     category    = each.value.category
     environment = var.environment
