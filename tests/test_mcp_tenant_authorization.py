@@ -130,17 +130,22 @@ class ProductMCPAuthenticationTests(unittest.TestCase):
                 external_secret = resource(
                     documents, "ExternalSecret", f"{tenant}-mcp-auth"
                 )
-                self.assertEqual(
-                    [
-                        {
-                            "secretKey": "MCP_AUTH_KEY",
-                            "remoteRef": {
-                                "key": f"prod-support-platform-{tenant}-mcp-key"
-                            },
+                expected = {
+                    "secretKey": "MCP_AUTH_KEY",
+                    "remoteRef": {"key": f"prod-support-platform-{tenant}-mcp-key"},
+                }
+                if tenant == "homechef":
+                    expected["sourceRef"] = {
+                        "storeRef": {
+                            "kind": "SecretStore",
+                            "name": "openbao-homechef-api",
                         }
-                    ],
-                    external_secret["spec"]["data"],
-                )
+                    }
+                    expected["remoteRef"] = {
+                        "key": "homechef/homechef-api/fe3dr-mcp-key",
+                        "property": "value",
+                    }
+                self.assertEqual([expected], external_secret["spec"]["data"])
 
     def test_router_authenticates_every_product_mcp_request(self):
         documents = render_chart("charts/apps/support-platform-slm-router")
@@ -192,7 +197,9 @@ class ProductMCPAuthenticationTests(unittest.TestCase):
             with self.subTest(tenant=tenant):
                 env_name = f"{tenant.upper()}_MCP_KEY"
                 self.assertEqual(
-                    f"prod-support-platform-{tenant}-mcp-key",
+                    "homechef/homechef-api/fe3dr-mcp-key"
+                    if tenant == "homechef"
+                    else f"prod-support-platform-{tenant}-mcp-key",
                     remote_keys[env_name],
                 )
 

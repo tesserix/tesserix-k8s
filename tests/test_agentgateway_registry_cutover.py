@@ -97,10 +97,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         self.assertEqual("List", desired["kind"])
         self.assertEqual(
             PLATFORM_SEEDED,
-            {
-                (item["kind"], item["metadata"]["name"])
-                for item in desired["items"]
-            },
+            {(item["kind"], item["metadata"]["name"]) for item in desired["items"]},
         )
         self.assertTrue(
             all(
@@ -137,11 +134,9 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         container = pod_spec["containers"][0]
         self.assertRegex(container["image"], r"@sha256:[0-9a-f]{64}$")
         script = container["args"][0]
-        self.assertIn('/v0/agentgateway/import', script)
+        self.assertIn("/v0/agentgateway/import", script)
         self.assertIn('test "${count}" = "27"', script)
-        count_pattern = re.search(
-            r"grep -Ec '([^']+)' /seed/resources\.json", script
-        )
+        count_pattern = re.search(r"grep -Ec '([^']+)' /seed/resources\.json", script)
         self.assertIsNotNone(count_pattern)
         count = subprocess.run(
             ["grep", "-Ec", count_pattern.group(1)],
@@ -210,9 +205,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         self.assertIn(
             {"name": "tmp", "mountPath": "/tmp"}, apply_container["volumeMounts"]
         )
-        self.assertIn(
-            {"name": "tmp", "emptyDir": {}}, pod_spec["volumes"]
-        )
+        self.assertIn({"name": "tmp", "emptyDir": {}}, pod_spec["volumes"])
 
         handoff = resource(
             documents, "Job", "agentgateway-registry-ownership-handoff-v2"
@@ -252,9 +245,20 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         secret = resource(documents, "ExternalSecret", "product-mcp-upstream-keys")
 
         self.assertEqual("agentgateway-system", secret["metadata"]["namespace"])
+        homechef = next(
+            item
+            for item in secret["spec"]["data"]
+            if item["secretKey"] == "HOMECHEF_MCP_KEY"
+        )
+        self.assertEqual(
+            {"kind": "SecretStore", "name": "openbao-fe3dr-shared"},
+            homechef["sourceRef"]["storeRef"],
+        )
+        self.assertEqual("value", homechef["remoteRef"]["property"])
+
         self.assertEqual(
             {
-                "HOMECHEF_MCP_KEY": "prod-support-platform-homechef-mcp-key",
+                "HOMECHEF_MCP_KEY": "homechef/homechef-api/fe3dr-mcp-key",
                 "KORA_MCP_KEY": "prod-support-platform-kora-mcp-key",
                 "ROAMIE_TRAVEL_MCP_KEY": "prod-roamie-travel-mcp-key",
                 "MARK8LY_MCP_KEY": "prod-support-platform-mark8ly-mcp-key",

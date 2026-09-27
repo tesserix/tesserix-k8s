@@ -351,6 +351,23 @@ bootstrap:
       hcl: |
         path "kv/data/mark8ly/marketplace-api/tenants/*"     { capabilities = ["read"] }
         path "kv/metadata/mark8ly/marketplace-api/tenants/*" { capabilities = ["read", "list"] }
+    - name: read-fe3dr-tesserix
+      hcl: |
+        path "kv/data/homechef/homechef-api/fe3dr-bff-internal-hmac-key" { capabilities = ["read"] }
+        path "kv/data/homechef/homechef-api/fe3dr-platform-admin-password" { capabilities = ["read"] }
+    - name: read-fe3dr-roamie
+      hcl: |
+        path "kv/data/homechef/homechef-api/fe3dr-google-weather-api-key" { capabilities = ["read"] }
+    - name: read-fe3dr-support-platform
+      hcl: |
+        path "kv/data/homechef/homechef-api/fe3dr-mcp-key" { capabilities = ["read"] }
+        path "kv/data/homechef/homechef-api/fe3dr-support-hook-secret" { capabilities = ["read"] }
+    - name: read-fe3dr-agentgateway-system
+      hcl: |
+        path "kv/data/homechef/homechef-api/fe3dr-mcp-key" { capabilities = ["read"] }
+    - name: read-fe3dr-db-backup-and-restore
+      hcl: |
+        path "kv/data/homechef/homechef-api/fe3dr-postgresql-password" { capabilities = ["read"] }
   # Kubernetes auth roles. Each binds a named ServiceAccount in a named
   # namespace to a policy — `bound_service_account_names: ["*"]` is never
   # correct here, it grants the role to every pod in the namespace.
@@ -409,6 +426,31 @@ bootstrap:
       policies:
         - mark8ly-marketplace-api-storefront-carrier-secrets
       ttl: 1h
+    - name: read-fe3dr-tesserix
+      serviceAccounts: ["fe3dr-secret-reader"]
+      namespaces: ["tesserix"]
+      policies: ["read-fe3dr-tesserix"]
+      ttl: 15m
+    - name: read-fe3dr-roamie
+      serviceAccounts: ["fe3dr-secret-reader"]
+      namespaces: ["roamie"]
+      policies: ["read-fe3dr-roamie"]
+      ttl: 15m
+    - name: read-fe3dr-support-platform
+      serviceAccounts: ["fe3dr-secret-reader"]
+      namespaces: ["support-platform"]
+      policies: ["read-fe3dr-support-platform"]
+      ttl: 15m
+    - name: read-fe3dr-agentgateway-system
+      serviceAccounts: ["fe3dr-secret-reader"]
+      namespaces: ["agentgateway-system"]
+      policies: ["read-fe3dr-agentgateway-system"]
+      ttl: 15m
+    - name: read-fe3dr-db-backup-and-restore
+      serviceAccounts: ["fe3dr-secret-reader"]
+      namespaces: ["db-backup-and-restore"]
+      policies: ["read-fe3dr-db-backup-and-restore"]
+      ttl: 15m
 # =============================================================================
 # Raft snapshots to GCS
 # =============================================================================
@@ -517,3 +559,11 @@ namespaceWhitelist:
       # is the same failure mode on a different app).
       #
       # Checked before removing: 0 of 245 ExternalSecrets referenced it.
+
+# ESO-only identities; each reader has an exact cross-product secret allowlist.
+fe3drCoordinatedReaders:
+  - tesserix
+  - roamie
+  - support-platform
+  - agentgateway-system
+  - db-backup-and-restore
