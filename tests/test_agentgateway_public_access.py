@@ -588,7 +588,7 @@ class AgentGatewayPublicAccessTests(unittest.TestCase):
             item["name"]: item["value"]
             for item in application["spec"]["source"]["helm"]["parameters"]
         }
-        self.assertEqual("main-4285ea2", parameters["image.tag"])
+        self.assertEqual("main-ae12d7e", parameters["image.tag"])
 
     def test_solo_admin_ui_is_private_and_uses_isolated_zitadel_oauth_proxy(self):
         documents = render_chart("charts/apps/devai-ai-gateway")
