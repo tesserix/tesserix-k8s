@@ -26,7 +26,7 @@
 #   1. Creates 3 projects (admin, storefront, tenant-onboarding) via Manage API
 #   2. Extracts the auto-generated client IDs from each response
 #   3. Patches the ArgoCD Application YAML files with real client IDs
-#   4. Optionally stores client IDs in GCP Secret Manager
+#   4. Stores product client IDs in OpenBao with a temporary scoped writer
 # =============================================================================
 
 set -euo pipefail
@@ -79,12 +79,13 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 
 check_deps() {
-  for cmd in jq curl; do
+  for cmd in jq curl python3; do
     if ! command -v "$cmd" &>/dev/null; then
       log_error "$cmd is required but not installed."
       exit 1
     fi
   done
+  [[ -n "${BAO_TOKEN:-}" ]] || { log_error "A temporary scoped BAO_TOKEN is required for product identifiers"; exit 1; }
 }
 
 # ---- Core Functions ----
@@ -244,28 +245,16 @@ patch_argocd_file() {
   fi
 }
 
-# Store client IDs in GCP Secret Manager (optional)
-store_client_id_gcp() {
+# Root OpenPanel administration credentials above are critical platform secrets.
+# Product client IDs use OpenBao. Supply a <=15m BAO_TOKEN with create/read on
+# the exact mark8ly[-development]/app/mark8ly-openpanel-<app>-client-id paths,
+# then revoke the token after setup. Different existing values fail closed.
+store_client_id_openbao() {
   local env="$1"
   local app="$2"
   local client_id="$3"
-
-  if ! command -v gcloud &>/dev/null; then
-    return 0
-  fi
-
-  local secret_name="${env}-openpanel-${app}-client-id"
-
-  # Check if secret exists
-  if gcloud secrets describe "$secret_name" &>/dev/null 2>&1; then
-    echo "$client_id" | gcloud secrets versions add "$secret_name" --data-file=-
-    log_ok "Updated GCP secret: $secret_name"
-  else
-    echo "$client_id" | gcloud secrets create "$secret_name" --data-file=- \
-      --replication-policy="automatic" 2>/dev/null && \
-      log_ok "Created GCP secret: $secret_name" || \
-      log_warn "Could not create GCP secret: $secret_name (may need permissions)"
-  fi
+  printf '%s' "$client_id" | python3 "${SCRIPT_DIR}/store-openpanel-client-id.py" \
+    --environment "$env" --app "$app"
 }
 
 # ---- Main ----
@@ -311,8 +300,8 @@ setup_environment() {
     local argocd_file="${argocd_dir}/${app}.yaml"
     patch_argocd_file "$argocd_file" "$client_id"
 
-    # Store in GCP Secret Manager
-    store_client_id_gcp "$env" "$app" "$client_id"
+    # Store the product identifier in OpenBao.
+    store_client_id_openbao "$env" "$app" "$client_id"
   done
 
   echo ""
