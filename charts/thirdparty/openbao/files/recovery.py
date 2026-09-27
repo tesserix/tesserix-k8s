@@ -592,13 +592,15 @@ def main() -> int:
         KeyError,
         TypeError,
         subprocess.SubprocessError,
-    ):
+    ) as exc:
         print(
             json.dumps(
                 {
                     "operation": args.operation,
                     "result": "FAIL",
-                    "error": "Recovery verification failed; no production restore attempted; inspect job status",
+                    "error": str(exc)
+                    if isinstance(exc, RecoveryError)
+                    else "Recovery operation failed; inspect job conditions",
                 }
             ),
             flush=True,

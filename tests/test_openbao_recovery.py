@@ -328,3 +328,17 @@ def test_orphan_cleanup_only_deletes_older_snapshot_generations(monkeypatch):
     m.Storage("recovery-bucket", "key").prune_orphans()
     assert len(deleted) == 1
     assert "ifGenerationMatch=1" in deleted[0]
+
+
+def test_cli_reports_safe_failure_reason_without_echoing_input(monkeypatch, capsys):
+    import json
+    import sys
+
+    m = module()
+    monkeypatch.setattr(sys, "argv", ["recovery.py", "backup"])
+    monkeypatch.setenv("BACKUP_BUCKET", "invalid-private-input!")
+    monkeypatch.setenv("BACKUP_KMS_KEY", "key")
+    assert m.main() == 1
+    output = capsys.readouterr().out
+    assert "invalid-private-input" not in output
+    assert json.loads(output)["error"] == "Invalid recovery bucket"
