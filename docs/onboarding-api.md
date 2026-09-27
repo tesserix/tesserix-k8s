@@ -1,11 +1,14 @@
 # `onboarding-service` — the platform onboarding API and console
 
-> Storage policy update (2026-09-27): new product application credentials must
-> default to OpenBao with product-prefixed identifiers. GCP is reserved for
-> critical platform/bootstrap/recovery credentials. GCP-writing flows below
-> describe legacy behavior that must be migrated in the implementation; do not
-> copy them into new features. See [the policy](application-secret-policy.md).
-
+> Application credentials belong in OpenBao with product-prefixed identifiers.
+> GCP Secret Manager is reserved for critical platform/bootstrap/recovery
+> credentials. See [the policy](application-secret-policy.md).
+>
+> Implementation status (2026-09-27): product registration currently stores
+> product metadata; the provisioning sequence below is the target design, not
+> evidence of automated credential creation. Generated access manifests still
+> require GitOps review and credential staging. Onboarding-service PR #7 updates
+> those manifests to OpenBao; deployment remains pending.
 
 `https://onboard.tesserix.app` — one API that creates organizations, onboards
 products to them, and lets a customer connect their own SSO. A Next.js console
@@ -150,7 +153,7 @@ POST /v1/products
    ├─ Zitadel: create project "hms" in TESSERIX  (never in ZITADEL)
    ├─ Zitadel: create OIDC app (web, PKCE) + API app (JWT)
    ├─ Zitadel: create machine user  svc-hms  → key
-   ├─ GCP SM:  prod-hms-oidc-client-secret, prod-hms-machine-key
+   ├─ OpenBao: hms/app/hms-oidc-client-secret, hms/app/hms-machine-key
    └─ DB:      products row + audit event
         │
         ▼
@@ -308,7 +311,7 @@ Products (platform only)
   POST   /v1/products                       create project + apps + machine user
   GET    /v1/products
   GET    /v1/products/{key}
-  POST   /v1/products/{key}/rotate-secret   rotates client secret, writes GCP SM
+  POST   /v1/products/{key}/rotate-secret   rotates client secret, writes product-scoped OpenBao
   POST   /v1/products/{key}/manifests-acknowledged
                                             records that the git PR was raised
 
@@ -526,8 +529,9 @@ Non-negotiable, in rough order of how much damage skipping each one does.
    against `org_products`. Tested with an explicit "HMS cannot read Mark8ly's
    org" case, not merely by reading the code.
 3. **No secret in a response body, ever** — including the one that just created
-   it. `POST /v1/products` writes the client secret to GCP Secret Manager and
-   returns the secret's *name*. The console shows a link, not a value.
+   it. The provisioning implementation must write client credentials to
+   `<product>/app/<product>-<secret>` in OpenBao and return only the path.
+   Registration alone currently does not create or store these credentials.
 4. **CSRF on every non-GET from a session**, double-submit header. Machine tokens
    are exempt because they are not ambient credentials.
 5. **Rate limits** per token and per IP: strict on `/v1/discovery/resolve` and
@@ -601,17 +605,15 @@ in `tesseracthub-480811`:
 | Authorised redirect URI | `https://onboard.tesserix.app/api/auth/callback` |
 
 The client id is `console.googleClientId` in `values-prod.yaml` — public, and
-kept in git so the value in use is reviewable. The secret half is a platform
-credential and goes to Secret Manager:
+kept in git so the value in use is reviewable. The secret half belongs in
+OpenBao at `onboarding/app/onboarding-google-client-secret`. It authenticates
+this console and is not the shared Zitadel management authority. Stage it using
+short-lived exact-path write access, then use a namespace-bound ESO reader.
+Existing GCP readers must be inventoried and migrated with byte equality and
+functional sign-in verification before deleting their source; this documentation
+change does not perform that migration.
 
-```bash
-gcloud secrets create prod-onboarding-google-client-secret \
-  --project=tesseracthub-480811 --replication-policy=automatic
-printf %s "$SECRET" | gcloud secrets versions add prod-onboarding-google-client-secret \
-  --project=tesseracthub-480811 --data-file=-
-```
-
-Rotating it is a new secret version; ESO picks it up within the refresh interval.
+Rotation writes a new OpenBao KV version; ESO picks it up within its refresh interval.
 Who may sign in is `console.adminEmails`, not part of this credential — see §2.
 
 ### 9.3 Reaching the host
@@ -666,7 +668,8 @@ synchronously — a team clicking *Upgrade* is watching the screen.
      ├─ Zitadel project planning-poker in TESSERIX, role pp-user
      ├─ OIDC web app (PKCE)  +  API app
      ├─ machine user svc-planning-poker
-     ├─ GCP SM: prod-planning-poker-oidc-client-secret, -machine-key
+     ├─ OpenBao: planning-poker/app/planning-poker-oidc-client-secret,
+     │           planning-poker/app/planning-poker-machine-key
      └─ copyable YAML: zitadel-bootstrap desired.projects, ExternalSecret,
         AuthorizationPolicy
    → raise the PR, merge, ArgoCD syncs. The product now exists in git AND live.
