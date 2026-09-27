@@ -106,7 +106,8 @@ class DevAIGatewayAndSecretsTests(unittest.TestCase):
         self.assertIn(
             {
                 "secretKey": "VERTEX_API_KEY",
-                "remoteRef": {"key": "prod-devai-vertex-api-key"},
+                "remoteRef": {"key": "devai/app/devai-vertex-api-key", "property": "value"},
+                "sourceRef": {"storeRef": {"name": "openbao-devai-production", "kind": "SecretStore"}},
             },
             external_secret["spec"]["data"],
         )
