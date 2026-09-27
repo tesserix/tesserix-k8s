@@ -66,3 +66,40 @@ The pre-existing evals onboarding organization API 403 is tracked separately in 
 The agents' pinned GHCR OCI index was no longer available, preventing fresh pods from starting. The cached linux/amd64 manifest and config were recovered read-only from a running node; all ten compressed layers were fetched from GHCR and SHA-256 checked against that manifest. The identical platform image is preserved in GAR at `global/recovered/ai-agents@sha256:c65f8c5af90c21b895e11d0b47f910bb0bd99b2dc05e393c38cb40a2a790b152`. No application code or credential changed during image recovery.
 
 OTel ingest requires a pod-template change to consume the normalized Langfuse credentials because its existing environment variables are fixed at pod startup. The `openbao-v1` annotation triggers that rollout through GitOps. End-to-end trace delivery must pass after rollout before source deletion.
+
+
+## Live acceptance after storage recovery — 2026-09-27
+
+All 34 live bindings use OpenBao and are Ready. All 22 Kubernetes Secret maps
+match the original hash baseline except the four reviewed Langfuse formatting
+corrections. No live ExternalSecret references any of the 32 GCP originals.
+All originals remain present; their latest enabled versions still match the
+migrated versions. Source deletion remains pending explicit named approval.
+
+Kora API, agents, company console, OTel ingest and OpenBao are Synced/Healthy.
+API readiness, signed BFF catalog and federation dependency checks passed;
+invalid signatures were rejected. Fresh agents generated a 3072-dimension
+embedding through the gateway; an invalid gateway key was rejected. MCP
+stateless discovery, tool listing and read-only nutrition lookup passed using
+the migrated credentials. Console metadata reads passed and payload reads were
+denied. Development and production Langfuse credentials authenticated with
+distinct project scopes.
+
+Shared telemetry disk pressure blocked repeat testing and was repaired by the
+approved PR #1198. Six spans through both gateways and a further span from Kora's
+agents reached the Langfuse v4 observations API. See
+[storage recovery](telemetry-storage-recovery.md) for timing and the remaining
+historical metrics backlog. The legacy traces API returns 404 in v4 events-only
+mode and must not be used as an ingestion failure signal.
+
+Backup `20260927T092106Z-3024d1f1dd83` passed isolated restore in 20.329 seconds;
+an independent read-only restore passed in 17.881 seconds. The dedicated recovery
+bucket contained exactly three retained snapshots. The encrypted original-source
+archive above remains available. Temporary migration writer permissions and
+tokens were removed/revoked.
+
+Issue #1191 remains open until approved source deletion and post-deletion checks.
+Separate platform onboarding permissions (#1194), image retention (#1196),
+telemetry capacity/backlog (#1197), and historical sandbox-sync deadline failures
+are not represented as fixed by the secret migration. No interactive mobile or
+human sign-in session was exercised.
