@@ -54,7 +54,7 @@ orphaned OpenBao role/policy after that rollout, since bootstrap upserts grants
 but does not prune omitted grants. No permanent application write grant remains.
 
 Source metadata, IAM and all enabled versions are archived at:
-`gs://tesseract-prod-backups-in/openbao/blog-migration/20260927T072511Z/gcp-sources.json.gz.kms`.
+`gs://tesseract-prod-backups-in/openbao/blog-migration/20260927T073552Z/gcp-sources.json.gz.kms`.
 The archive is gzip JSON encrypted with `openbao-backup-key`, additionally stored
 with GCS CMEK and the bucket's existing retention. Its decryption round trip was
 verified in memory. Restore by KMS decrypting then gunzipping in a controlled
@@ -71,3 +71,10 @@ the scoped OpenBao reader; do not reintroduce a GCP runtime dependency.
 
 Existing backup/legacy identity infrastructure findings are tracked separately in
 #1189. They predate migration; published-post API baseline is 21 posts, HTTP 200.
+
+The earlier `20260927T072511Z` archive is invalid (empty exported payloads) and
+has an `INVALID.txt` marker. Use only the replacement above: it was downloaded
+from GCS, decrypted in memory and compared against all five pinned GCP values.
+Use the migration helper’s base64 payload API format; GCP SM `--out-file=-`
+writes a literal file rather than stdout. The unintended local file was removed
+without displaying or committing its contents.
