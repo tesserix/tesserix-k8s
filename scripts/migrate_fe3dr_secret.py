@@ -7,13 +7,13 @@ import getpass
 import hmac
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 PROJECT = "tesseracthub-480811"
 SOURCE = "prod-homechef-openexchangerates-app-id"
@@ -80,6 +80,7 @@ class OpenBao:
                         "kv/data/homechef/",
                         "kv/data/homechef-development/",
                         "kv/data/blog/app/",
+                        "kv/data/postiz/app/",
                         "kv/data/devai/app/",
                         "kv/data/mark8ly/app/",
                         "kv/data/mark8ly-uat/app/",

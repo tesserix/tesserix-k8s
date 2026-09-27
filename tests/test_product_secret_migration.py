@@ -66,7 +66,7 @@ def test_rejects_unknown_product_and_duplicate_sources():
         migration.validate_plan("mark8ly", [item, item])
 
 
-@pytest.mark.parametrize("scope", ["mark8ly", "mark8ly-uat"])
+@pytest.mark.parametrize("scope", ["mark8ly", "mark8ly-uat", "postiz"])
 def test_missing_reviewed_destination_can_be_created(monkeypatch, scope):
     bao = OpenBao("http://127.0.0.1:18200", "synthetic-token")
 
