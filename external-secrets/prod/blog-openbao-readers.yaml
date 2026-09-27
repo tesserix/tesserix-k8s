@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: blog-production-reader
+  namespace: tesserix
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-blog-production
+  namespace: tesserix
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-blog-tesserix-production
+          serviceAccountRef:
+            name: blog-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: blog-legacy-reader
+  namespace: tesserix
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-blog-legacy
+  namespace: tesserix
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-blog-tesserix-legacy
+          serviceAccountRef:
+            name: blog-legacy-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: blog-production-reader
+  namespace: mongodb-blog
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-blog-production
+  namespace: mongodb-blog
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-blog-mongodb-blog-production
+          serviceAccountRef:
+            name: blog-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: blog-production-reader
+  namespace: db-backup-and-restore
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-blog-production
+  namespace: db-backup-and-restore
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-blog-db-backup-and-restore-production
+          serviceAccountRef:
+            name: blog-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: blog-migration-writer
+  namespace: openbao
+automountServiceAccountToken: false
