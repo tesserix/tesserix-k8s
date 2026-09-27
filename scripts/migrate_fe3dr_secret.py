@@ -76,7 +76,12 @@ class OpenBao:
                 error.code == 404
                 and method == "GET"
                 and path.startswith(
-                    ("kv/data/homechef/", "kv/data/homechef-development/")
+                    (
+                        "kv/data/homechef/",
+                        "kv/data/homechef-development/",
+                        "kv/data/roamie/app/",
+                        "kv/data/roamie-development/app/",
+                    )
                 )
             ):
                 return None

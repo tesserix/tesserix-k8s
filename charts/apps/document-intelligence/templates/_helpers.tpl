@@ -47,3 +47,18 @@ tesserix.io/product: {{ .Values.product }}
 {{- define "document-intelligence.fullname" -}}
 {{ (include "document-intelligence.config" . | fromYaml).fullname }}
 {{- end }}
+
+{{- define "document-intelligence.secretSource" -}}
+{{- if .openbaoKey }}
+sourceRef:
+  storeRef:
+    name: {{ required "openbaoStore is required with openbaoKey" .openbaoStore }}
+    kind: SecretStore
+remoteRef:
+  key: {{ .openbaoKey | quote }}
+  property: value
+{{- else }}
+remoteRef:
+  key: {{ .secretManagerKey | quote }}
+{{- end }}
+{{- end }}

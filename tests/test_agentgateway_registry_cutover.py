@@ -260,7 +260,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
             {
                 "HOMECHEF_MCP_KEY": "homechef/homechef-api/fe3dr-mcp-key",
                 "KORA_MCP_KEY": "prod-support-platform-kora-mcp-key",
-                "ROAMIE_TRAVEL_MCP_KEY": "prod-roamie-travel-mcp-key",
+                "ROAMIE_TRAVEL_MCP_KEY": "roamie/app/roamie-travel-mcp-key",
                 "MARK8LY_MCP_KEY": "prod-support-platform-mark8ly-mcp-key",
                 "PLATFORM_MCP_KEY": "prod-support-platform-platform-mcp-key",
                 "STOCKPILOT_MCP_KEY": "prod-support-platform-stockpilot-mcp-key",
