@@ -5,7 +5,7 @@ import yaml
 ROOT = pathlib.Path(__file__).parents[1]
 
 
-def test_production_api_and_worker_pause_on_gcp_before_handoff():
+def test_production_api_and_worker_use_openbao_while_paused():
     chart = ROOT / "charts/apps/homechef-api"
     docs = yaml.safe_load_all(
         subprocess.check_output(
@@ -28,7 +28,7 @@ def test_production_api_and_worker_pause_on_gcp_before_handoff():
         container = deployment["spec"]["template"]["spec"]["containers"][0]
         env = {e["name"]: e.get("value") for e in container["env"]}
         assert env["APP_SECRET_WRITES_PAUSED"] == "true"
-        assert env["APP_SECRET_STORE"] == "gcp"
+        assert env["APP_SECRET_STORE"] == "openbao"
         assert env["PII_SECRET_STORE"] == "gcp"
         assert env["OPENBAO_ROLE"] == "runtime-fe3dr-payment"
         assert env["OPENBAO_PII_ROLE"] == "app-homechef_homechef-api"
