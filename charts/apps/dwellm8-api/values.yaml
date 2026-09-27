@@ -101,8 +101,8 @@ env:
 payments:
   providers: "cashfree,offline"
   cashfree:
-    # Switch only after the fe3dr GCP writer is paused and drained (#1159).
-    openbao: true
+    # Shared fe3dr sandbox reader; the credential ownership stays with fe3dr.
+    readerStore: openbao-fe3dr-appdeps
     # Sandbox while Dwellm8's own merchant account is opened. Switching to live
     # is this URL, the two secret names below, and dropping allowSandboxInProd.
     baseUrl: "https://sandbox.cashfree.com/pg"
@@ -110,13 +110,10 @@ payments:
     # client changes behaviour on their release day rather than on ours.
     apiVersion: "2023-08-01"
 
-    # Secret Manager names, not values. These are HomeChef's Cashfree *test*
-    # credentials, borrowed while Dwellm8's merchant account is opened — safe
-    # only because they are test credentials. Note that prod-homechef-cashfree-
-    # app-id (no -test-) also holds a TEST credential today, so the unprefixed
-    # name is not a live one and must not be treated as the switch to live.
-    clientIdSecret: "prod-homechef-cashfree-test-app-id"
-    clientSecretSecret: "prod-homechef-cashfree-test-secret-key"
+    # OpenBao paths for borrowed fe3dr sandbox credentials. Use Dwellm8-owned
+    # production paths and grants when its merchant account is provisioned.
+    clientIdSecret: "homechef/homechef-api/fe3dr-cashfree-test-app-id"
+    clientSecretSecret: "homechef/homechef-api/fe3dr-cashfree-test-secret-key"
     # Defaults to clientSecretSecret — Cashfree signs with the merchant secret.
     webhookSecretSecret: ""
 
@@ -127,30 +124,28 @@ payments:
     # a live merchant account.
     allowSandboxInProd: true
 
-gcp:
-  secretManager:
-    enabled: true
-    secretStore: gcp-secret-store
-    refreshInterval: 1h
+externalSecrets:
+  enabled: true
+  refreshInterval: 1h
 
 # The impersonated-owner control (#227). A name, never a value: the key is in
-# Secret Manager and reaches the process through the payments ExternalSecret.
+# OpenBao and reaches the process through the payments ExternalSecret.
 payouts:
-  fingerprintKeySecret: "prod-dwellm8-payout-fp-key"
+  fingerprintKeySecret: "dwellm8/app/dwellm8-payout-fp-key"
 
 # The eSign docUrl signing key (#212). Same rule: a name, never a value. Safe
 # to rotate — a rotation kills at worst one signing window's URLs.
 esign:
-  docUrlKeySecret: "prod-dwellm8-docurl-key"
+  docUrlKeySecret: "dwellm8/app/dwellm8-docurl-key"
 
 # Twilio Verify (#22): prospect OTP. Names, never values. The SM entries hold
 # random development values until the Verify service is provisioned
 # (dwellm8 USER_REQUIREMENT.md item 12); the API reads the credential shape
 # (AC…/VA…) and keeps verification cleanly absent until the real ones land.
 twilio:
-  accountSidSecret: "prod-dwellm8-twilio-account-sid"
-  authTokenSecret: "prod-dwellm8-twilio-auth-token"
-  verifySidSecret: "prod-dwellm8-twilio-verify-sid"
+  accountSidSecret: "dwellm8/app/dwellm8-twilio-account-sid"
+  authTokenSecret: "dwellm8/app/dwellm8-twilio-auth-token"
+  verifySidSecret: "dwellm8/app/dwellm8-twilio-verify-sid"
 
 # The provider that carries a manager's email verification code (dwellm8#282).
 # Resend, as everywhere else on this platform: the sending domain publishes
@@ -171,7 +166,7 @@ mail:
 # The API connects as dwellm8_api — ADR-0003 §3's request role. Never as the
 # owner: the owner is the one role FORCE row level security exists to contain,
 # and it holds CREATEROLE for the schema bootstrap. The secret is reconciled by
-# CNPG from Secret Manager (see dwellm8-postgres applicationRoles).
+# CNPG from OpenBao (see dwellm8-postgres applicationRoles).
 # ADR-0002. The outbox is drained by a goroutine in the API rather than its own
 # deployment: the backlog is in PostgreSQL, so a replica that dies mid-drain
 # loses nothing and the survivors claim its rows with FOR UPDATE SKIP LOCKED.

@@ -36,3 +36,17 @@ Exact namespace identity and path ACLs protect product credentials from other
 workloads; secret values never enter source or logs. No persistent services are
 added, so ongoing cost is negligible. Before source deletion rollback can use
 old GCP refs; after deletion recovery requires the encrypted archive and KMS key.
+
+## Reviewed consumer cutover
+
+Recovery archive, including metadata/IAM and all enabled historical versions:
+`gs://tesseract-prod-backups-in/openbao/dwellm8-migration/20260927T142515Z/gcp-sources.json.gz.kms`.
+Remote ciphertext and decrypted content match the captured archive.
+
+All eleven observed bindings retain their existing seven target Secrets. The
+API, two CNPG charts and Dwellm8 Temporal select its namespaced OpenBao reader;
+the shared platform Temporal deployment retains its existing store. Local API
+rendering still omits ESO. The retired Cashfree GCP fallback is removed because
+its originals are already deleted; tests now enforce the OpenBao-only behavior.
+Product credential staging, live reader verification, writer retirement and
+post-cutover functional/restore acceptance remain required before deletion.
