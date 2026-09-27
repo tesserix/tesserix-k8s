@@ -58,3 +58,15 @@ def test_plan_rejects_aliases_and_duplicate_sources():
     item["version"] = "1"
     with pytest.raises(ValueError):
         batch.validate_plan([item, item])
+
+
+@pytest.mark.parametrize("suffix", [
+    "gip-web-api-key", "customer-client-secret", "business-client-secret", "internal-client-secret",
+])
+def test_reviewed_bff_identity_entries_use_product_prefixed_paths(suffix):
+    plan = [{"source": "prod-homechef-" + suffix, "version": "1",
+             "targets": ["homechef/homechef-auth-bff/fe3dr-" + suffix]}]
+    batch.validate_plan(plan)
+    policy = batch.policy_for(plan)
+    assert 'path "kv/data/homechef/homechef-auth-bff/fe3dr-' + suffix + '"' in policy
+    assert '"update"' not in policy.split('path "auth/token/lookup-self"')[0]

@@ -21,6 +21,10 @@ from migrate_fe3dr_secret import (
 
 POLICY = "fe3dr-migrate-reviewed"
 STATIC_SUFFIXES = {
+    "gip-web-api-key",
+    "customer-client-secret",
+    "business-client-secret",
+    "internal-client-secret",
     "openexchangerates-app-id",
     "exchangerates-api-key",
     "google-maps-api-key",
