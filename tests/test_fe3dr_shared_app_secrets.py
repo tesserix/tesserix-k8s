@@ -97,3 +97,15 @@ def test_declared_shared_consumers_use_canonical_openbao_values():
                 assert entry["remoteRef"]["property"] == "value"
                 count += 1
     assert count == 9
+
+
+def test_shared_chart_owners_apply_remote_source_changes():
+    for file in [
+        "argocd/prod/apps/blog/tesserix-blog.yaml",
+        "argocd/prod/apps/beautyandcruor/beautyandcruor.yaml",
+    ]:
+        app = yaml.safe_load((ROOT / file).read_text())
+        assert (
+            "RespectIgnoreDifferences=true"
+            not in app["spec"]["syncPolicy"]["syncOptions"]
+        )
