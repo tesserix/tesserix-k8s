@@ -300,6 +300,13 @@ bootstrap:
     - name: snapshot
       hcl: |
         path "sys/storage/raft/snapshot" { capabilities = ["read"] }
+    - name: recovery-backup
+      hcl: |
+        path "sys/storage/raft/snapshot" { capabilities = ["read"] }
+        path "kv/data/platform/backup-verification" { capabilities = ["create", "update", "read"] }
+    - name: snapshot-verify
+      hcl: |
+        path "kv/data/platform/backup-verification" { capabilities = ["read"] }
     # Keep the legacy API role compatible without granting access to BFF secrets.
     - name: read-homechef
       hcl: |
@@ -585,6 +592,16 @@ bootstrap:
       namespaces: ["openbao"]
       policies: ["snapshot"]
       ttl: 30m
+    - name: recovery-backup
+      serviceAccounts: ["openbao-backup"]
+      namespaces: ["openbao-recovery"]
+      policies: ["recovery-backup"]
+      ttl: 20m
+    - name: snapshot-verify
+      serviceAccounts: ["openbao-backup", "openbao-restore-test"]
+      namespaces: ["openbao-recovery"]
+      policies: ["snapshot-verify"]
+      ttl: 5m
     # ESO authenticates as the *application's* ServiceAccount, not its own, so
     # the role a secret is read under is decided by which pod will consume it.
     - name: read-homechef
@@ -762,3 +779,15 @@ namespaceWhitelist:
       # is the same failure mode on a different app).
       #
       # Checked before removing: 0 of 245 ExternalSecrets referenced it.
+
+# Dedicated bucket/IAM is provisioned by the storage stack.
+recovery:
+  enabled: true
+  schedule: "0 3,15 * * *"
+  project: tesseracthub-480811
+  bucket: tesseracthub-480811-openbao-recovery-prod
+  kmsKey: projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/openbao-backup-key
+  backupServiceAccount: openbao-recovery-backup@tesseracthub-480811.iam.gserviceaccount.com
+  restoreServiceAccount: openbao-recovery-test@tesseracthub-480811.iam.gserviceaccount.com
+  baoImage: quay.io/openbao/openbao@sha256:11fd73a2102cda9c55d5d881a8c3210303146a7ec1e8ac76f526e175c6d24641
+  runnerImage: docker.io/google/cloud-sdk@sha256:cfca8415b7ce1abccf4c7a1a9c78b4da2c3718ac668806480a4471cb052e1ca9
