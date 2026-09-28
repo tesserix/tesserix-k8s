@@ -417,6 +417,7 @@ resource "google_artifact_registry_repository" "docker_remote" {
 
 locals {
   retired_application_secret_ids = toset([
+    "prod-typesense-api-key",
     "prod-openbao-recovery-keys",
     "prod-homechef-postgresql-password",
     "dev-kora-document-intelligence-signing-key",
