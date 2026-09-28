@@ -49,13 +49,6 @@ def test_langfuse_access_is_exact_and_namespace_bound():
             {t for src, t in TARGETS.items() if src.startswith("prod-evals-")},
             ["read"],
         ),
-        (
-            "langfuse-migrate-reviewed",
-            "langfuse-migration-writer",
-            "observability",
-            set(TARGETS.values()),
-            ["create", "read"],
-        ),
     ):
         role = json.loads(config[f"role-{name}.json"])
         assert role["bound_service_account_names"] == [sa]
@@ -72,4 +65,17 @@ def test_langfuse_access_is_exact_and_namespace_bound():
             "langfuse"
         ]
         == TARGETS
+    )
+
+
+def test_temporary_langfuse_grant_is_removed():
+    docs = render("charts/thirdparty/openbao")
+    cm = resource(docs, "ConfigMap", "openbao-bootstrap")["data"]
+    assert "policy-langfuse-migrate-reviewed.hcl" not in cm
+    assert "role-langfuse-migrate-reviewed.json" not in cm
+    assert (
+        "langfuse-migration-writer"
+        not in (
+            ROOT / "external-secrets/prod/langfuse-openbao-readers.yaml"
+        ).read_text()
     )
