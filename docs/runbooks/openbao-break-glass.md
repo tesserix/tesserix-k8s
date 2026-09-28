@@ -227,9 +227,9 @@ python3 charts/thirdparty/openbao/files/recovery_record.py load /secure/private/
 ```
 
 Use a private operator-controlled directory for the output; remove the plaintext
-file once the recovery procedure is complete. Do not use the old Secret Manager
-record as the steady-state reader after cutover. Retain it until acceptance and
-the separate source-retirement change are complete.
+file once the recovery procedure is complete. The old Secret Manager
+record was retired in #1240 after acceptance. Use the independent GCS record;
+there is no steady-state Secret Manager fallback.
 
 Bootstrap defaults to `allowInitialization: false`. A restored cluster must
 restore its existing Raft state, not initialize new keys. Fresh initialization

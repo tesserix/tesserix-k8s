@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tesserix-production-reader
+  namespace: tesserix
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-tesserix-production
+  namespace: tesserix
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-tesserix-tesserix-production
+          serviceAccountRef:
+            name: tesserix-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tesserix-production-reader
+  namespace: mark8ly
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-tesserix-production
+  namespace: mark8ly
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-tesserix-mark8ly-production
+          serviceAccountRef:
+            name: tesserix-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tesserix-migration-writer
+  namespace: tesserix
+automountServiceAccountToken: false
