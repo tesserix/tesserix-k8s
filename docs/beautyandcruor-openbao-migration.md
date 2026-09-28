@@ -17,7 +17,8 @@ GCP SDK cutover is needed: the enquiry sidecar consumes the existing Secret keys
 The enquiry Resend key already reads OpenBao through `openbao-fe3dr-appdeps`.
 Preserve its path and target bytes. A fourth GCP source,
 `prod-beautyandcruor-cloudflare-token`, has an enabled version but no confirmed
-consumer in the current inventory. It remains a separate operational-credential
+consumer in the current inventory. Cloudflare token verification reports it as
+expired (HTTP 200 with token status `expired`). It remains a separate operational-credential
 review; lack of an explicit ESO binding is not proof that it is unused.
 
 Baseline: deployment ready; public UI at `beautyandcruor.com`, sidecar health,
@@ -34,3 +35,7 @@ hashes, preserve image parameters, repeat functional checks and retire write
 access. Never bulk-sync parent Applications. On initial cutover, use a selective
 ExternalSecret sync without `RespectIgnoreDifferences=true` if Argo preserves old
 remoteRef fields, then verify the actual path/property and refresh status.
+
+Source archive for the three admin credentials:
+`gs://tesseract-prod-backups-in/openbao/beautyandcruor-migration/20260928T070857Z/gcp-sources.json.gz.kms`.
+Remote ciphertext and decrypt equality were verified.
