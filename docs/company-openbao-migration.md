@@ -1,9 +1,10 @@
 # Company and console OpenBao migration
 
 Tracks [#1209](https://github.com/tesserix/tesserix-k8s/issues/1209).
-Status: seven pinned values staged and verified in OpenBao. Both namespace readers
-passed byte equality and denied out-of-scope reads. Consumer cutover is prepared;
-no GCP originals deleted for this group.
+Status: completed through #1241 and #1242. Seven pinned values migrated, all ten
+bindings freshly verified after source deletion, and seven GCP originals deleted.
+Both scoped readers and all 13 company/console/auth-bff functional checks passed.
+Four deployments remain ready with unchanged images and Argo parameters.
 
 The company application has seven remaining GCP references, with ten confirmed
 ESO bindings across the Tesserix and Mark8ly namespaces. Use production paths
@@ -65,3 +66,15 @@ console source (`main-419b036`) has no production use of `ARGOCD_AUTH_TOKEN`;
 the value is preserved unchanged, and is not counted as a passing credential.
 No rotation is included. Remaining console, database and shared platform sources
 are separate migration cohorts; this seven-source cohort does not complete them.
+
+## Completion evidence
+
+The temporary writer service account, role and policy are absent and issued tokens
+were revoked. Backup `20260928T092744Z-ce6799cb6c66` restored in 20.289 seconds,
+with three verified backups retained and pruning confirmed. All four whole-Secret
+hashes matched before and after deletion. No cluster ExternalSecret references
+remain to these seven GCP sources. The seven-day source-access audit returned no
+records and therefore is not additional evidence of exclusive ownership.
+
+Cleanup total after this cohort: 285; fresh remaining GCP inventory: 390.
+The next cohort is tracked in `docs/console-openbao-migration.md`.
