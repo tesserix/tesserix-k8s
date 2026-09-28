@@ -1,8 +1,9 @@
 # Company and console OpenBao migration
 
 Tracks [#1209](https://github.com/tesserix/tesserix-k8s/issues/1209).
-Status: access configuration prepared locally; no values copied and no consumer
-cutover or source deletion completed for this group.
+Status: seven pinned values staged and verified in OpenBao. Both namespace readers
+passed byte equality and denied out-of-scope reads. Consumer cutover is prepared;
+no GCP originals deleted for this group.
 
 The company application has seven remaining GCP references, with ten confirmed
 ESO bindings across the Tesserix and Mark8ly namespaces. Use production paths
@@ -26,8 +27,9 @@ across all three; no session-key rotation is part of this migration.
 
 The Tesserix reader can read exactly these seven paths. The Mark8ly reader can
 read only the internal API token. Neither can list, create, overwrite or delete.
-The temporary writer is namespace-bound, uses a fifteen-minute TTL and has only
-create/read on the seven exact destinations, plus self-lookup/revocation. The
+The staging writer was namespace-bound with a fifteen-minute TTL and exact
+create/read permissions. Its issued token has been revoked; this cutover removes
+its desired role, policy and service account. The
 migration script validates pinned versions, uses CAS=0 and refuses differences.
 Retire the writer and its issued tokens once staging and readback are complete.
 
@@ -46,3 +48,20 @@ for remaining sources. Do not remove that backend while other products still
 need it. The old GCP metadata health helper has no production function callers
 in the current source scan; verify imports and tests before removing the unused
 SDK dependency. Keep the portal's OpenBao metadata-only health checks read-blind.
+
+## Staging evidence and legacy credential
+
+All seven pinned values and ten existing ESO bindings matched. Recoverable GCP
+metadata, IAM and enabled versions were encrypted and verified at
+`gs://tesseract-prod-backups-in/openbao/company-migration/20260928T085926Z/gcp-sources.json.gz.kms`.
+
+Company health, anonymous/invalid session denial, internal API token authentication
+and a short-lived synthetic encrypted session passed through an authorized local
+port-forward. The GitHub token authenticated successfully. Public endpoint checks
+returned 403 from the external access layer and are not application evidence.
+
+The legacy Argo token fails authenticated Argo access. The deployed company and
+console source (`main-419b036`) has no production use of `ARGOCD_AUTH_TOKEN`;
+the value is preserved unchanged, and is not counted as a passing credential.
+No rotation is included. Remaining console, database and shared platform sources
+are separate migration cohorts; this seven-source cohort does not complete them.
