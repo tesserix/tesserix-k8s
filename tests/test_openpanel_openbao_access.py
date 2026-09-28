@@ -55,13 +55,6 @@ def test_openpanel_access_is_exact_and_namespace_bound():
             set(CLIENTS.values()),
             ["create", "read", "update"],
         ),
-        (
-            "openpanel-migrate-reviewed",
-            "openpanel-migration-writer",
-            "openpanel",
-            set(TARGETS.values()),
-            ["create", "read"],
-        ),
     ):
         role = json.loads(config[f"role-{name}.json"])
         assert role["bound_service_account_names"] == [sa]
@@ -157,3 +150,17 @@ def test_openbao_accepts_only_analytics_operator_identity():
         for rule in auth["spec"]["rules"]
         for source in rule.get("from", [])
     )
+
+
+def test_openpanel_temporary_migration_writer_is_retired():
+    config = resource(
+        render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap"
+    )["data"]
+    assert "role-openpanel-migrate-reviewed.json" not in config
+    assert "policy-openpanel-migrate-reviewed.hcl" not in config
+    docs = list(
+        yaml.safe_load_all(
+            (ROOT / "external-secrets/prod/openpanel-openbao-readers.yaml").read_text()
+        )
+    )
+    assert all(doc["metadata"]["name"] != "openpanel-migration-writer" for doc in docs)
