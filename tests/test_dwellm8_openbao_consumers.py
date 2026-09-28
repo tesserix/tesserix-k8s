@@ -68,13 +68,13 @@ def test_local_dwellm8_has_no_external_secret_dependency():
     )
 
 
-def test_shared_platform_temporal_retains_its_existing_store():
+def test_shared_platform_temporal_uses_its_own_openbao_store():
     secret = resource(render("temporal"), "ExternalSecret", "temporal-postgres-auth")
     assert secret["spec"]["secretStoreRef"] == {
-        "name": "gcp-secret-store",
-        "kind": "ClusterSecretStore",
+        "name": "openbao-temporal-production",
+        "kind": "SecretStore",
     }
     assert (
         secret["spec"]["data"][0]["remoteRef"]["key"]
-        == "prod-temporal-postgresql-password"
+        == "temporal/app/temporal-postgresql-password"
     )
