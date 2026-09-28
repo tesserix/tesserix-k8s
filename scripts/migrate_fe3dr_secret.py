@@ -84,6 +84,7 @@ class OpenBao:
                         "kv/data/dwellm8/app/",
                         "kv/data/support-platform/app/",
                         "kv/data/planning-poker/app/",
+                        "kv/data/beautyandcruor/app/",
                         "kv/data/devai/app/",
                         "kv/data/mark8ly/app/",
                         "kv/data/mark8ly-uat/app/",
