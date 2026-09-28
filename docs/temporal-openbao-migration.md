@@ -28,7 +28,9 @@ refresh and all functional checks. Storage and app-secrets Terraform states have
 no owner for this source. No database data, password or service deployment is
 changed by the migration.
 
-Current status: discovery and local manifest preparation only. All six database
-connections pass real credential checks and reject wrong passwords. HomeChef and
-Scrapper report SERVING, and the shared platform reports SERVING through a direct
-port-forward. Archive, staging, rollout and deletion are pending.
+Staging completed on 2026-09-28 with byte equality and temporary token, role,
+policy and service account removed. Recovery archive:
+`gs://tesseract-prod-backups-in/openbao/temporal-migration/20260928T140002Z/gcp-sources.json.gz.kms`.
+All six database connections pass real credential checks and reject wrong
+passwords. HomeChef, Scrapper and the shared Temporal platform report SERVING.
+Consumer rollout, final isolated recovery verification and deletion are pending.
