@@ -21,7 +21,7 @@ TARGETS = {
 }
 
 
-def test_console_reader_and_temporary_writer_are_exact_and_namespace_bound():
+def test_console_reader_is_exact_and_namespace_bound():
     config = resource(
         render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap"
     )["data"]
@@ -31,12 +31,6 @@ def test_console_reader_and_temporary_writer_are_exact_and_namespace_bound():
             "console-production-reader",
             '"read"',
             "1h",
-        ),
-        (
-            "console-migrate-reviewed",
-            "console-migration-writer",
-            '"create", "read"',
-            "15m",
         ),
     ]:
         role = json.loads(config[f"role-{name}.json"])
@@ -65,7 +59,7 @@ def test_console_reader_and_temporary_writer_are_exact_and_namespace_bound():
         "role": "read-console-tesserix-production",
         "serviceAccountRef": {"name": "console-production-reader"},
     }
-    for name in ("console-production-reader", "console-migration-writer"):
+    for name in ("console-production-reader",):
         sa = resource(docs, "ServiceAccount", name)
         assert sa["metadata"]["namespace"] == "tesserix"
         assert sa["automountServiceAccountToken"] is False
@@ -75,3 +69,17 @@ def test_console_reader_and_temporary_writer_are_exact_and_namespace_bound():
         ]
         == TARGETS
     )
+
+
+def test_console_staging_writer_is_retired():
+    config = resource(
+        render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap"
+    )["data"]
+    assert "role-console-migrate-reviewed.json" not in config
+    assert "policy-console-migrate-reviewed.hcl" not in config
+    docs = list(
+        yaml.safe_load_all(
+            (ROOT / "external-secrets/prod/console-openbao-readers.yaml").read_text()
+        )
+    )
+    assert all(d["metadata"]["name"] != "console-migration-writer" for d in docs)

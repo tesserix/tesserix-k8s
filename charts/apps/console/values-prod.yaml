@@ -94,8 +94,6 @@ env:
 gcp:
   workloadIdentity:
     gcpServiceAccount: ""
-  secretManager:
-    secretPrefix: "prod"
 
 pdb:
   enabled: true
@@ -109,12 +107,12 @@ pdb:
 # are what the Application actually renders (see the ordering note at the top of
 # this file), so this is the only place the flag can be trusted to take effect.
 #
-# READ THE PRECONDITION IN values.yaml BEFORE CHANGING. Both GSM secrets named
+# READ THE PRECONDITION IN values.yaml BEFORE CHANGING. Both OpenBao secrets named
 # by `stripeSecretKeyTest` / `stripeSecretKeyLive` must exist in
-# tesseracthub-480811 before they are named here — ESO resolves `data` as a
+# their scoped OpenBao paths before they are named here — ESO resolves `data` as a
 # unit, so a dangling reference parks the whole ExternalSecret.
 #
-# SATISFIED AS OF 2026-08-28: both exist, both are restricted keys that were
+# ORIGINAL CREDENTIAL VALIDATION (2026-08-28): both exist, both are restricted keys that were
 # verified UNABLE TO WRITE, and both modes report `clean`. Day one of the 7-day
 # window #327's Stripe write-key revocation rests on is 2026-08-27 (test) and
 # 2026-08-28 (live).
@@ -122,7 +120,7 @@ pdb:
 # The read-only property is checked at the CREDENTIAL, not claimed by the code:
 # a checker that could write to Stripe would be evidence that the catalog and
 # Stripe agree only because the checker can make them agree. The live write key
-# is a SEPARATE credential (`prod-tesserix-stripe-write-key-live`).
+# is a SEPARATE credential (`console/app/console-stripe-write-key-live`).
 #
 # UNTIL 2026-08-30 THIS CHART MOUNTED THAT KEY NOWHERE, and this note said so.
 # It is now mounted, by `publishCatalog.enabled` below — tesserix-home#327's
@@ -148,10 +146,10 @@ publishCatalog:
   enabled: true
   # tesserix-home#540 — the test-mode write key now exists, so a publish to
   # test is possible for the first time. Set here rather than in values.yaml
-  # so a chart consumer without this GSM secret does not get a dangling
+  # so a chart consumer without this OpenBao secret does not get a dangling
   # remoteRef: ESO resolves `data` as a unit, and one unresolvable reference
   # parks the WHOLE ExternalSecret, taking SESSION_ENCRYPT_KEY with it.
   #
   # On acct_1SgwbhE1SGxvhzVd (the sandbox), NOT the live account — see the
   # base values.yaml block for why that distinction is load-bearing.
-  stripeWriteKeyTest: prod-tesserix-stripe-write-key-test
+  stripeWriteKeyTest: console/app/console-stripe-write-key-test

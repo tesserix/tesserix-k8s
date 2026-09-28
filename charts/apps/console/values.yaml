@@ -424,19 +424,17 @@ env:
   # At most ONE extra round trip, then the same error as before.
   CONSOLE_CALLBACK_RETRY: "true"
 
-# External Secrets Configuration (GCP Secret Manager → K8s Secrets)
+# External Secrets Configuration (OpenBao → K8s Secrets)
 externalSecrets:
   enabled: true
-  secretStoreRef: "gcp-secret-store"
+  secretStoreRef: "openbao-console-production"
 
-# GCP Secret Manager configuration
+# GCP project and workload identity configuration
 gcp:
   projectId: ""  # Inherited from global-config.yaml if empty
   namespace: "tesserix"
   workloadIdentity:
     gcpServiceAccount: ""
-  secretManager:
-    secretPrefix: "devtest"
 
 # ConfigMap for additional non-secret configuration. Empty by default; kept so
 # operator tweaks have somewhere to land without a chart change.
@@ -483,17 +481,16 @@ database:
 #      run is day one; there is no dry-run mode, because a run that did not
 #      record would not be a run.
 #   2. It ADDS the per-mode STRIPE_RESTRICTED_READ_KEY_* entries to the
-#      ExternalSecret, which means ESO starts resolving them in GCP Secret
-#      Manager.
+#      ExternalSecret, which means ESO starts resolving them in OpenBao.
 #
 # PRECONDITION, AND IT IS A LIVE-SYSTEM STATE RATHER THAN A MERGED PR: every
-# GSM secret named below must already EXIST in project tesseracthub-480811, as
+# OpenBao secret named below must already EXIST at its scoped OpenBao path, as
 # a Stripe restricted key with read on Prices and nothing else. ESO resolves
 # the ExternalSecret's `data` as a unit — one missing remoteRef parks the whole
 # thing in SecretSyncedError. The already synced Secret is retained, so the
 # console keeps serving, but it STOPS REFRESHING: a later SESSION_ENCRYPT_KEY
 # rotation would then never reach the console, and that failure looks like an
-# unexplained login loop rather than an error. Create the GSM secret first,
+# unexplained login loop rather than an error. Create the OpenBao secret first,
 # confirm it, then name it here.
 #
 # THAT IS WHY EACH MODE IS NAMED SEPARATELY AND EMPTY MEANS "NOT WIRED": test
@@ -508,7 +505,7 @@ database:
 parityCheck:
   enabled: false
 
-  # GSM secrets holding the per-mode restricted keys, one per Stripe mode.
+  # OpenBao secrets holding the per-mode restricted keys, one per Stripe mode.
   # Named here rather than inlined in the template so a rotation to a
   # differently-named secret is a values change. Only read when `enabled`.
   #
@@ -521,7 +518,7 @@ parityCheck:
   # shipped between 0293afa6 and this change.
   #
   # EMPTY STRING MEANS "NOT WIRED YET" — the entry is omitted from the
-  # ExternalSecret and the CronJob entirely, rather than referencing a GSM
+  # ExternalSecret and the CronJob entirely, rather than referencing an OpenBao
   # secret that does not exist. See the ESO note above for why a dangling
   # reference is worse than an absent one.
   #
@@ -530,7 +527,7 @@ parityCheck:
   # optional) — live having no credential for months must cost live's row and
   # nothing else, because taking test down with it would forfeit every clean
   # day test has accumulated.
-  stripeSecretKeyTest: prod-tesserix-stripe-restricted-read-key-test
+  stripeSecretKeyTest: console/app/console-stripe-restricted-read-key-test
 
   # The MAIN Tesserix account's live mode, `acct_1SgwbFCyiazmanuP`, confirmed
   # against the dashboard on 2026-08-28 rather than inferred from a secret's
@@ -567,7 +564,7 @@ parityCheck:
   # zero `mark8ly_` prices, verified through this key. That is the honest
   # "nothing here yet" and it exits 0, so the nightly Job stops showing red for
   # a mode nobody has launched.
-  stripeSecretKeyLive: prod-tesserix-stripe-restricted-read-key-live
+  stripeSecretKeyLive: console/app/console-stripe-restricted-read-key-live
 
   # Daily, 02:15 UTC. See the long note in
   # templates/parity-check-cronjob.yaml for why the cadence is exactly one run
@@ -626,11 +623,10 @@ parityCheck:
 # worst case is that hour plus a `kubectl rollout restart deploy/console`.
 publishCatalog:
   enabled: false
-  # GSM secret holding the live-mode Stripe WRITE key, in
-  # tesseracthub-480811. VERIFIED 2026-08-30 against the live API, without
+  # OpenBao path holding the live-mode Stripe WRITE key. VERIFIED 2026-08-30 against the live API, without
   # creating anything: it is an `rk_live_` restricted key on
   # acct_1SgwbFCyiazmanuP (the prod account), it is a DIFFERENT credential
-  # from `prod-tesserix-stripe-restricted-read-key-live` (different SHA256),
+  # from `console/app/console-stripe-restricted-read-key-live` (different SHA256),
   # and it holds write on both Products and Prices — `POST /v1/products` with
   # an empty body answers `Missing required param: name`, a validation error,
   # where a read-only key answers `more_permissions_required`.
@@ -639,9 +635,9 @@ publishCatalog:
   # contradicts its slot, so an `rk_test_` value here fails loudly with
   # "holds a test mode key but is read as the live mode credential" rather
   # than publishing the live catalog into a sandbox.
-  stripeWriteKeyLive: prod-tesserix-stripe-write-key-live
+  stripeWriteKeyLive: console/app/console-stripe-write-key-live
 
-  # GSM secret holding the TEST-mode Stripe WRITE key. Added for
+  # OpenBao secret holding the TEST-mode Stripe WRITE key. Added for
   # tesserix-home#540: `WRITE_KEY_ENV` has always named STRIPE_WRITE_KEY_TEST,
   # but no secret backed it, so a publish to test failed with
   # StripeWriteUnavailableError before it started. The mode designed as the
