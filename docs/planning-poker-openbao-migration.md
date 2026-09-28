@@ -40,3 +40,17 @@ Recovery source archive:
 `gs://tesseract-prod-backups-in/openbao/planning-poker-migration/20260928T063153Z/gcp-sources.json.gz.kms`.
 The archive contains source metadata, IAM and enabled versions, and its remote
 ciphertext/decryption matched before migration.
+
+Completed: access #1233 and cutover #1234 merged; product rules merged in
+`tesserix/planning-poker#19`. The single GCP original was deleted after verified
+archive, reader scope, isolated restore and functional acceptance. Post-deletion
+fresh ESO read, whole-Secret equality, unchanged images/Argo parameters and all
+seven functional checks passed. Temporary ServiceAccount/role/policy are absent.
+Backup `20260928T064623Z-4cdcb6f9be89` restored in 19.689 seconds, with three
+verified backups retained and pruned objects absent. Total completed migration
+cleanup is 274 records; Support Platform's four originals remain retained.
+
+Argo's `RespectIgnoreDifferences=true` initially preserved the old remoteRef while
+changing the store. A selective ExternalSecret sync without that option applied
+the reviewed path/property. Verify actual ESO fields and fresh reads after sync;
+a healthy Deployment alone does not establish that ESO uses the new provider.

@@ -75,6 +75,7 @@ def test_rejects_unknown_product_and_duplicate_sources():
         "dwellm8",
         "support-platform",
         "planning-poker",
+        "beautyandcruor",
     ],
 )
 def test_missing_reviewed_destination_can_be_created(monkeypatch, scope):

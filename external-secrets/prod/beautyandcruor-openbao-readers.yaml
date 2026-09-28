@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: beautyandcruor-production-reader
+  namespace: tesserix
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-beautyandcruor-production
+  namespace: tesserix
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-beautyandcruor-tesserix-production
+          serviceAccountRef:
+            name: beautyandcruor-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: beautyandcruor-migration-writer
+  namespace: openbao
+automountServiceAccountToken: false
