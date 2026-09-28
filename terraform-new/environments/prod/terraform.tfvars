@@ -2215,22 +2215,6 @@ secrets = [
     }
     replication_locations = [{ location = "asia-south1" }]
   },
-  # OpenBao recovery keys. Created empty here; the bootstrap Job adds the only
-  # version, which is why openbao-bootstrap holds secretVersionAdder below.
-  {
-    secret_id = "prod-openbao-recovery-keys"
-    labels = {
-      tier        = "infrastructure"
-      type        = "encryption"
-      environment = "prod"
-    }
-    annotations = {
-      "managed-by"  = "terraform"
-      "description" = "OpenBao recovery keys and initial root token"
-    }
-    replication_locations = [{ location = "asia-south1" }]
-  },
-
   # ===========================================================================
   # Auth Secrets
   # ===========================================================================
@@ -4058,8 +4042,7 @@ service_accounts = [
     bucket_bindings = []
     secret_bindings = []
   },
-  # Bootstrap Job. Adds the recovery-key version once, at cluster init; viewer
-  # lets it check whether a version already exists before re-initialising.
+  # Independent GCS/KMS recovery grants are owned by the storage stack.
   {
     name          = "openbao-bootstrap"
     display_name  = "OpenBao Bootstrap"
@@ -4069,13 +4052,7 @@ service_accounts = [
       { namespace = "openbao", kubernetes_service_account = "openbao-bootstrap" }
     ]
     bucket_bindings = []
-    secret_bindings = [
-      { secret_id = "prod-openbao-recovery-keys", role = "roles/secretmanager.viewer" },
-      { secret_id = "prod-openbao-recovery-keys", role = "roles/secretmanager.secretVersionAdder" },
-      # Reads the root token back when a partial first run left the cluster
-      # initialised but Kubernetes auth unconfigured.
-      { secret_id = "prod-openbao-recovery-keys", role = "roles/secretmanager.secretAccessor" }
-    ]
+    secret_bindings = []
   },
   # Snapshot CronJob. objectAdmin rather than objectCreator: it prunes
   # snapshots past the retention window as well as writing them.

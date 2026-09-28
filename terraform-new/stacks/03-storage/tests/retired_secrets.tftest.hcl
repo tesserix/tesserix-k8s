@@ -13,6 +13,7 @@ run "retired_application_credentials_are_not_recreated" {
     create_kms_keyring = false
     enable_cmek        = false
     secrets = [
+      { secret_id = "prod-openbao-recovery-keys", platform_exception_reason = "Legacy recovery material now in independent GCS", secret_data = "synthetic-only", iam_bindings = [{ role = "roles/secretmanager.secretAccessor", member = "serviceAccount:synthetic@synthetic-project.iam.gserviceaccount.com" }] },
       { secret_id = "prod-homechef-postgresql-password", secret_data = "synthetic-only", iam_bindings = [{ role = "roles/secretmanager.secretAccessor", member = "serviceAccount:synthetic@synthetic-project.iam.gserviceaccount.com" }] },
       { secret_id = "dev-kora-document-intelligence-signing-key", secret_data = "synthetic-only", iam_bindings = [{ role = "roles/secretmanager.secretAccessor", member = "serviceAccount:synthetic@synthetic-project.iam.gserviceaccount.com" }] },
       { secret_id = "prod-ghcr-token", secret_data = "synthetic-only", iam_bindings = [{ role = "roles/secretmanager.secretAccessor", member = "serviceAccount:synthetic@synthetic-project.iam.gserviceaccount.com" }] }
