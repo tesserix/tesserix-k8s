@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: temporal-production-reader
+  namespace: homechef
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-temporal-production
+  namespace: homechef
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-temporal-homechef-production
+          serviceAccountRef:
+            name: temporal-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: temporal-production-reader
+  namespace: scrapper
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-temporal-production
+  namespace: scrapper
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-temporal-scrapper-production
+          serviceAccountRef:
+            name: temporal-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: temporal-production-reader
+  namespace: infra
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-temporal-production
+  namespace: infra
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-temporal-infra-production
+          serviceAccountRef:
+            name: temporal-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: temporal-production-reader
+  namespace: temporal-system
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-temporal-production
+  namespace: temporal-system
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-temporal-temporal-system-production
+          serviceAccountRef:
+            name: temporal-production-reader

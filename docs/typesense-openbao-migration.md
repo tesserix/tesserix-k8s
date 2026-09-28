@@ -28,4 +28,14 @@ this migration copies the current value and performs no rotation.
 Staging completed on 2026-09-28 with byte equality and all temporary migration
 grants removed. Encrypted archive:
 `gs://tesseract-prod-backups-in/openbao/typesense-migration/20260928T133147Z/gcp-sources.json.gz.kms`.
-Consumer rollout, final recovery verification and Terraform retirement are pending.
+Consumer rollout, final recovery verification and Terraform retirement are complete.
+
+## Completion
+
+Typesense cohort complete. PR #1253 switched its production reader to OpenBao; #1254 retired the Terraform-owned original using a reviewed Atlantis plan containing exactly one delete and no other changes. GCP and Terraform state both confirm the source is absent.
+
+The namespace-bound reader passes byte equality, exact read-only permissions and wrong-namespace denial. Authenticated collections requests succeed, invalid keys are rejected, and health passes. ESO refreshed successfully at 13:59:05Z after deletion, preserving the value, workload images/replicas and Argo overrides. Temporary migration grants were removed.
+
+Recovery archive: `gs://tesseract-prod-backups-in/openbao/typesense-migration/20260928T133147Z/gcp-sources.json.gz.kms`. Backup `20260928T134459Z-643ab0fa347a` restored in 20.035 seconds, with exactly three verified backups retained and pruning confirmed.
+
+Fresh GCP inventory: 350 secrets. GrowthBook remains deferred. Shared Temporal is next; its local changes are in draft #1255 with all six database credentials and three Temporal service health checks passing. Keep this issue open; the estate migration is not complete.
