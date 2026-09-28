@@ -1,5 +1,18 @@
 {{- if .Values.bootstrap.enabled }}
 apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openbao-bootstrap-staging
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.bootstrap.staging.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.bootstrap.staging.size }}
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: {{ .Values.bootstrap.serviceAccount.name }}
@@ -54,8 +67,14 @@ spec:
         - name: bootstrap
           image: "{{ .Values.bootstrap.image.repository }}:{{ .Values.bootstrap.image.tag }}"
           imagePullPolicy: {{ .Values.bootstrap.image.pullPolicy }}
-          command: ["/bin/bash", "/config/bootstrap.sh"]
+          command: ["python3", "/config/recovery_record.py", "run", "/config/bootstrap.sh"]
           env:
+            - name: RECOVERY_OBJECT_URI
+              value: {{ .Values.bootstrap.recoveryObjectURI | quote }}
+            - name: RECOVERY_KMS_KEY
+              value: {{ .Values.bootstrap.recoveryKMSKey | quote }}
+            - name: ALLOW_INITIALIZATION
+              value: {{ .Values.bootstrap.allowInitialization | quote }}
             # gcloud writes its config here and the root filesystem is read-only.
             - name: CLOUDSDK_CONFIG
               value: /tmp/gcloud
@@ -69,12 +88,17 @@ spec:
           resources:
 {{ toYaml .Values.bootstrap.resources | indent 12 }}
           volumeMounts:
+            - name: recovery-staging
+              mountPath: /recovery
             - name: config
               mountPath: /config
               readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
+        - name: recovery-staging
+          persistentVolumeClaim:
+            claimName: openbao-bootstrap-staging
         - name: config
           configMap:
             name: openbao-bootstrap

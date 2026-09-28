@@ -19,8 +19,8 @@ schedule and is the deliberate cost of the above. Three things bound it: the
 role's own 10-minute TTL, an explicit revoke at the end, and assertion 3 below,
 which fails if that token can ever read a secret value.
 
-Read-only with respect to secrets: it never reads a value, and it writes no
-policy or role. Run locally against a port-forward with:
+Read-only with respect to application values and policies. Recovery material is
+read privately from independently accessible KMS-encrypted GCS storage. Run locally against a port-forward with:
 
     kubectl -n openbao port-forward svc/openbao-active 8200:8200
     BAO_ADDR=http://127.0.0.1:8200 python3 scripts/check_break_glass.py
@@ -28,16 +28,25 @@ policy or role. Run locally against a port-forward with:
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 BAO_ADDR = os.environ.get("BAO_ADDR", "http://127.0.0.1:8200")
 PROJECT = os.environ.get("GCP_PROJECT_ID", "tesseracthub-480811")
-RECOVERY_SECRET = "prod-openbao-recovery-keys"
+RECOVERY_OBJECT = os.environ.get(
+    "OPENBAO_RECOVERY_OBJECT_URI",
+    f"gs://{PROJECT}-openbao-bootstrap-prod/bootstrap/init.json.kms",
+)
+RECOVERY_KEY = os.environ.get(
+    "OPENBAO_RECOVERY_KMS_KEY",
+    f"projects/{PROJECT}/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/openbao-bootstrap-key",
+)
 EXPECTED_POLICIES = {"bootstrap", "default"}
 EXPECTED_RECOVERY_SHARES = 5
 
@@ -46,7 +55,9 @@ EXPECTED_RECOVERY_SHARES = 5
 FORBIDDEN_READ = "kv/data/cloudflared/cloudflared/tunnel"
 
 
-def api(path: str, token: str | None = None, method: str = "GET", body: dict | None = None):
+def api(
+    path: str, token: str | None = None, method: str = "GET", body: dict | None = None
+):
     req = urllib.request.Request(
         f"{BAO_ADDR}/v1/{path}",
         method=method,
@@ -69,11 +80,18 @@ def api(path: str, token: str | None = None, method: str = "GET", body: dict | N
         return 0, {"errors": [str(e)]}
 
 
-def gcloud_secret(name: str) -> bytes:
-    return subprocess.run(
-        ["gcloud", "secrets", "versions", "access", "latest", "--secret", name, "--project", PROJECT],
-        capture_output=True,
-    ).stdout
+def recovery_record() -> bytes:
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "charts/thirdparty/openbao/files/recovery_record.py"
+    )
+    spec = importlib.util.spec_from_file_location("recovery_record", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    try:
+        return module.RecoveryRecord(RECOVERY_OBJECT, RECOVERY_KEY).load() or b""
+    except module.RecoveryRecordError:
+        return b""
 
 
 def main() -> int:
@@ -85,45 +103,69 @@ def main() -> int:
     #    confusingly two steps later.
     status, health = api("sys/health")
     if not health.get("initialized") or health.get("sealed") is not False:
-        failures.append(f"OpenBao not usable: initialized={health.get('initialized')} sealed={health.get('sealed')}")
+        failures.append(
+            f"OpenBao not usable: initialized={health.get('initialized')} sealed={health.get('sealed')}"
+        )
         print_report(failures, notes)
         return 1
     notes.append(f"reachable, unsealed, version {health.get('version')}")
 
     # 2. The documented way in actually authenticates.
     sa_token = subprocess.run(
-        ["kubectl", "-n", "openbao", "create", "token", "openbao-bootstrap", "--duration=10m"],
-        capture_output=True, text=True,
+        [
+            "kubectl",
+            "-n",
+            "openbao",
+            "create",
+            "token",
+            "openbao-bootstrap",
+            "--duration=10m",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     ).stdout.strip()
     if not sa_token:
-        failures.append("could not mint a Kubernetes token for serviceaccount/openbao-bootstrap")
+        failures.append(
+            "could not mint a Kubernetes token for serviceaccount/openbao-bootstrap"
+        )
         print_report(failures, notes)
         return 1
 
-    status, login = api("auth/kubernetes/login", method="POST", body={"role": "bootstrap", "jwt": sa_token})
+    status, login = api(
+        "auth/kubernetes/login",
+        method="POST",
+        body={"role": "bootstrap", "jwt": sa_token},
+    )
     auth = login.get("auth") or {}
     bao_token = auth.get("client_token")
     if not bao_token:
-        failures.append(f"auth/kubernetes login as role=bootstrap failed: {login.get('errors')}")
+        failures.append(
+            f"auth/kubernetes login as role=bootstrap failed ({status}); details withheld"
+        )
         print_report(failures, notes)
         return 1
 
     got = set(auth.get("policies") or [])
     if got != EXPECTED_POLICIES:
-        failures.append(f"bootstrap login returned policies {sorted(got)}, expected {sorted(EXPECTED_POLICIES)}")
+        failures.append(
+            f"bootstrap login returned policies {sorted(got)}, expected {sorted(EXPECTED_POLICIES)}"
+        )
     notes.append(f"login ok, policies {sorted(got)}, ttl {auth.get('lease_duration')}s")
 
     try:
         # 3. The administrative surface is reachable...
-        status, mounts = api("sys/mounts", bao_token)
+        status, _ = api("sys/mounts", bao_token)
         if status != 200:
-            failures.append(f"bootstrap token cannot read sys/mounts ({status}) — the path is broken")
+            failures.append(
+                f"bootstrap token cannot read sys/mounts ({status}) — the path is broken"
+            )
 
         # ...and the boundary still holds. This assertion is why the check is
         # worth minting a token for: if it ever passes, the bootstrap identity
         # has gained the ability to read secrets, which is the property the
         # whole authorization model exists to prevent.
-        status, secret = api(FORBIDDEN_READ, bao_token)
+        status, _ = api(FORBIDDEN_READ, bao_token)
         if status == 200:
             failures.append(
                 f"SECURITY: the bootstrap token READ a secret value at {FORBIDDEN_READ}. "
@@ -136,36 +178,38 @@ def main() -> int:
         api("auth/token/revoke-self", bao_token, method="POST")
         status, _ = api("auth/token/lookup-self", bao_token)
         if status == 200:
-            failures.append("revoke-self did not revoke the token — a privileged token is still live")
+            failures.append(
+                "revoke-self did not revoke the token — a privileged token is still live"
+            )
         else:
             notes.append("token revoked")
 
     # 5. The stored recovery material is what the runbook says it is.
-    raw = gcloud_secret(RECOVERY_SECRET)
+    raw = recovery_record()
     if not raw:
-        failures.append(f"{RECOVERY_SECRET} is unreadable — the recovery shares may be gone")
+        failures.append(
+            f"{RECOVERY_OBJECT} is unreadable — the recovery shares may be gone"
+        )
     else:
         try:
             stored = json.loads(raw)
         except json.JSONDecodeError:
-            failures.append(f"{RECOVERY_SECRET} is not JSON")
+            failures.append(f"{RECOVERY_OBJECT} is not JSON")
             stored = {}
         shares = stored.get("recovery_keys_base64") or []
         if len(shares) != EXPECTED_RECOVERY_SHARES:
-            failures.append(f"{RECOVERY_SECRET} holds {len(shares)} recovery shares, expected {EXPECTED_RECOVERY_SHARES}")
+            failures.append(
+                f"{RECOVERY_OBJECT} holds {len(shares)} recovery shares, expected {EXPECTED_RECOVERY_SHARES}"
+            )
         else:
             notes.append(f"{EXPECTED_RECOVERY_SHARES} recovery shares present")
 
-        # The trap this check was written because of. While the field exists it
-        # is the first thing an operator reaches for, and it is revoked. This is
-        # a WARNING rather than a failure so the check stays green once the
-        # field is removed, and stays loud until it is.
         if stored.get("root_token"):
-            notes.append(
-                "WARNING: root_token is still present in the secret and is revoked by design "
-                "(the bootstrap Job calls revoke-self). It is a dead end an operator will try first "
-                "during an incident — remove the field. See tesserix-home#462."
-            )
+            root_status, _ = api("auth/token/lookup-self", stored["root_token"])
+            if root_status == 403:
+                notes.append("archived initial root token is revoked")
+            else:
+                failures.append("initial root token revocation could not be confirmed")
 
     print_report(failures, notes)
     return 1 if failures else 0
@@ -184,7 +228,9 @@ def print_report(failures: list[str], notes: list[str]) -> None:
             file=sys.stderr,
         )
     else:
-        print("\nOK: the break-glass path in docs/runbooks/openbao-break-glass.md still works.")
+        print(
+            "\nOK: the break-glass path in docs/runbooks/openbao-break-glass.md still works."
+        )
 
 
 if __name__ == "__main__":

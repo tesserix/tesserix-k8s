@@ -14,11 +14,15 @@ metadata:
     # wave -1 still guarantees this exists before the Job mounts it.
     argocd.argoproj.io/sync-wave: "-1"
 data:
+  recovery_record.py: |
+{{ .Files.Get "files/recovery_record.py" | indent 4 }}
   bootstrap.sh: |
     #!/usr/bin/env bash
     # Initialises OpenBao once, then applies policies and Kubernetes auth roles
     # on every run. Everything below must be idempotent.
     set -euo pipefail
+    umask 077
+    INIT_FILE="${RECOVERY_STAGING_DIR:-/recovery}/init.json"
 
     ADDR="http://openbao-0.openbao-internal.{{ .Release.Namespace }}.svc:8200"
     SA_TOKEN_PATH=/var/run/secrets/kubernetes.io/serviceaccount/token
@@ -26,10 +30,16 @@ data:
     ROOT_TOKEN_IN_USE=0
 
     api() {
-      local method=$1 path=$2 data=${3:-}
-      local args=(-sS -o /tmp/resp -w '%{http_code}' -X "$method")
-      [[ -n $TOKEN ]] && args+=(-H "X-Vault-Token: $TOKEN")
-      [[ -n $data ]] && args+=(-H 'Content-Type: application/json' --data-binary "$data")
+      local method=$1 path=$2 data=${3:-} output=${4:-/tmp/resp}
+      local args=(-sS --connect-timeout 10 --max-time 60 -o "$output" -w '%{http_code}' -X "$method")
+      if [[ -n $TOKEN ]]; then
+        printf 'X-Vault-Token: %s\n' "$TOKEN" > /tmp/headers
+        args+=(-H @/tmp/headers)
+      fi
+      if [[ -n $data ]]; then
+        printf '%s' "$data" > /tmp/request
+        args+=(-H 'Content-Type: application/json' --data-binary @/tmp/request)
+      fi
       curl "${args[@]}" "$ADDR$path"
     }
 
@@ -41,8 +51,8 @@ data:
         200|204) echo "ok: $what" ;;
         400) grep -qiE 'existing|already' /tmp/resp \
                && echo "ok: $what (already configured)" \
-               || { echo "FAIL $what ($code): $(cat /tmp/resp)"; exit 1; } ;;
-        *) echo "FAIL $what ($code): $(cat /tmp/resp)"; exit 1 ;;
+               || { echo "FAIL $what ($code); details withheld"; exit 1; } ;;
+        *) echo "FAIL $what ($code); details withheld"; exit 1 ;;
       esac
     }
 
@@ -55,27 +65,46 @@ data:
       sleep 5
     done
 
-    if [[ "$(jget initialized)" != "True" ]]; then
+    initialized=$(jget initialized)
+    if [[ -s "$INIT_FILE" ]]; then
+      echo "==> resuming durable recovery-record persistence"
+      python3 /config/recovery_record.py store "$INIT_FILE"
+      rm -f "$INIT_FILE"
+    fi
+
+    if [[ "$initialized" != "True" ]]; then
+      [[ ${ALLOW_INITIALIZATION:-false} == true ]] || {
+        echo "refusing to initialise: restore existing state or explicitly enable a fresh bootstrap"
+        exit 1
+      }
+      set +e
+      python3 /config/recovery_record.py inspect
+      record_status=$?
+      set -e
+      [[ $record_status -eq 3 ]] || {
+        echo "refusing to initialise: recovery material exists or storage is unavailable"
+        exit 1
+      }
       echo "==> uninitialised: running operator init"
       code=$(api POST /v1/sys/init \
-        '{"recovery_shares":{{ .Values.bootstrap.recoveryShares }},"recovery_threshold":{{ .Values.bootstrap.recoveryThreshold }}}')
-      [[ $code == 200 ]] || { echo "init failed ($code): $(cat /tmp/resp)"; exit 1; }
-      cp /tmp/resp /tmp/init.json
-
-      # The recovery keys exist in exactly one place after this: Secret Manager.
-      # Losing them means losing the ability to mint a new root token.
-      gcloud secrets describe {{ .Values.bootstrap.recoverySecretName }} \
-        --project={{ .Values.bootstrap.gcpProject }} >/dev/null 2>&1 \
-        || gcloud secrets create {{ .Values.bootstrap.recoverySecretName }} \
-             --project={{ .Values.bootstrap.gcpProject }} --replication-policy=automatic
-      gcloud secrets versions add {{ .Values.bootstrap.recoverySecretName }} \
-        --project={{ .Values.bootstrap.gcpProject }} --data-file=/tmp/init.json
-      echo "==> recovery keys stored in {{ .Values.bootstrap.recoverySecretName }}"
-
+        '{"recovery_shares":{{ .Values.bootstrap.recoveryShares }},"recovery_threshold":{{ .Values.bootstrap.recoveryThreshold }}}' "$INIT_FILE")
+      [[ $code == 200 ]] || { echo "init failed ($code); details withheld"; exit 1; }
+      python3 /config/recovery_record.py store "$INIT_FILE"
+      rm -f "$INIT_FILE"
+      python3 /config/recovery_record.py load /tmp/init.json
       TOKEN=$(python3 -c 'import json;print(json.load(open("/tmp/init.json"))["root_token"])')
       ROOT_TOKEN_IN_USE=1
-      rm -f /tmp/init.json
+    else
+      python3 /config/recovery_record.py load /tmp/init.json
     fi
+
+    cleanup() {
+      if [[ $ROOT_TOKEN_IN_USE -eq 0 && -n $TOKEN ]]; then
+        api POST /v1/auth/token/revoke-self >/dev/null || true
+      fi
+      rm -f /tmp/init.json /tmp/request /tmp/headers /tmp/resp
+    }
+    trap cleanup EXIT
 
     echo "==> waiting for auto-unseal and a raft leader"
     for i in $(seq 1 60); do
@@ -87,10 +116,9 @@ data:
 
     if [[ $ROOT_TOKEN_IN_USE -eq 0 ]]; then
       echo "==> logging in via kubernetes auth as {{ .Values.bootstrap.bootstrapRole }}"
-      jwt=$(cat "$SA_TOKEN_PATH")
       code=$(api POST /v1/auth/kubernetes/login \
-        "$(python3 -c 'import json,sys;print(json.dumps({"role":sys.argv[1],"jwt":sys.argv[2]}))' \
-           '{{ .Values.bootstrap.bootstrapRole }}' "$jwt")")
+        "$(python3 -c 'import json,sys;print(json.dumps({"role":sys.argv[1],"jwt":open(sys.argv[2]).read().strip()}))' \
+           '{{ .Values.bootstrap.bootstrapRole }}' "$SA_TOKEN_PATH")")
       if [[ $code == 200 ]]; then
         TOKEN=$(python3 -c 'import json;print(json.load(open("/tmp/resp"))["auth"]["client_token"])')
       else
@@ -99,9 +127,6 @@ data:
         # stored root token is still live in that window, so fall back to it
         # and let the revoke at the end close the window.
         echo "==> kubernetes auth unavailable ($code); falling back to the stored root token"
-        gcloud secrets versions access latest \
-          --secret={{ .Values.bootstrap.recoverySecretName }} \
-          --project={{ .Values.bootstrap.gcpProject }} > /tmp/init.json
         TOKEN=$(python3 -c 'import json;print(json.load(open("/tmp/init.json"))["root_token"])')
         rm -f /tmp/init.json
         [[ -n "$TOKEN" ]] || { echo "no usable token; recover with: bao operator generate-root, using the recovery keys"; exit 1; }
@@ -142,11 +167,10 @@ data:
     done
 
     if [[ $ROOT_TOKEN_IN_USE -eq 1 ]]; then
-      # The root token is never stored. Day-2 admin access is minted from the
-      # recovery keys with `bao operator generate-root`.
       echo "==> revoking the initial root token"
-      api POST /v1/auth/token/revoke-self >/dev/null
     fi
+    expect_ok "$(api POST /v1/auth/token/revoke-self)" "revoke bootstrap token"
+    TOKEN=""
 
     echo "==> bootstrap complete"
 

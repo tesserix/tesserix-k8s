@@ -49,3 +49,9 @@ resource "google_storage_bucket_iam_member" "openbao_bootstrap" {
   role     = each.value
   member   = "serviceAccount:openbao-bootstrap@${var.project_id}.iam.gserviceaccount.com"
 }
+
+resource "google_kms_crypto_key_iam_member" "openbao_bootstrap_check" {
+  crypto_key_id = google_kms_crypto_key.openbao_bootstrap.id
+  role          = "roles/cloudkms.cryptoKeyDecrypter"
+  member        = "serviceAccount:github-actions@${var.project_id}.iam.gserviceaccount.com"
+}
