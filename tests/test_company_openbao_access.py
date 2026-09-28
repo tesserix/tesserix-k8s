@@ -62,20 +62,18 @@ def test_company_access_is_exact_namespace_bound_and_registered():
         )
 
 
-def test_company_writer_cannot_overwrite_or_read_other_products():
+def test_company_temporary_writer_is_retired_after_staging():
     config = resource(
         render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap"
     )["data"]
-    role = json.loads(config["role-tesserix-migrate-reviewed.json"])
-    assert role["bound_service_account_names"] == ["tesserix-migration-writer"]
-    assert role["bound_service_account_namespaces"] == ["tesserix"]
-    assert role["token_ttl"] == "15m"
-    policy = config["policy-tesserix-migrate-reviewed.hcl"]
-    assert set(re.findall(r'path "kv/data/([^\"]+)"', policy)) == set(TARGETS.values())
-    assert "*" not in policy and '"delete"' not in policy
-    for line in policy.splitlines():
-        if 'path "kv/data/' in line:
-            assert 'capabilities = ["create", "read"]' in line
+    assert "role-tesserix-migrate-reviewed.json" not in config
+    assert "policy-tesserix-migrate-reviewed.hcl" not in config
+    readers = list(
+        yaml.safe_load_all(
+            (ROOT / "external-secrets/prod/tesserix-openbao-readers.yaml").read_text()
+        )
+    )
+    assert all(d["metadata"]["name"] != "tesserix-migration-writer" for d in readers)
     assert (
         json.loads((ROOT / "scripts/product-secret-targets.json").read_text())[
             "tesserix"
