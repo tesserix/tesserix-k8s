@@ -307,13 +307,8 @@ enquiry:
 
   externalSecret:
     enabled: true
-    secretStoreRef: gcp-secret-store
-    # Platform-wide shared key, not product-prefixed — the same remote the blog
-    # reads (#1014).
-    #
-    # Point this at a product-specific secret if beautyandcruor ever gets its
-    # own Resend account: only this value changes, not the template.
-    remoteKey: prod-resend-api-key
+    secretStoreRef: openbao-fe3dr-appdeps
+    # Shared enquiry credential remains under its existing fe3dr OpenBao reader.
 
   # ---------------------------------------------------------------------------
   # The credits and running-order editor.
@@ -329,8 +324,8 @@ enquiry:
   # secretKeyRef to a Secret that is not there stops the pod starting. So this
   # flag is the second of two steps, not the first:
   #
-  #   1. create prod-bac-admin-password-hash, -session-key and -github-token
-  #      in Secret Manager (see the site repo's deploy/README.md)
+  #   1. create product-prefixed admin credentials in OpenBao and grant the
+  #      namespace reader access (see the site repo's deploy/README.md)
   #   2. set enabled: true here
   #
   # The GitHub token should be fine-grained, THIS REPOSITORY ONLY, Contents:
@@ -339,7 +334,7 @@ enquiry:
   # cannot reach the workflow that deploys the site; keep the token narrow
   # anyway, because that half is enforced by GitHub rather than by us.
   admin:
-    # On. The three secrets exist in Secret Manager and were verified before
+    # On. The three secrets exist in OpenBao and were verified before
     # this was flipped: the stored verifier accepts the stored password, and
     # the GitHub token can write beautyandcruor and is refused (403) on every
     # other repository tried.
@@ -356,11 +351,11 @@ enquiry:
 
     externalSecret:
       enabled: true
-      secretStoreRef: gcp-secret-store
+      secretStoreRef: openbao-beautyandcruor-production
       keys:
-        passwordHash: prod-bac-admin-password-hash
-        sessionKey: prod-bac-admin-session-key
-        githubToken: prod-bac-admin-github-token
+        passwordHash: beautyandcruor/app/beautyandcruor-admin-password-hash
+        sessionKey: beautyandcruor/app/beautyandcruor-admin-session-key
+        githubToken: beautyandcruor/app/beautyandcruor-admin-github-token
 
     # Image upload.
     #

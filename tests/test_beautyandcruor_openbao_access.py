@@ -29,12 +29,6 @@ def test_beautyandcruor_access_scoped_and_registered():
             "beautyandcruor-production-reader",
             '["read"]',
         ),
-        (
-            "openbao",
-            "beautyandcruor-migrate-reviewed",
-            "beautyandcruor-migration-writer",
-            '["create", "read"]',
-        ),
     ]:
         auth = json.loads(config[f"role-{role}.json"])
         assert auth["bound_service_account_names"] == [sa]
@@ -49,9 +43,7 @@ def test_beautyandcruor_access_scoped_and_registered():
             and d["metadata"]["namespace"] == namespace
             for d in docs
         )
-        if namespace == "openbao":
-            assert auth["token_ttl"] == "15m"
-        else:
+        if namespace == "tesserix":
             store = next(
                 d
                 for d in docs
@@ -62,3 +54,15 @@ def test_beautyandcruor_access_scoped_and_registered():
             assert (
                 store["spec"]["provider"]["vault"]["auth"]["kubernetes"]["role"] == role
             )
+
+
+def test_temporary_writer_retired():
+    config = resource(
+        render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap"
+    )["data"]
+    assert "role-beautyandcruor-migrate-reviewed.json" not in config
+    assert "policy-beautyandcruor-migrate-reviewed.hcl" not in config
+    manifests = subprocess.check_output(
+        ["kubectl", "kustomize", str(ROOT / "external-secrets/prod")], text=True
+    )
+    assert "beautyandcruor-migration-writer" not in manifests
