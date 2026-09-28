@@ -23,19 +23,17 @@ cloudRun:
 # =============================================================================
 # Domain
 # =============================================================================
-# STAGING HOST, not the real domain yet.
+# THE REAL DOMAIN. Cut over from the beautyandcruor.tesserix.app staging host
+# once the rebuild was signed off.
 #
-# beautyandcruor.com still resolves to the old WordPress site at Hostinger and
-# will until the rebuild is finished and a cutover is planned. Serving from a
-# tesserix.app subdomain in the meantime means the new site is publicly
-# reachable without touching a client's live DNS.
-#
-# When the cutover happens: set primary to beautyandcruor.com, add
-# www.beautyandcruor.com as an alias, flip tls.enabled to true (which brings
-# back this chart's own Gateway and Certificate) and empty `gateways`.
+# The nameservers for beautyandcruor.com moved off the Cloudflare account that
+# Hostinger assigned (kellen/zariyah) and onto the estate account's algin/nola,
+# so the zone is ours to edit. Hostinger remains the registrar and nothing
+# else — it never served this zone.
 domains:
-  primary: beautyandcruor.tesserix.app
-  aliases: []
+  primary: beautyandcruor.com
+  aliases:
+    - www.beautyandcruor.com
 
 # Gateways the VirtualService binds to when this chart is NOT carrying its own.
 #
@@ -44,9 +42,10 @@ domains:
 # to the ingress gateway. That is why blog.tesserix.app has no Certificate in
 # the cluster and neither does this — asking cert-manager for one would leave
 # it stuck pending forever, since the challenge could never be answered.
-gateways:
-  - istio-ingress/tesseract-gateway
-  - istio-ingress/custom-domain-gateway
+# Empty: with tls.enabled the VirtualService binds this chart's own Gateway
+# instead, and these would be silently ignored. Restoring the staging host
+# means restoring both this list and tls.enabled: false together.
+gateways: []
 
 # =============================================================================
 # Container image
@@ -208,18 +207,26 @@ affinity: {}
 # 2026-09-23 so a wildcard would work today, but this site only needs two
 # hosts and named SANs cannot regress if that record is ever removed.
 # =============================================================================
-# OFF while the app serves from tesserix.app — see `domains` above.
+# ON. Creates this chart's own Gateway (selector istio: custom-ingressgateway)
+# and its Certificate.
 #
-# Leaving this on would create a Gateway and a Certificate for
-# beautyandcruor.com, and cert-manager would retry an HTTP-01 challenge that
-# cannot succeed: the domain still points at Hostinger, so Let's Encrypt would
-# reach the old WordPress site instead of this cluster. A permanently pending
-# Certificate in production is noise that teaches people to ignore alerts.
+# ISSUER: letsencrypt-custom-domain, NOT letsencrypt-prod.
 #
-# Flip to true as part of the domain cutover, not before.
+# This is not interchangeable and the difference is silent. letsencrypt-prod's
+# solvers are selector-scoped to dnsZones [mark8ly.com, tesserix.app] — it has
+# no HTTP-01 solver and no catch-all. A Certificate for beautyandcruor.com
+# under it matches NO solver, so it never goes Ready and never explains why.
+# letsencrypt-custom-domain is the unscoped DNS-01 solver (Cloudflare,
+# cnameStrategy: Follow) and is what every other external domain on this
+# cluster uses — primasyss.com and yahvismartfarm.com both issue through it.
+#
+# Because it is DNS-01, the certificate issues from the zone alone. It went
+# Ready while beautyandcruor.com still pointed at Hostinger, which is what
+# let the address records move onto a gateway that was already serving valid
+# TLS instead of after it.
 tls:
-  enabled: false
-  issuer: letsencrypt-prod
+  enabled: true
+  issuer: letsencrypt-custom-domain
   secretName: beautyandcruor-com-tls
   gatewayNamespace: istio-ingress
 
