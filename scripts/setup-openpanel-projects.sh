@@ -306,7 +306,7 @@ usage() {
   echo "    export OPENPANEL_PROD_ROOT_CLIENT_ID=<uuid>"
   echo "    export OPENPANEL_PROD_ROOT_CLIENT_SECRET=<sec_...>"
   echo ""
-  echo "  Or store them in GCP Secret Manager (script will auto-fetch)."
+  echo "  Read these credentials from OpenBao using the approved environment reader."
   echo ""
   echo "How to get a root client:"
   echo "  1. Log into OpenPanel dashboard"
