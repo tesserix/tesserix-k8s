@@ -4046,7 +4046,7 @@ service_accounts = [
   {
     name          = "openbao-bootstrap"
     display_name  = "OpenBao Bootstrap"
-    description   = "Stores independent encrypted OpenBao recovery material"
+    description   = "Stores OpenBao recovery keys at cluster initialisation"
     project_roles = []
     workload_identity_bindings = [
       { namespace = "openbao", kubernetes_service_account = "openbao-bootstrap" }
