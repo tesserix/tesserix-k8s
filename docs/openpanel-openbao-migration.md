@@ -64,8 +64,9 @@ the real client credentials and rejects an invalid authorization code with
 `invalid_grant`; a deliberately wrong client secret returns `invalid_client`.
 
 Backup `20260928T110422Z-33444b1d0388` restored in isolation in 20.983 seconds;
-exactly three verified backups remained and pruning was checked. A further
-backup runs after staging access retirement. Temporary staging policy, role,
+exactly three verified backups remained and pruning was checked. The subsequent backup after staging access retirement,
+`20260928T113522Z-f4a747bd07ba`, also restored successfully in 21.66 seconds
+with retention and pruning verified. Temporary staging policy, role,
 ServiceAccount and tokens are retired. A GitOps operator restart tests fresh
 reconciliation with originals absent; final post-deletion evidence is recorded
 in issue #1209. The estate-wide issue remains open for the remaining cohorts.
