@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: langfuse-production-reader
+  namespace: observability
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-langfuse-production
+  namespace: observability
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-langfuse-production
+          serviceAccountRef:
+            name: langfuse-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: langfuse-production-reader
+  namespace: infra
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-langfuse-production
+  namespace: infra
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-langfuse-database-production
+          serviceAccountRef:
+            name: langfuse-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: langfuse-production-reader
+  namespace: evals-operator
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-langfuse-production
+  namespace: evals-operator
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-langfuse-organization-production
+          serviceAccountRef:
+            name: langfuse-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: langfuse-migration-writer
+  namespace: observability
+automountServiceAccountToken: false
