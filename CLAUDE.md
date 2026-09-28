@@ -138,7 +138,7 @@ Pick Zitadel unless the product genuinely has no notion of a customer
 organization. A product that starts on GIP and later needs enterprise SSO pays
 for the migration twice.
 
-**2. Application and tenant secrets use OpenBao by default.**
+**2. Application, tenant and operational platform secrets use OpenBao by default.**
 
 Use OpenBao for every new and existing product's database credentials, OAuth
 client secrets, provider keys, session/signing keys and tenant/user credentials.
@@ -146,28 +146,29 @@ Use `<product>-<secret-name>` identifiers with separate production/development/U
 paths. Application configuration uses namespaced ESO readers; tenant/user secrets
 use runtime access with server-derived ownership. Update writers and rotation jobs.
 
-GCP Secret Manager is reserved for critical platform/bootstrap/recovery material:
-OpenBao recovery keys, shared registry/CI credentials, infrastructure restore
-credentials and shared control-plane authority. Product ownership is what matters;
-a product's `platform-api` service is not itself an exception.
+OpenBao is also the default for operational platform credentials, including
+shared registry/CI, database, identity, DNS and service credentials. The target is
+zero GCP Secret Manager records and dependencies, tracked in issue #1209. Do not
+create new GCP Secret Manager dependencies. Existing sources are transitional
+until their readers, writers, cold-start dependencies and recovery are verified.
 
+OpenBao bootstrap/recovery material must remain independently recoverable outside
+OpenBao; never keep its only copy inside the system it unlocks. Its GCP sources
+remain until an independently accessible replacement is approved and tested.
+KMS auto-unseal and encrypted GCS backups are separate from Secret Manager and
+remain required. Preserve the explicit retain decision for Support Platform's
+four originals until its provider failures are resolved. See
+`docs/openbao-platform-retirement-plan.md`.
 Full policy and migration gates: [`docs/application-secret-policy.md`](docs/application-secret-policy.md).
 Runtime tenant boundaries: [`docs/tenant-secrets.md`](docs/tenant-secrets.md).
 
-### GCP Secret Manager — retained platform exceptions
+### GCP Secret Manager — transitional migration sources
 
-Project `tesseracthub-480811`. Naming: `{env}-{service}-{secret-name}` —
-e.g. `dev-blog-mongodb-uri`, `prod-ghcr-token`, `dev-auth-bff-session-secret`.
-
-```bash
-gcloud secrets list --project=tesseracthub-480811 --filter="name:<search>"
-gcloud secrets versions access latest --secret=<name> --project=tesseracthub-480811
-gcloud secrets create <name> --project=tesseracthub-480811 --replication-policy=automatic
-echo -n "value" | gcloud secrets versions add <name> --project=tesseracthub-480811 --data-file=-
-```
-
-Key tokens: `prod-ghcr-token` / `prod-ghcr-username` (GHCR + npm),
-`go-private-token` (private Go modules).
+Project `tesseracthub-480811` still contains sources awaiting verified migration.
+Inventory them without exposing payloads, and track consumer/writer cutover in
+issue #1209. Do not use historical GCP provisioning snippets for new credentials.
+Shared registry and Git credentials need cold-start/recovery verification before
+removing their originals. The target is zero records and dependencies.
 
 ---
 
@@ -192,7 +193,7 @@ New-service template checklist:
 - [ ] `serviceaccount.yaml` — Workload Identity annotation
 - [ ] `ingress.yaml` — Kong (dev) / Istio (prod)
 - [ ] `externalsecret.yaml` — application credentials from OpenBao through a
-      namespace-bound reader; retain GCP only for reviewed platform exceptions
+      namespace-bound reader; verify legacy GCP consumer cutover before deletion
 - [ ] `network-policy.yaml` — default deny + explicit allows
 - [ ] `authorization-policy.yaml` — Istio RBAC
 - [ ] `scaledobject.yaml` — KEDA (conditional)
@@ -397,5 +398,5 @@ console emits the matching git manifests (bootstrap values, ExternalSecret,
 - **Auth:** Google Identity Platform + OpenFGA (marketplace) / GIP (blog)
 - **Infra:** GKE, Istio, ArgoCD, Helm, KEDA, cert-manager
 - **Messaging:** Google Pub/Sub · **Caching:** Redis
-- **Secrets:** OpenBao by default; ESO for app configuration, runtime access for tenant/user secrets; GCP SM only for platform/bootstrap/recovery exceptions
+- **Secrets:** OpenBao by default; ESO for app configuration, runtime access for tenant/user secrets; zero GCP SM target with independently recoverable OpenBao bootstrap material
 - **CI/CD:** GitHub Actions → GHCR → GKE (ArgoCD for Helm sync)
