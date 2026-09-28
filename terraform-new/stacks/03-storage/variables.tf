@@ -305,7 +305,6 @@ variable "secrets" {
         "prod-mp-stripe-secret-key",
         "prod-mp-stripe-webhook-secret",
         "prod-mp-verification-encryption-key",
-        "prod-openbao-recovery-keys",
         "prod-postal-admin-credentials",
         "prod-postal-api-key",
         "prod-postgresql-bookkeeping-ca-cert",
