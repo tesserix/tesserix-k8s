@@ -117,3 +117,20 @@ get_root_credentials prod
         text=True,
     )
     assert supplied.returncode == 0
+
+
+def test_analytics_operator_keeps_scoped_kubernetes_api_egress():
+    docs = list(
+        yaml.safe_load_all(
+            (ROOT / "k8s/operators/analytics-onboarding/resources.yaml").read_text()
+        )
+    )
+    policy = resource(docs, "NetworkPolicy", "analytics-onboarding-operator")
+    destinations = {
+        peer["ipBlock"]["cidr"]
+        for rule in policy["spec"]["egress"]
+        if {"protocol": "TCP", "port": 443} in rule.get("ports", [])
+        for peer in rule.get("to", [])
+        if "ipBlock" in peer
+    }
+    assert destinations == {"10.30.0.1/32", "172.16.0.0/28"}
