@@ -1,7 +1,8 @@
 # Console OpenBao migration
 
 Tracks [#1209](https://github.com/tesserix/tesserix-k8s/issues/1209).
-Status: access configuration prepared; no values copied or consumer cutover yet.
+Status: access PR #1243 merged; twelve pinned values staged with verified equality.
+Consumer cutover is prepared. No GCP originals have been deleted for this cohort.
 
 The twelve sources below currently have twelve ESO bindings, all through
 `tesserix/console-secrets`. The shared session key was already migrated with
@@ -33,3 +34,21 @@ CRM erasures. Verify existing behavior first, then fresh ESO reads, whole-Secret
 equality, functional identity/session/provider checks, isolated restore and writer
 retirement before deleting any originals. Provider checks must not create Stripe
 objects, charges, identity users, sessions or customer records.
+
+## Verification before cutover
+
+All twelve values matched their original live ESO bindings. The encrypted archive
+round-trip passed at
+`gs://tesseract-prod-backups-in/openbao/console-migration/20260928T095226Z/gcp-sources.json.gz.kms`.
+Four Stripe keys authenticated read-only price queries. Both identity PATs
+read their own identity, the entitlements reader obtained a machine token, and
+the OIDC client authenticated introspection of a nonexistent token. The same
+introspection request with an invalid client secret was rejected with HTTP 400
+`unauthorized_client`. No operator login or customer/payment mutation was used.
+
+The temporary staging token was revoked. This cutover removes the writer role,
+policy and service account from desired state; remove the live role/policy only
+after capturing their configuration and confirming the desired state is applied.
+No active source writer was found in the infrastructure or product code audit.
+Zitadel's reconciler manages identities/permissions and does not issue/store these
+credentials; future manual provisioning must use the reviewed OpenBao paths.
