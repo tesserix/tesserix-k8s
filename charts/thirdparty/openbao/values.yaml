@@ -466,6 +466,35 @@ bootstrap:
         path "kv/metadata/kora/app/kora-gemini-api-key" { capabilities = ["read"] }
         path "kv/metadata/kora/app/kora-openai-api-key" { capabilities = ["read"] }
         path "auth/token/revoke-self" { capabilities = ["update"] }
+    - name: read-langfuse-production
+      hcl: |
+        path "kv/data/langfuse/app/langfuse-encryption-key" { capabilities = ["read"] }
+        path "kv/data/langfuse/app/langfuse-init-user-password" { capabilities = ["read"] }
+        path "kv/data/langfuse/app/langfuse-nextauth-secret" { capabilities = ["read"] }
+        path "kv/data/langfuse/app/langfuse-postgresql-password" { capabilities = ["read"] }
+        path "kv/data/langfuse/app/langfuse-salt" { capabilities = ["read"] }
+        path "kv/data/langfuse/app/langfuse-zitadel-client-id" { capabilities = ["read"] }
+        path "kv/data/langfuse/app/langfuse-zitadel-client-secret" { capabilities = ["read"] }
+    - name: read-langfuse-database-production
+      hcl: |
+        path "kv/data/langfuse/app/langfuse-postgresql-password" { capabilities = ["read"] }
+    - name: read-langfuse-organization-production
+      hcl: |
+        path "kv/data/langfuse/app/langfuse-org-public-key" { capabilities = ["read"] }
+        path "kv/data/langfuse/app/langfuse-org-secret-key" { capabilities = ["read"] }
+    - name: langfuse-migrate-reviewed
+      hcl: |
+        path "kv/data/langfuse/app/langfuse-org-public-key" { capabilities = ["create", "read"] }
+        path "kv/data/langfuse/app/langfuse-org-secret-key" { capabilities = ["create", "read"] }
+        path "kv/data/langfuse/app/langfuse-encryption-key" { capabilities = ["create", "read"] }
+        path "kv/data/langfuse/app/langfuse-init-user-password" { capabilities = ["create", "read"] }
+        path "kv/data/langfuse/app/langfuse-nextauth-secret" { capabilities = ["create", "read"] }
+        path "kv/data/langfuse/app/langfuse-postgresql-password" { capabilities = ["create", "read"] }
+        path "kv/data/langfuse/app/langfuse-salt" { capabilities = ["create", "read"] }
+        path "kv/data/langfuse/app/langfuse-zitadel-client-id" { capabilities = ["create", "read"] }
+        path "kv/data/langfuse/app/langfuse-zitadel-client-secret" { capabilities = ["create", "read"] }
+        path "auth/token/lookup-self" { capabilities = ["read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-openpanel-production
       hcl: |
         path "kv/data/openpanel/app/openpanel-admin-email" { capabilities = ["read"] }
@@ -884,6 +913,26 @@ bootstrap:
       namespaces: ["tesserix"]
       policies: ["company-kora-key-metadata"]
       ttl: 5m
+    - name: read-langfuse-production
+      serviceAccounts: ["langfuse-production-reader"]
+      namespaces: ["observability"]
+      policies: ["read-langfuse-production"]
+      ttl: 15m
+    - name: read-langfuse-database-production
+      serviceAccounts: ["langfuse-production-reader"]
+      namespaces: ["infra"]
+      policies: ["read-langfuse-database-production"]
+      ttl: 15m
+    - name: read-langfuse-organization-production
+      serviceAccounts: ["langfuse-production-reader"]
+      namespaces: ["evals-operator"]
+      policies: ["read-langfuse-organization-production"]
+      ttl: 15m
+    - name: langfuse-migrate-reviewed
+      serviceAccounts: ["langfuse-migration-writer"]
+      namespaces: ["observability"]
+      policies: ["langfuse-migrate-reviewed"]
+      ttl: 15m
     - name: read-openpanel-production
       serviceAccounts: ["openpanel-production-reader"]
       namespaces: ["openpanel"]
