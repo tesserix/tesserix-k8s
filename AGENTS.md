@@ -4,11 +4,11 @@
 
 # fe3dr secrets
 
-Use in-cluster OpenBao as the default destination for fe3dr application secrets, with identifiers starting `fe3dr-`. Keep platform bootstrap, infrastructure and recovery secrets in GCP Secret Manager. Track remaining consumer cutovers and shared-secret coordination in issue #1159.
+Use in-cluster OpenBao as the default destination for fe3dr application secrets, with identifiers starting `fe3dr-`. Migrate operational platform credentials under issue #1209; retain existing bootstrap/recovery sources only until their independent replacement is verified. Track remaining consumer cutovers and shared-secret coordination in issue #1159.
 
 # Roamie secrets
 
-Use in-cluster OpenBao for Roamie application secrets, with `roamie-` identifiers and separate production/development paths. Keep platform bootstrap, infrastructure and recovery secrets in GCP Secret Manager. See `docs/roamie-openbao-migration.md` and issue #1176.
+Use in-cluster OpenBao for Roamie application secrets, with `roamie-` identifiers and separate production/development paths. Migrate operational platform credentials under issue #1209; retain existing bootstrap/recovery sources only until their independent replacement is verified. See `docs/roamie-openbao-migration.md` and issue #1176.
 
 # Application secret storage
 
@@ -18,11 +18,19 @@ separate production/development/UAT paths, and namespace-bound least-privilege
 readers. Application configuration may use ESO; tenant/user secrets stay scoped
 and are read at runtime. Update secret writers and rotation jobs as well as readers.
 
-GCP Secret Manager is reserved for critical platform/bootstrap/recovery secrets:
-OpenBao recovery material, shared registry/CI access, infrastructure restore
-credentials and shared control-plane authority. Product database credentials,
-OAuth client secrets, session/signing keys and provider API keys belong in OpenBao.
-Never treat a product's own "platform-api" service name as a platform exception.
+OpenBao is also the default for operational platform credentials, including
+shared registry/CI, database, identity, DNS and service credentials. The target is
+zero GCP Secret Manager records and dependencies, tracked in issue #1209. Do not
+create new GCP Secret Manager dependencies. Existing sources are transitional
+until their readers, writers, cold-start dependencies and recovery are verified.
+
+OpenBao bootstrap/recovery material must remain independently recoverable outside
+OpenBao; never keep its only copy inside the system it unlocks. Its GCP sources
+remain until an independently accessible replacement is approved and tested.
+KMS auto-unseal and encrypted GCS backups are separate from Secret Manager and
+remain required. Preserve the explicit retain decision for Support Platform's
+four originals until its provider failures are resolved. See
+`docs/openbao-platform-retirement-plan.md`.
 
 Migrate one product at a time: archive recoverable state, copy pinned versions
 without overwriting different values, switch readers and writers through GitOps,

@@ -6,11 +6,19 @@ separate production/development/UAT paths, and namespace-bound least-privilege
 readers. Application configuration may use ESO; tenant/user secrets stay scoped
 and are read at runtime. Update secret writers and rotation jobs as well as readers.
 
-GCP Secret Manager is reserved for critical platform/bootstrap/recovery secrets:
-OpenBao recovery material, shared registry/CI access, infrastructure restore
-credentials and shared control-plane authority. Product database credentials,
-OAuth client secrets, session/signing keys and provider API keys belong in OpenBao.
-Never treat a product's own "platform-api" service name as a platform exception.
+OpenBao is also the default for operational platform credentials, including
+shared registry/CI, database, identity, DNS and service credentials. The target is
+zero GCP Secret Manager records and dependencies, tracked in issue #1209. Do not
+create new GCP Secret Manager dependencies. Existing sources are transitional
+until their readers, writers, cold-start dependencies and recovery are verified.
+
+OpenBao bootstrap/recovery material must remain independently recoverable outside
+OpenBao; never keep its only copy inside the system it unlocks. Its GCP sources
+remain until an independently accessible replacement is approved and tested.
+KMS auto-unseal and encrypted GCS backups are separate from Secret Manager and
+remain required. Preserve the explicit retain decision for Support Platform's
+four originals until its provider failures are resolved. See
+`docs/openbao-platform-retirement-plan.md`.
 
 Migrate one product at a time: archive recoverable state, copy pinned versions
 without overwriting different values, switch readers and writers through GitOps,
@@ -19,18 +27,17 @@ approved GCP originals. See `docs/application-secret-policy.md`.
 
 This policy supersedes older guidance that placed all product-owned credentials
 in GCP Secret Manager. Historical runbooks describe their original deployment;
-they do not authorize new GCP application secrets. Existing runtime producers
+they do not authorize new GCP secrets, including platform credentials. Existing runtime producers
 must be migrated and tested before their sources are retired.
 
 ## Terraform provisioning guard
 
 The storage and legacy app-secrets stacks freeze the reviewed production GCP
-identifier inventory while migration continues. New entries are rejected unless
-`platform_exception_reason` explicitly explains a critical shared platform,
-bootstrap or recovery dependency (20–256 characters). The reason is stored as
-`tesserix.io/platform-secret-reason` metadata; never put credential values there.
-Product database passwords, signing keys and provider credentials do not qualify.
-Use the OpenBao scaffold and product namespace reader instead.
+identifier inventory while migration continues. The existing implementation has a
+`platform_exception_reason` escape hatch for historical bootstrap dependencies.
+That validation capability does not authorize creating new GCP secrets under the
+zero-record target; retire the escape hatch with the remaining provisioning
+writers. Use OpenBao with reviewed namespace-scoped access instead.
 
 This guard preserves existing unmigrated resources; it does not approve them as
 permanent platform exceptions. Retire their declarations alongside migration.
