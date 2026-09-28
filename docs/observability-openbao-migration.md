@@ -19,3 +19,17 @@ deleting originals. Verify another refresh and provider checks after deletion.
 
 The OAuth provisioning runbook now uses OpenBao and create-only CAS. No
 credentials are rotated or new users/applications created by this migration.
+
+
+Completed 2026-09-28: all six originals were deleted after byte equality,
+namespace isolation, application/provider checks and isolated recovery passed.
+A subsequent ESO refresh at 13:30:45Z succeeded after the final deletion at
+13:29:15Z; all six values, images, replicas and Argo overrides stayed unchanged.
+Post-deletion health, readiness, Google OAuth controls and GitHub App checks pass.
+Temporary migration grants and token were removed.
+
+Recovery archive:
+`gs://tesseract-prod-backups-in/openbao/observability-migration/20260928T130959Z/gcp-sources.json.gz.kms`.
+Backup `20260928T132715Z-2203295aab12` restored in 25.939 seconds. Exactly three
+verified backups remain and pruning was verified. Inventory now contains 351
+GCP secrets; the estate migration remains open and GrowthBook is deferred.

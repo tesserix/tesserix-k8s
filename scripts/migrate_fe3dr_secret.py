@@ -91,6 +91,7 @@ class OpenBao:
                         "kv/data/langfuse/app/",
                         "kv/data/clickhouse/app/",
                         "kv/data/observability/app/",
+                        "kv/data/typesense/app/",
                         "kv/data/devai/app/",
                         "kv/data/mark8ly/app/",
                         "kv/data/mark8ly-uat/app/",
