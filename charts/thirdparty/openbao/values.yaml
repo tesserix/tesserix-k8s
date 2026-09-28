@@ -285,6 +285,29 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: read-tesserix-tesserix-production
+      hcl: |
+        path "kv/data/tesserix/app/tesserix-internal-service-key" { capabilities = ["read"] }
+        path "kv/data/tesserix/app/tesserix-internal-api-token" { capabilities = ["read"] }
+        path "kv/data/tesserix/app/tesserix-github-token" { capabilities = ["read"] }
+        path "kv/data/tesserix/app/tesserix-marketplace-content-admin-key" { capabilities = ["read"] }
+        path "kv/data/tesserix/app/tesserix-argocd-auth-token" { capabilities = ["read"] }
+        path "kv/data/tesserix/app/tesserix-session-encrypt-key" { capabilities = ["read"] }
+        path "kv/data/tesserix/app/tesserix-sendgrid-webhook-secret" { capabilities = ["read"] }
+    - name: read-tesserix-mark8ly-production
+      hcl: |
+        path "kv/data/tesserix/app/tesserix-internal-api-token" { capabilities = ["read"] }
+    - name: tesserix-migrate-reviewed
+      hcl: |
+        path "kv/data/tesserix/app/tesserix-internal-service-key" { capabilities = ["create", "read"] }
+        path "kv/data/tesserix/app/tesserix-internal-api-token" { capabilities = ["create", "read"] }
+        path "kv/data/tesserix/app/tesserix-github-token" { capabilities = ["create", "read"] }
+        path "kv/data/tesserix/app/tesserix-marketplace-content-admin-key" { capabilities = ["create", "read"] }
+        path "kv/data/tesserix/app/tesserix-argocd-auth-token" { capabilities = ["create", "read"] }
+        path "kv/data/tesserix/app/tesserix-session-encrypt-key" { capabilities = ["create", "read"] }
+        path "kv/data/tesserix/app/tesserix-sendgrid-webhook-secret" { capabilities = ["create", "read"] }
+        path "auth/token/lookup-self" { capabilities = ["read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-beautyandcruor-tesserix-production
       hcl: |
         path "kv/data/beautyandcruor/app/beautyandcruor-admin-password-hash" { capabilities = ["read"] }
@@ -722,6 +745,21 @@ bootstrap:
         path "kv/data/roamie/app/roamie-travel-mcp-key" { capabilities = ["read"] }
 
   kubernetesRoles:
+    - name: read-tesserix-tesserix-production
+      serviceAccounts: ["tesserix-production-reader"]
+      namespaces: ["tesserix"]
+      policies: ["read-tesserix-tesserix-production"]
+      ttl: "1h"
+    - name: read-tesserix-mark8ly-production
+      serviceAccounts: ["tesserix-production-reader"]
+      namespaces: ["mark8ly"]
+      policies: ["read-tesserix-mark8ly-production"]
+      ttl: "1h"
+    - name: tesserix-migrate-reviewed
+      serviceAccounts: ["tesserix-migration-writer"]
+      namespaces: ["tesserix"]
+      policies: ["tesserix-migrate-reviewed"]
+      ttl: "15m"
     - name: read-beautyandcruor-tesserix-production
       serviceAccounts: ["beautyandcruor-production-reader"]
       namespaces: ["tesserix"]

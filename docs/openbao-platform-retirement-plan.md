@@ -112,7 +112,22 @@ PR #1238 applied exactly six creates, zero changes and zero deletes through a
 targeted Atlantis plan. The original recovery record was archived at
 `gs://tesseract-prod-backups-in/openbao/independent-recovery-migration/20260928T080610Z/gcp-sources.json.gz.kms`.
 The canonical GCS copy passed byte equality and independent GCP-only decrypt
-verification. The original remains until consumer rollout and restore acceptance.
+verification. The original was retired in #1240 after consumer rollout and restore acceptance.
 The consumer change also grants the existing scheduled GitHub break-glass identity
 decrypt-only access to this dedicated key; it already has bucket read access.
 This does not grant routine backup/restore-test identities recovery access.
+
+
+### Independent recovery completed
+
+PR #1239 deployed the GCS bootstrap consumer; #1240 deleted the single recovery
+Secret Manager record through a targeted Atlantis apply and reconciled its two
+obsolete IAM bindings. Both enabled versions remain in the encrypted migration
+archive above. A fresh bootstrap after deletion verified the GCS record and
+revoked its temporary token. Independent break-glass also passed with the source
+absent. No production initialization or rekey was performed.
+
+Backup `20260928T082137Z-741ed0e3979a` restored in 19.024 seconds, with exactly
+three retained snapshots and pruning verified. All 265 deployments and
+StatefulSets kept their images and had no readiness regression. Current verified
+cleanup is 278 records; 397 GCP Secret Manager records remain. Keep #1209 open.
