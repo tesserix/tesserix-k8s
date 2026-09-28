@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openpanel-production-reader
+  namespace: openpanel
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-openpanel-production
+  namespace: openpanel
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-openpanel-production
+          serviceAccountRef:
+            name: openpanel-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openpanel-production-reader
+  namespace: analytics-operator
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-openpanel-production
+  namespace: analytics-operator
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-openpanel-analytics-production
+          serviceAccountRef:
+            name: openpanel-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openpanel-migration-writer
+  namespace: openpanel
+automountServiceAccountToken: false
