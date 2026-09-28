@@ -26,11 +26,6 @@ def test_planning_poker_access_is_scoped_and_registered():
             "read-planning-poker-planning-poker-production",
             "planning-poker-production-reader",
         ),
-        (
-            "openbao",
-            "planning-poker-migrate-reviewed",
-            "planning-poker-migration-writer",
-        ),
     ]:
         auth = json.loads(config[f"role-{role}.json"])
         assert auth["bound_service_account_names"] == [sa]
@@ -57,6 +52,15 @@ def test_planning_poker_access_is_scoped_and_registered():
             assert (
                 store["spec"]["provider"]["vault"]["auth"]["kubernetes"]["role"] == role
             )
-        else:
-            assert auth["token_ttl"] == "15m"
-            assert '"update"' not in policy.split('path "auth/token/')[0]
+
+
+def test_temporary_migration_access_retired():
+    config = resource(
+        render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap"
+    )["data"]
+    assert "role-planning-poker-migrate-reviewed.json" not in config
+    assert "policy-planning-poker-migrate-reviewed.hcl" not in config
+    manifests = subprocess.check_output(
+        ["kubectl", "kustomize", str(ROOT / "external-secrets/prod")], text=True
+    )
+    assert "planning-poker-migration-writer" not in manifests

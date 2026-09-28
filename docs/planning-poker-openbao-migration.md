@@ -29,3 +29,14 @@ snapshot restore and retire temporary access. Preserve deployed image parameters
 Before deletion rollback may restore old references; afterward the encrypted
 recovery archive is required. A stopped OpenBao must not prevent independent
 recovery access. No additional persistent service is introduced.
+
+The consumer chart uses `openbao-planning-poker-production` and the KV `value`
+property. Optional Slack paths use the same product prefix but require separately
+reviewed grants before enabling Slack. The unused GCP database-secret default is
+removed. Cutover retires the temporary writer in Git; live role/policy removal
+must follow selective ServiceAccount pruning and capture of the retired grants.
+
+Recovery source archive:
+`gs://tesseract-prod-backups-in/openbao/planning-poker-migration/20260928T063153Z/gcp-sources.json.gz.kms`.
+The archive contains source metadata, IAM and enabled versions, and its remote
+ciphertext/decryption matched before migration.
