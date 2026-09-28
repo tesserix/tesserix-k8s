@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: planning-poker-production-reader
+  namespace: planning-poker
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-planning-poker-production
+  namespace: planning-poker
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-planning-poker-planning-poker-production
+          serviceAccountRef:
+            name: planning-poker-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: planning-poker-migration-writer
+  namespace: openbao
+automountServiceAccountToken: false
