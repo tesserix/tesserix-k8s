@@ -78,6 +78,7 @@ def test_rejects_unknown_product_and_duplicate_sources():
         "beautyandcruor",
         "tesserix",
         "console",
+        "clickhouse",
     ],
 )
 def test_missing_reviewed_destination_can_be_created(monkeypatch, scope):
@@ -90,3 +91,20 @@ def test_missing_reviewed_destination_can_be_created(monkeypatch, scope):
     assert (
         bao.request("GET", f"kv/data/{scope}/app/mark8ly-session-encrypt-key") is None
     )
+
+
+def test_clickhouse_reviewed_targets_are_product_prefixed():
+    expected = {
+        "prod-clickhouse-otel-password": "clickhouse/app/clickhouse-otel-password",
+        "prod-clickhouse-observer-password": "clickhouse/app/clickhouse-observer-password",
+        "prod-clickhouse-sre-writer-password": "clickhouse/app/clickhouse-sre-writer-password",
+    }
+    assert migration.targets_for("clickhouse") == expected
+    plan = [
+        {"source": source, "version": "1", "targets": [target]}
+        for source, target in expected.items()
+    ]
+    policy = migration.policy_for("clickhouse", plan)
+    assert "*" not in policy
+    assert '"delete"' not in policy
+    assert '"update"' not in policy.split('path "auth/token/')[0]
