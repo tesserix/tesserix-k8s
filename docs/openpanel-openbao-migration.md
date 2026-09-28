@@ -27,7 +27,11 @@ Archive of all eleven pinned sources, enabled versions, metadata and IAM:
 `gs://tesseract-prod-backups-in/openbao/openpanel-migration/20260928T104616Z/gcp-sources.json.gz.kms`.
 KMS encryption and remote decryption were round-trip verified. Baseline root API
 reads pass, and both source client IDs equal the active OpenPanel clients.
-No source deletion is complete for this cohort.
+All eleven values were staged with pinned-version equality, including the existing
+DevAI value. Both reader identities passed exact read-only and cross-product
+denial checks. The temporary staging token was revoked. Operator writer code is
+merged in `tesserix/tesserix-operators#17` (`5453663`); the production cutover pins
+that image. No source deletion is complete for this cohort.
 
 ## Cutover acceptance
 

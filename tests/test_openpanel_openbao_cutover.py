@@ -1,0 +1,80 @@
+import subprocess
+import yaml
+
+from test_homechef_openbao_access import ROOT, resource
+
+
+def test_all_openpanel_credential_readers_use_openbao():
+    docs = list(
+        yaml.safe_load_all(
+            (ROOT / "external-secrets/prod/openpanel/externalsecret.yaml").read_text()
+        )
+    )
+    docs += list(
+        yaml.safe_load_all(
+            (ROOT / "k8s/operators/analytics-onboarding/resources.yaml").read_text()
+        )
+    )
+    docs += list(
+        yaml.safe_load_all(
+            subprocess.check_output(
+                [
+                    "helm",
+                    "template",
+                    "openpanel",
+                    str(ROOT / "charts/thirdparty/openpanel"),
+                    "--namespace",
+                    "openpanel",
+                    "-f",
+                    str(ROOT / "charts/thirdparty/openpanel/values-prod.yaml"),
+                ],
+                text=True,
+            )
+        )
+    )
+    for name in (
+        "openpanel-secrets",
+        "openpanel-root-credentials",
+        "openpanel-oauth2-secrets",
+    ):
+        secret = resource(docs, "ExternalSecret", name)
+        assert secret["spec"]["secretStoreRef"] == {
+            "kind": "SecretStore",
+            "name": "openbao-openpanel-production",
+        }
+        for binding in secret["spec"]["data"]:
+            ref = binding["remoteRef"]
+            assert ref["property"] == "value"
+            if binding["secretKey"] == "marketplace-internal-auth":
+                assert ref["key"] == "mark8ly/app/mark8ly-audit-ingest-secret"
+                assert binding["sourceRef"]["storeRef"] == {
+                    "name": "openbao-mark8ly-production",
+                    "kind": "SecretStore",
+                }
+            else:
+                assert ref["key"].startswith("openpanel/app/openpanel-")
+
+
+def test_analytics_operator_declares_openbao_without_gcp_identity():
+    docs = list(
+        yaml.safe_load_all(
+            (ROOT / "k8s/operators/analytics-onboarding/resources.yaml").read_text()
+        )
+    )
+    sa = resource(docs, "ServiceAccount", "analytics-onboarding-operator")
+    assert "iam.gke.io/gcp-service-account" not in sa["metadata"].get("annotations", {})
+    deployment = resource(docs, "Deployment", "analytics-onboarding-operator")
+    args = deployment["spec"]["template"]["spec"]["containers"][0]["args"]
+    assert "--openbao-products=devai,langfuse" in args
+    assert "--openbao-role=analytics-onboarding-writer" in args
+    assert not any(
+        arg.startswith(("--gcp-", "--secret-prefix", "--secret-manager"))
+        for arg in args
+    )
+    policy = resource(docs, "NetworkPolicy", "analytics-onboarding-operator")
+    assert all(
+        peer.get("ipBlock", {}).get("cidr")
+        not in ("169.254.169.254/32", "169.254.169.252/32")
+        for rule in policy["spec"]["egress"]
+        for peer in rule.get("to", [])
+    )
