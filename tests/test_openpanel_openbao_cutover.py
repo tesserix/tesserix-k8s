@@ -1,3 +1,4 @@
+import os
 import subprocess
 import yaml
 
@@ -78,3 +79,41 @@ def test_analytics_operator_declares_openbao_without_gcp_identity():
         for rule in policy["spec"]["egress"]
         for peer in rule.get("to", [])
     )
+
+
+def test_manual_setup_never_falls_back_to_gcp(tmp_path):
+    script = (ROOT / "scripts/setup-openpanel-projects.sh").read_text()
+    function = script.split("get_root_credentials() {", 1)[1].split("\n}\n", 1)[0]
+    marker = tmp_path / "gcp-called"
+    command = """
+log_info() { :; }
+log_ok() { :; }
+log_error() { :; }
+gcloud() { touch "$GCP_MARKER"; printf 'legacy-value'; }
+unset OPENPANEL_PROD_ROOT_CLIENT_ID OPENPANEL_PROD_ROOT_CLIENT_SECRET
+get_root_credentials() { FUNCTION
+}
+get_root_credentials prod
+""".replace("FUNCTION", function)
+    result = subprocess.run(
+        ["bash", "-c", command],
+        env={**os.environ, "GCP_MARKER": str(marker)},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert not marker.exists()
+    supplied = subprocess.run(
+        [
+            "bash",
+            "-c",
+            command.replace(
+                "unset OPENPANEL_PROD_ROOT_CLIENT_ID OPENPANEL_PROD_ROOT_CLIENT_SECRET",
+                "OPENPANEL_PROD_ROOT_CLIENT_ID=test-id\nOPENPANEL_PROD_ROOT_CLIENT_SECRET=test-secret",
+            )
+            + '\n[[ "$ROOT_CLIENT_ID" == test-id && "$ROOT_CLIENT_SECRET" == test-secret ]]',
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert supplied.returncode == 0

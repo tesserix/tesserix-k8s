@@ -9,11 +9,10 @@
 #   1. A root-type client must exist in each OpenPanel environment.
 #      Create one manually in the OpenPanel dashboard:
 #        Settings > Clients > New Client > type: root
-#      Then store the credentials in GCP Secret Manager:
-#        - devtest-openpanel-root-client-id
-#        - devtest-openpanel-root-client-secret
-#        - prod-openpanel-root-client-id
-#        - prod-openpanel-root-client-secret
+#      Root credentials live in OpenBao. Export the selected environment's
+#      credentials from its approved read-only identity before running setup.
+#      Production: openpanel/app/openpanel-root-client-{id,secret}.
+#      Development requires separate reviewed OpenBao paths and grants.
 #
 #   2. jq must be installed (brew install jq)
 #
@@ -90,10 +89,9 @@ check_deps() {
 
 # ---- Core Functions ----
 
-# Get root client credentials from env vars or GCP Secret Manager
+# Root credentials must be supplied from the selected OpenBao environment.
 get_root_credentials() {
   local env="$1"
-  local prefix="${env}"
 
   # Try environment variables first
   local id_var="OPENPANEL_${env^^}_ROOT_CLIENT_ID"
@@ -106,30 +104,8 @@ get_root_credentials() {
     return 0
   fi
 
-  # Fall back to GCP Secret Manager
-  if command -v gcloud &>/dev/null; then
-    log_info "Fetching root credentials from GCP Secret Manager..."
-    ROOT_CLIENT_ID=$(gcloud secrets versions access latest \
-      --secret="${prefix}-openpanel-root-client-id" 2>/dev/null || echo "")
-    ROOT_CLIENT_SECRET=$(gcloud secrets versions access latest \
-      --secret="${prefix}-openpanel-root-client-secret" 2>/dev/null || echo "")
-
-    if [[ -n "$ROOT_CLIENT_ID" && -n "$ROOT_CLIENT_SECRET" ]]; then
-      log_ok "Fetched root credentials from GCP Secret Manager"
-      return 0
-    fi
-  fi
-
-  log_error "Root client credentials not found for '$env'."
-  echo ""
-  echo "  Set environment variables:"
-  echo "    export OPENPANEL_${env^^}_ROOT_CLIENT_ID=<uuid>"
-  echo "    export OPENPANEL_${env^^}_ROOT_CLIENT_SECRET=<sec_...>"
-  echo ""
-  echo "  Or store in GCP Secret Manager:"
-  echo "    gcloud secrets create ${prefix}-openpanel-root-client-id --data-file=-"
-  echo "    gcloud secrets create ${prefix}-openpanel-root-client-secret --data-file=-"
-  echo ""
+  log_error "Root credentials from OpenBao are required for '$env'."
+  log_error "Export OPENPANEL_${env^^}_ROOT_CLIENT_ID and OPENPANEL_${env^^}_ROOT_CLIENT_SECRET using the approved environment reader."
   return 1
 }
 
@@ -245,8 +221,7 @@ patch_argocd_file() {
   fi
 }
 
-# Root OpenPanel administration credentials above are critical platform secrets.
-# Product client IDs use OpenBao. Supply a <=15m BAO_TOKEN with create/read on
+# Root credentials and product client IDs use OpenBao. Supply a <=15m BAO_TOKEN with create/read on
 # the exact mark8ly[-development]/app/mark8ly-openpanel-<app>-client-id paths,
 # then revoke the token after setup. Different existing values fail closed.
 store_client_id_openbao() {
