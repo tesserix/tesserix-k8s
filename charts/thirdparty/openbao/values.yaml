@@ -249,8 +249,8 @@ openbao:
 # Bootstrap — this chart's own addition
 # =============================================================================
 # `bao operator init` is a one-time, stateful act that produces the recovery
-# keys. This Job does it idempotently, stores the recovery keys in GCP Secret
-# Manager, then applies every policy and auth role below on each sync.
+# keys. This Job persists them to independent KMS-encrypted GCS storage, then
+# applies every policy and auth role below on each sync. Fresh init is opt-in.
 bootstrap:
   enabled: true
   image:
@@ -260,8 +260,7 @@ bootstrap:
   serviceAccount:
     name: openbao-bootstrap
     annotations:
-      # Writes the recovery keys to Secret Manager. Needs
-      # roles/secretmanager.admin on prod-openbao-recovery-keys only.
+      # Reads/creates immutable KMS-encrypted records in the dedicated bootstrap bucket.
       iam.gke.io/gcp-service-account: openbao-bootstrap@tesseracthub-480811.iam.gserviceaccount.com
   resources:
     requests:
@@ -272,10 +271,12 @@ bootstrap:
   # recovery keys that regenerate a root token and nothing else.
   recoveryShares: 5
   recoveryThreshold: 3
-  # GCP Secret Manager secret holding the recovery keys. It is created by the
-  # Job on first run and never read back by anything in-cluster.
-  recoverySecretName: prod-openbao-recovery-keys
-  gcpProject: tesseracthub-480811
+  allowInitialization: false
+  recoveryObjectURI: gs://tesseracthub-480811-openbao-bootstrap-prod/bootstrap/init.json.kms
+  recoveryKMSKey: projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/openbao-bootstrap-key
+  staging:
+    storageClass: standard-rwo-retain
+    size: 1Gi
   # KV v2 mount every application secret lives under.
   kvMount: kv
   # The Job's own way back in on later runs. Created during init, bound to the

@@ -104,3 +104,15 @@ Initialisation and interrupted-bootstrap handling still need separate integratio
 and failure testing before the old Secret Manager reader/writer can be removed.
 Never initialise or rekey the production OpenBao as a migration test. A cold-start
 must restore existing data and recovery material, not replace them with new keys.
+
+
+### Recovery storage progress (2026-09-28)
+
+PR #1238 applied exactly six creates, zero changes and zero deletes through a
+targeted Atlantis plan. The original recovery record was archived at
+`gs://tesseract-prod-backups-in/openbao/independent-recovery-migration/20260928T080610Z/gcp-sources.json.gz.kms`.
+The canonical GCS copy passed byte equality and independent GCP-only decrypt
+verification. The original remains until consumer rollout and restore acceptance.
+The consumer change also grants the existing scheduled GitHub break-glass identity
+decrypt-only access to this dedicated key; it already has bucket read access.
+This does not grant routine backup/restore-test identities recovery access.

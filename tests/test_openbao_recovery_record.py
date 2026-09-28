@@ -144,3 +144,22 @@ def test_transport_errors_do_not_expose_credentials():
     with pytest.raises(record.RecoveryRecordError) as error:
         record.RecoveryRecord(URI, KEY, runner=fail).store(PAYLOAD)
     assert "credential-must-not-leak" not in str(error.value)
+
+
+def test_gcloud_missing_object_diagnostic_allows_first_creation():
+    class MissingCloud(Cloud):
+        def __call__(self, args, **kwargs):
+            if args[1:3] == ["storage", "cat"] and self.stored is None:
+                return subprocess.CompletedProcess(
+                    args,
+                    1,
+                    b"",
+                    b"ERROR: (gcloud.storage.cat) The following URLs matched no objects or files:\n"
+                    + URI.encode(),
+                )
+            return super().__call__(args, **kwargs)
+
+    cloud = MissingCloud()
+    client = record.RecoveryRecord(URI, KEY, runner=cloud)
+    client.store(PAYLOAD)
+    assert client.load() == PAYLOAD

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import fcntl
 import hashlib
 import hmac
 import json
@@ -81,7 +82,15 @@ class RecoveryRecord:
     def load(self) -> bytes | None:
         result = self.call(["storage", "cat", self.uri])
         if result.returncode:
-            if b"404" in result.stderr or b"not found" in result.stderr.lower():
+            if (
+                b"404" in result.stderr
+                or b"not found" in result.stderr.lower()
+                or result.stderr.strip()
+                == (
+                    b"ERROR: (gcloud.storage.cat) The following URLs matched no objects or files:\n"
+                    + self.uri.encode()
+                )
+            ):
                 return None
             raise RecoveryRecordError("Recovery object read failed; details withheld")
         payload = self.crypt("decrypt", result.stdout)
@@ -135,22 +144,60 @@ class RecoveryRecord:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["store", "load"])
-    parser.add_argument("filename", type=Path)
+    parser.add_argument("operation", choices=["store", "load", "inspect", "run"])
+    parser.add_argument("filename", type=Path, nargs="?")
     args = parser.parse_args()
     try:
         client = RecoveryRecord(
             os.environ["RECOVERY_OBJECT_URI"], os.environ["RECOVERY_KMS_KEY"]
         )
+        if args.operation == "inspect":
+            if client.load() is None:
+                print("Recovery record absent")
+                return 3
+            print("Recovery record present")
+            return 0
+        if args.filename is None:
+            raise RecoveryRecordError("A filename is required")
+        if args.operation == "run":
+            staging = Path(os.environ.get("RECOVERY_STAGING_DIR", "/recovery"))
+            with (staging / ".bootstrap.lock").open("a+") as lock:
+                os.fchmod(lock.fileno(), 0o600)
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return subprocess.run(
+                    ["/bin/bash", str(args.filename)],
+                    pass_fds=(lock.fileno(),),
+                    check=False,
+                ).returncode
         if args.operation == "store":
-            client.store(args.filename.read_bytes())
+            descriptor = os.open(args.filename, os.O_RDWR | os.O_NOFOLLOW)
+            with os.fdopen(descriptor, "r+b") as stream:
+                os.fchmod(stream.fileno(), 0o600)
+                payload = stream.read(65537)
+                os.fsync(stream.fileno())
+            directory = os.open(args.filename.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+            client.store(payload)
         else:
             payload = client.load()
             if payload is None:
                 raise RecoveryRecordError("Recovery record is missing")
-            with args.filename.open("wb") as stream:
-                os.fchmod(stream.fileno(), 0o600)
-                stream.write(payload)
+            temporary = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    dir=args.filename.parent, delete=False
+                ) as stream:
+                    temporary = Path(stream.name)
+                    stream.write(payload)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, args.filename)
+            finally:
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
         print("Recovery record verified")
         return 0
     except (RecoveryRecordError, OSError, KeyError):

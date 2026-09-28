@@ -12,7 +12,7 @@ Secrets into application namespaces. Applications never hold an OpenBao token.
 | API | `http://openbao.openbao.svc:8200` (in-cluster only, no Ingress) |
 | KV mount | `kv/` (v2) |
 | Unseal | `seal "gcpckms"` → `tesseract-prod-in-keyring/openbao-unseal-key` |
-| Recovery keys | GCP Secret Manager, `prod-openbao-recovery-keys` |
+| Recovery keys | Independent KMS-encrypted GCS, `gs://tesseracthub-480811-openbao-bootstrap-prod/bootstrap/init.json.kms` |
 | Snapshots | `gs://tesseract-prod-backups-in/openbao/`, daily 03:00 UTC, 30 days |
 
 ## What belongs here, and what does not
@@ -24,10 +24,11 @@ Use `<product>-<secret-name>` identifiers and separate environment paths.
 Application configuration uses namespace-bound ESO readers; tenant/user values
 remain owner-scoped and are read at runtime.
 
-GCP Secret Manager retains only critical platform/bootstrap/recovery exceptions:
-OpenBao recovery material, shared registry and CI access, infrastructure restore
-credentials and shared control-plane authority. Credentials needed to recover
-OpenBao must remain available when OpenBao is unavailable.
+The migration target is zero GCP Secret Manager records and dependencies.
+Operational platform credentials also move to OpenBao after consumer and
+cold-start verification. Bootstrap and recovery material must remain independently
+accessible through KMS-encrypted GCS when OpenBao is unavailable. Preserve the
+explicit Support Platform retention exception until its acceptance gates pass.
 
 See [the application secret policy](application-secret-policy.md) for migration
 and deletion gates. A product service named `platform-api` remains product-owned.
@@ -75,9 +76,9 @@ unlocks everything.
    unsealed cluster means someone unsealing three pods at 3am. With `gcpckms`
    a restarted pod is ready on its own.
 3. **The root token is revoked at the end of bootstrap.** The Job initialises
-   the cluster, writes the *recovery* keys to Secret Manager, applies the
+   a fresh cluster only with explicit opt-in, persists recovery material to encrypted GCS, applies the
    config, then calls `auth/token/revoke-self`. It stores init's whole JSON, so
-   a dead `root_token` field is visible in the secret; it authenticates nothing.
+   an archived `root_token` field, if present, authenticates nothing.
    Day-2 admin access was meant to be minted from the recovery keys via `bao
    operator generate-root`, which does not currently work — see Day-2 below.
 4. **Applications authenticate as themselves.** Kubernetes auth roles bind a
@@ -85,8 +86,8 @@ unlocks everything.
    prefix. ESO mints a token for the *application's* ServiceAccount, so the
    identity reading a secret is the identity that will consume it.
 
-Both the recovery keys and the seal key live in GCP. GCP Secret Manager stays
-the root of trust; OpenBao is the working store everything else reads.
+Independent recovery uses GCS and KMS with separately managed IAM. The seal
+key remains in KMS; neither dependency requires GCP Secret Manager.
 
 ## Authorization model
 
@@ -138,7 +139,7 @@ no administration rights (tesserix-home#464), so branch protection binds it.
 
 **If the console is unavailable**, see
 [the break-glass runbook](runbooks/openbao-break-glass.md). Do not reach for the
-`root_token` field in `prod-openbao-recovery-keys`; it is revoked by design and
+archived `root_token` field in the independent GCS recovery record; it is revoked by design and
 fails with a bare `permission denied`.
 
 ### The whitelist lives in Git
@@ -255,125 +256,27 @@ it can read every namespace can request — which is why its policy stops at
 - The Agent injector and CSI provider are both disabled: each is a cluster-wide
   mutating path we have no use for while ESO is the reader.
 
-## Prerequisites — already applied
+## Recovery prerequisites
 
-Three GCP service accounts, the KMS key, the recovery-key secret and two IAM
-grants. Nothing in the chart creates them; without them the pods crash-loop on
-seal init.
+Provision the OpenBao Workload Identity accounts and KMS auto-unseal access in
+Terraform. The independent bootstrap bucket, dedicated key and scoped IAM are
+owned by `terraform-new/stacks/03-storage/openbao-bootstrap-recovery.tf`.
+PR #1238 applied these with a six-create targeted plan. Existing unrelated
+storage drift means a broad stack apply is unsafe: review a narrowly targeted
+plan for each migration step.
 
-**These were created by CLI on 2026-08-13 and imported into Terraform state**
-(`03-storage` and `06-workload-identity`), so both stacks plan clean for
-OpenBao. The commands are kept here for a rebuild from scratch.
+Do not recreate the old recovery Secret Manager entry or restore its old reader
+and writer grants. Before retiring that source, verify the GCS canonical record,
+bootstrap and scheduled-checker consumers, and isolated restore acceptance.
+See [the break-glass runbook](runbooks/openbao-break-glass.md) for independent
+retrieval and [the retirement plan](openbao-platform-retirement-plan.md) for
+migration evidence.
 
-```bash
-PROJECT=tesseracthub-480811
-
-# 1. Service accounts
-gcloud iam service-accounts create openbao --project="$PROJECT" \
-  --display-name="OpenBao Server" \
-  --description="Auto-unseal via Cloud KMS for the openbao StatefulSet"
-gcloud iam service-accounts create openbao-bootstrap --project="$PROJECT" \
-  --display-name="OpenBao Bootstrap" \
-  --description="Stores OpenBao recovery keys at cluster initialisation"
-gcloud iam service-accounts create openbao-snapshot --project="$PROJECT" \
-  --display-name="OpenBao Snapshot" \
-  --description="Writes and prunes raft snapshots in the backups bucket"
-
-# 2. Workload Identity bindings
-for sa in openbao openbao-bootstrap openbao-snapshot; do
-  gcloud iam service-accounts add-iam-policy-binding \
-    "${sa}@${PROJECT}.iam.gserviceaccount.com" --project="$PROJECT" \
-    --role=roles/iam.workloadIdentityUser \
-    --member="serviceAccount:${PROJECT}.svc.id.goog[openbao/${sa}]"
-done
-
-# 3. Unseal key. NOT via `terraform apply` — the 03-storage stack has unrelated
-#    drift (it plans ~29 creates for resources that already exist), so applying
-#    it to get one key is not safe. Create by CLI, then import.
-#    destroy_scheduled_duration is immutable and KMS never frees a key name, so
-#    it must be right at creation: 30 days, matching tfvars.
-gcloud kms keys create openbao-unseal-key --project="$PROJECT" \
-  --location=asia-south1 --keyring=tesseract-prod-in-keyring \
-  --purpose=encryption --protection-level=software \
-  --rotation-period=7776000s --next-rotation-time="$(date -u -v+90d +%Y-%m-%dT%H:%M:%SZ)" \
-  --destroy-scheduled-duration=2592000s \
-  --labels=environment=prod,managed-by=terraform,project=tesseracthub,region=in,tier=infrastructure,purpose=openbao-unseal
-# Both roles: the seal calls cryptoKeys.get before it encrypts, and that is
-# not in EncrypterDecrypter — without viewer it fails closed at startup.
-for role in roles/cloudkms.cryptoKeyEncrypterDecrypter roles/cloudkms.viewer; do
-  gcloud kms keys add-iam-policy-binding openbao-unseal-key --project="$PROJECT" \
-    --location=asia-south1 --keyring=tesseract-prod-in-keyring \
-    --role="$role" --condition=None \
-    --member="serviceAccount:openbao@${PROJECT}.iam.gserviceaccount.com"
-done
-
-# 4. Recovery-key secret. Pre-created so the bootstrap Job needs no
-#    project-level Secret Manager role. user-managed replication pinned to
-#    asia-south1 like every other secret here; the field is immutable.
-gcloud secrets create prod-openbao-recovery-keys \
-  --project="$PROJECT" --replication-policy=user-managed --locations=asia-south1 \
-  --labels=environment=prod,managed-by=terraform,project=tesseracthub,region=in,tier=infrastructure,type=encryption
-for role in roles/secretmanager.viewer roles/secretmanager.secretVersionAdder; do
-  gcloud secrets add-iam-policy-binding prod-openbao-recovery-keys \
-    --project="$PROJECT" --role="$role" \
-    --member="serviceAccount:openbao-bootstrap@${PROJECT}.iam.gserviceaccount.com"
-done
-
-# 5. Snapshot bucket. --condition=None is required: the bucket policy already
-#    carries conditional bindings, and gcloud refuses to guess non-interactively.
-gcloud storage buckets add-iam-policy-binding gs://tesseract-prod-backups-in \
-  --project="$PROJECT" --role=roles/storage.objectAdmin --condition=None \
-  --member="serviceAccount:openbao-snapshot@${PROJECT}.iam.gserviceaccount.com"
-```
-
-### Importing them into Terraform state
-
-The tfvars entries exist (`kms_keys`, `secrets`, `service_accounts`), so the
-CLI-created objects must be imported or the next apply tries to create them
-again and fails on "already exists".
-
-```bash
-cd terraform-new/stacks/03-storage && terraform init
-VF=../../environments/prod/terraform.tfvars
-P=tesseracthub-480811
-KEY=projects/$P/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/openbao-unseal-key
-ROLE=roles/cloudkms.cryptoKeyEncrypterDecrypter
-MEM=serviceAccount:openbao@$P.iam.gserviceaccount.com
-
-terraform import -var-file=$VF 'google_kms_crypto_key.keys["openbao-unseal-key"]' "$KEY"
-terraform import -var-file=$VF "google_kms_crypto_key_iam_member.key_members[\"openbao-unseal-key-$ROLE-$MEM\"]" "$KEY $ROLE $MEM"
-terraform import -var-file=$VF 'google_secret_manager_secret.secrets["prod-openbao-recovery-keys"]' "projects/$P/secrets/prod-openbao-recovery-keys"
-
-cd ../06-workload-identity && terraform init
-for sa in openbao openbao-bootstrap openbao-snapshot; do
-  terraform import -var-file=$VF "google_service_account.workload_identity[\"$sa\"]" \
-    "projects/$P/serviceAccounts/$sa@$P.iam.gserviceaccount.com"
-  terraform import -var-file=$VF "google_service_account_iam_member.workload_identity_binding[\"$sa-openbao-$sa\"]" \
-    "projects/$P/serviceAccounts/$sa@$P.iam.gserviceaccount.com roles/iam.workloadIdentityUser serviceAccount:$P.svc.id.goog[openbao/$sa]"
-done
-terraform import -var-file=$VF \
-  'google_storage_bucket_iam_member.bucket_access["openbao-snapshot-tesseract-prod-backups-in-roles/storage.objectAdmin"]' \
-  "b/tesseract-prod-backups-in roles/storage.objectAdmin serviceAccount:openbao-snapshot@$P.iam.gserviceaccount.com"
-for role in roles/secretmanager.viewer roles/secretmanager.secretVersionAdder; do
-  terraform import -var-file=$VF \
-    "google_secret_manager_secret_iam_member.secret_access[\"openbao-bootstrap-prod-openbao-recovery-keys-$role\"]" \
-    "projects/$P/secrets/prod-openbao-recovery-keys $role serviceAccount:openbao-bootstrap@$P.iam.gserviceaccount.com"
-done
-```
-
-`06-workload-identity` then plans clean for OpenBao. Three lines remain in the
-`03-storage` plan, none of them real drift:
-
-- the key and the secret show `labels` being added. The google provider v5
-  splits `labels` (Terraform-owned) from `effective_labels` (all of them), and
-  import populates only the latter — so the first apply merely claims labels
-  that are already on the object. Verify with `gcloud kms keys describe` before
-  assuming otherwise.
-- `google_kms_crypto_key_iam_member.secret_manager_service_agent["openbao-unseal-key"]`
-  will be created. The module grants the Secret Manager service agent
-  encrypt/decrypt on *every* `ENCRYPT_DECRYPT` key with no per-key opt-out. It
-  was left uncreated rather than hand-granted on the unseal key; an apply adds
-  it.
+Bootstrap staging uses a retained PVC, private files and an exclusive lock.
+Failed uploads retain the original init response; retries cannot overwrite a
+different canonical record. Initialization defaults off, and a fresh init is
+refused when recovery material already exists. Never initialize production to
+test this path.
 
 Then commit and let ArgoCD sync. The `security` app-of-apps brings up the
 namespace (wave -5), the bootstrap script ConfigMap (wave -1), and the
@@ -426,7 +329,7 @@ console.
 **Getting an admin token — currently not possible.** Both documented routes are
 dead ends as of 2026-08-15:
 
-- The `root_token` field in `prod-openbao-recovery-keys` is the one `bao
+- The archived `root_token` field in the independent GCS recovery record is the one `bao
   operator init` returned. The bootstrap Job calls `auth/token/revoke-self`
   before exiting, so it 403s on every call. The field is persisted only because
   the Job stores init's whole JSON.
@@ -534,8 +437,9 @@ read the upstream changelog for moved values, and let the promotion run.
 
 ## Adopting it — order of migration
 
-OpenBao does not replace GCP Secret Manager overnight, and it should not: the
-recovery keys and the seal key have to live outside it.
+Migrate one product or shared consumer group at a time. The target is zero
+Secret Manager dependencies, while recovery material and the seal key remain
+independently available through GCS and KMS.
 
 1. New services write their secrets to `kv/<namespace>/<app>/<name>` and ship a
    namespaced `SecretStore` from day one.
@@ -543,9 +447,9 @@ recovery keys and the seal key have to live outside it.
    copy the values across, flip `secretStoreRef` from `gcp-secret-store` to the
    namespace's `openbao` store, confirm the Secret still reconciles, then delete
    the GCP secret.
-3. `gcp-secret-store` remains for reviewed critical platform/bootstrap/recovery
-   exceptions defined in `application-secret-policy.md`. Preserve these while
-   migrating application-owned dependencies.
+3. Retire `gcp-secret-store` only after all application and operational consumers
+   are verified on OpenBao and independent bootstrap/recovery is tested. Keep
+   explicitly retained originals until their acceptance gates pass.
 
 Bootstrap ordering is the reason for rule 3. Anything needed to *start* the
 cluster cannot be stored in something the cluster starts.

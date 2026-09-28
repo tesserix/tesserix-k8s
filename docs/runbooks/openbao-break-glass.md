@@ -14,7 +14,7 @@ Steps 1-3 and 6 are re-checked daily; step 4 is not, because it writes.
 
 ## Do not start here: the credential that looks right is revoked
 
-`prod-openbao-recovery-keys` in Secret Manager contains a `root_token` field.
+The independently encrypted GCS recovery record contains an archived `root_token` field.
 **It does not work.**
 
 ```
@@ -37,8 +37,7 @@ PUT /v1/sys/generate-recovery-token/attempt  -> {"errors":["permission denied"]}
 The seal is `gcpckms` with `recovery_seal: true` (threshold 3 of 5), and
 recovery shares cannot be presented as a token.
 
-**If you are reading this during an incident: skip to step 1. The recovery-keys
-secret is not your way in.**
+**If you are reading this during an incident: skip to step 1. The archived root token is not your way in.**
 
 ---
 
@@ -204,13 +203,38 @@ than none.
   check deliberately does not perform step 4, because it writes. Step 4 was
   verified by hand once, on 2026-09-03; if the policy grants change it could
   rot without anything noticing.
-- **All five recovery shares live in one Secret Manager entry**
-  (`prod-openbao-recovery-keys`). A 3-of-5 split exists so no single party holds
-  enough to recover; whoever can read that secret holds all five. The split is
-  arithmetic, not a control, as currently stored.
-- **The stale `root_token` is a trap** and remains one until that field is
-  removed. It is the first thing an operator will try and it fails with a bare
-  `permission denied`.
-- **Nothing detects any of this.** No check compares the stored credential
-  against what OpenBao accepts, which is why a revoked token sat there
-  unnoticed until someone tried to use it.
+- **All five recovery shares remain in one encrypted recovery record.** IAM
+  and KMS access to that record, rather than the 3-of-5 threshold alone, form
+  the authorization boundary. Routine backup/restore-test identities must not
+  read this bootstrap material.
+- The archived initial root token is deliberately revoked. The daily checker
+  now requires its lookup to return HTTP 403; it is not an emergency credential.
+
+## Independent recovery material
+
+The canonical object is
+`gs://tesseracthub-480811-openbao-bootstrap-prod/bootstrap/init.json.kms`,
+client-encrypted with `openbao-bootstrap-key` and stored with bucket CMEK. It
+can be retrieved using an authorized GCP identity without Kubernetes, ESO,
+Argo CD or a functioning OpenBao. KMS auto-unseal remains a separate dependency.
+Do not print recovery material or put it in shell arguments.
+
+```bash
+umask 077
+export RECOVERY_OBJECT_URI=gs://tesseracthub-480811-openbao-bootstrap-prod/bootstrap/init.json.kms
+export RECOVERY_KMS_KEY=projects/tesseracthub-480811/locations/asia-south1/keyRings/tesseract-prod-in-keyring/cryptoKeys/openbao-bootstrap-key
+python3 charts/thirdparty/openbao/files/recovery_record.py load /secure/private/recovery.json
+```
+
+Use a private operator-controlled directory for the output; remove the plaintext
+file once the recovery procedure is complete. Do not use the old Secret Manager
+record as the steady-state reader after cutover. Retain it until acceptance and
+the separate source-retirement change are complete.
+
+Bootstrap defaults to `allowInitialization: false`. A restored cluster must
+restore its existing Raft state, not initialize new keys. Fresh initialization
+requires explicit opt-in and an absent canonical recovery object. A retained
+`openbao-bootstrap-staging` PVC holds any pending init response until encrypted
+upload and byte verification succeed. Retries persist the same pending record;
+a filesystem lock prevents concurrent bootstrap jobs. Never delete that PVC to
+work around a failed upload. Do not apply snapshot retention to this bucket.

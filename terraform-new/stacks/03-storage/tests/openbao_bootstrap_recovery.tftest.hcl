@@ -35,3 +35,17 @@ run "bootstrap_material_is_separate_and_not_pruned" {
     error_message = "Bootstrap material must use its own KMS key."
   }
 }
+
+run "scheduled_break_glass_can_only_decrypt_recovery_material" {
+  command = plan
+  variables {
+    project_id         = "synthetic-project"
+    create_kms_keyring = false
+    enable_cmek        = false
+    secrets            = []
+  }
+  assert {
+    condition     = google_kms_crypto_key_iam_member.openbao_bootstrap_check.role == "roles/cloudkms.cryptoKeyDecrypter" && google_kms_crypto_key_iam_member.openbao_bootstrap_check.member == "serviceAccount:github-actions@synthetic-project.iam.gserviceaccount.com"
+    error_message = "The existing scheduled break-glass checker requires decrypt-only access to the dedicated recovery key."
+  }
+}
