@@ -39,3 +39,13 @@ remoteRef fields, then verify the actual path/property and refresh status.
 Source archive for the three admin credentials:
 `gs://tesseract-prod-backups-in/openbao/beautyandcruor-migration/20260928T070857Z/gcp-sources.json.gz.kms`.
 Remote ciphertext and decrypt equality were verified.
+
+Completed admin migration: #1235/#1236 merged, and product rules/docs merged in
+`tesserix/beautyandcruor#50`. All three admin GCP originals were deleted only after
+verified archive, scoped readback, isolated restore and application acceptance.
+Post-deletion: two fresh ESO resources, both whole-Secret hashes, unchanged images
+and Argo parameters, ready deployment and all seven functional checks passed.
+Temporary writer ServiceAccount/role/policy are absent and tokens revoked.
+Backup `20260928T072158Z-ba8f13d62523` restored in 18.888 seconds; three verified
+snapshots retained and pruning confirmed. Total verified cleanup: 277 records.
+The expired Cloudflare source remains outside the completed admin batch.

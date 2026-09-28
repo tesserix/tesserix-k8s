@@ -6,7 +6,8 @@ Tracks https://github.com/tesserix/tesserix-k8s/issues/1209.
 The requested target now includes platform secrets, superseding the earlier
 steady-state policy that retained platform secrets in Secret Manager. Operational
 credentials should use OpenBao; reaching zero Secret Manager records also needs
-independent bootstrap and recovery storage. The latter decision is pending.
+independent bootstrap and recovery storage. The implementation direction is KMS-encrypted GCS, consistent with the approved
+backup storage and the renewed instruction to continue all migrations.
 
 ## Observed scope (2026-09-28, before Planning Poker cleanup)
 
@@ -76,9 +77,30 @@ The existing twice-daily verified snapshots target a 12-hour backup interval;
 retain three verified snapshots. Recovery-material retention is separate. Current
 isolated restore measurements are not a cluster-wide disaster recovery RTO.
 
-## Pending decision
+## Independent recovery implementation
 
-Choose KMS-encrypted GCS or an external offline vault for independent recovery
-and bootstrap copies. After the choice, prepare and test the concrete code/IAM
-changes before requesting the required production rollout/deletion approval.
-No platform originals are approved for unconditional deletion by this document.
+Use a separate `tesseracthub-480811-openbao-bootstrap-prod` bucket and dedicated
+`openbao-bootstrap-key` in the existing regional keyring. Enable versioning,
+public access prevention, uniform IAM and seven-day soft deletion; apply no
+age-based lifecycle rule. Terraform prevents destruction of both bucket and key.
+The existing three-snapshot policy remains on the separate snapshot bucket.
+
+The bootstrap service account receives objectCreator/objectViewer on this bucket
+and encryption/decryption on the dedicated key. The GCS service agent receives
+CMEK access. Routine snapshot backup/test identities receive no new grants.
+`recovery_record.py` performs client-side KMS encryption in addition to bucket
+CMEK, uses generation-match zero for object creation, accepts identical retries,
+rejects different existing records and verifies decrypted remote bytes. Payloads
+never enter command arguments or error messages. The canonical object is
+`bootstrap/init.json.kms`.
+
+The first infrastructure plan is limited to six new resources (bucket, key and
+four IAM memberships). It changes no existing resource and deletes nothing. Do
+not apply the full storage-stack plan: unrelated historical drift remains out
+of scope. Keep all original recovery data until exact copy/readback, independent
+GCP-identity retrieval, bootstrap-consumer cutover and restore checks pass.
+
+Initialisation and interrupted-bootstrap handling still need separate integration
+and failure testing before the old Secret Manager reader/writer can be removed.
+Never initialise or rekey the production OpenBao as a migration test. A cold-start
+must restore existing data and recovery material, not replace them with new keys.
