@@ -31,7 +31,9 @@ All eleven values were staged with pinned-version equality, including the existi
 DevAI value. Both reader identities passed exact read-only and cross-product
 denial checks. The temporary staging token was revoked. Operator writer code is
 merged in `tesserix/tesserix-operators#17` (`5453663`); the production cutover pins
-that image. No source deletion is complete for this cohort.
+that image. All eleven GCP originals were deleted after the consumer and provider checks.
+The old operator's two project IAM grants and Workload Identity binding were
+removed and verified absent. Its Kubernetes identity has no GCP annotation.
 
 The cutover removes the temporary migration ServiceAccount and its bootstrap
 policy/role declarations. After reconciliation, remove the corresponding live
@@ -47,3 +49,24 @@ all seven OpenPanel workloads and both onboarding claims. Test isolated OpenBao
 restore before deleting verified sources. Reconcile again after deletion and
 confirm the GCP sources stay absent. Retire temporary writer permissions and
 obsolete operator GCP grants through their owning configuration.
+
+## Verification after cutover
+
+Access PR #1245, operator PR `tesserix/tesserix-operators#17`, consumer PR #1246
+and scoped Kubernetes API egress correction #1247 are merged. Both claims are
+Ready with canonical OpenBao paths; fresh ESO reads match all three Kubernetes
+Secrets byte-for-byte. Seven OpenPanel workload images/replicas and both Argo
+source configurations are unchanged.
+
+Database authentication, authenticated root management API reads, both product
+client IDs, API/proxy health and dashboard OAuth redirect pass. Google accepts
+the real client credentials and rejects an invalid authorization code with
+`invalid_grant`; a deliberately wrong client secret returns `invalid_client`.
+
+Backup `20260928T110422Z-33444b1d0388` restored in isolation in 20.983 seconds;
+exactly three verified backups remained and pruning was checked. The subsequent backup after staging access retirement,
+`20260928T113522Z-f4a747bd07ba`, also restored successfully in 21.66 seconds
+with retention and pruning verified. Temporary staging policy, role,
+ServiceAccount and tokens are retired. A GitOps operator restart tests fresh
+reconciliation with originals absent; final post-deletion evidence is recorded
+in issue #1209. The estate-wide issue remains open for the remaining cohorts.
