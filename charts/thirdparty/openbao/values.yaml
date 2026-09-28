@@ -466,6 +466,14 @@ bootstrap:
         path "kv/metadata/kora/app/kora-gemini-api-key" { capabilities = ["read"] }
         path "kv/metadata/kora/app/kora-openai-api-key" { capabilities = ["read"] }
         path "auth/token/revoke-self" { capabilities = ["update"] }
+    - name: read-clickhouse-observability-production
+      hcl: |
+        path "kv/data/clickhouse/app/clickhouse-otel-password" { capabilities = ["read"] }
+        path "kv/data/clickhouse/app/clickhouse-observer-password" { capabilities = ["read"] }
+        path "kv/data/clickhouse/app/clickhouse-sre-writer-password" { capabilities = ["read"] }
+    - name: read-clickhouse-tesserix-production
+      hcl: |
+        path "kv/data/clickhouse/app/clickhouse-otel-password" { capabilities = ["read"] }
     - name: read-langfuse-production
       hcl: |
         path "kv/data/langfuse/app/langfuse-encryption-key" { capabilities = ["read"] }
@@ -900,6 +908,16 @@ bootstrap:
       namespaces: ["tesserix"]
       policies: ["company-kora-key-metadata"]
       ttl: 5m
+    - name: read-clickhouse-observability-production
+      serviceAccounts: ["clickhouse-production-reader"]
+      namespaces: ["observability"]
+      policies: ["read-clickhouse-observability-production"]
+      ttl: 15m
+    - name: read-clickhouse-tesserix-production
+      serviceAccounts: ["clickhouse-production-reader"]
+      namespaces: ["tesserix"]
+      policies: ["read-clickhouse-tesserix-production"]
+      ttl: 15m
     - name: read-langfuse-production
       serviceAccounts: ["langfuse-production-reader"]
       namespaces: ["observability"]

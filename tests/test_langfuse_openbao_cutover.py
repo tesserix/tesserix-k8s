@@ -25,8 +25,8 @@ def test_langfuse_service_and_database_use_namespace_bound_openbao():
             "property": "value",
         }
     assert entries["clickhouse-password"]["sourceRef"]["storeRef"] == {
-        "name": "gcp-secret-store",
-        "kind": "ClusterSecretStore",
+        "name": "openbao-clickhouse-production",
+        "kind": "SecretStore",
     }
     database = resource(
         render("charts/apps/infra-postgres"),

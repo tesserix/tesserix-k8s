@@ -89,6 +89,7 @@ class OpenBao:
                         "kv/data/console/app/",
                         "kv/data/openpanel/app/",
                         "kv/data/langfuse/app/",
+                        "kv/data/clickhouse/app/",
                         "kv/data/devai/app/",
                         "kv/data/mark8ly/app/",
                         "kv/data/mark8ly-uat/app/",
