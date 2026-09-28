@@ -466,6 +466,42 @@ bootstrap:
         path "kv/metadata/kora/app/kora-gemini-api-key" { capabilities = ["read"] }
         path "kv/metadata/kora/app/kora-openai-api-key" { capabilities = ["read"] }
         path "auth/token/revoke-self" { capabilities = ["update"] }
+    - name: read-openpanel-production
+      hcl: |
+        path "kv/data/openpanel/app/openpanel-admin-email" { capabilities = ["read"] }
+        path "kv/data/openpanel/app/openpanel-admin-password" { capabilities = ["read"] }
+        path "kv/data/openpanel/app/openpanel-cookie-secret" { capabilities = ["read"] }
+        path "kv/data/openpanel/app/openpanel-db-password" { capabilities = ["read"] }
+        path "kv/data/openpanel/app/openpanel-oauth2-client-id" { capabilities = ["read"] }
+        path "kv/data/openpanel/app/openpanel-oauth2-client-secret" { capabilities = ["read"] }
+        path "kv/data/openpanel/app/openpanel-oauth2-cookie-secret" { capabilities = ["read"] }
+        path "kv/data/openpanel/app/openpanel-root-client-id" { capabilities = ["read"] }
+        path "kv/data/openpanel/app/openpanel-root-client-secret" { capabilities = ["read"] }
+    - name: read-openpanel-analytics-production
+      hcl: |
+        path "kv/data/openpanel/app/openpanel-root-client-id" { capabilities = ["read"] }
+        path "kv/data/openpanel/app/openpanel-root-client-secret" { capabilities = ["read"] }
+    - name: analytics-onboarding-writer
+      hcl: |
+        path "kv/data/devai/app/devai-openpanel-client-id" { capabilities = ["create", "read", "update"] }
+        path "kv/data/langfuse/app/langfuse-openpanel-client-id" { capabilities = ["create", "read", "update"] }
+        path "auth/token/lookup-self" { capabilities = ["read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
+    - name: openpanel-migrate-reviewed
+      hcl: |
+        path "kv/data/openpanel/app/openpanel-admin-email" { capabilities = ["create", "read"] }
+        path "kv/data/openpanel/app/openpanel-admin-password" { capabilities = ["create", "read"] }
+        path "kv/data/openpanel/app/openpanel-cookie-secret" { capabilities = ["create", "read"] }
+        path "kv/data/openpanel/app/openpanel-db-password" { capabilities = ["create", "read"] }
+        path "kv/data/openpanel/app/openpanel-oauth2-client-id" { capabilities = ["create", "read"] }
+        path "kv/data/openpanel/app/openpanel-oauth2-client-secret" { capabilities = ["create", "read"] }
+        path "kv/data/openpanel/app/openpanel-oauth2-cookie-secret" { capabilities = ["create", "read"] }
+        path "kv/data/openpanel/app/openpanel-root-client-id" { capabilities = ["create", "read"] }
+        path "kv/data/openpanel/app/openpanel-root-client-secret" { capabilities = ["create", "read"] }
+        path "kv/data/devai/app/devai-openpanel-client-id" { capabilities = ["create", "read"] }
+        path "kv/data/langfuse/app/langfuse-openpanel-client-id" { capabilities = ["create", "read"] }
+        path "auth/token/lookup-self" { capabilities = ["read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: evals-onboarding-writer
       hcl: |
         path "kv/data/devai/app/devai-langfuse-public-key" { capabilities = ["create", "read", "update"] }
@@ -863,6 +899,26 @@ bootstrap:
       namespaces: ["tesserix"]
       policies: ["company-kora-key-metadata"]
       ttl: 5m
+    - name: read-openpanel-production
+      serviceAccounts: ["openpanel-production-reader"]
+      namespaces: ["openpanel"]
+      policies: ["read-openpanel-production"]
+      ttl: 15m
+    - name: read-openpanel-analytics-production
+      serviceAccounts: ["openpanel-production-reader"]
+      namespaces: ["analytics-operator"]
+      policies: ["read-openpanel-analytics-production"]
+      ttl: 15m
+    - name: analytics-onboarding-writer
+      serviceAccounts: ["analytics-onboarding-operator"]
+      namespaces: ["analytics-operator"]
+      policies: ["analytics-onboarding-writer"]
+      ttl: 5m
+    - name: openpanel-migrate-reviewed
+      serviceAccounts: ["openpanel-migration-writer"]
+      namespaces: ["openpanel"]
+      policies: ["openpanel-migrate-reviewed"]
+      ttl: 15m
     - name: evals-onboarding-writer
       serviceAccounts: ["evals-onboarding-operator"]
       namespaces: ["evals-operator"]
