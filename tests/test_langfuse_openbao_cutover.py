@@ -33,6 +33,7 @@ def test_langfuse_service_and_database_use_namespace_bound_openbao():
         "ExternalSecret",
         "infra-postgres-langfuse",
     )
+    assert database["spec"]["refreshInterval"] == "5m"
     assert database["spec"]["secretStoreRef"] == app["spec"]["secretStoreRef"]
     assert database["spec"]["data"] == [
         {
