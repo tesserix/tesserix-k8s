@@ -1,9 +1,16 @@
 # Analytics onboarding
 
 Claims in `claims/` reconcile OpenPanel projects through its Manage API and
-mirror each write client ID to `prod-openpanel-<claim>-client-id` in GCP Secret
-Manager. Product charts can materialize that value through External Secrets.
+publish each write client ID at `<product>/app/<product>-openpanel-client-id`
+in OpenBao. DevAI and Langfuse are the reviewed production products. New claims
+require an explicit product allowlist entry and exact-path policy grant.
 
-The operator deliberately has no delete finalizer. Removing a claim or rolling
-back this Argo CD application leaves the OpenPanel project and GCP secret in
-place; cleanup requires a separately approved destructive operation.
+The namespace-bound operator identity has create/read/update access only to
+those two paths. Root credentials arrive through a separate ESO reader limited
+to OpenPanel's root client ID and secret. Writes compare values and use KV-v2 CAS;
+retries reuse the existing project and unchanged values create no new version.
+
+The operator has no delete finalizer. Removing a claim leaves the OpenPanel
+project and OpenBao record in place; cleanup requires separate approval. It has
+no GCP Secret Manager fallback or Workload Identity grant. See
+`docs/openpanel-openbao-migration.md` for source retirement and recovery checks.

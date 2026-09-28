@@ -26,10 +26,7 @@ class OperatorClaimLayoutTests(unittest.TestCase):
             and target["ipBlock"]["cidr"].startswith("169.254.")
             for port in rule.get("ports", [])
         }
-        self.assertEqual(
-            metadata_endpoints,
-            {("169.254.169.254/32", 80), ("169.254.169.252/32", 988)},
-        )
+        self.assertEqual(metadata_endpoints, set())
 
     def test_claims_live_with_their_operators_and_are_deployed(self):
         operators = {

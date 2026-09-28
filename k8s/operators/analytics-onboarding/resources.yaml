@@ -54,21 +54,19 @@ metadata:
   namespace: analytics-operator
 spec:
   refreshInterval: 10m
-  secretStoreRef: {name: gcp-secret-store, kind: ClusterSecretStore}
+  secretStoreRef: {name: openbao-openpanel-production, kind: SecretStore}
   target: {name: openpanel-root-credentials, creationPolicy: Owner}
   data:
     - secretKey: client-id
-      remoteRef: {key: prod-openpanel-root-client-id}
+      remoteRef: {key: openpanel/app/openpanel-root-client-id, property: value}
     - secretKey: client-secret
-      remoteRef: {key: prod-openpanel-root-client-secret}
+      remoteRef: {key: openpanel/app/openpanel-root-client-secret, property: value}
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: analytics-onboarding-operator
   namespace: analytics-operator
-  annotations:
-    iam.gke.io/gcp-service-account: analytics-onboarding-operator@tesseracthub-480811.iam.gserviceaccount.com
 automountServiceAccountToken: true
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -130,16 +128,6 @@ spec:
         - ipBlock: {cidr: 10.20.0.0/16}
       ports:
         - {protocol: TCP, port: 15008}
-    - to:
-        - ipBlock: {cidr: 169.254.169.254/32}
-      ports:
-        - {protocol: TCP, port: 80}
-    - to:
-        - ipBlock: {cidr: 169.254.169.252/32}
-      ports:
-        - {protocol: TCP, port: 988}
-    - ports:
-        - {protocol: TCP, port: 443}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -169,8 +157,9 @@ spec:
           args:
             - --watch-namespace=analytics-operator
             - --openpanel-api-url=http://openpanel-api.openpanel.svc.cluster.local:3333
-            - --gcp-project=tesseracthub-480811
-            - --secret-prefix=prod-openpanel-
+            - --openbao-address=http://openbao.openbao.svc.cluster.local:8200
+            - --openbao-role=analytics-onboarding-writer
+            - --openbao-products=devai,langfuse
           ports: [{name: healthz, containerPort: 8081}]
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: [ALL]}}
           resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {memory: 256Mi}}

@@ -14,7 +14,7 @@ to `devai/app/devai-openpanel-client-id` and
 old operator after its earlier deletion. Retire the writer before deleting it
 again; compare the existing OpenBao value without overwriting a different value.
 
-## Access phase
+## Access phase (completed)
 
 The staging policy permits create/read on eleven exact paths, with a
 15-minute token. It cannot overwrite an existing different value. OpenPanel's
@@ -27,7 +27,16 @@ Archive of all eleven pinned sources, enabled versions, metadata and IAM:
 `gs://tesseract-prod-backups-in/openbao/openpanel-migration/20260928T104616Z/gcp-sources.json.gz.kms`.
 KMS encryption and remote decryption were round-trip verified. Baseline root API
 reads pass, and both source client IDs equal the active OpenPanel clients.
-No source deletion is complete for this cohort.
+All eleven values were staged with pinned-version equality, including the existing
+DevAI value. Both reader identities passed exact read-only and cross-product
+denial checks. The temporary staging token was revoked. Operator writer code is
+merged in `tesserix/tesserix-operators#17` (`5453663`); the production cutover pins
+that image. No source deletion is complete for this cohort.
+
+The cutover removes the temporary migration ServiceAccount and its bootstrap
+policy/role declarations. After reconciliation, remove the corresponding live
+OpenBao role and policy, preserving their metadata in the private evidence.
+The runtime writer remains constrained to two paths.
 
 ## Cutover acceptance
 
