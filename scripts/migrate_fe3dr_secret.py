@@ -93,6 +93,7 @@ class OpenBao:
                         "kv/data/observability/app/",
                         "kv/data/typesense/app/",
                         "kv/data/temporal/app/",
+                        "kv/data/cloudflare/app/",
                         "kv/data/devai/app/",
                         "kv/data/mark8ly/app/",
                         "kv/data/mark8ly-uat/app/",
