@@ -285,6 +285,36 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: read-console-tesserix-production
+      hcl: |
+        path "kv/data/console/app/console-zitadel-client-secret" { capabilities = ["read"] }
+        path "kv/data/console/app/console-operator-token-key" { capabilities = ["read"] }
+        path "kv/data/console/app/console-crm-erasure-hash-key" { capabilities = ["read"] }
+        path "kv/data/console/app/console-login-throttle-hash-key" { capabilities = ["read"] }
+        path "kv/data/console/app/console-zitadel-login-client-token" { capabilities = ["read"] }
+        path "kv/data/console/app/console-zitadel-identity-reader-pat" { capabilities = ["read"] }
+        path "kv/data/console/app/console-zitadel-entitlements-reader-client-id" { capabilities = ["read"] }
+        path "kv/data/console/app/console-zitadel-entitlements-reader-client-secret" { capabilities = ["read"] }
+        path "kv/data/console/app/console-stripe-restricted-read-key-test" { capabilities = ["read"] }
+        path "kv/data/console/app/console-stripe-restricted-read-key-live" { capabilities = ["read"] }
+        path "kv/data/console/app/console-stripe-write-key-live" { capabilities = ["read"] }
+        path "kv/data/console/app/console-stripe-write-key-test" { capabilities = ["read"] }
+    - name: console-migrate-reviewed
+      hcl: |
+        path "kv/data/console/app/console-zitadel-client-secret" { capabilities = ["create", "read"] }
+        path "kv/data/console/app/console-operator-token-key" { capabilities = ["create", "read"] }
+        path "kv/data/console/app/console-crm-erasure-hash-key" { capabilities = ["create", "read"] }
+        path "kv/data/console/app/console-login-throttle-hash-key" { capabilities = ["create", "read"] }
+        path "kv/data/console/app/console-zitadel-login-client-token" { capabilities = ["create", "read"] }
+        path "kv/data/console/app/console-zitadel-identity-reader-pat" { capabilities = ["create", "read"] }
+        path "kv/data/console/app/console-zitadel-entitlements-reader-client-id" { capabilities = ["create", "read"] }
+        path "kv/data/console/app/console-zitadel-entitlements-reader-client-secret" { capabilities = ["create", "read"] }
+        path "kv/data/console/app/console-stripe-restricted-read-key-test" { capabilities = ["create", "read"] }
+        path "kv/data/console/app/console-stripe-restricted-read-key-live" { capabilities = ["create", "read"] }
+        path "kv/data/console/app/console-stripe-write-key-live" { capabilities = ["create", "read"] }
+        path "kv/data/console/app/console-stripe-write-key-test" { capabilities = ["create", "read"] }
+        path "auth/token/lookup-self" { capabilities = ["read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-tesserix-tesserix-production
       hcl: |
         path "kv/data/tesserix/app/tesserix-internal-service-key" { capabilities = ["read"] }
@@ -734,6 +764,16 @@ bootstrap:
         path "kv/data/roamie/app/roamie-travel-mcp-key" { capabilities = ["read"] }
 
   kubernetesRoles:
+    - name: read-console-tesserix-production
+      serviceAccounts: ["console-production-reader"]
+      namespaces: ["tesserix"]
+      policies: ["read-console-tesserix-production"]
+      ttl: "1h"
+    - name: console-migrate-reviewed
+      serviceAccounts: ["console-migration-writer"]
+      namespaces: ["tesserix"]
+      policies: ["console-migrate-reviewed"]
+      ttl: "15m"
     - name: read-tesserix-tesserix-production
       serviceAccounts: ["tesserix-production-reader"]
       namespaces: ["tesserix"]

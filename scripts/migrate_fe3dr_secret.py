@@ -86,6 +86,7 @@ class OpenBao:
                         "kv/data/planning-poker/app/",
                         "kv/data/beautyandcruor/app/",
                         "kv/data/tesserix/app/",
+                        "kv/data/console/app/",
                         "kv/data/devai/app/",
                         "kv/data/mark8ly/app/",
                         "kv/data/mark8ly-uat/app/",
