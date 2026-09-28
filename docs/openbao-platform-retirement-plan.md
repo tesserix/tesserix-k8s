@@ -5,7 +5,11 @@ Tracks https://github.com/tesserix/tesserix-k8s/issues/1209.
 
 The requested target now includes platform secrets, superseding the earlier
 steady-state policy that retained platform secrets in Secret Manager. Operational
-credentials should use OpenBao; reaching zero Secret Manager records also needs
+credentials should use OpenBao, except the shared Cloudflare original retained
+by the user on 2026-09-29 (Melbourne). Keep `prod-cloudflare-api-token` in GCP and
+a verified copy at `cloudflare/app/cloudflare-api-token` in OpenBao. Its consumers
+and Terraform owner stay on GCP; rotations must update and verify both copies.
+The other Secret Manager dependencies still require
 independent bootstrap and recovery storage. The implementation direction is KMS-encrypted GCS, consistent with the approved
 backup storage and the renewed instruction to continue all migrations.
 
@@ -58,7 +62,7 @@ initial root token as the break-glass recovery mechanism.
 | Shared operational services | Database, telemetry, analytics, shared provider and service credentials | Every shared consumer switched; fresh ESO and functional dependency checks |
 | Cluster delivery/control plane | Registry pulls, Git/Argo/Kargo/Atlantis credentials, identity, DNS and certificate authority dependencies | Reviewed cold-start dependency order and recovery access outside the failed cluster |
 | Retire sources and writers | Release Terraform ownership safely, disable old creation/rotation paths, delete only accepted originals | Encrypted recoverable capture, unchanged pinned versions, consumer acceptance and specific deletion authorization |
-| Final zero audit | Inspect all Secret Manager records, runtime/CI clients and IAM | Zero remaining records and dependencies; restore/cold-start drill passes; issue can close |
+| Final migration audit | Inspect all Secret Manager records, runtime/CI clients and IAM | Only explicitly retained Cloudflare originals remain, with verified OpenBao copies; all other accepted migration and restore/cold-start gates pass |
 
 A credential being named “platform” is not evidence of a bootstrap dependency.
 Conversely, a working warm cluster does not prove cold-start recovery: ESO needs
