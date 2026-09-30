@@ -84,20 +84,21 @@ cloudflare:
   region: "auto"
 
 # Public deployment — real auth required (notSecured MUST stay "false").
+# disableRegistration stays "true" — only existing accounts can log in.
 flags:
   isGeneral: "true"
   notSecured: "false"
-  # TEMPORARILY "false" — samyak.rout@gmail.com needs to sign up. Re-lock to
-  # "true" immediately once they have signed in: this flag is global, not an
-  # allowlist, so while it is "false" anyone who reaches the public URL can
-  # create an account.
+  # Locked. The flag is global, not an allowlist, so any period with it "false"
+  # lets anyone who reaches the public URL create an account. Onboarding another
+  # member means flipping it to "false", having them sign in with Google, and
+  # re-locking straight away — keep the two changes as a pair (#1258 and this
+  # one; before that, 99871604 -> 75544a27).
   #
-  # Baseline is locked (2026-07-22) with two Google accounts on the Tesserix org
-  # (unidevidp@gmail.com + mahesh.sangawar@gmail.com). There is no invite mail
-  # while email.enabled is false, so the new member self-registers and Postiz
-  # gives them their own auto-created org — move their UserOrganization row onto
-  # the Tesserix org afterwards.
-  disableRegistration: "false"
+  # There is no invitation mail while email.enabled is false, so a new member
+  # has to self-register, and Postiz puts them in their own auto-created org —
+  # their UserOrganization row then has to be moved onto the Tesserix org or
+  # they will not see the shared channels.
+  disableRegistration: "true"
   apiLimit: "30"
   # Starts Postiz's `missingPostWorkflow` sweeper (InfiniteWorkflowRegister only
   # runs it `if (!!process.env.RUN_CRON)`). Hourly, it re-signals any post left
