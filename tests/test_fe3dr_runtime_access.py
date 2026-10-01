@@ -20,6 +20,11 @@ GATEWAY_KEYS = [
     "stripe-secret-key",
     "stripe-publishable-key",
     "stripe-webhook-secret",
+    "stripe-key-id",
+    "stripe-test-secret-key",
+    "stripe-test-publishable-key",
+    "stripe-test-webhook-secret",
+    "stripe-test-key-id",
 ]
 
 
