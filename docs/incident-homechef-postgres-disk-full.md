@@ -146,7 +146,7 @@ rebuilding the two broken replicas is safe (no data loss). Preferred path uses
 the CNPG kubectl plugin:
 
 ```bash
-export KUBECONFIG=~/.kube/gke-prod
+kubectl config use-context gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke
 
 # 0. Confirm primary is healthy and authoritative
 kubectl get cluster homechef-postgres -n homechef

@@ -174,7 +174,7 @@ What actually shipped in that bundle on 2026-07-30 (commit `87049131`):
 ## 6. Verification checklist (after the promotion completes)
 
 ```bash
-export KUBECONFIG=~/.kube/gke-prod
+kubectl config use-context gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke
 
 # Warehouse healthy again, fresh freight present
 kubectl get warehouse platform-tools -n kargo-infra \

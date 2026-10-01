@@ -18,10 +18,10 @@ during shadow rollout and suspended, never deleted, after controller cutover.
 
 ## Read-only diagnosis
 
-Use the production kubeconfig and confirm context before every command:
+Select the production context and confirm it before every command:
 
 ```bash
-export KUBECONFIG="$HOME/.kube/gke-prod"
+kubectl config use-context gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke
 kubectl config current-context
 kubectl -n agentgateway-system get deploy,pod,pdb,lease,cronjob \
   -l app.kubernetes.io/name=agentgateway-route-sync -o wide
