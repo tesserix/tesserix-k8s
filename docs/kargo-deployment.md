@@ -104,7 +104,7 @@ Push the changes in this PR to `main`. Sync order driven by sync waves:
 Verify:
 
 ```bash
-export KUBECONFIG=~/.kube/gke-prod
+kubectl config use-context gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke
 kubectl -n kargo get pods
 kubectl -n kargo get externalsecrets
 kubectl -n kargo get vs kargo-vs

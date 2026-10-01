@@ -224,7 +224,7 @@ Identity).
 ### 5. Trigger Kargo Warehouse refresh
 
 ```bash
-export KUBECONFIG=~/.kube/gke-prod
+kubectl config use-context gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke
 kubectl -n kargo-<product> annotate warehouse services \
   kargo.akuity.io/refresh=$(date +%s) --overwrite
 ```

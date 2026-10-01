@@ -301,7 +301,7 @@ script a new Job that actually runs.
 ## Day-2
 
 ```bash
-export KUBECONFIG=~/.kube/gke-prod
+kubectl config use-context gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke
 
 # Cluster health. The image has no curl; use the bao CLI in the pod.
 kubectl exec -n openbao openbao-0 -- bao status

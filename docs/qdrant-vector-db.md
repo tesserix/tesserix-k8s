@@ -137,7 +137,7 @@ first time it is needed for real.
 ## Operations
 
 ```bash
-export KUBECONFIG=~/.kube/gke-prod
+kubectl config use-context gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke
 
 # Cluster health (raft peers, one entry per node). The image ships no curl,
 # so drive the API from outside rather than kubectl exec.

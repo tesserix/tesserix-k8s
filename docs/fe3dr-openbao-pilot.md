@@ -125,7 +125,7 @@ review. The OpenBao identifier is `fe3dr-openexchangerates-app-id`.
 3. Use a verified TLS endpoint or a loopback port-forward to the active service:
 
    ```sh
-   KUBECONFIG=~/.kube/gke-prod kubectl -n openbao port-forward svc/openbao-active 18200:8200
+   kubectl -n openbao port-forward svc/openbao-active 18200:8200
    ```
 
    Confirm the active kubeconfig context first. Keep the forward in a separate
