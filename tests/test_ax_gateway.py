@@ -25,3 +25,13 @@ def test_ax_model_clients_are_enrolled_in_ambient_mesh():
         docs = list(yaml.safe_load_all((ROOT / f'argocd/prod/apps/ax/runtime/{name}.yaml').read_text()))
         deployment = next(d for d in docs if d and d['kind'] == 'Deployment')
         assert deployment['spec']['template']['metadata']['labels']['istio.io/dataplane-mode'] == 'ambient'
+
+
+def test_actor_tunnel_keeps_native_mtls_under_ambient():
+    policy_path = ROOT / 'argocd/prod/apps/ax/runtime/egress-peer-authentication.yaml'
+    policy = yaml.safe_load(policy_path.read_text())
+    assert policy['spec']['selector']['matchLabels'] == {'app': 'atenet-egress'}
+    assert policy['spec']['mtls']['mode'] == 'STRICT'
+    assert policy['spec']['portLevelMtls'] == {443: {'mode': 'DISABLE'}}
+    egress = (ROOT / 'argocd/prod/apps/ax/runtime/atenet-egress.yaml').read_text()
+    assert 'require_client_certificate: true' in egress
