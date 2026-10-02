@@ -32,6 +32,16 @@ def test_actor_tunnel_keeps_native_mtls_under_ambient():
     policy = yaml.safe_load(policy_path.read_text())
     assert policy['spec']['selector']['matchLabels'] == {'app': 'atenet-egress'}
     assert policy['spec']['mtls']['mode'] == 'STRICT'
-    assert policy['spec']['portLevelMtls'] == {443: {'mode': 'DISABLE'}}
+    assert policy['spec']['portLevelMtls'] == {'443': {'mode': 'DISABLE'}}
     egress = (ROOT / 'argocd/prod/apps/ax/runtime/atenet-egress.yaml').read_text()
     assert 'require_client_certificate: true' in egress
+
+
+def test_runtime_kustomize_renders_egress_policy():
+    import subprocess
+    rendered = subprocess.check_output(
+        ['kubectl', 'kustomize', str(ROOT / 'argocd/prod/apps/ax/runtime')],
+        text=True,
+    )
+    resources = list(yaml.safe_load_all(rendered))
+    assert any(r['kind'] == 'PeerAuthentication' for r in resources)
