@@ -99,7 +99,7 @@ def test_production_defaults_render_the_digest_pinned_workload() -> None:
     deployment = resource(documents, "Deployment", "sre-ai-agent")
     assert deployment["spec"]["template"]["spec"]["containers"][0]["image"] == (
         "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/"
-        "tesserix/ai-agents-sre@sha256:c9597ce3effded296142ccfb32f8b6238d5982ea4823a54a7f2f1a4bf84f1b18"
+        "tesserix/ai-agents-sre@sha256:386d2137afdb431c3287b8a066047bb3a64ec901400472624b0bba34e20e1e92"
     )
 
 
