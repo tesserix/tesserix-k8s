@@ -124,11 +124,11 @@ run "headroom_only_changes_selected_pool_total_limit" {
     node_pool_total_max_count_overrides = { "default-pool" = 10 }
   }
   assert {
-    condition = google_container_node_pool.pools["default-pool"].autoscaling[0].total_max_node_count == 10 && google_container_node_pool.pools["default-pool"].autoscaling[0].total_min_node_count == 3
+    condition     = google_container_node_pool.pools["default-pool"].autoscaling[0].total_max_node_count == 10 && google_container_node_pool.pools["default-pool"].autoscaling[0].total_min_node_count == 3
     error_message = "Headroom must raise only the total ceiling, not the minimum."
   }
   assert {
-    condition = google_container_node_pool.pools["gpu"].autoscaling[0].max_node_count == 1
+    condition     = google_container_node_pool.pools["gpu"].autoscaling[0].max_node_count == 1
     error_message = "Other pools must retain their existing limits."
   }
 }
@@ -136,7 +136,7 @@ run "headroom_only_changes_selected_pool_total_limit" {
 run "reject_ceiling_below_configured_total" {
   command = plan
   variables {
-    node_pools = [{ name = "default-pool", min_count = null, max_count = null, total_min_count = 3, total_max_count = 7 }]
+    node_pools                          = [{ name = "default-pool", min_count = null, max_count = null, total_min_count = 3, total_max_count = 7 }]
     node_pool_total_max_count_overrides = { "default-pool" = 6 }
   }
   expect_failures = [google_container_node_pool.pools["default-pool"]]
