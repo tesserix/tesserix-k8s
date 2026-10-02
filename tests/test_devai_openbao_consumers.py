@@ -57,29 +57,29 @@ def test_all_reviewed_live_bindings_render_with_namespaced_openbao_sources():
         )
     )
     for file in (ROOT / "argocd/prod").rglob("*.yaml"):
-        app = yaml.safe_load(file.read_text())
-        if (
-            not isinstance(app, dict)
-            or app.get("kind") != "Application"
-            or app["metadata"]["name"] not in owners
-        ):
-            continue
-        ns = app["spec"]["destination"]["namespace"]
-        rendered = render_app(app)
-        if app["metadata"]["name"] in {"kora-api", "kora-ai-agents"}:
-            deployment = next(
-                d for d in rendered if d and d.get("kind") == "Deployment"
-            )
-            assert (
-                deployment["spec"]["template"]["metadata"]["annotations"][
-                    "kora.tesserix.app/secret-source"
-                ]
-                == "openbao-v1"
-            )
-        for d in rendered:
-            if d and d.get("kind") == "ExternalSecret":
-                d["metadata"].setdefault("namespace", ns)
-                docs.append(d)
+        for app in yaml.safe_load_all(file.read_text()):
+            if (
+                not isinstance(app, dict)
+                or app.get("kind") != "Application"
+                or app["metadata"]["name"] not in owners
+            ):
+                continue
+            ns = app["spec"]["destination"]["namespace"]
+            rendered = render_app(app)
+            if app["metadata"]["name"] in {"kora-api", "kora-ai-agents"}:
+                deployment = next(
+                    d for d in rendered if d and d.get("kind") == "Deployment"
+                )
+                assert (
+                    deployment["spec"]["template"]["metadata"]["annotations"][
+                        "kora.tesserix.app/secret-source"
+                    ]
+                    == "openbao-v1"
+                )
+            for d in rendered:
+                if d and d.get("kind") == "ExternalSecret":
+                    d["metadata"].setdefault("namespace", ns)
+                    docs.append(d)
     for c in expected:
         secret = next(
             d

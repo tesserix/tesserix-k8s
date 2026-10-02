@@ -178,6 +178,14 @@ stacks:
     dependencies: []
     timeout: 10m
 
+  16-ax:
+    name: ax
+    description: Isolated AX snapshot and backup storage and workload identities
+    path: stacks/16-ax
+    state_prefix: stacks/prod/ax
+    dependencies: [04-gke]
+    timeout: 10m
+
 execution_order:
   - phase: 1
     stacks: [00-state-bootstrap]
@@ -188,13 +196,14 @@ execution_order:
   - phase: 4
     stacks: [04-gke, 12-vertex]
   - phase: 5
-    stacks: [05-k8s-bootstrap, 06-workload-identity]
+    stacks: [05-k8s-bootstrap, 06-workload-identity, 16-ax]
   - phase: 6
     stacks: [07-app-secrets, 13-document-intelligence-iam, 14-uptime-monitoring, 15-document-intelligence-products]
   - phase: 7
     stacks: [09-github-arc]
 
 destroy_order:
+  - 16-ax
   - 09-github-arc
   - 15-document-intelligence-products
   - 14-uptime-monitoring
