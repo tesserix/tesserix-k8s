@@ -54,3 +54,16 @@ def test_runtime_is_rendered_unique_and_memory_bounded():
         for c in spec.get('containers', []):
             assert '@sha256:' in c['image']
             assert c['resources']['limits']['memory']
+
+
+def test_control_plane_runs_nonroot_with_seccomp_and_readonly_root():
+    for obj in objects():
+        if obj['kind'] != 'Deployment':
+            continue
+        spec = obj['spec']['template']['spec']
+        assert spec['securityContext']['runAsNonRoot'] is True
+        assert spec['securityContext']['seccompProfile']['type'] == 'RuntimeDefault'
+        for c in spec['containers']:
+            assert c['securityContext']['readOnlyRootFilesystem'] is True
+            assert c['securityContext']['allowPrivilegeEscalation'] is False
+            assert c['securityContext']['capabilities']['drop'] == ['ALL']

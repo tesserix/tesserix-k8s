@@ -1,4 +1,3 @@
-# Derived from Apache-2.0 licensed Google Agent Substrate; see scripts/ax/README.md.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -124,17 +123,24 @@ spec:
           mountPath: /run/podidentity.podcert.ax.ate.dev
         - name: servicedns-ca
           mountPath: /run/servicedns-ca
+        - name: runtime-tmp
+          mountPath: /tmp
         resources:
           requests:
             cpu: 50m
             memory: 128Mi
           limits:
             memory: 512Mi
+            cpu: '1'
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
       volumes:
       - name: podidentity
         projected:
@@ -152,6 +158,9 @@ spec:
                 matchLabels:
                   podcert.ax.ate.dev/canarying: live
               path: trust-bundle.pem
+      - name: runtime-tmp
+        emptyDir:
+          sizeLimit: 256Mi
       automountServiceAccountToken: true
       affinity:
         podAntiAffinity:
@@ -159,3 +168,13 @@ spec:
           - labelSelector:
               matchLabels: *id001
             topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+        sysctls:
+        - name: net.ipv4.ip_unprivileged_port_start
+          value: '0'

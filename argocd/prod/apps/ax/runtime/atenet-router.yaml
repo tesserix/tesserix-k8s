@@ -1,4 +1,3 @@
-# Derived from Apache-2.0 licensed Google Agent Substrate; see scripts/ax/README.md.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -50,62 +49,25 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: '-6'
 data:
-  envoy.yaml: |
-    admin:
-      address:
-        socket_address:
-          # ipv4_compat keeps `kubectl port-forward` to the admin port working;
-          # in-pod callers dial localhost and need no help.
-          address: "::"
-          ipv4_compat: true
-          port_value: 9901
-
-    node:
-      id: substrate-envoy-node
-      cluster: substrate-router-cluster
-
-    # Required for main_internal (see xds.go's buildMainInternalListener):
-    # Envoy rejects any Listener.internal_listener without this registered,
-    # with "InternalListener bootstrap extension is mandatory".
-    bootstrap_extensions:
-    - name: envoy.bootstrap.internal_listener
-      typed_config:
-        "@type": type.googleapis.com/envoy.extensions.bootstrap.internal_listener.v3.InternalListener
-
-    dynamic_resources:
-      lds_config:
-        resource_api_version: V3
-        ads: {}
-      cds_config:
-        resource_api_version: V3
-        ads: {}
-      ads_config:
-        api_type: GRPC
-        transport_api_version: V3
-        grpc_services:
-        - envoy_grpc:
-            cluster_name: xds_cluster
-
-    static_resources:
-      clusters:
-      - name: xds_cluster
-        connect_timeout: 0.25s
-        type: STRICT_DNS
-        lb_policy: ROUND_ROBIN
-        typed_extension_protocol_options:
-          envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-            "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-            explicit_http_config:
-              http2_protocol_options: {}
-        load_assignment:
-          cluster_name: xds_cluster
-          endpoints:
-          - lb_endpoints:
-            - endpoint:
-                address:
-                  socket_address:
-                    address: 127.0.0.1
-                    port_value: 18000
+  envoy.yaml: "admin:\n  address:\n    socket_address:\n      # ipv4_compat keeps\
+    \ `kubectl port-forward` to the admin port working;\n      # in-pod callers dial\
+    \ localhost and need no help.\n      address: \"::\"\n      ipv4_compat: true\n\
+    \      port_value: 9901\n\nnode:\n  id: substrate-envoy-node\n  cluster: substrate-router-cluster\n\
+    \n# Required for main_internal (see xds.go's buildMainInternalListener):\n# Envoy\
+    \ rejects any Listener.internal_listener without this registered,\n# with \"InternalListener\
+    \ bootstrap extension is mandatory\".\nbootstrap_extensions:\n- name: envoy.bootstrap.internal_listener\n\
+    \  typed_config:\n    \"@type\": type.googleapis.com/envoy.extensions.bootstrap.internal_listener.v3.InternalListener\n\
+    \ndynamic_resources:\n  lds_config:\n    resource_api_version: V3\n    ads: {}\n\
+    \  cds_config:\n    resource_api_version: V3\n    ads: {}\n  ads_config:\n   \
+    \ api_type: GRPC\n    transport_api_version: V3\n    grpc_services:\n    - envoy_grpc:\n\
+    \        cluster_name: xds_cluster\n\nstatic_resources:\n  clusters:\n  - name:\
+    \ xds_cluster\n    connect_timeout: 0.25s\n    type: STRICT_DNS\n    lb_policy:\
+    \ ROUND_ROBIN\n    typed_extension_protocol_options:\n      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:\n\
+    \        \"@type\": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions\n\
+    \        explicit_http_config:\n          http2_protocol_options: {}\n    load_assignment:\n\
+    \      cluster_name: xds_cluster\n      endpoints:\n      - lb_endpoints:\n  \
+    \      - endpoint:\n            address:\n              socket_address:\n    \
+    \            address: 127.0.0.1\n                port_value: 18000\n"
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -210,17 +172,24 @@ spec:
           mountPath: /run/servicedns-ca
         - name: drain-signal
           mountPath: /var/run/atenet
+        - name: runtime-tmp
+          mountPath: /tmp
         resources:
           requests:
             cpu: 50m
             memory: 128Mi
           limits:
             memory: 512Mi
+            cpu: '1'
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
       - name: envoy
         image: envoyproxy/envoy:v1.39-latest@sha256:57e14a549d7bd43c8d3f6d03e8cfa653e037d4b38e133acd9b54f38c524401b4
         command:
@@ -257,12 +226,24 @@ spec:
         - name: drain-signal
           mountPath: /var/run/atenet
           readOnly: true
+        - name: runtime-tmp
+          mountPath: /tmp
         resources:
           requests:
             cpu: 50m
             memory: 128Mi
           limits:
             memory: 512Mi
+            cpu: '1'
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+          capabilities:
+            drop:
+            - ALL
       volumes:
       - name: envoy-config
         configMap:
@@ -298,6 +279,9 @@ spec:
                 matchLabels:
                   podcert.ax.ate.dev/canarying: live
               path: trust-bundle.pem
+      - name: runtime-tmp
+        emptyDir:
+          sizeLimit: 256Mi
       automountServiceAccountToken: true
       affinity:
         podAntiAffinity:
@@ -305,6 +289,16 @@ spec:
           - labelSelector:
               matchLabels: *id001
             topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+        sysctls:
+        - name: net.ipv4.ip_unprivileged_port_start
+          value: '0'
 ---
 apiVersion: v1
 kind: Service

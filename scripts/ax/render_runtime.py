@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import yaml
+from harden_runtime import harden
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'argocd/prod/apps/ax/runtime'
@@ -134,3 +135,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+harden(OUT)

@@ -51,6 +51,7 @@ spec:
             memory: 128Mi
           limits:
             memory: 512Mi
+            cpu: '1'
         readinessProbe:
           httpGet:
             path: /readyz
@@ -75,6 +76,7 @@ spec:
           capabilities:
             drop:
             - ALL
+          runAsGroup: 65532
         volumeMounts:
         - name: token
           mountPath: /run/substrate
@@ -82,6 +84,8 @@ spec:
         - name: ca
           mountPath: /run/substrate-ca
           readOnly: true
+        - name: runtime-tmp
+          mountPath: /tmp
       volumes:
       - name: token
         projected:
@@ -93,6 +97,19 @@ spec:
       - name: ca
         secret:
           secretName: ax-service-dns-ca
+      - name: runtime-tmp
+        emptyDir:
+          sizeLimit: 256Mi
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+        sysctls:
+        - name: net.ipv4.ip_unprivileged_port_start
+          value: '0'
 ---
 apiVersion: v1
 kind: Service

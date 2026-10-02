@@ -26,6 +26,9 @@ spec:
           - name: backup
             emptyDir:
               sizeLimit: 1Gi
+          - name: runtime-tmp
+            emptyDir:
+              sizeLimit: 256Mi
           initContainers:
           - name: snapshot
             image: valkey/valkey:9.1.1-alpine@sha256:15568b9cb7eb67f4aed4de018c23f13d344e0e6437b31fe8fb8823dc81ebb3a9
@@ -50,9 +53,21 @@ spec:
                 memory: 128Mi
               limits:
                 memory: 512Mi
+                cpu: '1'
             volumeMounts:
             - name: backup
               mountPath: /backup
+            - name: runtime-tmp
+              mountPath: /tmp
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 65532
+              runAsGroup: 65532
+              capabilities:
+                drop:
+                - ALL
           containers:
           - name: upload
             image: google/cloud-sdk:slim@sha256:7c2dbc4eeba1e500b788be19cae33599cefe3294949a62c034bd1c2002329f69
@@ -67,7 +82,29 @@ spec:
                 memory: 128Mi
               limits:
                 memory: 512Mi
+                cpu: '1'
             volumeMounts:
             - name: backup
               mountPath: /backup
               readOnly: true
+            - name: runtime-tmp
+              mountPath: /tmp
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 65532
+              runAsGroup: 65532
+              capabilities:
+                drop:
+                - ALL
+            env:
+            - name: CLOUDSDK_CONFIG
+              value: /tmp/gcloud
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
