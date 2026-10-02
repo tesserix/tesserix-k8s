@@ -38,9 +38,15 @@ echo "cluster status"
 [[ "$STATUS" == "RUNNING" ]] && pass "cluster is RUNNING" || block "cluster status is $STATUS, not RUNNING"
 
 echo "in-flight operations"
-RUNNING_OPS=$(gcloud container operations list --region "$REGION" --project "$PROJECT" \
-  --filter="status=RUNNING AND targetLink~${CLUSTER}$" --format="value(name,operationType)" 2>/dev/null || true)
-[[ -z "$RUNNING_OPS" ]] && pass "no operations in flight" || block "operations already running: $RUNNING_OPS"
+if RUNNING_OPS=$(gcloud container operations list --region "$REGION" --project "$PROJECT" \
+  --filter='status!=DONE' --format=json | jq -r --arg path "/clusters/$CLUSTER" '
+    .[] | select(.status != "DONE")
+    | select((.targetLink // "") | endswith($path) or contains($path + "/"))
+    | "\(.name) (\(.operationType))"'); then
+  [[ -z "$RUNNING_OPS" ]] && pass "no operations in flight" || block "operations already running: $RUNNING_OPS"
+else
+  block "cannot verify in-flight operations"
+fi
 
 echo "version path"
 if assert_upgrade_path "$CP_VERSION" "$TARGET" 2>/dev/null; then
@@ -111,6 +117,8 @@ BLOCKING_PDBS=$(kubectl get pdb -A \
 echo "$BLOCKING_PDBS" >"$OUT/blocking-pdbs.txt"
 if [[ -z "$BLOCKING_PDBS" ]]; then
   pass "every PDB allows at least one eviction"
+elif [[ "$SCOPE" == "control-plane" ]]; then
+  warn "PDBs allow zero evictions; control-plane-only upgrade does not drain nodes: $(tr '\n' ' ' <<<"$BLOCKING_PDBS")"
 elif [[ "$ALLOW_BLOCKING_PDBS" == "true" ]]; then
   warn "$(wc -l <<<"$BLOCKING_PDBS" | tr -d ' ') PDBs allow zero evictions — proceeding, GKE will force-drain after ~1h per node"
 else

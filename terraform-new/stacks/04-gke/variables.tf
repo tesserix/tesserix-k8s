@@ -77,16 +77,14 @@ variable "release_channel" {
   default     = "REGULAR"
 }
 
-variable "use_latest_version" {
-  description = "Use the latest available GKE version"
-  type        = bool
-  default     = true
-}
-
-variable "kubernetes_version_prefix" {
-  description = "Kubernetes version prefix (e.g., '1.28')"
+variable "control_plane_version" {
+  description = "Reviewed exact control-plane minimum version; node upgrades use the separate gated workflow"
   type        = string
-  default     = null
+
+  validation {
+    condition     = can(regex("^[0-9]+\\.[0-9]+\\.[0-9]+-gke\\.[0-9]+$", var.control_plane_version))
+    error_message = "Pin an exact non-preview GKE version, for example 1.37.0-gke.3503000."
+  }
 }
 
 # =============================================================================
@@ -208,6 +206,25 @@ variable "maintenance_start_time" {
   description = "Start time for maintenance window (UTC)"
   type        = string
   default     = "03:00"
+}
+
+variable "node_upgrade_hold" {
+  description = "Temporary automatic minor/node upgrade exclusion while staged upgrades are verified; does not stop an active operation or manual upgrades"
+  type = object({
+    name       = string
+    start_time = string
+    end_time   = string
+  })
+  default = null
+
+  validation {
+    condition = var.node_upgrade_hold == null ? true : try(
+      timecmp(var.node_upgrade_hold.end_time, var.node_upgrade_hold.start_time) > 0 &&
+      timecmp(var.node_upgrade_hold.end_time, timeadd(var.node_upgrade_hold.start_time, "720h")) <= 0,
+      false
+    )
+    error_message = "The node upgrade hold must use valid RFC3339 times and last more than zero and at most 30 days."
+  }
 }
 
 # =============================================================================

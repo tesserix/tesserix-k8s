@@ -17,10 +17,15 @@ TARGET=${4:?target version}
 SCOPE=${5:-both}
 ARTIFACTS=${6:-./upgrade-artifacts}
 
-DRY_RUN=${DRY_RUN:-false}
-POOL_STRATEGY=${POOL_STRATEGY:-recreate}
-RECREATE_POOLS=${RECREATE_POOLS:-gpu-l4-spot}
+DRY_RUN=${DRY_RUN:-true}
+POOL_STRATEGY=${POOL_STRATEGY:-surge}
+RECREATE_POOLS=${RECREATE_POOLS:-}
 ONLY_POOL=${ONLY_POOL:-}
+
+case "$DRY_RUN" in
+  true|false) ;;
+  *) die "DRY_RUN must be true or false"; exit 1 ;;
+esac
 
 GC=(gcloud container --project "$PROJECT")
 
