@@ -296,8 +296,8 @@ class CapabilityProbeTests(unittest.TestCase):
         self.assertEqual(["ALL"], container["securityContext"]["capabilities"]["drop"])
         self.assertRegex(
             container["image"],
-            r"^asia-south1-docker\.pkg\.dev/tesseracthub-480811/ghcr-remote/"
-            r"tesserix/agentic-registry@sha256:[0-9a-f]{64}$",
+            r"^asia-south1-docker\.pkg\.dev/tesseracthub-480811/global/"
+            r"agentic-registry@sha256:[0-9a-f]{64}$",
         )
         self.assertTrue(
             container["image"].endswith(
