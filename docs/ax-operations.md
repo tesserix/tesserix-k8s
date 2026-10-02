@@ -75,9 +75,9 @@ schema changes require a separate reviewed compatibility and recovery plan.
 
 ## Acceptance status
 
-Foundation PR #1279 was applied by Atlantis and merged. Runtime deployment and
-end-to-end acceptance are still in progress; this document does not assert they
-have completed.
+Foundation and backup IAM changes were applied by Atlantis. Runtime and gateway
+changes are merged and reconciled through Argo CD. End-to-end acceptance passed
+on 2026-10-02; the evidence and exact scope are recorded below.
 
 ## Reviewed runtime privileges
 
@@ -91,3 +91,73 @@ this agent process. The controller can mutate network policies only inside
 `ax-system`, which is required to manage workers. These findings are retained
 for review; ordinary control-plane containers run non-root and drop all
 capabilities. This is not an appropriate runtime for an untrusted cluster admin.
+
+## Verified deployment (2026-10-02)
+
+Control plane and all seven Ready nodes run `1.37.0-gke.3503000`, verified as the
+latest non-preview Rapid version available in asia-south1. The main pool has a
+total maximum of seven, the two empty pools have autoscaling disabled, node
+autoprovisioning is disabled, and node upgrades have zero surge. AX server
+updates replace one of its two replicas at a time without a surge pod.
+
+Verified live:
+
+- Real task execution and CLI guest access returned `AX_EXECUTION_OK`. A changed
+  workspace marker survived suspend/resume and returned `AX_CHECKPOINT_OK`.
+- A gVisor actor called the existing Vertex gateway and returned
+  `AX_ACTOR_GATEWAY_OK`, with no provider key copied into AX. A model-driven
+  workspace task then created `gateway-verification.txt`; guest access read back
+  `AX_GATEWAY_E2E_OK`. Requests to non-Vertex gateway paths and an unapproved
+  external hostname both returned HTTP 403.
+- Authenticated Valkey writes succeeded, unauthenticated access returned
+  `NOAUTH`, and a marker survived Sentinel failover. An isolated restore of
+  `valkey/20261002T084508Z.rdb` returned `AX_VALKEY_RESTORE_OK keys=4`.
+- PostgreSQL continuous WAL archiving and base backup `20261002T085528` succeeded.
+  An isolated CNPG clone recovered two actor and two template records. The test
+  clone was removed; its 10 GiB disk remains retained in asia-south1-b as
+  `pvc-91d4c28d-4be9-4d6f-ab63-c5725fcd9e2f` pending an explicit disposal decision.
+- All four CA expiry checks passed with approximately 365 days remaining.
+  Prometheus scrapes the AX PostgreSQL, API, router and node-agent targets.
+  Alert expressions were evaluated against the live metrics, including backup
+  freshness and primary/standby aggregation using the observed `job` label.
+
+Restore fixtures are in `scripts/ax/acceptance/{valkey,postgres}-restore.yaml`.
+Choose a current RDB object and PostgreSQL backup ID before each future drill.
+The fixture IDs above identify this acceptance run, not an automatically selected
+latest recovery point. Local manifests/log evidence is archived with restricted
+permissions under `/tmp/ax-validation-archive` and
+`/tmp/ax-failed-acceptance-archive`; these temporary directories are not a backup
+retention mechanism. The protected GCS buckets contain the recoverable backups.
+
+### Mac CLI
+
+The patched CLI is installed at `~/go/bin/ax`. `~/.zshrc` adds that directory to
+PATH and defines `ax-prod` with the production context and AX namespace. Open a
+new terminal, then run:
+
+```sh
+ax-prod get tasks -a ax-system
+ax-prod apply -f scripts/ax/acceptance/task.yaml
+ax-prod resume task ax-runtime-acceptance -a ax-system
+ax-prod ssh ax-runtime-acceptance -a ax-system -- cat /workspace/ax-acceptance-marker
+ax-prod suspend task ax-runtime-acceptance -a ax-system
+```
+
+The existing runtime acceptance task contains the checkpoint marker, so its file
+currently reads `AX_CHECKPOINT_OK`. Tasks start suspended and need explicit
+resume. Guest access requires `spec.debug: true`. Two workers each admit one
+active actor; cold template preparation can briefly use a slot. Suspend tasks
+when finished and retry capacity errors after the workers release their slots.
+
+### Startup and mesh boundaries
+
+The actor probe uses `/healthz` to let Substrate activate networking before model
+bootstrap. `/readyz` separately reports workspace completion. Using `/readyz` as
+the actor probe deadlocks network-dependent bootstrap.
+
+Only AX egress's port 443 accepts native actor mTLS through the ambient mesh.
+Envoy still validates the actor CA and enforces per-actor destinations; other
+ports retain STRICT mesh mTLS/default-deny authorization. Gateway HBONE ingress
+is allowed only from AX server/egress pods, and the existing gateway permits those
+principals only on Vertex paths. Package/Git downloads need an explicit additional
+egress policy; the initial policy permits only the model gateway hostname.
