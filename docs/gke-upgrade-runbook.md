@@ -217,3 +217,20 @@ The Terraform tests mock providers and remote-state data; the mock apply runs
 only in memory. The runner omits credential outputs because the legacy SDK
 provider mock cannot synthesize an absent `master_auth` block. The real stack
 must additionally pass `terraform validate` and a reviewed live-state plan.
+
+
+## Restoring the seven-node ceiling
+
+The 2026-10-02 upgrade temporarily raises `optimized-v2`'s total autoscaler
+ceiling from seven to ten through `node_pool_total_max_count_overrides` in
+`terraform-new/stacks/04-gke/upgrade.auto.tfvars`. Its minimum remains three.
+This is temporary capacity, not a new steady-state size.
+
+After all node pools and AX pass verification, remove the `optimized-v2`
+override through a reviewed GKE-only Atlantis plan and apply. The base production
+pool configuration must still set `total_max_count = 7`. Verify GKE reports
+`autoscaling.totalMaxNodeCount = 7`, wait for the actual worker count to return
+to seven with workload health preserved, and confirm no operation remains active.
+Do not force-delete nodes to achieve the count. If requests no longer fit within
+seven nodes, resolve their sizing and placement before declaring completion.
+Keep the GPU and sandbox pools empty unless their use has been explicitly scoped.

@@ -328,3 +328,14 @@ variable "boot_disk_kms_key" {
   type        = string
   default     = null
 }
+
+variable "node_pool_total_max_count_overrides" {
+  description = "GKE-only capacity ceilings for pools already using total node-count autoscaling; reductions are rejected."
+  type        = map(number)
+  default     = {}
+
+  validation {
+    condition     = alltrue([for ceiling in values(var.node_pool_total_max_count_overrides) : ceiling > 0 && ceiling == floor(ceiling)])
+    error_message = "Autoscaler ceilings must be positive whole node counts."
+  }
+}

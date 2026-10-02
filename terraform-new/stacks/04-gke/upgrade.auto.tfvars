@@ -7,3 +7,9 @@ node_upgrade_hold = {
   start_time = "2026-10-02T00:00:00Z"
   end_time   = "2026-10-09T00:00:00Z"
 }
+
+# Temporary upgrade headroom. Remove this override after GKE and AX verification
+# and restore optimized-v2 to its base hard maximum of seven nodes.
+node_pool_total_max_count_overrides = {
+  optimized-v2 = 10
+}
