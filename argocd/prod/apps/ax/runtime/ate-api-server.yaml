@@ -1,0 +1,289 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ax-ate-api-server
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - pods
+  verbs:
+  - get
+  - watch
+  - list
+- apiGroups:
+  - ax.ate.dev
+  resources:
+  - workerpools
+  - sandboxconfigs
+  - csidriverconfigs
+  verbs:
+  - get
+  - watch
+  - list
+- apiGroups:
+  - ax.ate.dev
+  resources:
+  - workerpools
+  verbs:
+  - get
+  - watch
+  - list
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - get
+  - watch
+  - list
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ate-api-server
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ax-ate-api-server
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+subjects:
+- kind: ServiceAccount
+  name: ate-api-server
+  namespace: ax-system
+roleRef:
+  kind: ClusterRole
+  name: ax-ate-api-server
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ate-api-server
+  namespace: ax-system
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ate-api-server
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ate-api-server
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  replicas: 2
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels: &id001
+      app: ate-api-server
+  template:
+    metadata:
+      labels:
+        app: ate-api-server
+        ax.tesserix.app/component: ate-api-server
+      annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '9090'
+    spec:
+      serviceAccountName: ate-api-server
+      terminationGracePeriodSeconds: 40
+      containers:
+      - name: ate-api-server
+        image: asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-runtime/ateapi:ax-944abe3278b8-v1@sha256:167b4f4dbd7ba58e3712097dc2f7a3ef10d71320136a73fc7e2a9287dbad4db9
+        args:
+        - --grpc-server-cred-bundle=/run/servicedns.podcert.ax.ate.dev/credential-bundle.pem
+        - --authentication-config=/etc/ateapi/authentication/authentication.yaml
+        - --postgres-connection-string=@env
+        - --postgres-schema=@env
+        - --actor-id-jwt-pool=/run/actor-id-jwt-pool/pool.json
+        - --actor-id-ca-pool=/run/actor-id-ca-pool/pool.json
+        - --atelet-client-cred-bundle=/run/podidentity.podcert.ax.ate.dev/credential-bundle.pem
+        - --pod-identity-ca-certs=/run/podidentity.podcert.ax.ate.dev/trust-bundle.pem
+        - --egress-gateway-address=atenet-egress.ax-system.svc:443
+        - --drain-delay=13s
+        - --drain-timeout=15s
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),service.instance.id=$(POD_UID)
+        - name: ATE_STORAGE_BACKEND
+          value: gcs
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        - configMapRef:
+            name: ate-api-server-envvars
+            optional: true
+        - secretRef:
+            name: ax-ate-api-server-secret-envvars
+        volumeMounts:
+        - name: servicedns
+          mountPath: /run/servicedns.podcert.ax.ate.dev
+        - name: podidentity
+          mountPath: /run/podidentity.podcert.ax.ate.dev
+        - name: actor-id-jwt-pool
+          mountPath: /run/actor-id-jwt-pool
+        - name: actor-id-ca-pool
+          mountPath: /run/actor-id-ca-pool
+          readOnly: true
+        - name: authentication-config
+          mountPath: /etc/ateapi/authentication
+          readOnly: true
+        - name: postgres-server-ca
+          mountPath: /run/postgres-server-ca
+          readOnly: true
+        - name: runtime-tmp
+          mountPath: /tmp
+        ports:
+        - containerPort: 443
+        - name: prometheus
+          containerPort: 9090
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 2
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: 9090
+          periodSeconds: 5
+          failureThreshold: 24
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+            cpu: '1'
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+      volumes:
+      - name: servicedns
+        projected:
+          sources:
+          - podCertificate:
+              signerName: servicedns.podcert.ax.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+          - clusterTrustBundle:
+              signerName: servicedns.podcert.ax.ate.dev/identity
+              labelSelector:
+                matchLabels:
+                  podcert.ax.ate.dev/canarying: live
+              path: trust-bundle.pem
+      - name: podidentity
+        projected:
+          sources:
+          - podCertificate:
+              signerName: podidentity.podcert.ax.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+          - clusterTrustBundle:
+              signerName: podidentity.podcert.ax.ate.dev/identity
+              labelSelector:
+                matchLabels:
+                  podcert.ax.ate.dev/canarying: live
+              path: trust-bundle.pem
+      - name: actor-id-jwt-pool
+        projected:
+          sources:
+          - secret:
+              name: ax-actor-id-jwt-pool
+              items:
+              - key: pool
+                path: pool.json
+      - name: actor-id-ca-pool
+        projected:
+          sources:
+          - secret:
+              name: ax-actor-id-ca-pool
+              items:
+              - key: pool
+                path: pool.json
+      - name: authentication-config
+        configMap:
+          name: ate-api-authentication
+      - name: postgres-server-ca
+        secret:
+          secretName: ax-postgres-ca
+          optional: true
+      - name: runtime-tmp
+        emptyDir:
+          sizeLimit: 256Mi
+      automountServiceAccountToken: true
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels: *id001
+            topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+        sysctls:
+        - name: net.ipv4.ip_unprivileged_port_start
+          value: '0'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  clusterIP: None
+  ipFamilyPolicy: PreferDualStack
+  selector:
+    app: ate-api-server
+  ports:
+  - name: grpc
+    protocol: TCP
+    port: 443
+    targetPort: 443
+  type: ClusterIP

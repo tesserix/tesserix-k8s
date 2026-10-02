@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ax-secret-bootstrap
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '-5'
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app: ax-secret-bootstrap
+    spec:
+      serviceAccountName: ax-bootstrap
+      automountServiceAccountToken: true
+      restartPolicy: OnFailure
+      containers:
+      - name: bootstrap
+        image: asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-runtime/ax-bootstrap:ax-944abe3278b8-v1@sha256:d35ae10e7061567c0e2c4dd038fea75607db67cf698c662d914c517ea6837336
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+            cpu: '1'
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+          runAsGroup: 65532
+        volumeMounts:
+        - name: runtime-tmp
+          mountPath: /tmp
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+      - name: runtime-tmp
+        emptyDir:
+          sizeLimit: 256Mi

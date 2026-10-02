@@ -1,0 +1,180 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ate-client
+  namespace: ax-system
+  labels:
+    apps: ate-client
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ate-controller
+  namespace: ax-system
+  labels:
+    apps: ate-controller
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ax-ate-controller
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+subjects:
+- kind: ServiceAccount
+  name: ate-controller
+  namespace: ax-system
+roleRef:
+  kind: ClusterRole
+  name: ax-ate-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ate-controller
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+subjects:
+- kind: ServiceAccount
+  name: ate-controller
+  namespace: ax-system
+roleRef:
+  kind: Role
+  name: ate-controller
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: ate-controller
+  namespace: ax-system
+  labels:
+    app: ate-controller
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  selector:
+    app: ate-controller
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: metrics
+    protocol: TCP
+  type: ClusterIP
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: ate-controller
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &id001
+      app: ate-controller
+  template:
+    metadata:
+      labels:
+        app: ate-controller
+        ax.tesserix.app/component: ate-controller
+    spec:
+      serviceAccountName: ate-controller
+      containers:
+      - name: ate-controller
+        image: asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-runtime/atecontroller:ax-944abe3278b8-v3@sha256:45b9d1c84cd10d03ab9c9772e57a134ebffc6d30ed48c666ff1938fae6dc04ff
+        args:
+        - --ateapi-ca-file=/run/servicedns-ca/trust-bundle.pem
+        - --ateapi-client-cert=/run/podidentity.podcert.ax.ate.dev/credential-bundle.pem
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),service.instance.id=$(POD_UID)
+        envFrom:
+        - configMapRef:
+            name: ate-otel-config
+        ports:
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        - name: healthz
+          containerPort: 8081
+          protocol: TCP
+        volumeMounts:
+        - name: podidentity
+          mountPath: /run/podidentity.podcert.ax.ate.dev
+        - name: servicedns-ca
+          mountPath: /run/servicedns-ca
+        - name: runtime-tmp
+          mountPath: /tmp
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+            cpu: '1'
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+      volumes:
+      - name: podidentity
+        projected:
+          sources:
+          - podCertificate:
+              signerName: podidentity.podcert.ax.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+      - name: servicedns-ca
+        projected:
+          sources:
+          - clusterTrustBundle:
+              signerName: servicedns.podcert.ax.ate.dev/identity
+              labelSelector:
+                matchLabels:
+                  podcert.ax.ate.dev/canarying: live
+              path: trust-bundle.pem
+      - name: runtime-tmp
+        emptyDir:
+          sizeLimit: 256Mi
+      automountServiceAccountToken: true
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels: *id001
+            topologyKey: kubernetes.io/hostname
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+        sysctls:
+        - name: net.ipv4.ip_unprivileged_port_start
+          value: '0'

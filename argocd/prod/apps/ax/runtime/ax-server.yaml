@@ -1,0 +1,140 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ax-server
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  replicas: 2
+  selector:
+    matchLabels: &id001
+      app: ax-server
+  template:
+    metadata:
+      labels: *id001
+    spec:
+      serviceAccountName: ax-server
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 40
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels: *id001
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: ax-server
+        image: asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-runtime/ax-server:ax-ac2332829f22-v2@sha256:a8dd715a82edb4fdb88030194e79056708903c12ad8f6a6b5637a0336e1c5848
+        args:
+        - --substrate-endpoint=api.ax-system.svc:443
+        - --substrate-authority=api.ax-system.svc
+        - --substrate-token-file=/run/substrate/token
+        - --substrate-ca-file=/run/substrate-ca/ca.crt
+        - --template-atespace=ax-system
+        env:
+        - name: REDIS_ADDR
+          value: ax-valkey.ax-system.svc:6379
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ax-valkey-password
+              key: password
+        - name: AX_SNAPSHOTS_BUCKET
+          value: gs://tesseracthub-480811-ax-snapshots/actors/
+        ports:
+        - name: http
+          containerPort: 8080
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+            cpu: '1'
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 10
+        startupProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          periodSeconds: 5
+          failureThreshold: 60
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 65532
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+          runAsGroup: 65532
+        volumeMounts:
+        - name: token
+          mountPath: /run/substrate
+          readOnly: true
+        - name: ca
+          mountPath: /run/substrate-ca
+          readOnly: true
+        - name: runtime-tmp
+          mountPath: /tmp
+      volumes:
+      - name: token
+        projected:
+          sources:
+          - serviceAccountToken:
+              audience: api.ax-system.svc
+              expirationSeconds: 3600
+              path: token
+      - name: ca
+        secret:
+          secretName: ax-service-dns-ca
+      - name: runtime-tmp
+        emptyDir:
+          sizeLimit: 256Mi
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+        sysctls:
+        - name: net.ipv4.ip_unprivileged_port_start
+          value: '0'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ax-server
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  selector:
+    app: ax-server
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ax-server
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: ax-server
