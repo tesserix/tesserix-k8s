@@ -285,6 +285,10 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: ax-bootstrap
+      hcl: |
+        path "kv/data/ax-system/production/ax-*" { capabilities = ["create", "read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-console-tesserix-production
       hcl: |
         path "kv/data/console/app/console-zitadel-client-secret" { capabilities = ["read"] }
@@ -821,6 +825,11 @@ bootstrap:
         path "kv/data/roamie/app/roamie-travel-mcp-key" { capabilities = ["read"] }
 
   kubernetesRoles:
+    - name: ax-bootstrap
+      serviceAccounts: [ax-bootstrap]
+      namespaces: [ax-system]
+      policies: [ax-bootstrap]
+      ttl: 5m
     - name: read-console-tesserix-production
       serviceAccounts: ["console-production-reader"]
       namespaces: ["tesserix"]
@@ -1330,6 +1339,10 @@ clusterSecretStore:
 # A new namespace also needs a `destinations` entry in
 # argocd/prod/projects/security.yaml, or ArgoCD refuses to render its store.
 namespaceWhitelist:
+  - namespace: ax-system
+    apps:
+      - name: production
+        serviceAccount: ax-secret-reader
   - namespace: homechef
     apps:
       - name: homechef-api
