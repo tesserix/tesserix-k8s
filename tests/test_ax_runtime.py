@@ -76,3 +76,20 @@ def test_bootstrap_has_scoped_openbao_network_access_and_retry_hook():
     assert 'ax-system' not in values['allowedSources']
     job = next(o for o in objects() if o['kind'] == 'Job' and o['metadata']['name'] == 'ax-secret-bootstrap')
     assert job['metadata']['annotations']['argocd.argoproj.io/hook'] == 'Sync'
+
+
+def test_required_secret_volumes_are_provisioned():
+    resources = list(objects())
+    provided = {'ax-postgres-ca'}  # CNPG's generated server CA.
+    provided |= {o['spec']['target']['name'] for o in resources if o['kind'] == 'ExternalSecret'}
+    def visit(value):
+        if isinstance(value, dict):
+            if 'secretName' in value and not value.get('optional', False):
+                assert value['secretName'] in provided, value['secretName']
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+    for resource in resources:
+        visit(resource)

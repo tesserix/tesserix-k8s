@@ -38,6 +38,8 @@ def walk(value, images):
     return value
 
 def secret_name(name):
+    if name == 'actor-id-ca-certs':
+        return 'ax-actor-id-ca'
     if name == 'postgres-server-ca':
         return 'ax-postgres-ca'
     return name if name.startswith('ax-') else 'ax-' + name
