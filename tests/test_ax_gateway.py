@@ -53,3 +53,15 @@ def test_native_actor_ingress_is_limited_to_the_egress_tls_port():
     assert policy['spec']['selector']['matchLabels'] == {'app': 'atenet-egress'}
     assert policy['spec']['action'] == 'ALLOW'
     assert policy['spec']['rules'] == [{'to': [{'operation': {'ports': ['443']}}]}]
+
+
+def test_gateway_waypoint_accepts_only_ax_model_callers():
+    path = ROOT / 'manifests/agentic-istio/ax-gateway-connectivity.yaml'
+    policy = yaml.safe_load(path.read_text())
+    rule = policy['spec']['ingress'][0]
+    assert rule['ports'] == [{'protocol': 'TCP', 'port': 15008}]
+    peer = rule['from'][0]
+    assert peer['namespaceSelector']['matchLabels']['kubernetes.io/metadata.name'] == 'ax-system'
+    assert peer['podSelector']['matchExpressions'] == [
+        {'key': 'app', 'operator': 'In', 'values': ['ax-server', 'atenet-egress']}
+    ]
