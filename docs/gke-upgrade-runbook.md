@@ -124,6 +124,19 @@ Blockers fail the run before anything is touched. Warnings are printed and allow
   before draining. Setting `allow_blocking_pdbs` accepts possible forced-drain
   downtime and requires an explicit operational decision.
 
+For a staged node rollout, set `only_pool` in the workflow (or `ONLY_POOL`
+locally). Drain checks evaluate pods on that pool, including full Kubernetes
+label selectors; budgets with no matching active pods do not block an empty
+pool. A CNPG-owned primary budget is allowed only when its cluster is healthy,
+all desired instances are ready, no switchover is pending, and a ready standby
+exists on another Ready, schedulable node. CNPG still coordinates the actual
+switchover and Kubernetes still enforces its PDB. Singletons and ordinary
+application budgets remain blocking. Failure to read inventory blocks the run.
+
+Verification checks both the selected pool's configured version and every
+selected node's actual kubelet version. An incomplete node rollout fails even
+when the pool already reports the target version.
+
 Preflight includes operations targeting `/clusters/<name>/nodePools/...`, and
 fails closed if it cannot read operations. It runs again after environment
 approval immediately before the upgrade; verification uses that fresh baseline.
@@ -193,6 +206,7 @@ laptop against a live cluster without changing anything:
 ./scripts/gke-upgrade/preflight.sh tesseract-prod-in-gke asia-south1 \
   tesseracthub-480811 1.36.2-gke.2064000 both ./artifacts
 
+python3 -m pytest scripts/gke-upgrade/tests/ -q
 bash scripts/gke-upgrade/tests/run-tests.sh   # offline unit tests, no cloud access
 bash scripts/gke-upgrade/tests/preflight-tests.sh
 bash scripts/gke-upgrade/tests/upgrade-tests.sh
