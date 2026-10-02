@@ -7,12 +7,16 @@ name: Terraform Static Validation
       - terraform-new/**
       - atlantis.yaml
       - .github/workflows/terraform.yml
+      - scripts/gke-upgrade/**
+      - .github/workflows/gke-upgrade.yaml
   push:
     branches: [main]
     paths:
       - terraform-new/**
       - atlantis.yaml
       - .github/workflows/terraform.yml
+      - scripts/gke-upgrade/**
+      - .github/workflows/gke-upgrade.yaml
   workflow_dispatch:
 
 permissions:
@@ -74,3 +78,12 @@ jobs:
       - name: Validate
         working-directory: terraform-new/stacks/${{ matrix.stack }}
         run: terraform validate
+
+      - name: Test GKE upgrade safety offline
+        if: matrix.stack == '04-gke'
+        run: |
+          bash scripts/gke-upgrade/tests/run-tests.sh
+          bash scripts/gke-upgrade/tests/preflight-tests.sh
+          bash scripts/gke-upgrade/tests/upgrade-tests.sh
+          bash scripts/gke-upgrade/tests/terraform-tests.sh
+          shellcheck scripts/gke-upgrade/*.sh scripts/gke-upgrade/tests/*.sh
