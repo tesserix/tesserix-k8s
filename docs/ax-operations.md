@@ -9,7 +9,9 @@ Existing Kagent and `ate.dev` resources are not part of this release.
 
 Two API replicas and two gVisor workers are the initial bounded capacity. The
 GKE cluster stays on the existing main pool with a seven-node maximum and zero
-surge. No GPU or separate gVisor pool is enabled. Workers each request 250m CPU
+surge. No GPU or separate gVisor pool is enabled. Sandbox node agents run only in
+`asia-south1-b` and `asia-south1-c`, with non-preempting priority. This preserves
+the zonal Valkey disk slot in `asia-south1-a` within the seven-node cap. Workers each request 250m CPU
 and 512Mi and are limited to two CPUs and 2Gi. Worker admission and latency must
 be measured before increasing concurrency. Extra persistent storage initially
 consists of two 10Gi PostgreSQL volumes and three 2Gi Valkey volumes, plus GCS

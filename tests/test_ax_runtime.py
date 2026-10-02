@@ -93,3 +93,19 @@ def test_required_secret_volumes_are_provisioned():
                 visit(child)
     for resource in resources:
         visit(resource)
+
+
+def test_sandbox_agents_cannot_preempt_existing_workloads():
+    resources = list(objects())
+    priorities = {o['metadata']['name']: o for o in resources if o['kind'] == 'PriorityClass'}
+    for obj in resources:
+        if obj['kind'] == 'DaemonSet':
+            spec = obj['spec']['template']['spec']
+            assert priorities[spec['priorityClassName']]['preemptionPolicy'] == 'Never'
+            expressions = spec['affinity']['nodeAffinity']['requiredDuringSchedulingIgnoredDuringExecution']['nodeSelectorTerms'][0]['matchExpressions']
+            assert {'key': 'topology.kubernetes.io/zone', 'operator': 'In', 'values': ['asia-south1-b', 'asia-south1-c']} in expressions
+
+
+def test_argo_uses_live_server_schema_for_gke_certificate_fields():
+    app = yaml.safe_load((ROOT / 'argocd/prod/infrastructure/ax.yaml').read_text())
+    assert app['metadata']['annotations']['argocd.argoproj.io/compare-options'] == 'ServerSideDiff=true'

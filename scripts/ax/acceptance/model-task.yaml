@@ -1,0 +1,24 @@
+apiVersion: ax.io/v1alpha1
+kind: Workspace
+metadata:
+  name: ax-gateway-acceptance
+  atespace: ax-system
+spec:
+  goal: Create gateway-verification.txt in this workspace containing exactly AX_GATEWAY_E2E_OK. Use existing Python or shell tools; do not install packages or contact external services.
+---
+apiVersion: ax.io/v1alpha1
+kind: Task
+metadata:
+  name: ax-gateway-acceptance
+  atespace: ax-system
+spec:
+  debug: true
+  workspaces:
+    - name: ax-gateway-acceptance
+      path: /workspace
+  command:
+    - /bin/sh
+    - -ec
+    - |
+      test "$(cat /workspace/gateway-verification.txt)" = AX_GATEWAY_E2E_OK
+      while :; do sleep 60; done
