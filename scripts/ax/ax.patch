@@ -321,6 +321,38 @@ index 55814d7..e37d6ba 100644
  	if r.SecretResolver != nil {
  		lookupCtx, cancel := context.WithTimeout(ctx, secretLookupTimeout)
  		defer cancel()
+diff --git a/internal/metadata/actor_probe_test.go b/internal/metadata/actor_probe_test.go
+new file mode 100644
+index 0000000..94ecace
+--- /dev/null
++++ b/internal/metadata/actor_probe_test.go
+@@ -0,0 +1,26 @@
++package metadata
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"testing"
++
++	"github.com/google/ax/internal/substrate"
++	"github.com/google/ax/pkg/apis/v1alpha1"
++)
++
++func TestActorCanEnableNetworkingBeforeWorkspaceBootstrap(t *testing.T) {
++	server := NewServer(9999, &v1alpha1.Task{Spec: &v1alpha1.TaskSpec{}}, nil)
++	template := substrate.BuildActorTemplate("test", "bootstrap", "runner", nil, nil, "")
++	probe := template.GetContainers()[0].GetReadyz().GetHttpGet().GetPath()
++	response := httptest.NewRecorder()
++	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, probe, nil))
++	if response.Code != http.StatusOK {
++		t.Fatalf("actor cannot enable egress before model bootstrap: probe returned %d", response.Code)
++	}
++	response = httptest.NewRecorder()
++	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
++	if response.Code != http.StatusServiceUnavailable {
++		t.Fatalf("workspace falsely ready before bootstrap: %d", response.Code)
++	}
++}
 diff --git a/internal/model/client.go b/internal/model/client.go
 index f5884d7..e362695 100644
 --- a/internal/model/client.go
@@ -564,7 +596,7 @@ index 2b54a30..53f134b 100644
  }
 -
 diff --git a/internal/substrate/client.go b/internal/substrate/client.go
-index 7e65273..941e8cc 100644
+index 7e65273..4e0e2e3 100644
 --- a/internal/substrate/client.go
 +++ b/internal/substrate/client.go
 @@ -20,6 +20,7 @@ import (
@@ -584,6 +616,15 @@ index 7e65273..941e8cc 100644
  )
  
  // BuildActorTemplate constructs a Substrate ActorTemplate based on the standard ate-env specification.
+@@ -247,7 +248,7 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string,
+ 			Env:     envList,
+ 			Readyz: &ateapipb.ContainerReadyz{
+ 				HttpGet: &ateapipb.HTTPGetAction{
+-					Path: "/readyz",
++					Path: "/healthz",
+ 					Port: 80,
+ 				},
+ 			},
 @@ -304,7 +305,15 @@ func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace,
  }
  

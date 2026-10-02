@@ -26,3 +26,19 @@ After rebuilding, record image digests, then run
 The renderer preserves the separately authored configuration/state manifests.
 Run the AX runtime and Valkey tests and review the rendered Git diff before
 rollout. These are maintained compatibility patches, not an upstream release.
+
+Rebuild the Linux runner from the patched checkout with the pinned Python base and
+hash-locked SDK dependencies (Go, uv, Python 3 and crane required):
+
+```sh
+scripts/ax/build_runner.sh /tmp/ax-build/ax \
+  asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-task-runner:REVIEWED_TAG
+```
+
+The script includes the bootstrap program and `/workspace`, normalizes the layer
+metadata, publishes the image and prints its digest. Validate the SDK and a real
+actor before promoting that digest. It does not change the deployed image.
+
+The actor startup probe uses `/healthz` so Substrate can activate network access
+before model bootstrap. Workspace readiness remains separately reported by
+`/readyz`; requiring workspace completion for actor startup creates a deadlock.
