@@ -69,3 +69,16 @@ schema changes require a separate reviewed compatibility and recovery plan.
 Foundation PR #1279 was applied by Atlantis and merged. Runtime deployment and
 end-to-end acceptance are still in progress; this document does not assert they
 have completed.
+
+## Reviewed runtime privileges
+
+Trivy flags the dedicated atelet node agent's privileged/root execution,
+`/dev` and `/var/lib/kubelet/device-plugins` host mounts, and host port 18085.
+These are required by the upstream device-plugin/gVisor architecture. The
+agent is limited to the existing main pool, uses a separate AX host root, has
+bounded resources and a read-only image filesystem. It must be treated as
+trusted node-level software. Untrusted task code runs inside gVisor, not in
+this agent process. The controller can mutate network policies only inside
+`ax-system`, which is required to manage workers. These findings are retained
+for review; ordinary control-plane containers run non-root and drop all
+capabilities. This is not an appropriate runtime for an untrusted cluster admin.

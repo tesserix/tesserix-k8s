@@ -154,6 +154,7 @@ spec:
           capabilities:
             drop:
             - ALL
+          readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false
         resources:
           requests:
@@ -161,6 +162,7 @@ spec:
             memory: 128Mi
           limits:
             memory: 1Gi
+            cpu: '1'
         env:
         - name: NODE_NAME
           valueFrom:
@@ -221,6 +223,8 @@ spec:
         - name: host-dev
           mountPath: /host/dev
           readOnly: true
+        - name: runtime-tmp
+          mountPath: /tmp
       volumes:
       - name: run-ateom
         hostPath:
@@ -260,4 +264,7 @@ spec:
                 matchLabels:
                   podcert.ax.ate.dev/canarying: live
               path: trust-bundle.pem
+      - name: runtime-tmp
+        emptyDir:
+          sizeLimit: 512Mi
       automountServiceAccountToken: true

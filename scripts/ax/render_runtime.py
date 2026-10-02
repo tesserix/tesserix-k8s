@@ -92,6 +92,7 @@ def main():
                 spec['automountServiceAccountToken'] = True
                 if kind == 'DaemonSet':
                     spec['nodeSelector'] = {'cloud.google.com/gke-nodepool': 'optimized-v2'}
+                    spec.setdefault('volumes', []).append({'name': 'runtime-tmp', 'emptyDir': {'sizeLimit': '512Mi'}})
                 if 'priorityClassName' in spec:
                     spec['priorityClassName'] = 'ax-' + spec['priorityClassName']
                 if kind == 'Deployment':
@@ -101,7 +102,9 @@ def main():
                     c.setdefault('resources', {'requests': {'cpu': '50m', 'memory': '128Mi'}, 'limits': {'memory': '512Mi'}})
                     c.setdefault('resources', {}).setdefault('limits', {'memory': '512Mi'})
                     if meta['name'].startswith('atelet-'):
-                        c['resources'] = {'requests': {'cpu': '50m', 'memory': '128Mi'}, 'limits': {'memory': '1Gi'}}
+                        c['resources'] = {'requests': {'cpu': '50m', 'memory': '128Mi'}, 'limits': {'memory': '1Gi', 'cpu': '1'}}
+                        c.setdefault('securityContext', {})['readOnlyRootFilesystem'] = True
+                        c.setdefault('volumeMounts', []).append({'name': 'runtime-tmp', 'mountPath': '/tmp'})
                     if meta['name'] == 'ate-api-server':
                         for ref in c.get('envFrom', []):
                             if 'secretRef' in ref:
