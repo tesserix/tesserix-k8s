@@ -63,13 +63,30 @@ spec:
       \  - '.spec.subscriptions[]?.git.discoveryLimit'\n  - '.spec.subscriptions[]?.git.commitSelectionStrategy'\n\
       \  - '.spec.subscriptions[]?.image.strictSemvers'\n  - '.spec.subscriptions[]?.image.discoveryLimit'\n\
       \  - '.spec.subscriptions[]?.chart.strictSemvers'\n  - '.spec.subscriptions[]?.chart.discoveryLimit'\n"
-    resource.customizations.ignoreDifferences.postgresql.cnpg.io_Cluster: "jsonPointers:\n  - /spec/affinity\n\
-      \  - /spec/inheritedMetadata\n  - /spec/enablePDB\n  - /spec/logLevel\n  - /spec/maxSyncReplicas\n\
-      \  - /spec/minSyncReplicas\n  - /spec/postgresGID\n  - /spec/postgresUID\n  - /spec/replicationSlots\n\
-      \  - /spec/smartShutdownTimeout\n  - /spec/startDelay\n  - /spec/stopDelay\n  - /spec/monitoring/customQueriesConfigMap\n\
-      jqPathExpressions:\n  - '.spec.postgresql.parameters | keys[] | select(. == \"archive_mode\" or\
-      \ . == \"archive_timeout\")'\n  - '.spec.bootstrap.initdb.encoding'\n  - '.spec.backup.barmanObjectStore.data'\n\
-      \  - '.spec.managed.roles[]?.connectionLimit'\n  - '.spec.managed.roles[]?.inherit'\n\n"
+    resource.customizations.ignoreDifferences.postgresql.cnpg.io_Cluster: |
+      jsonPointers:
+      - /spec/inheritedMetadata
+      - /spec/enablePDB
+      - /spec/logLevel
+      - /spec/maxSyncReplicas
+      - /spec/minSyncReplicas
+      - /spec/postgresGID
+      - /spec/postgresUID
+      - /spec/replicationSlots
+      - /spec/smartShutdownTimeout
+      - /spec/startDelay
+      - /spec/stopDelay
+      - /spec/monitoring/customQueriesConfigMap
+      jqPathExpressions:
+      - .spec.postgresql.parameters | keys[] | select(. == "archive_mode" or . == "archive_timeout")
+      - .spec.bootstrap.initdb.encoding
+      - .spec.backup.barmanObjectStore.data
+      - .spec.managed.roles[]?.connectionLimit
+      - .spec.managed.roles[]?.inherit
+      - .spec.affinity.enablePodAntiAffinity | select(. == true)
+      - .spec.affinity.podAntiAffinityType | select(. == "preferred")
+      - .spec.affinity.topologyKey | select(. == "kubernetes.io/hostname")
+      - .spec.affinity | select(. == {})
     # Heartbeat noise only, never the whole of /status. Ignoring /status
     # cluster-wide means a status-only event — a pod going ready is exactly
     # that — never refreshes the controller's cached copy, so cached health
