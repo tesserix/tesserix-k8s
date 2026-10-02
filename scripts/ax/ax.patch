@@ -139,6 +139,162 @@ index 0000000..9d0abc1
 +
 +if __name__ == '__main__':
 +    unittest.main()
+diff --git a/cmd/ax/lifecycle_timeout_test.go b/cmd/ax/lifecycle_timeout_test.go
+new file mode 100644
+index 0000000..93027d0
+--- /dev/null
++++ b/cmd/ax/lifecycle_timeout_test.go
+@@ -0,0 +1,45 @@
++package main
++
++import (
++	"context"
++	"github.com/google/ax/pkg/apis/v1alpha1"
++	"google.golang.org/grpc"
++	"net"
++	"testing"
++	"time"
++)
++
++type coldLifecycleServer struct{ v1alpha1.UnimplementedAXServer }
++
++func coldOperation(ctx context.Context) (*v1alpha1.Task, error) {
++	select {
++	case <-time.After(16 * time.Second):
++		return &v1alpha1.Task{}, nil
++	case <-ctx.Done():
++		return nil, ctx.Err()
++	}
++}
++func (s *coldLifecycleServer) ResumeTask(ctx context.Context, _ *v1alpha1.ResumeTaskRequest) (*v1alpha1.Task, error) {
++	return coldOperation(ctx)
++}
++func (s *coldLifecycleServer) SuspendTask(ctx context.Context, _ *v1alpha1.SuspendTaskRequest) (*v1alpha1.Task, error) {
++	return coldOperation(ctx)
++}
++func TestLifecycleAllowsColdCheckpointOperations(t *testing.T) {
++	for name, run := range map[string]func(string, string, []string) error{"resume": runResume, "suspend": runSuspend} {
++		t.Run(name, func(t *testing.T) {
++			t.Parallel()
++			l, err := net.Listen("tcp", "127.0.0.1:0")
++			if err != nil {
++				t.Fatal(err)
++			}
++			s := grpc.NewServer()
++			v1alpha1.RegisterAXServer(s, &coldLifecycleServer{})
++			t.Cleanup(s.Stop)
++			go func() { _ = s.Serve(l) }()
++			if err := run("http://"+l.Addr().String(), "test", []string{"task", "cold"}); err != nil {
++				t.Fatal(err)
++			}
++		})
++	}
++}
+diff --git a/cmd/ax/main.go b/cmd/ax/main.go
+index a7bfb3a..b96e6db 100644
+--- a/cmd/ax/main.go
++++ b/cmd/ax/main.go
+@@ -146,7 +146,7 @@ func main() {
+ 	case "delete":
+ 		err = runDelete(serverURL, atespace, cleanArgs)
+ 	case "ssh":
+-		err = runSSH(serverURL, atespace, kubeContext, cleanArgs)
++		err = runSSH(serverURL, atespace, kubeContext, axNamespace, cleanArgs)
+ 	default:
+ 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
+ 		printUsage()
+@@ -400,7 +400,6 @@ func runGet(serverURL, atespace string, args []string) error {
+ 		return yaml.NewEncoder(os.Stdout).Encode(task)
+ 	}
+ 
+-
+ 	if (resource == "workspaces" || resource == "workspace") && len(args) == 1 {
+ 		resp, err := client.ListWorkspaces(ctx, &v1alpha1.ListWorkspacesRequest{Atespace: atespace})
+ 		if err != nil {
+@@ -607,7 +606,6 @@ func runDescribe(serverURL, atespace string, args []string) error {
+ 		return nil
+ 	}
+ 
+-
+ 	task, err := client.GetTask(ctx, &v1alpha1.GetTaskRequest{Atespace: atespace, Name: name})
+ 	if err != nil {
+ 		return fmt.Errorf("getting task %q: %w", name, err)
+@@ -831,7 +829,7 @@ func runSuspend(serverURL, atespace string, args []string) error {
+ 	}
+ 	defer conn.Close()
+ 
+-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+ 	defer cancel()
+ 
+ 	if _, err := client.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Atespace: atespace, Name: name}); err != nil {
+@@ -862,7 +860,7 @@ func runResume(serverURL, atespace string, args []string) error {
+ 	}
+ 	defer conn.Close()
+ 
+-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+ 	defer cancel()
+ 
+ 	if _, err := client.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Atespace: atespace, Name: name}); err != nil {
+@@ -959,7 +957,7 @@ func runTunnel(args []string) error {
+ 	}
+ }
+ 
+-func runSSH(serverURL, atespace, kubeContext string, args []string) error {
++func runSSH(serverURL, atespace, kubeContext, axNamespace string, args []string) error {
+ 	if len(args) == 0 {
+ 		return fmt.Errorf("usage: ax ssh <task-name> [-- command...]")
+ 	}
+@@ -1039,8 +1037,8 @@ func runSSH(serverURL, atespace, kubeContext string, args []string) error {
+ 			return fmt.Errorf("connecting to guest at %s: %w", guestEndpoint, err)
+ 		}
+ 	} else {
+-		// 2. Connect via the Substrate atenet-router service in ate-system (port 80)
+-		localPort, pfCleanup, err := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 80)
++		// 2. Connect via the Substrate atenet-router service in the AX namespace (port 80)
++		localPort, pfCleanup, err := tunnel.PortForward(context.Background(), kubeContext, routerNamespace(axNamespace), "svc/atenet-router", 80)
+ 		if err != nil {
+ 			return fmt.Errorf("establishing port-forward to atenet-router: %w", err)
+ 		}
+@@ -1072,3 +1070,13 @@ func runSSH(serverURL, atespace, kubeContext string, args []string) error {
+ 
+ 	return nil
+ }
++
++func routerNamespace(explicit string) string {
++	if explicit != "" {
++		return explicit
++	}
++	if namespace := os.Getenv("AX_SYSTEM_NAMESPACE"); namespace != "" {
++		return namespace
++	}
++	return "ax-system"
++}
+diff --git a/cmd/ax/router_namespace_test.go b/cmd/ax/router_namespace_test.go
+new file mode 100644
+index 0000000..3ef648e
+--- /dev/null
++++ b/cmd/ax/router_namespace_test.go
+@@ -0,0 +1,18 @@
++package main
++
++import "testing"
++
++func TestRouterNamespaceFollowsAXInstallation(t *testing.T) {
++	for _, tt := range []struct{ name, flag, env, want string }{
++		{"isolated default", "", "", "ax-system"},
++		{"environment", "", "ax-staging", "ax-staging"},
++		{"explicit namespace", "ax-other", "ax-staging", "ax-other"},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			t.Setenv("AX_SYSTEM_NAMESPACE", tt.env)
++			if got := routerNamespace(tt.flag); got != tt.want {
++				t.Fatalf("namespace = %s, want %s", got, tt.want)
++			}
++		})
++	}
++}
 diff --git a/internal/controller/reconciler.go b/internal/controller/reconciler.go
 index 55814d7..e37d6ba 100644
 --- a/internal/controller/reconciler.go
@@ -512,6 +668,63 @@ index 0000000..161b08a
 +		}
 +	}
 +}
+diff --git a/internal/tunnel/remote_health_test.go b/internal/tunnel/remote_health_test.go
+new file mode 100644
+index 0000000..50f8f64
+--- /dev/null
++++ b/internal/tunnel/remote_health_test.go
+@@ -0,0 +1,29 @@
++package tunnel
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"strconv"
++	"testing"
++	"time"
++)
++
++func TestRemoteTunnelHealthAllowsRegionalRoundTrip(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		time.Sleep(500 * time.Millisecond)
++		w.WriteHeader(http.StatusOK)
++	}))
++	defer server.Close()
++	u, err := url.Parse(server.URL)
++	if err != nil {
++		t.Fatal(err)
++	}
++	port, err := strconv.Atoi(u.Port())
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !IsTunnelHealthy(port) {
++		t.Fatal("healthy regional tunnel rejected by health timeout")
++	}
++}
+diff --git a/internal/tunnel/tunnel.go b/internal/tunnel/tunnel.go
+index 6ab44eb..c3ee2db 100644
+--- a/internal/tunnel/tunnel.go
++++ b/internal/tunnel/tunnel.go
+@@ -165,7 +165,7 @@ func IsTunnelHealthy(port int) bool {
+ 	if port <= 0 {
+ 		return false
+ 	}
+-	client := http.Client{Timeout: 400 * time.Millisecond}
++	client := http.Client{Timeout: 2 * time.Second}
+ 	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
+ 	if err != nil {
+ 		return false
+@@ -278,7 +278,7 @@ func EnsureServerURL(opts Options) (string, error) {
+ 
+ 	// Wait for healthz to respond
+ 	healthy := false
+-	healthDeadline := time.Now().Add(3 * time.Second)
++	healthDeadline := time.Now().Add(10 * time.Second)
+ 	for time.Now().Before(healthDeadline) {
+ 		if IsTunnelHealthy(localPort) {
+ 			healthy = true
 diff --git a/internal/workspace/setup.go b/internal/workspace/setup.go
 index 78acf93..2d7718d 100644
 --- a/internal/workspace/setup.go
@@ -526,7 +739,7 @@ index 78acf93..2d7718d 100644
  		return false
  	}
 diff --git a/pkg/apis/v1alpha1/types.go b/pkg/apis/v1alpha1/types.go
-index 362722b..4677dae 100644
+index 362722b..7af61bc 100644
 --- a/pkg/apis/v1alpha1/types.go
 +++ b/pkg/apis/v1alpha1/types.go
 @@ -35,7 +35,7 @@ const (
@@ -534,7 +747,7 @@ index 362722b..4677dae 100644
  	KindModel     = "Model"
  
 -	DefaultTaskImage = "gcr.io/ax-substrate/ate-images/ax-task-runner"
-+	DefaultTaskImage = "asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-task-runner@sha256:ac1926a363d7c240f3bd1d08f892ef3cd4e774c52a5e3b5dbed2fad545075407"
++	DefaultTaskImage = "asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-task-runner@sha256:c06c3b5686489f8f414988a9f9e61221d3e622f1a6de40bc5d970a83862dbe99"
  
  	// PhaseTerminating marks a task whose deletion has been requested and whose
  	// actor is being torn down. The record disappears once cleanup completes.
