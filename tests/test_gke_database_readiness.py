@@ -47,7 +47,7 @@ def test_active_database_has_a_standby(application: str, tmp_path: Path) -> None
     assert len(clusters) == 1
     assert clusters[0]["spec"]["instances"] >= 2
     assert clusters[0]["spec"].get("enablePDB", True) is True
-    if application == "global/global-postgres":
+    if application in {"global/global-postgres", "dwellm8/dwellm8-temporal-postgres"}:
         assert clusters[0]["spec"]["affinity"]["podAntiAffinityType"] == "required"
 
 
