@@ -139,6 +139,12 @@ if __name__ == "__main__":
         for name in found:
             print(f"BLOCKED {name}")
         sys.exit(1 if found else 0)
-    except (ValueError, KeyError, TypeError, subprocess.CalledProcessError) as error:
+    except (
+        ValueError,
+        KeyError,
+        TypeError,
+        OSError,
+        subprocess.CalledProcessError,
+    ) as error:
         print(f"Invalid drain inventory: {error}", file=sys.stderr)
         sys.exit(2)

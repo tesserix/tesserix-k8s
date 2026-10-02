@@ -206,3 +206,13 @@ def test_unknown_selector_operator_fails_closed() -> None:
         "matchExpressions": [{"key": "role", "operator": "unsupported"}]
     }
     assert run_check(data, "workers").returncode == 2
+
+
+def test_missing_kubectl_fails_as_inventory_error(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "workers", "--live"],
+        env={"PATH": str(tmp_path)},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 2
