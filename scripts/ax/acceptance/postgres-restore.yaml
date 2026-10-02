@@ -1,0 +1,53 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ax-restore-isolation
+  namespace: ax-system
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: ax-restore
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: cnpg-system
+    ports:
+    - protocol: TCP
+      port: 8000
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ax-restore
+  namespace: ax-system
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.11@sha256:70664ebcfa1100361b5bdc28bbf06fdbe08db2dc4ad7bd14de33c5e05fe8ea8e
+  enableSuperuserAccess: false
+  storage:
+    size: 10Gi
+    storageClass: premium-rwo-retain
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  bootstrap:
+    recovery:
+      source: ax-postgres
+      recoveryTarget:
+        targetImmediate: true
+        backupID: 20261002T085528
+  externalClusters:
+  - name: ax-postgres
+    barmanObjectStore:
+      destinationPath: gs://tesseracthub-480811-ax-backups/postgres
+      serverName: ax-postgres
+      googleCredentials:
+        gkeEnvironment: true
+      wal:
+        maxParallel: 2
