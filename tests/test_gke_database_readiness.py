@@ -1,6 +1,7 @@
 """The active single-instance databases need standbys before node drains."""
 
 from pathlib import Path
+import json
 import subprocess
 
 import pytest
@@ -48,3 +49,24 @@ def test_active_database_has_a_standby(application: str, tmp_path: Path) -> None
     assert clusters[0]["spec"].get("enablePDB", True) is True
     if application == "global/global-postgres":
         assert clusters[0]["spec"]["affinity"]["podAntiAffinityType"] == "required"
+
+
+@pytest.mark.parametrize("affinity,ignored", [
+    ({"podAntiAffinityType": "preferred"}, True),
+    ({"enablePodAntiAffinity": True, "podAntiAffinityType": "preferred", "topologyKey": "kubernetes.io/hostname"}, True),
+    ({"podAntiAffinityType": "required"}, False),
+    ({"enablePodAntiAffinity": False}, False),
+    ({"topologyKey": "topology.kubernetes.io/zone"}, False),
+    ({"nodeSelector": {"dedicated": "database"}}, False),
+])
+def test_argocd_ignores_only_default_database_affinity(affinity, ignored):
+    operator = yaml.safe_load((ROOT / "charts/argocd-operator/argocd-instance.yaml").read_text())
+    config = yaml.safe_load(operator["spec"]["extraConfig"]["resource.customizations.ignoreDifferences.postgresql.cnpg.io_Cluster"])
+    assert "/spec/affinity" not in config.get("jsonPointers", [])
+    expressions = [e for e in config.get("jqPathExpressions", []) if ".spec.affinity" in e]
+    assert len(expressions) == 4
+    normalized = subprocess.run(["jq", "-c", " | ".join("del(" + e + ")" for e in expressions)], input=json.dumps({"spec": {"affinity": affinity}}), text=True, capture_output=True, check=True)
+    spec = json.loads(normalized.stdout)["spec"]
+    assert ("affinity" not in spec) == ignored
+    if not ignored:
+        assert spec["affinity"] == affinity
