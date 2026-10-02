@@ -38,7 +38,7 @@ remain at the gateway. Model failures return errors instead of synthesized
 success. Each actor initially permits egress only to the gateway hostname;
 additional Git/package hosts require an explicit actor egress policy.
 
-The CA pools expire one year after initial creation. Inspect certificate-only
+The CA pools expire one year after initial creation. A daily certificate-only check alerts through failed Jobs. Also inspect certificate-only
 material monthly and renew at least 30 days before expiry using overlapping
 trusted roots; never rerun bootstrap expecting rotation. Keep OpenBao's tested
 independent recovery and GCS backup path intact.

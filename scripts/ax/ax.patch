@@ -39,7 +39,7 @@ index 4f224fd..0023750 100644
  
  	httpServer := &http.Server{
 diff --git a/cmd/ax-task-runner/antigravity_bootstrap.py b/cmd/ax-task-runner/antigravity_bootstrap.py
-index 600870b..06d7259 100644
+index 600870b..d47ec9f 100644
 --- a/cmd/ax-task-runner/antigravity_bootstrap.py
 +++ b/cmd/ax-task-runner/antigravity_bootstrap.py
 @@ -72,7 +72,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -47,11 +47,11 @@ index 600870b..06d7259 100644
  
  async def run_bootstrap(goal: str, workspace_dir: str, data_dir: str) -> None:
 -    from google.antigravity import Agent, CapabilitiesConfig, LocalAgentConfig
-+    from google.antigravity import Agent, CapabilitiesConfig, LocalAgentConfig, ModelTarget, VertexEndpoint
++    from google.antigravity import Agent, CapabilitiesConfig, LocalAgentConfig, ModelTarget, VertexEndpoint, ModelType, BuiltinTools
      from google.antigravity.hooks import policy
  
      config_kwargs = dict(
-@@ -81,9 +81,16 @@ async def run_bootstrap(goal: str, workspace_dir: str, data_dir: str) -> None:
+@@ -81,9 +81,18 @@ async def run_bootstrap(goal: str, workspace_dir: str, data_dir: str) -> None:
          # Deny file tools outside the workspace; allow everything else (including
          # run_command, which the SDK denies by default). Denies take priority.
          policies=[*policy.workspace_only([workspace_dir]), policy.allow_all()],
@@ -62,14 +62,16 @@ index 600870b..06d7259 100644
 +    if gateway := os.environ.get("AX_MODEL_GATEWAY_URL"):
 +        config_kwargs["model"] = ModelTarget(
 +            name=os.environ["AX_MODEL_NAME"],
++            types=[ModelType.TEXT, ModelType.IMAGE],
 +            endpoint=VertexEndpoint(base_url=gateway, project=os.environ["AX_VERTEX_PROJECT"], location=os.environ["AX_VERTEX_LOCATION"]),
 +        )
++        config_kwargs["capabilities"] = CapabilitiesConfig(disabled_tools=[BuiltinTools.GENERATE_IMAGE])
 +    else:
 +        config_kwargs["api_key"] = os.environ[API_KEY_ENV]
      if data_dir:
          os.makedirs(data_dir, exist_ok=True)
          config_kwargs["save_dir"] = data_dir
-@@ -108,7 +115,7 @@ def main(argv: list[str]) -> int:
+@@ -108,7 +117,7 @@ def main(argv: list[str]) -> int:
      if not args.goal:
          logging.info("No goal provided for Antigravity workspace bootstrap; skipping")
          return 0
@@ -80,10 +82,10 @@ index 600870b..06d7259 100644
      if not os.path.isdir(workspace_dir):
 diff --git a/cmd/ax-task-runner/test_antigravity_gateway.py b/cmd/ax-task-runner/test_antigravity_gateway.py
 new file mode 100644
-index 0000000..68b33dc
+index 0000000..9d0abc1
 --- /dev/null
 +++ b/cmd/ax-task-runner/test_antigravity_gateway.py
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,53 @@
 +import asyncio
 +import importlib.util
 +import os
@@ -119,6 +121,8 @@ index 0000000..68b33dc
 +        sdk = types.ModuleType('google.antigravity')
 +        sdk.Agent, sdk.CapabilitiesConfig, sdk.LocalAgentConfig = Agent, Value, Value
 +        sdk.ModelTarget, sdk.VertexEndpoint = Value, Value
++        sdk.ModelType = types.SimpleNamespace(TEXT="text", IMAGE="image")
++        sdk.BuiltinTools = types.SimpleNamespace(GENERATE_IMAGE="generate_image")
 +        hooks = types.ModuleType('google.antigravity.hooks')
 +        hooks.policy = types.SimpleNamespace(workspace_only=lambda _: [], allow_all=lambda: None)
 +        env = {'AX_MODEL_GATEWAY_URL': 'http://gateway/vertex', 'AX_MODEL_NAME': 'gemini-2.5-flash', 'AX_VERTEX_PROJECT': 'test-project', 'AX_VERTEX_LOCATION': 'global'}
@@ -129,6 +133,8 @@ index 0000000..68b33dc
 +        self.assertEqual(cfg.model.endpoint.project, 'test-project')
 +        self.assertEqual(cfg.model.name, 'gemini-2.5-flash')
 +        self.assertFalse(hasattr(cfg, 'api_key'))
++        self.assertEqual(cfg.model.types, ["text", "image"])
++        self.assertEqual(cfg.capabilities.disabled_tools, ["generate_image"])
 +
 +
 +if __name__ == '__main__':
@@ -160,7 +166,7 @@ index 55814d7..e37d6ba 100644
  		lookupCtx, cancel := context.WithTimeout(ctx, secretLookupTimeout)
  		defer cancel()
 diff --git a/internal/model/client.go b/internal/model/client.go
-index f5884d7..776ace4 100644
+index f5884d7..e362695 100644
 --- a/internal/model/client.go
 +++ b/internal/model/client.go
 @@ -25,6 +25,7 @@ import (
@@ -175,7 +181,7 @@ index f5884d7..776ace4 100644
  	if cfg.Atespace == "" {
  		cfg.Atespace = DefaultAtespace
  	}
-+	if cfg.Model == "" && os.Getenv("AX_MODEL_GATEWAY_URL") != "" {
++	if (cfg.Model == "" || cfg.Model == DefaultModel) && os.Getenv("AX_MODEL_GATEWAY_URL") != "" {
 +		cfg.Model = os.Getenv("AX_MODEL_NAME")
 +	}
  	if cfg.Model == "" {
@@ -234,10 +240,10 @@ index f5884d7..776ace4 100644
  			return c.fallbackResponse(req), nil
 diff --git a/internal/model/gateway_test.go b/internal/model/gateway_test.go
 new file mode 100644
-index 0000000..eb21cb0
+index 0000000..b97f849
 --- /dev/null
 +++ b/internal/model/gateway_test.go
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,51 @@
 +package model
 +
 +import (
@@ -264,6 +270,10 @@ index 0000000..eb21cb0
 +	t.Setenv("AX_VERTEX_PROJECT", "test-project")
 +	t.Setenv("AX_VERTEX_LOCATION", "global")
 +	t.Setenv("AX_MODEL_NAME", "gemini-2.5-flash")
++	_, errDefault := NewClient(DefaultConfig()).Generate(context.Background(), &GenerateRequest{Prompt: "test default"})
++	if errDefault != nil {
++		t.Fatal(errDefault)
++	}
 +	c := NewClient(Config{})
 +	got, err := c.Generate(context.Background(), &GenerateRequest{Prompt: "test"})
 +	if err != nil {
@@ -516,7 +526,7 @@ index 78acf93..2d7718d 100644
  		return false
  	}
 diff --git a/pkg/apis/v1alpha1/types.go b/pkg/apis/v1alpha1/types.go
-index 362722b..20dc67d 100644
+index 362722b..4677dae 100644
 --- a/pkg/apis/v1alpha1/types.go
 +++ b/pkg/apis/v1alpha1/types.go
 @@ -35,7 +35,7 @@ const (
@@ -524,7 +534,7 @@ index 362722b..20dc67d 100644
  	KindModel     = "Model"
  
 -	DefaultTaskImage = "gcr.io/ax-substrate/ate-images/ax-task-runner"
-+	DefaultTaskImage = "asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-task-runner@sha256:56ee2c4652bec61ef33f129b3115a2bc0fa3a2e2669f652edbc3abcff197e130"
++	DefaultTaskImage = "asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-task-runner@sha256:ac1926a363d7c240f3bd1d08f892ef3cd4e774c52a5e3b5dbed2fad545075407"
  
  	// PhaseTerminating marks a task whose deletion has been requested and whose
  	// actor is being torn down. The record disappears once cleanup completes.
