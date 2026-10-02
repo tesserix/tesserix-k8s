@@ -53,8 +53,7 @@ spec:
         summary: AX container restarted repeatedly
         runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/ax-operations.md
     - alert: AXPostgresReplicaUnavailable
-      expr: cnpg_pg_replication_streaming_replicas{namespace="ax-system",cluster="ax-postgres"}
-        < 1
+      expr: max(cnpg_pg_replication_streaming_replicas{namespace="ax-system",job="ax-system/ax-postgres"}) < 1 or absent(cnpg_pg_replication_streaming_replicas{namespace="ax-system",job="ax-system/ax-postgres"})
       for: 10m
       labels:
         severity: warning
@@ -62,4 +61,15 @@ spec:
         service: ax
       annotations:
         summary: AX PostgreSQL lacks a streaming standby
+        runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/ax-operations.md
+
+    - alert: AXPostgresBackupStale
+      expr: (time() - max(cnpg_collector_last_available_backup_timestamp{namespace="ax-system",job="ax-system/ax-postgres"}) > 28800) or absent(cnpg_collector_last_available_backup_timestamp{namespace="ax-system",job="ax-system/ax-postgres"})
+      for: 15m
+      labels:
+        severity: warning
+        team: platform
+        service: ax
+      annotations:
+        summary: AX PostgreSQL has no successful backup within eight hours
         runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/ax-operations.md
