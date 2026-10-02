@@ -117,6 +117,7 @@ jobs:
 
       - name: Run preflight checks
         env:
+          ONLY_POOL: ${{ inputs.only_pool }}
           ALLOW_BLOCKING_PDBS: ${{ inputs.allow_blocking_pdbs }}
           ALLOW_OUT_OF_CHANNEL: ${{ inputs.allow_out_of_channel }}
           USE_GKE_GCLOUD_AUTH_PLUGIN: 'True'
@@ -229,7 +230,8 @@ jobs:
       - name: Verify cluster health
         env:
           # A pool left on the old version is expected when only part of the cluster was touched.
-          EXPECT_NODE_VERSIONS: ${{ inputs.scope == 'both' && inputs.only_pool == '' && inputs.pool_strategy != 'skip' }}
+          EXPECT_NODE_VERSIONS: ${{ inputs.scope != 'control-plane' && inputs.pool_strategy != 'skip' }}
+          ONLY_POOL: ${{ inputs.only_pool }}
           USE_GKE_GCLOUD_AUTH_PLUGIN: 'True'
           CLUSTER: ${{ inputs.cluster_name }}
           REGION: ${{ inputs.region }}

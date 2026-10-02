@@ -20,6 +20,7 @@ AFTER=${6:?after dir}
 
 SETTLE_SECONDS=${SETTLE_SECONDS:-180}
 EXPECT_NODE_VERSIONS=${EXPECT_NODE_VERSIONS:-true}
+ONLY_POOL=${ONLY_POOL:-}
 
 FAILURES=()
 fail() { FAILURES+=("$1"); printf '  FAILED   %s\n' "$1" >&2; }
@@ -36,10 +37,13 @@ CP=$(jq -r '.currentMasterVersion' "$AFTER/cluster.json")
 
 if [[ "$EXPECT_NODE_VERSIONS" == "true" ]]; then
   echo "node pool versions"
+  if [[ -n "$ONLY_POOL" ]] && ! jq -e --arg p "$ONLY_POOL" '.nodePools | any(.name == $p)' "$AFTER/cluster.json" >/dev/null; then
+    fail "selected pool $ONLY_POOL missing after upgrade"
+  fi
   while read -r name version; do
     [[ "$version" == "$TARGET" ]] && pass "node pool $name at $TARGET" ||
       fail "node pool $name is $version, expected $TARGET"
-  done < <(jq -r '.nodePools[] | "\(.name) \(.version)"' "$AFTER/cluster.json")
+  done < <(jq -r --arg p "$ONLY_POOL" '.nodePools[] | select($p == "" or .name == $p) | "\(.name) \(.version)"' "$AFTER/cluster.json")
 fi
 
 echo "node readiness"
@@ -54,11 +58,20 @@ while read -r node status; do
 done < <(kubectl get nodes --no-headers 2>/dev/null | awk '{print $1" "$2}')
 [[ -z "$NOT_READY" ]] && pass "all nodes Ready" || true
 
-echo "kubelet versions"
-STALE_KUBELET=$(kubectl get nodes -o json 2>/dev/null |
-  jq -r --arg t "$TARGET" '.items[] | select((.status.nodeInfo.kubeletVersion | ltrimstr("v")) as $k | ($t | startswith($k)) | not) | .metadata.name' || true)
-[[ -z "$STALE_KUBELET" ]] && pass "kubelets match the target version" ||
-  warn "kubelet version mismatch on: $(tr '\n' ' ' <<<"$STALE_KUBELET")"
+if [[ "$EXPECT_NODE_VERSIONS" == "true" ]]; then
+  echo "kubelet versions"
+  if ! STALE_KUBELET=$(kubectl get nodes -o json |
+    jq -r --arg t "$TARGET" --arg p "$ONLY_POOL" '.items[]
+      | select($p == "" or .metadata.labels["cloud.google.com/gke-nodepool"] == $p)
+      | select((.status.nodeInfo.kubeletVersion | ltrimstr("v")) != $t)
+      | .metadata.name'); then
+    fail "cannot read kubelet versions"
+  elif [[ -z "$STALE_KUBELET" ]]; then
+    pass "selected kubelets match the target version"
+  else
+    fail "kubelet version mismatch on: $(tr '\n' ' ' <<<"$STALE_KUBELET")"
+  fi
+fi
 
 check_delta() {
   local label=$1 file=$2

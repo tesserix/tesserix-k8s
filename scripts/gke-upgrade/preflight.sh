@@ -18,6 +18,7 @@ SCOPE=${5:-both}
 OUT=${6:-./upgrade-artifacts}
 
 ALLOW_BLOCKING_PDBS=${ALLOW_BLOCKING_PDBS:-false}
+ONLY_POOL=${ONLY_POOL:-}
 ALLOW_OUT_OF_CHANNEL=${ALLOW_OUT_OF_CHANNEL:-false}
 
 mkdir -p "$OUT"
@@ -115,14 +116,26 @@ BLOCKING_PDBS=$(kubectl get pdb -A \
   -o jsonpath='{range .items[?(@.status.disruptionsAllowed==0)]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>/dev/null |
   grep -v '^[[:space:]]*$' || true)
 echo "$BLOCKING_PDBS" >"$OUT/blocking-pdbs.txt"
-if [[ -z "$BLOCKING_PDBS" ]]; then
-  pass "every PDB allows at least one eviction"
-elif [[ "$SCOPE" == "control-plane" ]]; then
-  warn "PDBs allow zero evictions; control-plane-only upgrade does not drain nodes: $(tr '\n' ' ' <<<"$BLOCKING_PDBS")"
-elif [[ "$ALLOW_BLOCKING_PDBS" == "true" ]]; then
-  warn "$(wc -l <<<"$BLOCKING_PDBS" | tr -d ' ') PDBs allow zero evictions — proceeding, GKE will force-drain after ~1h per node"
+if [[ "$SCOPE" == "control-plane" ]]; then
+  [[ -z "$BLOCKING_PDBS" ]] || warn "PDBs allow zero evictions; control-plane-only upgrade does not drain nodes: $(tr '\n' ' ' <<<"$BLOCKING_PDBS")"
 else
-  block "$(wc -l <<<"$BLOCKING_PDBS" | tr -d ' ') PDBs allow zero evictions and will stall node drains: $(tr '\n' ' ' <<<"$BLOCKING_PDBS")"
+  if [[ -n "$ONLY_POOL" ]] && ! jq -e --arg pool "$ONLY_POOL" '.nodePools | any(.name == $pool)' <<<"$CLUSTER_JSON" >/dev/null; then
+    block "unknown node pool: $ONLY_POOL"
+  fi
+  drain_status=0
+  python3 "${HERE}/drain-readiness.py" "$ONLY_POOL" --live >"$OUT/drain-readiness.txt" || drain_status=$?
+  cat "$OUT/drain-readiness.txt"
+  if [[ "$drain_status" != "0" && "$drain_status" != "1" ]]; then
+    block "cannot evaluate node drain readiness"
+  elif [[ "$drain_status" != "0" ]]; then
+    if [[ "$ALLOW_BLOCKING_PDBS" != "true" ]]; then
+      block "selected nodes have blocking PDBs; restore replicas before upgrading"
+    else
+      warn "proceeding past explicitly overridden PDB blockers"
+    fi
+  else
+    pass "selected nodes have no blocking disruption budgets"
+  fi
 fi
 
 echo "single-instance postgres"
