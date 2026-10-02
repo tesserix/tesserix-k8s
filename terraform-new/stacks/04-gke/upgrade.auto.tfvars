@@ -1,15 +1,8 @@
-# Reviewed non-preview Rapid version. Node rollouts use the gated workflow.
+# Keep this stack's reviewed version independent of shared application inputs.
 control_plane_version = "1.37.0-gke.3503000"
 
-# Does not cancel an active operation. Remove after node verification.
-node_upgrade_hold = {
-  name       = "ax-control-plane-first-20261002"
-  start_time = "2026-10-02T00:00:00Z"
-  end_time   = "2026-10-09T00:00:00Z"
-}
-
-# Temporary upgrade headroom. Remove this override after GKE and AX verification
-# and restore optimized-v2 to its base hard maximum of seven nodes.
-node_pool_total_max_count_overrides = {
-  optimized-v2 = 10
+# The regular production ceiling remains seven. Future upgrades replace a
+# worker before adding its replacement, rather than exceeding that ceiling.
+node_pool_upgrade_settings_overrides = {
+  optimized-v2 = { max_surge = 0, max_unavailable = 1 }
 }

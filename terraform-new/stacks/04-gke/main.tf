@@ -205,8 +205,8 @@ resource "google_container_node_pool" "pools" {
   }
 
   upgrade_settings {
-    max_surge       = each.value.max_surge
-    max_unavailable = each.value.max_unavailable
+    max_surge       = try(var.node_pool_upgrade_settings_overrides[each.key].max_surge, each.value.max_surge)
+    max_unavailable = try(var.node_pool_upgrade_settings_overrides[each.key].max_unavailable, each.value.max_unavailable)
   }
 
   node_config {
@@ -255,6 +255,11 @@ resource "google_container_node_pool" "pools" {
     # Node rollouts belong to the gated upgrade workflow, separately from the
     # control plane. Preserve GKE's version after automatic or manual upgrades.
     ignore_changes = [initial_node_count, version]
+
+    precondition {
+      condition     = alltrue([for name in keys(var.node_pool_upgrade_settings_overrides) : contains([for pool in var.node_pools : pool.name], name)])
+      error_message = "Upgrade overrides must name an existing node pool."
+    }
 
     precondition {
       condition     = alltrue([for name in keys(var.node_pool_total_max_count_overrides) : contains([for pool in var.node_pools : pool.name], name)])

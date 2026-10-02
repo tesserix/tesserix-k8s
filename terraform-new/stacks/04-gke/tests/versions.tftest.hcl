@@ -1,4 +1,5 @@
 mock_provider "google" {
+
   mock_data "google_container_engine_versions" {
     defaults = {
       latest_master_version = "1.36.4-gke.1495000"
@@ -156,4 +157,45 @@ run "reject_fractional_ceiling" {
     node_pool_total_max_count_overrides = { "default-pool" = 9.5 }
   }
   expect_failures = [var.node_pool_total_max_count_overrides]
+}
+
+run "strict_ceiling_uses_unavailable_slot_instead_of_surge" {
+  command = plan
+  variables {
+    node_pool_upgrade_settings_overrides = {
+      "default-pool" = { max_surge = 0, max_unavailable = 1 }
+    }
+  }
+  assert {
+    condition     = google_container_node_pool.pools["default-pool"].upgrade_settings[0].max_surge == 0 && google_container_node_pool.pools["default-pool"].upgrade_settings[0].max_unavailable == 1
+    error_message = "A strict node ceiling must not create surge nodes during later upgrades."
+  }
+}
+
+run "reject_unknown_pool_upgrade_settings" {
+  command = plan
+  variables {
+    node_pool_upgrade_settings_overrides = { missing = { max_surge = 0, max_unavailable = 1 } }
+  }
+  expect_failures = [google_container_node_pool.pools["default-pool"]]
+}
+
+run "reject_upgrade_without_progress_budget" {
+  command = plan
+  variables {
+    node_pool_upgrade_settings_overrides = { "default-pool" = { max_surge = 0, max_unavailable = 0 } }
+  }
+  expect_failures = [var.node_pool_upgrade_settings_overrides]
+}
+
+run "auxiliary_pools_cannot_expand_cluster" {
+  command = plan
+  assert {
+    condition     = google_container_node_pool.gpu_l4_spot.node_count == 0 && length(google_container_node_pool.gpu_l4_spot.autoscaling) == 0 && google_container_node_pool.sandbox_gvisor.node_count == 0 && length(google_container_node_pool.sandbox_gvisor.autoscaling) == 0
+    error_message = "Retained auxiliary pools must remain empty with autoscaling disabled."
+  }
+  assert {
+    condition     = google_container_node_pool.gpu_l4_spot.upgrade_settings[0].max_surge == 0 && google_container_node_pool.sandbox_gvisor.upgrade_settings[0].max_surge == 0
+    error_message = "Empty auxiliary pools must not add upgrade surge capacity."
+  }
 }

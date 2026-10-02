@@ -339,3 +339,21 @@ variable "node_pool_total_max_count_overrides" {
     error_message = "Autoscaler ceilings must be positive whole node counts."
   }
 }
+
+variable "node_pool_upgrade_settings_overrides" {
+  description = "GKE-only per-pool surge and unavailable budgets for subsequent upgrades."
+  type = map(object({
+    max_surge       = number
+    max_unavailable = number
+  }))
+  default = {}
+
+  validation {
+    condition = alltrue([for settings in values(var.node_pool_upgrade_settings_overrides) :
+      settings.max_surge >= 0 && settings.max_surge == floor(settings.max_surge) &&
+      settings.max_unavailable >= 0 && settings.max_unavailable == floor(settings.max_unavailable) &&
+      settings.max_surge + settings.max_unavailable > 0
+    ])
+    error_message = "Upgrade budgets must be nonnegative whole counts with at least one progress slot."
+  }
+}
