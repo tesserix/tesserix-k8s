@@ -2,8 +2,8 @@
 """Evaluate disruption budgets against pods on the nodes being upgraded."""
 
 import json
-import sys
 import subprocess
+import sys
 from typing import Any
 
 
@@ -98,6 +98,23 @@ def blockers(inventory: dict[str, Any], pool: str) -> list[str]:
         or n["metadata"].get("labels", {}).get("cloud.google.com/gke-nodepool") == pool
     }
     blocked = []
+    for pod in inventory["pods"]:
+        if pod.get("spec", {}).get("nodeName") not in nodes or pod.get(
+            "status", {}
+        ).get("phase") in ("Succeeded", "Failed"):
+            continue
+        meta = pod["metadata"]
+        budgets = [
+            pdb["metadata"]["name"]
+            for pdb in inventory["pdbs"]
+            if pdb["metadata"]["namespace"] == meta["namespace"]
+            and matches(meta.get("labels", {}), pdb["spec"].get("selector"))
+        ]
+        if len(budgets) > 1:
+            blocked.append(
+                f"{meta['namespace']}/{meta['name']}: multiple PodDisruptionBudgets "
+                + ", ".join(budgets)
+            )
     for pdb in inventory["pdbs"]:
         if pdb.get("status", {}).get("disruptionsAllowed", 0) > 0:
             continue
