@@ -1,0 +1,65 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ax-runtime
+  namespace: ax-system
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+  - name: ax-runtime
+    rules:
+    - alert: AXDeploymentUnavailable
+      expr: kube_deployment_status_replicas_available{namespace="ax-system"} < kube_deployment_spec_replicas{namespace="ax-system"}
+      for: 10m
+      labels:
+        severity: warning
+        team: platform
+        service: ax
+      annotations:
+        summary: AX deployment has fewer available replicas than requested
+        runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/ax-operations.md
+    - alert: AXValkeyBackupStale
+      expr: (time() - kube_cronjob_status_last_successful_time{namespace="ax-system",cronjob="ax-valkey-backup"}
+        > 1800) or absent(kube_cronjob_status_last_successful_time{namespace="ax-system",cronjob="ax-valkey-backup"})
+      for: 15m
+      labels:
+        severity: warning
+        team: platform
+        service: ax
+      annotations:
+        summary: AX Valkey backup has not succeeded within the recovery window
+        runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/ax-operations.md
+    - alert: AXJobFailed
+      expr: kube_job_status_failed{namespace="ax-system",job_name=~"ax-(ca-expiry|valkey-backup|postgres-backup|restore).*"}
+        > 0
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+        service: ax
+      annotations:
+        summary: AX backup, restore, or certificate check failed
+        runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/ax-operations.md
+    - alert: AXContainerRestarting
+      expr: increase(kube_pod_container_status_restarts_total{namespace="ax-system"}[15m])
+        > 3
+      for: 5m
+      labels:
+        severity: warning
+        team: platform
+        service: ax
+      annotations:
+        summary: AX container restarted repeatedly
+        runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/ax-operations.md
+    - alert: AXPostgresReplicaUnavailable
+      expr: cnpg_pg_replication_streaming_replicas{namespace="ax-system",cluster="ax-postgres"}
+        < 1
+      for: 10m
+      labels:
+        severity: warning
+        team: platform
+        service: ax
+      annotations:
+        summary: AX PostgreSQL lacks a streaming standby
+        runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/ax-operations.md

@@ -31,7 +31,14 @@ the AX server or workers. Substrate uses the external GKE issuer, audience
 `api.ax-system.svc`, stable certificate APIs and its own CA pools. No provider
 keys belong in task YAML, Git, logs, command arguments, or workstation shell rc.
 
-The CA pools expire one year after initial creation. Inspect certificate-only
+AX uses the existing `ai-gateway.agentgateway-system` Vertex route with
+`gemini-2.5-flash`. Only the AX server and AX egress service accounts are
+admitted, through ambient mTLS, and only to `/vertex/*`. Provider credentials
+remain at the gateway. Model failures return errors instead of synthesized
+success. Each actor initially permits egress only to the gateway hostname;
+additional Git/package hosts require an explicit actor egress policy.
+
+The CA pools expire one year after initial creation. A daily certificate-only check alerts through failed Jobs. Also inspect certificate-only
 material monthly and renew at least 30 days before expiry using overlapping
 trusted roots; never rerun bootstrap expecting rotation. Keep OpenBao's tested
 independent recovery and GCS backup path intact.

@@ -38,6 +38,8 @@ def walk(value, images):
     return value
 
 def secret_name(name):
+    if name == 'actor-id-ca-certs':
+        return 'ax-actor-id-ca'
     if name == 'postgres-server-ca':
         return 'ax-postgres-ca'
     return name if name.startswith('ax-') else 'ax-' + name
@@ -86,6 +88,8 @@ def main():
                 template = obj['spec']['template']
                 labels = template['metadata'].setdefault('labels', {})
                 labels['ax.tesserix.app/component'] = meta['name']
+                if meta['name'] == 'atenet-egress':
+                    labels['istio.io/dataplane-mode'] = 'ambient'
                 spec = template['spec']
                 if meta['name'] == 'podcertificate-controller':
                     spec['serviceAccountName'] = 'ax-podcert'
@@ -106,6 +110,7 @@ def main():
                         c.setdefault('securityContext', {})['readOnlyRootFilesystem'] = True
                         c.setdefault('volumeMounts', []).append({'name': 'runtime-tmp', 'mountPath': '/tmp'})
                     if meta['name'] == 'ate-api-server':
+                        c['args'].append('--egress-gateway-address=atenet-egress.ax-system.svc:443')
                         for ref in c.get('envFrom', []):
                             if 'secretRef' in ref:
                                 ref['secretRef'].pop('optional', None)

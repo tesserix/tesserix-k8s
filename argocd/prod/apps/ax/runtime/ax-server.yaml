@@ -10,6 +10,7 @@ spec:
   selector:
     matchLabels: &id001
       app: ax-server
+      istio.io/dataplane-mode: ambient
   template:
     metadata:
       labels: *id001
@@ -25,7 +26,7 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - name: ax-server
-        image: asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-runtime/ax-server:ax-ac2332829f22-v2@sha256:a8dd715a82edb4fdb88030194e79056708903c12ad8f6a6b5637a0336e1c5848
+        image: asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-runtime/ax-server:ax-ac2332829f22-v5@sha256:b1fda470ce7b8e632ad0c161f63ae33b26b4fb8b0d8b633d43bfa31022b7f5a6
         args:
         - --substrate-endpoint=api.ax-system.svc:443
         - --substrate-authority=api.ax-system.svc
@@ -42,6 +43,14 @@ spec:
               key: password
         - name: AX_SNAPSHOTS_BUCKET
           value: gs://tesseracthub-480811-ax-snapshots/actors/
+        - name: AX_MODEL_GATEWAY_URL
+          value: http://ai-gateway.agentgateway-system.svc.cluster.local:8080/vertex
+        - name: AX_VERTEX_PROJECT
+          value: tesseracthub-480811
+        - name: AX_VERTEX_LOCATION
+          value: global
+        - name: AX_MODEL_NAME
+          value: gemini-2.5-flash
         ports:
         - name: http
           containerPort: 8080
