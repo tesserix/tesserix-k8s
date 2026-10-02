@@ -134,16 +134,10 @@ database_encryption_key_name = "projects/tesseracthub-480811/locations/asia-sout
 # Maintenance Window (3 AM IST = 9:30 PM UTC previous day)
 maintenance_start_time = "21:30"
 
-# Does not cancel an in-flight upgrade; review/remove after staged node verification.
-node_upgrade_hold = {
-  name       = "ax-control-plane-first-20261002"
-  start_time = "2026-10-02T00:00:00Z"
-  end_time   = "2026-10-09T00:00:00Z"
-}
-
 # Release Channel
-release_channel       = "RAPID"
-control_plane_version = "1.37.0-gke.3503000" # Reviewed non-preview Rapid version; node rollouts are separate.
+release_channel           = "RAPID" # Use RAPID channel for latest edge GKE versions
+use_latest_version        = true
+kubernetes_version_prefix = "1.36." # Latest 1.36.x patch — pin keeps upgrades deterministic
 
 # Master Authorized Networks
 # TODO: Restrict to specific IPs after ARC runners are deployed

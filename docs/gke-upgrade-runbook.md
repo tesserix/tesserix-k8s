@@ -7,11 +7,16 @@ upgrade only ever happens because a human dispatched it.
 ## Version ownership and staged upgrades
 
 Terraform owns the exact control-plane minimum through `control_plane_version`
-in `terraform-new/environments/prod/terraform.tfvars`. It no longer selects a
+in `terraform-new/stacks/04-gke/upgrade.auto.tfvars`. It no longer selects a
 moving latest version for either the control plane or nodes. Node versions are
 preserved by Terraform; the manual workflow upgrades individual pools after
 their workload checks pass. GKE can still perform automatic upgrades outside
 maintenance exclusions, so this is not an indefinite version freeze.
+
+Keep upgrade-only inputs in this stack-local file: changing the shared production
+tfvars causes Atlantis to plan every stack and require unrelated dependency
+applies. The legacy `use_latest_version` and `kubernetes_version_prefix` values
+in the shared file are no longer consumed by the GKE stack.
 
 For the AX prerequisite upgrade, the reviewed target is
 `1.37.0-gke.3503000`, offered by the cluster's Rapid channel on 2026-10-02.
