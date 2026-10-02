@@ -195,7 +195,7 @@ resource "google_container_node_pool" "pools" {
     min_node_count       = each.value.min_count
     max_node_count       = each.value.max_count
     total_min_node_count = each.value.total_min_count
-    total_max_node_count = each.value.total_max_count
+    total_max_node_count = lookup(var.node_pool_total_max_count_overrides, each.key, each.value.total_max_count)
     location_policy      = each.value.location_policy
   }
 
@@ -255,6 +255,19 @@ resource "google_container_node_pool" "pools" {
     # Node rollouts belong to the gated upgrade workflow, separately from the
     # control plane. Preserve GKE's version after automatic or manual upgrades.
     ignore_changes = [initial_node_count, version]
+
+    precondition {
+      condition     = alltrue([for name in keys(var.node_pool_total_max_count_overrides) : contains([for pool in var.node_pools : pool.name], name)])
+      error_message = "Autoscaler overrides must name an existing node pool."
+    }
+
+    precondition {
+      condition = !contains(keys(var.node_pool_total_max_count_overrides), each.key) || (
+        each.value.total_max_count != null &&
+        lookup(var.node_pool_total_max_count_overrides, each.key, 0) >= coalesce(each.value.total_max_count, 0)
+      )
+      error_message = "Overrides may only increase an existing total node-count ceiling."
+    }
   }
 
   timeouts {

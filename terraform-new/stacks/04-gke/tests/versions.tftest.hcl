@@ -113,3 +113,47 @@ run "reject_unbounded_node_hold" {
   }
   expect_failures = [var.node_upgrade_hold]
 }
+
+run "headroom_only_changes_selected_pool_total_limit" {
+  command = plan
+  variables {
+    node_pools = [
+      { name = "default-pool", min_count = null, max_count = null, total_min_count = 3, total_max_count = 7 },
+      { name = "gpu", min_count = 0, max_count = 1 }
+    ]
+    node_pool_total_max_count_overrides = { "default-pool" = 10 }
+  }
+  assert {
+    condition = google_container_node_pool.pools["default-pool"].autoscaling[0].total_max_node_count == 10 && google_container_node_pool.pools["default-pool"].autoscaling[0].total_min_node_count == 3
+    error_message = "Headroom must raise only the total ceiling, not the minimum."
+  }
+  assert {
+    condition = google_container_node_pool.pools["gpu"].autoscaling[0].max_node_count == 1
+    error_message = "Other pools must retain their existing limits."
+  }
+}
+
+run "reject_ceiling_below_configured_total" {
+  command = plan
+  variables {
+    node_pools = [{ name = "default-pool", min_count = null, max_count = null, total_min_count = 3, total_max_count = 7 }]
+    node_pool_total_max_count_overrides = { "default-pool" = 6 }
+  }
+  expect_failures = [google_container_node_pool.pools["default-pool"]]
+}
+
+run "reject_unknown_pool_ceiling" {
+  command = plan
+  variables {
+    node_pool_total_max_count_overrides = { missing = 10 }
+  }
+  expect_failures = [google_container_node_pool.pools["default-pool"]]
+}
+
+run "reject_fractional_ceiling" {
+  command = plan
+  variables {
+    node_pool_total_max_count_overrides = { "default-pool" = 9.5 }
+  }
+  expect_failures = [var.node_pool_total_max_count_overrides]
+}
