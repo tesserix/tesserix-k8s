@@ -45,3 +45,10 @@ resource "google_artifact_registry_repository_iam_member" "atelet_images" {
   role       = "roles/artifactregistry.reader"
   member     = "principal://iam.googleapis.com/projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/${var.project_id}.svc.id.goog/subject/ns/ax-system/sa/atelet"
 }
+
+resource "google_storage_bucket_iam_member" "archive_metadata" {
+  for_each = toset(["ax-postgres", "ax-restore"])
+  bucket   = google_storage_bucket.ax["backups"].name
+  role     = "roles/storage.legacyBucketReader"
+  member   = "principal://iam.googleapis.com/projects/${data.google_project.current.number}/locations/global/workloadIdentityPools/${var.project_id}.svc.id.goog/subject/ns/ax-system/sa/${each.key}"
+}

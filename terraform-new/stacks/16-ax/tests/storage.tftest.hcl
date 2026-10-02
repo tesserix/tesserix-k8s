@@ -18,3 +18,14 @@ run "private_recoverable_ax_storage" {
     error_message = "Separate snapshot and backup buckets must use namespace-bound workload identities."
   }
 }
+
+run "barman_archive_discovery" {
+  command = plan
+  assert {
+    condition = toset(keys(google_storage_bucket_iam_member.archive_metadata)) == toset(["ax-postgres", "ax-restore"]) && alltrue([
+      for grant in google_storage_bucket_iam_member.archive_metadata :
+      grant.role == "roles/storage.legacyBucketReader" && grant.bucket == google_storage_bucket.ax["backups"].name && strcontains(grant.member, "/subject/ns/ax-system/sa/ax-")
+    ])
+    error_message = "Only the AX PostgreSQL backup and restore identities may inspect backup bucket metadata."
+  }
+}
