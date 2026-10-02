@@ -16,6 +16,7 @@ TERRAFORM_ROOT = ROOT / "terraform-new"
 ATLANTIS_FAILURE_PROJECT = "atlantis-failure-smoke"
 STATE_BUCKET = "tesseract-terraform-states"
 LIVE_STATE_PREFIXES = {
+    "stacks/prod/ax",
     "stacks/prod/foundation",
     "stacks/prod/network",
     "stacks/prod/storage",
