@@ -46,10 +46,14 @@ data:
   start-valkey.sh: |
     #!/bin/sh
     set -eu
+    {{- include "global-valkey.validatePassword" . | nindent 4 }}
     ORDINAL="${HOSTNAME##*-}"
     HEADLESS="{{ include "global-valkey.headless" . }}.{{ .Release.Namespace }}.svc.cluster.local"
     SELF="{{ include "global-valkey.name" . }}-${ORDINAL}.${HEADLESS}"
     cp /etc/valkey/valkey.conf /tmp/valkey.conf
+    {{- if .Values.auth.enabled }}
+    printf 'requirepass %s\nmasterauth %s\n' "$VALKEY_PASSWORD" "$VALKEY_PASSWORD" >> /tmp/valkey.conf
+    {{- end }}
     echo "replica-announce-ip ${SELF}" >> /tmp/valkey.conf
 
     # Sentinel is the source of truth for who is primary; only fall back to
@@ -72,12 +76,16 @@ data:
   start-sentinel.sh: |
     #!/bin/sh
     set -eu
+    {{- include "global-valkey.validatePassword" . | nindent 4 }}
     HEADLESS="{{ include "global-valkey.headless" . }}.{{ .Release.Namespace }}.svc.cluster.local"
     # Held in a variable rather than inline: a conditional flag spliced into a
     # backslash-continued command loses the newline to Helm's trim and the
     # continuation swallows the next argument.
     AUTH="{{ if .Values.acl.enabled }}--user healthcheck --pass x{{ end }}"
     cp /etc/valkey/sentinel.conf.tmpl /tmp/sentinel.conf
+    {{- if .Values.auth.enabled }}
+    printf 'requirepass %s\n' "$VALKEY_PASSWORD" >> /tmp/sentinel.conf
+    {{- end }}
 
     # Wait for the primary to accept connections before monitoring it —
     # sentinel resolves the monitor target once, at startup.
@@ -100,6 +108,9 @@ data:
     sentinel down-after-milliseconds {{ include "global-valkey.name" . }} {{ .Values.sentinel.downAfterMilliseconds }}
     sentinel failover-timeout {{ include "global-valkey.name" . }} {{ .Values.sentinel.failoverTimeout }}
     sentinel parallel-syncs {{ include "global-valkey.name" . }} {{ .Values.sentinel.parallelSyncs }}
+    {{- if .Values.auth.enabled }}
+    sentinel auth-pass {{ include "global-valkey.name" . }} ${VALKEY_PASSWORD}
+    {{- end }}
     {{- if .Values.acl.enabled }}
     sentinel auth-user {{ include "global-valkey.name" . }} sentinel
     sentinel auth-pass {{ include "global-valkey.name" . }} x

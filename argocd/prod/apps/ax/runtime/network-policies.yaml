@@ -1,0 +1,104 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ax-postgres
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: ax-postgres
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          cnpg.io/cluster: ax-postgres
+    - podSelector:
+        matchLabels:
+          app: ate-api-server
+    - podSelector:
+        matchLabels:
+          cnpg.io/cluster: ax-restore
+    ports:
+    - protocol: TCP
+      port: 5432
+    - protocol: TCP
+      port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ax-valkey
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ax-valkey
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ax-valkey
+    - podSelector:
+        matchLabels:
+          app: ax-server
+    - podSelector:
+        matchLabels:
+          app: ax-valkey-backup
+    - podSelector:
+        matchLabels:
+          app: ax-restore-test
+    ports:
+    - protocol: TCP
+      port: 6379
+    - protocol: TCP
+      port: 26379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ax-postgres-operator
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: ax-postgres
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: cnpg-system
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 9187
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ax-server-private
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+spec:
+  podSelector:
+    matchLabels:
+      app: ax-server
+  policyTypes:
+  - Ingress
+  ingress: []

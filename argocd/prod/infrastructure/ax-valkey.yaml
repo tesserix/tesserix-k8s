@@ -1,0 +1,57 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ax-valkey
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '10'
+spec:
+  project: ax
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/global-valkey
+    helm:
+      releaseName: ax-valkey
+      valuesObject:
+        nameOverride: ax-valkey
+        image:
+          repository: valkey/valkey
+          tag: 9.1.1-alpine@sha256:15568b9cb7eb67f4aed4de018c23f13d344e0e6437b31fe8fb8823dc81ebb3a9
+        replicaCount: 3
+        acl:
+          enabled: false
+        auth:
+          enabled: true
+          existingSecret: ax-valkey-password
+        valkey:
+          maxmemory: 256mb
+          maxmemoryPolicy: noeviction
+          appendonly: 'yes'
+          extraConfig:
+          - appendfsync everysec
+          - min-replicas-to-write 1
+          - min-replicas-max-lag 10
+        sentinel:
+          image:
+            repository: valkey/valkey
+            tag: 9.1.1-alpine@sha256:15568b9cb7eb67f4aed4de018c23f13d344e0e6437b31fe8fb8823dc81ebb3a9
+        haproxy:
+          image:
+            repository: haproxy
+            tag: 3.0-alpine@sha256:56b887da77428b7a6621e59e480cdbd330cc805c22d3cedb66ceea76ffdea2c6
+        persistence:
+          enabled: true
+          size: 2Gi
+          storageClass: premium-rwo-retain
+        podAntiAffinity: hard
+        networkPolicy:
+          enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ax-system
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+    - ServerSideApply=true

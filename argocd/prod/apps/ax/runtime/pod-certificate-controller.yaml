@@ -1,0 +1,202 @@
+# Derived from Apache-2.0 licensed Google Agent Substrate; see scripts/ax/README.md.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: ax-podcert-ate-dev-signer
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - services
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - certificates.k8s.io
+  resources:
+  - podcertificaterequests
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+- apiGroups:
+  - certificates.k8s.io
+  resources:
+  - clustertrustbundles
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - delete
+- apiGroups:
+  - certificates.k8s.io
+  resources:
+  - podcertificaterequests/status
+  verbs:
+  - update
+- apiGroups:
+  - certificates.k8s.io
+  resources:
+  - signers
+  resourceNames:
+  - servicedns.podcert.ax.ate.dev/*
+  - podidentity.podcert.ax.ate.dev/*
+  verbs:
+  - sign
+  - attest
+- apiGroups:
+  - events.k8s.io
+  resources:
+  - events
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: ax-podcert-ate-dev-signer
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: ax-podcert-ate-dev-signer
+subjects:
+- kind: ServiceAccount
+  namespace: ax-system
+  name: ax-podcert
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: ax-system
+  name: coordinator
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+rules:
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: podcertificate-controller-is-a-coordinator
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: coordinator
+subjects:
+- kind: ServiceAccount
+  namespace: ax-system
+  name: ax-podcert
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: podcertificate-controller
+  namespace: ax-system
+  labels:
+    app: podcertificate-controller
+  annotations:
+    argocd.argoproj.io/sync-wave: '0'
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &id001
+      app: podcertificate-controller
+  template:
+    metadata:
+      labels:
+        app: podcertificate-controller
+        ax.tesserix.app/component: podcertificate-controller
+    spec:
+      containers:
+      - name: controller
+        image: asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-runtime/podcertcontroller:ax-944abe3278b8-v2@sha256:5c137c28165aa67fb16fbbcbc8249be66c5982fca62cb7ee3301ada3f6f2e370
+        args:
+        - --in-cluster=true
+        - --sharding-pod-namespace=$(POD_NAMESPACE)
+        - --sharding-pod-name=$(POD_NAME)
+        - --sharding-pod-uid=$(POD_UID)
+        - --sharding-application-name=podcertificate-controller
+        - --service-dns-ca-pool=/run/ca-state/service-dns-pool.json
+        - --pod-identity-ca-pool=/run/ca-state/pod-identity-pool.json
+        - --workers-per-signer=$(WORKERS_PER_SIGNER)
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: WORKERS_PER_SIGNER
+          value: '1'
+        volumeMounts:
+        - name: ca-state
+          mountPath: /run/ca-state
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+      volumes:
+      - name: ca-state
+        projected:
+          sources:
+          - secret:
+              name: ax-service-dns-ca-pool
+              items:
+              - key: pool
+                path: service-dns-pool.json
+          - secret:
+              name: ax-pod-identity-ca-pool
+              items:
+              - key: pool
+                path: pod-identity-pool.json
+      dnsPolicy: Default
+      nodeSelector:
+        kubernetes.io/os: linux
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccountName: ax-podcert
+      terminationGracePeriodSeconds: 30
+      automountServiceAccountToken: true
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels: *id001
+            topologyKey: kubernetes.io/hostname

@@ -1,0 +1,178 @@
+diff --git a/cmd/ax-server/main.go b/cmd/ax-server/main.go
+index 4f224fd..0023750 100644
+--- a/cmd/ax-server/main.go
++++ b/cmd/ax-server/main.go
+@@ -17,6 +17,8 @@ package main
+ import (
+ 	"context"
+ 	"flag"
++	"google.golang.org/grpc/codes"
++	"google.golang.org/grpc/status"
+ 	"log/slog"
+ 	"net/http"
+ 	"os"
+@@ -99,7 +101,8 @@ func main() {
+ 		Plaintext:   substratePlaintext,
+ 	})
+ 	if err != nil {
+-		slog.Warn("could not initialize substrate client; running without substrate reconciliation", "error", err)
++		slog.Error("could not initialize substrate client", "error", err)
++		os.Exit(1)
+ 	} else {
+ 		defer subClient.Close()
+ 		reconciler = controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace)
+@@ -108,6 +111,16 @@ func main() {
+ 	srv := server.NewServer(rStore, server.Options{
+ 		Locker:     rLocker,
+ 		Reconciler: reconciler,
++		Readiness: func(ctx context.Context) error {
++			if err := rClient.Ping(ctx).Err(); err != nil {
++				return err
++			}
++			_, err := subClient.ListActorTemplates(ctx, defaultTemplateAtespace)
++			if status.Code(err) == codes.NotFound {
++				return nil
++			}
++			return err
++		},
+ 	})
+ 
+ 	httpServer := &http.Server{
+diff --git a/internal/server/readiness_test.go b/internal/server/readiness_test.go
+new file mode 100644
+index 0000000..942e3c4
+--- /dev/null
++++ b/internal/server/readiness_test.go
+@@ -0,0 +1,48 @@
++// Copyright 2026 Google LLC
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package server
++
++import (
++	"context"
++	"errors"
++	"net/http/httptest"
++	"testing"
++)
++
++func TestReadinessFailsClosed(t *testing.T) {
++	t.Parallel()
++	for _, tc := range []struct {
++		name  string
++		ready func(context.Context) error
++		want  int
++	}{
++		{"unconfigured", nil, 503},
++		{"dependency unavailable", func(context.Context) error { return errors.New("private dependency detail") }, 503},
++		{"healthy", func(context.Context) error { return nil }, 200},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			t.Parallel()
++			s := NewServer(nil, Options{Readiness: tc.ready})
++			rec := httptest.NewRecorder()
++			s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/readyz", nil))
++			if rec.Code != tc.want {
++				t.Fatalf("status=%d; want %d", rec.Code, tc.want)
++			}
++			if rec.Body.String() == "private dependency detail" {
++				t.Fatal("readiness leaked dependency error")
++			}
++		})
++	}
++}
+diff --git a/internal/server/server.go b/internal/server/server.go
+index 2b54a30..53f134b 100644
+--- a/internal/server/server.go
++++ b/internal/server/server.go
+@@ -20,6 +20,7 @@ import (
+ 	"log/slog"
+ 	"net/http"
+ 	"strings"
++	"time"
+ 
+ 	"github.com/google/ax/internal/lock"
+ 	"github.com/google/ax/internal/store"
+@@ -40,6 +41,7 @@ type Reconciler interface {
+ type Options struct {
+ 	Locker     lock.Locker
+ 	Reconciler Reconciler
++	Readiness  func(context.Context) error
+ }
+ 
+ // Server provides the gRPC API for AX.
+@@ -49,6 +51,7 @@ type Server struct {
+ 	locker     lock.Locker
+ 	reconciler Reconciler
+ 	grpcServer *grpc.Server
++	readiness  func(context.Context) error
+ }
+ 
+ // NewServer creates a new AX API server.
+@@ -67,6 +70,7 @@ func NewServer(s store.Store, opts ...Options) *Server {
+ 		locker:     locker,
+ 		reconciler: opt.Reconciler,
+ 		grpcServer: grpc.NewServer(),
++		readiness:  opt.Readiness,
+ 	}
+ 	v1alpha1.RegisterAXServer(srv.grpcServer, srv)
+ 	return srv
+@@ -84,6 +88,16 @@ func (s *Server) Handler() http.Handler {
+ 			s.grpcServer.ServeHTTP(w, r)
+ 			return
+ 		}
++		if r.URL.Path == "/readyz" {
++			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
++			defer cancel()
++			if s.readiness == nil || s.readiness(ctx) != nil {
++				http.Error(w, "dependencies unavailable", http.StatusServiceUnavailable)
++				return
++			}
++			w.WriteHeader(http.StatusOK)
++			return
++		}
+ 		if r.URL.Path == "/healthz" {
+ 			w.WriteHeader(http.StatusOK)
+ 			_, _ = w.Write([]byte("ok\n"))
+@@ -599,4 +613,3 @@ func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name str
+ 	}
+ 	return meta
+ }
+-
+diff --git a/internal/substrate/client.go b/internal/substrate/client.go
+index 7e65273..a6b2df8 100644
+--- a/internal/substrate/client.go
++++ b/internal/substrate/client.go
+@@ -205,7 +205,7 @@ func (c *Client) GetActorTemplate(ctx context.Context, atespace, templateName st
+ 
+ const (
+ 	DefaultGuestCommand    = "/usr/local/bin/ax-task-runner"
+-	DefaultSnapshotsBucket = "gs://dberkov-gke-dev3/ate-env/"
++	DefaultSnapshotsBucket = "gs://tesseracthub-480811-ax-snapshots/actors/"
+ )
+ 
+ // BuildActorTemplate constructs a Substrate ActorTemplate based on the standard ate-env specification.
+diff --git a/pkg/apis/v1alpha1/types.go b/pkg/apis/v1alpha1/types.go
+index 362722b..9ea318e 100644
+--- a/pkg/apis/v1alpha1/types.go
++++ b/pkg/apis/v1alpha1/types.go
+@@ -35,7 +35,7 @@ const (
+ 	KindWorkspace = "Workspace"
+ 	KindModel     = "Model"
+ 
+-	DefaultTaskImage = "gcr.io/ax-substrate/ate-images/ax-task-runner"
++	DefaultTaskImage = "asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-task-runner@sha256:0e6caaa791e1c977433aba42c1d14a602ce48e07789db85553ffdefaa6410566"
+ 
+ 	// PhaseTerminating marks a task whose deletion has been requested and whose
+ 	// actor is being torn down. The record disappears once cleanup completes.

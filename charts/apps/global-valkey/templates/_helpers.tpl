@@ -42,6 +42,10 @@ listen valkey
   option clitcpka
   option srvtcpka
   option tcp-check
+{{- if .Values.auth.enabled }}
+  tcp-check send "AUTH ${VALKEY_PASSWORD}\r\n"
+  tcp-check expect string +OK
+{{- end }}
 {{- if .Values.acl.enabled }}
   tcp-check send AUTH\ healthcheck\ x\r\n
   tcp-check expect string +OK
@@ -71,3 +75,24 @@ resolvers kube
 {{- $ordinal := index . 1 -}}
 {{ include "global-valkey.name" $root }}-{{ $ordinal }}.{{ include "global-valkey.headless" $root }}.{{ $root.Release.Namespace }}.svc.cluster.local
 {{- end -}}
+
+{{- define "global-valkey.authEnv" -}}
+{{- if .Values.auth.enabled }}
+{{- if .Values.acl.enabled }}{{ fail "auth.enabled requires acl.enabled=false" }}{{ end }}
+env:
+{{- range $name := list "VALKEY_PASSWORD" "REDISCLI_AUTH" "VALKEYCLI_AUTH" }}
+  - name: {{ $name }}
+    valueFrom:
+      secretKeyRef:
+        name: {{ required "auth.existingSecret is required" $.Values.auth.existingSecret }}
+        key: {{ $.Values.auth.passwordKey }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "global-valkey.validatePassword" -}}
+{{- if .Values.auth.enabled }}
+if [ "${#VALKEY_PASSWORD}" -ne 64 ]; then echo "Password must be 64 hexadecimal characters" >&2; exit 1; fi
+case "$VALKEY_PASSWORD" in *[!a-fA-F0-9]*) echo "Password must be hexadecimal" >&2; exit 1;; esac
+{{- end }}
+{{- end }}
