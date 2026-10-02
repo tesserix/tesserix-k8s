@@ -1,9 +1,10 @@
 import json
-from typing import Any
-import pytest
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "drain-readiness.py"
 
@@ -16,6 +17,7 @@ def run_check(
         input=json.dumps(inventory),
         text=True,
         capture_output=True,
+        check=False,
     )
 
 
@@ -214,5 +216,20 @@ def test_missing_kubectl_fails_as_inventory_error(tmp_path: Path) -> None:
         env={"PATH": str(tmp_path)},
         text=True,
         capture_output=True,
+        check=False,
     )
     assert result.returncode == 2
+
+
+@pytest.mark.parametrize("pool,expected", [("workers", 1), ("other", 0)])
+def test_overlapping_positive_budgets_block_eviction(pool: str, expected: int) -> None:
+    data = database_inventory()
+    budget = data["pdbs"][0]
+    budget["status"]["disruptionsAllowed"] = 1
+    duplicate = json.loads(json.dumps(budget))
+    duplicate["metadata"]["name"] = "overlap"
+    data["pdbs"].append(duplicate)
+    result = run_check(data, pool)
+    assert result.returncode == expected
+    if expected:
+        assert "multiple PodDisruptionBudgets" in result.stdout
