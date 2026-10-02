@@ -67,3 +67,12 @@ def test_control_plane_runs_nonroot_with_seccomp_and_readonly_root():
             assert c['securityContext']['readOnlyRootFilesystem'] is True
             assert c['securityContext']['allowPrivilegeEscalation'] is False
             assert c['securityContext']['capabilities']['drop'] == ['ALL']
+
+
+def test_bootstrap_has_scoped_openbao_network_access_and_retry_hook():
+    values = yaml.safe_load((ROOT / 'charts/apps/openbao-namespace/values.yaml').read_text())
+    matches = [x for x in values['allowedPodSources'] if x['namespace'] == 'ax-system']
+    assert matches == [{'namespace': 'ax-system', 'podLabels': {'app': 'ax-secret-bootstrap'}}]
+    assert 'ax-system' not in values['allowedSources']
+    job = next(o for o in objects() if o['kind'] == 'Job' and o['metadata']['name'] == 'ax-secret-bootstrap')
+    assert job['metadata']['annotations']['argocd.argoproj.io/hook'] == 'Sync'
