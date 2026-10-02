@@ -1,0 +1,16 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: ax-native-actor-egress
+  namespace: ax-system
+spec:
+  selector:
+    matchLabels:
+      app: atenet-egress
+  action: ALLOW
+  rules:
+  # The native TLS listener authenticates actor certificates. NetworkPolicy
+  # restricts ingress to ax-system; other ports retain the mesh default deny.
+  - to:
+    - operation:
+        ports: ["443"]

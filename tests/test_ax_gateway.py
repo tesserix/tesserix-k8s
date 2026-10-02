@@ -45,3 +45,11 @@ def test_runtime_kustomize_renders_egress_policy():
     )
     resources = list(yaml.safe_load_all(rendered))
     assert any(r['kind'] == 'PeerAuthentication' for r in resources)
+
+
+def test_native_actor_ingress_is_limited_to_the_egress_tls_port():
+    path = ROOT / 'argocd/prod/apps/ax/runtime/egress-authorization.yaml'
+    policy = yaml.safe_load(path.read_text())
+    assert policy['spec']['selector']['matchLabels'] == {'app': 'atenet-egress'}
+    assert policy['spec']['action'] == 'ALLOW'
+    assert policy['spec']['rules'] == [{'to': [{'operation': {'ports': ['443']}}]}]
