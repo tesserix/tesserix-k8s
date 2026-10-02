@@ -1,5 +1,6 @@
 """Render the pinned, patched Substrate sources into the AX GitOps overlay."""
 import argparse
+import copy
 import json
 from pathlib import Path
 
@@ -96,6 +97,8 @@ def main():
                 spec['automountServiceAccountToken'] = True
                 if kind == 'DaemonSet':
                     spec['nodeSelector'] = {'cloud.google.com/gke-nodepool': 'optimized-v2'}
+                    spec['priorityClassName'] = 'atelet-nonpreempting'
+                    spec['affinity'] = {'nodeAffinity': {'requiredDuringSchedulingIgnoredDuringExecution': {'nodeSelectorTerms': [{'matchExpressions': [{'key': 'topology.kubernetes.io/zone', 'operator': 'In', 'values': ['asia-south1-b', 'asia-south1-c']}]}]}}}
                     spec.setdefault('volumes', []).append({'name': 'runtime-tmp', 'emptyDir': {'sizeLimit': '512Mi'}})
                 if 'priorityClassName' in spec:
                     spec['priorityClassName'] = 'ax-' + spec['priorityClassName']
@@ -119,6 +122,11 @@ def main():
                 if kind == 'Deployment' and obj['spec']['replicas'] > 1:
                     output.append({'apiVersion':'policy/v1','kind':'PodDisruptionBudget','metadata':{'name':meta['name'],'namespace':NS},'spec':{'maxUnavailable':1,'selector':obj['spec']['selector']}})
             output.append(obj)
+            if kind == 'PriorityClass':
+                priority = copy.deepcopy(obj)
+                priority['metadata']['name'] = 'ax-atelet-nonpreempting'
+                priority['preemptionPolicy'] = 'Never'
+                output.append(priority)
         name = Path(path).name.replace('ate.dev_', 'ax.ate.dev_')
         dump(OUT / name, output)
         files.append(name)

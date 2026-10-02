@@ -104,6 +104,17 @@ value: 1000
 globalDefault: false
 description: Node-local ate components that every actor activation depends on.
 ---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: ax-atelet-nonpreempting
+  annotations:
+    argocd.argoproj.io/sync-wave: '-6'
+value: 1000
+globalDefault: false
+description: Node-local ate components that every actor activation depends on.
+preemptionPolicy: Never
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -130,7 +141,7 @@ spec:
         prometheus.io/port: '19090'
     spec:
       serviceAccountName: atelet
-      priorityClassName: ax-ate-node-critical
+      priorityClassName: ax-atelet-nonpreempting
       nodeSelector:
         cloud.google.com/gke-nodepool: optimized-v2
       terminationGracePeriodSeconds: 330
@@ -268,3 +279,13 @@ spec:
         emptyDir:
           sizeLimit: 512Mi
       automountServiceAccountToken: true
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                - asia-south1-b
+                - asia-south1-c
