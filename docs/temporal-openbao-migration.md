@@ -33,4 +33,14 @@ policy and service account removed. Recovery archive:
 `gs://tesseract-prod-backups-in/openbao/temporal-migration/20260928T140002Z/gcp-sources.json.gz.kms`.
 All six database connections pass real credential checks and reject wrong
 passwords. HomeChef, Scrapper and the shared Temporal platform report SERVING.
-Consumer rollout, final isolated recovery verification and deletion are pending.
+Consumer rollout, final isolated recovery verification and deletion are complete.
+
+## Completion
+
+Shared Temporal cohort complete. PR #1255 migrated the shared password to `temporal/app/temporal-postgresql-password` with exact read-only, namespace-bound readers for HomeChef, Scrapper, Infra Postgres and the shared Temporal platform. All four consumers preserve their Kubernetes keys and values. Dwellm8’s separate credential remains unchanged.
+
+The original `prod-temporal-postgresql-password` was deleted and confirmed absent after the acceptance gates passed. All four ESO consumers refreshed after deletion at 14:23:35–42Z with matching generations and unchanged values. All three Temporal services report SERVING, and all twelve database authentication checks pass (real credentials accepted, wrong passwords rejected). Images, replicas and Argo source settings are unchanged.
+
+Archive: `gs://tesseract-prod-backups-in/openbao/temporal-migration/20260928T140002Z/gcp-sources.json.gz.kms`. Final backup `20260928T141609Z-bc62ebba262b` passed isolated restore in 19.911 seconds, with exactly three verified snapshots retained and pruning confirmed. Temporary writer access is removed.
+
+Fresh GCP inventory: 349 secrets. Shared Cloudflare remains deliberately retained in GCP with its verified OpenBao copy; GrowthBook remains deferred. Global Postgres is next, with read-only baseline checks passing. Keep this issue open; the estate migration is not complete.
