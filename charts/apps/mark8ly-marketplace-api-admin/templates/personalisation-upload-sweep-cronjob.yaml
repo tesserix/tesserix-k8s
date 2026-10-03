@@ -1,0 +1,102 @@
+{{- if .Values.personalisationUploadSweepCron.enabled }}
+# Abandoned buyer-artwork reaper (mark8ly#963, deployed by #960) — destroys
+# artwork a shopper uploaded to a cart that no order ever claimed.
+#
+# UNLIKE THE OTHER SWEEPERS, THIS ONE IS LOAD-BEARING.
+#
+# stock-hold-sweep is housekeeping: availability is computed, so a missed run
+# only leaves dead rows and nothing a customer can buy is wrong. This is a
+# different kind of job. Every row it looks at points at a photograph a
+# shopper uploaded — often of a person, frequently of a child — sitting in a
+# bucket. If this job stops running those accumulate indefinitely, and "we
+# kept pictures of your children for a year because a CronJob was broken" is
+# not a housekeeping failure. The binary exits non-zero on failure for that
+# reason.
+#
+# WHY THIS IS NOT A GCS LIFECYCLE RULE.
+#
+# #960 originally proposed an age-based bucket lifecycle rule as a backstop.
+# It would destroy customer data. A claimed order's artwork is the SAME
+# object under the SAME buyer-uploads/<tenant>/<cartToken>/<uploadID> key —
+# checkout snapshots the key into order_item_personalisations and copies
+# nothing — so a rule that deletes by age deletes the artwork of paid orders
+# once they age past the TTL, silently, months after the merchant stopped
+# looking. Only the database knows which objects are claimed, so only
+# something that reads the database may delete.
+#
+# Schedule: every 6h against a 72h upload TTL, so worst-case retention is
+# ~78h rather than the ~96h a daily run would give. The cost of lateness
+# here is holding someone's photograph longer than we said we would, which
+# is worth four runs a day.
+#
+# No signer SA: this job only deletes, so ADC via Workload Identity is
+# enough. It does NOT need MARKETPLACE_GCS_SIGNER_SA_EMAIL (that is for
+# V4-signing read/write URLs). Without MARKETPLACE_PRIVATE_GCS_BUCKET it is a
+# deliberate successful no-op — no bucket means no uploads means no orphans.
+#
+# istio injection off: a Job with a sidecar never terminates.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Values.name }}-personalisation-upload-sweep
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.name }}-personalisation-upload-sweep
+    app.kubernetes.io/part-of: mark8ly
+    app.kubernetes.io/component: cron
+spec:
+  schedule: {{ .Values.personalisationUploadSweepCron.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  # Higher than the housekeeping sweepers: when this one starts failing we
+  # want the run history still on the cluster to see how long it has been
+  # failing, because the answer is also "how long have we been keeping
+  # photographs we promised to delete".
+  failedJobsHistoryLimit: 10
+  startingDeadlineSeconds: 120
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # Above the binary's own 10-minute self-deadline so a healthy run
+      # finishes on its own; a hung run is killed before the next tick.
+      activeDeadlineSeconds: 720
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: {{ .Values.name }}-personalisation-upload-sweep
+            app.kubernetes.io/part-of: mark8ly
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: {{ .Values.name }}
+          imagePullSecrets:
+{{ toYaml .Values.imagePullSecrets | indent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            fsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: personalisation-upload-sweep
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["/usr/local/bin/personalisation-upload-sweep-cron"]
+              env:
+{{ include "mark8ly-marketplace-api-admin.dbEnv" . | indent 16 }}
+                {{- with .Values.privateGcsBucket }}
+                - name: MARKETPLACE_PRIVATE_GCS_BUCKET
+                  value: {{ . | quote }}
+                {{- end }}
+              resources:
+                requests:
+                  memory: 64Mi
+                limits:
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+{{- end }}
