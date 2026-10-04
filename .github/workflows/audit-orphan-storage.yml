@@ -45,6 +45,10 @@ env:
   WIF_PROVIDER: projects/849928263410/locations/global/workloadIdentityPools/github-pool/providers/github-provider
   SA_EMAIL: github-actions@tesseracthub-480811.iam.gserviceaccount.com
 
+concurrency:
+  group: orphan-storage-reclaim
+  cancel-in-progress: false
+
 jobs:
   audit:
     name: Audit & Report
@@ -132,6 +136,7 @@ jobs:
         if: steps.inputs.outputs.apply == 'false'
         id: audit_report
         run: |
+          rm -f audit-report.md
           set +e
           python3 scripts/audit-orphan-storage.py \
             --project "${GCP_PROJECT_ID}" \
@@ -139,14 +144,16 @@ jobs:
             --out audit-report.md
           rc=$?
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
-          # Exit 0 = nothing needs attention; 1 = at least one finding worth review.
-          # Either way the workflow itself is "successful".
+          # A finding is successful; execution and deletion errors are not.
+          if [ "$rc" -gt 1 ]; then exit "$rc"; fi
+          if [ ! -s audit-report.md ]; then exit 2; fi
           exit 0
 
       - name: Run audit (apply safe deletes)
         if: steps.inputs.outputs.apply == 'true'
         id: audit_apply
         run: |
+          rm -f audit-report.md
           set +e
           python3 scripts/audit-orphan-storage.py \
             --project "${GCP_PROJECT_ID}" \
@@ -155,16 +162,23 @@ jobs:
             --out audit-report.md
           rc=$?
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -gt 1 ]; then exit "$rc"; fi
+          if [ ! -s audit-report.md ]; then exit 2; fi
           exit 0
 
       - name: Publish report to step summary
-        run: cat audit-report.md >> "$GITHUB_STEP_SUMMARY"
+        if: always()
+        run: |
+          if [ -f audit-report.md ]; then cat audit-report.md >> "$GITHUB_STEP_SUMMARY"; fi
 
       - name: Upload report artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: audit-report-${{ github.run_id }}
-          path: audit-report.md
+          path: |
+            audit-report.md
+            audit-recovery/
           retention-days: 90
 
       - name: Decide if a GitHub Issue is warranted
@@ -217,7 +231,7 @@ jobs:
           # Built with printf so the trailer is not indented — leading spaces
           # would render it as a code block in the issue.
           body=$(cat audit-report.md)
-          body=$(printf '%s\n\n---\nWorkflow run: https://github.com/%s/actions/runs/%s\nTriggered by: `%s` (apply=%s, age_days=%s)\n' \
+          body=$(printf '%s\n\n---\nWorkflow run: https://github.com/%s/actions/runs/%s\nTriggered by: %s (apply=%s, age_days=%s)\n' \
             "$body" "$REPO" "$RUN_ID" "$EVENT_NAME" "$APPLY" "$AGE_DAYS")
 
           # If there's already an open audit issue, update it instead of opening a new one
