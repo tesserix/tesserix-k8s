@@ -1,0 +1,25 @@
+{{- if .Values.observabilityEgress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kora-observability-egress
+  labels:
+    {{- include "kora-api.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kora-api.selectorLabels" . | nindent 6 }}
+      kora.tesserix.app/stack: deployment
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.observabilityEgress.namespace }}
+      ports:
+        {{- range .Values.observabilityEgress.ports }}
+        - port: {{ . }}
+          protocol: TCP
+        {{- end }}
+{{- end }}

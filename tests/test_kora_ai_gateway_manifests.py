@@ -666,6 +666,43 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         # 15008 is the ambient HBONE tunnel; without it ztunnel drops the hop.
         self.assertEqual({12121, 15008}, ports)
 
+    def test_production_kora_api_may_egress_to_trace_and_score_ai(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        policy = resource(documents, "NetworkPolicy", "kora-observability-egress")
+        rule = policy["spec"]["egress"][0]
+
+        # allow-kora-egress has no observability rule, so OTLP spans and
+        # Langfuse scores to these 10.x services were silently dropped.
+        self.assertEqual(
+            "observability",
+            rule["to"][0]["namespaceSelector"]["matchLabels"][
+                "kubernetes.io/metadata.name"
+            ],
+        )
+        self.assertEqual({4318, 3000}, {entry["port"] for entry in rule["ports"]})
+
+    def test_production_kora_api_scores_accuracy_in_its_langfuse_project(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        env = {
+            entry["name"]: entry
+            for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+
+        self.assertEqual(
+            "http://langfuse-web.observability.svc.cluster.local:3000",
+            env["KORA_LANGFUSE_HOST"]["value"],
+        )
+        for name in ("KORA_LANGFUSE_PUBLIC_KEY", "KORA_LANGFUSE_SECRET_KEY"):
+            ref = env[name]["valueFrom"]["secretKeyRef"]
+            self.assertEqual("kora-langfuse-scores", ref["name"])
+            self.assertEqual(name, ref["key"])
+            self.assertTrue(ref["optional"])
+
     def test_production_kora_api_carries_its_own_registry_deploy_key(self):
         documents = render_chart(
             "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
