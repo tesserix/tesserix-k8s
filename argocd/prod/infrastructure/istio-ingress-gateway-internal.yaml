@@ -21,23 +21,13 @@ spec:
     helm:
       releaseName: istio-ingress-internal
       values: |
-        # Internal Gateway for Cloudflare Tunnel
-        # This gateway receives traffic from cloudflared via private/internal LoadBalancer
+        # No live Gateway selects this legacy gateway; tunnels use other Services.
         name: istio-ingressgateway-internal
+        replicaCount: 0
 
-        # Service configuration
         service:
-          # Internal LoadBalancer (private IP)
-          type: LoadBalancer
-          # GKE annotation for internal load balancer
-          annotations:
-            networking.gke.io/load-balancer-type: "Internal"
-            # For Azure AKS
-            service.beta.kubernetes.io/azure-load-balancer-internal: "true"
-            service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path: /healthz/ready
-
-          # Preserve client IP
-          externalTrafficPolicy: Local
+          type: ClusterIP
+          annotations: {}
 
           # Ports configuration
           ports:
@@ -65,7 +55,7 @@ spec:
 
         # Auto-scaling configuration
         autoscaling:
-          enabled: true
+          enabled: false
           minReplicas: 2
           maxReplicas: 5
           # CPU target zeroed rather than nulled: the chart's values schema types it
