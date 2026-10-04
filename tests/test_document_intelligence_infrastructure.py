@@ -349,3 +349,24 @@ def test_platform_argocd_application_is_registered_without_direct_apply() -> Non
         (ROOT / "argocd/prod/infrastructure/kustomization.yaml").read_text()
     )
     assert "document-intelligence-platform.yaml" in registration["resources"]
+
+
+def test_kora_result_writers_can_verify_results_without_overwrite_or_delete() -> None:
+    main = (DOCUMENT_INTELLIGENCE_IAM / "main.tf").read_text()
+    for worker, bucket in {
+        "kora-doc-worker": "kora-prod-doc-results-in",
+        "kora-dev-doc-worker": "kora-dev-doc-results-in",
+    }.items():
+        assert re.search(rf'"{worker}"\s*=\s*"{bucket}"', main), worker
+    resource = re.search(
+        r'resource "google_storage_bucket_iam_member" "result_readback" \{(.*?)\n\}',
+        main,
+        re.DOTALL,
+    )
+    assert resource is not None
+    body = resource.group(1)
+    assert "for_each = local.result_readback_buckets" in body
+    assert re.search(r'bucket\s*=\s*each.value', body)
+    assert re.search(r'role\s*=\s*"roles/storage.objectViewer"', body)
+    assert 'member = "serviceAccount:${each.key}@${var.project_id}.iam.gserviceaccount.com"' in body
+    assert "roles/storage.objectAdmin" not in body
