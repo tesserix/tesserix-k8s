@@ -118,3 +118,11 @@ alert routing and the relevant autoscaler before considering revival complete.
 Do not use the old dedicated-node-pool recreation commands in
 `docs/observability-park.md`: these workloads currently use the existing shared
 pool. No node pool is removed by this change.
+
+The parked operator Deployment uses resource-specific `Replace=true` to clear
+its old defaulted RollingUpdate fields when switching to Recreate. It also
+ignores application health checks while deliberately unschedulable. Admission
+certificate/patch hooks are disabled while parked; a PostSync hook otherwise
+waits forever for the unschedulable operator. Existing certificates are retained
+and webhook failurePolicy stays Ignore. Restore the admission hooks and remove
+both annotations when restoring the operator; verify it is healthy before restoring managed replicas.
