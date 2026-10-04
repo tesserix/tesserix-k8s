@@ -776,8 +776,8 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         # what this asserts is that it is mirrored and pinned, not mutable.
         repository, _, digest = container["image"].partition("@")
         self.assertEqual(
-            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/"
-            "recovered/ai-agents",
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/"
+            "tesserix/ai-agents",
             repository,
         )
         self.assertRegex(digest, r"^sha256:[0-9a-f]{64}$")
