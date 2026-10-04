@@ -1,6 +1,7 @@
 # Production network cost reduction — 2026-10-04
 
-Prepared changes; not yet deployed. Active account: `unidevidp@gmail.com`.
+First-stage changes deployed through [PR #1307](https://github.com/tesserix/tesserix-k8s/pull/1307).
+Active account: `unidevidp@gmail.com`.
 Project: `tesseracthub-480811`; context:
 `gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke`.
 
@@ -35,7 +36,7 @@ Regional endpoints such as `asia-south1-aiplatform.googleapis.com` do not fall
 under the existing `aiplatform.googleapis.com` private zone. They already use
 Private Google Access; do not describe this wildcard as covering those names.
 
-## Changes ready for rollout
+## GitOps changes
 
 1. Set `PreferSameZone` on the production main ingress Service, both shared Valkey
    HAProxy Services and both shared PostgreSQL pooler Services. Add the equivalent
@@ -62,8 +63,25 @@ Private Google Access; do not describe this wildcard as covering those names.
 ## Verification and rollback
 
 Helm renders, strict chart lints, locality/Valkey/waypoint tests, server-side
-resource dry run and Terraform validation/mock-provider tests pass. The real
-Terraform plans were read-only. No live network resource was changed.
+resource dry run and Terraform validation/mock-provider tests pass. The first Atlantis apply changed only three DNS resources, with no deletions.
+The internal gateway now has zero replicas and a ClusterIP Service; GKE removed
+its internal forwarding rule. The public forwarding rule remains. All checked
+frontend and waypoint Services retain ready endpoints; no new application pod
+became unready.
+
+DNS migration applied at 04:39 UTC. After the 300-second TTL, all three DevAI
+API pods resolved the apex/wildcard to the private VIPs and returned HTTP 200
+for authenticated global locations, Gemini model metadata and regional model
+listing, using their own Workload Identity and validated TLS. No PSC connections
+were observed in these pods. Kora and Roamie agents also resolved the private VIPs.
+The default PSC flag is now disabled for the separately reviewed retirement.
+
+Waypoints already carried Istio's equivalent PreferClose default before this
+change. Their explicit PreferSameZone annotation standardizes the preference;
+no additional savings are attributed to changing that synonym. Listener
+allowedRoutes explicitly matches the API server's Same-namespace default to
+avoid GitOps drift. Shared application chart versions were bumped after CI
+identified the missing version increments; repository tests passed.
 
 Roll back locality hints by reverting their commit; ensure endpoint readiness
 and routing remain healthy. Restore the unused gateway from the capture before
