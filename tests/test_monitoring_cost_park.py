@@ -34,6 +34,18 @@ def render_application(name, tmp_path, *, parked=True):
 
 
 @pytest.mark.parametrize("name", [
+    "redpanda", "otel-gateway",
+])
+def test_retired_park_has_no_explicit_claims_to_recreate_disks(name, tmp_path):
+    items = render_application(name, tmp_path)
+    assert not any(item["kind"] == "PersistentVolumeClaim" for item in items)
+    assert all(
+        item["spec"]["replicas"] == 0
+        for item in items if item["kind"] == "StatefulSet"
+    )
+
+
+@pytest.mark.parametrize("name", [
     "clickhouse-ha", "clickhouse-keeper", "redpanda", "otel-gateway",
     "otel-ingest", "otel-cluster", "obs-api", "obs-ui", "opencost",
 ])
@@ -44,6 +56,10 @@ def test_park_stops_workloads_without_pruning_retained_resources(name, tmp_path)
         return {
             (item["kind"], item["metadata"]["name"]) for item in items
             if not item["metadata"].get("annotations", {}).get("argocd.argoproj.io/hook")
+            and not (
+                name in {"redpanda", "otel-gateway"}
+                and item["kind"] == "PersistentVolumeClaim"
+            )
         }
     assert identities(parked) == identities(active)
     workloads = [

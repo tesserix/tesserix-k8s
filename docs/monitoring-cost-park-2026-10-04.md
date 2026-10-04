@@ -10,12 +10,19 @@ Target: `tesseracthub-480811`, `asia-south1`, cluster
 `tesseract-prod-in-gke`. Namespaces: `monitoring`, `observability`, `opencost`.
 Grafana in `monitoring` and Kiali in `istio-system` are already parked.
 
+## Approved storage retirement update
+
+The owner subsequently approved purging the ten observability disks. See
+[storage-retirement-2026-10-04.md](storage-retirement-2026-10-04.md) for the exact
+scope and recovery snapshots. Restore disks and claims before un-parking;
+replica changes alone would now create empty stores.
+
 ## Desired state
 
 Production Application Helm parameters override the running chart defaults.
 Removing these park parameters restores the recorded running configuration.
-Services, configuration, credentials, rules, charts and persistent volumes stay
-in place. Do not disable the releases, unregister their Applications or delete
+Services, configuration, credentials, rules and charts stay in place.
+The separately approved observability storage retirement is described above. Do not disable the releases, unregister their Applications or delete
 their namespaces.
 
 | Application | Park | Restore |
@@ -23,8 +30,8 @@ their namespaces.
 | kube-prometheus-stack | Prometheus, Alertmanager and kube-state-metrics: 0; operator cannot schedule | restore operator first, then 1 each |
 | clickhouse-ha | 0 | 2 |
 | clickhouse-keeper | 0 | 3 |
-| redpanda | 0; retain 3 explicit expansion PVCs | 3 |
-| otel-gateway | 0; retain 2 explicit expansion PVCs | 2 |
+| redpanda | 0; retain no explicit expansion PVCs | 3 |
+| otel-gateway | 0; retain no explicit expansion PVCs | 2 |
 | otel-ingest | 0 | 2 |
 | otel-cluster | 0 | 1 |
 | otel-agent | `nodeSelector.workload: observability-parked` | remove override |
@@ -35,9 +42,8 @@ their namespaces.
 
 No current node carries `workload=observability-parked`. Do not add this label
 to a node while monitoring is parked. StatefulSet PVC retention was verified as
-`Retain` on both scale and deletion. Explicit Redpanda/gateway claims remain
-rendered using `persistence.retainedReplicas`; their `Prune=false,Delete=false`
-annotations also remain intact. The temporary Redpanda topic bootstrap hook is
+`Retain` on both scale and deletion. Redpanda/gateway explicit claims are no longer rendered while parked.
+Their deletion follows snapshot verification and the named retirement plan. The temporary Redpanda topic bootstrap hook is
 not rendered while brokers are at zero.
 
 ## Rollout
