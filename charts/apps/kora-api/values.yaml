@@ -169,6 +169,8 @@ env:
   ENV: "production"
   # AI traces go to Kora's Langfuse project through the AI-trace pipeline (docs/ai-trace-pipeline.md).
   KORA_AI_TRACE_ENDPOINT: "http://otel-gateway.observability.svc.cluster.local:4318/v1/traces"
+  # Accuracy scores go straight to Langfuse on the same traces (kora#556).
+  KORA_LANGFUSE_HOST: "http://langfuse-web.observability.svc.cluster.local:3000"
   # NOTE: PORT is set by the container spec, not here.
   # var and INJECTS it itself based on the container port. Defining it
   # in the manifest causes the validation webhook to reject:
@@ -257,6 +259,18 @@ extraSecretEnv:
   - name: KORA_AI_TRACE_USER_KEY
     secretName: kora-ai-trace-user-key
     key: KORA_AI_TRACE_USER_KEY
+  - name: KORA_LANGFUSE_PUBLIC_KEY
+    secretName: kora-langfuse-scores
+    key: KORA_LANGFUSE_PUBLIC_KEY
+  - name: KORA_LANGFUSE_SECRET_KEY
+    secretName: kora-langfuse-scores
+    key: KORA_LANGFUSE_SECRET_KEY
+
+# allow-kora-egress has no observability rule; this opens OTLP traces and Langfuse scores.
+observabilityEgress:
+  enabled: true
+  namespace: observability
+  ports: [4318, 3000]
 
 # GCP / Workload Identity — annotates the SA with the matching GSA email.
 #
