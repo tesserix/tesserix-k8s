@@ -1,8 +1,10 @@
 # Temporary production monitoring shutdown
 
 Prepared on 2026-10-04 at the owner's request to stop monitoring traffic and
-reduce cost. This file describes the intended rollout; it does not prove the
-live cluster has been changed.
+reduce cost. Stage one was merged in PR #1301 and verified live: Prometheus and
+Alertmanager CRs and StatefulSets are at zero, the telemetry agent schedules
+zero pods, and the other target workloads are stopped. Stage two parks the
+operator only after that verification.
 
 Target: `tesseracthub-480811`, `asia-south1`, cluster
 `tesseract-prod-in-gke`. Namespaces: `monitoring`, `observability`, `opencost`.
@@ -18,7 +20,7 @@ their namespaces.
 
 | Application | Park | Restore |
 |---|---|---|
-| kube-prometheus-stack | Prometheus, Alertmanager and kube-state-metrics: 0 | 1 each |
+| kube-prometheus-stack | Prometheus, Alertmanager and kube-state-metrics: 0; operator cannot schedule | restore operator first, then 1 each |
 | clickhouse-ha | 0 | 2 |
 | clickhouse-keeper | 0 | 3 |
 | redpanda | 0; retain 3 explicit expansion PVCs | 3 |
