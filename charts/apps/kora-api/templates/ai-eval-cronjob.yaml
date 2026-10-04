@@ -1,0 +1,86 @@
+{{- if and .Values.aiEval.enabled .Values.aiGateway.enabled }}
+# Nightly golden-dataset experiment (kora#557). A failed Job is a regression
+# against the accepted baseline (exit 1) or a run that could not start (exit 2).
+{{- $secretName := printf "%s-secrets" (include "kora-api.fullname" .) }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "kora-api.fullname" . }}-ai-eval
+  labels:
+    {{- include "kora-api.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ai-eval
+spec:
+  schedule: {{ .Values.aiEval.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      # No retry: a second run would only spend tokens to report the same regression.
+      backoffLimit: 0
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            {{- include "kora-api.labels" . | nindent 12 }}
+            app.kubernetes.io/component: ai-eval
+            # Matched by the gateway and observability egress policies, never by the Service.
+            kora.tesserix.app/stack: eval
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "kora-api.serviceAccountName" . }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: ai-eval
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["aieval", "-dataset", {{ .Values.aiEval.dataset | quote }}]
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $secretName }}
+                      key: {{ index .Values.secretEnv "DATABASE_URL" }}
+                - name: AI_GATEWAY_BASE_URL
+                  value: {{ .Values.aiGateway.baseURL | quote }}
+                - name: AI_GATEWAY_MODEL
+                  value: {{ .Values.aiGateway.model | quote }}
+                - name: AI_GATEWAY_API_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.aiGateway.clientSecret.name }}
+                      key: {{ .Values.aiGateway.clientSecret.key }}
+                - name: KORA_AI_TRACE_ENDPOINT
+                  value: {{ index .Values.env "KORA_AI_TRACE_ENDPOINT" | quote }}
+                - name: KORA_LANGFUSE_HOST
+                  value: {{ index .Values.env "KORA_LANGFUSE_HOST" | quote }}
+                {{- range list "KORA_LANGFUSE_PUBLIC_KEY" "KORA_LANGFUSE_SECRET_KEY" }}
+                - name: {{ . }}
+                  valueFrom:
+                    secretKeyRef:
+                      name: kora-langfuse-scores
+                      key: {{ . }}
+                {{- end }}
+                {{- range list "KORA_EVAL_FIREBASE_API_KEY" "KORA_EVAL_EMAIL" "KORA_EVAL_PASSWORD" }}
+                - name: {{ . }}
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $.Values.aiEval.accountSecret }}
+                      key: {{ . }}
+                {{- end }}
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  memory: 256Mi
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+{{- end }}
