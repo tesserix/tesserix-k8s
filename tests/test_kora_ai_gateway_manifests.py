@@ -12,7 +12,7 @@ def load_yaml(path):
     return list(yaml.safe_load_all(path.read_text()))
 
 
-def render_chart(chart, release, namespace, values=None):
+def render_chart(chart, release, namespace, values=None, overrides=()):
     command = [
         "helm",
         "template",
@@ -27,6 +27,8 @@ def render_chart(chart, release, namespace, values=None):
         command.extend(["--set", "registryOwnership.enabled=false"])
     if values:
         command.extend(["--values", str(ROOT / chart / values)])
+    for override in overrides:
+        command.extend(["--set", override])
     result = subprocess.run(
         command,
         check=True,
@@ -42,6 +44,15 @@ def resource(documents, kind, name):
         for document in documents
         if document.get("kind") == kind
         and document.get("metadata", {}).get("name") == name
+    )
+
+
+def selects(policy, labels):
+    selector = policy["spec"]["podSelector"]
+    if any(labels.get(k) != v for k, v in selector.get("matchLabels", {}).items()):
+        return False
+    return all(
+        labels.get(e["key"]) in e["values"] for e in selector.get("matchExpressions", [])
     )
 
 
@@ -702,6 +713,45 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             self.assertEqual("kora-langfuse-scores", ref["name"])
             self.assertEqual(name, ref["key"])
             self.assertTrue(ref["optional"])
+
+    def test_nightly_ai_eval_stays_off_until_its_account_exists(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        self.assertFalse(
+            [d for d in documents if d.get("kind") == "CronJob" and "ai-eval" in d["metadata"]["name"]]
+        )
+
+    def test_nightly_ai_eval_runs_the_api_image_against_the_gateway_and_langfuse(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml", ["aiEval.enabled=true"]
+        )
+        cron = resource(documents, "CronJob", "kora-kora-api-ai-eval")
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        pod = cron["spec"]["jobTemplate"]["spec"]["template"]
+        container = pod["spec"]["containers"][0]
+        env = {entry["name"]: entry for entry in container["env"]}
+
+        self.assertEqual(
+            deployment["spec"]["template"]["spec"]["containers"][0]["image"], container["image"]
+        )
+        self.assertEqual(["aieval", "-dataset", "kora-capture-text"], container["command"])
+        self.assertEqual("Forbid", cron["spec"]["concurrencyPolicy"])
+        for name in ("DATABASE_URL", "AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY", "KORA_AI_TRACE_ENDPOINT", "KORA_LANGFUSE_HOST"):
+            self.assertIn(name, env)
+        for name in ("KORA_LANGFUSE_PUBLIC_KEY", "KORA_LANGFUSE_SECRET_KEY"):
+            self.assertEqual("kora-langfuse-scores", env[name]["valueFrom"]["secretKeyRef"]["name"])
+        for name in ("KORA_EVAL_FIREBASE_API_KEY", "KORA_EVAL_EMAIL", "KORA_EVAL_PASSWORD"):
+            ref = env[name]["valueFrom"]["secretKeyRef"]
+            self.assertEqual(("kora-ai-eval", name), (ref["name"], ref["key"]))
+
+        labels = pod["metadata"]["labels"]
+        self.assertTrue(selects(resource(documents, "NetworkPolicy", "kora-ai-gateway-egress"), labels))
+        self.assertTrue(selects(resource(documents, "NetworkPolicy", "kora-observability-egress"), labels))
+        self.assertFalse(
+            any(d.get("kind") == "Service" and selects({"spec": {"podSelector": {"matchLabels": d["spec"]["selector"]}}}, labels) for d in documents),
+            "eval pods must not join the API Service",
+        )
 
     def test_production_kora_api_carries_its_own_registry_deploy_key(self):
         documents = render_chart(
