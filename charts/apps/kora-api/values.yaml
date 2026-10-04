@@ -262,28 +262,15 @@ extraSecretEnv:
 # exists in tesseracthub-480811. So this pod has been annotated to
 # impersonate an account that does not exist.
 #
-# That cost nothing until now, because kora-api made no GCP API calls:
-# Firebase ID token VERIFICATION reads Google's public JWKS and needs no
-# IAM, and DB credentials arrive as a Kubernetes Secret via ESO. Account
-# deletion (#106) is the first code path that calls a GCP API — it deletes
-# the user's Firebase identity — so from here a missing GSA means every
-# deletion leaves a live identity behind. The account's Kora data is still
-# destroyed correctly; the person can simply sign in again and be
-# re-provisioned by EnsureUser as a fresh empty account.
+# Firebase verification checks revoked, disabled and deleted account status,
+# requiring firebaseauth.users.get. Account deletion additionally requires
+# firebaseauth.users.delete. Both are granted by the existing custom role
+# projects/tesseracthub-480811/roles/koraFirebaseUserDelete; its declarative
+# definition lives in docs/iam/kora-firebase-user-role.yaml. Do not broaden this
+# to roles/firebaseauth.admin, which also grants create/update/list access.
 #
-# kora-api-prod holds ONE permission, via the custom role
-# projects/tesseracthub-480811/roles/koraFirebaseUserDelete:
-# firebaseauth.users.delete. Deliberately NOT roles/firebaseauth.admin,
-# which would also grant create/update/list over every identity in the
-# project. If a future code path needs more, add the permission to that
-# custom role deliberately rather than widening to the predefined one.
-#
-# Not in Terraform — created out-of-band like the other app-secrets-*
-# accounts, which is exactly how the original went missing. Fold both this
-# account and its custom role into IaC to stop it drifting.
-gcp:
-  projectId: "tesseracthub-480811"
-  workloadIdentity:
+# This pre-existing GSA and custom role are managed outside Terraform.
+workloadIdentity:
     enabled: true
     gcpServiceAccount: "kora-api-prod@tesseracthub-480811.iam.gserviceaccount.com"
 
