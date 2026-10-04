@@ -1,12 +1,13 @@
 # Older Secret Manager version cleanup — 2026-10-04
 
-Status: approved targets prepared; execution pending.
+Status: completed on 2026-10-04. All 25 approved older versions are confirmed
+`DESTROYED`; every retained current version remains enabled and accessible.
 
 Scope: billing account `01C0B7-C8CD85-88B397`, project
 `tesseracthub-480811`. The user approved removing verified unused older versions.
 No whole secrets or current values are retired by this operation.
 
-## Approved targets
+## Completed targets
 
 These 25 older versions are byte-for-byte duplicates of the retained enabled
 version. Live External Secrets have no numeric pins, inspected repository
@@ -15,7 +16,7 @@ Terraform states owns these version IDs. The project has no Cloud Run services o
 jobs and no installed SecretProviderClass resource. A 30-day targeted access-log
 query found no older-version accesses; this absence is supporting evidence only.
 
-| Secret | Older version to destroy | Retained version |
+| Secret | Older version destroyed | Retained version |
 |---|---:|---:|
 | analytics-db-password | 2 | 3 |
 | audit-db-password | 2 | 3 |
@@ -83,7 +84,7 @@ versions save approximately **AUD 2.14/month**, or **AUD 0.07/day**. This is les
 than the AUD 10.33 maximum for all 121 extra versions because the remaining
 versions have not passed the deletion checks. Billing export reporting is delayed.
 
-Validation run before execution:
+Validation run before execution (all passed):
 
 ```sh
 python3 -m pytest -q tests/test_retire_duplicate_secret_versions.py
@@ -93,11 +94,17 @@ mypy --strict scripts/retire_duplicate_secret_versions.py
 python3 -m py_compile scripts/retire_duplicate_secret_versions.py
 ```
 
-Eleven tests cover deletion after verified recovery and refusal for current,
+The GitHub repository suite passed with 766 tests, four deselected and 48 subtests
+([execution PR #1313](https://github.com/tesserix/tesserix-k8s/pull/1313)). Eleven
+targeted tests cover deletion after verified recovery and refusal for current,
 aliased, pinned, differing, disabled, stale or delayed-destruction targets and
 failed archive verification. Secret payloads, hashes, tokens and recovery keys
 are not committed.
 
-The pre-operation External Secrets baseline is 251 Ready and two already not
-Ready (`kora/kora-ai-eval` and `kora/kora-ai-trace-user-key`). Capture the same
-status and current-value access after execution before reporting completion.
+After execution, all 25 retained current versions passed fresh payload access.
+External Secrets remained at 251 Ready; the same two pre-existing failures
+(`kora/kora-ai-eval` and `kora/kora-ai-trace-user-key`) remained. No previously
+Ready reader regressed. The durable recovery directory also holds the exact
+reviewed metadata plan, protected-version inventory, mutation journal and
+completion proof. Detailed GCP audit events are captured separately when
+available. No live current values were changed.
