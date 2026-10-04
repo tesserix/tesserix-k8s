@@ -108,7 +108,7 @@ variable "devai_runner_ksa" {
 variable "enable_vertex_psc" {
   description = "Retain PSC until private API DNS migration and client verification finish"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "vertex_dns_addresses" {

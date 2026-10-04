@@ -66,9 +66,33 @@ def test_waypoints_prefer_same_zone_and_keep_hbone_authorization_path():
             == "PreferSameZone"
         )
         assert gateway["spec"]["listeners"] == [
-            {"name": "mesh", "port": 15008, "protocol": "HBONE"}
+            {
+                "name": "mesh",
+                "port": 15008,
+                "protocol": "HBONE",
+                "allowedRoutes": {"namespaces": {"from": "Same"}},
+            }
         ]
         assert gateway["metadata"]["labels"]["istio.io/waypoint-for"] == "service"
+
+
+def test_waypoint_listener_declares_server_default_to_avoid_sync_drift():
+    docs = render(
+        "charts/thirdparty/istio-config",
+        "istio-config",
+        "istio-system",
+        values=("charts/thirdparty/istio-config/values-prod.yaml",),
+    )
+    gateways = [
+        x
+        for x in docs
+        if x["kind"] == "Gateway" and x["metadata"]["name"] == "waypoint"
+    ]
+    assert gateways
+    for gateway in gateways:
+        assert gateway["spec"]["listeners"][0].get("allowedRoutes") == {
+            "namespaces": {"from": "Same"}
+        }
 
 
 @pytest.mark.parametrize("instance", ["cache", "queue"])
