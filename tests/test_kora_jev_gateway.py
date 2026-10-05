@@ -17,7 +17,6 @@ class JevGatewayTests(unittest.TestCase):
         route = resource(docs, "HTTPRoute", "kora-decide")
         rule = route["spec"]["rules"][0]
         self.assertEqual(rule["matches"][0]["path"], {"type": "Exact", "value": "/v1/decisions"})
-        self.assertEqual(rule["matches"][0]["method"], "POST")
         self.assertEqual(rule["backendRefs"][0]["name"], "kora-typesafe")
         removed = rule["filters"][1]["requestHeaderModifier"]["remove"]
         self.assertIn("X-Kora-End-User-Token", removed)
@@ -34,6 +33,17 @@ class JevGatewayTests(unittest.TestCase):
         self.assertNotIn("extProc", policy)
         self.assertIn("jev-1.13.0", policy["transformation"]["request"]["body"])
         self.assertIn("rateLimit", policy)
+
+    def test_unsupported_methods_cannot_fall_through_to_the_chat_route(self):
+        docs = render_chart("charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system")
+        rule = resource(docs, "HTTPRoute", "kora-decide")["spec"]["rules"][0]
+        self.assertNotIn("method", rule["matches"][0])
+        traffic = resource(docs, "AgentgatewayPolicy", "kora-decide-traffic")["spec"]["traffic"]
+        self.assertEqual(traffic["authorization"]["action"], "Require")
+        expression = traffic["authorization"]["policy"]["matchExpressions"][0]
+        self.assertIn('request.method == "POST" &&', expression)
+        self.assertIn('size(request.body) <= 16000', expression)
+        self.assertIn('json(request.body).model == "kora-decide"', expression)
 
     def test_only_gateway_reader_gets_typesafe_secret_from_openbao(self):
         docs = render_chart("charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system")

@@ -34,7 +34,6 @@ spec:
         - path:
             type: Exact
             value: /v1/decisions
-          method: POST
       filters:
         - type: URLRewrite
           urlRewrite:
@@ -94,7 +93,7 @@ spec:
       action: Require
       policy:
         matchExpressions:
-          - 'size(request.body) <= 16000 && json(request.body).model == "kora-decide"'
+          - 'request.method == "POST" && size(request.body) <= 16000 && json(request.body).model == "kora-decide"'
     transformation:
       request:
         body: '{"model": "{{ .Values.providers.typesafe.model }}", "state": json(request.body).state, "questions": json(request.body).questions}'
