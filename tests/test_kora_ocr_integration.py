@@ -61,3 +61,13 @@ def test_ocr_secret_template_extracts_only_kora_and_rejects_missing_key(tmp_path
         else:
             assert result.returncode == 0, result.stderr
             assert yaml.safe_load(result.stdout)['value'] == expected
+
+
+def test_firebase_account_status_key_is_required_and_openbao_backed():
+    docs = render_chart('charts/apps/kora-api', 'kora-api', 'kora', 'values-prod.yaml')
+    deployment = resource(docs, 'Deployment', 'kora-api')
+    env = {x['name']: x for x in deployment['spec']['template']['spec']['containers'][0]['env']}
+    assert env['FIREBASE_API_KEY']['valueFrom']['secretKeyRef'] == {'name': 'kora-firebase-client', 'key': 'api-key'}
+    secret = resource(docs, 'ExternalSecret', 'kora-firebase-client')['spec']
+    assert secret['secretStoreRef'] == {'name': 'openbao-kora-production', 'kind': 'SecretStore'}
+    assert secret['data'] == [{'secretKey': 'api-key', 'remoteRef': {'key': 'kora/app/kora-firebase-api-key', 'property': 'value'}}]

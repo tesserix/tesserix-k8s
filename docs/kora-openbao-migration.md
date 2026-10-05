@@ -135,3 +135,5 @@ The Kora API reader has read-only access to the production OCR identity source.
 identity map is not retained in the API namespace. Missing or malformed signing
 keys block reconciliation. Production OCR ingress permits only the Kora API
 service account; API egress permits only the upload and job API components.
+
+Kora API account-status verification uses `kora/app/kora-firebase-api-key` through the namespace-bound production reader and required `kora-firebase-client` Secret. The existing Firebase public client key is provisioned directly in OpenBao; it is not committed to chart values.
