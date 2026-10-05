@@ -14,9 +14,13 @@ def test_label_review_has_independent_stronger_route_with_user_authentication():
     backend = resource(docs, "AgentgatewayBackend", "kora-label-review-providers")
     groups = backend["spec"]["ai"]["groups"]
     assert len(groups) == 1
-    assert groups[0]["providers"][0]["anthropic"]["model"] == "claude-sonnet-4-5"
+    assert groups[0]["providers"][0]["anthropic"]["model"] == "claude-sonnet-5-5"
     auth = resource(docs, "AgentgatewayPolicy", "kora-user-auth")["spec"]
     assert any(t.get("sectionName") == "label-review" for t in auth["targetRefs"])
     assert auth["traffic"]["jwtAuthentication"]["mode"] == "Strict"
     bundle = json.loads((pathlib.Path(__file__).parents[1] / "charts/apps/agentgateway-route-sync/files/platform-resources.json").read_text())
     resource(bundle["items"], "AgentgatewayBackend", "kora-label-review-providers")
+
+    for name in ("kora-structured-providers", "kora-conversation-providers"):
+        groups = resource(docs, "AgentgatewayBackend", name)["spec"]["ai"]["groups"]
+        assert groups[1]["providers"][0]["anthropic"]["model"] == "claude-sonnet-4-5"
