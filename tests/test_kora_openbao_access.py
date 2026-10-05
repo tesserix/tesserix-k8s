@@ -5,6 +5,7 @@ from test_homechef_openbao_access import render, resource
 READERS = {'agentgateway-system|production': ['kora/app/kora-ai-agents-api-key',
                                     'kora/app/kora-ai-gateway-api-key',
                                     'kora/app/kora-mcp-key',
+                                    'kora/app/kora-typesafe-api-key',
                                     'kora/app/kora-vertex-api-key'],
  'agentregistry-system|production': ['kora/app/kora-registry-deploy-key-sha256'],
  'devai|development': ['kora-development/app/kora-document-intelligence-signing-key',
