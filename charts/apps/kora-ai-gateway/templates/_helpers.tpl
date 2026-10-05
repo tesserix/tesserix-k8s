@@ -51,7 +51,7 @@ jwtAuthentication:
 - providers:
     - name: anthropic
       anthropic:
-        model: {{ .Values.providers.anthropic.model }}
+        model: {{ default .Values.providers.anthropic.model .anthropicModel }}
       policies:
         auth:
           secretRef:
