@@ -1,0 +1,29 @@
+{{- if .Values.ocr.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kora-ocr-egress
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kora-api.selectorLabels" . | nindent 6 }}
+      kora.tesserix.app/stack: deployment
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: document-intelligence
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: document-intelligence-prod
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [upload-api, job-api]
+      ports:
+        - port: 8080
+          protocol: TCP
+        - port: 15008
+          protocol: TCP
+{{- end }}
