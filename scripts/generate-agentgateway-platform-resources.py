@@ -28,6 +28,7 @@ EXPECTED = (
     ("AgentgatewayBackend", "kora-conversation-providers"),
     ("AgentgatewayBackend", "kora-embedding-providers"),
     ("AgentgatewayBackend", "kora-firebase-jwks"),
+    ("AgentgatewayBackend", "kora-label-review-providers"),
     ("AgentgatewayBackend", "kora-structured-providers"),
     ("AgentgatewayBackend", "kora-typesafe"),
     ("AgentgatewayBackend", "mcp-zitadel-jwks"),

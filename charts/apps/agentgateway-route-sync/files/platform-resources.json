@@ -346,6 +346,47 @@
       "apiVersion": "agentgateway.dev/v1alpha1",
       "kind": "AgentgatewayBackend",
       "metadata": {
+        "name": "kora-label-review-providers",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "policies": {
+          "ai": {
+            "routes": {
+              "/v1/chat/completions": "Completions",
+              "/v1/embeddings": "Embeddings",
+              "*": "Detect"
+            }
+          }
+        },
+        "ai": {
+          "groups": [
+            {
+              "providers": [
+                {
+                  "name": "anthropic",
+                  "anthropic": {
+                    "model": "claude-sonnet-4-5"
+                  },
+                  "policies": {
+                    "auth": {
+                      "secretRef": {
+                        "name": "kora-ai-gateway-provider-credentials",
+                        "key": "anthropic"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayBackend",
+      "metadata": {
         "name": "kora-structured-providers",
         "namespace": "agentgateway-system"
       },
@@ -720,6 +761,43 @@
                 "group": "agentgateway.dev",
                 "kind": "AgentgatewayBackend",
                 "name": "kora-embedding-providers",
+                "weight": 1
+              }
+            ]
+          },
+          {
+            "name": "label-review",
+            "matches": [
+              {
+                "path": {
+                  "type": "PathPrefix",
+                  "value": "/"
+                },
+                "headers": [
+                  {
+                    "name": "x-kora-ai-capability",
+                    "type": "Exact",
+                    "value": "read_label_review"
+                  }
+                ]
+              }
+            ],
+            "filters": [
+              {
+                "type": "RequestHeaderModifier",
+                "requestHeaderModifier": {
+                  "remove": [
+                    "X-Kora-End-User-Token",
+                    "X-Kora-Delegated-End-User-Token"
+                  ]
+                }
+              }
+            ],
+            "backendRefs": [
+              {
+                "group": "agentgateway.dev",
+                "kind": "AgentgatewayBackend",
+                "name": "kora-label-review-providers",
                 "weight": 1
               }
             ]
@@ -1505,6 +1583,12 @@
             "kind": "HTTPRoute",
             "name": "kora-ai",
             "sectionName": "default"
+          },
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "kora-ai",
+            "sectionName": "label-review"
           }
         ],
         "traffic": {

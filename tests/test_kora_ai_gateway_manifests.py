@@ -120,6 +120,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             for document in documents
             if document.get("kind") == "AgentgatewayBackend"
             and "ai" in document.get("spec", {})
+            and document["metadata"]["name"] != "kora-label-review-providers"
         ]
         for backend in backends:
             vertex = next(
@@ -374,7 +375,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         policy = resource(documents, "AgentgatewayPolicy", "kora-user-auth")
 
         self.assertEqual(
-            ["embedding", "conversation", "structured", "default"],
+            ["embedding", "label-review", "conversation", "structured", "default"],
             [rule["name"] for rule in route["spec"]["rules"]],
         )
         self.assertEqual(
@@ -401,6 +402,12 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
                     "kind": "HTTPRoute",
                     "name": "kora-ai",
                     "sectionName": "default",
+                },
+                {
+                    "group": "gateway.networking.k8s.io",
+                    "kind": "HTTPRoute",
+                    "name": "kora-ai",
+                    "sectionName": "label-review",
                 },
             ],
             policy["spec"]["targetRefs"],
