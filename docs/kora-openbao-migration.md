@@ -29,7 +29,7 @@ Use KV v2 mount `kv`, field `value`. Production paths are `kora/app/kora-*`; dev
 | prod-kora-langfuse-public-key | 1 | kora/app/kora-langfuse-public-key | observability |
 | prod-kora-langfuse-secret-key | 1 | kora/app/kora-langfuse-secret-key | observability |
 | prod-kora-mcp-internal-key | 2 | kora/app/kora-mcp-internal-key | kora |
-| prod-kora-ocr-workload-identity-keys | 1 | kora/app/kora-ocr-workload-identity-keys | document-intelligence |
+| prod-kora-ocr-workload-identity-keys | 2 | kora/app/kora-ocr-workload-identity-keys | document-intelligence |
 | prod-kora-openai-api-key | 1 | kora/app/kora-openai-api-key |  |
 | prod-kora-postgresql-password | 1 | kora/app/kora-postgresql-password | global |
 | prod-kora-sandbox-anonymization-salt | 1 | kora/app/kora-sandbox-anonymization-salt | kora |
@@ -129,3 +129,9 @@ seconds and retained exactly three recovery points. The original-source encrypte
 archive remains at the recovery location documented above. Shared
 `prod-devai-anthropic-api-key` was verified still present; no platform/shared
 secret was included in this deletion. Separate platform follow-ups remain open.
+
+The Kora API reader has read-only access to the production OCR identity source.
+`kora-ocr-client` extracts only `kora-prod-v1` into its target Secret; the full
+identity map is not retained in the API namespace. Missing or malformed signing
+keys block reconciliation. Production OCR ingress permits only the Kora API
+service account; API egress permits only the upload and job API components.
