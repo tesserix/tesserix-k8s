@@ -44,3 +44,10 @@ def test_devai_shared_key_follows_same_openbao_source():
     assert role['bound_service_account_namespaces'] == ['devai']
     assert role['bound_service_account_names'] == ['devai-production-reader']
     assert config['policy-read-qdrant-devai.hcl'].strip() == 'path "kv/data/qdrant/app/qdrant-api-key" { capabilities = ["read"] }'
+
+
+def test_qdrant_identity_exists_before_secretstore_on_cold_start():
+    docs = render('charts/thirdparty/qdrant')
+    identity = resource(docs, 'ServiceAccount', 'qdrant')
+    store = resource(docs, 'SecretStore', 'openbao-qdrant-production')
+    assert int(identity['metadata'].get('annotations', {}).get('argocd.argoproj.io/sync-wave', '0')) < int(store['metadata']['annotations']['argocd.argoproj.io/sync-wave'])
