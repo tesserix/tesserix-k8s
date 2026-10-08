@@ -218,5 +218,11 @@ return 401. Exact read-only capabilities and wrong-namespace denial passed.
 Backup `20261008T025841Z-3b502a5a7123` passed restore verification in 19.467s and an
 independent isolated restore in 26.122s. The two pinned originals and metadata
 are encrypted at `gs://tesseract-prod-backups-in/openbao/qdrant-migration/20261008/gcp-sources.json.kms`;
-remote decrypt/readback equality passed. Both GCP originals remain pending their
-specific retirement approval. Their removal is not claimed as a cost saving yet.
+remote decrypt/readback equality passed. After explicit retirement approval and a
+final version/equality check, both originals were deleted at 03:15 UTC on
+2026-10-08; GCP returned 404 for each. No other originals were deleted.
+Post-deletion ESO refreshes succeeded at 03:17:23 UTC (Qdrant) and 03:17:26 UTC
+(DevAI). Readback equality, exact permissions, wrong-namespace denial and all
+three authentication checks passed again; workload readiness remained unchanged.
+The encrypted archive is pinned to generation `1791428997651231`. Storage for
+these two GCP versions is retired; the resulting bill reduction is not yet measured.
