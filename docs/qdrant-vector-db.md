@@ -87,7 +87,7 @@ on a vector store means re-embedding every document. Growth is manual —
 
 ```
 QDRANT_URL=http://qdrant.ai-database.svc.cluster.local:6333
-QDRANT_API_KEY=<from prod-qdrant-api-key>
+QDRANT_API_KEY=<injected by the namespace-bound OpenBao reader>
 ```
 
 Two things gate access, and both must be updated for a new consumer:
@@ -95,9 +95,10 @@ Two things gate access, and both must be updated for a new consumer:
 1. Add the consumer's namespace to `allowedSources` in
    `charts/apps/ai-database-namespace/values.yaml` (drives both the L3
    NetworkPolicy and the L7 AuthorizationPolicy).
-2. Add an ExternalSecret in the consumer's namespace pulling
-   `prod-qdrant-api-key` — or `prod-qdrant-read-only-api-key` for
-   query-only workloads.
+2. Add a namespace-bound, exact-path OpenBao reader and ExternalSecret for
+   `qdrant/app/qdrant-api-key` — or `qdrant/app/qdrant-read-only-api-key` for
+   query-only workloads — using the `value` property. Keep every consumer of a
+   shared key on the same source and coordinate rotations.
 
 The *egress* side is already handled: `istio-config`'s `vectorStoreNamespace`
 value opens 6333/6334 from every namespace in `appNamespaces`, so a consumer
@@ -155,17 +156,15 @@ cluster-manager would do it):
 
 ## One-time GCP setup
 
-Not in git — run once per environment:
+Provision the two `qdrant/app/` key paths through the approved secret-service
+writer before installing a new environment. Use create-only writes and readback
+verification; never rotate an existing environment as a bootstrap step. Do not
+create replacement GCP Secret Manager records.
+
+Backup Workload Identity is a separate dependency, provisioned once per environment:
 
 ```bash
 PROJECT=tesseracthub-480811
-
-# API keys
-for s in prod-qdrant-api-key prod-qdrant-read-only-api-key; do
-  gcloud secrets create "$s" --project=$PROJECT --replication-policy=automatic
-  openssl rand -base64 48 | tr -d '\n' | \
-    gcloud secrets versions add "$s" --project=$PROJECT --data-file=-
-done
 
 # Workload Identity for the backup CronJob
 gcloud iam service-accounts create qdrant-backup --project=$PROJECT \
@@ -201,7 +200,7 @@ fails closed. No credential is rotated by this migration.
 Retain both GCP originals until fresh ESO sync, exact readback, namespace denial,
 authenticated Qdrant checks and a verified OpenBao backup/restore pass. Deleting
 the sources is a separate reviewed retirement, including the Terraform owner
-and external clients referenced by the older onboarding examples above.
+and every external runtime/CI client.
 Rollback before retirement restores the old ExternalSecret references without
 changing values. Future key rotations must coordinate all Qdrant consumers.
 
@@ -209,3 +208,15 @@ DevAI consumes the shared read/write key through `openbao-qdrant` in `devai`,
 using the existing `devai-production-reader` identity and exact single-path
 `read-qdrant-devai` policy. It cannot read the separate read-only credential.
 Both consumers must refresh and match before source retirement.
+
+
+PR #1324 deployed on 2026-10-08: OpenBao, Qdrant and shared ExternalSecrets are
+Synced/Healthy. Both consumers refreshed from OpenBao with unchanged key values;
+Qdrant remains 3/3 ready and DevAI API/worker remain 3/3 and 2/2 ready.
+Read/write and read-only keys return HTTP 200 for collection reads; invalid keys
+return 401. Exact read-only capabilities and wrong-namespace denial passed.
+Backup `20261008T025841Z-3b502a5a7123` passed restore verification in 19.467s and an
+independent isolated restore in 26.122s. The two pinned originals and metadata
+are encrypted at `gs://tesseract-prod-backups-in/openbao/qdrant-migration/20261008/gcp-sources.json.kms`;
+remote decrypt/readback equality passed. Both GCP originals remain pending their
+specific retirement approval. Their removal is not claimed as a cost saving yet.
