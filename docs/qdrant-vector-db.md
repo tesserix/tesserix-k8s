@@ -11,7 +11,7 @@ collection, not their own cluster.
 | Chart | `charts/thirdparty/qdrant` → upstream `qdrant/qdrant` 1.18.2, image `v1.19.0` |
 | Endpoints | `qdrant.ai-database.svc.cluster.local` — REST `6333`, gRPC `6334` |
 | Per-pod (admin/backup only) | `qdrant-{0,1,2}.qdrant-headless.ai-database.svc.cluster.local:6333` |
-| Auth | API key via `QDRANT__SERVICE__API_KEY`; ExternalSecret ships with the chart, sourced from GCP SM `prod-qdrant-api-key` |
+| Auth | API key via `QDRANT__SERVICE__API_KEY`; ExternalSecret ships with the chart, sourced from OpenBao `qdrant/app/qdrant-api-key` |
 | Backups | nightly 02:00 UTC → `gs://tesseract-prod-backups-in/qdrant/`, 14 days — deployed, not yet verified |
 
 Live since 2026-08-13: three replicas Ready, raft leader elected, no collections
@@ -182,3 +182,25 @@ gcloud iam service-accounts add-iam-policy-binding \
 The ExternalSecret stays `SecretSyncedError` and the StatefulSet stays
 `CreateContainerConfigError` until the two secrets exist — that is the expected
 failure mode, not a chart bug.
+
+## OpenBao cutover (2026-10-08)
+
+Both API keys use the namespace-bound `read-qdrant-production` role and
+`openbao-qdrant-production` SecretStore. The role can read only
+`qdrant/app/qdrant-api-key` and `qdrant/app/qdrant-read-only-api-key`, property
+`value`; it cannot list or write secrets. Existing Kubernetes key names,
+workload images and replicas are preserved. The initial copy pins GCP version 1
+and checks equality with the running workload before create-only staging.
+
+Assets are Qdrant read/write access and its data. A compromised other namespace
+must not acquire these credentials; the reader binds the existing `qdrant`
+ServiceAccount only in `ai-database`. ESO refreshes every five minutes. If
+OpenBao is unavailable, existing Kubernetes secrets remain; new provisioning
+fails closed. No credential is rotated by this migration.
+
+Retain both GCP originals until fresh ESO sync, exact readback, namespace denial,
+authenticated Qdrant checks and a verified OpenBao backup/restore pass. Deleting
+the sources is a separate reviewed retirement, including the Terraform owner
+and external clients referenced by the older onboarding examples above.
+Rollback before retirement restores the old ExternalSecret references without
+changing values. Future key rotations must coordinate all Qdrant consumers.
