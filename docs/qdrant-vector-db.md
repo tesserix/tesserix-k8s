@@ -204,3 +204,8 @@ the sources is a separate reviewed retirement, including the Terraform owner
 and external clients referenced by the older onboarding examples above.
 Rollback before retirement restores the old ExternalSecret references without
 changing values. Future key rotations must coordinate all Qdrant consumers.
+
+DevAI consumes the shared read/write key through `openbao-qdrant` in `devai`,
+using the existing `devai-production-reader` identity and exact single-path
+`read-qdrant-devai` policy. It cannot read the separate read-only credential.
+Both consumers must refresh and match before source retirement.
