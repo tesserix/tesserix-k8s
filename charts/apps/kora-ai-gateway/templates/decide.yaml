@@ -1,0 +1,107 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: kora-typesafe-credentials
+  labels:
+    {{- include "kora-ai-gateway.labels" . | nindent 4 }}
+spec:
+  refreshInterval: {{ .Values.externalSecrets.refreshInterval }}
+  secretStoreRef:
+    name: openbao-kora-production
+    kind: SecretStore
+  target:
+    name: kora-typesafe-credentials
+    creationPolicy: Owner
+  data:
+    - secretKey: api-key
+      remoteRef:
+        key: kora/app/kora-typesafe-api-key
+        property: value
+{{- if not .Values.registryOwnership.enabled }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: kora-decide
+  labels:
+    {{- include "kora-ai-gateway.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ .Values.gateway.name }}
+      sectionName: http
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /v1/decisions
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            hostname: api.typesafe.ai
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /v1/systemone
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - {{ .Values.endUserAuthentication.header | quote }}
+              - {{ .Values.endUserAuthentication.delegatedHeader | quote }}
+              - Cookie
+              - X-Kora-AI-Capability
+              - X-Kora-AI-Context-Kind
+              - X-Kora-RTK-Applied
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: kora-typesafe
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: kora-typesafe
+  labels:
+    {{- include "kora-ai-gateway.labels" . | nindent 4 }}
+spec:
+  static:
+    host: api.typesafe.ai
+    port: 443
+  policies:
+    tls: {}
+    auth:
+      secretRef:
+        name: kora-typesafe-credentials
+        key: api-key
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: kora-decide-traffic
+  labels:
+    {{- include "kora-ai-gateway.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: kora-decide
+  traffic:
+    {{- include "kora-ai-gateway.userJwtAuthentication" . | nindent 4 }}
+    apiKeyAuthentication:
+      mode: Strict
+      secretRef:
+        name: {{ .Values.externalSecrets.clientSecretName }}
+    authorization:
+      action: Require
+      policy:
+        matchExpressions:
+          - 'request.method == "POST" && size(request.body) <= 16000 && json(request.body).model == "kora-decide"'
+    transformation:
+      request:
+        body: '{"model": "{{ .Values.providers.typesafe.model }}", "state": json(request.body).state, "questions": json(request.body).questions}'
+    rateLimit:
+      local:
+        - requests: {{ .Values.limits.requestsPerMinute }}
+          unit: Minutes
+          burst: {{ .Values.limits.requestBurst }}
+    timeouts:
+      request: 1500ms
+{{- end }}

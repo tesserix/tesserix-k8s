@@ -50,11 +50,14 @@ CREATE TABLE ocr_jobs (
     request_digest TEXT NOT NULL CHECK (request_digest ~ '^sha256:[a-f0-9]{64}$'),
     upload_id TEXT CHECK (upload_id ~ '^upl_[A-Za-z0-9_]{1,64}$'),
     webhook_subscription_id TEXT CHECK (webhook_subscription_id ~ '^whs_[A-Za-z0-9_]{1,64}$'),
+    extraction_schema_id TEXT,
+    extraction_schema_version TEXT,
     status ocr_job_status NOT NULL DEFAULT 'accepted',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (product_id, tenant_id, idempotency_key),
     UNIQUE (job_id, product_id, tenant_id),
+    CONSTRAINT ocr_jobs_extraction_schema_shape CHECK ((extraction_schema_id IS NULL AND extraction_schema_version IS NULL) OR (extraction_schema_id IS NOT NULL AND extraction_schema_version IS NOT NULL AND length(extraction_schema_id) BETWEEN 1 AND 128 AND length(extraction_schema_version) BETWEEN 1 AND 64)),
     FOREIGN KEY (upload_id, product_id, tenant_id) REFERENCES ocr_uploads (upload_id, product_id, tenant_id) ON DELETE RESTRICT
 );
 
@@ -145,6 +148,13 @@ CREATE TABLE ocr_work_scopes (
 );
 
 CREATE INDEX ocr_uploads_scope_created_idx ON ocr_uploads (product_id, tenant_id, created_at DESC, upload_id DESC);
+ALTER TABLE ocr_jobs ADD COLUMN IF NOT EXISTS extraction_schema_id TEXT, ADD COLUMN IF NOT EXISTS extraction_schema_version TEXT;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ocr_jobs_extraction_schema_shape') THEN
+    ALTER TABLE ocr_jobs ADD CONSTRAINT ocr_jobs_extraction_schema_shape CHECK ((extraction_schema_id IS NULL AND extraction_schema_version IS NULL) OR (extraction_schema_id IS NOT NULL AND extraction_schema_version IS NOT NULL AND length(extraction_schema_id) BETWEEN 1 AND 128 AND length(extraction_schema_version) BETWEEN 1 AND 64));
+  END IF;
+END $$;
+
 CREATE INDEX ocr_jobs_scope_created_idx ON ocr_jobs (product_id, tenant_id, created_at DESC, job_id DESC);
 CREATE INDEX ocr_jobs_upload_scope_idx ON ocr_jobs (product_id, tenant_id, upload_id) WHERE upload_id IS NOT NULL;
 CREATE INDEX ocr_results_document_version_idx ON ocr_results (product_id, tenant_id, document_id, document_version);

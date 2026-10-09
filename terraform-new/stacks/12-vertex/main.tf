@@ -4,7 +4,8 @@
 # Dependencies: 02-network (VPC), 04-gke (Workload Identity pool)
 #
 # Design:
-#   - One global PSC endpoint (all-apis bundle) at a fixed internal IP.
+#   - Vertex DNS uses the private Google API VIPs through Private Google Access.
+#   - Retain PSC during the DNS migration; disable it after TTL/client validation.
 #   - DNS is scoped to aiplatform.googleapis.com ONLY, so Vertex traffic pins
 #     to the PSC endpoint while GCS/GCR/etc. keep their default resolution
 #     (low blast radius; widen to a googleapis.com zone deliberately, later).
@@ -24,6 +25,7 @@ data "google_compute_network" "vpc" {
 # ============================================================================
 
 resource "google_compute_global_address" "vertex_psc_ip" {
+  count        = var.enable_vertex_psc ? 1 : 0
   name         = var.vertex_psc_address_name
   project      = var.project_id
   purpose      = "PRIVATE_SERVICE_CONNECT"
@@ -33,23 +35,24 @@ resource "google_compute_global_address" "vertex_psc_ip" {
 }
 
 resource "google_compute_global_forwarding_rule" "vertex_psc" {
+  count                 = var.enable_vertex_psc ? 1 : 0
   name                  = var.vertex_psc_rule_name
   project               = var.project_id
   target                = "all-apis"
   network               = data.google_compute_network.vpc.id
-  ip_address            = google_compute_global_address.vertex_psc_ip.id
+  ip_address            = google_compute_global_address.vertex_psc_ip[0].id
   load_balancing_scheme = ""
 }
 
 # ============================================================================
-# Private DNS — pin aiplatform.googleapis.com to the PSC endpoint
+# Private DNS — pin aiplatform.googleapis.com to private Google API VIPs
 # ============================================================================
 
 resource "google_dns_managed_zone" "vertex_aiplatform" {
   name        = var.vertex_dns_zone_name
   project     = var.project_id
   dns_name    = "aiplatform.googleapis.com."
-  description = "Pin Vertex AI traffic to the ${var.vertex_psc_rule_name} PSC endpoint (${var.vertex_psc_ip})"
+  description = "Private Vertex AI access through Private Google Access"
   visibility  = "private"
 
   private_visibility_config {
@@ -65,7 +68,7 @@ resource "google_dns_record_set" "vertex_apex" {
   managed_zone = google_dns_managed_zone.vertex_aiplatform.name
   type         = "A"
   ttl          = 300
-  rrdatas      = [var.vertex_psc_ip]
+  rrdatas      = var.vertex_dns_addresses
 }
 
 resource "google_dns_record_set" "vertex_wildcard" {
@@ -74,7 +77,7 @@ resource "google_dns_record_set" "vertex_wildcard" {
   managed_zone = google_dns_managed_zone.vertex_aiplatform.name
   type         = "A"
   ttl          = 300
-  rrdatas      = [var.vertex_psc_ip]
+  rrdatas      = var.vertex_dns_addresses
 }
 
 # ============================================================================
@@ -133,4 +136,14 @@ resource "google_service_account_iam_member" "devai_runner_wi" {
   service_account_id = "projects/${var.project_id}/serviceAccounts/${var.devai_workload_sa_email}"
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.devai_runner_ksa}]"
+}
+
+moved {
+  from = google_compute_global_address.vertex_psc_ip
+  to   = google_compute_global_address.vertex_psc_ip[0]
+}
+
+moved {
+  from = google_compute_global_forwarding_rule.vertex_psc
+  to   = google_compute_global_forwarding_rule.vertex_psc[0]
 }

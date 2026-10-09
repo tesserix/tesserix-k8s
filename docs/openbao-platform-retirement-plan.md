@@ -135,3 +135,25 @@ Backup `20260928T082137Z-741ed0e3979a` restored in 19.024 seconds, with exactly
 three retained snapshots and pruning verified. All 265 deployments and
 StatefulSets kept their images and had no readiness regression. Current verified
 cleanup is 278 records; 397 GCP Secret Manager records remain. Keep #1209 open.
+
+## Cost-reduction audit (2026-10-08)
+
+Read-only metadata inventory found 349 GCP secret records, 424 enabled and three
+disabled versions. Explicit live ExternalSecret data bindings still reference
+99 distinct GCP source names across 195 bindings, resolving per-item store
+overrides as well as default stores. These numbers do not prove the other
+records unused: dataFrom, runtime, CI, Terraform, version aliases and cold-start
+consumers remain acceptance gates. Disabled versions still incur storage cost.
+
+Execution order: (1) Qdrant's two stable keys, (2) shared database/provider
+credentials after enumerating every consumer and writer, (3) delivery and
+identity credentials after cold-start verification, (4) reviewed exact duplicate
+versions and migrated originals after encrypted recovery and ownership checks.
+Preserve the Cloudflare and Support Platform exceptions. The prior independent
+OpenBao recovery migration is complete and must remain external to OpenBao.
+
+No new node capacity, loss of replicas, or secret rotation is required. No
+savings are claimed from copying a key alone: storage fees fall only after
+accepted source/version retirement. Each batch requires unchanged payloads,
+namespace isolation, fresh ESO sync, functional checks, verified recovery,
+scoped GitOps changes and a narrow source-retirement plan.

@@ -1,5 +1,10 @@
 # Observability park — 2026-08-01
 
+For the current production shutdown and its staged rollout, see
+[monitoring-cost-park-2026-10-04.md](monitoring-cost-park-2026-10-04.md).
+This older document records the August park and subsequent revival; its disk
+deletion and dedicated-node-pool instructions are not the current plan.
+
 The whole observability estate is parked at **0 pods** to cut GCP spend. Nothing
 was deleted: every Application, chart, Service, ConfigMap, Secret, PVC and alert
 rule is still in Git and still in the cluster. Revival is flipping replica
