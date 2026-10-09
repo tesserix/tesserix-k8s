@@ -3,9 +3,11 @@ hibernate: false
 namespace: homechef
 clusterName: homechef-postgres
 
-# 3 instances: 1 primary + 2 sync replicas for production HA.
-# Automatic failover is handled by the CNPG operator.
-instances: 3
+# 2 instances: 1 primary + 1 standby. Automatic failover is handled by the
+# CNPG operator. Reduced from 3 while the database is near-empty; the third
+# copy cost a full 100Gi + 30Gi of disk for no extra failover target that
+# a second zone does not already give us.
+instances: 2
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
 # Storage — separate WAL volume for I/O isolation
@@ -117,6 +119,10 @@ autoheal:
 affinity:
   podAntiAffinityType: preferred
 
+# With only one standby, minSyncReplicas: 1 would block every write while
+# that standby is down (node drain, upgrade). 0/1 keeps commits synchronous
+# whenever the standby is healthy and falls back to async only while it is
+# away.
 replication:
-  minSyncReplicas: 1
+  minSyncReplicas: 0
   maxSyncReplicas: 1
