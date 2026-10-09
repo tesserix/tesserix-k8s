@@ -49,7 +49,7 @@ still considers in-window.
 ## Verify backups are healthy
 
 ```bash
-export KUBECONFIG=~/.kube/gke-prod
+kubectl config use-context gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke
 
 # CNPG-reported recovery window + last good backup
 kubectl get cluster homechef-postgres -n homechef \

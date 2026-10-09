@@ -34,11 +34,13 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import re
 import subprocess
 import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 NOW = dt.datetime.now(dt.timezone.utc)
@@ -234,7 +236,7 @@ def classify(inv: Inventory, age_days: int) -> list[Finding]:
                 pv_name=None, pv_phase=None,
                 pvc_namespace=None, pvc_name=None,
                 detail=f"GCE disk has no matching PV. lastDetach={detach_days:.1f}d ago." if detach_days else "GCE disk has no matching PV. Never detached.",
-                safe_to_delete=(not attached) and (detach_days is None or detach_days >= age_days),
+                safe_to_delete=(not attached) and (detach_days is not None and detach_days >= age_days),
             ))
             continue
 
@@ -251,7 +253,8 @@ def classify(inv: Inventory, age_days: int) -> list[Finding]:
                 pv_name=pv_name, pv_phase=phase,
                 pvc_namespace=pvc_ns, pvc_name=pvc_name,
                 detail=f"PV phase={phase} reclaim={pv.get('spec',{}).get('persistentVolumeReclaimPolicy')}.",
-                safe_to_delete=(not attached) and (detach_days is None or detach_days >= age_days),
+                safe_to_delete=(not attached) and detach_days is not None and detach_days >= age_days
+                               and (pvc_ns, pvc_name) not in inv.pvcs,
             ))
             continue
 
@@ -264,7 +267,7 @@ def classify(inv: Inventory, age_days: int) -> list[Finding]:
                 pv_name=pv_name, pv_phase=phase,
                 pvc_namespace=pvc_ns, pvc_name=pvc_name,
                 detail=f"PV claimRef {pvc_ns}/{pvc_name} but PVC missing — Released-equivalent.",
-                safe_to_delete=(not attached) and (detach_days is None or detach_days >= age_days),
+                safe_to_delete=(not attached) and (detach_days is not None and detach_days >= age_days),
             ))
             continue
 
@@ -336,7 +339,15 @@ def classify(inv: Inventory, age_days: int) -> list[Finding]:
         if pv_name in seen_pvs:
             continue
         phase = pv.get("status", {}).get("phase", "")
-        if phase != "Released":
+        spec = pv.get("spec", {})
+        csi = spec.get("csi", {})
+        handle = csi.get("volumeHandle", "")
+        disk_name = handle.rsplit("/", 1)[-1] if handle else spec.get("gcePersistentDisk", {}).get("pdName")
+        claim = spec.get("claimRef", {}) or {}
+        if (phase != "Released" or not disk_name
+                or (csi and csi.get("driver") != "pd.csi.storage.gke.io")
+                or any(d.get("name") == disk_name for d in inv.disks)
+                or (claim.get("namespace"), claim.get("name")) in inv.pvcs):
             continue
         capacity = pv.get("spec", {}).get("capacity", {}).get("storage", "0")
         # crude size in GiB
@@ -455,11 +466,29 @@ def _action_line(ok: bool, what: str, res: subprocess.CompletedProcess) -> str:
     return f"FAIL: {what} — {reason[-1] if reason else 'no stderr'}"
 
 
-def apply_safe_deletes(findings: list[Finding], project: str) -> list[str]:
+def apply_safe_deletes(
+    findings: list[Finding], project: str, age_days: int, capture_dir: Path
+) -> list[str]:
     actions: list[str] = []
     for f in findings:
         if not f.safe_to_delete:
             continue
+        current = build_inventory(project)
+        fresh = next((x for x in classify(current, age_days)
+                      if x.disk_name == f.disk_name and x.pv_name == f.pv_name
+                      and x.disk_zone == f.disk_zone and x.category == f.category), None)
+        if fresh is None or not fresh.safe_to_delete:
+            actions.append(f"SKIP {f.disk_name}/{f.pv_name}: ownership or detach age changed")
+            continue
+        disk = next((d for d in current.disks if d.get("name") == f.disk_name
+                     and d.get("zone", "").rsplit("/", 1)[-1] == f.disk_zone), None)
+        pv = current.pvs.get(f.pv_name) if f.pv_name else None
+        capture_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        capture = capture_dir / f"{f.pv_name or f.disk_name}.json"
+        with os.fdopen(os.open(capture, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as out:
+            json.dump({"project": project, "captured_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                       "disk": disk, "pv": pv}, out, indent=2)
+        actions.append(f"CAPTURE {capture}")
         if f.category == "ZOMBIE_DISK":
             res = subprocess.run(
                 ["gcloud", "compute", "disks", "delete", f.disk_name,
@@ -476,7 +505,9 @@ def apply_safe_deletes(findings: list[Finding], project: str) -> list[str]:
                 )
                 ok = res.returncode == 0
                 actions.append(_action_line(ok, f"kubectl delete pv {f.pv_name}", res))
-                if ok and f.disk_name == "(no disk)":
+                if not ok:
+                    continue
+                if f.disk_name == "(no disk)":
                     # With the disk already gone, a stale external-attacher
                     # finalizer holds the PV in Terminating forever; clearing
                     # it is safe because there is nothing left to detach.
@@ -513,7 +544,11 @@ def main() -> int:
     p.add_argument("--apply", action="store_true",
                    help="Actually delete safe categories (default: report only)")
     p.add_argument("--out", default="-", help="Markdown output file (- for stdout)")
+    p.add_argument("--capture-dir", type=Path, default=Path("audit-recovery"),
+                   help="Recovery metadata directory, saved before deletion")
     args = p.parse_args()
+    if args.age_days < 1:
+        p.error("--age-days must be at least 1")
 
     inv = build_inventory(args.project)
     findings = classify(inv, args.age_days)
@@ -527,7 +562,7 @@ def main() -> int:
 
     actions: list[str] = []
     if args.apply:
-        actions = apply_safe_deletes(findings, args.project)
+        actions = apply_safe_deletes(findings, args.project, args.age_days, args.capture_dir)
 
     md = render_markdown(findings, args.age_days, applied=bool(actions))
     if actions:
@@ -548,6 +583,8 @@ def main() -> int:
                        "CNPG_OUT_OF_SCOPE", "STS_OUT_OF_SCOPE")
         for f in findings
     )
+    if any(a.startswith("FAIL:") for a in actions):
+        return 2
     return 1 if attention else 0
 
 

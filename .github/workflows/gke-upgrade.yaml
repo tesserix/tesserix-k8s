@@ -27,18 +27,18 @@ on:
           - node-pools
           - both
       pool_strategy:
-        description: 'How to upgrade capacity-constrained pools (see recreate_pools). Switch to surge once those pools run on CUD/on-demand.'
+        description: 'Surge by default. Recreate deletes selected pools and requires separate approval.'
         required: true
-        default: 'recreate'
+        default: 'surge'
         type: choice
         options:
-          - recreate
           - surge
           - skip
+          - recreate
       recreate_pools:
         description: 'Comma-separated pools that pool_strategy applies to. Everything else always surges.'
         required: false
-        default: 'gpu-l4-spot'
+        default: ''
         type: string
       only_pool:
         description: 'Limit to a single node pool (optional)'
@@ -100,23 +100,24 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
         with:
           workload_identity_provider: ${{ env.WIF_PROVIDER }}
           service_account: ${{ env.SA_EMAIL }}
           project_id: ${{ env.PROJECT_ID }}
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
         with:
           project_id: ${{ env.PROJECT_ID }}
           install_components: gke-gcloud-auth-plugin
 
       - name: Run preflight checks
         env:
+          ONLY_POOL: ${{ inputs.only_pool }}
           ALLOW_BLOCKING_PDBS: ${{ inputs.allow_blocking_pdbs }}
           ALLOW_OUT_OF_CHANNEL: ${{ inputs.allow_out_of_channel }}
           USE_GKE_GCLOUD_AUTH_PLUGIN: 'True'
@@ -129,7 +130,7 @@ jobs:
             "$CLUSTER" "$REGION" "$PROJECT_ID" "$TARGET" "$SCOPE" upgrade-artifacts
 
       - name: Upload baseline
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: gke-upgrade-baseline
           path: upgrade-artifacts/
@@ -146,23 +147,23 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Download baseline
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: gke-upgrade-baseline
           path: upgrade-artifacts
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
         with:
           workload_identity_provider: ${{ env.WIF_PROVIDER }}
           service_account: ${{ env.SA_EMAIL }}
           project_id: ${{ env.PROJECT_ID }}
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
         with:
           project_id: ${{ env.PROJECT_ID }}
           install_components: gke-gcloud-auth-plugin
@@ -173,18 +174,23 @@ jobs:
           POOL_STRATEGY: ${{ inputs.pool_strategy }}
           RECREATE_POOLS: ${{ inputs.recreate_pools }}
           ONLY_POOL: ${{ inputs.only_pool }}
+          ALLOW_BLOCKING_PDBS: ${{ inputs.allow_blocking_pdbs }}
+          ALLOW_OUT_OF_CHANNEL: ${{ inputs.allow_out_of_channel }}
           USE_GKE_GCLOUD_AUTH_PLUGIN: 'True'
           CLUSTER: ${{ inputs.cluster_name }}
           REGION: ${{ inputs.region }}
           TARGET: ${{ inputs.target_version }}
           SCOPE: ${{ inputs.scope }}
         run: |
+          # Approval can arrive after a new automatic operation has started.
+          ./scripts/gke-upgrade/preflight.sh \
+            "$CLUSTER" "$REGION" "$PROJECT_ID" "$TARGET" "$SCOPE" upgrade-artifacts
           ./scripts/gke-upgrade/upgrade.sh \
             "$CLUSTER" "$REGION" "$PROJECT_ID" "$TARGET" "$SCOPE" upgrade-artifacts
 
       - name: Upload recovery scripts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: gke-upgrade-recovery
           path: upgrade-artifacts/
@@ -200,23 +206,23 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: Download baseline
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: gke-upgrade-baseline
+          name: gke-upgrade-recovery
           path: upgrade-artifacts
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
         with:
           workload_identity_provider: ${{ env.WIF_PROVIDER }}
           service_account: ${{ env.SA_EMAIL }}
           project_id: ${{ env.PROJECT_ID }}
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f
         with:
           project_id: ${{ env.PROJECT_ID }}
           install_components: gke-gcloud-auth-plugin
@@ -224,7 +230,8 @@ jobs:
       - name: Verify cluster health
         env:
           # A pool left on the old version is expected when only part of the cluster was touched.
-          EXPECT_NODE_VERSIONS: ${{ inputs.scope == 'both' && inputs.only_pool == '' && inputs.pool_strategy != 'skip' }}
+          EXPECT_NODE_VERSIONS: ${{ inputs.scope != 'control-plane' && inputs.pool_strategy != 'skip' }}
+          ONLY_POOL: ${{ inputs.only_pool }}
           USE_GKE_GCLOUD_AUTH_PLUGIN: 'True'
           CLUSTER: ${{ inputs.cluster_name }}
           REGION: ${{ inputs.region }}
@@ -236,7 +243,7 @@ jobs:
 
       - name: Upload post-upgrade state
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: gke-upgrade-verification
           path: upgrade-artifacts/

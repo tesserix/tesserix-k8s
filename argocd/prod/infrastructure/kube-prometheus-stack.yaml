@@ -18,6 +18,21 @@ spec:
     targetRevision: 65.5.0
     helm:
       releaseName: kps
+      parameters:
+        - name: prometheus.prometheusSpec.replicas
+          value: "0"
+        - name: alertmanager.alertmanagerSpec.replicas
+          value: "0"
+        - name: kube-state-metrics.replicas
+          value: "0"
+        - name: prometheusOperator.nodeSelector.workload
+          value: observability-parked
+        - name: prometheusOperator.strategy.type
+          value: Recreate
+        - name: prometheusOperator.admissionWebhooks.failurePolicy
+          value: Ignore
+        - name: prometheusOperator.admissionWebhooks.patch.enabled
+          value: "false"
       values: |
         # PHASE 1 of docs/2026-09-04-alerting-restoration-design.md.
         #
@@ -32,6 +47,13 @@ spec:
         # keeps serving until parity is proven (phase 2), because it is
         # currently the ONLY thing scraping marketplace-api and we have no
         # alerting that would tell us if that stopped.
+
+        # Replace only the operator Deployment so server-side apply does not
+        # retain its old defaulted rollingUpdate fields with Recreate.
+        prometheusOperator:
+          annotations:
+            argocd.argoproj.io/sync-options: Replace=true
+            argocd.argoproj.io/ignore-healthcheck: "true"
 
         # ── CRDs are already installed by the prometheus-operator-crds app ──
         crds:

@@ -18,7 +18,7 @@ image:
   # Cloud NAT data-processing charges on every image pull. See
   # docs/artifact-registry-mirror.md.
   repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/mark8ly-marketplace-api
-  tag: "main-f111cf0"
+  tag: "main-08ea99d"
   pullPolicy: IfNotPresent
   # Same image, different entrypoint via Dockerfile target. The migrate
   # init container uses the `migrate` target; the main container uses
@@ -161,6 +161,13 @@ gcsBucket: "tesseracthub-480811-mark8ly-media"
 # GCP service account used (a) as the Workload Identity target and (b)
 # as the signer for V4-signed GCS upload URLs (IAM SignBlob path).
 gcpServiceAccount: "app-secrets-marketplace-prod@tesseracthub-480811.iam.gserviceaccount.com"
+# Buyer artwork (#960). A second bucket with NO allUsers binding and
+# public access prevention enforced — a photograph of someone's child is
+# not the same category of object as a product shot, and under uniform
+# bucket-level access a "private prefix" in a public bucket is not
+# private. Leave empty to keep the feature off; marketplace-api has no
+# fallback to the public bucket on purpose.
+privateGcsBucket: "tesseracthub-480811-mark8ly-artwork"
 # Public base URL prepended to product_media.url. Served by the
 # Cloudflare Worker `mark8ly-media-cdn` (route cdn.mark8ly.com/*) which
 # fetches from the GCS bucket and edge-caches with cf:cacheEverything.
@@ -318,6 +325,16 @@ refundSweepCron:
 # reduces it by nothing and a missed run costs only dead rows. Hourly is
 # ample — contrast refundSweepCron above, which is every 5 minutes because
 # a stuck refund is money that has not moved.
+# Abandoned buyer-artwork reaper (#960/#963). Load-bearing, unlike the
+# housekeeping sweepers around it — see the CronJob template for why this
+# is not a GCS lifecycle rule. Offset to :43 so it does not contend with
+# the other crons on the hour.
+personalisationUploadSweepCron:
+  enabled: true
+  # Every 6h against a 72h upload TTL: worst-case retention ~78h rather
+  # than the ~96h a daily run would give.
+  schedule: "43 */6 * * *"
+
 stockHoldSweepCron:
   enabled: true
   schedule: "17 * * * *"

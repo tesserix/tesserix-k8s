@@ -143,6 +143,20 @@ allowedAppNames:
   # own manifest. The chart that defines the CronJob and the chart that
   # grants it database access are different charts.
   - mark8ly-marketplace-api-admin-webhook-delivery-prune
+  # Abandoned buyer-artwork reaper CronJob (admin chart, mark8ly#960).
+  #
+  # FOURTH instance of the shape the comment above warns about, and it
+  # shipped missing this entry despite that warning. Every run from
+  # 2026-10-03 to 2026-10-05 failed: db.Open retried a silently-dropped
+  # connection ten times, reporting "tls error: ... connection reset by
+  # peer", then the Job died on activeDeadlineSeconds. The CronJob
+  # existed and looked correct the entire time.
+  #
+  # This one is load-bearing, unlike the three above it: it destroys
+  # photographs shoppers uploaded and never bought, so a silent failure
+  # is a retention breach that accumulates rather than dead rows that do
+  # not matter.
+  - mark8ly-marketplace-api-admin-artwork-sweep
 
 # Cross-namespace clients allowed into postgres. Prod allows the
 # tesserix super-admin Next.js + APIs; UAT defaults to none (test env

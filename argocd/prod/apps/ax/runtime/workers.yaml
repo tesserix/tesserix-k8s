@@ -1,0 +1,36 @@
+apiVersion: ax.ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: ax-workers
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '1'
+spec:
+  replicas: 2
+  workerImage: asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-runtime/ateom-gvisor:ax-944abe3278b8-v2@sha256:fb9e2b108087d483d76b69d88db5c4c1d7fede21794ce8dd1e675db8d9330020
+  sandboxClass: gvisor
+  template:
+    labels:
+      ax.tesserix.app/component: worker
+    nodeSelector:
+      cloud.google.com/gke-nodepool: optimized-v2
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: '2'
+        memory: 2Gi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ax-workers
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '1'
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      ax.ate.dev/worker-pool: ax-workers

@@ -84,17 +84,20 @@ cloudflare:
   region: "auto"
 
 # Public deployment — real auth required (notSecured MUST stay "false").
-# disableRegistration locked to "true" (2026-07-22) after the owner account
-# was registered — only existing accounts can log in. Flip to "false"
-# temporarily if another account ever needs to sign up.
+# disableRegistration stays "true" — only existing accounts can log in.
 flags:
   isGeneral: "true"
   notSecured: "false"
-  # Locked (2026-07-22) — two Google accounts share the Tesserix org
-  # (unidevidp@gmail.com + mahesh.sangawar@gmail.com); no other account can
-  # register. Flip to "false" temporarily to add another member, then re-lock
-  # (and move their auto-created org membership in the DB if they signed up
-  # without an invite).
+  # Locked. The flag is global, not an allowlist, so any period with it "false"
+  # lets anyone who reaches the public URL create an account. Onboarding another
+  # member means flipping it to "false", having them sign in with Google, and
+  # re-locking straight away — keep the two changes as a pair (#1258 and this
+  # one; before that, 99871604 -> 75544a27).
+  #
+  # There is no invitation mail while email.enabled is false, so a new member
+  # has to self-register, and Postiz puts them in their own auto-created org —
+  # their UserOrganization row then has to be moved onto the Tesserix org or
+  # they will not see the shared channels.
   disableRegistration: "true"
   apiLimit: "30"
   # Starts Postiz's `missingPostWorkflow` sweeper (InfiniteWorkflowRegister only

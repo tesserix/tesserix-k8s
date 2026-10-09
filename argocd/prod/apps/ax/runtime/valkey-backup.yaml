@@ -1,0 +1,110 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ax-valkey-backup
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '3'
+spec:
+  schedule: '*/15 * * * *'
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app: ax-valkey-backup
+        spec:
+          serviceAccountName: ax-backup
+          restartPolicy: Never
+          volumes:
+          - name: backup
+            emptyDir:
+              sizeLimit: 1Gi
+          - name: runtime-tmp
+            emptyDir:
+              sizeLimit: 256Mi
+          initContainers:
+          - name: snapshot
+            image: valkey/valkey:9.1.1-alpine@sha256:15568b9cb7eb67f4aed4de018c23f13d344e0e6437b31fe8fb8823dc81ebb3a9
+            command:
+            - sh
+            - -ec
+            - valkey-cli -h ax-valkey --rdb /backup/dump.rdb && test -s /backup/dump.rdb
+            env:
+            - name: REDISCLI_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: ax-valkey-password
+                  key: password
+            - name: VALKEYCLI_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: ax-valkey-password
+                  key: password
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                memory: 512Mi
+                cpu: '1'
+            volumeMounts:
+            - name: backup
+              mountPath: /backup
+            - name: runtime-tmp
+              mountPath: /tmp
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 65532
+              runAsGroup: 65532
+              capabilities:
+                drop:
+                - ALL
+          containers:
+          - name: upload
+            image: google/cloud-sdk:slim@sha256:7c2dbc4eeba1e500b788be19cae33599cefe3294949a62c034bd1c2002329f69
+            command:
+            - sh
+            - -ec
+            - gcloud storage cp /backup/dump.rdb "gs://tesseracthub-480811-ax-backups/valkey/$(date
+              -u +%Y%m%dT%H%M%SZ).rdb" --quiet
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                memory: 512Mi
+                cpu: '1'
+            volumeMounts:
+            - name: backup
+              mountPath: /backup
+              readOnly: true
+            - name: runtime-tmp
+              mountPath: /tmp
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 65532
+              runAsGroup: 65532
+              capabilities:
+                drop:
+                - ALL
+            env:
+            - name: CLOUDSDK_CONFIG
+              value: /tmp/gcloud
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault

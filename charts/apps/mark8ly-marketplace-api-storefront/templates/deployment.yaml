@@ -125,6 +125,38 @@ spec:
             - name: EMAIL_PRIMARY_PROVIDER
               value: {{ .Values.email.primaryProvider | quote }}
             {{- end }}
+            # Buyer artwork — a SEPARATE, PRIVATE bucket (#960).
+            #
+            # Never the public media bucket. That one has
+            # `roles/storage.objectViewer -> allUsers`, which is correct
+            # for a product photo and catastrophic for a photograph a
+            # buyer uploaded of a person. marketplace-api has no
+            # fallback: empty here means buyer uploads stay switched off
+            # rather than quietly landing somewhere world-readable.
+            {{- with .Values.privateGcsBucket }}
+            - name: MARKETPLACE_PRIVATE_GCS_BUCKET
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.gcpServiceAccount }}
+            # REQUIRED for the private bucket to work at all, and it was
+            # missing from this chart until #960.
+            #
+            # Under GKE Workload Identity, ADC has no private key, so
+            # bucket.SignedURL cannot sign locally — it needs the IAM
+            # SignBlob path, which marketplace-api only takes when this
+            # variable is set. Without it every buyer upload fails at
+            # signing time with the bucket correctly configured and the
+            # KSA correctly bound: the exact "looks right, emits
+            # nothing" failure. The KSA is annotated with this same SA in
+            # serviceaccount.yaml; the SA holds
+            # roles/iam.serviceAccountTokenCreator on itself.
+            - name: MARKETPLACE_GCS_SIGNER_SA_EMAIL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.mediaPublicBaseURL }}
+            - name: MARKETPLACE_MEDIA_PUBLIC_BASE_URL
+              value: {{ . | quote }}
+            {{- end }}
             # Service discovery
             - name: MARKETPLACE_FGA_API_URL
               value: {{ .Values.fgaApiUrl | quote }}

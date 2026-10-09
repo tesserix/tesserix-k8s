@@ -8,3 +8,19 @@ resource "google_storage_bucket_iam_member" "sandbox_source_promotion_verifier" 
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${data.google_service_account.kora_dev_document_scanner.email}"
 }
+
+locals {
+  result_readback_buckets = {
+    "kora-doc-worker"     = "kora-prod-doc-results-in"
+    "kora-dev-doc-worker" = "kora-dev-doc-results-in"
+  }
+}
+
+# Finalization reads the immutable object back before publishing its generation.
+resource "google_storage_bucket_iam_member" "result_readback" {
+  for_each = local.result_readback_buckets
+
+  bucket = each.value
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${each.key}@${var.project_id}.iam.gserviceaccount.com"
+}

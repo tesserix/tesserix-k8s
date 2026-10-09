@@ -12,13 +12,6 @@ data "terraform_remote_state" "network" {
   }
 }
 
-# Get the latest GKE version for the release channel
-data "google_container_engine_versions" "gke_version" {
-  project        = var.project_id
-  location       = var.regional ? var.region : var.zones[0]
-  version_prefix = var.kubernetes_version_prefix
-}
-
 # =============================================================================
 # GKE Cluster
 # =============================================================================
@@ -28,8 +21,7 @@ resource "google_container_cluster" "primary" {
   project  = var.project_id
   location = var.regional ? var.region : var.zones[0]
 
-  # Use the latest available version from the release channel
-  min_master_version = var.use_latest_version ? data.google_container_engine_versions.gke_version.latest_master_version : null
+  min_master_version = var.control_plane_version
 
   # Remove default node pool - we manage node pools separately
   remove_default_node_pool = true
@@ -109,6 +101,18 @@ resource "google_container_cluster" "primary" {
     daily_maintenance_window {
       start_time = var.maintenance_start_time
     }
+
+    dynamic "maintenance_exclusion" {
+      for_each = var.node_upgrade_hold == null ? [] : [var.node_upgrade_hold]
+      content {
+        exclusion_name = maintenance_exclusion.value.name
+        start_time     = maintenance_exclusion.value.start_time
+        end_time       = maintenance_exclusion.value.end_time
+        exclusion_options {
+          scope = "NO_MINOR_OR_NODE_UPGRADES"
+        }
+      }
+    }
   }
 
   # Release channel
@@ -158,6 +162,7 @@ resource "google_container_cluster" "primary" {
   deletion_protection = var.deletion_protection
 
   lifecycle {
+    prevent_destroy = true
     ignore_changes = [
       node_pool,
       initial_node_count,
@@ -183,9 +188,6 @@ resource "google_container_node_pool" "pools" {
   location = var.regional ? var.region : var.zones[0]
   cluster  = google_container_cluster.primary.name
 
-  # Use the latest node version from the release channel
-  version = var.use_latest_version ? data.google_container_engine_versions.gke_version.latest_node_version : null
-
   initial_node_count = each.value.initial_node_count
   max_pods_per_node  = each.value.max_pods_per_node
 
@@ -193,7 +195,7 @@ resource "google_container_node_pool" "pools" {
     min_node_count       = each.value.min_count
     max_node_count       = each.value.max_count
     total_min_node_count = each.value.total_min_count
-    total_max_node_count = each.value.total_max_count
+    total_max_node_count = lookup(var.node_pool_total_max_count_overrides, each.key, each.value.total_max_count)
     location_policy      = each.value.location_policy
   }
 
@@ -203,8 +205,8 @@ resource "google_container_node_pool" "pools" {
   }
 
   upgrade_settings {
-    max_surge       = each.value.max_surge
-    max_unavailable = each.value.max_unavailable
+    max_surge       = try(var.node_pool_upgrade_settings_overrides[each.key].max_surge, each.value.max_surge)
+    max_unavailable = try(var.node_pool_upgrade_settings_overrides[each.key].max_unavailable, each.value.max_unavailable)
   }
 
   node_config {
@@ -249,7 +251,28 @@ resource "google_container_node_pool" "pools" {
   }
 
   lifecycle {
-    ignore_changes = [initial_node_count]
+    prevent_destroy = true
+    # Node rollouts belong to the gated upgrade workflow, separately from the
+    # control plane. Preserve GKE's version after automatic or manual upgrades.
+    ignore_changes = [initial_node_count, version]
+
+    precondition {
+      condition     = alltrue([for name in keys(var.node_pool_upgrade_settings_overrides) : contains([for pool in var.node_pools : pool.name], name)])
+      error_message = "Upgrade overrides must name an existing node pool."
+    }
+
+    precondition {
+      condition     = alltrue([for name in keys(var.node_pool_total_max_count_overrides) : contains([for pool in var.node_pools : pool.name], name)])
+      error_message = "Autoscaler overrides must name an existing node pool."
+    }
+
+    precondition {
+      condition = !contains(keys(var.node_pool_total_max_count_overrides), each.key) || (
+        each.value.total_max_count != null &&
+        lookup(var.node_pool_total_max_count_overrides, each.key, 0) >= coalesce(each.value.total_max_count, 0)
+      )
+      error_message = "Overrides may only increase an existing total node-count ceiling."
+    }
   }
 
   timeouts {

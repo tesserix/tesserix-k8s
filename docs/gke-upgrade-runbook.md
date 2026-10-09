@@ -4,6 +4,51 @@ Manual, gated upgrade of a GKE cluster via the **GKE Upgrade (Manual)** workflow
 (`.github/workflows/gke-upgrade.yaml`). Nothing here runs on a schedule — an
 upgrade only ever happens because a human dispatched it.
 
+## Version ownership and staged upgrades
+
+Terraform owns the exact control-plane minimum through `control_plane_version`
+in `terraform-new/stacks/04-gke/upgrade.auto.tfvars`. It no longer selects a
+moving latest version for either the control plane or nodes. Node versions are
+preserved by Terraform; the manual workflow upgrades individual pools after
+their workload checks pass. GKE can still perform automatic upgrades outside
+maintenance exclusions, so this is not an indefinite version freeze.
+
+Keep upgrade-only inputs in this stack-local file: changing the shared production
+tfvars causes Atlantis to plan every stack and require unrelated dependency
+applies. The legacy `use_latest_version` and `kubernetes_version_prefix` values
+in the shared file are no longer consumed by the GKE stack.
+
+For the AX prerequisite upgrade, the reviewed target is
+`1.37.0-gke.3503000`, offered by the cluster's Rapid channel on 2026-10-02.
+`1.38.0-gke.1002000+preview` is excluded. Refresh version availability and
+preflight before applying. The read-only Terraform plan showed one in-place
+cluster change (`maintenance_policy`, `min_master_version`), no node-pool
+changes, and no deletes/replacements.
+
+`node_upgrade_hold` sets a bounded `NO_MINOR_OR_NODE_UPGRADES` exclusion until
+2026-10-09 00:00 UTC. It prevents automatic minor and node upgrades during the
+staged rollout; it does not cancel an active operation, block manual upgrades,
+or prevent emergency maintenance. The pinned Google provider 5.45.2 updates
+maintenance policy and waits before updating the control-plane version.
+Review/remove the hold after node verification; do not silently extend it.
+
+The cluster and managed node-pool resources also use `prevent_destroy`.
+Terraform must reject replacements, including immutable node changes. This
+guard does not protect a resource whose entire configuration is removed, and
+does not prevent deletion through gcloud. Keep cluster deletion protection on.
+
+Use Atlantis's saved-plan review/apply path for the Terraform change. Do not
+run a Terraform apply and the manual upgrade workflow concurrently. Apply the
+control-plane change only after the cluster is RUNNING and no cluster or
+node-pool operation is pending/running. Verify certificate API discovery and
+the before/after workload health before proceeding with AX or node upgrades.
+
+At the assessment, automatic operation
+`operation-1790899686623-0a9d0222-23cd-4b1d-98af-e9053d2b1472` was upgrading
+`optimized-v2`, and the cluster was RECONCILING. It is a live gate, not a reason
+to override preflight. Cancellation requires a separate named approval; an
+in-flight node may finish, and completed nodes are not rolled back by cancelling.
+
 ## One-time setup
 
 Both of these are prerequisites; the workflow fails without them.
@@ -69,26 +114,48 @@ Blockers fail the run before anything is touched. Warnings are printed and allow
 - Any node that is not Ready. A cordoned-but-Ready node is only a warning: that
   is normally the cluster autoscaler retiring a node, not a fault.
 - Deprecated API usage that the target version removes.
-- **PDBs that allow zero evictions.** This is the usual blocker on this cluster —
+- **PDBs that allow zero evictions block node upgrades, not a control-plane-only
+  upgrade.** A control-plane-only run reports them without needing an eviction
+  override. This is the usual node-rollout blocker on this cluster —
   every single-instance CNPG `*-postgres-primary` has `minAvailable: 1`, so a
   drain cannot legally evict it. GKE waits about an hour per node and then
   force-drains anyway, which means an uncoordinated restart for that database.
-  Either scale the CNPG cluster to 2 instances first so it can switch over
-  cleanly, or set `allow_blocking_pdbs` and accept the downtime.
+  Plan and verify database redundancy and the operator's switchover behaviour
+  before draining. Setting `allow_blocking_pdbs` accepts possible forced-drain
+  downtime and requires an explicit operational decision.
+
+For a staged node rollout, set `only_pool` in the workflow (or `ONLY_POOL`
+locally). Drain checks evaluate pods on that pool, including full Kubernetes
+label selectors; budgets with no matching active pods do not block an empty
+pool. A CNPG-owned primary budget is allowed only when its cluster is healthy,
+all desired instances are ready, no switchover is pending, and a ready standby
+exists on another Ready, schedulable node. CNPG still coordinates the actual
+switchover and Kubernetes still enforces its PDB. Singletons and ordinary
+application budgets remain blocking. Failure to read inventory blocks the run.
+
+Verification checks both the selected pool's configured version and every
+selected node's actual kubelet version. An incomplete node rollout fails even
+when the pool already reports the target version.
+
+Preflight includes operations targeting `/clusters/<name>/nodePools/...`, and
+fails closed if it cannot read operations. It runs again after environment
+approval immediately before the upgrade; verification uses that fresh baseline.
 
 ## Node pool strategies
 
 `pool_strategy` applies **only** to the pools named in `recreate_pools`
-(default `gpu-l4-spot`). Every other pool always surge-upgrades.
+(empty by default). Every other pool always surge-upgrades. The script defaults
+to `DRY_RUN=true` and rejects values other than `true` or `false`.
 
-- **`recreate`** (default) — delete the pool and rebuild it at the target
+- **`recreate`** (explicit opt-in) — delete the pool and rebuild it at the target
   version from the spec captured during preflight. Used because a surge upgrade
   must first obtain an *additional* spot L4 node in `asia-south1` before it will
   drain the old one, and that capacity may simply not exist, leaving the upgrade
   stalled. Recreate accepts a short outage on that pool instead of a stall.
-- **`surge`** — normal in-place rolling upgrade. **Switch `gpu-l4-spot` to this,
-  and empty `recreate_pools`, once those nodes move to CUD/on-demand capacity**,
-  since the surge node is then guaranteed to be available.
+- **`surge`** (default) — rolling upgrade with additional temporary capacity.
+  Verify quota and zonal capacity first; on-demand billing or a CUD does not
+  guarantee spare capacity. Current settings permit one surge node per zone and
+  zero unavailable nodes. Budget for temporary extra nodes during the rollout.
 - **`skip`** — leave the pool alone.
 
 Recreate-strategy pools are always upgraded **last**, so a capacity failure there
@@ -139,5 +206,31 @@ laptop against a live cluster without changing anything:
 ./scripts/gke-upgrade/preflight.sh tesseract-prod-in-gke asia-south1 \
   tesseracthub-480811 1.36.2-gke.2064000 both ./artifacts
 
+python3 -m pytest scripts/gke-upgrade/tests/ -q
 bash scripts/gke-upgrade/tests/run-tests.sh   # offline unit tests, no cloud access
+bash scripts/gke-upgrade/tests/preflight-tests.sh
+bash scripts/gke-upgrade/tests/upgrade-tests.sh
+bash scripts/gke-upgrade/tests/terraform-tests.sh
 ```
+
+The Terraform tests mock providers and remote-state data; the mock apply runs
+only in memory. The runner omits credential outputs because the legacy SDK
+provider mock cannot synthesize an absent `master_auth` block. The real stack
+must additionally pass `terraform validate` and a reviewed live-state plan.
+
+
+## Restoring the seven-node ceiling
+
+The 2026-10-02 upgrade temporarily raises `optimized-v2`'s total autoscaler
+ceiling from seven to ten through `node_pool_total_max_count_overrides` in
+`terraform-new/stacks/04-gke/upgrade.auto.tfvars`. Its minimum remains three.
+This is temporary capacity, not a new steady-state size.
+
+After all node pools and AX pass verification, remove the `optimized-v2`
+override through a reviewed GKE-only Atlantis plan and apply. The base production
+pool configuration must still set `total_max_count = 7`. Verify GKE reports
+`autoscaling.totalMaxNodeCount = 7`, wait for the actual worker count to return
+to seven with workload health preserved, and confirm no operation remains active.
+Do not force-delete nodes to achieve the count. If requests no longer fit within
+seven nodes, resolve their sizing and placement before declaring completion.
+Keep the GPU and sandbox pools empty unless their use has been explicitly scoped.

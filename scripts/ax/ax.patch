@@ -1,0 +1,794 @@
+diff --git a/cmd/ax-server/main.go b/cmd/ax-server/main.go
+index 4f224fd..0023750 100644
+--- a/cmd/ax-server/main.go
++++ b/cmd/ax-server/main.go
+@@ -17,6 +17,8 @@ package main
+ import (
+ 	"context"
+ 	"flag"
++	"google.golang.org/grpc/codes"
++	"google.golang.org/grpc/status"
+ 	"log/slog"
+ 	"net/http"
+ 	"os"
+@@ -99,7 +101,8 @@ func main() {
+ 		Plaintext:   substratePlaintext,
+ 	})
+ 	if err != nil {
+-		slog.Warn("could not initialize substrate client; running without substrate reconciliation", "error", err)
++		slog.Error("could not initialize substrate client", "error", err)
++		os.Exit(1)
+ 	} else {
+ 		defer subClient.Close()
+ 		reconciler = controller.NewTaskReconciler(subClient, defaultTemplate, defaultTemplateAtespace)
+@@ -108,6 +111,16 @@ func main() {
+ 	srv := server.NewServer(rStore, server.Options{
+ 		Locker:     rLocker,
+ 		Reconciler: reconciler,
++		Readiness: func(ctx context.Context) error {
++			if err := rClient.Ping(ctx).Err(); err != nil {
++				return err
++			}
++			_, err := subClient.ListActorTemplates(ctx, defaultTemplateAtespace)
++			if status.Code(err) == codes.NotFound {
++				return nil
++			}
++			return err
++		},
+ 	})
+ 
+ 	httpServer := &http.Server{
+diff --git a/cmd/ax-task-runner/antigravity_bootstrap.py b/cmd/ax-task-runner/antigravity_bootstrap.py
+index 600870b..d47ec9f 100644
+--- a/cmd/ax-task-runner/antigravity_bootstrap.py
++++ b/cmd/ax-task-runner/antigravity_bootstrap.py
+@@ -72,7 +72,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
+ 
+ 
+ async def run_bootstrap(goal: str, workspace_dir: str, data_dir: str) -> None:
+-    from google.antigravity import Agent, CapabilitiesConfig, LocalAgentConfig
++    from google.antigravity import Agent, CapabilitiesConfig, LocalAgentConfig, ModelTarget, VertexEndpoint, ModelType, BuiltinTools
+     from google.antigravity.hooks import policy
+ 
+     config_kwargs = dict(
+@@ -81,9 +81,18 @@ async def run_bootstrap(goal: str, workspace_dir: str, data_dir: str) -> None:
+         # Deny file tools outside the workspace; allow everything else (including
+         # run_command, which the SDK denies by default). Denies take priority.
+         policies=[*policy.workspace_only([workspace_dir]), policy.allow_all()],
+-        api_key=os.environ[API_KEY_ENV],
++
+         system_instructions=SYSTEM_INSTRUCTIONS.format(workspace_dir=workspace_dir),
+     )
++    if gateway := os.environ.get("AX_MODEL_GATEWAY_URL"):
++        config_kwargs["model"] = ModelTarget(
++            name=os.environ["AX_MODEL_NAME"],
++            types=[ModelType.TEXT, ModelType.IMAGE],
++            endpoint=VertexEndpoint(base_url=gateway, project=os.environ["AX_VERTEX_PROJECT"], location=os.environ["AX_VERTEX_LOCATION"]),
++        )
++        config_kwargs["capabilities"] = CapabilitiesConfig(disabled_tools=[BuiltinTools.GENERATE_IMAGE])
++    else:
++        config_kwargs["api_key"] = os.environ[API_KEY_ENV]
+     if data_dir:
+         os.makedirs(data_dir, exist_ok=True)
+         config_kwargs["save_dir"] = data_dir
+@@ -108,7 +117,7 @@ def main(argv: list[str]) -> int:
+     if not args.goal:
+         logging.info("No goal provided for Antigravity workspace bootstrap; skipping")
+         return 0
+-    if not os.environ.get(API_KEY_ENV):
++    if not os.environ.get(API_KEY_ENV) and not os.environ.get("AX_MODEL_GATEWAY_URL"):
+         logging.error("%s is not set; cannot run Antigravity workspace bootstrap", API_KEY_ENV)
+         return 1
+     if not os.path.isdir(workspace_dir):
+diff --git a/cmd/ax-task-runner/test_antigravity_gateway.py b/cmd/ax-task-runner/test_antigravity_gateway.py
+new file mode 100644
+index 0000000..9d0abc1
+--- /dev/null
++++ b/cmd/ax-task-runner/test_antigravity_gateway.py
+@@ -0,0 +1,53 @@
++import asyncio
++import importlib.util
++import os
++from pathlib import Path
++import sys
++import types
++import unittest
++from unittest.mock import patch
++
++spec = importlib.util.spec_from_file_location('bootstrap', Path(__file__).with_name('antigravity_bootstrap.py'))
++bootstrap = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(bootstrap)
++
++
++class GatewayConfigTest(unittest.TestCase):
++    def test_gateway_uses_scoped_vertex_endpoint_without_key(self):
++        captured = {}
++        class Value:
++            def __init__(self, **kwargs):
++                self.__dict__.update(kwargs)
++        class Response:
++            async def text(self):
++                return 'gateway-ok'
++        class Agent:
++            def __init__(self, config):
++                captured['config'] = config
++            async def __aenter__(self):
++                return self
++            async def __aexit__(self, *args):
++                pass
++            async def chat(self, prompt):
++                return Response()
++        sdk = types.ModuleType('google.antigravity')
++        sdk.Agent, sdk.CapabilitiesConfig, sdk.LocalAgentConfig = Agent, Value, Value
++        sdk.ModelTarget, sdk.VertexEndpoint = Value, Value
++        sdk.ModelType = types.SimpleNamespace(TEXT="text", IMAGE="image")
++        sdk.BuiltinTools = types.SimpleNamespace(GENERATE_IMAGE="generate_image")
++        hooks = types.ModuleType('google.antigravity.hooks')
++        hooks.policy = types.SimpleNamespace(workspace_only=lambda _: [], allow_all=lambda: None)
++        env = {'AX_MODEL_GATEWAY_URL': 'http://gateway/vertex', 'AX_MODEL_NAME': 'gemini-2.5-flash', 'AX_VERTEX_PROJECT': 'test-project', 'AX_VERTEX_LOCATION': 'global'}
++        with patch.dict(os.environ, env, clear=True), patch.dict(sys.modules, {'google': types.ModuleType('google'), 'google.antigravity': sdk, 'google.antigravity.hooks': hooks}):
++            asyncio.run(bootstrap.run_bootstrap('write a marker', '/workspace', ''))
++        cfg = captured['config']
++        self.assertEqual(cfg.model.endpoint.base_url, 'http://gateway/vertex')
++        self.assertEqual(cfg.model.endpoint.project, 'test-project')
++        self.assertEqual(cfg.model.name, 'gemini-2.5-flash')
++        self.assertFalse(hasattr(cfg, 'api_key'))
++        self.assertEqual(cfg.model.types, ["text", "image"])
++        self.assertEqual(cfg.capabilities.disabled_tools, ["generate_image"])
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/cmd/ax/lifecycle_timeout_test.go b/cmd/ax/lifecycle_timeout_test.go
+new file mode 100644
+index 0000000..93027d0
+--- /dev/null
++++ b/cmd/ax/lifecycle_timeout_test.go
+@@ -0,0 +1,45 @@
++package main
++
++import (
++	"context"
++	"github.com/google/ax/pkg/apis/v1alpha1"
++	"google.golang.org/grpc"
++	"net"
++	"testing"
++	"time"
++)
++
++type coldLifecycleServer struct{ v1alpha1.UnimplementedAXServer }
++
++func coldOperation(ctx context.Context) (*v1alpha1.Task, error) {
++	select {
++	case <-time.After(16 * time.Second):
++		return &v1alpha1.Task{}, nil
++	case <-ctx.Done():
++		return nil, ctx.Err()
++	}
++}
++func (s *coldLifecycleServer) ResumeTask(ctx context.Context, _ *v1alpha1.ResumeTaskRequest) (*v1alpha1.Task, error) {
++	return coldOperation(ctx)
++}
++func (s *coldLifecycleServer) SuspendTask(ctx context.Context, _ *v1alpha1.SuspendTaskRequest) (*v1alpha1.Task, error) {
++	return coldOperation(ctx)
++}
++func TestLifecycleAllowsColdCheckpointOperations(t *testing.T) {
++	for name, run := range map[string]func(string, string, []string) error{"resume": runResume, "suspend": runSuspend} {
++		t.Run(name, func(t *testing.T) {
++			t.Parallel()
++			l, err := net.Listen("tcp", "127.0.0.1:0")
++			if err != nil {
++				t.Fatal(err)
++			}
++			s := grpc.NewServer()
++			v1alpha1.RegisterAXServer(s, &coldLifecycleServer{})
++			t.Cleanup(s.Stop)
++			go func() { _ = s.Serve(l) }()
++			if err := run("http://"+l.Addr().String(), "test", []string{"task", "cold"}); err != nil {
++				t.Fatal(err)
++			}
++		})
++	}
++}
+diff --git a/cmd/ax/main.go b/cmd/ax/main.go
+index a7bfb3a..b96e6db 100644
+--- a/cmd/ax/main.go
++++ b/cmd/ax/main.go
+@@ -146,7 +146,7 @@ func main() {
+ 	case "delete":
+ 		err = runDelete(serverURL, atespace, cleanArgs)
+ 	case "ssh":
+-		err = runSSH(serverURL, atespace, kubeContext, cleanArgs)
++		err = runSSH(serverURL, atespace, kubeContext, axNamespace, cleanArgs)
+ 	default:
+ 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
+ 		printUsage()
+@@ -400,7 +400,6 @@ func runGet(serverURL, atespace string, args []string) error {
+ 		return yaml.NewEncoder(os.Stdout).Encode(task)
+ 	}
+ 
+-
+ 	if (resource == "workspaces" || resource == "workspace") && len(args) == 1 {
+ 		resp, err := client.ListWorkspaces(ctx, &v1alpha1.ListWorkspacesRequest{Atespace: atespace})
+ 		if err != nil {
+@@ -607,7 +606,6 @@ func runDescribe(serverURL, atespace string, args []string) error {
+ 		return nil
+ 	}
+ 
+-
+ 	task, err := client.GetTask(ctx, &v1alpha1.GetTaskRequest{Atespace: atespace, Name: name})
+ 	if err != nil {
+ 		return fmt.Errorf("getting task %q: %w", name, err)
+@@ -831,7 +829,7 @@ func runSuspend(serverURL, atespace string, args []string) error {
+ 	}
+ 	defer conn.Close()
+ 
+-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+ 	defer cancel()
+ 
+ 	if _, err := client.SuspendTask(ctx, &v1alpha1.SuspendTaskRequest{Atespace: atespace, Name: name}); err != nil {
+@@ -862,7 +860,7 @@ func runResume(serverURL, atespace string, args []string) error {
+ 	}
+ 	defer conn.Close()
+ 
+-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
++	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+ 	defer cancel()
+ 
+ 	if _, err := client.ResumeTask(ctx, &v1alpha1.ResumeTaskRequest{Atespace: atespace, Name: name}); err != nil {
+@@ -959,7 +957,7 @@ func runTunnel(args []string) error {
+ 	}
+ }
+ 
+-func runSSH(serverURL, atespace, kubeContext string, args []string) error {
++func runSSH(serverURL, atespace, kubeContext, axNamespace string, args []string) error {
+ 	if len(args) == 0 {
+ 		return fmt.Errorf("usage: ax ssh <task-name> [-- command...]")
+ 	}
+@@ -1039,8 +1037,8 @@ func runSSH(serverURL, atespace, kubeContext string, args []string) error {
+ 			return fmt.Errorf("connecting to guest at %s: %w", guestEndpoint, err)
+ 		}
+ 	} else {
+-		// 2. Connect via the Substrate atenet-router service in ate-system (port 80)
+-		localPort, pfCleanup, err := tunnel.PortForward(context.Background(), kubeContext, "ate-system", "svc/atenet-router", 80)
++		// 2. Connect via the Substrate atenet-router service in the AX namespace (port 80)
++		localPort, pfCleanup, err := tunnel.PortForward(context.Background(), kubeContext, routerNamespace(axNamespace), "svc/atenet-router", 80)
+ 		if err != nil {
+ 			return fmt.Errorf("establishing port-forward to atenet-router: %w", err)
+ 		}
+@@ -1072,3 +1070,13 @@ func runSSH(serverURL, atespace, kubeContext string, args []string) error {
+ 
+ 	return nil
+ }
++
++func routerNamespace(explicit string) string {
++	if explicit != "" {
++		return explicit
++	}
++	if namespace := os.Getenv("AX_SYSTEM_NAMESPACE"); namespace != "" {
++		return namespace
++	}
++	return "ax-system"
++}
+diff --git a/cmd/ax/router_namespace_test.go b/cmd/ax/router_namespace_test.go
+new file mode 100644
+index 0000000..3ef648e
+--- /dev/null
++++ b/cmd/ax/router_namespace_test.go
+@@ -0,0 +1,18 @@
++package main
++
++import "testing"
++
++func TestRouterNamespaceFollowsAXInstallation(t *testing.T) {
++	for _, tt := range []struct{ name, flag, env, want string }{
++		{"isolated default", "", "", "ax-system"},
++		{"environment", "", "ax-staging", "ax-staging"},
++		{"explicit namespace", "ax-other", "ax-staging", "ax-other"},
++	} {
++		t.Run(tt.name, func(t *testing.T) {
++			t.Setenv("AX_SYSTEM_NAMESPACE", tt.env)
++			if got := routerNamespace(tt.flag); got != tt.want {
++				t.Fatalf("namespace = %s, want %s", got, tt.want)
++			}
++		})
++	}
++}
+diff --git a/internal/controller/reconciler.go b/internal/controller/reconciler.go
+index 55814d7..e37d6ba 100644
+--- a/internal/controller/reconciler.go
++++ b/internal/controller/reconciler.go
+@@ -150,6 +150,11 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, wor
+ 		}
+ 	}
+ 
++	for _, name := range []string{"AX_MODEL_GATEWAY_URL", "AX_MODEL_NAME", "AX_VERTEX_PROJECT", "AX_VERTEX_LOCATION"} {
++		if value := os.Getenv(name); value != "" {
++			extraEnv[name] = value
++		}
++	}
+ 	if geminiKey := r.lookupGeminiKey(ctx, atespace); geminiKey != "" {
+ 		extraEnv[geminiSecretKey] = geminiKey
+ 	}
+@@ -351,6 +356,9 @@ func (r *TaskReconciler) setCondition(task *v1alpha1.Task, condType, status, rea
+ // Kubernetes secret in the task's atespace and falling back to the server's own
+ // environment. It returns "" when neither source has a value.
+ func (r *TaskReconciler) lookupGeminiKey(ctx context.Context, atespace string) string {
++	if os.Getenv("AX_MODEL_GATEWAY_URL") != "" {
++		return ""
++	}
+ 	if r.SecretResolver != nil {
+ 		lookupCtx, cancel := context.WithTimeout(ctx, secretLookupTimeout)
+ 		defer cancel()
+diff --git a/internal/metadata/actor_probe_test.go b/internal/metadata/actor_probe_test.go
+new file mode 100644
+index 0000000..94ecace
+--- /dev/null
++++ b/internal/metadata/actor_probe_test.go
+@@ -0,0 +1,26 @@
++package metadata
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"testing"
++
++	"github.com/google/ax/internal/substrate"
++	"github.com/google/ax/pkg/apis/v1alpha1"
++)
++
++func TestActorCanEnableNetworkingBeforeWorkspaceBootstrap(t *testing.T) {
++	server := NewServer(9999, &v1alpha1.Task{Spec: &v1alpha1.TaskSpec{}}, nil)
++	template := substrate.BuildActorTemplate("test", "bootstrap", "runner", nil, nil, "")
++	probe := template.GetContainers()[0].GetReadyz().GetHttpGet().GetPath()
++	response := httptest.NewRecorder()
++	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, probe, nil))
++	if response.Code != http.StatusOK {
++		t.Fatalf("actor cannot enable egress before model bootstrap: probe returned %d", response.Code)
++	}
++	response = httptest.NewRecorder()
++	server.server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
++	if response.Code != http.StatusServiceUnavailable {
++		t.Fatalf("workspace falsely ready before bootstrap: %d", response.Code)
++	}
++}
+diff --git a/internal/model/client.go b/internal/model/client.go
+index f5884d7..e362695 100644
+--- a/internal/model/client.go
++++ b/internal/model/client.go
+@@ -25,6 +25,7 @@ import (
+ 	"fmt"
+ 	"io"
+ 	"net/http"
++	"net/url"
+ 	"os"
+ 	"os/exec"
+ 	"strings"
+@@ -236,6 +237,9 @@ func NewClient(cfg Config, opts ...Option) *Client {
+ 	if cfg.Atespace == "" {
+ 		cfg.Atespace = DefaultAtespace
+ 	}
++	if (cfg.Model == "" || cfg.Model == DefaultModel) && os.Getenv("AX_MODEL_GATEWAY_URL") != "" {
++		cfg.Model = os.Getenv("AX_MODEL_NAME")
++	}
+ 	if cfg.Model == "" {
+ 		cfg.Model = DefaultModel
+ 	}
+@@ -260,7 +264,7 @@ func NewClient(cfg Config, opts ...Option) *Client {
+ 		opt(c)
+ 	}
+ 
+-	if c.cfg.APIKey == "" {
++	if c.cfg.APIKey == "" && os.Getenv("AX_MODEL_GATEWAY_URL") == "" {
+ 		c.cfg.APIKey = c.resolveAPIKey()
+ 	}
+ 
+@@ -497,7 +501,8 @@ func (c *Client) Generate(ctx context.Context, req *GenerateRequest) (*GenerateR
+ 
+ // generateGoogle communicates with Google Generative Language API for Gemini models.
+ func (c *Client) generateGoogle(ctx context.Context, req *GenerateRequest) (*GenerateResponse, error) {
+-	if c.cfg.DisableRemote || c.cfg.APIKey == "" {
++	gateway := os.Getenv("AX_MODEL_GATEWAY_URL")
++	if c.cfg.DisableRemote || (c.cfg.APIKey == "" && gateway == "") {
+ 		return c.fallbackResponse(req), nil
+ 	}
+ 
+@@ -507,6 +512,13 @@ func (c *Client) generateGoogle(ctx context.Context, req *GenerateRequest) (*Gen
+ 	}
+ 
+ 	endpoint := fmt.Sprintf("%s/v1beta/models/%s:generateContent?key=%s", baseURL, req.Model, c.cfg.APIKey)
++	if gateway != "" {
++		project, location := os.Getenv("AX_VERTEX_PROJECT"), os.Getenv("AX_VERTEX_LOCATION")
++		if project == "" || location == "" {
++			return nil, fmt.Errorf("gateway Vertex project and location are required")
++		}
++		endpoint = fmt.Sprintf("%s/v1/projects/%s/locations/%s/publishers/google/models/%s:generateContent", strings.TrimRight(gateway, "/"), url.PathEscape(project), url.PathEscape(location), url.PathEscape(req.Model))
++	}
+ 
+ 	payload := map[string]interface{}{
+ 		"contents": []map[string]interface{}{
+@@ -556,11 +568,17 @@ func (c *Client) generateGoogle(ctx context.Context, req *GenerateRequest) (*Gen
+ 
+ 	resp, err := c.httpClient.Do(httpReq)
+ 	if err != nil {
++		if gateway != "" {
++			return nil, fmt.Errorf("model gateway request failed: %w", err)
++		}
+ 		return c.fallbackResponse(req), nil
+ 	}
+ 	defer resp.Body.Close()
+ 
+ 	if resp.StatusCode != http.StatusOK {
++		if gateway != "" {
++			return nil, fmt.Errorf("model gateway returned HTTP %d", resp.StatusCode)
++		}
+ 		b, _ := io.ReadAll(resp.Body)
+ 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+ 			return c.fallbackResponse(req), nil
+diff --git a/internal/model/gateway_test.go b/internal/model/gateway_test.go
+new file mode 100644
+index 0000000..b97f849
+--- /dev/null
++++ b/internal/model/gateway_test.go
+@@ -0,0 +1,51 @@
++package model
++
++import (
++	"context"
++	"net/http"
++	"net/http/httptest"
++	"testing"
++)
++
++func TestGatewayUsesNativeVertexPathWithoutProviderKey(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		want := "/vertex/v1/projects/test-project/locations/global/publishers/google/models/gemini-2.5-flash:generateContent"
++		if r.URL.Path != want {
++			t.Errorf("path = %s, want %s", r.URL.Path, want)
++		}
++		if r.URL.Query().Has("key") || r.Header.Get("Authorization") != "" {
++			t.Error("gateway request leaked provider authentication")
++		}
++		w.Header().Set("Content-Type", "application/json")
++		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"gateway-ok"}]}}]}`))
++	}))
++	defer server.Close()
++	t.Setenv("AX_MODEL_GATEWAY_URL", server.URL+"/vertex")
++	t.Setenv("AX_VERTEX_PROJECT", "test-project")
++	t.Setenv("AX_VERTEX_LOCATION", "global")
++	t.Setenv("AX_MODEL_NAME", "gemini-2.5-flash")
++	_, errDefault := NewClient(DefaultConfig()).Generate(context.Background(), &GenerateRequest{Prompt: "test default"})
++	if errDefault != nil {
++		t.Fatal(errDefault)
++	}
++	c := NewClient(Config{})
++	got, err := c.Generate(context.Background(), &GenerateRequest{Prompt: "test"})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if got.Content != "gateway-ok" {
++		t.Fatalf("response = %q", got.Content)
++	}
++}
++
++func TestGatewayFailureDoesNotSynthesizeSuccess(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusForbidden) }))
++	defer server.Close()
++	t.Setenv("AX_MODEL_GATEWAY_URL", server.URL)
++	t.Setenv("AX_VERTEX_PROJECT", "test-project")
++	t.Setenv("AX_VERTEX_LOCATION", "global")
++	_, err := NewClient(Config{}).Generate(context.Background(), &GenerateRequest{Prompt: "test"})
++	if err == nil {
++		t.Fatal("gateway failure was reported as successful inference")
++	}
++}
+diff --git a/internal/server/readiness_test.go b/internal/server/readiness_test.go
+new file mode 100644
+index 0000000..942e3c4
+--- /dev/null
++++ b/internal/server/readiness_test.go
+@@ -0,0 +1,48 @@
++// Copyright 2026 Google LLC
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//     http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++package server
++
++import (
++	"context"
++	"errors"
++	"net/http/httptest"
++	"testing"
++)
++
++func TestReadinessFailsClosed(t *testing.T) {
++	t.Parallel()
++	for _, tc := range []struct {
++		name  string
++		ready func(context.Context) error
++		want  int
++	}{
++		{"unconfigured", nil, 503},
++		{"dependency unavailable", func(context.Context) error { return errors.New("private dependency detail") }, 503},
++		{"healthy", func(context.Context) error { return nil }, 200},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			t.Parallel()
++			s := NewServer(nil, Options{Readiness: tc.ready})
++			rec := httptest.NewRecorder()
++			s.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/readyz", nil))
++			if rec.Code != tc.want {
++				t.Fatalf("status=%d; want %d", rec.Code, tc.want)
++			}
++			if rec.Body.String() == "private dependency detail" {
++				t.Fatal("readiness leaked dependency error")
++			}
++		})
++	}
++}
+diff --git a/internal/server/server.go b/internal/server/server.go
+index 2b54a30..53f134b 100644
+--- a/internal/server/server.go
++++ b/internal/server/server.go
+@@ -20,6 +20,7 @@ import (
+ 	"log/slog"
+ 	"net/http"
+ 	"strings"
++	"time"
+ 
+ 	"github.com/google/ax/internal/lock"
+ 	"github.com/google/ax/internal/store"
+@@ -40,6 +41,7 @@ type Reconciler interface {
+ type Options struct {
+ 	Locker     lock.Locker
+ 	Reconciler Reconciler
++	Readiness  func(context.Context) error
+ }
+ 
+ // Server provides the gRPC API for AX.
+@@ -49,6 +51,7 @@ type Server struct {
+ 	locker     lock.Locker
+ 	reconciler Reconciler
+ 	grpcServer *grpc.Server
++	readiness  func(context.Context) error
+ }
+ 
+ // NewServer creates a new AX API server.
+@@ -67,6 +70,7 @@ func NewServer(s store.Store, opts ...Options) *Server {
+ 		locker:     locker,
+ 		reconciler: opt.Reconciler,
+ 		grpcServer: grpc.NewServer(),
++		readiness:  opt.Readiness,
+ 	}
+ 	v1alpha1.RegisterAXServer(srv.grpcServer, srv)
+ 	return srv
+@@ -84,6 +88,16 @@ func (s *Server) Handler() http.Handler {
+ 			s.grpcServer.ServeHTTP(w, r)
+ 			return
+ 		}
++		if r.URL.Path == "/readyz" {
++			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
++			defer cancel()
++			if s.readiness == nil || s.readiness(ctx) != nil {
++				http.Error(w, "dependencies unavailable", http.StatusServiceUnavailable)
++				return
++			}
++			w.WriteHeader(http.StatusOK)
++			return
++		}
+ 		if r.URL.Path == "/healthz" {
+ 			w.WriteHeader(http.StatusOK)
+ 			_, _ = w.Write([]byte("ok\n"))
+@@ -599,4 +613,3 @@ func defaultMetadata(meta *v1alpha1.ObjectMeta, existing func(atespace, name str
+ 	}
+ 	return meta
+ }
+-
+diff --git a/internal/substrate/client.go b/internal/substrate/client.go
+index 7e65273..4e0e2e3 100644
+--- a/internal/substrate/client.go
++++ b/internal/substrate/client.go
+@@ -20,6 +20,7 @@ import (
+ 	"crypto/x509"
+ 	"fmt"
+ 	"log/slog"
++	"net/url"
+ 	"os"
+ 	"strings"
+ 	"time"
+@@ -205,7 +206,7 @@ func (c *Client) GetActorTemplate(ctx context.Context, atespace, templateName st
+ 
+ const (
+ 	DefaultGuestCommand    = "/usr/local/bin/ax-task-runner"
+-	DefaultSnapshotsBucket = "gs://dberkov-gke-dev3/ate-env/"
++	DefaultSnapshotsBucket = "gs://tesseracthub-480811-ax-snapshots/actors/"
+ )
+ 
+ // BuildActorTemplate constructs a Substrate ActorTemplate based on the standard ate-env specification.
+@@ -247,7 +248,7 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string,
+ 			Env:     envList,
+ 			Readyz: &ateapipb.ContainerReadyz{
+ 				HttpGet: &ateapipb.HTTPGetAction{
+-					Path: "/readyz",
++					Path: "/healthz",
+ 					Port: 80,
+ 				},
+ 			},
+@@ -304,7 +305,15 @@ func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace,
+ }
+ 
+ // EnsureActor creates an Actor in the specified atespace deriving from an ActorTemplate.
+-func (c *Client) EnsureActor(ctx context.Context, atespace, actorName, templateAtespace, templateName string) (*ateapipb.Actor, error) {
++func (c *Client) EnsureActor(ctx context.Context, atespace, actorName, templateAtespace, templateName string) (actorResult *ateapipb.Actor, resultErr error) {
++	defer func() {
++		if resultErr == nil && actorResult != nil && os.Getenv("AX_MODEL_GATEWAY_URL") != "" {
++			resultErr = c.ensureGatewayPolicy(ctx, atespace, actorName)
++			if resultErr != nil {
++				actorResult = nil
++			}
++		}
++	}()
+ 	req := &ateapipb.CreateActorRequest{
+ 		Actor: &ateapipb.Actor{
+ 			Metadata: &ateapipb.ResourceMetadata{
+@@ -506,4 +515,17 @@ func (c *Client) DeleteActorTemplate(ctx context.Context, atespace, templateName
+ 	return nil
+ }
+ 
+-
++func (c *Client) ensureGatewayPolicy(ctx context.Context, atespace, actorName string) error {
++	gateway, err := url.Parse(os.Getenv("AX_MODEL_GATEWAY_URL"))
++	if err != nil || gateway.Hostname() == "" {
++		return fmt.Errorf("invalid AX model gateway URL")
++	}
++	_, err = c.control.CreateActorEgressPolicy(ctx, &ateapipb.CreateActorEgressPolicyRequest{
++		Actor:        &ateapipb.ObjectRef{Atespace: atespace, Name: actorName},
++		EgressPolicy: &ateapipb.EgressPolicy{Metadata: &ateapipb.ResourceMetadata{Atespace: atespace, Name: "default"}, Rules: []*ateapipb.EgressRule{{Hostnames: &ateapipb.HostnameRule{Patterns: []string{gateway.Hostname()}}}}},
++	})
++	if err != nil && status.Code(err) != codes.AlreadyExists {
++		return fmt.Errorf("creating actor gateway policy: %w", err)
++	}
++	return nil
++}
+diff --git a/internal/substrate/gateway_test.go b/internal/substrate/gateway_test.go
+new file mode 100644
+index 0000000..161b08a
+--- /dev/null
++++ b/internal/substrate/gateway_test.go
+@@ -0,0 +1,42 @@
++package substrate
++
++import (
++	"context"
++	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
++	"google.golang.org/grpc"
++	"google.golang.org/grpc/codes"
++	"google.golang.org/grpc/status"
++	"testing"
++)
++
++type gatewayPolicyClient struct {
++	ateapipb.ControlClient
++	request *ateapipb.CreateActorEgressPolicyRequest
++	exists  bool
++}
++
++func (m *gatewayPolicyClient) CreateActorEgressPolicy(ctx context.Context, req *ateapipb.CreateActorEgressPolicyRequest, opts ...grpc.CallOption) (*ateapipb.EgressPolicy, error) {
++	m.request = req
++	if m.exists {
++		return nil, status.Error(codes.AlreadyExists, "exists")
++	}
++	return req.EgressPolicy, nil
++}
++func TestGatewayPolicyAllowsOnlyConfiguredGateway(t *testing.T) {
++	t.Setenv("AX_MODEL_GATEWAY_URL", "http://ai-gateway.agentgateway-system.svc.cluster.local:8080/vertex")
++	m := &gatewayPolicyClient{}
++	c := &Client{control: m}
++	for _, exists := range []bool{false, true} {
++		m.exists = exists
++		if err := c.ensureGatewayPolicy(context.Background(), "team-a", "task-a"); err != nil {
++			t.Fatal(err)
++		}
++		p := m.request.EgressPolicy
++		if m.request.Actor.Atespace != "team-a" || m.request.Actor.Name != "task-a" || p.Metadata.Atespace != "team-a" || p.Metadata.Name != "default" {
++			t.Fatal("incorrect policy scope")
++		}
++		if len(p.Rules) != 1 || len(p.Rules[0].GetHostnames().GetPatterns()) != 1 || p.Rules[0].GetHostnames().GetPatterns()[0] != "ai-gateway.agentgateway-system.svc.cluster.local" {
++			t.Fatal("policy permits unintended destinations")
++		}
++	}
++}
+diff --git a/internal/tunnel/remote_health_test.go b/internal/tunnel/remote_health_test.go
+new file mode 100644
+index 0000000..50f8f64
+--- /dev/null
++++ b/internal/tunnel/remote_health_test.go
+@@ -0,0 +1,29 @@
++package tunnel
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"strconv"
++	"testing"
++	"time"
++)
++
++func TestRemoteTunnelHealthAllowsRegionalRoundTrip(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		time.Sleep(500 * time.Millisecond)
++		w.WriteHeader(http.StatusOK)
++	}))
++	defer server.Close()
++	u, err := url.Parse(server.URL)
++	if err != nil {
++		t.Fatal(err)
++	}
++	port, err := strconv.Atoi(u.Port())
++	if err != nil {
++		t.Fatal(err)
++	}
++	if !IsTunnelHealthy(port) {
++		t.Fatal("healthy regional tunnel rejected by health timeout")
++	}
++}
+diff --git a/internal/tunnel/tunnel.go b/internal/tunnel/tunnel.go
+index 6ab44eb..c3ee2db 100644
+--- a/internal/tunnel/tunnel.go
++++ b/internal/tunnel/tunnel.go
+@@ -165,7 +165,7 @@ func IsTunnelHealthy(port int) bool {
+ 	if port <= 0 {
+ 		return false
+ 	}
+-	client := http.Client{Timeout: 400 * time.Millisecond}
++	client := http.Client{Timeout: 2 * time.Second}
+ 	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
+ 	if err != nil {
+ 		return false
+@@ -278,7 +278,7 @@ func EnsureServerURL(opts Options) (string, error) {
+ 
+ 	// Wait for healthz to respond
+ 	healthy := false
+-	healthDeadline := time.Now().Add(3 * time.Second)
++	healthDeadline := time.Now().Add(10 * time.Second)
+ 	for time.Now().Before(healthDeadline) {
+ 		if IsTunnelHealthy(localPort) {
+ 			healthy = true
+diff --git a/internal/workspace/setup.go b/internal/workspace/setup.go
+index 78acf93..2d7718d 100644
+--- a/internal/workspace/setup.go
++++ b/internal/workspace/setup.go
+@@ -280,7 +280,7 @@ func runBootstrap(ctx context.Context, goal, targetPath string) bool {
+ 		slog.Info("Antigravity bootstrap script not installed; skipping", "script", bootstrapScriptPath)
+ 		return false
+ 	}
+-	if os.Getenv(bootstrapAPIKeyEnv) == "" {
++	if os.Getenv(bootstrapAPIKeyEnv) == "" && os.Getenv("AX_MODEL_GATEWAY_URL") == "" {
+ 		slog.Warn("workspace goal set but no API key available; skipping Antigravity bootstrap", "env", bootstrapAPIKeyEnv)
+ 		return false
+ 	}
+diff --git a/pkg/apis/v1alpha1/types.go b/pkg/apis/v1alpha1/types.go
+index 362722b..7af61bc 100644
+--- a/pkg/apis/v1alpha1/types.go
++++ b/pkg/apis/v1alpha1/types.go
+@@ -35,7 +35,7 @@ const (
+ 	KindWorkspace = "Workspace"
+ 	KindModel     = "Model"
+ 
+-	DefaultTaskImage = "gcr.io/ax-substrate/ate-images/ax-task-runner"
++	DefaultTaskImage = "asia-south1-docker.pkg.dev/tesseracthub-480811/global/ax-task-runner@sha256:c06c3b5686489f8f414988a9f9e61221d3e622f1a6de40bc5d970a83862dbe99"
+ 
+ 	// PhaseTerminating marks a task whose deletion has been requested and whose
+ 	// actor is being torn down. The record disappears once cleanup completes.

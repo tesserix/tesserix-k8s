@@ -12,7 +12,7 @@ def load_yaml(path):
     return list(yaml.safe_load_all(path.read_text()))
 
 
-def render_chart(chart, release, namespace, values=None):
+def render_chart(chart, release, namespace, values=None, overrides=()):
     command = [
         "helm",
         "template",
@@ -27,6 +27,8 @@ def render_chart(chart, release, namespace, values=None):
         command.extend(["--set", "registryOwnership.enabled=false"])
     if values:
         command.extend(["--values", str(ROOT / chart / values)])
+    for override in overrides:
+        command.extend(["--set", override])
     result = subprocess.run(
         command,
         check=True,
@@ -42,6 +44,15 @@ def resource(documents, kind, name):
         for document in documents
         if document.get("kind") == kind
         and document.get("metadata", {}).get("name") == name
+    )
+
+
+def selects(policy, labels):
+    selector = policy["spec"]["podSelector"]
+    if any(labels.get(k) != v for k, v in selector.get("matchLabels", {}).items()):
+        return False
+    return all(
+        labels.get(e["key"]) in e["values"] for e in selector.get("matchExpressions", [])
     )
 
 
@@ -109,6 +120,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             for document in documents
             if document.get("kind") == "AgentgatewayBackend"
             and "ai" in document.get("spec", {})
+            and document["metadata"]["name"] != "kora-label-review-providers"
         ]
         for backend in backends:
             vertex = next(
@@ -363,7 +375,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         policy = resource(documents, "AgentgatewayPolicy", "kora-user-auth")
 
         self.assertEqual(
-            ["embedding", "conversation", "structured", "default"],
+            ["embedding", "label-review", "conversation", "structured", "default"],
             [rule["name"] for rule in route["spec"]["rules"]],
         )
         self.assertEqual(
@@ -390,6 +402,12 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
                     "kind": "HTTPRoute",
                     "name": "kora-ai",
                     "sectionName": "default",
+                },
+                {
+                    "group": "gateway.networking.k8s.io",
+                    "kind": "HTTPRoute",
+                    "name": "kora-ai",
+                    "sectionName": "label-review",
                 },
             ],
             policy["spec"]["targetRefs"],
@@ -666,6 +684,82 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         # 15008 is the ambient HBONE tunnel; without it ztunnel drops the hop.
         self.assertEqual({12121, 15008}, ports)
 
+    def test_production_kora_api_may_egress_to_trace_and_score_ai(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        policy = resource(documents, "NetworkPolicy", "kora-observability-egress")
+        rule = policy["spec"]["egress"][0]
+
+        # allow-kora-egress has no observability rule, so OTLP spans and
+        # Langfuse scores to these 10.x services were silently dropped.
+        self.assertEqual(
+            "observability",
+            rule["to"][0]["namespaceSelector"]["matchLabels"][
+                "kubernetes.io/metadata.name"
+            ],
+        )
+        self.assertEqual({4318, 3000}, {entry["port"] for entry in rule["ports"]})
+
+    def test_production_kora_api_scores_accuracy_in_its_langfuse_project(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        env = {
+            entry["name"]: entry
+            for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+
+        self.assertEqual(
+            "http://langfuse-web.observability.svc.cluster.local:3000",
+            env["KORA_LANGFUSE_HOST"]["value"],
+        )
+        for name in ("KORA_LANGFUSE_PUBLIC_KEY", "KORA_LANGFUSE_SECRET_KEY"):
+            ref = env[name]["valueFrom"]["secretKeyRef"]
+            self.assertEqual("kora-langfuse-scores", ref["name"])
+            self.assertEqual(name, ref["key"])
+            self.assertTrue(ref["optional"])
+
+    def test_nightly_ai_eval_stays_off_until_its_account_exists(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
+        )
+        self.assertFalse(
+            [d for d in documents if d.get("kind") == "CronJob" and "ai-eval" in d["metadata"]["name"]]
+        )
+
+    def test_nightly_ai_eval_runs_the_api_image_against_the_gateway_and_langfuse(self):
+        documents = render_chart(
+            "charts/apps/kora-api", "kora", "kora", "values-prod.yaml", ["aiEval.enabled=true"]
+        )
+        cron = resource(documents, "CronJob", "kora-kora-api-ai-eval")
+        deployment = resource(documents, "Deployment", "kora-kora-api")
+        pod = cron["spec"]["jobTemplate"]["spec"]["template"]
+        container = pod["spec"]["containers"][0]
+        env = {entry["name"]: entry for entry in container["env"]}
+
+        self.assertEqual(
+            deployment["spec"]["template"]["spec"]["containers"][0]["image"], container["image"]
+        )
+        self.assertEqual(["aieval", "-dataset", "kora-capture-text"], container["command"])
+        self.assertEqual("Forbid", cron["spec"]["concurrencyPolicy"])
+        for name in ("DATABASE_URL", "AI_GATEWAY_BASE_URL", "AI_GATEWAY_API_KEY", "KORA_AI_TRACE_ENDPOINT", "KORA_LANGFUSE_HOST"):
+            self.assertIn(name, env)
+        for name in ("KORA_LANGFUSE_PUBLIC_KEY", "KORA_LANGFUSE_SECRET_KEY"):
+            self.assertEqual("kora-langfuse-scores", env[name]["valueFrom"]["secretKeyRef"]["name"])
+        for name in ("KORA_EVAL_FIREBASE_API_KEY", "KORA_EVAL_EMAIL", "KORA_EVAL_PASSWORD"):
+            ref = env[name]["valueFrom"]["secretKeyRef"]
+            self.assertEqual(("kora-ai-eval", name), (ref["name"], ref["key"]))
+
+        labels = pod["metadata"]["labels"]
+        self.assertTrue(selects(resource(documents, "NetworkPolicy", "kora-ai-gateway-egress"), labels))
+        self.assertTrue(selects(resource(documents, "NetworkPolicy", "kora-observability-egress"), labels))
+        self.assertFalse(
+            any(d.get("kind") == "Service" and selects({"spec": {"podSelector": {"matchLabels": d["spec"]["selector"]}}}, labels) for d in documents),
+            "eval pods must not join the API Service",
+        )
+
     def test_production_kora_api_carries_its_own_registry_deploy_key(self):
         documents = render_chart(
             "charts/apps/kora-api", "kora", "kora", "values-prod.yaml"
@@ -776,8 +870,8 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         # what this asserts is that it is mirrored and pinned, not mutable.
         repository, _, digest = container["image"].partition("@")
         self.assertEqual(
-            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/"
-            "recovered/ai-agents",
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/"
+            "tesserix/ai-agents",
             repository,
         )
         self.assertRegex(digest, r"^sha256:[0-9a-f]{64}$")

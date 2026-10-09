@@ -346,6 +346,47 @@
       "apiVersion": "agentgateway.dev/v1alpha1",
       "kind": "AgentgatewayBackend",
       "metadata": {
+        "name": "kora-label-review-providers",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "policies": {
+          "ai": {
+            "routes": {
+              "/v1/chat/completions": "Completions",
+              "/v1/embeddings": "Embeddings",
+              "*": "Detect"
+            }
+          }
+        },
+        "ai": {
+          "groups": [
+            {
+              "providers": [
+                {
+                  "name": "anthropic",
+                  "anthropic": {
+                    "model": "claude-sonnet-5-5"
+                  },
+                  "policies": {
+                    "auth": {
+                      "secretRef": {
+                        "name": "kora-ai-gateway-provider-credentials",
+                        "key": "anthropic"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayBackend",
+      "metadata": {
         "name": "kora-structured-providers",
         "namespace": "agentgateway-system"
       },
@@ -398,6 +439,29 @@
               ]
             }
           ]
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayBackend",
+      "metadata": {
+        "name": "kora-typesafe",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "static": {
+          "host": "api.typesafe.ai",
+          "port": 443
+        },
+        "policies": {
+          "tls": {},
+          "auth": {
+            "secretRef": {
+              "name": "kora-typesafe-credentials",
+              "key": "api-key"
+            }
+          }
         }
       }
     },
@@ -702,6 +766,43 @@
             ]
           },
           {
+            "name": "label-review",
+            "matches": [
+              {
+                "path": {
+                  "type": "PathPrefix",
+                  "value": "/"
+                },
+                "headers": [
+                  {
+                    "name": "x-kora-ai-capability",
+                    "type": "Exact",
+                    "value": "read_label_review"
+                  }
+                ]
+              }
+            ],
+            "filters": [
+              {
+                "type": "RequestHeaderModifier",
+                "requestHeaderModifier": {
+                  "remove": [
+                    "X-Kora-End-User-Token",
+                    "X-Kora-Delegated-End-User-Token"
+                  ]
+                }
+              }
+            ],
+            "backendRefs": [
+              {
+                "group": "agentgateway.dev",
+                "kind": "AgentgatewayBackend",
+                "name": "kora-label-review-providers",
+                "weight": 1
+              }
+            ]
+          },
+          {
             "name": "conversation",
             "matches": [
               {
@@ -802,6 +903,66 @@
                 "kind": "AgentgatewayBackend",
                 "name": "kora-structured-providers",
                 "weight": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "gateway.networking.k8s.io/v1",
+      "kind": "HTTPRoute",
+      "metadata": {
+        "name": "kora-decide",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "parentRefs": [
+          {
+            "name": "kora-ai",
+            "sectionName": "http"
+          }
+        ],
+        "rules": [
+          {
+            "matches": [
+              {
+                "path": {
+                  "type": "Exact",
+                  "value": "/v1/decisions"
+                }
+              }
+            ],
+            "filters": [
+              {
+                "type": "URLRewrite",
+                "urlRewrite": {
+                  "hostname": "api.typesafe.ai",
+                  "path": {
+                    "type": "ReplaceFullPath",
+                    "replaceFullPath": "/v1/systemone"
+                  }
+                }
+              },
+              {
+                "type": "RequestHeaderModifier",
+                "requestHeaderModifier": {
+                  "remove": [
+                    "X-Kora-End-User-Token",
+                    "X-Kora-Delegated-End-User-Token",
+                    "Cookie",
+                    "X-Kora-AI-Capability",
+                    "X-Kora-AI-Context-Kind",
+                    "X-Kora-RTK-Applied"
+                  ]
+                }
+              }
+            ],
+            "backendRefs": [
+              {
+                "group": "agentgateway.dev",
+                "kind": "AgentgatewayBackend",
+                "name": "kora-typesafe"
               }
             ]
           }
@@ -1321,6 +1482,85 @@
       "apiVersion": "agentgateway.dev/v1alpha1",
       "kind": "AgentgatewayPolicy",
       "metadata": {
+        "name": "kora-decide-traffic",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "targetRefs": [
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "kora-decide"
+          }
+        ],
+        "traffic": {
+          "jwtAuthentication": {
+            "mode": "Strict",
+            "location": {
+              "header": {
+                "name": "X-Kora-End-User-Token",
+                "prefix": "Bearer "
+              }
+            },
+            "providers": [
+              {
+                "issuer": "https://securetoken.google.com/kora-app-e6d38",
+                "audiences": [
+                  "kora-app-e6d38"
+                ],
+                "jwks": {
+                  "remote": {
+                    "jwksPath": "/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com",
+                    "cacheDuration": "5m",
+                    "backendRef": {
+                      "group": "agentgateway.dev",
+                      "kind": "AgentgatewayBackend",
+                      "name": "kora-firebase-jwks",
+                      "port": 443
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "apiKeyAuthentication": {
+            "mode": "Strict",
+            "secretRef": {
+              "name": "kora-ai-gateway-client-credentials"
+            }
+          },
+          "authorization": {
+            "action": "Require",
+            "policy": {
+              "matchExpressions": [
+                "request.method == \"POST\" && size(request.body) <= 16000 && json(request.body).model == \"kora-decide\""
+              ]
+            }
+          },
+          "transformation": {
+            "request": {
+              "body": "{\"model\": \"jev-1.13.0\", \"state\": json(request.body).state, \"questions\": json(request.body).questions}"
+            }
+          },
+          "rateLimit": {
+            "local": [
+              {
+                "requests": 120,
+                "unit": "Minutes",
+                "burst": 20
+              }
+            ]
+          },
+          "timeouts": {
+            "request": "1500ms"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayPolicy",
+      "metadata": {
         "name": "kora-user-auth",
         "namespace": "agentgateway-system"
       },
@@ -1343,6 +1583,12 @@
             "kind": "HTTPRoute",
             "name": "kora-ai",
             "sectionName": "default"
+          },
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "kora-ai",
+            "sectionName": "label-review"
           }
         ],
         "traffic": {

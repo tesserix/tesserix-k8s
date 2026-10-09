@@ -66,7 +66,7 @@ variable "vertex_psc_rule_name" {
 }
 
 variable "vertex_dns_zone_name" {
-  description = "Name of the private DNS zone that pins aiplatform.googleapis.com to the PSC endpoint"
+  description = "Name of the private DNS zone for aiplatform.googleapis.com"
   type        = string
   default     = "vertex-aiplatform"
 }
@@ -103,4 +103,16 @@ variable "devai_runner_ksa" {
   description = "Kubernetes SA (namespace/name) of the DevAI ADK runner Jobs, bound to the DevAI workload GSA so dispatched agents reach Vertex via ADC"
   type        = string
   default     = "devai/devai-runner"
+}
+
+variable "enable_vertex_psc" {
+  description = "Retain PSC until private API DNS migration and client verification finish"
+  type        = bool
+  default     = false
+}
+
+variable "vertex_dns_addresses" {
+  description = "Private Google API VIPs; use the retained PSC IP to roll back DNS"
+  type        = list(string)
+  default     = ["199.36.153.8", "199.36.153.9", "199.36.153.10", "199.36.153.11"]
 }

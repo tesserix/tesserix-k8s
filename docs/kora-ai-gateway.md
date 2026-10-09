@@ -145,3 +145,20 @@ token result so far is a 44.7% reduction on one 4,005-token CPU benchmark, so it
 is not a production savings forecast. Promotion requires representative Kora
 quality evaluations and provider-specific input/output token accounting against
 the authoritative `ai_usage_events` ledger.
+
+## Independent nutrition-label review
+
+Kora can send `x-kora-ai-capability: read_label_review` for one independent
+image reading when its document extraction is incomplete or requires review.
+The `label-review` HTTPRoute rule targets `kora-label-review-providers`, pinned
+to the existing Claude Sonnet 4.5 Anthropic provider group, without falling back
+to the ordinary Vertex group. This is an independent reviewer, not a guarantee
+of superior accuracy; rollout requires synthetic-image comparison.
+
+The route retains strict Firebase JWT authentication, the existing private API
+key admission, egress identity-header removal, and existing provider credentials.
+The API enforces a single attempt, a per-request deadline and another quota check.
+No new secret, public endpoint, tenant access, data store or provider credential
+is introduced. Seeded resource cardinality increases from 30 to 31; the registry
+generated bundle and count check change together. Reverting this route change
+removes the optional reviewer; Kora retains readable OCR data when review fails.

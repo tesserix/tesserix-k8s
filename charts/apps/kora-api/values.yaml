@@ -167,6 +167,10 @@ env:
   # code to branch on Env would otherwise take the development path in
   # production without anyone noticing.
   ENV: "production"
+  # AI traces go to Kora's Langfuse project through the AI-trace pipeline (docs/ai-trace-pipeline.md).
+  KORA_AI_TRACE_ENDPOINT: "http://otel-gateway.observability.svc.cluster.local:4318/v1/traces"
+  # Accuracy scores go straight to Langfuse on the same traces (kora#556).
+  KORA_LANGFUSE_HOST: "http://langfuse-web.observability.svc.cluster.local:3000"
   # NOTE: PORT is set by the container spec, not here.
   # var and INJECTS it itself based on the container port. Defining it
   # in the manifest causes the validation webhook to reject:
@@ -252,6 +256,31 @@ extraSecretEnv:
   - name: KORA_MCP_INTERNAL_KEY
     secretName: kora-mcp-internal
     key: KORA_MCP_INTERNAL_KEY
+  - name: KORA_AI_TRACE_USER_KEY
+    secretName: kora-ai-trace-user-key
+    key: KORA_AI_TRACE_USER_KEY
+  - name: KORA_LANGFUSE_PUBLIC_KEY
+    secretName: kora-langfuse-scores
+    key: KORA_LANGFUSE_PUBLIC_KEY
+  - name: KORA_LANGFUSE_SECRET_KEY
+    secretName: kora-langfuse-scores
+    key: KORA_LANGFUSE_SECRET_KEY
+
+# Nightly golden-dataset experiment (kora#557): cmd/aieval through the gateway,
+# gated on the dataset's accepted Langfuse baseline. Off until the eval account
+# exists in OpenBao (kora/app/kora-eval-*).
+aiEval:
+  enabled: false
+  # 16:30 UTC is 02:30-03:30 in Sydney, outside the beta's active hours.
+  schedule: "30 16 * * *"
+  dataset: kora-capture-text
+  accountSecret: kora-ai-eval
+
+# allow-kora-egress has no observability rule; this opens OTLP traces and Langfuse scores.
+observabilityEgress:
+  enabled: true
+  namespace: observability
+  ports: [4318, 3000]
 
 # GCP / Workload Identity — annotates the SA with the matching GSA email.
 #
@@ -449,3 +478,9 @@ metrics:
   enabled: true
   port: 9090
   interval: 30s
+
+ocr:
+  enabled: false
+
+firebaseAccountStatus:
+  enabled: false

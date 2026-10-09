@@ -1,0 +1,60 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ax-postgres
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '-3'
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.11@sha256:70664ebcfa1100361b5bdc28bbf06fdbe08db2dc4ad7bd14de33c5e05fe8ea8e
+  enableSuperuserAccess: false
+  bootstrap:
+    initdb:
+      database: ax_substrate
+      owner: ax_substrate
+      secret:
+        name: ax-postgres
+  storage:
+    size: 10Gi
+    storageClass: premium-rwo-retain
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  affinity:
+    enablePodAntiAffinity: true
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+  backup:
+    barmanObjectStore:
+      destinationPath: gs://tesseracthub-480811-ax-backups/postgres
+      googleCredentials:
+        gkeEnvironment: true
+      wal:
+        compression: gzip
+        maxParallel: 2
+      data:
+        compression: gzip
+        jobs: 2
+    retentionPolicy: 30d
+    target: prefer-standby
+  monitoring:
+    enablePodMonitor: true
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: ax-postgres
+  namespace: ax-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+spec:
+  schedule: 0 0 */6 * * *
+  backupOwnerReference: self
+  cluster:
+    name: ax-postgres
+  immediate: true
+  method: barmanObjectStore

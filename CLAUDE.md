@@ -40,11 +40,21 @@ writable by strangers.
 
 ## Cluster Access
 
+Prod is a context in the **default** kubeconfig (`~/.kube/config`) and is
+normally already current. There is no `~/.kube/gke-prod` file — exporting
+`KUBECONFIG` at that path points kubectl at nothing and every command fails with
+`connection refused` against `localhost:8080`.
+
 ```bash
-export KUBECONFIG=~/.kube/gke-prod
+kubectl config current-context
+# gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke
 ```
 
-Set this before any `kubectl` or `argocd` command.
+If it is not current, select it before any `kubectl` or `argocd` command:
+
+```bash
+kubectl config use-context gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke
+```
 
 ---
 

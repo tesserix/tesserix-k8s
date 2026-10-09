@@ -382,6 +382,18 @@ spec:
         - operation:
             paths: ["/healthz"]
             methods: ["GET"]
+    - from:
+      - source:
+          principals:
+          - cluster.local/ns/ax-system/sa/ax-server
+          - cluster.local/ns/ax-system/sa/atenet-egress
+      to:
+      - operation:
+          ports:
+          - '8080'
+          paths:
+          - /vertex/*
+
 ---
 ##############################################################################
 # DENY policies — explicit closures over the wide-open allow-mesh-internal
@@ -513,6 +525,8 @@ spec:
               - "cluster.local/ns/devai/sa/devai-runner"
               - "cluster.local/ns/devai/sa/devai-sandbox"
               - "cluster.local/ns/ai-agents/sa/sre-ai-agent"
+              - "cluster.local/ns/ax-system/sa/ax-server"
+              - "cluster.local/ns/ax-system/sa/atenet-egress"
       to:
         - operation:
             ports: ["8080"]
@@ -524,3 +538,28 @@ spec:
               - "/groq/*"
               - "/openrouter/*"
               - "/nemoclaw/*"
+
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: ai-gateway-deny-ax-non-vertex
+  namespace: agentgateway-system
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: waypoint
+  action: DENY
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/ax-system/sa/ax-server
+        - cluster.local/ns/ax-system/sa/atenet-egress
+    to:
+    - operation:
+        ports:
+        - '8080'
+        notPaths:
+        - /vertex/*

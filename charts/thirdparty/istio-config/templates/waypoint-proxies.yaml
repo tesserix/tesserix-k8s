@@ -15,8 +15,16 @@ metadata:
     istio.io/waypoint-for: service
 spec:
   gatewayClassName: istio-waypoint
+  {{- with $.Values.ambient.waypointTrafficDistribution }}
+  infrastructure:
+    annotations:
+      networking.istio.io/traffic-distribution: {{ . | quote }}
+  {{- end }}
   listeners:
     - name: mesh
       port: 15008
       protocol: HBONE
+      allowedRoutes:
+        namespaces:
+          from: Same
 {{- end }}

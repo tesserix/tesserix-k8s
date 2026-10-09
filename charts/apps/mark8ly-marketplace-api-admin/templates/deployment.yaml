@@ -135,6 +135,18 @@ spec:
             # an error.
             - name: MARKETPLACE_GCS_BUCKET
               value: {{ .Values.gcsBucket | quote }}
+            # Buyer artwork — a SEPARATE, PRIVATE bucket (#960).
+            #
+            # The admin pod reads it rather than writes it: the merchant
+            # downloads the original a buyer uploaded (#968). Never the
+            # public media bucket above, which is world-readable by
+            # design. Empty means the download endpoints answer 501, so
+            # an operator learns the deployment is misconfigured instead
+            # of being told the order has no artwork.
+            {{- with .Values.privateGcsBucket }}
+            - name: MARKETPLACE_PRIVATE_GCS_BUCKET
+              value: {{ . | quote }}
+            {{- end }}
             {{- with .Values.gcpServiceAccount }}
             # Required on GKE Workload Identity: ADC has no private key,
             # so the V4-signed upload URL path uses IAM Credentials

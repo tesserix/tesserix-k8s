@@ -32,6 +32,26 @@ spec:
           kind: AgentgatewayBackend
           name: kora-embedding-providers
           weight: 1
+    - name: label-review
+      matches:
+        - path:
+            type: PathPrefix
+            value: /
+          headers:
+            - name: x-kora-ai-capability
+              type: Exact
+              value: read_label_review
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove:
+              - {{ .Values.endUserAuthentication.header | quote }}
+              - {{ .Values.endUserAuthentication.delegatedHeader | quote }}
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: kora-label-review-providers
+          weight: 1
     - name: conversation
       matches:
         - path:

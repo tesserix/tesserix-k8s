@@ -285,6 +285,10 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: ax-bootstrap
+      hcl: |
+        path "kv/data/ax-system/production/ax-*" { capabilities = ["create", "read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-console-tesserix-production
       hcl: |
         path "kv/data/console/app/console-zitadel-client-secret" { capabilities = ["read"] }
@@ -549,6 +553,7 @@ bootstrap:
         path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-kora-agentgateway-system-production
       hcl: |
+        path "kv/data/kora/app/kora-typesafe-api-key" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-ai-agents-api-key" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-ai-gateway-api-key" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-mcp-key" { capabilities = ["read"] }
@@ -574,15 +579,23 @@ bootstrap:
       hcl: |
         path "kv/data/kora/app/kora-ai-agents-api-key" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-ai-gateway-api-key" { capabilities = ["read"] }
+        path "kv/data/kora/app/kora-ai-trace-user-key" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-api-platform-admin" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-apple-key-id" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-apple-private-key" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-apple-team-id" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-bff-internal-hmac-key" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-database-url" { capabilities = ["read"] }
+        path "kv/data/kora/app/kora-eval-email" { capabilities = ["read"] }
+        path "kv/data/kora/app/kora-eval-firebase-api-key" { capabilities = ["read"] }
+        path "kv/data/kora/app/kora-eval-password" { capabilities = ["read"] }
+        path "kv/data/kora/app/kora-firebase-api-key" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-expo-access-token" { capabilities = ["read"] }
+        path "kv/data/kora/app/kora-langfuse-public-key" { capabilities = ["read"] }
+        path "kv/data/kora/app/kora-langfuse-secret-key" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-mcp-internal-key" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-mcp-key" { capabilities = ["read"] }
+        path "kv/data/kora/app/kora-ocr-workload-identity-keys" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-registry-deploy-key" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-sandbox-anonymization-salt" { capabilities = ["read"] }
         path "kv/data/kora/app/kora-sandbox-reader-password" { capabilities = ["read"] }
@@ -642,6 +655,13 @@ bootstrap:
       hcl: |
         path "kv/data/homechef/homechef-api/*"     { capabilities = ["read"] }
         path "kv/metadata/homechef/homechef-api/*" { capabilities = ["read", "list"] }
+    - name: read-qdrant-devai
+      hcl: |
+        path "kv/data/qdrant/app/qdrant-api-key" { capabilities = ["read"] }
+    - name: read-qdrant-production
+      hcl: |
+        path "kv/data/qdrant/app/qdrant-api-key" { capabilities = ["read"] }
+        path "kv/data/qdrant/app/qdrant-read-only-api-key" { capabilities = ["read"] }
     - name: read-ai-database
       hcl: |
         path "kv/data/ai-database/*"     { capabilities = ["read"] }
@@ -777,6 +797,11 @@ bootstrap:
         path "kv/data/homechef/homechef-api/fe3dr-stripe-secret-key" { capabilities = ["create", "read", "update"] }
         path "kv/data/homechef/homechef-api/fe3dr-stripe-publishable-key" { capabilities = ["create", "read", "update"] }
         path "kv/data/homechef/homechef-api/fe3dr-stripe-webhook-secret" { capabilities = ["create", "read", "update"] }
+        path "kv/data/homechef/homechef-api/fe3dr-stripe-key-id" { capabilities = ["create", "read", "update"] }
+        path "kv/data/homechef/homechef-api/fe3dr-stripe-test-secret-key" { capabilities = ["create", "read", "update"] }
+        path "kv/data/homechef/homechef-api/fe3dr-stripe-test-key-id" { capabilities = ["create", "read", "update"] }
+        path "kv/data/homechef/homechef-api/fe3dr-stripe-test-publishable-key" { capabilities = ["create", "read", "update"] }
+        path "kv/data/homechef/homechef-api/fe3dr-stripe-test-webhook-secret" { capabilities = ["create", "read", "update"] }
         path "kv/data/homechef/homechef-api/fe3dr-vendor-payment-*" { capabilities = ["create", "read", "update"] }
         path "kv/data/homechef/homechef-api/fe3dr-driver-payment-*" { capabilities = ["create", "read", "update"] }
         path "kv/metadata/homechef/homechef-api/fe3dr-vendor-payment-*" { capabilities = ["delete"] }
@@ -822,6 +847,11 @@ bootstrap:
         path "kv/data/roamie/app/roamie-travel-mcp-key" { capabilities = ["read"] }
 
   kubernetesRoles:
+    - name: ax-bootstrap
+      serviceAccounts: [ax-bootstrap]
+      namespaces: [ax-system]
+      policies: [ax-bootstrap]
+      ttl: 5m
     - name: read-console-tesserix-production
       serviceAccounts: ["console-production-reader"]
       namespaces: ["tesserix"]
@@ -1209,6 +1239,16 @@ bootstrap:
       namespaces: ["homechef"]
       policies: ["read-homechef"]
       ttl: 1h
+    - name: read-qdrant-devai
+      serviceAccounts: ["devai-production-reader"]
+      namespaces: ["devai"]
+      policies: ["read-qdrant-devai"]
+      ttl: 15m
+    - name: read-qdrant-production
+      serviceAccounts: ["qdrant"]
+      namespaces: ["ai-database"]
+      policies: ["read-qdrant-production"]
+      ttl: 15m
     - name: read-ai-database
       serviceAccounts: ["qdrant"]
       namespaces: ["ai-database"]
@@ -1341,6 +1381,10 @@ clusterSecretStore:
 # A new namespace also needs a `destinations` entry in
 # argocd/prod/projects/security.yaml, or ArgoCD refuses to render its store.
 namespaceWhitelist:
+  - namespace: ax-system
+    apps:
+      - name: production
+        serviceAccount: ax-secret-reader
   - namespace: homechef
     apps:
       - name: homechef-api
