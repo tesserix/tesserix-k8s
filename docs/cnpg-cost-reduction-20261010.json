@@ -1,0 +1,194 @@
+{
+  "date": "2026-10-10",
+  "project": "tesseracthub-480811",
+  "policy": {
+    "active_instances": 2,
+    "meaning": "one primary and one standby",
+    "replication": "preserve node separation, backups and required durability; never shrink PVCs in place",
+    "hibernated_exception": "stockpilot-postgres remains hibernated; its prior restore/snapshot retirement is already documented"
+  },
+  "stages": [
+    {
+      "target": "zitadel-postgres",
+      "state": "deployed, 2/2 healthy, replication lag zero, public discovery HTTP 200",
+      "disk_retirement": "two Released PVs, 20Gi data + 8Gi WAL; original disks still charged",
+      "recovery": "both detached disk snapshots READY",
+      "remaining": "approve exact detached-disk retirement after recovery review"
+    },
+    {
+      "target": "planning-poker-postgres",
+      "state": "backup IAM and database-only metadata egress deployed; 3/3 healthy",
+      "recovery": "one-off physical backup/WAL restore job prepared; reduce to two only after successful recovery",
+      "potential_disk_retirement_gib": 12
+    },
+    {
+      "target": "homechef-postgres",
+      "state": "destination on global prepared; 135-table restore rehearsal, sequence and permission equality passed; source still serves production",
+      "destination": "global-postgres-pooler-rw.global.svc.cluster.local / homechef_db for API and worker; direct global primary for company admin/bootstrap",
+      "durability_decision": "source enforces minSyncReplicas=1; global configured 0/1; user choice pending before cutover",
+      "maintenance": "approved for API, worker, company, schema bootstrap; not started",
+      "rollback": "before target writes, resume source; after target writes, pause and reconcile new data before any return",
+      "potential_disk_retirement_gib": 260,
+      "retention": "preserve old source through agreed fallback window; independent archive retained; no source disk deletion approved"
+    },
+    {
+      "target": "mark8ly-postgres",
+      "state": "assessment only; no production change",
+      "source_databases": [
+        "mark8ly_platform_api",
+        "mark8ly_marketplace_api",
+        "mark8ly_openfga"
+      ],
+      "source_data_bytes": 36935081,
+      "current_provisioned_gib": 440,
+      "proposed_instances": 2,
+      "proposed_data_gib_per_instance": 20,
+      "proposed_wal_gib_per_instance": 16,
+      "proposed_total_gib": 72,
+      "potential_disk_retirement_gib": 368,
+      "constraints": [
+        "5GB max_slot_wal_keep_size requires WAL startup headroom; do not shrink to 5Gi",
+        "use separate smaller cluster; do not disable the CNPG validating webhook",
+        "preserve platform_api, marketplace_api, openfga and mark8ly_platform_admin roles and OpenBao credential equality",
+        "pause APIs, auth/database consumers, all writing CronJobs and company admin during final copy",
+        "verify all three databases, sequences, ownership/grants and real consumers before retiring source",
+        "size memory and connection budgets from peak measurements; a small dataset alone does not justify changing them"
+      ],
+      "remaining": "prepare complete replacement and consumer manifests before named maintenance/replacement approval"
+    }
+  ],
+  "baseline_inventory": [
+    {
+      "namespace": "agentregistry-system",
+      "cluster": "agentregistry-postgres",
+      "instances": 2,
+      "data": "8Gi",
+      "wal": "4Gi"
+    },
+    {
+      "namespace": "ax-system",
+      "cluster": "ax-postgres",
+      "instances": 2,
+      "data": "10Gi",
+      "wal": null
+    },
+    {
+      "namespace": "devai",
+      "cluster": "devai-postgres",
+      "instances": 2,
+      "data": "10Gi",
+      "wal": "10Gi"
+    },
+    {
+      "namespace": "dwellm8",
+      "cluster": "dwellm8-postgres",
+      "instances": 2,
+      "data": "10Gi",
+      "wal": "5Gi"
+    },
+    {
+      "namespace": "dwellm8",
+      "cluster": "dwellm8-temporal-postgres",
+      "instances": 2,
+      "data": "10Gi",
+      "wal": "5Gi"
+    },
+    {
+      "namespace": "global",
+      "cluster": "global-postgres",
+      "instances": 2,
+      "data": "20Gi",
+      "wal": "16Gi"
+    },
+    {
+      "namespace": "helivanta",
+      "cluster": "helivanta-postgres",
+      "instances": 2,
+      "data": "10Gi",
+      "wal": "5Gi"
+    },
+    {
+      "namespace": "homechef",
+      "cluster": "homechef-postgres",
+      "instances": 2,
+      "data": "100Gi",
+      "wal": "30Gi"
+    },
+    {
+      "namespace": "infra",
+      "cluster": "infra-postgres",
+      "instances": 2,
+      "data": "20Gi",
+      "wal": "8Gi"
+    },
+    {
+      "namespace": "kora",
+      "cluster": "kora-postgres",
+      "instances": 2,
+      "data": "20Gi",
+      "wal": "5Gi"
+    },
+    {
+      "namespace": "mark8ly",
+      "cluster": "mark8ly-postgres",
+      "instances": 2,
+      "data": "200Gi",
+      "wal": "20Gi"
+    },
+    {
+      "namespace": "planning-poker",
+      "cluster": "planning-poker-postgres",
+      "instances": 3,
+      "data": "10Gi",
+      "wal": "2Gi"
+    },
+    {
+      "namespace": "postiz",
+      "cluster": "postiz-postgres",
+      "instances": 2,
+      "data": "10Gi",
+      "wal": "5Gi"
+    },
+    {
+      "namespace": "roamie",
+      "cluster": "roamie-postgres",
+      "instances": 2,
+      "data": "10Gi",
+      "wal": "5Gi"
+    },
+    {
+      "namespace": "stockpilot",
+      "cluster": "stockpilot-postgres",
+      "instances": 1,
+      "data": "100Gi",
+      "wal": "20Gi"
+    },
+    {
+      "namespace": "support-platform",
+      "cluster": "support-platform-postgres",
+      "instances": 2,
+      "data": "20Gi",
+      "wal": "5Gi"
+    },
+    {
+      "namespace": "tesserix",
+      "cluster": "tesserix-postgres",
+      "instances": 2,
+      "data": "15Gi",
+      "wal": "30Gi"
+    },
+    {
+      "namespace": "zitadel",
+      "cluster": "zitadel-postgres",
+      "instances": 3,
+      "data": "20Gi",
+      "wal": "8Gi"
+    }
+  ],
+  "billing_limits": [
+    "Retained disks are still billed after replica reduction or hibernation",
+    "Potential capacity reductions are not realized savings until approved disk retirement",
+    "Existing compute commitments remain payable even if node count falls",
+    "No backup retention, cross-zone replication or application data is removed to meet a nominal disk target"
+  ]
+}
