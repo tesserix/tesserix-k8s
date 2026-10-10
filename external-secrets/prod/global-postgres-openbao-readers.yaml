@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: global-postgres-production-reader
+  namespace: global
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-global-postgres-production
+  namespace: global
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-global-postgres-global-production
+          serviceAccountRef:
+            name: global-postgres-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: global-postgres-production-reader
+  namespace: db-backup-and-restore
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-global-postgres-production
+  namespace: db-backup-and-restore
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-global-postgres-db-backup-and-restore-production
+          serviceAccountRef:
+            name: global-postgres-production-reader
