@@ -1,8 +1,7 @@
 namespace: planning-poker
 clusterName: planning-poker-postgres
 
-# 3 with backups off: a replica is the only copy of this data, so one
-# failure must not leave the cluster with no redundancy at all.
+# Keep three until the newly enabled backup has passed restore verification.
 instances: 3
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
@@ -40,14 +39,11 @@ monitoring:
   enablePodMonitor: true
 
 affinity:
-  podAntiAffinityType: preferred
+  podAntiAffinityType: required
 
-# Off until the Workload Identity binding exists: CNPG authenticates to GCS as
-# the KSA it generates for this cluster, so app-secrets-infra-prod@ needs an
-# iam.workloadIdentityUser grant for planning-poker/planning-poker-postgres.
-# Enabling this without it leaves every WAL archive failing in a retry loop.
+# Workload Identity is declared in stacks/06-workload-identity/planning-poker-database.tf.
 backup:
-  enabled: false
+  enabled: true
   destinationPath: "gs://tesseract-prod-backups-in/planning-poker-postgres"
   retentionPolicy: "3d"
   serviceAccount: "app-secrets-infra-prod@tesseracthub-480811.iam.gserviceaccount.com"
