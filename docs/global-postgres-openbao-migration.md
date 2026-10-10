@@ -31,4 +31,31 @@ Staging completed with pinned-version byte equality and all temporary write
 access removed. The archived value matches all three current consumers, with the
 existing bootstrap trim preserved. Archive:
 `gs://tesseract-prod-backups-in/openbao/global-postgres-migration/20260928T142628Z/gcp-sources.json.gz.kms`.
-Consumer rollout, final recovery verification and Terraform retirement are pending.
+Consumer rollout and final recovery verification completed on 2026-10-10.
+Terraform retirement of the original GCP secret remains pending and is not
+authorized by the reader rollout.
+
+
+## Production acceptance — 2026-10-10
+
+PR #1340 installed the exact reader identities before PR #1257 switched the
+three consumers. Both namespace-bound logins could read only the intended path;
+an unrelated Homechef secret path was denied. The GCP source, OpenBao value and
+all three Kubernetes consumer credentials matched. Every existing secret key
+remained unchanged after fresh ESO refreshes through OpenBao.
+
+All 18 Global-owned databases accepted the valid password and rejected an invalid
+password. The backup namespace credential completed a read-only schema dump.
+Global Postgres remained healthy with two ready instances; OpenBao retained three
+healthy nodes. The owning Argo applications reconciled Synced/Healthy.
+
+Verified backup `20261010T023529Z-d1b64437102c` passed its isolated restore in
+20.729 seconds and retained three verified recovery points. A second restore of
+the same backup under the separate read-only recovery identity passed in 20.502
+seconds. Jobs: `openbao-global-verified-20261010` and
+`openbao-global-restore-20261010` in `openbao-recovery`.
+
+`prod-global-postgresql-password` remains in GCP as the retained original.
+No password rotation, application restart, database migration or source-secret
+deletion was performed. Its eventual retirement still requires the separately
+reviewed, single-resource Terraform change and explicit deletion approval.
