@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: planning-poker-restore-check-20261010-v2
+  name: planning-poker-restore-check-20261010-v3
   namespace: planning-poker
 spec:
   backoffLimit: 0
@@ -88,12 +88,12 @@ spec:
               trap 'pg_ctl -D /restore/data -m immediate stop >/dev/null 2>&1 || true' EXIT
               pg_ctl -D /restore/data -l /restore/postgres.log -o '-c config_file=/restore/postgresql.conf' -w -t 180 start
               psql -X -v ON_ERROR_STOP=1 -h /restore/socket -p 55432 -U postgres -d planning_poker_db <<'SQL'
-              DO $$ BEGIN
+              DO $verify$ BEGIN
                 IF NOT pg_is_in_recovery() OR current_setting('transaction_read_only') <> 'on' THEN
                   RAISE EXCEPTION 'Restore must remain isolated and read-only';
                 END IF;
-              END $$;
-              DO $$
+              END $verify$;
+              DO $verify$
               DECLARE r record; row_count bigint;
               BEGIN
                 IF (SELECT count(*) FROM pg_tables WHERE schemaname = 'public') <> 18 THEN
@@ -102,7 +102,7 @@ spec:
                 FOR r IN SELECT schemaname, tablename FROM pg_tables WHERE schemaname = 'public' LOOP
                   EXECUTE format('SELECT count(*) FROM %I.%I', r.schemaname, r.tablename) INTO row_count;
                 END LOOP;
-              END $$;
+              END $verify$;
               SELECT count(*) AS restored_tables FROM pg_tables WHERE schemaname = 'public';
               SQL
               echo 'PASS: physical backup and WAL restored; all public tables readable'
