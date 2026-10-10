@@ -1,9 +1,7 @@
 import json
 import re
-import subprocess
 
-import yaml
-from test_homechef_openbao_access import ROOT, render, resource
+from test_homechef_openbao_access import render, resource
 
 PATH = "global-postgres/app/global-postgres-password"
 
