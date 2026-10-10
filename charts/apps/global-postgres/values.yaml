@@ -3,12 +3,8 @@ hibernate: false
 namespace: global
 clusterName: global-postgres
 
-# 1 instance: single-primary for low-traffic prod environment.
-# Was 3 (primary + 2 replicas) but replicas could not start on the 5Gi WAL
-# volume due to CNPG's WAL-space pre-flight check requiring ~2× the
-# max_slot_wal_keep_size free. Re-enable replicas once the cluster has real
-# traffic and the WAL volume is sized appropriately (≥ 16Gi).
-instances: 1
+# Primary plus one standby; ArgoCD and standalone renders agree.
+instances: 2
 imageName: ghcr.io/cloudnative-pg/postgresql:16.4
 
 # Storage — separate WAL volume for I/O isolation
@@ -101,6 +97,10 @@ bootstrap:
 # works even for a role that never has direct superuser access. Same pattern
 # as mark8ly-postgres's `openfga` / `marketplace_api` secondary roles.
 managedRoles:
+  - name: homechef
+    passwordSecret: global-postgres-homechef
+  - name: homechef_platform_admin
+    passwordSecret: global-postgres-homechef-platform-admin
   # "global" is the bootstrap owner role and is already managed in every other
   # sense; it is listed here only for createdb. Without it db-schema-bootstrap
   # cannot provision a new database on this cluster at all — it connects as
@@ -213,16 +213,18 @@ monitoring:
 
 # Replication
 affinity:
-  podAntiAffinityType: preferred
+  podAntiAffinityType: required
 
 replication:
   minSyncReplicas: 0
-  maxSyncReplicas: 0
+  maxSyncReplicas: 1
 
 # Databases managed by CNPG Database CRs. postInitSQL only fires on a fresh
 # bootstrap and db-schema-bootstrap applies DDL only on the run that creates the
 # database, so neither can fix ownership for a role created afterwards.
 databases:
+  - name: homechef_db
+    owner: homechef
   - name: agentgateway_config
     owner: agentgateway
   - name: agentgateway_logs
