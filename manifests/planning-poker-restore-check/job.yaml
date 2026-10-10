@@ -1,0 +1,121 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: planning-poker-restore-check-20261010-v3
+  namespace: planning-poker
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: planning-poker-restore-check
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      serviceAccountName: planning-poker-postgres
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: restore
+          image: ghcr.io/cloudnative-pg/postgresql@sha256:99be063781d171d3971089b49c992706bdab9ccbd2b57cdf126c7542773aedfe
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          env:
+            - name: TMPDIR
+              value: /restore/tmp
+            - name: GOOGLE_CLOUD_PROJECT
+              value: tesseracthub-480811
+          command: [bash, -ec]
+          args:
+            - |
+              umask 077
+              mkdir -p /restore/tmp /restore/socket
+              backup_url=gs://tesseract-prod-backups-in/planning-poker-postgres
+              server=planning-poker-postgres
+              for attempt in $(seq 1 30); do
+                backup_id=$(barman-cloud-backup-list --cloud-provider google-cloud-storage --format json "$backup_url" "$server" |
+                python3 -c 'import json,sys; b=[x for x in json.load(sys.stdin)["backups_list"] if x["status"]=="DONE"]; assert b, "No completed backup"; print(sorted(b,key=lambda x:x["backup_id"])[-1]["backup_id"])') && break
+                sleep 5
+              done
+              test -n "$backup_id"
+              echo "Restoring completed backup $backup_id into isolated ephemeral storage"
+              barman-cloud-restore --cloud-provider google-cloud-storage "$backup_url" "$server" "$backup_id" /restore/data
+              if test -L /restore/data/pg_wal; then
+                unlink /restore/data/pg_wal
+                mkdir /restore/data/pg_wal
+              fi
+              printf 'local all all trust\n' > /restore/pg_hba.conf
+              # The backup's CNPG configuration refers to live cluster paths.
+              # Use an independent configuration with no network listener.
+              cat > /restore/postgresql.conf <<'CONFIG'
+              data_directory = '/restore/data'
+              hba_file = '/restore/pg_hba.conf'
+              listen_addresses = ''
+              unix_socket_directories = '/restore/socket'
+              port = 55432
+              ssl = off
+              archive_mode = off
+              shared_buffers = '128MB'
+              max_connections = 100
+              max_worker_processes = 32
+              hot_standby = on
+              default_transaction_read_only = on
+              CONFIG
+              rm -f /restore/data/postgresql.auto.conf
+              cat > /restore/data/postgresql.auto.conf <<'CONFIG'
+              restore_command = 'barman-cloud-wal-restore --cloud-provider google-cloud-storage gs://tesseract-prod-backups-in/planning-poker-postgres planning-poker-postgres %f %p'
+              recovery_target = 'immediate'
+              recovery_target_action = 'pause'
+              primary_conninfo = ''
+              CONFIG
+              rm -f /restore/data/standby.signal
+              touch /restore/data/recovery.signal
+              trap 'pg_ctl -D /restore/data -m immediate stop >/dev/null 2>&1 || true' EXIT
+              pg_ctl -D /restore/data -l /restore/postgres.log -o '-c config_file=/restore/postgresql.conf' -w -t 180 start
+              psql -X -v ON_ERROR_STOP=1 -h /restore/socket -p 55432 -U postgres -d planning_poker_db <<'SQL'
+              DO $verify$ BEGIN
+                IF NOT pg_is_in_recovery() OR current_setting('transaction_read_only') <> 'on' THEN
+                  RAISE EXCEPTION 'Restore must remain isolated and read-only';
+                END IF;
+              END $verify$;
+              DO $verify$
+              DECLARE r record; row_count bigint;
+              BEGIN
+                IF (SELECT count(*) FROM pg_tables WHERE schemaname = 'public') <> 18 THEN
+                  RAISE EXCEPTION 'Expected the 18 source tables';
+                END IF;
+                FOR r IN SELECT schemaname, tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+                  EXECUTE format('SELECT count(*) FROM %I.%I', r.schemaname, r.tablename) INTO row_count;
+                END LOOP;
+              END $verify$;
+              SELECT count(*) AS restored_tables FROM pg_tables WHERE schemaname = 'public';
+              SQL
+              echo 'PASS: physical backup and WAL restored; all public tables readable'
+          volumeMounts:
+            - name: restore
+              mountPath: /restore
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: restore
+          emptyDir:
+            sizeLimit: 4Gi
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi

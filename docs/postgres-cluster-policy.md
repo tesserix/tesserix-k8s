@@ -105,14 +105,14 @@ are never created.
 |---|---|---|---|---|
 | `global-postgres` | `global` | 1 | 20Gi + 5Gi WAL | yes |
 | `infra-postgres` | `infra` | 2 (primary + sync replica) | 20Gi + 8Gi WAL | yes |
-| `homechef-postgres` | `homechef` | 3 | 100Gi | yes |
+| `homechef-postgres` | `homechef` | 2 (primary + standby) | 100Gi + 30Gi WAL | yes |
 | `mark8ly-postgres` | `mark8ly` | 1 | 200Gi | yes |
 | `tesserix-postgres` | `tesserix` | 1 | 15Gi | yes |
 | `devai-postgres` | `devai` | 1 | 10Gi | yes |
 | `support-platform-postgres` | `support-platform` | 1 | 20Gi | **no** |
 | `agentregistry-postgres` | `agentregistry-system` | 1 | 8Gi | **no** |
 | `postiz-postgres` | `postiz` | 1 | 10Gi | **no** |
-| `stockpilot-postgres` | `stockpilot` | hibernated | 100Gi + 20Gi | yes |
+| `stockpilot-postgres` | `stockpilot` | hibernated, volumes held as snapshots | none (snapshots only) | **no** — see below |
 | `planning-poker-postgres` | `planning-poker` | 1 | 10Gi + 2Gi | **no** — needs the WI binding first |
 | `zitadel-postgres` | `zitadel` | 3 (primary + 2 replicas) | 20Gi + 8Gi | **no** — needs the WI binding first |
 
@@ -120,6 +120,32 @@ Known gaps worth fixing when touching any of these: three clusters run with no
 backup at all, and `global-postgres` is single-instance while hosting both
 Keycloak stores — its own chart notes it should return to multiple instances
 once the WAL volume is ≥16Gi.
+
+### Hibernated clusters have no backups
+
+CNPG refuses to back up a hibernated cluster, so its scheduled backups fail
+daily, and the bucket lifecycle deletes every Postgres prefix after 10 days.
+Ten days after hibernation the object store holds nothing. Snapshot the disks
+before you rely on hibernation as storage.
+
+`stockpilot-postgres` was hibernated in June 2026; its last good backup was
+2026-06-12 and had expired by October. On 2026-10-09 both volumes were
+snapshotted (`stockpilot-pg-data-final-20261009`, `stockpilot-pg-wal-final-20261009`,
+`asia-south1`), a restore was mounted and checked (PostgreSQL 16, 5 databases,
+about 150 MB), and the 100Gi and 20Gi disks were removed. The Cluster resource
+stays in Git, hibernated.
+
+To bring it back, before removing the `cnpg.io/hibernation` annotation:
+
+1. Create `pd-balanced` disks in `asia-south1-b` from the two snapshots.
+2. Recreate PVs pointing at them, then the PVCs `stockpilot-postgres-1` and
+   `stockpilot-postgres-1-wal` in `stockpilot`, with the CNPG metadata they
+   had: `cnpg.io/cluster: stockpilot-postgres`,
+   `cnpg.io/instanceName: stockpilot-postgres-1`, `cnpg.io/instanceRole: primary`,
+   `cnpg.io/nodeSerial: "1"`, `cnpg.io/pvcStatus: ready`, and
+   `cnpg.io/pvcRole: PG_DATA` or `PG_WAL`. Storage class `standard-rwo-retain`.
+3. Remove the hibernation annotation and let CNPG start the instance.
+4. Run a backup at once; the old WAL archive in the bucket has expired.
 
 ## When a new cluster is justified
 
