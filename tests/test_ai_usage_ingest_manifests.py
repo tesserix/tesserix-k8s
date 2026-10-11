@@ -26,7 +26,7 @@ class AIUsageIngestManifestTests(unittest.TestCase):
     def test_ingest_uses_verified_release_digest(self):
         deployment = resource(self.ingest, "Deployment", "ai-usage-ingest")
         self.assertEqual(
-            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/tesserix-platform-api@sha256:9e8109f180609ced67839f4cb3d15faeafea7a2183c4ea86bf35dba32dc26870",
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/tesserix-platform-api@sha256:51584eed0d54a9eae7852331e3df232f26cf7c98f69cad2bc6b74171ece26074",
             deployment["spec"]["template"]["spec"]["containers"][0]["image"],
         )
 
@@ -234,7 +234,7 @@ class DevAIGatewayExportTests(unittest.TestCase):
     def test_ingest_uses_verified_release_digest(self):
         deployment = resource(self.ingest, "Deployment", "ai-usage-ingest")
         self.assertEqual(
-            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/tesserix-platform-api@sha256:9e8109f180609ced67839f4cb3d15faeafea7a2183c4ea86bf35dba32dc26870",
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/tesserix-platform-api@sha256:51584eed0d54a9eae7852331e3df232f26cf7c98f69cad2bc6b74171ece26074",
             deployment["spec"]["template"]["spec"]["containers"][0]["image"],
         )
 

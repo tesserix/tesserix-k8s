@@ -1008,7 +1008,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             image.split("@")[0],
         )
         self.assertEqual(
-            "sha256:fd76ced977d24ac35c685c9ca41e01c35ce17979b06da8749836cd16be9dfc56",
+            "sha256:d4eb2689e49a4308ceb56e7ed6c2c7fee8726bde10b892fc5b59a86019b67479",
             image.split("@")[1],
         )
         self.assertNotIn("imagePullSecrets", pod)
