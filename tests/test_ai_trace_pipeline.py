@@ -208,7 +208,7 @@ def test_every_ai_agent_exports_to_the_gateway_with_its_product_and_may_reach_it
         ),
     ]
     for chart, release, namespace, product, sets in cases:
-        docs = render(chart, release, namespace, sets)
+        docs = render(chart, release, namespace, (*sets, "image.tag=telemetry-test"))
         deployment = resource(docs, "Deployment", release)
         env = {
             entry["name"]: entry.get("value")
@@ -220,7 +220,7 @@ def test_every_ai_agent_exports_to_the_gateway_with_its_product_and_may_reach_it
         assert env["AGENT_TELEMETRY_PRODUCT"] == product
         assert env["AGENT_TELEMETRY_SERVICE_NAME"] == release
         assert env["AGENT_TELEMETRY_ENVIRONMENT"] == "prod"
-        assert env["AGENT_TELEMETRY_RELEASE"] == "main-" + "a" * 12
+        assert env["AGENT_TELEMETRY_RELEASE"] == "telemetry-test-" + "a" * 12
         policy = resource(docs, "NetworkPolicy", release)
         egress = [
             rule for rule in policy["spec"]["egress"]
