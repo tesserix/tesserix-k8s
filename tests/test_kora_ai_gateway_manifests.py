@@ -356,6 +356,9 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
                             "remove": [
                                 "X-Kora-End-User-Token",
                                 "X-Kora-Delegated-End-User-Token",
+                                "X-Kora-User-Id",
+                                "X-Kora-AI-Service",
+                                "X-Kora-Delegated-User-Id",
                             ]
                         },
                     }
@@ -466,6 +469,10 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         )
         self.assertEqual(
             [
+                {
+                    "name": "X-Kora-Delegated-User-Id",
+                    "value": ('"x-kora-user-id" in request.headers ? request.headers["x-kora-user-id"] : ""'),
+                },
                 {
                     "name": "X-Kora-Delegated-End-User-Token",
                     "value": (
@@ -1002,7 +1009,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             image.split("@")[0],
         )
         self.assertEqual(
-            "sha256:4e58d6ac0922db2954d24f6f81d7624d1f99944002e8ea7415b25d37133643db",
+            "sha256:fd76ced977d24ac35c685c9ca41e01c35ce17979b06da8749836cd16be9dfc56",
             image.split("@")[1],
         )
         self.assertNotIn("imagePullSecrets", pod)
@@ -1019,8 +1026,8 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         maximum = int(env["TOKEN_OPTIMIZER_MAX_REQUEST_BYTES"]["value"])
         self.assertGreaterEqual(maximum, 8 * 1024 * 1024 * 4 // 3 + 65536)
         self.assertLessEqual(maximum, 16 * 1024 * 1024)
-        self.assertEqual(env["TOKEN_OPTIMIZER_JEV_API_KEY"]["valueFrom"]["secretKeyRef"],
-                         {"name": "kora-typesafe-credentials", "key": "api-key"})
+        self.assertEqual(env["TOKEN_OPTIMIZER_GATEWAY_API_KEY"]["valueFrom"]["secretKeyRef"],
+                         {"name": "kora-ai-gateway-client-credentials", "key": "kora-api"})
 
     def test_registry_publish_path_is_credential_gated(self):
         registry = render_chart(
