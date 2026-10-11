@@ -76,6 +76,7 @@ jwtAuthentication:
 {{- end -}}
 
 {{- define "kora-ai-gateway.usageMetadata" -}}
+ledger_capability: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
 ledger_user: '"x-kora-user-id" in request.headers ? request.headers["x-kora-user-id"] : ""'
 ledger_service: '"x-kora-ai-service" in request.headers ? request.headers["x-kora-ai-service"] : ""'
 {{- end }}

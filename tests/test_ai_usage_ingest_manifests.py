@@ -52,14 +52,14 @@ class AIUsageIngestManifestTests(unittest.TestCase):
         added = {a["name"]: a["expression"] for a in self.tracing["attributes"]["add"]}
         self.assertEqual("'kora'", added["tesserix.product"])
         self.assertEqual("'kora-ai'", added["tesserix.gateway"])
-        self.assertIn("x-kora-ai-capability", added["tesserix.capability"])
+        self.assertIn("metadata.ledger_capability", added["tesserix.capability"])
 
     def test_an_absent_capability_header_does_not_cost_us_the_span(self):
         # Bare map access throws "No such key" when the header is absent; the
         # estate's ext_proc attributes already fail this way on live traffic.
         added = {a["name"]: a["expression"] for a in self.tracing["attributes"]["add"]}
         self.assertEqual(
-            '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""',
+            '"ledger_capability" in metadata ? metadata.ledger_capability : ""',
             added["tesserix.capability"],
         )
 
