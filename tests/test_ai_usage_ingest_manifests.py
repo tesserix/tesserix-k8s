@@ -23,6 +23,13 @@ class AIUsageIngestManifestTests(unittest.TestCase):
             self.gateway, "AgentgatewayPolicy", "kora-ai-observability"
         )["spec"]["frontend"]["tracing"]
 
+    def test_ingest_uses_verified_release_digest(self):
+        deployment = resource(self.ingest, "Deployment", "ai-usage-ingest")
+        self.assertEqual(
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/tesserix-platform-api@sha256:9e8109f180609ced67839f4cb3d15faeafea7a2183c4ea86bf35dba32dc26870",
+            deployment["spec"]["template"]["spec"]["containers"][0]["image"],
+        )
+
     def test_the_gateway_exports_to_the_ingest_service(self):
         self.assertEqual("HTTP", self.tracing["protocol"])
         self.assertEqual("/v1/traces", self.tracing["path"])
@@ -120,7 +127,7 @@ class AIUsageIngestManifestTests(unittest.TestCase):
     def test_the_ingest_runs_the_ingest_binary_from_the_platform_api_image(self):
         deployment = resource(self.ingest, "Deployment", "ai-usage-ingest")
         container = deployment["spec"]["template"]["spec"]["containers"][0]
-        self.assertTrue(container["image"].endswith("tesserix-platform-api:latest"))
+        self.assertIn("/tesserix-platform-api@sha256:", container["image"])
         self.assertEqual(["/app/ai-usage-ingest"], container["command"])
 
         env = {entry["name"]: entry for entry in container["env"]}
@@ -223,6 +230,13 @@ class DevAIGatewayExportTests(unittest.TestCase):
         self.tracing = resource(
             self.gateway, "AgentgatewayPolicy", "devai-ai-observability"
         )["spec"]["frontend"]["tracing"]
+
+    def test_ingest_uses_verified_release_digest(self):
+        deployment = resource(self.ingest, "Deployment", "ai-usage-ingest")
+        self.assertEqual(
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/tesserix-platform-api@sha256:9e8109f180609ced67839f4cb3d15faeafea7a2183c4ea86bf35dba32dc26870",
+            deployment["spec"]["template"]["spec"]["containers"][0]["image"],
+        )
 
     def test_the_gateway_exports_to_the_ingest_service(self):
         self.assertEqual("HTTP", self.tracing["protocol"])
