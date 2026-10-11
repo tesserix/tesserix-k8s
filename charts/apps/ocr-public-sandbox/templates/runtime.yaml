@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ocr-public-sandbox
+  annotations:
+    iam.gke.io/gcp-service-account: ocr-sandbox-prod-cleanup@tesseracthub-480811.iam.gserviceaccount.com
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: ocr-public-sandbox
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {name: openbao-ocr-sandbox-production, kind: SecretStore}
+  target:
+    name: ocr-public-sandbox
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        SANDBOX_DATABASE_URL: 'postgres://ocr_public_ledger:{{ "{{ .password }}" }}@global-postgres-rw.global.svc.cluster.local:5432/ocr_public_ledger_db?sslmode=require'
+        SANDBOX_WORKLOAD_IDENTITY: 'sandbox-v1=ocr-sandbox:{{ "{{ .key }}" }}'
+  data:
+    - secretKey: password
+      remoteRef: {key: ocr-sandbox/app/ocr-sandbox-ledger-db-password, property: value}
+    - secretKey: key
+      remoteRef: {key: ocr-sandbox/app/ocr-sandbox-workload-key, property: value}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ocr-public-sandbox
+spec:
+  replicas: {{ .Values.replicas }}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector:
+    matchLabels: {app: ocr-public-sandbox}
+  template:
+    metadata:
+      labels: {app: ocr-public-sandbox}
+      annotations:
+        secret.reloader.stakater.com/reload: ocr-public-sandbox
+        traffic.sidecar.istio.io/excludeOutboundIPRanges: 169.254.169.254/32,169.254.169.252/32
+    spec:
+      serviceAccountName: ocr-public-sandbox
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app: ocr-public-sandbox}}
+      containers:
+        - name: app
+          image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}'
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {memory: 96Mi}
+            limits: {memory: 256Mi}
+          ports: [{name: http, containerPort: 8080}]
+          startupProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5, failureThreshold: 30}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 20}
+          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 30, timeoutSeconds: 15}
+          envFrom: [{secretRef: {name: ocr-public-sandbox}}]
+          env:
+            - {name: SANDBOX_ORIGIN, value: 'https://{{ .Values.host }}'}
+            - {name: SANDBOX_UPLOAD_API, value: 'http://document-intelligence-ocr-sandbox-prod-upload-api:8080'}
+            - {name: SANDBOX_JOB_API, value: 'http://document-intelligence-ocr-sandbox-prod-job-api:8080'}
+            - {name: SANDBOX_BUCKETS, value: 'ocr-sandbox-prod-doc-quarantine-in,ocr-sandbox-prod-doc-accepted-in,ocr-sandbox-prod-doc-derived-in,ocr-sandbox-prod-doc-results-in'}
+            - {name: SANDBOX_ADMISSION_ENABLED, value: {{ .Values.admissionEnabled | quote }}}
+            - {name: SANDBOX_DAILY_UPLOADS, value: {{ .Values.dailyUploads | quote }}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocr-public-sandbox
+spec:
+  selector: {app: ocr-public-sandbox}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ocr-public-sandbox
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app: ocr-public-sandbox}}

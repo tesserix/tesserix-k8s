@@ -8,19 +8,21 @@ locals {
   gcp_secret_releases = {
     for name, r in local.releases : name => r if try(r.secretBackend, "openbao") == "gcp"
   }
-  products = toset([for r in local.releases : r.product])
+  public_sandboxes = { for name, r in local.releases : name => r if try(r.publicSandbox, false) }
+  products         = toset([for r in local.releases : r.product])
 
   # purpose => retentionDays key
   bucket_purposes = { quarantine = "quarantine", accepted = "source", derived = "pages", results = "results" }
   buckets = merge([
     for name, r in local.releases : {
       for purpose, retention in local.bucket_purposes : "${name}-${purpose}" => {
-        release = name
-        product = r.product
-        env     = r.environment
-        name    = "${name}-doc-${purpose}-in"
-        purpose = purpose
-        age     = r.retentionDays[retention]
+        release   = name
+        product   = r.product
+        env       = r.environment
+        name      = "${name}-doc-${purpose}-in"
+        purpose   = purpose
+        age       = r.retentionDays[retention]
+        ephemeral = try(r.publicSandbox, false)
       }
     }
   ]...)
@@ -49,7 +51,7 @@ locals {
 check "registry_names" {
   assert {
     condition = alltrue([
-      for name, r in local.releases : name == "${r.product}-${r.environment}" && can(regex("^[a-z][a-z0-9]*$", r.product)) && length("${name}-ocr-scanner") <= 30
+      for name, r in local.releases : name == "${r.product}-${r.environment}" && (can(regex("^[a-z][a-z0-9]*$", r.product)) || (r.product == "ocr-sandbox" && try(r.publicSandbox, false))) && length("${name}-ocr-scanner") <= 30
     ])
     error_message = "Registry files must be named <product>-<environment>.yaml, product lowercase alphanumeric, and <product>-<environment>-ocr-scanner at most 30 characters."
   }
@@ -97,6 +99,13 @@ resource "google_storage_bucket" "document" {
 
   versioning {
     enabled = false
+  }
+
+  dynamic "soft_delete_policy" {
+    for_each = each.value.ephemeral ? [1] : []
+    content {
+      retention_duration_seconds = 0
+    }
   }
 
   encryption {
@@ -206,4 +215,29 @@ resource "google_secret_manager_secret_version" "database_gcp" {
 
   secret      = google_secret_manager_secret.database_gcp[each.key].id
   secret_data = random_password.database_gcp[each.key].result
+}
+
+resource "google_service_account" "public_sandbox_cleanup" {
+  for_each     = local.public_sandboxes
+  account_id   = "${each.key}-cleanup"
+  display_name = "Public OCR sandbox verified cleanup"
+}
+resource "google_project_iam_custom_role" "public_sandbox_cleanup" {
+  count       = length(local.public_sandboxes) > 0 ? 1 : 0
+  project     = var.project_id
+  role_id     = "ocrSandboxCleanup"
+  title       = "OCR sandbox verified cleanup"
+  permissions = ["storage.buckets.get", "storage.objects.list", "storage.objects.delete"]
+}
+resource "google_storage_bucket_iam_member" "public_sandbox_cleanup" {
+  for_each = { for key, bucket in local.buckets : key => bucket if bucket.ephemeral }
+  bucket   = google_storage_bucket.document[each.key].name
+  role     = google_project_iam_custom_role.public_sandbox_cleanup[0].name
+  member   = google_service_account.public_sandbox_cleanup[each.value.release].member
+}
+resource "google_service_account_iam_member" "public_sandbox_cleanup" {
+  for_each           = local.public_sandboxes
+  service_account_id = google_service_account.public_sandbox_cleanup[each.key].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[document-intelligence/ocr-public-sandbox]"
 }

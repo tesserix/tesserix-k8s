@@ -168,6 +168,7 @@ class TemporalPlatformManifestTests(unittest.TestCase):
                 "document-intelligence-prod",
                 "document-intelligence-roamie-prod",
                 "document-intelligence-sandbox",
+                "document-intelligence-ocr-sandbox-prod",
                 "dwellm8",
                 "homechef",
                 "kora",
