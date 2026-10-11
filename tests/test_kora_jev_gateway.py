@@ -61,3 +61,17 @@ class JevGatewayTests(unittest.TestCase):
             resource(bundle["items"], kind, name)
         values = yaml.safe_load((ROOT / "charts/apps/agentgateway-route-sync/values.yaml").read_text())
         self.assertEqual(len(bundle["items"]), values["registryPlatformSeed"]["expectedCount"])
+
+    def test_all_model_routes_require_jev_without_fail_open(self):
+        docs = render_chart("charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system")
+        policy = resource(docs, "AgentgatewayPolicy", "kora-ai-traffic")["spec"]
+        self.assertEqual(policy["targetRefs"][0]["name"], "kora-ai")
+        self.assertNotIn("sectionName", policy["targetRefs"][0])
+        ext = policy["traffic"]["extProc"]
+        self.assertEqual(ext["failureMode"], "FailClosed")
+        self.assertEqual(ext["requestAttributes"]["kora.jev_required"], "true")
+
+    def test_required_jev_buffers_full_image_in_gateway_and_processor(self):
+        docs = render_chart("charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system")
+        traffic = resource(docs, "AgentgatewayPolicy", "kora-ai-traffic")["spec"]["traffic"]
+        self.assertEqual(traffic["buffer"]["request"], {"maxBytes": "16Mi", "failureMode": "FailClosed"})

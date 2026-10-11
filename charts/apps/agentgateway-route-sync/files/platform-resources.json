@@ -780,6 +780,19 @@
                     "value": "read_label_review"
                   }
                 ]
+              },
+              {
+                "path": {
+                  "type": "PathPrefix",
+                  "value": "/"
+                },
+                "headers": [
+                  {
+                    "name": "x-kora-ai-capability",
+                    "type": "Exact",
+                    "value": "identify_photo_review"
+                  }
+                ]
               }
             ],
             "filters": [
@@ -1459,13 +1472,20 @@
           "timeouts": {
             "request": "120s"
           },
+          "buffer": {
+            "request": {
+              "maxBytes": "16Mi",
+              "failureMode": "FailClosed"
+            }
+          },
           "extProc": {
             "backendRef": {
               "name": "token-optimizer",
               "port": 18080
             },
-            "failureMode": "FailOpen",
+            "failureMode": "FailClosed",
             "requestAttributes": {
+              "kora.jev_required": "true",
               "token_optimizer.capability": "\"x-kora-ai-capability\" in request.headers ? request.headers[\"x-kora-ai-capability\"] : \"\"",
               "token_optimizer.context_kind": "\"x-kora-ai-context-kind\" in request.headers ? request.headers[\"x-kora-ai-context-kind\"] : \"\"",
               "token_optimizer.rtk_applied": "\"x-kora-rtk-applied\" in request.headers ? request.headers[\"x-kora-rtk-applied\"] == \"true\" : false"

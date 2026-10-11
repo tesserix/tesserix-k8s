@@ -88,13 +88,18 @@ spec:
           unit: Hours
     timeouts:
       request: 120s
+    buffer:
+      request:
+        maxBytes: 16Mi
+        failureMode: FailClosed
     extProc:
       backendRef:
         name: {{ .Values.optimizer.serviceName }}
         port: {{ .Values.optimizer.grpcPort }}
-      failureMode: FailOpen
+      failureMode: FailClosed
       # Guarded: bare map access throws "No such key" when the header is absent.
       requestAttributes:
+        kora.jev_required: 'true'
         token_optimizer.capability: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
         token_optimizer.context_kind: '"x-kora-ai-context-kind" in request.headers ? request.headers["x-kora-ai-context-kind"] : ""'
         token_optimizer.rtk_applied: '"x-kora-rtk-applied" in request.headers ? request.headers["x-kora-rtk-applied"] == "true" : false'
