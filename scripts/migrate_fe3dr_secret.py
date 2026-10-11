@@ -94,6 +94,7 @@ class OpenBao:
                         "kv/data/typesense/app/",
                         "kv/data/temporal/app/",
                         "kv/data/cloudflare/app/",
+                        "kv/data/global-postgres/app/",
                         "kv/data/devai/app/",
                         "kv/data/mark8ly/app/",
                         "kv/data/mark8ly-uat/app/",

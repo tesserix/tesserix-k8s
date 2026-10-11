@@ -23,6 +23,13 @@ class AIUsageIngestManifestTests(unittest.TestCase):
             self.gateway, "AgentgatewayPolicy", "kora-ai-observability"
         )["spec"]["frontend"]["tracing"]
 
+    def test_ingest_uses_verified_release_digest(self):
+        deployment = resource(self.ingest, "Deployment", "ai-usage-ingest")
+        self.assertEqual(
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/tesserix-platform-api@sha256:51584eed0d54a9eae7852331e3df232f26cf7c98f69cad2bc6b74171ece26074",
+            deployment["spec"]["template"]["spec"]["containers"][0]["image"],
+        )
+
     def test_the_gateway_exports_to_the_ingest_service(self):
         self.assertEqual("HTTP", self.tracing["protocol"])
         self.assertEqual("/v1/traces", self.tracing["path"])
@@ -45,14 +52,14 @@ class AIUsageIngestManifestTests(unittest.TestCase):
         added = {a["name"]: a["expression"] for a in self.tracing["attributes"]["add"]}
         self.assertEqual("'kora'", added["tesserix.product"])
         self.assertEqual("'kora-ai'", added["tesserix.gateway"])
-        self.assertIn("x-kora-ai-capability", added["tesserix.capability"])
+        self.assertIn("metadata.ledger_capability", added["tesserix.capability"])
 
     def test_an_absent_capability_header_does_not_cost_us_the_span(self):
         # Bare map access throws "No such key" when the header is absent; the
         # estate's ext_proc attributes already fail this way on live traffic.
         added = {a["name"]: a["expression"] for a in self.tracing["attributes"]["add"]}
         self.assertEqual(
-            '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""',
+            '"ledger_capability" in metadata ? metadata.ledger_capability : ""',
             added["tesserix.capability"],
         )
 
@@ -120,7 +127,7 @@ class AIUsageIngestManifestTests(unittest.TestCase):
     def test_the_ingest_runs_the_ingest_binary_from_the_platform_api_image(self):
         deployment = resource(self.ingest, "Deployment", "ai-usage-ingest")
         container = deployment["spec"]["template"]["spec"]["containers"][0]
-        self.assertTrue(container["image"].endswith("tesserix-platform-api:latest"))
+        self.assertIn("/tesserix-platform-api@sha256:", container["image"])
         self.assertEqual(["/app/ai-usage-ingest"], container["command"])
 
         env = {entry["name"]: entry for entry in container["env"]}
@@ -223,6 +230,13 @@ class DevAIGatewayExportTests(unittest.TestCase):
         self.tracing = resource(
             self.gateway, "AgentgatewayPolicy", "devai-ai-observability"
         )["spec"]["frontend"]["tracing"]
+
+    def test_ingest_uses_verified_release_digest(self):
+        deployment = resource(self.ingest, "Deployment", "ai-usage-ingest")
+        self.assertEqual(
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/tesserix-platform-api@sha256:51584eed0d54a9eae7852331e3df232f26cf7c98f69cad2bc6b74171ece26074",
+            deployment["spec"]["template"]["spec"]["containers"][0]["image"],
+        )
 
     def test_the_gateway_exports_to_the_ingest_service(self):
         self.assertEqual("HTTP", self.tracing["protocol"])

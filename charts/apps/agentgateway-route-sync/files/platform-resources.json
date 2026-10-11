@@ -751,7 +751,13 @@
                 "requestHeaderModifier": {
                   "remove": [
                     "X-Kora-End-User-Token",
-                    "X-Kora-Delegated-End-User-Token"
+                    "X-Kora-Delegated-End-User-Token",
+                    "X-Kora-User-Id",
+                    "X-Kora-AI-Service",
+                    "X-Kora-Agent-Id",
+                    "X-Kora-Agent-Version",
+                    "X-Kora-Agent-Run-Id",
+                    "X-Kora-Delegated-User-Id"
                   ]
                 }
               }
@@ -780,6 +786,19 @@
                     "value": "read_label_review"
                   }
                 ]
+              },
+              {
+                "path": {
+                  "type": "PathPrefix",
+                  "value": "/"
+                },
+                "headers": [
+                  {
+                    "name": "x-kora-ai-capability",
+                    "type": "Exact",
+                    "value": "identify_photo_review"
+                  }
+                ]
               }
             ],
             "filters": [
@@ -788,7 +807,13 @@
                 "requestHeaderModifier": {
                   "remove": [
                     "X-Kora-End-User-Token",
-                    "X-Kora-Delegated-End-User-Token"
+                    "X-Kora-Delegated-End-User-Token",
+                    "X-Kora-User-Id",
+                    "X-Kora-AI-Service",
+                    "X-Kora-Agent-Id",
+                    "X-Kora-Agent-Version",
+                    "X-Kora-Agent-Run-Id",
+                    "X-Kora-Delegated-User-Id"
                   ]
                 }
               }
@@ -825,7 +850,13 @@
                 "requestHeaderModifier": {
                   "remove": [
                     "X-Kora-End-User-Token",
-                    "X-Kora-Delegated-End-User-Token"
+                    "X-Kora-Delegated-End-User-Token",
+                    "X-Kora-User-Id",
+                    "X-Kora-AI-Service",
+                    "X-Kora-Agent-Id",
+                    "X-Kora-Agent-Version",
+                    "X-Kora-Agent-Run-Id",
+                    "X-Kora-Delegated-User-Id"
                   ]
                 }
               }
@@ -862,7 +893,13 @@
                 "requestHeaderModifier": {
                   "remove": [
                     "X-Kora-End-User-Token",
-                    "X-Kora-Delegated-End-User-Token"
+                    "X-Kora-Delegated-End-User-Token",
+                    "X-Kora-User-Id",
+                    "X-Kora-AI-Service",
+                    "X-Kora-Agent-Id",
+                    "X-Kora-Agent-Version",
+                    "X-Kora-Agent-Run-Id",
+                    "X-Kora-Delegated-User-Id"
                   ]
                 }
               }
@@ -892,7 +929,13 @@
                 "requestHeaderModifier": {
                   "remove": [
                     "X-Kora-End-User-Token",
-                    "X-Kora-Delegated-End-User-Token"
+                    "X-Kora-Delegated-End-User-Token",
+                    "X-Kora-User-Id",
+                    "X-Kora-AI-Service",
+                    "X-Kora-Agent-Id",
+                    "X-Kora-Agent-Version",
+                    "X-Kora-Agent-Run-Id",
+                    "X-Kora-Delegated-User-Id"
                   ]
                 }
               }
@@ -947,9 +990,93 @@
               {
                 "type": "RequestHeaderModifier",
                 "requestHeaderModifier": {
+                  "set": [
+                    {
+                      "name": "Accept-Encoding",
+                      "value": "identity"
+                    }
+                  ],
                   "remove": [
                     "X-Kora-End-User-Token",
                     "X-Kora-Delegated-End-User-Token",
+                    "X-Kora-User-Id",
+                    "X-Kora-AI-Service",
+                    "X-Kora-Agent-Id",
+                    "X-Kora-Agent-Version",
+                    "X-Kora-Agent-Run-Id",
+                    "X-Kora-Delegated-User-Id",
+                    "Cookie",
+                    "X-Kora-AI-Capability",
+                    "X-Kora-AI-Context-Kind",
+                    "X-Kora-RTK-Applied"
+                  ]
+                }
+              }
+            ],
+            "backendRefs": [
+              {
+                "group": "agentgateway.dev",
+                "kind": "AgentgatewayBackend",
+                "name": "kora-typesafe"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "gateway.networking.k8s.io/v1",
+      "kind": "HTTPRoute",
+      "metadata": {
+        "name": "kora-gate-decide",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "parentRefs": [
+          {
+            "name": "kora-ai",
+            "sectionName": "http"
+          }
+        ],
+        "rules": [
+          {
+            "matches": [
+              {
+                "path": {
+                  "type": "Exact",
+                  "value": "/internal/v1/decisions"
+                }
+              }
+            ],
+            "filters": [
+              {
+                "type": "URLRewrite",
+                "urlRewrite": {
+                  "hostname": "api.typesafe.ai",
+                  "path": {
+                    "type": "ReplaceFullPath",
+                    "replaceFullPath": "/v1/systemone"
+                  }
+                }
+              },
+              {
+                "type": "RequestHeaderModifier",
+                "requestHeaderModifier": {
+                  "set": [
+                    {
+                      "name": "Accept-Encoding",
+                      "value": "identity"
+                    }
+                  ],
+                  "remove": [
+                    "X-Kora-End-User-Token",
+                    "X-Kora-Delegated-End-User-Token",
+                    "X-Kora-User-Id",
+                    "X-Kora-AI-Service",
+                    "X-Kora-Agent-Id",
+                    "X-Kora-Agent-Version",
+                    "X-Kora-Agent-Run-Id",
+                    "X-Kora-Delegated-User-Id",
                     "Cookie",
                     "X-Kora-AI-Capability",
                     "X-Kora-AI-Context-Kind",
@@ -1273,10 +1400,22 @@
           },
           "transformation": {
             "request": {
+              "metadata": {
+                "ledger_capability": "\"x-kora-ai-capability\" in request.headers ? request.headers[\"x-kora-ai-capability\"] : \"\"",
+                "ledger_user": "\"x-kora-user-id\" in request.headers ? request.headers[\"x-kora-user-id\"] : \"\"",
+                "ledger_service": "\"x-kora-ai-service\" in request.headers ? request.headers[\"x-kora-ai-service\"] : \"\"",
+                "ledger_agent_id": "\"x-kora-agent-id\" in request.headers ? request.headers[\"x-kora-agent-id\"] : \"\"",
+                "ledger_agent_version": "\"x-kora-agent-version\" in request.headers ? request.headers[\"x-kora-agent-version\"] : \"\"",
+                "ledger_agent_run_id": "\"x-kora-agent-run-id\" in request.headers ? request.headers[\"x-kora-agent-run-id\"] : \"\""
+              },
               "set": [
                 {
+                  "name": "X-Kora-Delegated-User-Id",
+                  "value": "\"x-kora-user-id\" in request.headers ? request.headers[\"x-kora-user-id\"] : \"\""
+                },
+                {
                   "name": "X-Kora-Delegated-End-User-Token",
-                  "value": "\"x-kora-end-user-token\" in request.headers ? request.headers[\"x-kora-end-user-token\"] : \"\""
+                  "value": "\"Bearer \" + jwt.rawToken.unredacted()"
                 }
               ]
             }
@@ -1412,8 +1551,44 @@
                   "expression": "'kora-ai'"
                 },
                 {
+                  "name": "http.response.status_code",
+                  "expression": "response.code"
+                },
+                {
                   "name": "tesserix.capability",
-                  "expression": "\"x-kora-ai-capability\" in request.headers ? request.headers[\"x-kora-ai-capability\"] : \"\""
+                  "expression": "\"ledger_capability\" in metadata ? metadata.ledger_capability : \"\""
+                },
+                {
+                  "name": "tesserix.user_id",
+                  "expression": "\"ledger_user\" in metadata ? metadata.ledger_user : \"\""
+                },
+                {
+                  "name": "tesserix.agent_id",
+                  "expression": "\"ledger_agent_id\" in metadata ? metadata.ledger_agent_id : \"\""
+                },
+                {
+                  "name": "tesserix.agent_version",
+                  "expression": "\"ledger_agent_version\" in metadata ? metadata.ledger_agent_version : \"\""
+                },
+                {
+                  "name": "tesserix.agent_run_id",
+                  "expression": "\"ledger_agent_run_id\" in metadata ? metadata.ledger_agent_run_id : \"\""
+                },
+                {
+                  "name": "tesserix.service",
+                  "expression": "\"ledger_service\" in metadata ? metadata.ledger_service : \"\""
+                },
+                {
+                  "name": "tesserix.decision_model",
+                  "expression": "\"jev_model\" in metadata ? metadata.jev_model : \"\""
+                },
+                {
+                  "name": "tesserix.decision_input_tokens",
+                  "expression": "\"jev_input\" in metadata ? metadata.jev_input : 0"
+                },
+                {
+                  "name": "tesserix.decision_output_tokens",
+                  "expression": "\"jev_output\" in metadata ? metadata.jev_output : 0"
                 }
               ]
             }
@@ -1459,13 +1634,37 @@
           "timeouts": {
             "request": "120s"
           },
+          "buffer": {
+            "request": {
+              "maxBytes": "16Mi",
+              "failureMode": "FailClosed"
+            }
+          },
+          "transformation": {
+            "request": {
+              "metadata": {
+                "ledger_capability": "\"x-kora-ai-capability\" in request.headers ? request.headers[\"x-kora-ai-capability\"] : \"\"",
+                "ledger_user": "\"x-kora-user-id\" in request.headers ? request.headers[\"x-kora-user-id\"] : \"\"",
+                "ledger_service": "\"x-kora-ai-service\" in request.headers ? request.headers[\"x-kora-ai-service\"] : \"\"",
+                "ledger_agent_id": "\"x-kora-agent-id\" in request.headers ? request.headers[\"x-kora-agent-id\"] : \"\"",
+                "ledger_agent_version": "\"x-kora-agent-version\" in request.headers ? request.headers[\"x-kora-agent-version\"] : \"\"",
+                "ledger_agent_run_id": "\"x-kora-agent-run-id\" in request.headers ? request.headers[\"x-kora-agent-run-id\"] : \"\""
+              }
+            }
+          },
           "extProc": {
             "backendRef": {
               "name": "token-optimizer",
               "port": 18080
             },
-            "failureMode": "FailOpen",
+            "failureMode": "FailClosed",
             "requestAttributes": {
+              "kora.jev_required": "true",
+              "kora.user_id": "\"x-kora-user-id\" in request.headers ? request.headers[\"x-kora-user-id\"] : \"\"",
+              "kora.agent_id": "\"x-kora-agent-id\" in request.headers ? request.headers[\"x-kora-agent-id\"] : \"\"",
+              "kora.agent_version": "\"x-kora-agent-version\" in request.headers ? request.headers[\"x-kora-agent-version\"] : \"\"",
+              "kora.agent_run_id": "\"x-kora-agent-run-id\" in request.headers ? request.headers[\"x-kora-agent-run-id\"] : \"\"",
+              "kora.service": "\"x-kora-ai-service\" in request.headers ? request.headers[\"x-kora-ai-service\"] : \"\"",
               "token_optimizer.capability": "\"x-kora-ai-capability\" in request.headers ? request.headers[\"x-kora-ai-capability\"] : \"\"",
               "token_optimizer.context_kind": "\"x-kora-ai-context-kind\" in request.headers ? request.headers[\"x-kora-ai-context-kind\"] : \"\"",
               "token_optimizer.rtk_applied": "\"x-kora-rtk-applied\" in request.headers ? request.headers[\"x-kora-rtk-applied\"] == \"true\" : false"
@@ -1537,9 +1736,103 @@
               ]
             }
           },
+          "buffer": {
+            "response": {
+              "maxBytes": 64000,
+              "failureMode": "FailClosed"
+            }
+          },
           "transformation": {
             "request": {
+              "metadata": {
+                "ledger_capability": "\"x-kora-ai-capability\" in request.headers ? request.headers[\"x-kora-ai-capability\"] : \"\"",
+                "ledger_user": "\"x-kora-user-id\" in request.headers ? request.headers[\"x-kora-user-id\"] : \"\"",
+                "ledger_service": "\"x-kora-ai-service\" in request.headers ? request.headers[\"x-kora-ai-service\"] : \"\"",
+                "ledger_agent_id": "\"x-kora-agent-id\" in request.headers ? request.headers[\"x-kora-agent-id\"] : \"\"",
+                "ledger_agent_version": "\"x-kora-agent-version\" in request.headers ? request.headers[\"x-kora-agent-version\"] : \"\"",
+                "ledger_agent_run_id": "\"x-kora-agent-run-id\" in request.headers ? request.headers[\"x-kora-agent-run-id\"] : \"\"",
+                "jev_model": "\"jev-1.13.0\""
+              },
               "body": "{\"model\": \"jev-1.13.0\", \"state\": json(request.body).state, \"questions\": json(request.body).questions}"
+            },
+            "response": {
+              "metadata": {
+                "jev_model": "response.code == 200 ? json(response.body).model : \"jev-1.13.0\"",
+                "jev_input": "response.code == 200 ? json(response.body).usage.input_tokens : 0",
+                "jev_output": "response.code == 200 ? json(response.body).usage.output_tokens : 0"
+              }
+            }
+          },
+          "rateLimit": {
+            "local": [
+              {
+                "requests": 120,
+                "unit": "Minutes",
+                "burst": 20
+              }
+            ]
+          },
+          "timeouts": {
+            "request": "1500ms"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayPolicy",
+      "metadata": {
+        "name": "kora-gate-decide-traffic",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "targetRefs": [
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "kora-gate-decide"
+          }
+        ],
+        "traffic": {
+          "apiKeyAuthentication": {
+            "mode": "Strict",
+            "secretRef": {
+              "name": "kora-ai-gateway-client-credentials"
+            }
+          },
+          "authorization": {
+            "action": "Require",
+            "policy": {
+              "matchExpressions": [
+                "request.method == \"POST\" && size(request.body) <= 16000 && json(request.body).model == \"kora-decide\""
+              ]
+            }
+          },
+          "buffer": {
+            "response": {
+              "maxBytes": 64000,
+              "failureMode": "FailClosed"
+            }
+          },
+          "transformation": {
+            "request": {
+              "metadata": {
+                "ledger_capability": "\"x-kora-ai-capability\" in request.headers ? request.headers[\"x-kora-ai-capability\"] : \"\"",
+                "ledger_user": "\"x-kora-user-id\" in request.headers ? request.headers[\"x-kora-user-id\"] : \"\"",
+                "ledger_service": "\"x-kora-ai-service\" in request.headers ? request.headers[\"x-kora-ai-service\"] : \"\"",
+                "ledger_agent_id": "\"x-kora-agent-id\" in request.headers ? request.headers[\"x-kora-agent-id\"] : \"\"",
+                "ledger_agent_version": "\"x-kora-agent-version\" in request.headers ? request.headers[\"x-kora-agent-version\"] : \"\"",
+                "ledger_agent_run_id": "\"x-kora-agent-run-id\" in request.headers ? request.headers[\"x-kora-agent-run-id\"] : \"\"",
+                "jev_model": "\"jev-1.13.0\""
+              },
+              "body": "{\"model\": \"jev-1.13.0\", \"state\": json(request.body).state, \"questions\": json(request.body).questions}"
+            },
+            "response": {
+              "metadata": {
+                "jev_model": "response.code == 200 ? json(response.body).model : \"jev-1.13.0\"",
+                "jev_input": "response.code == 200 ? json(response.body).usage.input_tokens : 0",
+                "jev_output": "response.code == 200 ? json(response.body).usage.output_tokens : 0"
+              }
             }
           },
           "rateLimit": {

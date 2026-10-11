@@ -74,3 +74,12 @@ jwtAuthentication:
             key: xai
         tls: {}
 {{- end -}}
+
+{{- define "kora-ai-gateway.usageMetadata" -}}
+ledger_capability: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
+ledger_user: '"x-kora-user-id" in request.headers ? request.headers["x-kora-user-id"] : ""'
+ledger_service: '"x-kora-ai-service" in request.headers ? request.headers["x-kora-ai-service"] : ""'
+ledger_agent_id: '"x-kora-agent-id" in request.headers ? request.headers["x-kora-agent-id"] : ""'
+ledger_agent_version: '"x-kora-agent-version" in request.headers ? request.headers["x-kora-agent-version"] : ""'
+ledger_agent_run_id: '"x-kora-agent-run-id" in request.headers ? request.headers["x-kora-agent-run-id"] : ""'
+{{- end }}
