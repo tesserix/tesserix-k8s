@@ -874,11 +874,10 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         pod = deployment["spec"]["template"]["spec"]
         container = pod["containers"][0]
         # The digest itself lives in values.yaml and moves on every deploy;
-        # what this asserts is that it is mirrored and pinned, not mutable.
+        # what this asserts is that it is in-region and pinned, not mutable.
         repository, _, digest = container["image"].partition("@")
         self.assertEqual(
-            "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/"
-            "tesserix/ai-agents",
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/kora-ai-agents",
             repository,
         )
         self.assertRegex(digest, r"^sha256:[0-9a-f]{64}$")
