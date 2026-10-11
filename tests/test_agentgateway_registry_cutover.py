@@ -41,7 +41,9 @@ PLATFORM_SEEDED = MIGRATED | {
     ("AgentgatewayBackend", "kora-label-review-providers"),
     ("AgentgatewayBackend", "kora-typesafe"),
     ("HTTPRoute", "kora-decide"),
+    ("HTTPRoute", "kora-gate-decide"),
     ("AgentgatewayPolicy", "kora-decide-traffic"),
+    ("AgentgatewayPolicy", "kora-gate-decide-traffic"),
     ("AgentgatewayBackend", "kora-firebase-jwks"),
     ("AgentgatewayPolicy", "kora-a2a-user-auth"),
     ("AgentgatewayPolicy", "kora-user-auth"),
@@ -139,7 +141,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         self.assertRegex(container["image"], r"@sha256:[0-9a-f]{64}$")
         script = container["args"][0]
         self.assertIn("/v0/agentgateway/import", script)
-        self.assertIn('test "${count}" = "31"', script)
+        self.assertIn('test "${count}" = "33"', script)
         count_pattern = re.search(r"grep -Ec '([^']+)' /seed/resources\.json", script)
         self.assertIsNotNone(count_pattern)
         count = subprocess.run(
@@ -149,7 +151,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(0, count.returncode, count.stderr)
-        self.assertEqual("31", count.stdout.strip())
+        self.assertEqual("33", count.stdout.strip())
         self.assertTrue(
             any(
                 env.get("valueFrom", {}).get("secretKeyRef", {}).get("name")

@@ -59,7 +59,11 @@ spec:
     {{- include "kora-ai-gateway.userJwtAuthentication" . | nindent 4 }}
     transformation:
       request:
+        metadata:
+          {{- include "kora-ai-gateway.usageMetadata" . | nindent 10 }}
         set:
+          - name: X-Kora-Delegated-User-Id
+            value: '"x-kora-user-id" in request.headers ? request.headers["x-kora-user-id"] : ""'
           - name: {{ .Values.endUserAuthentication.delegatedHeader }}
             value: '"x-kora-end-user-token" in request.headers ? request.headers["x-kora-end-user-token"] : ""'
 ---
@@ -92,6 +96,10 @@ spec:
       request:
         maxBytes: 16Mi
         failureMode: FailClosed
+    transformation:
+      request:
+        metadata:
+          {{- include "kora-ai-gateway.usageMetadata" . | nindent 10 }}
     extProc:
       backendRef:
         name: {{ .Values.optimizer.serviceName }}
@@ -100,6 +108,8 @@ spec:
       # Guarded: bare map access throws "No such key" when the header is absent.
       requestAttributes:
         kora.jev_required: 'true'
+        kora.user_id: '"x-kora-user-id" in request.headers ? request.headers["x-kora-user-id"] : ""'
+        kora.service: '"x-kora-ai-service" in request.headers ? request.headers["x-kora-ai-service"] : ""'
         token_optimizer.capability: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
         token_optimizer.context_kind: '"x-kora-ai-context-kind" in request.headers ? request.headers["x-kora-ai-context-kind"] : ""'
         token_optimizer.rtk_applied: '"x-kora-rtk-applied" in request.headers ? request.headers["x-kora-rtk-applied"] == "true" : false'
@@ -199,4 +209,14 @@ spec:
           # absent, and an unset capability must not cost us the whole span.
           - name: tesserix.capability
             expression: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
+          - name: tesserix.user_id
+            expression: '"ledger_user" in metadata ? metadata.ledger_user : ""'
+          - name: tesserix.service
+            expression: '"ledger_service" in metadata ? metadata.ledger_service : ""'
+          - name: tesserix.decision_model
+            expression: '"jev_model" in metadata ? metadata.jev_model : ""'
+          - name: tesserix.decision_input_tokens
+            expression: '"jev_input" in metadata ? metadata.jev_input : 0'
+          - name: tesserix.decision_output_tokens
+            expression: '"jev_output" in metadata ? metadata.jev_output : 0'
 {{- end }}
