@@ -44,6 +44,8 @@ class LedgerAttribution(unittest.TestCase):
             metadata = traffic.get("transformation", {}).get("request", {}).get("metadata", {})
             self.assertIn("ledger_user", metadata)
             self.assertIn("ledger_service", metadata)
+            for key in ["agent_id", "agent_version", "agent_run_id"]:
+                self.assertIn("ledger_" + key, metadata)
         policy = resource(docs, "AgentgatewayPolicy", "kora-ai-observability")
         attrs = {a["name"]: a["expression"] for a in policy["spec"]["frontend"]["tracing"]["attributes"]["add"]}
         self.assertIn("metadata.ledger_user", attrs["tesserix.user_id"])
@@ -62,3 +64,17 @@ class LedgerAttribution(unittest.TestCase):
             route = resource(docs, "HTTPRoute", name)
             header = next(f["requestHeaderModifier"] for f in route["spec"]["rules"][0]["filters"] if f["type"] == "RequestHeaderModifier")
             self.assertIn({"name": "Accept-Encoding", "value": "identity"}, header.get("set", []))
+
+    def test_agent_details_are_exported_and_removed_before_provider_egress(self):
+        docs = render_chart("charts/apps/kora-ai-gateway", "kora", "agentgateway-system")
+        attrs = {a["name"]: a["expression"] for a in resource(docs, "AgentgatewayPolicy", "kora-ai-observability")["spec"]["frontend"]["tracing"]["attributes"]["add"]}
+        ext = resource(docs, "AgentgatewayPolicy", "kora-ai-traffic")["spec"]["traffic"]["extProc"]["requestAttributes"]
+        for key in ["agent_id", "agent_version", "agent_run_id"]:
+            self.assertIn("metadata.ledger_" + key, attrs["tesserix." + key])
+            self.assertIn("kora." + key, ext)
+        for name in ["kora-ai", "kora-decide", "kora-gate-decide"]:
+            for rule in resource(docs, "HTTPRoute", name)["spec"]["rules"]:
+                modifiers = [f["requestHeaderModifier"] for f in rule.get("filters", []) if f["type"] == "RequestHeaderModifier"]
+                self.assertTrue(modifiers)
+                for header in ["X-Kora-Agent-Id", "X-Kora-Agent-Version", "X-Kora-Agent-Run-Id"]:
+                    self.assertIn(header, modifiers[0].get("remove", []))

@@ -358,6 +358,9 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
                                 "X-Kora-Delegated-End-User-Token",
                                 "X-Kora-User-Id",
                                 "X-Kora-AI-Service",
+                                "X-Kora-Agent-Id",
+                                "X-Kora-Agent-Version",
+                                "X-Kora-Agent-Run-Id",
                                 "X-Kora-Delegated-User-Id",
                             ]
                         },
