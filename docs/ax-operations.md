@@ -114,8 +114,9 @@ Verified live:
   `valkey/20261002T084508Z.rdb` returned `AX_VALKEY_RESTORE_OK keys=4`.
 - PostgreSQL continuous WAL archiving and base backup `20261002T085528` succeeded.
   An isolated CNPG clone recovered two actor and two template records. The test
-  clone was removed; its 10 GiB disk remains retained in asia-south1-b as
-  `pvc-91d4c28d-4be9-4d6f-ab63-c5725fcd9e2f` pending an explicit disposal decision.
+  clone was removed. Its retained 10 GiB disk
+  (`pvc-91d4c28d-4be9-4d6f-ab63-c5725fcd9e2f`, asia-south1-b) was deleted on
+  2026-10-09 after a final snapshot, `ax-restore-1-final-20261009`.
 - All four CA expiry checks passed with approximately 365 days remaining.
   Prometheus scrapes the AX PostgreSQL, API, router and node-agent targets.
   Alert expressions were evaluated against the live metrics, including backup

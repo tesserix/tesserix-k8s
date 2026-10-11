@@ -356,6 +356,12 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
                             "remove": [
                                 "X-Kora-End-User-Token",
                                 "X-Kora-Delegated-End-User-Token",
+                                "X-Kora-User-Id",
+                                "X-Kora-AI-Service",
+                                "X-Kora-Agent-Id",
+                                "X-Kora-Agent-Version",
+                                "X-Kora-Agent-Run-Id",
+                                "X-Kora-Delegated-User-Id",
                             ]
                         },
                     }
@@ -467,11 +473,12 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         self.assertEqual(
             [
                 {
+                    "name": "X-Kora-Delegated-User-Id",
+                    "value": ('"x-kora-user-id" in request.headers ? request.headers["x-kora-user-id"] : ""'),
+                },
+                {
                     "name": "X-Kora-Delegated-End-User-Token",
-                    "value": (
-                        '"x-kora-end-user-token" in request.headers ? '
-                        'request.headers["x-kora-end-user-token"] : ""'
-                    ),
+                    "value": '"Bearer " + jwt.rawToken.unredacted()',
                 }
             ],
             traffic["transformation"]["request"]["set"],
@@ -867,11 +874,10 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         pod = deployment["spec"]["template"]["spec"]
         container = pod["containers"][0]
         # The digest itself lives in values.yaml and moves on every deploy;
-        # what this asserts is that it is mirrored and pinned, not mutable.
+        # what this asserts is that it is in-region and pinned, not mutable.
         repository, _, digest = container["image"].partition("@")
         self.assertEqual(
-            "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/"
-            "tesserix/ai-agents",
+            "asia-south1-docker.pkg.dev/tesseracthub-480811/global/kora-ai-agents",
             repository,
         )
         self.assertRegex(digest, r"^sha256:[0-9a-f]{64}$")
@@ -1002,7 +1008,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             image.split("@")[0],
         )
         self.assertEqual(
-            "sha256:58958f8dc92ab4ab70183c203ab92cfac26d0d716482adfc6f7ebbd6a9bad41a",
+            "sha256:d4eb2689e49a4308ceb56e7ed6c2c7fee8726bde10b892fc5b59a86019b67479",
             image.split("@")[1],
         )
         self.assertNotIn("imagePullSecrets", pod)
@@ -1012,25 +1018,15 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         )
 
     def test_token_optimizer_accepts_bounded_multimodal_payloads(self):
-        documents = render_chart(
-            "charts/apps/token-optimizer",
-            "token-optimizer",
-            "agentgateway-system",
-        )
+        documents = render_chart("charts/apps/token-optimizer", "token-optimizer", "agentgateway-system")
         deployment = resource(documents, "Deployment", "token-optimizer")
-        env = {
-            entry["name"]: entry["value"]
-            for entry in deployment["spec"]["template"]["spec"]["containers"][0][
-                "env"
-            ]
-        }
-
-        # The optimizer's own Settings validator rejects anything above 2 MiB and
-        # exits 1 at startup, so assert the ceiling rather than mirror the value.
-        self.assertLessEqual(
-            int(env["TOKEN_OPTIMIZER_MAX_REQUEST_BYTES"]),
-            2097152,
-        )
+        env = {entry["name"]: entry for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
+        # The mandatory gate must receive an 8 MiB image after base64 encoding.
+        maximum = int(env["TOKEN_OPTIMIZER_MAX_REQUEST_BYTES"]["value"])
+        self.assertGreaterEqual(maximum, 8 * 1024 * 1024 * 4 // 3 + 65536)
+        self.assertLessEqual(maximum, 16 * 1024 * 1024)
+        self.assertEqual(env["TOKEN_OPTIMIZER_GATEWAY_API_KEY"]["valueFrom"]["secretKeyRef"],
+                         {"name": "kora-ai-gateway-client-credentials", "key": "kora-api"})
 
     def test_registry_publish_path_is_credential_gated(self):
         registry = render_chart(

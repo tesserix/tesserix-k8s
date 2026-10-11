@@ -1,0 +1,26 @@
+{{- if and .Values.networkPolicy.enabled .Values.backup.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.clusterName }}-backup-identity
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: {{ .Values.clusterName }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 80
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.252/32
+      ports:
+        - protocol: TCP
+          port: 988
+{{- end }}

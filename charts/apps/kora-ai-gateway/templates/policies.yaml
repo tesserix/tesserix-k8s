@@ -59,9 +59,14 @@ spec:
     {{- include "kora-ai-gateway.userJwtAuthentication" . | nindent 4 }}
     transformation:
       request:
+        metadata:
+          {{- include "kora-ai-gateway.usageMetadata" . | nindent 10 }}
         set:
+          - name: X-Kora-Delegated-User-Id
+            value: '"x-kora-user-id" in request.headers ? request.headers["x-kora-user-id"] : ""'
           - name: {{ .Values.endUserAuthentication.delegatedHeader }}
-            value: '"x-kora-end-user-token" in request.headers ? request.headers["x-kora-end-user-token"] : ""'
+            # JWT authentication consumes the original header before transformations.
+            value: '"Bearer " + jwt.rawToken.unredacted()'
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
@@ -88,13 +93,27 @@ spec:
           unit: Hours
     timeouts:
       request: 120s
+    buffer:
+      request:
+        maxBytes: 16Mi
+        failureMode: FailClosed
+    transformation:
+      request:
+        metadata:
+          {{- include "kora-ai-gateway.usageMetadata" . | nindent 10 }}
     extProc:
       backendRef:
         name: {{ .Values.optimizer.serviceName }}
         port: {{ .Values.optimizer.grpcPort }}
-      failureMode: FailOpen
+      failureMode: FailClosed
       # Guarded: bare map access throws "No such key" when the header is absent.
       requestAttributes:
+        kora.jev_required: 'true'
+        kora.user_id: '"x-kora-user-id" in request.headers ? request.headers["x-kora-user-id"] : ""'
+        kora.agent_id: '"x-kora-agent-id" in request.headers ? request.headers["x-kora-agent-id"] : ""'
+        kora.agent_version: '"x-kora-agent-version" in request.headers ? request.headers["x-kora-agent-version"] : ""'
+        kora.agent_run_id: '"x-kora-agent-run-id" in request.headers ? request.headers["x-kora-agent-run-id"] : ""'
+        kora.service: '"x-kora-ai-service" in request.headers ? request.headers["x-kora-ai-service"] : ""'
         token_optimizer.capability: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
         token_optimizer.context_kind: '"x-kora-ai-context-kind" in request.headers ? request.headers["x-kora-ai-context-kind"] : ""'
         token_optimizer.rtk_applied: '"x-kora-rtk-applied" in request.headers ? request.headers["x-kora-rtk-applied"] == "true" : false'
@@ -192,6 +211,24 @@ spec:
             expression: "'{{ .Values.gateway.name }}'"
           # Guarded: bare map access throws "No such key" when the header is
           # absent, and an unset capability must not cost us the whole span.
+          - name: http.response.status_code
+            expression: response.code
           - name: tesserix.capability
-            expression: '"x-kora-ai-capability" in request.headers ? request.headers["x-kora-ai-capability"] : ""'
+            expression: '"ledger_capability" in metadata ? metadata.ledger_capability : ""'
+          - name: tesserix.user_id
+            expression: '"ledger_user" in metadata ? metadata.ledger_user : ""'
+          - name: tesserix.agent_id
+            expression: '"ledger_agent_id" in metadata ? metadata.ledger_agent_id : ""'
+          - name: tesserix.agent_version
+            expression: '"ledger_agent_version" in metadata ? metadata.ledger_agent_version : ""'
+          - name: tesserix.agent_run_id
+            expression: '"ledger_agent_run_id" in metadata ? metadata.ledger_agent_run_id : ""'
+          - name: tesserix.service
+            expression: '"ledger_service" in metadata ? metadata.ledger_service : ""'
+          - name: tesserix.decision_model
+            expression: '"jev_model" in metadata ? metadata.jev_model : ""'
+          - name: tesserix.decision_input_tokens
+            expression: '"jev_input" in metadata ? metadata.jev_input : 0'
+          - name: tesserix.decision_output_tokens
+            expression: '"jev_output" in metadata ? metadata.jev_output : 0'
 {{- end }}
