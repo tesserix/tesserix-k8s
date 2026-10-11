@@ -48,3 +48,17 @@ class LedgerAttribution(unittest.TestCase):
         attrs = {a["name"]: a["expression"] for a in policy["spec"]["frontend"]["tracing"]["attributes"]["add"]}
         self.assertIn("metadata.ledger_user", attrs["tesserix.user_id"])
         self.assertIn("metadata.ledger_service", attrs["tesserix.service"])
+
+    def test_ledger_has_response_status_and_preserved_capability(self):
+        docs = render_chart("charts/apps/kora-ai-gateway", "kora", "agentgateway-system")
+        policy = resource(docs, "AgentgatewayPolicy", "kora-ai-observability")
+        attrs = {a["name"]: a["expression"] for a in policy["spec"]["frontend"]["tracing"]["attributes"]["add"]}
+        self.assertEqual("response.code", attrs.get("http.response.status_code"))
+        self.assertIn("metadata.ledger_capability", attrs["tesserix.capability"])
+
+    def test_decision_responses_are_json_readable_for_accounting(self):
+        docs = render_chart("charts/apps/kora-ai-gateway", "kora", "agentgateway-system")
+        for name in ["kora-decide", "kora-gate-decide"]:
+            route = resource(docs, "HTTPRoute", name)
+            header = next(f["requestHeaderModifier"] for f in route["spec"]["rules"][0]["filters"] if f["type"] == "RequestHeaderModifier")
+            self.assertIn({"name": "Accept-Encoding", "value": "identity"}, header.get("set", []))
