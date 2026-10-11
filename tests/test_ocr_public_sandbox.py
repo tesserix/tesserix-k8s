@@ -81,3 +81,13 @@ def test_secret_bootstrap_creates_only_missing_keys_with_cas(monkeypatch):
     monkeypatch.setattr(urllib.request, 'urlopen', respond)
     runpy.run_path(str(ROOT / 'charts/apps/ocr-public-sandbox/files/bootstrap.py'))
     assert len(writes) == 2
+
+
+def test_only_sandbox_workers_can_reach_temporal_frontend():
+    docs = list(yaml.safe_load_all(subprocess.check_output(['helm', 'template', 'temporal-platform-resources', str(ROOT / 'charts/apps/temporal-platform-resources')], text=True)))
+    policy = next(d for d in docs if d and d['kind'] == 'AuthorizationPolicy')
+    permissions = {principal: rule.get('to', []) for rule in policy['spec']['rules'] for peer in rule.get('from', []) for principal in peer['source'].get('principals', [])}
+    for role in ['scanner', 'worker']:
+        principal = f'cluster.local/ns/document-intelligence/sa/ocr-sandbox-prod-ocr-{role}'
+        assert permissions[principal] == [{'operation': {'ports': ['7233']}}]
+    assert 'cluster.local/ns/document-intelligence/sa/ocr-public-sandbox' not in permissions
