@@ -20,7 +20,12 @@ def test_public_sandbox_is_isolated_and_closed_by_default():
     assert 'document-intelligence-ocr-sandbox-prod' in env['SANDBOX_UPLOAD_API']
     assert all(b.startswith('ocr-sandbox-') for b in env['SANDBOX_BUCKETS'].split(','))
     assert deployment['spec']['replicas'] == 2
-    assert any(d and d['kind'] == 'EnvoyFilter' for d in docs)
+    edge = next(d for d in docs if d and d['kind'] == 'EnvoyFilter')
+    route = next(p for p in edge['spec']['configPatches'] if p['applyTo'] == 'HTTP_ROUTE')
+    assert route['match']['routeConfiguration']['vhost']['name'] == 'ocr-test.tesserix.app:80'
+    assert route['patch']['value']['typed_per_filter_config']['envoy.filters.http.jwt_authn']['disabled'] is True
+    policy = next(d for d in docs if d and d['metadata']['name'] == 'allow-ocr-public-sandbox-host')
+    assert policy['spec']['rules'][0]['to'][0]['operation']['hosts'] == ['ocr-test.tesserix.app']
     assert any(d and d['kind'] == 'PodDisruptionBudget' for d in docs)
 
 

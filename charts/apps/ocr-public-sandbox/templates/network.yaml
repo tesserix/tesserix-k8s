@@ -79,6 +79,10 @@ spec:
         operation: MERGE
         value:
           typed_per_filter_config:
+            # This host uses opaque sandbox bearer sessions, validated by the adapter.
+            envoy.filters.http.jwt_authn:
+              '@type': type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.PerRouteConfig
+              disabled: true
             envoy.filters.http.local_ratelimit:
               '@type': type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
               stat_prefix: ocr_sandbox_limit
@@ -88,3 +92,30 @@ spec:
               response_headers_to_add:
                 - append_action: OVERWRITE_IF_EXISTS_OR_ADD
                   header: {key: retry-after, value: '60'}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ocr-public-sandbox-host
+  namespace: istio-ingress
+spec:
+  selector: {matchLabels: {istio: ingressgateway}}
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            hosts: [{{ .Values.host | quote }}]
+            ports: ['80', '443']
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-ocr-public-sandbox
+spec:
+  selector: {matchLabels: {app: ocr-public-sandbox}}
+  action: ALLOW
+  rules:
+    - from:
+        - source: {namespaces: [istio-ingress]}
+      to:
+        - operation: {ports: ['8080']}
