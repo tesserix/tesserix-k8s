@@ -1,0 +1,90 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ocr-public-sandbox
+spec:
+  podSelector: {matchLabels: {app: ocr-public-sandbox}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: istio-ingress}}
+      ports: [{port: 8080}, {port: 15008}]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+          podSelector: {matchLabels: {k8s-app: kube-dns}}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to: [{ipBlock: {cidr: 10.30.0.10/32}}]
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: document-intelligence}}
+          podSelector: {matchLabels: {app.kubernetes.io/instance: document-intelligence-ocr-sandbox-prod}}
+      ports: [{port: 8080}, {port: 15008}]
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: global}}}]
+      ports: [{port: 5432}, {port: 15008}]
+    - to: [{ipBlock: {cidr: 169.254.169.254/32}}]
+      ports: [{port: 80}]
+    - to: [{ipBlock: {cidr: 169.254.169.252/32}}]
+      ports: [{port: 988}]
+    - to: [{ipBlock: {cidr: 0.0.0.0/0, except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]}}]
+      ports: [{port: 443}]
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: ocr-public-sandbox
+spec:
+  hosts: [{{ .Values.host | quote }}]
+  gateways: [istio-ingress/tesseract-gateway]
+  http:
+    {{- if not .Values.publicAPIEnabled }}
+    - match: [{uri: {prefix: /v1/}}]
+      directResponse: {status: 503, body: {string: '{"code":"SandboxUnavailable","message":"Sandbox qualification is in progress."}'}}
+    {{- end }}
+    - route:
+        - destination:
+            host: ocr-public-sandbox.{{ .Release.Namespace }}.svc.cluster.local
+            port: {number: 8080}
+      timeout: 65s
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: ocr-public-sandbox-limits
+  namespace: istio-ingress
+spec:
+  workloadSelector: {labels: {istio: ingressgateway}}
+  configPatches:
+    - applyTo: HTTP_FILTER
+      match:
+        context: GATEWAY
+        listener:
+          filterChain:
+            filter:
+              name: envoy.filters.network.http_connection_manager
+              subFilter: {name: envoy.filters.http.router}
+      patch:
+        operation: INSERT_BEFORE
+        value:
+          name: envoy.filters.http.local_ratelimit
+          typed_config:
+            '@type': type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+            stat_prefix: ocr_sandbox_limit
+    - applyTo: HTTP_ROUTE
+      match:
+        context: GATEWAY
+        routeConfiguration:
+          vhost: {name: '{{ .Values.host }}:80'}
+      patch:
+        operation: MERGE
+        value:
+          typed_per_filter_config:
+            envoy.filters.http.local_ratelimit:
+              '@type': type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+              stat_prefix: ocr_sandbox_limit
+              token_bucket: {max_tokens: 120, tokens_per_fill: 120, fill_interval: 60s}
+              filter_enabled: {runtime_key: ocr_sandbox_enabled, default_value: {numerator: 100, denominator: HUNDRED}}
+              filter_enforced: {runtime_key: ocr_sandbox_enforced, default_value: {numerator: 100, denominator: HUNDRED}}
+              response_headers_to_add:
+                - append_action: OVERWRITE_IF_EXISTS_OR_ADD
+                  header: {key: retry-after, value: '60'}
