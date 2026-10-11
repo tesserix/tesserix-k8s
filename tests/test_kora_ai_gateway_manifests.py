@@ -1002,7 +1002,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             image.split("@")[0],
         )
         self.assertEqual(
-            "sha256:58958f8dc92ab4ab70183c203ab92cfac26d0d716482adfc6f7ebbd6a9bad41a",
+            "sha256:4e58d6ac0922db2954d24f6f81d7624d1f99944002e8ea7415b25d37133643db",
             image.split("@")[1],
         )
         self.assertNotIn("imagePullSecrets", pod)
@@ -1012,25 +1012,15 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         )
 
     def test_token_optimizer_accepts_bounded_multimodal_payloads(self):
-        documents = render_chart(
-            "charts/apps/token-optimizer",
-            "token-optimizer",
-            "agentgateway-system",
-        )
+        documents = render_chart("charts/apps/token-optimizer", "token-optimizer", "agentgateway-system")
         deployment = resource(documents, "Deployment", "token-optimizer")
-        env = {
-            entry["name"]: entry["value"]
-            for entry in deployment["spec"]["template"]["spec"]["containers"][0][
-                "env"
-            ]
-        }
-
-        # The optimizer's own Settings validator rejects anything above 2 MiB and
-        # exits 1 at startup, so assert the ceiling rather than mirror the value.
-        self.assertLessEqual(
-            int(env["TOKEN_OPTIMIZER_MAX_REQUEST_BYTES"]),
-            2097152,
-        )
+        env = {entry["name"]: entry for entry in deployment["spec"]["template"]["spec"]["containers"][0]["env"]}
+        # The mandatory gate must receive an 8 MiB image after base64 encoding.
+        maximum = int(env["TOKEN_OPTIMIZER_MAX_REQUEST_BYTES"]["value"])
+        self.assertGreaterEqual(maximum, 8 * 1024 * 1024 * 4 // 3 + 65536)
+        self.assertLessEqual(maximum, 16 * 1024 * 1024)
+        self.assertEqual(env["TOKEN_OPTIMIZER_JEV_API_KEY"]["valueFrom"]["secretKeyRef"],
+                         {"name": "kora-typesafe-credentials", "key": "api-key"})
 
     def test_registry_publish_path_is_credential_gated(self):
         registry = render_chart(
