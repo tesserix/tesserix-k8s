@@ -475,10 +475,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
                 },
                 {
                     "name": "X-Kora-Delegated-End-User-Token",
-                    "value": (
-                        '"x-kora-end-user-token" in request.headers ? '
-                        'request.headers["x-kora-end-user-token"] : ""'
-                    ),
+                    "value": '"Bearer " + jwt.rawToken.unredacted()',
                 }
             ],
             traffic["transformation"]["request"]["set"],

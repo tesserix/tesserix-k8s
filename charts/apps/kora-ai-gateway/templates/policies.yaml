@@ -65,7 +65,8 @@ spec:
           - name: X-Kora-Delegated-User-Id
             value: '"x-kora-user-id" in request.headers ? request.headers["x-kora-user-id"] : ""'
           - name: {{ .Values.endUserAuthentication.delegatedHeader }}
-            value: '"x-kora-end-user-token" in request.headers ? request.headers["x-kora-end-user-token"] : ""'
+            # JWT authentication consumes the original header before transformations.
+            value: '"Bearer " + jwt.rawToken.unredacted()'
 ---
 apiVersion: agentgateway.dev/v1alpha1
 kind: AgentgatewayPolicy
