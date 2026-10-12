@@ -5,6 +5,27 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_public_sandbox_uses_verified_image_digest_when_configured():
+    digest = 'sha256:' + 'a' * 64
+    docs = list(yaml.safe_load_all(subprocess.check_output([
+        'helm', 'template', 'ocr-public-sandbox',
+        str(ROOT / 'charts/apps/ocr-public-sandbox'),
+        '--namespace', 'document-intelligence', '--set', f'image.digest={digest}',
+    ], text=True)))
+    deployment = next(d for d in docs if d and d['kind'] == 'Deployment')
+    image = deployment['spec']['template']['spec']['containers'][0]['image']
+    assert image == 'asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/document-intelligence/ocr-sandbox@' + digest
+
+
+def test_public_sandbox_rejects_a_malformed_image_digest():
+    rendered = subprocess.run([
+        'helm', 'template', 'ocr-public-sandbox',
+        str(ROOT / 'charts/apps/ocr-public-sandbox'), '--set', 'image.digest=latest',
+    ], text=True, capture_output=True)
+    assert rendered.returncode != 0
+    assert 'image.digest must be a sha256 digest' in rendered.stderr
+
+
 def test_public_sandbox_is_isolated_and_closed_by_default():
     release = yaml.safe_load((ROOT / 'charts/apps/document-intelligence/products/ocr-sandbox-prod.yaml').read_text())
     assert release['product'] == 'ocr-sandbox'
