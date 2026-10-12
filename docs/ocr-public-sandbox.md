@@ -67,6 +67,9 @@ returned 404, a bounded request burst produced 429, and a truncated PNG was
 rejected with 400 at the upload boundary. PostgreSQL remained healthy with two
 instances and the existing 21 OCR replicas stayed available.
 
-The public-opening change must remain unmerged until the browser rejection fix
-from document-intelligence PR #107 is published and the abandoned-upload expiry
-check completes. Chart defaults remain closed; only this Application opts in.
+Waiting for the abandoned session to expire found a cleanup defect: rejected
+job requests were retried indefinitely. Document-intelligence PR #108 fixes
+400/422 rejection handling and preserves retry behavior for ambiguous failures.
+Keep public admission closed while deploying this correction, and confirm the
+original abandoned image disappears before enabling the public route. Chart
+defaults remain closed.
