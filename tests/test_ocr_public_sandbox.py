@@ -112,3 +112,13 @@ def test_only_sandbox_workers_can_reach_temporal_frontend():
         principal = f'cluster.local/ns/document-intelligence/sa/ocr-sandbox-prod-ocr-{role}'
         assert permissions[principal] == [{'operation': {'ports': ['7233']}}]
     assert 'cluster.local/ns/document-intelligence/sa/ocr-public-sandbox' not in permissions
+
+
+def test_public_sandbox_gateway_preserves_the_large_upload_timeout():
+    docs = list(yaml.safe_load_all(subprocess.check_output([
+        'helm', 'template', 'ocr-public-sandbox',
+        str(ROOT / 'charts/apps/ocr-public-sandbox'),
+        '--namespace', 'document-intelligence', '--set', 'publicAPIEnabled=true',
+    ], text=True)))
+    service = next(d for d in docs if d and d['kind'] == 'VirtualService')
+    assert service['spec']['http'][0]['timeout'] == '95s'
