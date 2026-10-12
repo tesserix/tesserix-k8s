@@ -1,7 +1,8 @@
 # Self-hosted weather activation
 
 The weather workload and compatible maintenance manager are pinned to the
-CI-published immutable digests. Release runs38221298575 and38222146518 passed.
+CI-published immutable digests. The weather image passed release run
+38222146518. The corrected manager is published by release run 38224447649.
 Do not pair this service with the old manager image. The user authorized
 self-hosted Open-Meteo primary and existing Google fallback on 2026-10-12.
 
@@ -30,7 +31,8 @@ The reusable weather image is based on the official immutable Open-Meteo 1.6.0
 image plus a readiness check and its corresponding upstream source archive.
 Its workflow tests Tokyo, Melbourne and New York before publishing. Local cold
 requests took 6–29 seconds, warm ones 0.01–0.02 seconds; the manager bounds each
-provider attempt at six seconds and uses Google on failures/limits. Google
+primary request at 35 seconds and Google fallback at six seconds. The manager
+retains its 80-second overall request limit. Google
 cannot return daily forecasts in Japan and several other countries.
 
 Post-deployment acceptance:
@@ -48,9 +50,17 @@ Post-deployment acceptance:
 Rollback requires approval: restore prior manager digest and disable weather
 through GitOps. This loses Japan primary coverage but preserves saved trips.
 
-Current evidence: 49 Roamie manifest tests passed and enabled chart lint passed.
-Local reusable image built and became healthy; local primary forecasts and an
-isolated real-Google429 failover check succeeded. Production is still unchanged:
-GitHub release run38213920022 attempt2 was blocked by billing. The user then
-authorized making tesserix/ai-agents public; visibility is now public and CI
-is running. This chart does not expose a public weather endpoint.
+Initial rollout: PR1362 reconciled at c50c11956779a9e73c1bd9afde8ddfba0bbe5ef4;
+Argo reported Healthy/Synced, with two ready weather and two ready manager pods.
+Deployed source-session checks returned three Tokyo days and two Kyoto days.
+Melbourne succeeded through Google fallback, and an isolated primary429 returned
+a real Google forecast. iOS showed Tokyo forecasts with Open-Meteo attribution,
+but Kyoto exposed premature fallback during a cold data load.
+
+The manager follow-up increases the primary budget from six to 35 seconds and
+aligns the self-hosted HTTP read timeout. The regression failed before the fix;
+maintenance verification passed 453 tests and main verification passed 492.
+Repeat iOS acceptance after the corrected manager rollout.
+
+The repository is public and Actions builds run successfully. The weather
+endpoint remains private; public repository visibility does not expose it.
