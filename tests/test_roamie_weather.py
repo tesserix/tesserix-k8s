@@ -22,6 +22,7 @@ def test_weather_is_private_nonroot_bounded_and_has_real_readiness():
     deploy = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "roamie-weather")
     pod = deploy["spec"]["template"]["spec"]
     assert deploy["spec"]["replicas"] == 2
+    assert deploy["spec"]["strategy"]["rollingUpdate"] == {"maxUnavailable": 1, "maxSurge": 0}
     assert pod["automountServiceAccountToken"] is False
     assert pod["securityContext"]["runAsNonRoot"] is True
     container = pod["containers"][0]

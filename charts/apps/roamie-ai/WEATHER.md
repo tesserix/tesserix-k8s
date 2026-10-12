@@ -1,7 +1,8 @@
 # Self-hosted weather activation
 
-This chart's weather workload is disabled until its two immutable image digests
-are available. Do not enable it with the old manager image. The user authorized
+The weather workload and compatible maintenance manager are pinned to the
+CI-published immutable digests. Release runs38221298575 and38222146518 passed.
+Do not pair this service with the old manager image. The user authorized
 self-hosted Open-Meteo primary and existing Google fallback on 2026-10-12.
 
 Prerequisites:
@@ -14,7 +15,7 @@ Prerequisites:
    The manager's self-hosted flag is derived from weather.enabled.
 4. Confirm current active account/project/context and available schedulable
    resources before the approved production rollout. Two weather pods request a
-   combined 2 CPUs, 16Gi memory and 40Gi ephemeral disk; rolling surge can add one.
+   combined 2 CPUs, 16Gi memory and 40Gi ephemeral disk; updates replace one pod at a time without requiring surge capacity.
    No node pool resize or external purchase was authorized or performed.
 5. Review and merge through normal GitOps gates; no imperative live patching.
 
