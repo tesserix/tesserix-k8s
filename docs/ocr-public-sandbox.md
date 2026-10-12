@@ -73,3 +73,9 @@ job requests were retried indefinitely. Document-intelligence PR #108 fixes
 Keep public admission closed while deploying this correction, and confirm the
 original abandoned image disappears before enabling the public route. Chart
 defaults remain closed.
+
+The corrected adapter image `e568c0144754d7f674cfe5289bdff43aa1fd6416`
+was deployed through PR #1359 and Argo CD reported Synced/Healthy. Its cleanup
+worker removed both copies of the already-expired rejected upload; an independent
+all-generation listing then found no objects in any of the four sandbox buckets.
+The follow-up public opening changes only this Application's public route flag.
