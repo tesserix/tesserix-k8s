@@ -51,3 +51,25 @@ itself fails, block ingress first and restore the last qualified image.
 Observe readiness, HTTP 429/5xx, cleanup retry logs and ledger pending-cleanup age.
 This small demo does not add a paging SLO; any inability to verify cleanup is a
 reason to close public admission and repair the dependency before reopening.
+
+## Qualification — 2026-10-12
+
+The dedicated deployment processed the checked-in nutrition, receipt and blank
+fixtures through real OCR. Nutrition matched 20/20 expected fields; normalized
+receipt CER was 0%; the blank image returned review-required with no text.
+Initial end-to-end durations were 16.59, 13.45 and 14.38 seconds respectively.
+These are individual fixture observations, not a general accuracy or latency SLO.
+
+All successful test source images were absent in an independent all-generation
+GCS listing. An additional job's images disappeared while its client was paused
+for 90 seconds, before any status/result retrieval. Cross-session result access
+returned 404, a bounded request burst produced 429, and a truncated PNG was
+rejected with 400 at the upload boundary. PostgreSQL remained healthy with two
+instances and the existing 21 OCR replicas stayed available.
+
+Waiting for the abandoned session to expire found a cleanup defect: rejected
+job requests were retried indefinitely. Document-intelligence PR #108 fixes
+400/422 rejection handling and preserves retry behavior for ambiguous failures.
+Keep public admission closed while deploying this correction, and confirm the
+original abandoned image disappears before enabling the public route. Chart
+defaults remain closed.
