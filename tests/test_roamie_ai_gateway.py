@@ -77,3 +77,12 @@ def test_speech_uses_fixed_native_vertex_backend_with_auth_and_bounded_telemetry
     assert metadata['ledger_user'] == 'jwt.sub'
     assert metadata['speech_model'] == "'gemini-3.8-flash-tts'"
     assert 'response.body' in traffic['transformation']['response']['metadata']['speech_input']
+
+
+def test_speech_allows_both_app_voices_and_restricts_output_to_audio():
+    policy = next(d for d in render(True) if d['metadata']['name'] == 'roamie-api-speech-traffic')
+    expressions = policy['spec']['traffic']['authorization']['policy']['matchExpressions']
+    assert expressions == [
+        'json(request.body).generationConfig.responseModalities == ["AUDIO"] && '
+        'json(request.body).generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName in ["Sulafat", "Algieba"]'
+    ]
