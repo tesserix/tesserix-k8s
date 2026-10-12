@@ -1,0 +1,206 @@
+{{- if and .Values.enabled .Values.weather.enabled }}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" .Values.weather.digest) }}
+{{- fail "roamie-weather needs a tested immutable image digest" }}
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: roamie-weather
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: roamie-weather
+  labels:
+    app.kubernetes.io/name: roamie-weather
+    app.kubernetes.io/part-of: roamie
+spec:
+  replicas: {{ .Values.weather.replicas }}
+  revisionHistoryLimit: 3
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: roamie-weather
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: roamie-weather
+        app.kubernetes.io/part-of: roamie
+        istio.io/use-waypoint: none
+    spec:
+      serviceAccountName: roamie-weather
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: roamie-weather
+      containers:
+        - name: weather
+          image: {{ .Values.weather.repository }}@{{ .Values.weather.digest }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DATA_DIRECTORY
+              value: /app/data/
+            - name: TEMP_DIRECTORY
+              value: /app/tmp/
+            - name: REMOTE_DATA_DIRECTORY
+              value: https://openmeteo.s3.amazonaws.com/data/
+            - name: CACHE_SIZE
+              value: 8GB
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            {{- toYaml .Values.weather.resources | nindent 12 }}
+          startupProbe:
+            exec:
+              command: [python3, /app/check_forecast.py]
+            periodSeconds: 30
+            timeoutSeconds: 20
+            failureThreshold: 20
+          readinessProbe:
+            exec:
+              command: [python3, /app/check_forecast.py]
+            periodSeconds: 60
+            timeoutSeconds: 20
+            failureThreshold: 2
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: weather-cache
+              mountPath: /app/data
+            - name: temporary
+              mountPath: /app/tmp
+            - name: temporary-system
+              mountPath: /tmp
+      volumes:
+        - name: weather-cache
+          emptyDir:
+            sizeLimit: 20Gi
+        - name: temporary
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: temporary-system
+          emptyDir:
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: roamie-weather
+  labels:
+    app.kubernetes.io/name: roamie-weather
+    istio.io/use-waypoint: none
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: roamie-weather
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: roamie-weather
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: roamie-weather
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: roamie-weather
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: roamie-weather
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: roamie-trip-manager
+      ports:
+        - port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: roamie
+      ports:
+        - port: 15008
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - ports:
+        - port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: roamie-manager-weather
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: roamie-trip-manager
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: roamie-weather
+      ports:
+        - port: 8080
+        - port: 15008
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: roamie-weather
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: roamie-weather
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/roamie/sa/roamie-trip-manager
+      to:
+        - operation:
+            ports: ["8080"]
+{{- end }}

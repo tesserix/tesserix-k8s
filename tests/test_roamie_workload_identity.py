@@ -89,7 +89,7 @@ def test_mcp_uses_the_verified_cluster_and_zitadel_boundary():
 def test_mesh_candidate_uses_published_images_and_internal_mcp_origin():
     values = yaml.safe_load((ROOT / "charts/apps/roamie-ai/values.yaml").read_text())
     expected = {
-        "roamie-trip-manager": "sha256:234c5af7e2b6ee65deb6defad4c102d8ceecb551d2a8389d5a8236c967f6e01e",
+        "roamie-trip-manager": "sha256:45c57f1cbe957c7def890f3b3ed52e25358cc972d0087157a8b6b7b0c964e832",
         "roamie-agents": "sha256:390c5334b23d221c30a646d4ee12ebf4389b204e2bb8571b9bb319f4d4f50690",
     }
     for name, prefix in [
@@ -120,7 +120,9 @@ def test_mcp_schema_contract_is_explicit_and_not_a_credential():
 
 def test_validation_workloads_start_but_the_manager_denies_user_traffic():
     docs = render("roamie-ai", "enabled=true", "validationOnly=true")
-    assert len([d for d in docs if d["kind"] == "Deployment"]) == 3
+    assert {d["metadata"]["name"] for d in docs if d["kind"] == "Deployment"} == {
+        "roamie-trip-manager", "roamie-agents", "roamie-travel-mcp", "roamie-weather",
+    }
     manager = next(
         d
         for d in docs
