@@ -38,6 +38,19 @@ MIGRATED = {
 }
 
 PLATFORM_SEEDED = MIGRATED | {
+    ('AgentgatewayBackend', 'roamie-api-vertex'),
+    ('AgentgatewayBackend', 'roamie-api-speech-vertex'),
+    ('HTTPRoute', 'roamie-api-speech'),
+    ('AgentgatewayPolicy', 'roamie-api-speech-traffic'),
+    ('AgentgatewayBackend', 'roamie-api-typesafe'),
+    ('AgentgatewayBackend', 'roamie-api-jwks'),
+    ('HTTPRoute', 'roamie-api-model'),
+    ('HTTPRoute', 'roamie-api-decide'),
+    ('AgentgatewayPolicy', 'roamie-api-auth'),
+    ('AgentgatewayPolicy', 'roamie-api-model-traffic'),
+    ('AgentgatewayPolicy', 'roamie-api-decide-traffic'),
+    ('AgentgatewayPolicy', 'roamie-api-observability'),
+
     ("AgentgatewayBackend", "kora-label-review-providers"),
     ("AgentgatewayBackend", "kora-typesafe"),
     ("HTTPRoute", "kora-decide"),
@@ -141,7 +154,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         self.assertRegex(container["image"], r"@sha256:[0-9a-f]{64}$")
         script = container["args"][0]
         self.assertIn("/v0/agentgateway/import", script)
-        self.assertIn('test "${count}" = "33"', script)
+        self.assertIn('test "${count}" = "45"', script)
         count_pattern = re.search(r"grep -Ec '([^']+)' /seed/resources\.json", script)
         self.assertIsNotNone(count_pattern)
         count = subprocess.run(
@@ -151,7 +164,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(0, count.returncode, count.stderr)
-        self.assertEqual("33", count.stdout.strip())
+        self.assertEqual("45", count.stdout.strip())
         self.assertTrue(
             any(
                 env.get("valueFrom", {}).get("secretKeyRef", {}).get("name")
@@ -164,6 +177,7 @@ class AgentGatewayRegistryCutoverTests(unittest.TestCase):
         charts = (
             "charts/apps/devai-ai-gateway",
             "charts/apps/kora-ai-gateway",
+            "charts/apps/roamie-ai-gateway",
             "charts/apps/agentgateway-route-sync",
         )
         default_resources = set()

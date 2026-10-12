@@ -8,7 +8,7 @@ from test_homechef_openbao_access import render, resource
 
 ROOT = pathlib.Path(__file__).parents[1]
 READERS = {
-    "agentgateway-system-production": ["agents-api-key", "travel-mcp-key"],
+    "agentgateway-system-production": ["agents-api-key", "travel-mcp-key", "typesafe-api-key"],
     "agentregistry-system-production": ["registry-deploy-key-sha256"],
     "document-intelligence-production": [
         "api-ocr-key",
