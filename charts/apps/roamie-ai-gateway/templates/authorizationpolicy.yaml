@@ -1,0 +1,22 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: roamie-api-model-invocation
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: {{ .Values.gateway.name }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/roamie/sa/roamie-api
+      to:
+        - operation:
+            methods: ["POST"]
+            paths: ["/v1/chat/completions", "/v1/decisions", "/v1/speech"]
+            ports: ["8080"]
+    - to:
+        - operation:
+            notPorts: ["8080"]

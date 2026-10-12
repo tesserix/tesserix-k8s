@@ -6,6 +6,617 @@
       "apiVersion": "agentgateway.dev/v1alpha1",
       "kind": "AgentgatewayBackend",
       "metadata": {
+        "name": "roamie-api-vertex",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "ai": {
+          "groups": [
+            {
+              "providers": [
+                {
+                  "name": "vertex",
+                  "vertexai": {
+                    "projectId": "tesseracthub-480811",
+                    "region": "global",
+                    "model": "gemini-2.5-flash"
+                  },
+                  "policies": {
+                    "auth": {
+                      "gcp": {}
+                    },
+                    "tls": {}
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "policies": {
+          "ai": {
+            "routes": {
+              "/v1/chat/completions": "Completions"
+            }
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayBackend",
+      "metadata": {
+        "name": "roamie-api-speech-vertex",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "static": {
+          "host": "aiplatform.googleapis.com",
+          "port": 443
+        },
+        "policies": {
+          "tls": {},
+          "auth": {
+            "gcp": {}
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "gateway.networking.k8s.io/v1",
+      "kind": "HTTPRoute",
+      "metadata": {
+        "name": "roamie-api-speech",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "parentRefs": [
+          {
+            "name": "roamie-ai",
+            "sectionName": "http"
+          }
+        ],
+        "rules": [
+          {
+            "matches": [
+              {
+                "path": {
+                  "type": "Exact",
+                  "value": "/v1/speech"
+                }
+              }
+            ],
+            "filters": [
+              {
+                "type": "URLRewrite",
+                "urlRewrite": {
+                  "hostname": "aiplatform.googleapis.com",
+                  "path": {
+                    "type": "ReplaceFullPath",
+                    "replaceFullPath": "/v1/projects/tesseracthub-480811/locations/global/publishers/google/models/gemini-3.8-flash-tts:generateContent"
+                  }
+                }
+              },
+              {
+                "type": "RequestHeaderModifier",
+                "requestHeaderModifier": {
+                  "remove": [
+                    "Authorization",
+                    "Cookie",
+                    "X-Roamie-AI-Service",
+                    "X-Roamie-AI-Capability",
+                    "X-Roamie-User-Id"
+                  ],
+                  "set": [
+                    {
+                      "name": "Accept-Encoding",
+                      "value": "identity"
+                    }
+                  ]
+                }
+              }
+            ],
+            "backendRefs": [
+              {
+                "group": "agentgateway.dev",
+                "kind": "AgentgatewayBackend",
+                "name": "roamie-api-speech-vertex"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayPolicy",
+      "metadata": {
+        "name": "roamie-api-speech-traffic",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "targetRefs": [
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "roamie-api-speech"
+          }
+        ],
+        "traffic": {
+          "timeouts": {
+            "request": "45s"
+          },
+          "buffer": {
+            "request": {
+              "maxBytes": "8Ki",
+              "failureMode": "FailClosed"
+            },
+            "response": {
+              "maxBytes": "3Mi",
+              "failureMode": "FailClosed"
+            }
+          },
+          "authorization": {
+            "action": "Require",
+            "policy": {
+              "matchExpressions": [
+                "json(request.body).generationConfig.responseModalities == [\"AUDIO\"] && json(request.body).generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName == \"Kore\""
+              ]
+            }
+          },
+          "transformation": {
+            "request": {
+              "metadata": {
+                "speech_model": "'gemini-3.8-flash-tts'",
+                "ledger_user": "jwt.sub",
+                "ledger_capability": "\"x-roamie-ai-capability\" in request.headers ? request.headers[\"x-roamie-ai-capability\"] : \"\""
+              }
+            },
+            "response": {
+              "metadata": {
+                "speech_input": "response.code == 200 && \"usageMetadata\" in json(response.body) && \"promptTokenCount\" in json(response.body).usageMetadata ? json(response.body).usageMetadata.promptTokenCount : 0",
+                "speech_output": "response.code == 200 && \"usageMetadata\" in json(response.body) && \"candidatesTokenCount\" in json(response.body).usageMetadata ? json(response.body).usageMetadata.candidatesTokenCount : 0"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayBackend",
+      "metadata": {
+        "name": "roamie-api-typesafe",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "static": {
+          "host": "api.typesafe.ai",
+          "port": 443
+        },
+        "policies": {
+          "tls": {},
+          "auth": {
+            "secretRef": {
+              "name": "roamie-typesafe-credentials",
+              "key": "api-key"
+            }
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayBackend",
+      "metadata": {
+        "name": "roamie-api-jwks",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "static": {
+          "host": "auth.tesserix.app",
+          "port": 443
+        },
+        "policies": {
+          "tls": {}
+        }
+      }
+    },
+    {
+      "apiVersion": "gateway.networking.k8s.io/v1",
+      "kind": "HTTPRoute",
+      "metadata": {
+        "name": "roamie-api-model",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "parentRefs": [
+          {
+            "name": "roamie-ai",
+            "sectionName": "http"
+          }
+        ],
+        "rules": [
+          {
+            "matches": [
+              {
+                "path": {
+                  "type": "Exact",
+                  "value": "/v1/chat/completions"
+                }
+              }
+            ],
+            "filters": [
+              {
+                "type": "RequestHeaderModifier",
+                "requestHeaderModifier": {
+                  "remove": [
+                    "Authorization",
+                    "Cookie",
+                    "X-Roamie-AI-Service",
+                    "X-Roamie-AI-Capability",
+                    "X-Roamie-User-Id"
+                  ],
+                  "set": [
+                    {
+                      "name": "Accept-Encoding",
+                      "value": "identity"
+                    }
+                  ]
+                }
+              }
+            ],
+            "backendRefs": [
+              {
+                "group": "agentgateway.dev",
+                "kind": "AgentgatewayBackend",
+                "name": "roamie-api-vertex"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "gateway.networking.k8s.io/v1",
+      "kind": "HTTPRoute",
+      "metadata": {
+        "name": "roamie-api-decide",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "parentRefs": [
+          {
+            "name": "roamie-ai",
+            "sectionName": "http"
+          }
+        ],
+        "rules": [
+          {
+            "matches": [
+              {
+                "path": {
+                  "type": "Exact",
+                  "value": "/v1/decisions"
+                }
+              }
+            ],
+            "filters": [
+              {
+                "type": "URLRewrite",
+                "urlRewrite": {
+                  "hostname": "api.typesafe.ai",
+                  "path": {
+                    "type": "ReplaceFullPath",
+                    "replaceFullPath": "/v1/systemone"
+                  }
+                }
+              },
+              {
+                "type": "RequestHeaderModifier",
+                "requestHeaderModifier": {
+                  "remove": [
+                    "Authorization",
+                    "Cookie",
+                    "X-Roamie-AI-Service",
+                    "X-Roamie-AI-Capability",
+                    "X-Roamie-User-Id"
+                  ],
+                  "set": [
+                    {
+                      "name": "Accept-Encoding",
+                      "value": "identity"
+                    }
+                  ]
+                }
+              }
+            ],
+            "backendRefs": [
+              {
+                "group": "agentgateway.dev",
+                "kind": "AgentgatewayBackend",
+                "name": "roamie-api-typesafe"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayPolicy",
+      "metadata": {
+        "name": "roamie-api-auth",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "targetRefs": [
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "roamie-api-model"
+          },
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "roamie-api-decide"
+          },
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "roamie-api-speech"
+          }
+        ],
+        "traffic": {
+          "jwtAuthentication": {
+            "mode": "Strict",
+            "providers": [
+              {
+                "issuer": "https://auth.tesserix.app",
+                "audiences": [
+                  "392328861469115174"
+                ],
+                "jwks": {
+                  "remote": {
+                    "jwksPath": "/oauth/v2/keys",
+                    "cacheDuration": "5m",
+                    "backendRef": {
+                      "group": "agentgateway.dev",
+                      "kind": "AgentgatewayBackend",
+                      "name": "roamie-api-jwks",
+                      "port": 443
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "authorization": {
+            "action": "Require",
+            "policy": {
+              "matchExpressions": [
+                "request.method == \"POST\" && jwt.client_id in [\"392328865646707494\", \"392328864774226726\"]"
+              ]
+            }
+          },
+          "rateLimit": {
+            "local": [
+              {
+                "requests": 120,
+                "burst": 20,
+                "unit": "Minutes"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayPolicy",
+      "metadata": {
+        "name": "roamie-api-model-traffic",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "targetRefs": [
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "roamie-api-model"
+          }
+        ],
+        "traffic": {
+          "timeouts": {
+            "request": "45s"
+          },
+          "buffer": {
+            "request": {
+              "maxBytes": "12Mi",
+              "failureMode": "FailClosed"
+            }
+          },
+          "authorization": {
+            "action": "Require",
+            "policy": {
+              "matchExpressions": [
+                "json(request.body).model == \"roamie-structured\""
+              ]
+            }
+          },
+          "transformation": {
+            "request": {
+              "metadata": {
+                "ledger_user": "jwt.sub",
+                "ledger_capability": "\"x-roamie-ai-capability\" in request.headers ? request.headers[\"x-roamie-ai-capability\"] : \"\""
+              }
+            }
+          }
+        },
+        "backend": {
+          "ai": {
+            "promptGuard": {
+              "request": [
+                {
+                  "regex": {
+                    "action": "Reject",
+                    "builtins": [
+                      "CreditCard",
+                      "Ssn"
+                    ]
+                  },
+                  "response": {
+                    "message": "Remove sensitive identifiers before trying again.",
+                    "statusCode": 400
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayPolicy",
+      "metadata": {
+        "name": "roamie-api-decide-traffic",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "targetRefs": [
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "HTTPRoute",
+            "name": "roamie-api-decide"
+          }
+        ],
+        "traffic": {
+          "timeouts": {
+            "request": "1500ms"
+          },
+          "authorization": {
+            "action": "Require",
+            "policy": {
+              "matchExpressions": [
+                "request.method == \"POST\" && size(request.body) <= 16000 && json(request.body).model == \"jev-1.13.0\""
+              ]
+            }
+          },
+          "buffer": {
+            "response": {
+              "maxBytes": 64000,
+              "failureMode": "FailClosed"
+            }
+          },
+          "transformation": {
+            "request": {
+              "metadata": {
+                "jev_model": "\"jev-1.13.0\"",
+                "ledger_user": "jwt.sub",
+                "ledger_capability": "\"x-roamie-ai-capability\" in request.headers ? request.headers[\"x-roamie-ai-capability\"] : \"\""
+              }
+            },
+            "response": {
+              "metadata": {
+                "jev_model": "response.code == 200 ? json(response.body).model : \"jev-1.13.0\"",
+                "jev_input": "response.code == 200 ? json(response.body).usage.input_tokens : 0",
+                "jev_output": "response.code == 200 ? json(response.body).usage.output_tokens : 0"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayPolicy",
+      "metadata": {
+        "name": "roamie-api-observability",
+        "namespace": "agentgateway-system"
+      },
+      "spec": {
+        "targetRefs": [
+          {
+            "group": "gateway.networking.k8s.io",
+            "kind": "Gateway",
+            "name": "roamie-ai"
+          }
+        ],
+        "frontend": {
+          "http": {
+            "maxBufferSize": "12Mi"
+          },
+          "tracing": {
+            "backendRef": {
+              "kind": "Service",
+              "name": "ai-usage-ingest",
+              "namespace": "tesserix",
+              "port": 4318
+            },
+            "protocol": "HTTP",
+            "path": "/v1/traces",
+            "clientSampling": "1.0",
+            "randomSampling": "1.0",
+            "attributes": {
+              "add": [
+                {
+                  "name": "tesserix.product",
+                  "expression": "'roamie'"
+                },
+                {
+                  "name": "tesserix.service",
+                  "expression": "'roamie-api'"
+                },
+                {
+                  "name": "tesserix.gateway",
+                  "expression": "'roamie-ai'"
+                },
+                {
+                  "name": "http.response.status_code",
+                  "expression": "response.code"
+                },
+                {
+                  "name": "tesserix.user_id",
+                  "expression": "\"ledger_user\" in metadata ? metadata.ledger_user : \"\""
+                },
+                {
+                  "name": "tesserix.capability",
+                  "expression": "\"ledger_capability\" in metadata ? metadata.ledger_capability : \"\""
+                },
+                {
+                  "name": "tesserix.decision_model",
+                  "expression": "\"jev_model\" in metadata ? metadata.jev_model : \"\""
+                },
+                {
+                  "name": "tesserix.decision_input_tokens",
+                  "expression": "\"jev_input\" in metadata ? metadata.jev_input : 0"
+                },
+                {
+                  "name": "tesserix.decision_output_tokens",
+                  "expression": "\"jev_output\" in metadata ? metadata.jev_output : 0"
+                },
+                {
+                  "name": "tesserix.speech_model",
+                  "expression": "\"speech_model\" in metadata ? metadata.speech_model : \"\""
+                },
+                {
+                  "name": "tesserix.speech_input_tokens",
+                  "expression": "\"speech_input\" in metadata ? metadata.speech_input : 0"
+                },
+                {
+                  "name": "tesserix.speech_output_tokens",
+                  "expression": "\"speech_output\" in metadata ? metadata.speech_output : 0"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "agentgateway.dev/v1alpha1",
+      "kind": "AgentgatewayBackend",
+      "metadata": {
         "name": "ai-zitadel-jwks",
         "namespace": "agentgateway-system"
       },

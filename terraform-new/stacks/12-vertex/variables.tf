@@ -116,3 +116,9 @@ variable "vertex_dns_addresses" {
   type        = list(string)
   default     = ["199.36.153.8", "199.36.153.9", "199.36.153.10", "199.36.153.11"]
 }
+
+variable "roamie_agentgateway_ksa" {
+  description = "Kubernetes SA of the private Roamie API model gateway"
+  type        = string
+  default     = "agentgateway-system/roamie-ai"
+}

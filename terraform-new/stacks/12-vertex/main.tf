@@ -147,3 +147,9 @@ moved {
   from = google_compute_global_forwarding_rule.vertex_psc
   to   = google_compute_global_forwarding_rule.vertex_psc[0]
 }
+
+resource "google_service_account_iam_member" "roamie_agentgateway_wi" {
+  service_account_id = google_service_account.agentgateway_llm.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.roamie_agentgateway_ksa}]"
+}

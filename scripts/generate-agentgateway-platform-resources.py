@@ -14,9 +14,22 @@ OUTPUT = ROOT / "charts/apps/agentgateway-route-sync/files/platform-resources.js
 CHARTS = (
     "charts/apps/devai-ai-gateway",
     "charts/apps/kora-ai-gateway",
+    "charts/apps/roamie-ai-gateway",
     "charts/apps/agentgateway-route-sync",
 )
 EXPECTED = (
+    ('AgentgatewayBackend', 'roamie-api-vertex'),
+    ('AgentgatewayBackend', 'roamie-api-speech-vertex'),
+    ('HTTPRoute', 'roamie-api-speech'),
+    ('AgentgatewayPolicy', 'roamie-api-speech-traffic'),
+    ('AgentgatewayBackend', 'roamie-api-typesafe'),
+    ('AgentgatewayBackend', 'roamie-api-jwks'),
+    ('HTTPRoute', 'roamie-api-model'),
+    ('HTTPRoute', 'roamie-api-decide'),
+    ('AgentgatewayPolicy', 'roamie-api-auth'),
+    ('AgentgatewayPolicy', 'roamie-api-model-traffic'),
+    ('AgentgatewayPolicy', 'roamie-api-decide-traffic'),
+    ('AgentgatewayPolicy', 'roamie-api-observability'),
     ("AgentgatewayBackend", "ai-zitadel-jwks"),
     ("AgentgatewayBackend", "devai-anthropic"),
     ("AgentgatewayBackend", "devai-gemini"),
