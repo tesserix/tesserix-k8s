@@ -89,7 +89,7 @@ def test_mcp_uses_the_verified_cluster_and_zitadel_boundary():
 def test_mesh_candidate_uses_published_images_and_internal_mcp_origin():
     values = yaml.safe_load((ROOT / "charts/apps/roamie-ai/values.yaml").read_text())
     expected = {
-        "roamie-trip-manager": "sha256:dc2a225e390ca2069bee8f429e9745b84b39dcbccc6a3367ce84819d7696b95e",
+        "roamie-trip-manager": "sha256:555d1f595a93e4e0d6c7455913ca5b672ed0effe0c664ff2fb7e0eeeb2ef7372",
         "roamie-agents": "sha256:390c5334b23d221c30a646d4ee12ebf4389b204e2bb8571b9bb319f4d4f50690",
     }
     for name, prefix in [
