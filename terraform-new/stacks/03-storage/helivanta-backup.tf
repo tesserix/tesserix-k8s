@@ -46,3 +46,10 @@ resource "google_storage_bucket_iam_member" "helivanta_backup_objects" {
   role     = each.key == "backup" ? "roles/storage.objectAdmin" : "roles/storage.objectViewer"
   member   = "serviceAccount:${each.value.email}"
 }
+
+resource "google_storage_bucket_iam_member" "helivanta_backup_metadata" {
+  for_each = google_service_account.helivanta_backup
+  bucket   = google_storage_bucket.helivanta_backup.name
+  role     = "roles/storage.legacyBucketReader"
+  member   = "serviceAccount:${each.value.email}"
+}
