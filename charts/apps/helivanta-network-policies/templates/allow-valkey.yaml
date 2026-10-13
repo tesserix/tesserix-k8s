@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-helivanta-api-valkey
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: helivanta-api
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: global
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: global-valkey-cache
+      ports:
+        - protocol: TCP
+          port: 6379
