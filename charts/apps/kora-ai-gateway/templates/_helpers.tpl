@@ -32,6 +32,20 @@ jwtAuthentication:
             kind: AgentgatewayBackend
             name: kora-firebase-jwks
             port: 443
+    {{- range .Values.endUserAuthentication.extraIssuers }}
+    - issuer: {{ .issuer }}
+      audiences:
+        - {{ .audience | quote }}
+      jwks:
+        remote:
+          jwksPath: {{ .jwksPath }}
+          cacheDuration: {{ $.Values.endUserAuthentication.jwksCacheDuration }}
+          backendRef:
+            group: agentgateway.dev
+            kind: AgentgatewayBackend
+            name: {{ .jwksBackend }}
+            port: 443
+    {{- end }}
 {{- end -}}
 
 {{- define "kora-ai-gateway.vertexGroup" -}}
