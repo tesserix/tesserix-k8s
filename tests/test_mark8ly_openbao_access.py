@@ -10,6 +10,13 @@ ROOT = Path(__file__).parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 CONSUMERS = json.loads((ROOT / "tests/mark8ly-consumers.json").read_text())
 
+# Credentials created directly in OpenBao. They never lived in GCP, so they
+# have no migration source in scripts/product-secret-targets.json and no
+# consumer entry, but a namespace reader is still granted them.
+OPENBAO_NATIVE = {
+    "mark8ly": {"kv/data/mark8ly/app/mark8ly-geoapify-api-key"},
+}
+
 
 def test_readers_only_access_their_namespace_app_dependencies():
     from migrate_product_secrets import targets_for
@@ -30,7 +37,7 @@ def test_readers_only_access_their_namespace_app_dependencies():
             "kv/data/" + TARGETS[item["source"]]
             for item in CONSUMERS
             if item["namespace"] == namespace
-        }
+        } | OPENBAO_NATIVE.get(namespace, set())
         assert set(re.findall(r"capabilities = \[([^]]+)\]", policy)) == {'"read"'}
 
 
