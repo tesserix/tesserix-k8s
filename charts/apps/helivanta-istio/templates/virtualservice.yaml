@@ -2,22 +2,17 @@
 Path routing for helivanta.app, done AT THE INGRESS and not in the shell.
 
 Dockerfile.shell bakes a rewrite table into the Next build (next.config.ts):
-/api/:path* -> API_URL/:path*, plus /medicore, /pharmacy and /lab to their
-zone services. Those rewrites exist for `next dev`, where one process fronts
-everything. Production deliberately bypasses them, and this VirtualService is
-how.
+/api/:path* -> API_URL/:path*. That rewrite exists for `next dev`, where one
+process fronts everything. Production deliberately bypasses it: /api/v1/ is
+routed below, straight to the API, so a request never takes a Next.js hop it
+does not need.
 
-Two reasons, both from the design spec's D3:
-  - A zone request routed through the shell takes a Next.js hop it does not
-    need, on every request.
-  - It couples availability: a shell rollout would take pharmacy and lab down
-    with it, because their traffic flows through the shell's process.
-
-So: ZONE ROUTING BELONGS HERE, NOT IN THE SHELL'S REWRITES. No zone routes are
-added yet — apps/medicore, apps/pharmacy and apps/lab are not deployed until
-slice 2. When they are, they get their own `match`/`route` entries in this
-file ahead of the catch-all below, and the shell's baked rewrites stay unused
-in production exactly as they are now.
+There are no zone routes and none are coming. MediCore, Pharmacy and Lab are
+routes of the shell app itself since helivanta#933 (ADR-0010): one Next app,
+one image, one Deployment. They reach the shell through the catch-all below,
+like every other page. A product needing its own app again would be a new
+decision with its own ADR, and would add its route here, ahead of the
+catch-all.
 */ -}}
 apiVersion: networking.istio.io/v1
 kind: VirtualService
