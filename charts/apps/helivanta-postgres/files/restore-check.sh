@@ -14,7 +14,7 @@ barman-cloud-restore --cloud-provider google-cloud-storage \
   "$BACKUP_DESTINATION" "$BACKUP_SERVER" "$BACKUP_ID" "$PGDATA"
 test ! -L "$PGDATA/pg_wal" || rm "$PGDATA/pg_wal"
 mkdir -p "$PGDATA/pg_wal"
-rm -f "$PGDATA/standby.signal"
+rm -f "$PGDATA/standby.signal" "$PGDATA/postgresql.auto.conf" "$PGDATA/postgresql.conf" "$PGDATA/pg_hba.conf"
 : > "$PGDATA/postgresql.auto.conf"
 printf 'local all all trust\n' > "$PGDATA/pg_hba.conf"
 cat > "$PGDATA/postgresql.conf" <<EOF
@@ -22,6 +22,7 @@ listen_addresses = ''
 unix_socket_directories = '/restore/socket'
 ssl = off
 archive_mode = off
+hot_standby = off
 logging_collector = off
 shared_preload_libraries = ''
 shared_buffers = '64MB'
@@ -35,7 +36,16 @@ recovery_target = 'immediate'
 recovery_target_action = 'promote'
 EOF
 touch "$PGDATA/recovery.signal"
-pg_ctl -D "$PGDATA" -l /restore/postgres.log -w -t 180 start
+pg_ctl -D "$PGDATA" -l /restore/postgres.log -w -t 180 start || { cat /restore/postgres.log >&2; exit 1; }
+attempt=0
+until [ "$(psql -X -d postgres -Atc 'SELECT NOT pg_is_in_recovery()' 2>/dev/null || true)" = "t" ]; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 90 ]; then
+    cat /restore/postgres.log >&2
+    exit 1
+  fi
+  sleep 2
+done
 psql -X -v ON_ERROR_STOP=1 -d helivanta -At <<'SQL'
 DO $$
 BEGIN
