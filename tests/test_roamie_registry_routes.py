@@ -216,3 +216,24 @@ def test_planning_deadlines_and_new_specialist_routes():
     assert "/a2a/v1/roamie-weather" in paths
     assert "/a2a/v1/roamie-entry-guidance" in paths
     assert all(rule["timeouts"]["request"] == "65s" for rule in route["spec"]["rules"])
+
+
+def test_roamie_model_bounds_reasoning_through_registry_desired_state():
+    result = render()
+    assert result.returncode == 0, result.stderr
+    documents = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
+    config = next(
+        doc
+        for doc in documents
+        if doc["kind"] == "ConfigMap"
+        and doc["metadata"]["name"] == "roamie-registry-gateway-resources"
+    )
+    backend = next(
+        item
+        for item in json.loads(config["data"]["resources.json"])["items"]
+        if item["kind"] == "AgentgatewayBackend"
+        and item["metadata"]["name"] == "roamie-model"
+    )
+    assert backend["spec"]["policies"]["ai"]["defaults"] == [
+        {"field": "reasoning_effort", "value": "low"}
+    ]
