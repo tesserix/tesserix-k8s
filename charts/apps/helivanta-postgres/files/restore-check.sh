@@ -32,8 +32,6 @@ max_wal_senders = 32
 max_prepared_transactions = 100
 max_locks_per_transaction = 256
 restore_command = 'barman-cloud-wal-restore --cloud-provider google-cloud-storage $BACKUP_DESTINATION $BACKUP_SERVER %f %p'
-recovery_target = 'immediate'
-recovery_target_action = 'promote'
 EOF
 touch "$PGDATA/recovery.signal"
 pg_ctl -D "$PGDATA" -l /restore/postgres.log -w -t 180 start || { cat /restore/postgres.log >&2; exit 1; }
