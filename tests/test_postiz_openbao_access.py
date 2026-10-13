@@ -24,8 +24,12 @@ def test_postiz_reader_is_exact_and_temporary_writer_is_retired():
     assert role["bound_service_account_names"] == ["postiz-production-reader"]
     assert role["bound_service_account_namespaces"] == ["postiz"]
     policy = config[f"policy-{name}.hcl"]
+    # TikTok was never in GCP Secret Manager; its paths are OpenBao-native.
     expected = {
         f"kv/data/{p}" for s, p in targets.items() if s != "prod-postiz-api-key"
+    } | {
+        "kv/data/postiz/app/postiz-tiktok-client-id",
+        "kv/data/postiz/app/postiz-tiktok-client-secret",
     }
     assert set(re.findall(r'path "(kv/data/[^"]+)"', policy)) == expected
     assert set(re.findall(r"capabilities = \[([^]]+)\]", policy)) == {'"read"'}
