@@ -35,7 +35,7 @@ recovery_target = 'immediate'
 recovery_target_action = 'promote'
 EOF
 touch "$PGDATA/recovery.signal"
-pg_ctl -D "$PGDATA" -l /restore/postgres.log -w -t 180 start
+pg_ctl -D "$PGDATA" -l /restore/postgres.log -w -t 180 start || { cat /restore/postgres.log >&2; exit 1; }
 psql -X -v ON_ERROR_STOP=1 -d helivanta -At <<'SQL'
 DO $$
 BEGIN
