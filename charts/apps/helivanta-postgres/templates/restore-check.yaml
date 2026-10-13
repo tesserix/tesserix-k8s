@@ -1,0 +1,109 @@
+{{- if and .Values.restoreCheck.enabled (not .Values.hibernate) }}
+{{- $backupID := required "restoreCheck.backupID must identify a completed backup" .Values.restoreCheck.backupID }}
+{{- if not (regexMatch "^[0-9]{8}T[0-9]{6}$" $backupID) }}
+{{- fail "restoreCheck.backupID must be a Barman timestamp identifier" }}
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: helivanta-restore-check
+  namespace: {{ .Values.namespace }}
+  annotations:
+    iam.gke.io/gcp-service-account: helivanta-db-restore@tesseracthub-480811.iam.gserviceaccount.com
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: helivanta-restore-check
+  namespace: {{ .Values.namespace }}
+data:
+  restore-check.sh: |
+{{ .Files.Get "files/restore-check.sh" | indent 4 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: helivanta-restore-check-metadata
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: helivanta-restore-check
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.252/32
+      ports:
+        - protocol: TCP
+          port: 988
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 80
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: helivanta-restore-{{ $backupID | lower }}
+  namespace: {{ .Values.namespace }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: helivanta-restore-check
+    spec:
+      restartPolicy: Never
+      serviceAccountName: helivanta-restore-check
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 26
+        runAsGroup: 26
+        fsGroup: 26
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: restore
+          image: {{ .Values.restoreCheck.image | quote }}
+          command: ["/bin/sh", "/scripts/restore-check.sh"]
+          env:
+            - name: BACKUP_DESTINATION
+              value: {{ .Values.backup.destinationPath | quote }}
+            - name: BACKUP_SERVER
+              value: {{ .Values.clusterName | quote }}
+            - name: BACKUP_ID
+              value: {{ $backupID | quote }}
+            - name: TMPDIR
+              value: /restore
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+              ephemeral-storage: 10Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: restore
+              mountPath: /restore
+            - name: script
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: restore
+          emptyDir:
+            sizeLimit: 10Gi
+        - name: script
+          configMap:
+            name: helivanta-restore-check
+{{- end }}
