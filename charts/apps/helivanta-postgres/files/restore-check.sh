@@ -22,6 +22,7 @@ listen_addresses = ''
 unix_socket_directories = '/restore/socket'
 ssl = off
 archive_mode = off
+hot_standby = off
 logging_collector = off
 shared_preload_libraries = ''
 shared_buffers = '64MB'
