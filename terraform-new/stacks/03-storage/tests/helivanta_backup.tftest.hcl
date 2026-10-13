@@ -20,6 +20,10 @@ run "helivanta_backup_is_private_and_restore_is_read_only" {
     error_message = "Helivanta backups require private, deletion-protected regional storage."
   }
   assert {
+    condition     = google_storage_bucket_iam_member.helivanta_backup_metadata["backup"].role == "roles/storage.legacyBucketReader" && google_storage_bucket_iam_member.helivanta_backup_metadata["restore"].role == "roles/storage.legacyBucketReader"
+    error_message = "Barman must be able to read metadata on its dedicated bucket."
+  }
+  assert {
     condition     = google_storage_bucket_iam_member.helivanta_backup_objects["restore"].role == "roles/storage.objectViewer" && google_storage_bucket_iam_member.helivanta_backup_objects["backup"].role == "roles/storage.objectAdmin"
     error_message = "Restore verification must not modify backup objects."
   }
