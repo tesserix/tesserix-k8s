@@ -26,11 +26,14 @@ def test_readers_only_access_their_namespace_app_dependencies():
         assert role["bound_service_account_names"] == ["mark8ly-production-reader"]
         assert role["token_policies"] == [name]
         policy = config[f"policy-{name}.hcl"]
-        assert set(re.findall(r'path "([^"]+)"', policy)) == {
+        expected = {
             "kv/data/" + TARGETS[item["source"]]
             for item in CONSUMERS
             if item["namespace"] == namespace
         }
+        if namespace == "mark8ly":
+            expected.add("kv/data/mark8ly/app/mark8ly-geoapify-api-key")
+        assert set(re.findall(r'path "([^"]+)"', policy)) == expected
         assert set(re.findall(r"capabilities = \[([^]]+)\]", policy)) == {'"read"'}
 
 
