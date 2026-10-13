@@ -6,6 +6,13 @@ import yaml
 
 
 ROOT = pathlib.Path(__file__).parents[1]
+# Kora accepts both while it moves off Firebase; Zitadel is pinned to the Kora
+# project so another product's token on the shared issuer is refused.
+KORA_REQUEST_PRINCIPALS = [
+    "https://securetoken.google.com/kora-app-e6d38/*",
+    "https://auth.tesserix.app/*",
+]
+KORA_ZITADEL_PROJECT = "394926080202442797"
 
 
 def load_yaml(path):
@@ -308,6 +315,12 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             rule["fromHeaders"],
         )
         self.assertTrue(rule["forwardOriginalToken"])
+        zitadel_rule = authentication["spec"]["jwtRules"][1]
+        self.assertEqual("https://auth.tesserix.app", zitadel_rule["issuer"])
+        self.assertEqual([KORA_ZITADEL_PROJECT], zitadel_rule["audiences"])
+        self.assertEqual(rule["fromHeaders"], zitadel_rule["fromHeaders"])
+        self.assertTrue(zitadel_rule["forwardOriginalToken"])
+        self.assertEqual(2, len(authentication["spec"]["jwtRules"]))
 
         client_rule = policy["spec"]["rules"][0]
         self.assertEqual(
@@ -315,7 +328,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             client_rule["from"][0]["source"]["principals"],
         )
         self.assertEqual(
-            ["https://securetoken.google.com/kora-app-e6d38/*"],
+            KORA_REQUEST_PRINCIPALS,
             client_rule["from"][0]["source"]["requestPrincipals"],
         )
         self.assertEqual(["8080"], client_rule["to"][0]["operation"]["ports"])
@@ -325,7 +338,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             policy["spec"]["rules"][1]["from"][0]["source"]["principals"],
         )
         self.assertEqual(
-            ["https://securetoken.google.com/kora-app-e6d38/*"],
+            KORA_REQUEST_PRINCIPALS,
             policy["spec"]["rules"][1]["from"][0]["source"]["requestPrincipals"],
         )
 
@@ -442,6 +455,15 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
         self.assertEqual(
             "kora-firebase-jwks",
             provider["jwks"]["remote"]["backendRef"]["name"],
+        )
+        self.assertEqual(2, len(jwt["providers"]))
+        zitadel = jwt["providers"][1]
+        self.assertEqual("https://auth.tesserix.app", zitadel["issuer"])
+        self.assertEqual([KORA_ZITADEL_PROJECT], zitadel["audiences"])
+        self.assertEqual("/oauth/v2/keys", zitadel["jwks"]["remote"]["jwksPath"])
+        self.assertEqual(
+            "ai-zitadel-jwks",
+            zitadel["jwks"]["remote"]["backendRef"]["name"],
         )
 
     def test_a2a_gateway_copies_only_validated_identity_into_internal_header(self):
@@ -949,6 +971,17 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             ],
             authentication["spec"]["jwtRules"][0]["fromHeaders"],
         )
+        self.assertEqual(
+            [
+                ("https://securetoken.google.com/kora-app-e6d38", ["kora-app-e6d38"]),
+                ("https://auth.tesserix.app", [KORA_ZITADEL_PROJECT]),
+            ],
+            [(r["issuer"], r["audiences"]) for r in authentication["spec"]["jwtRules"]],
+        )
+        self.assertEqual(
+            authentication["spec"]["jwtRules"][0]["fromHeaders"],
+            authentication["spec"]["jwtRules"][1]["fromHeaders"],
+        )
         self.assertNotIn("selector", authorization["spec"])
         self.assertEqual(
             [{"group": "", "kind": "Service", "name": "kora-ai-agents"}],
@@ -959,7 +992,7 @@ class KoraAIGatewayManifestTests(unittest.TestCase):
             authorization["spec"]["rules"][0]["from"][0]["source"]["principals"],
         )
         self.assertEqual(
-            ["https://securetoken.google.com/kora-app-e6d38/*"],
+            KORA_REQUEST_PRINCIPALS,
             authorization["spec"]["rules"][0]["from"][0]["source"][
                 "requestPrincipals"
             ],
