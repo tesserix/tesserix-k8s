@@ -14,7 +14,7 @@ barman-cloud-restore --cloud-provider google-cloud-storage \
   "$BACKUP_DESTINATION" "$BACKUP_SERVER" "$BACKUP_ID" "$PGDATA"
 test ! -L "$PGDATA/pg_wal" || rm "$PGDATA/pg_wal"
 mkdir -p "$PGDATA/pg_wal"
-rm -f "$PGDATA/standby.signal"
+rm -f "$PGDATA/standby.signal" "$PGDATA/postgresql.auto.conf" "$PGDATA/postgresql.conf" "$PGDATA/pg_hba.conf"
 : > "$PGDATA/postgresql.auto.conf"
 printf 'local all all trust\n' > "$PGDATA/pg_hba.conf"
 cat > "$PGDATA/postgresql.conf" <<EOF
