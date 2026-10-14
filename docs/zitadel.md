@@ -580,7 +580,8 @@ record. The operator grants no roles.
 ```
 kora-account-deleter  PAT, read by kora-api as ZITADEL_DELETER_TOKEN.
                       Calls DELETE /v2/users/{id} for a Kora user's identity.
-                      membership: ORG_USER_MANAGER on TESSERIX, by hand.
+                      membership: ORG_USER_MANAGER on TESSERIX, granted by
+                      hand, asserted through desired.orgMemberships.
 kora-eval             client secret, read by the ai-eval CronJob. Mints
                       Kora-audience JWTs with client_credentials. Kora's
                       project is mode: public, so it needs no grant.
