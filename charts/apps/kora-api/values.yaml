@@ -188,6 +188,14 @@ env:
   # a token it would accept, so every authenticated request 401'd and the prod
   # users table sat at 0 rows.
   FIREBASE_PROJECT_ID: "kora-app-e6d38"
+  # Zitadel, which replaces Firebase at cutover (kora feat/zitadel-migration).
+  # Read only by the Zitadel-era image; the Firebase-era image ignores them, so
+  # they land ahead of it and FIREBASE_*/APPLE_* go in the cleanup after.
+  # ZITADEL_PROJECT_ID is the audience kora-api pins on every access token: the
+  # Kora project from the identity-operator claim, and the same value the app
+  # requests (apps/mobile/eas.json EXPO_PUBLIC_ZITADEL_PROJECT_ID).
+  ZITADEL_ISSUER: "https://auth.tesserix.app"
+  ZITADEL_PROJECT_ID: "394926080202442797"
   # Inert-by-default (see docs/superpowers/plans/2026-07-27-kora-push-notifications.md):
   # OS push go-live is a user-owned step (eas init, APNs creds, physical
   # device test). Flip to "true" only after that's done.
@@ -265,6 +273,12 @@ extraSecretEnv:
   - name: KORA_LANGFUSE_SECRET_KEY
     secretName: kora-langfuse-scores
     key: KORA_LANGFUSE_SECRET_KEY
+  # Required in production by the Zitadel-era image, which refuses to start
+  # without it (DELETE /v1/me is Apple-mandated). Optional here so the current
+  # image keeps booting while the operator has yet to publish it.
+  - name: ZITADEL_DELETER_TOKEN
+    secretName: kora-zitadel-deleter
+    key: ZITADEL_DELETER_TOKEN
 
 # Nightly golden-dataset experiment (kora#557): cmd/aieval through the gateway,
 # gated on the dataset's accepted Langfuse baseline. Off until the eval account
@@ -275,6 +289,11 @@ aiEval:
   schedule: "30 16 * * *"
   dataset: kora-capture-text
   accountSecret: kora-ai-eval
+  # Zitadel-era credentials (cmd/aieval client_credentials). The client id is
+  # the kora-eval machine user's userName; the secret is published by the
+  # zitadel-operator. Both are passed beside the Firebase ones until cutover.
+  clientId: kora-eval
+  clientSecret: kora-ai-eval-zitadel
 
 # allow-kora-egress has no observability rule; this opens OTLP traces and Langfuse scores.
 observabilityEgress:
