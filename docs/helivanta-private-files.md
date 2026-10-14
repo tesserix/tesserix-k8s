@@ -14,6 +14,14 @@ Active discovery: project `tesseracthub-480811`, account
 `gke_tesseracthub-480811_asia-south1_tesseract-prod-in-gke`, namespace
 `helivanta`. No imperative cloud changes have been made for these files.
 
+The `17-helivanta-files` project owns only these new resources in the separate
+`stacks/prod/helivanta-files` state. It reads the existing regional keyring;
+shared storage, secrets, registries and backup resources stay in their owning
+states. No resource has been applied under the earlier shared-stack proposal,
+so no Terraform state move is needed. The earlier plan (56 additions, 2 updates,
+11 deletions) is unsafe and must never be applied. Request a new saved plan for
+`17-helivanta-files`; never use targeted apply to bypass the unrelated drift.
+
 The intended additions are four regional buckets, one CMEK with its storage
 service-agent grant, one custom exact-object-read role and ten bucket-scoped
 workload grants (17 resources). The saved Atlantis plan must be checked for
@@ -60,9 +68,9 @@ private caching and attachment response headers.
 Native Terraform tests use mocked Google providers and issue no cloud calls:
 
 ```sh
-terraform -chdir=terraform-new/stacks/03-storage init -backend=false -input=false
-terraform -chdir=terraform-new/stacks/03-storage validate
-terraform -chdir=terraform-new/stacks/03-storage test
+terraform -chdir=terraform-new/stacks/17-helivanta-files init -backend=false -input=false
+terraform -chdir=terraform-new/stacks/17-helivanta-files validate
+terraform -chdir=terraform-new/stacks/17-helivanta-files test
 ```
 
 Real GCS/workload-identity and end-to-end scan/delivery verification remain

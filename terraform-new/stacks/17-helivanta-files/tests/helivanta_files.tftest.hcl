@@ -1,9 +1,8 @@
 mock_provider "google" {}
-mock_provider "google-beta" {}
 
 override_data {
-  target = data.terraform_remote_state.foundation
-  values = { outputs = {} }
+  target = data.google_kms_key_ring.existing
+  values = { id = "projects/synthetic-project/locations/asia-south1/keyRings/synthetic-keyring" }
 }
 override_data {
   target = data.google_project.project
@@ -16,16 +15,14 @@ run "private_files_are_separate_encrypted_and_have_no_destructive_identity" {
     project_id         = "synthetic-project"
     region             = "asia-south1"
     kms_location       = "asia-south1"
-    create_kms_keyring = false
-    enable_cmek        = false
-    secrets            = []
+    kms_keyring_name   = "synthetic-keyring"
   }
   assert {
     condition = length(google_storage_bucket.helivanta_files) == 4 && alltrue([
       for bucket in google_storage_bucket.helivanta_files :
       bucket.uniform_bucket_level_access && bucket.public_access_prevention == "enforced" && !bucket.force_destroy &&
       bucket.location == "ASIA-SOUTH1" && bucket.encryption[0].default_kms_key_name == local.helivanta_file_key_id &&
-      bucket.name != google_storage_bucket.helivanta_backup.name && length(bucket.lifecycle_rule) == 0 && length(bucket.cors) == 0
+      bucket.name != "synthetic-project-helivanta-backup" && length(bucket.lifecycle_rule) == 0 && length(bucket.cors) == 0
     ])
     error_message = "Application/verification files need distinct private regional CMEK buckets, no direct browser CORS and no automatic deletion."
   }

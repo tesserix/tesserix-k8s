@@ -17,6 +17,7 @@ ATLANTIS_FAILURE_PROJECT = "atlantis-failure-smoke"
 STATE_BUCKET = "tesseract-terraform-states"
 LIVE_STATE_PREFIXES = {
     "stacks/prod/ax",
+    "stacks/prod/helivanta-files",
     "stacks/prod/foundation",
     "stacks/prod/network",
     "stacks/prod/storage",
@@ -129,6 +130,27 @@ class TerraformGraphTests(unittest.TestCase):
             for dependency in config["dependencies"]:
                 self.assertIn(dependency, stacks)
                 self.assertLess(positions[dependency], positions[stack])
+
+    def test_helivanta_private_files_have_an_isolated_state_and_plan(self):
+        stack = self.graph["stacks"].get("17-helivanta-files")
+        self.assertIsNotNone(stack, "private files must not plan shared storage drift")
+        self.assertEqual("stacks/prod/helivanta-files", stack["state_prefix"])
+        self.assertEqual(["03-storage", "04-gke"], stack["dependencies"])
+        directory = TERRAFORM_ROOT / stack["path"]
+        self.assertFalse((TERRAFORM_ROOT / "stacks/03-storage/helivanta-files.tf").exists())
+        resources = set()
+        for path in directory.glob("*.tf"):
+            resources.update(re.findall(r'resource\s+"([^"]+)"\s+"([^"]+)"', path.read_text()))
+        self.assertEqual(
+            {
+                ("google_kms_crypto_key", "helivanta_files"),
+                ("google_kms_crypto_key_iam_member", "helivanta_files"),
+                ("google_project_iam_custom_role", "helivanta_file_read"),
+                ("google_storage_bucket", "helivanta_files"),
+                ("google_storage_bucket_iam_member", "helivanta_files"),
+            },
+            resources,
+        )
 
     def test_all_observed_state_is_owned_or_acknowledged(self):
         state = self.graph["state"]

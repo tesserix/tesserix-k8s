@@ -1,5 +1,19 @@
+data "google_project" "project" {
+  project_id = var.project_id
+}
+
+data "google_storage_project_service_account" "gcs" {
+  project = var.project_id
+}
+
+data "google_kms_key_ring" "existing" {
+  name     = var.kms_keyring_name
+  location = var.kms_location
+  project  = var.project_id
+}
+
 locals {
-  helivanta_file_keyring = "projects/${var.project_id}/locations/${var.kms_location}/keyRings/${var.kms_keyring_name}"
+  helivanta_file_keyring = data.google_kms_key_ring.existing.id
   helivanta_file_key_id  = "${local.helivanta_file_keyring}/cryptoKeys/helivanta-private-files"
   helivanta_file_read    = "projects/${var.project_id}/roles/helivantaPrivateFileRead"
   helivanta_file_buckets = {
@@ -31,7 +45,6 @@ resource "google_kms_crypto_key" "helivanta_files" {
   lifecycle {
     prevent_destroy = true
   }
-  depends_on = [google_kms_key_ring.keyring]
 }
 
 resource "google_kms_crypto_key_iam_member" "helivanta_files" {
