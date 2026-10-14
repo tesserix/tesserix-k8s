@@ -1,0 +1,62 @@
+{{- if .Values.schemaMigration.enabled }}
+{{- $c := include "document-intelligence.config" . | fromYaml }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $c.fullname }}-native-migrations
+  namespace: {{ .Values.schemaMigration.namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/sync-wave: "-2"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+  labels: {{ include "document-intelligence.labels" . | nindent 4 }}
+data:
+{{- range $path, $_ := .Files.Glob "files/native-migrations/*" }}
+  {{ base $path }}: |
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $c.fullname }}-native-migrations
+  namespace: {{ .Values.schemaMigration.namespace }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+  labels: {{ include "document-intelligence.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      annotations: {sidecar.istio.io/inject: "false"}
+      labels:
+        app.kubernetes.io/component: native-migration
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: migrate
+          image: {{ .Values.schemaMigration.image }}
+          command: ["psql", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-f", "/migrations/run.psql"]
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
+          resources: {requests: {cpu: 100m, memory: 64Mi}, limits: {memory: 128Mi}}
+          env:
+            - {name: PGHOST, value: global-postgres-rw.global.svc.cluster.local}
+            - {name: PGSSLMODE, value: require}
+            - {name: PGDATABASE, value: {{ $c.database.name | quote }}}
+            - name: PGUSER
+              valueFrom: {secretKeyRef: {name: {{ .Values.schemaMigration.ownerSecret }}, key: username}}
+            - name: PGPASSWORD
+              valueFrom: {secretKeyRef: {name: {{ .Values.schemaMigration.ownerSecret }}, key: password}}
+          volumeMounts: [{name: migrations, mountPath: /migrations, readOnly: true}, {name: tmp, mountPath: /tmp}]
+      volumes:
+        - name: migrations
+          configMap: {name: {{ $c.fullname }}-native-migrations}
+        - name: tmp
+          emptyDir: {sizeLimit: 16Mi}
+{{- end }}
