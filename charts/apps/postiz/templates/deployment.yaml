@@ -43,6 +43,13 @@ spec:
         - name: postiz
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.flags.prismaAcceptDataLoss }}
+          # Replaces the image's CMD (`nginx && pnpm run pm2`), keeping its
+          # docker-entrypoint.sh ENTRYPOINT — `args`, not `command`. Pushes the
+          # schema once with --accept-data-loss; pm2-run's own push then finds
+          # it in sync and passes. See flags.prismaAcceptDataLoss.
+          args: ["sh", "-c", "nginx && pnpm run prisma-db-push --accept-data-loss && pnpm run pm2"]
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
