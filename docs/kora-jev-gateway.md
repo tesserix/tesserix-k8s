@@ -39,7 +39,11 @@ Strip user/delegated identity headers and cookies before provider egress.
 Backend authentication replaces the client credential with the OpenBao key.
 This is a static JSON backend, not an OpenAI chat backend: no chat translation,
 prompt optimization or generative-provider fallback is applied. Requests have
-a 1.5-second deadline and the existing per-replica request-rate bound. Product
+a three-second gateway deadline and the existing per-replica request-rate bound.
+The Kora API decision client allows four seconds, while preserving shorter
+caller deadlines and the 22-second photo orchestration limit. This headroom
+addresses the observed 2026-10-14 photo decision timeout; it adds no retry or
+provider call. Both user and internal decision routes retain strict authentication. Product
 quota and provider-attempt accounting still belong in the consuming application.
 
 ## Rollout verification
