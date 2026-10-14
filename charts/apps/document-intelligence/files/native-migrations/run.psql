@@ -1,0 +1,28 @@
+\set ON_ERROR_STOP on
+select pg_advisory_lock(hashtext('ocr-native-schema'), hashtext(current_database()));
+create table if not exists ocr_native_schema_migrations (version text primary key, sha256 text not null, applied_at timestamptz not null default now());
+select not exists(select 1 from ocr_native_schema_migrations where version='0019') as apply, exists(select 1 from ocr_native_schema_migrations where version='0019' and sha256<>'dae9a2e7d879a00a6f239a5fcf746ddccbcdf70fbb8443b21848d938dd146125') as mismatch \gset
+\if :mismatch
+do $$begin raise exception 'native migration 0019 checksum mismatch'; end$$;
+\endif
+\if :apply
+\i /migrations/0019_native_document_limits.sql
+\endif
+\echo native migration 0019 ready
+select not exists(select 1 from ocr_native_schema_migrations where version='0020') as apply, exists(select 1 from ocr_native_schema_migrations where version='0020' and sha256<>'963bc9b70d5550ca00876160d48ef90afab0fdbc478312c3d1975044ac51933f') as mismatch \gset
+\if :mismatch
+do $$begin raise exception 'native migration 0020 checksum mismatch'; end$$;
+\endif
+\if :apply
+\i /migrations/0020_native_page_cache.sql
+\endif
+\echo native migration 0020 ready
+select not exists(select 1 from ocr_native_schema_migrations where version='0021') as apply, exists(select 1 from ocr_native_schema_migrations where version='0021' and sha256<>'d72ccdb7a9a6e57df75d4bacf7ff59db473a0d091ee316d21454245dc8ac1f58') as mismatch \gset
+\if :mismatch
+do $$begin raise exception 'native migration 0021 checksum mismatch'; end$$;
+\endif
+\if :apply
+\i /migrations/0021_document_output_limits.sql
+\endif
+\echo native migration 0021 ready
+select pg_advisory_unlock(hashtext('ocr-native-schema'), hashtext(current_database()));

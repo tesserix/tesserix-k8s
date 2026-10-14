@@ -1,0 +1,11 @@
+begin;
+set local lock_timeout = '5s';
+set local statement_timeout = '30s';
+alter table ocr_results add constraint ocr_results_native_content_length check (content_length between 1 and 67108864) not valid;
+alter table ocr_page_artifacts add constraint ocr_page_artifacts_native_content_length check (content_length between 1 and 67108864) not valid;
+alter table ocr_results validate constraint ocr_results_native_content_length;
+alter table ocr_page_artifacts validate constraint ocr_page_artifacts_native_content_length;
+alter table ocr_results drop constraint ocr_results_content_length_check;
+alter table ocr_page_artifacts drop constraint ocr_page_artifacts_content_length_check;
+insert into ocr_native_schema_migrations (version,sha256) values ('0021','d72ccdb7a9a6e57df75d4bacf7ff59db473a0d091ee316d21454245dc8ac1f58');
+commit;
