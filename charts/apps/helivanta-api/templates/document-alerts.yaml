@@ -1,0 +1,35 @@
+{{- if .Values.documents.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: helivanta-document-processing
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: helivanta
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: helivanta.document-processing
+      rules:
+        - alert: HelivantaDocumentWorkerUnavailable
+          expr: kube_deployment_status_replicas_available{namespace="{{ .Release.Namespace }}",deployment="helivanta-document-worker"} < 1
+          for: 5m
+          labels: {severity: critical, owner: helivanta}
+          annotations:
+            summary: No document worker is ready; private uploads cannot complete processing
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/helivanta-document-processing.md
+        - alert: HelivantaDocumentScannerUnavailable
+          expr: kube_deployment_status_replicas_available{namespace="{{ .Release.Namespace }}",deployment="helivanta-clamav"} < 1
+          for: 10m
+          labels: {severity: critical, owner: helivanta}
+          annotations:
+            summary: The private document scanner is unavailable; files remain inaccessible
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/helivanta-document-processing.md
+        - alert: HelivantaDocumentWorkerRestarting
+          expr: sum(increase(kube_pod_container_status_restarts_total{namespace="{{ .Release.Namespace }}",container="worker",pod=~"helivanta-document-worker-.*"}[15m])) > 3
+          for: 5m
+          labels: {severity: warning, owner: helivanta}
+          annotations:
+            summary: Document worker restarts require dependency and workflow recovery checks
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/helivanta-document-processing.md
+{{- end }}

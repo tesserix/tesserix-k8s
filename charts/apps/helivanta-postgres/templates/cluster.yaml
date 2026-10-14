@@ -158,6 +158,14 @@ spec:
       - name: helivanta_document_worker
         ensure: present
         inherit: false
+        {{- if .Values.documentWorker.login }}
+        {{- if not .Values.documentWorker.credentials.enabled }}
+        {{- fail "worker login requires credential projection" }}
+        {{- end }}
+        login: true
+        passwordSecret:
+          name: {{ .Values.documentWorker.credentials.secretName }}
+        {{- end }}
       - name: {{ .Values.bootstrap.owner }}
         ensure: present
         login: true

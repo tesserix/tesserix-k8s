@@ -1,0 +1,145 @@
+{{- if .Values.documents.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: helivanta-clamav
+  namespace: {{ .Release.Namespace }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: helivanta-clamav
+  namespace: {{ .Release.Namespace }}
+data:
+  clamd.conf: |
+    Foreground yes
+    User clamav
+    DatabaseDirectory /var/lib/clamav
+    TemporaryDirectory /tmp
+    TCPSocket 3310
+    TCPAddr 0.0.0.0
+    StreamMaxLength 10M
+    MaxScanSize 30M
+    MaxFileSize 10M
+    MaxRecursion 8
+    MaxFiles 256
+    MaxThreads 4
+    MaxQueue 8
+    ReadTimeout 90
+    CommandReadTimeout 10
+    SendBufTimeout 10
+    SelfCheck 60
+    LogClean no
+    LogVerbose no
+    LogTime no
+  freshclam.conf: |
+    Foreground yes
+    DatabaseDirectory /var/lib/clamav
+    DatabaseOwner clamav
+    DatabaseMirror database.clamav.net
+    Checks 12
+    ConnectTimeout 15
+    ReceiveTimeout 60
+    MaxAttempts 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helivanta-clamav
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: helivanta-clamav
+    app.kubernetes.io/part-of: helivanta
+spec:
+  replicas: {{ .Values.documents.scanner.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helivanta-clamav
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: helivanta-clamav
+        app.kubernetes.io/part-of: helivanta
+      annotations:
+        sidecar.istio.io/inject: "true"
+        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts":true}'
+        sidecar.istio.io/proxyCPU: 50m
+        sidecar.istio.io/proxyCPULimit: 250m
+        sidecar.istio.io/proxyMemory: 64Mi
+        sidecar.istio.io/proxyMemoryLimit: 128Mi
+    spec:
+      serviceAccountName: helivanta-clamav
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: scanner
+          image: {{ .Values.documents.scanner.image | quote }}
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              freshclam --config-file=/config/freshclam.conf --quiet
+              freshclam --config-file=/config/freshclam.conf --daemon --quiet &
+              updater=$!
+              clamd --config-file=/config/clamd.conf &
+              scanner=$!
+              trap 'kill -TERM "$scanner" "$updater" 2>/dev/null; wait "$scanner"; exit 0' TERM INT
+              code=0
+              wait "$scanner" || code=$?
+              kill -TERM "$updater" 2>/dev/null || true
+              exit "$code"
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          ports:
+            - {name: clamd, containerPort: 3310}
+          startupProbe:
+            tcpSocket: {port: clamd}
+            periodSeconds: 10
+            failureThreshold: 120
+          readinessProbe:
+            tcpSocket: {port: clamd}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: clamd}
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.documents.scanner.resources | nindent 12 }}
+          volumeMounts:
+            - {name: definitions, mountPath: /var/lib/clamav}
+            - {name: tmp, mountPath: /tmp}
+            - {name: config, mountPath: /config, readOnly: true}
+      volumes:
+        - name: definitions
+          emptyDir: {sizeLimit: 2Gi}
+        - name: tmp
+          emptyDir: {sizeLimit: 128Mi}
+        - name: config
+          configMap:
+            name: helivanta-clamav
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: helivanta-clamav
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: helivanta-clamav
+  ports:
+    - {name: tcp-clamd, port: 3310, targetPort: clamd}
+{{- end }}

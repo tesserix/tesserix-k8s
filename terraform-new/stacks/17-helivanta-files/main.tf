@@ -98,6 +98,19 @@ resource "google_storage_bucket_iam_member" "helivanta_files" {
   depends_on = [google_project_iam_custom_role.helivanta_file_read]
 }
 
+// GCS seeds legacy project convenience grants even with uniform access enabled.
+resource "google_storage_bucket_iam_binding" "helivanta_legacy_grants" {
+  for_each = {
+    for pair in setproduct(keys(local.helivanta_file_buckets), [
+      "roles/storage.legacyBucketOwner", "roles/storage.legacyBucketReader",
+      "roles/storage.legacyObjectOwner", "roles/storage.legacyObjectReader"
+    ]) : "${pair[0]}_${pair[1]}" => { bucket = pair[0], role = pair[1] }
+  }
+  bucket  = google_storage_bucket.helivanta_files[each.value.bucket].name
+  role    = each.value.role
+  members = []
+}
+
 output "helivanta_file_buckets" {
   description = "Dedicated private application and isolated synthetic verification buckets."
   value       = { for name, bucket in google_storage_bucket.helivanta_files : name => bucket.name }
