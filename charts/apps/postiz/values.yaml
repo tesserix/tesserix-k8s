@@ -117,13 +117,12 @@ flags:
   # "local" = legacy PVC mode (re-pins pod to the PVC's zone, Recreate strategy)
   storageProvider: "cloudflare"
   # Lets the startup `prisma db push` apply changes it flags as possible data
-  # loss. ON for the v2.21.10 -> v2.25.1 upgrade only: Prisma refused to add
-  # the unique (experimentId, itemId, attempt) on mastra_experiment_results.
-  # `attempt` is a new nullable column, so every existing row gets NULL and
-  # Postgres treats NULLs as distinct — the constraint cannot collide. Turn it
-  # back OFF once the pod is up: left on, every future upgrade would apply
-  # whatever Prisma warns about without stopping.
-  prismaAcceptDataLoss: true
+  # loss. Keep OFF: on, every upgrade applies whatever Prisma warns about
+  # without stopping. Turn on for one rollout only, after checking the
+  # warning against the live data — v2.21.10 -> v2.25.1 needed it for a
+  # unique (experimentId, itemId, attempt) on mastra_experiment_results,
+  # safe because `attempt` was a new nullable column (#1410).
+  prismaAcceptDataLoss: false
 
 # Per-platform OAuth credentials (BOTH client IDs AND secrets) live in OpenBao
 # (postiz/app/postiz-*) and are pulled in via the postiz-secrets
