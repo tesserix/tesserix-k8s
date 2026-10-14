@@ -570,6 +570,36 @@ No per-secret GCP IAM binding was added for this PAT:
 service accounts, which is why no other `prod-console-*` secret carries one
 of its own either.
 
+**`kora-account-deleter`** and **`kora-eval`** (org `TESSERIX`) are not in
+`desired.machineUsers`. They are `ZitadelMachineUser` claims in
+`k8s/operators/zitadel/claims/kora.yaml`: the zitadel operator creates each
+account and writes its one-time credential to OpenBao at `kora/app/<name>`. It
+issues a credential only when that path is empty, so OpenBao is the recovery
+record. The operator grants no roles.
+
+```
+kora-account-deleter  PAT, read by kora-api as ZITADEL_DELETER_TOKEN.
+                      Calls DELETE /v2/users/{id} for a Kora user's identity.
+                      membership: ORG_USER_MANAGER on TESSERIX, by hand.
+kora-eval             client secret, read by the ai-eval CronJob. Mints
+                      Kora-audience JWTs with client_credentials. Kora's
+                      project is mode: public, so it needs no grant.
+```
+
+**Scoping decision.** Deleting a user needs `user.delete`. The narrowest org
+role holding it is `ORG_USER_MANAGER`; `ORG_USER_PERMISSION_EDITOR` and
+`ORG_USER_SELF_MANAGER` do not have it, and `ORG_OWNER` adds projects, apps and
+policies on top. It is still an over-grant: Kora users self-register into
+TESSERIX, the default org, so the role reaches every TESSERIX user, admins and
+other products' users included, and also carries `user.write`. Zitadel has no
+per-project user role to narrow it further. The limit is the PAT itself:
+OpenBao lets only `kora-api` read `kora/app/kora-account-deleter`, and kora-api
+deletes only the `idp_subject` stored on the Kora user being deleted.
+
+**Order matters.** Grant the membership after the operator has created the
+account, then declare it in `desired.orgMemberships`. Declaring it first makes
+`assert_org_memberships` fail every bootstrap run until the grant exists.
+
 **Actions.** Custom claims, token enrichment and provisioning hooks are Actions
 v2 objects, created through the API.
 
