@@ -29,10 +29,22 @@ class JevGatewayTests(unittest.TestCase):
         policy = resource(docs, "AgentgatewayPolicy", "kora-decide-traffic")["spec"]["traffic"]
         self.assertEqual(policy["apiKeyAuthentication"]["mode"], "Strict")
         self.assertEqual(policy["jwtAuthentication"]["mode"], "Strict")
-        self.assertEqual(policy["timeouts"]["request"], "1500ms")
+        self.assertEqual(policy["timeouts"]["request"], "3s")
         self.assertNotIn("extProc", policy)
         self.assertIn("jev-1.13.0", policy["transformation"]["request"]["body"])
         self.assertIn("rateLimit", policy)
+
+    def test_decision_timeout_budget_matches_registry_bundle(self):
+        docs = render_chart("charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system")
+        bundle = json.loads((ROOT / "charts/apps/agentgateway-route-sync/files/platform-resources.json").read_text())
+        for name in ("kora-decide-traffic", "kora-gate-decide-traffic"):
+            with self.subTest(policy=name):
+                traffic = resource(docs, "AgentgatewayPolicy", name)["spec"]["traffic"]
+                desired = resource(bundle["items"], "AgentgatewayPolicy", name)["spec"]["traffic"]
+                self.assertEqual(traffic["timeouts"]["request"], "3s")
+                self.assertEqual(desired["timeouts"], traffic["timeouts"])
+                self.assertEqual(traffic["apiKeyAuthentication"]["mode"], "Strict")
+                self.assertNotIn("extProc", traffic)
 
     def test_unsupported_methods_cannot_fall_through_to_the_chat_route(self):
         docs = render_chart("charts/apps/kora-ai-gateway", "kora-ai-gateway", "agentgateway-system")
