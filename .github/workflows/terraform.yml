@@ -64,6 +64,7 @@ jobs:
           - 13-document-intelligence-iam
           - 15-document-intelligence-products
           - 16-ax
+          - 17-helivanta-files
           - 14-uptime-monitoring
     steps:
       - name: Checkout
@@ -79,6 +80,11 @@ jobs:
       - name: Validate
         working-directory: terraform-new/stacks/${{ matrix.stack }}
         run: terraform validate
+
+      - name: Test private file isolation offline
+        if: matrix.stack == '17-helivanta-files'
+        working-directory: terraform-new/stacks/17-helivanta-files
+        run: terraform test
 
       - name: Test GKE upgrade safety offline
         if: matrix.stack == '04-gke'
