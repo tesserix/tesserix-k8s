@@ -27,6 +27,25 @@
 
 replicaCount: 2
 
+documents:
+  enabled: false
+  quarantineBucket: tesseracthub-480811-helivanta-prod-quarantine
+  releasedBucket: tesseracthub-480811-helivanta-prod-released
+  temporalAddress: temporal-frontend.temporal-system.svc.cluster.local:7233
+  temporalNamespace: helivanta-documents-prod
+  worker:
+    replicas: 2
+    secretName: helivanta-document-worker-credentials
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+  scanner:
+    image: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/clamav:1.5.4_base@sha256:96b28b83eb72fb497c2400a94229844226e5fe4da9061fad1988092d9fcd88f3
+    replicas: 1
+    resources:
+      requests: {cpu: 250m, memory: 1536Mi}
+      limits: {cpu: "1", memory: 3Gi}
+
 image:
   # Same in-region GAR pull-through mirror of ghcr.io every other chart in
   # this fleet uses (never ghcr.io directly — see devai-auth-bff's values.yaml

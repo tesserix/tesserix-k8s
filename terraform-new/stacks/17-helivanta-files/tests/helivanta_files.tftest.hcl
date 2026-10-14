@@ -42,4 +42,14 @@ run "private_files_are_separate_encrypted_and_have_no_destructive_identity" {
     ])
     error_message = "API cannot create releases; the verifier must not receive production access."
   }
+  assert {
+    condition = length(google_storage_bucket_iam_binding.helivanta_legacy_grants) == 16 && alltrue([
+      for grant in google_storage_bucket_iam_binding.helivanta_legacy_grants :
+      length(grant.members) == 0 && contains([
+        "roles/storage.legacyBucketOwner", "roles/storage.legacyBucketReader",
+        "roles/storage.legacyObjectOwner", "roles/storage.legacyObjectReader"
+      ], grant.role)
+    ])
+    error_message = "GCS defaults must not give project viewers or editors additional bucket/object access."
+  }
 }
