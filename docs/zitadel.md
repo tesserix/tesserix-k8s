@@ -585,7 +585,27 @@ kora-account-deleter  PAT, read by kora-api as ZITADEL_DELETER_TOKEN.
 kora-eval             client secret, read by the ai-eval CronJob. Mints
                       Kora-audience JWTs with client_credentials. Kora's
                       project is mode: public, so it needs no grant.
+kora-login-client     PAT, read by kora-api as ZITADEL_LOGIN_CLIENT_TOKEN.
+                      Drives the Session API behind Kora's own sign-in,
+                      sign-up and reset screens. membership: IAM_LOGIN_CLIENT
+                      on the instance, reconciled through
+                      desired.instanceMembers.
 ```
+
+**Why Kora holds a login-client credential.** The Kora app shows its own
+sign-in screens, never Zitadel's hosted login. kora-api opens the OIDC auth
+request itself, sending `x-zitadel-login-client: <kora-login-client id>` on
+`/oauth/v2/authorize`. That header makes Zitadel create a v2 auth request
+(`V2_...`) for the native `kora-ios` / `kora-android` client without either
+app being switched to Login V2. kora-api checks the credential through the
+Session API and finalises the request. The app redeems the resulting code with
+its own PKCE verifier, so kora-api never holds the user's tokens.
+`IAM_LOGIN_CLIENT` can mint a session for any user on the instance, which
+makes this the most powerful credential Kora holds. It is a separate machine
+user rather than a reused one, for the reason given for `console-login-client`
+in `charts/apps/console/templates/externalsecret.yaml`: rotation and
+compromise stay per product. OpenBao lets only `kora-api` read
+`kora/app/kora-login-client`.
 
 **Scoping decision.** Deleting a user needs `user.delete`. The narrowest org
 role holding it is `ORG_USER_MANAGER`; `ORG_USER_PERMISSION_EDITOR` and
