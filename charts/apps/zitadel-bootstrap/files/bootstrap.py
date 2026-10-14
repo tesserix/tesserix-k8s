@@ -183,27 +183,42 @@ def find_user(identifier):
     An unverified address is whatever the account holder typed, so matching on
     one would let anyone claim IAM_OWNER by setting an email they do not own.
 
-    Capped at 100 users, unpaginated. Verified against the live instance: 9
-    users total today, so the headroom is real. But three reconcilers now
-    depend on this returning every user — reconcile_admins,
-    reconcile_instance_members and reconcile_machine_users — and past 100 the
-    call silently returns fewer than all users rather than erroring, so a user
-    past the cutoff reads as "does not exist". That would make
-    reconcile_machine_users retry a create every run and reconcile_instance_members
-    skip a real membership indefinitely.
-    Not paginating today; revisit if user count approaches 100.
+    Zitadel does the filtering: one exact, case-insensitive search on username,
+    then one on email. This used to list the first 100 users and search them
+    here, and past 100 a real user read as "does not exist". Kora's sign-ups
+    land in TESSERIX, the default org, so that limit would be passed. The
+    results are still checked here, so a filter Zitadel ignored would narrow
+    nothing rather than match the wrong user.
+
+    More than one match fails the run. The old list resolved a collision by
+    whichever user came first, and this answer decides who gets IAM_OWNER.
     """
-    status, payload = request("POST", "/v2/users", {"query": {"limit": 100}})
-    if status != 200:
-        raise SystemExit(f"user search failed: {status} {payload!r}")
     wanted = identifier.lower()
-    for user in json.loads(payload).get("result", []):
-        if user.get("username", "").lower() == wanted:
-            return user["userId"]
+
+    def search(query, matches):
+        status, payload = request(
+            "POST",
+            "/v2/users",
+            {"query": {"limit": 10}, "queries": [query]},
+        )
+        if status != 200:
+            raise SystemExit(f"user search failed: {status} {payload!r}")
+        found = {user["userId"] for user in json.loads(payload).get("result", []) if matches(user)}
+        if len(found) > 1:
+            raise SystemExit(f"user {identifier!r} matches {len(found)} users; refusing to pick one")
+        return next(iter(found), None)
+
+    def by_username(user):
+        return user.get("username", "").lower() == wanted
+
+    def by_verified_email(user):
         email = user.get("human", {}).get("email", {})
-        if email.get("isVerified") and email.get("email", "").lower() == wanted:
-            return user["userId"]
-    return None
+        return bool(email.get("isVerified")) and email.get("email", "").lower() == wanted
+
+    method = "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE"
+    return search({"userNameQuery": {"userName": identifier, "method": method}}, by_username) or search(
+        {"emailQuery": {"emailAddress": identifier, "method": method}}, by_verified_email
+    )
 
 
 def reconcile_admins(admins):

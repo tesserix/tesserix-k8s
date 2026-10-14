@@ -432,6 +432,73 @@ ORGS = {"result": [
 ]}
 
 
+class FindUserTest(unittest.TestCase):
+    """find_user asks Zitadel for the user rather than listing everyone."""
+
+    METHOD = "TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE"
+
+    def _fake(self, by_username=(), by_email=()):
+        """Answers each /v2/users search with the users for its filter."""
+        calls = []
+
+        def fake(method, path, body=None, headers=None, raw=None, content_type=None):
+            calls.append(body)
+            query = body["queries"][0]
+            result = list(by_username) if "userNameQuery" in query else list(by_email)
+            return 200, json.dumps({"result": result}).encode()
+
+        return fake, calls
+
+    def test_filters_by_username_in_zitadel(self):
+        """The search is Zitadel's, so a user past the first page still resolves."""
+        fake, calls = self._fake(by_username=[{"userId": "u-1", "username": "kora-account-deleter"}])
+        with mock.patch.object(bootstrap, "request", fake):
+            self.assertEqual(bootstrap.find_user("kora-account-deleter"), "u-1")
+        self.assertEqual(calls, [{
+            "query": {"limit": 10},
+            "queries": [{"userNameQuery": {"userName": "kora-account-deleter", "method": self.METHOD}}],
+        }])
+
+    def test_falls_back_to_a_verified_email_search(self):
+        fake, calls = self._fake(by_email=[{
+            "userId": "u-9",
+            "username": "zitadel-admin@zitadel.auth.example.test",
+            "human": {"email": {"email": "unidevidp@gmail.com", "isVerified": True}},
+        }])
+        with mock.patch.object(bootstrap, "request", fake):
+            self.assertEqual(bootstrap.find_user("unidevidp@gmail.com"), "u-9")
+        self.assertEqual(calls[1]["queries"], [
+            {"emailQuery": {"emailAddress": "unidevidp@gmail.com", "method": self.METHOD}},
+        ])
+
+    def test_rechecks_results_in_case_zitadel_ignored_the_filter(self):
+        """An unfiltered answer must narrow to nothing, never to the first user."""
+        others = [{"userId": "u-2", "username": "someone-else"}]
+        fake, _ = self._fake(by_username=others, by_email=others)
+        with mock.patch.object(bootstrap, "request", fake):
+            self.assertIsNone(bootstrap.find_user("kora-account-deleter"))
+
+    def test_more_than_one_match_fails_instead_of_picking_one(self):
+        """This answer decides who gets IAM_OWNER; first-in-list is not a rule."""
+        twins = [
+            {"userId": "u-1", "username": "samyak.rout@gmail.com"},
+            {"userId": "u-7", "username": "Samyak.Rout@gmail.com"},
+        ]
+        fake, _ = self._fake(by_username=twins)
+        with mock.patch.object(bootstrap, "request", fake):
+            with self.assertRaises(SystemExit) as caught:
+                bootstrap.find_user("samyak.rout@gmail.com")
+        self.assertIn("matches 2 users", str(caught.exception))
+
+    def test_a_failed_search_fails_the_run(self):
+        def fake(method, path, body=None, headers=None, raw=None, content_type=None):
+            return 400, b'{"code":3,"message":"invalid query"}'
+
+        with mock.patch.object(bootstrap, "request", fake):
+            with self.assertRaises(SystemExit):
+                bootstrap.find_user("kora-account-deleter")
+
+
 class DefaultOrgTest(unittest.TestCase):
     def _recorder(self, current, extra=None):
         return Recorder({
@@ -1242,8 +1309,10 @@ class InstanceMemberTest(unittest.TestCase):
                     machine_logins={"svc-onboarding"},
                 )
         self.assertIn("svc-onboarding", str(caught.exception))
+        # Two lookups, by username and then by email, and no write.
         self.assertEqual([call[:2] for call in recorder.calls], [
             ("POST", "/admin/v1/members/_search"),
+            ("POST", "/v2/users"),
             ("POST", "/v2/users"),
         ])
 
