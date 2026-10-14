@@ -49,3 +49,36 @@ spec:
     - "com.tesserix.kora:/auth/callback"
   postLogoutRedirectUris:
     - "com.tesserix.kora:/auth/logout"
+---
+# kora-api's ZITADEL_DELETER_TOKEN: deletes the caller's own Zitadel user on
+# DELETE /v1/me. The operator grants no roles; the user-deletion grant is a
+# separate reviewed step (Kora migration plan Q2).
+apiVersion: identity.tesserix.app/v1alpha1
+kind: ZitadelMachineUser
+metadata:
+  name: kora-account-deleter
+  namespace: identity-operator
+  labels:
+    app.kubernetes.io/part-of: kora
+    app.kubernetes.io/managed-by: zitadel-onboarding-operator
+spec:
+  organization: TESSERIX
+  userName: kora-account-deleter
+  displayName: Kora account deleter
+  credential: personalAccessToken
+---
+# cmd/aieval's KORA_EVAL_CLIENT_SECRET (client ID kora-eval). Gets Kora-audience
+# JWTs through client_credentials for gated AI evals.
+apiVersion: identity.tesserix.app/v1alpha1
+kind: ZitadelMachineUser
+metadata:
+  name: kora-eval
+  namespace: identity-operator
+  labels:
+    app.kubernetes.io/part-of: kora
+    app.kubernetes.io/managed-by: zitadel-onboarding-operator
+spec:
+  organization: TESSERIX
+  userName: kora-eval
+  displayName: Kora eval
+  credential: clientSecret
