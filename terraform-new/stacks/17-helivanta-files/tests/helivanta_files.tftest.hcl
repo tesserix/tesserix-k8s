@@ -12,10 +12,10 @@ override_data {
 run "private_files_are_separate_encrypted_and_have_no_destructive_identity" {
   command = plan
   variables {
-    project_id         = "synthetic-project"
-    region             = "asia-south1"
-    kms_location       = "asia-south1"
-    kms_keyring_name   = "synthetic-keyring"
+    project_id       = "synthetic-project"
+    region           = "asia-south1"
+    kms_location     = "asia-south1"
+    kms_keyring_name = "synthetic-keyring"
   }
   assert {
     condition = length(google_storage_bucket.helivanta_files) == 4 && alltrue([

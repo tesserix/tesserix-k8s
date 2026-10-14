@@ -10,7 +10,6 @@ import unittest
 
 import yaml
 
-
 ROOT = pathlib.Path(__file__).parents[1]
 TERRAFORM_ROOT = ROOT / "terraform-new"
 ATLANTIS_FAILURE_PROJECT = "atlantis-failure-smoke"
@@ -68,7 +67,9 @@ def render_atlantis_chart():
 
 def render_istio_auth_policies():
     """Render the way ArgoCD does: the Application's inline block wins over values-prod."""
-    application = load_yaml(ROOT / "argocd/prod/infrastructure/istio-auth-policies.yaml")
+    application = load_yaml(
+        ROOT / "argocd/prod/infrastructure/istio-auth-policies.yaml"
+    )
     chart = ROOT / "charts/infrastructure/istio-auth-policies"
     result = subprocess.run(
         [
@@ -110,9 +111,7 @@ class TerraformGraphTests(unittest.TestCase):
     def test_graph_is_canonical_complete_and_acyclic(self):
         stacks = self.graph["stacks"]
         stack_dirs = {
-            path.name
-            for path in (TERRAFORM_ROOT / "stacks").iterdir()
-            if path.is_dir()
+            path.name for path in (TERRAFORM_ROOT / "stacks").iterdir() if path.is_dir()
         }
         self.assertEqual(stack_dirs, set(stacks))
 
@@ -137,10 +136,14 @@ class TerraformGraphTests(unittest.TestCase):
         self.assertEqual("stacks/prod/helivanta-files", stack["state_prefix"])
         self.assertEqual(["03-storage", "04-gke"], stack["dependencies"])
         directory = TERRAFORM_ROOT / stack["path"]
-        self.assertFalse((TERRAFORM_ROOT / "stacks/03-storage/helivanta-files.tf").exists())
+        self.assertFalse(
+            (TERRAFORM_ROOT / "stacks/03-storage/helivanta-files.tf").exists()
+        )
         resources = set()
         for path in directory.glob("*.tf"):
-            resources.update(re.findall(r'resource\s+"([^"]+)"\s+"([^"]+)"', path.read_text()))
+            resources.update(
+                re.findall(r'resource\s+"([^"]+)"\s+"([^"]+)"', path.read_text())
+            )
         self.assertEqual(
             {
                 ("google_kms_crypto_key", "helivanta_files"),
@@ -156,8 +159,7 @@ class TerraformGraphTests(unittest.TestCase):
         state = self.graph["state"]
         managed = {stack["state_prefix"] for stack in self.graph["stacks"].values()}
         orphans = {
-            config["state_prefix"]
-            for config in state["acknowledged_orphans"].values()
+            config["state_prefix"] for config in state["acknowledged_orphans"].values()
         }
         self.assertEqual(
             LIVE_STATE_PREFIXES | {"stacks/prod/state-bootstrap"},
@@ -184,7 +186,9 @@ class TerraformGraphTests(unittest.TestCase):
         )
         prefix_pattern = re.compile(r'^\s*prefix\s*=\s*"([^"]+)"', re.MULTILINE)
         for terraform_file in (TERRAFORM_ROOT / "stacks").glob("*/*.tf"):
-            for remote_state in remote_state_pattern.findall(terraform_file.read_text()):
+            for remote_state in remote_state_pattern.findall(
+                terraform_file.read_text()
+            ):
                 prefixes = prefix_pattern.findall(remote_state)
                 self.assertEqual(len(prefixes), 1, terraform_file)
                 prefix = prefixes[0]
@@ -384,9 +388,7 @@ class AtlantisPlatformTests(unittest.TestCase):
 
     def test_container_environment_names_are_unique(self):
         stateful_set = resource(self.documents, "StatefulSet", "atlantis")
-        environment = stateful_set["spec"]["template"]["spec"]["containers"][0][
-            "env"
-        ]
+        environment = stateful_set["spec"]["template"]["spec"]["containers"][0]["env"]
         names = [entry["name"] for entry in environment]
         self.assertEqual(len(names), len(set(names)))
 
@@ -488,8 +490,7 @@ class AtlantisPlatformTests(unittest.TestCase):
                 target["operation"]
                 for rule in policy["spec"]["rules"]
                 for target in rule.get("to", [])
-                if target["operation"].get("hosts")
-                == ["atlantis.tesserix.app"]
+                if target["operation"].get("hosts") == ["atlantis.tesserix.app"]
             ]
             self.assertEqual(
                 [
@@ -556,9 +557,7 @@ class AtlantisPlatformTests(unittest.TestCase):
             self.documents, "ConfigMap", "atlantis-ui-oauth2-proxy-emails"
         )
         emails = config_map["data"]["authenticated-emails.txt"].split()
-        self.assertEqual(
-            ["samyak.rout@gmail.com", "mahesh.sangawar@gmail.com"], emails
-        )
+        self.assertEqual(["samyak.rout@gmail.com", "mahesh.sangawar@gmail.com"], emails)
 
     def test_proxy_authenticates_against_zitadel_without_leaking_tokens(self):
         deployment = resource(self.documents, "Deployment", "atlantis-ui-oauth2-proxy")
@@ -619,7 +618,13 @@ class AtlantisPlatformTests(unittest.TestCase):
         network_policy = resource(self.documents, "NetworkPolicy", "atlantis-ingress")
         sources = network_policy["spec"]["ingress"][0]["from"]
         self.assertIn(
-            {"podSelector": {"matchLabels": {"app.kubernetes.io/name": "atlantis-ui-oauth2-proxy"}}},
+            {
+                "podSelector": {
+                    "matchLabels": {
+                        "app.kubernetes.io/name": "atlantis-ui-oauth2-proxy"
+                    }
+                }
+            },
             sources,
         )
         ports = network_policy["spec"]["ingress"][0]["ports"]
@@ -644,9 +649,7 @@ class AtlantisPlatformTests(unittest.TestCase):
         self.assertIn("sha256sum -c", installer["args"][0])
 
         atlantis_container = pod_spec["containers"][0]
-        self.assertTrue(
-            atlantis_container["securityContext"]["readOnlyRootFilesystem"]
-        )
+        self.assertTrue(atlantis_container["securityContext"]["readOnlyRootFilesystem"])
         mounts = {mount["name"]: mount for mount in atlantis_container["volumeMounts"]}
         self.assertEqual("/opt/atlantis-tools", mounts["terraform-tools"]["mountPath"])
         env = {entry["name"]: entry.get("value") for entry in atlantis_container["env"]}
@@ -658,9 +661,7 @@ class AtlantisPlatformTests(unittest.TestCase):
             self.assertIn("gke-auth.sh", providers)
             self.assertNotIn("google_client_config", providers)
 
-        bootstrap = (
-            TERRAFORM_ROOT / "stacks/05-k8s-bootstrap/main.tf"
-        ).read_text()
+        bootstrap = (TERRAFORM_ROOT / "stacks/05-k8s-bootstrap/main.tf").read_text()
         self.assertIn("kubectl-gke.sh", bootstrap)
         self.assertNotRegex(bootstrap, r"(?m)^\s*(?:if\s+)?kubectl\s")
 
@@ -675,7 +676,9 @@ class AtlantisPlatformTests(unittest.TestCase):
     def test_argocd_application_pins_the_upstream_chart(self):
         application = load_yaml(ROOT / "argocd/prod/infrastructure/atlantis.yaml")
         self.assertEqual("atlantis", application["spec"]["destination"]["namespace"])
-        self.assertEqual("charts/thirdparty/atlantis", application["spec"]["source"]["path"])
+        self.assertEqual(
+            "charts/thirdparty/atlantis", application["spec"]["source"]["path"]
+        )
 
         chart = load_yaml(ROOT / "charts/thirdparty/atlantis/Chart.yaml")
         dependency = chart["dependencies"][0]
@@ -692,7 +695,6 @@ class AtlantisPlatformTests(unittest.TestCase):
             f"helm repo add atlantis {chart['dependencies'][0]['repository']}",
             workflow,
         )
-
 
     def test_proxy_may_resolve_dns_on_the_kube_dns_cluster_ip(self):
         """A namespaceSelector alone does not match a Service ClusterIP.
@@ -809,8 +811,16 @@ if __name__ == "__main__":
 
 def test_apply_can_satisfy_its_own_required_status_without_dropping_merge_checks():
     documents = render_atlantis_chart()
-    statefulset = resource(documents, 'StatefulSet', 'atlantis')
-    container = next(c for c in statefulset['spec']['template']['spec']['containers'] if c['name'] == 'atlantis')
-    assert '--gh-allow-mergeable-bypass-apply' in container['args']
-    config = yaml.safe_load(load_yaml(ROOT / 'charts/thirdparty/atlantis/values.yaml')['atlantis']['repoConfig'])
-    assert config['repos'][0]['apply_requirements'] == ['mergeable', 'undiverged']
+    statefulset = resource(documents, "StatefulSet", "atlantis")
+    container = next(
+        c
+        for c in statefulset["spec"]["template"]["spec"]["containers"]
+        if c["name"] == "atlantis"
+    )
+    assert "--gh-allow-mergeable-bypass-apply" in container["args"]
+    config = yaml.safe_load(
+        load_yaml(ROOT / "charts/thirdparty/atlantis/values.yaml")["atlantis"][
+            "repoConfig"
+        ]
+    )
+    assert config["repos"][0]["apply_requirements"] == ["mergeable", "undiverged"]
