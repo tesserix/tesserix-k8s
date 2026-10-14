@@ -164,9 +164,15 @@ desired:
   # simply get IAM_OWNER through `admins`. A login must not appear in both
   # lists — reconcile_instance_members fails the run if one does, rather than
   # letting the two reconcilers fight over the same membership every 30
-  # minutes. Empty for now: nothing today needs a narrower instance role than
-  # IAM_OWNER or the roles a machine user already has through project grants.
-  instanceMembers: []
+  # minutes.
+  #
+  # kora-login-client is created by the zitadel operator, not desired.machineUsers,
+  # so until the operator has run it is skipped as "no such user yet" and granted
+  # on the next run after it exists.
+  instanceMembers:
+    - login: kora-login-client
+      roles:
+        - IAM_LOGIN_CLIENT
 
   # Org-level memberships, asserted but never created from here.
   #
