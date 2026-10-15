@@ -1,4 +1,26 @@
 {{- if .Values.documents.enabled }}
+{{- if .Values.documents.acceptUploads }}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: helivanta-api-ingress
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helivanta-api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/istio-ingress/sa/istio-ingressgateway
+              - cluster.local/ns/{{ .Release.Namespace }}/sa/helivanta-shell
+      to:
+        - operation:
+            ports: ["{{ .Values.service.port }}"]
+---
+{{- end }}
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication
 metadata:

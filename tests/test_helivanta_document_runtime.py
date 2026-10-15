@@ -34,6 +34,40 @@ def resource(resources, kind, name):
     )
 
 
+def test_upload_acceptance_allows_only_gateway_and_shell_identities_to_api_port():
+    resources = render(
+        "charts/apps/helivanta-api",
+        "documents.enabled=true",
+        "documents.acceptUploads=true",
+    )
+    policy = resource(resources, "AuthorizationPolicy", "helivanta-api-ingress")["spec"]
+    assert policy == {
+        "selector": {"matchLabels": {"app.kubernetes.io/name": "helivanta-api"}},
+        "action": "ALLOW",
+        "rules": [
+            {
+                "from": [
+                    {
+                        "source": {
+                            "principals": [
+                                "cluster.local/ns/istio-ingress/sa/istio-ingressgateway",
+                                "cluster.local/ns/helivanta/sa/helivanta-shell",
+                            ]
+                        }
+                    }
+                ],
+                "to": [{"operation": {"ports": ["8080"]}}],
+            }
+        ],
+    }
+    dormant = render("charts/apps/helivanta-api", "documents.enabled=true")
+    assert not any(
+        item["kind"] == "AuthorizationPolicy"
+        and item["metadata"]["name"] == "helivanta-api-ingress"
+        for item in dormant
+    )
+
+
 def test_document_proxies_can_reach_only_the_istiod_control_port():
     policy = resource(
         render("charts/thirdparty/istio-config"),
@@ -474,7 +508,9 @@ def test_document_outage_alerts_have_owner_and_recovery_runbook():
 
 def test_mesh_enrolment_keeps_every_api_caller_on_mtls():
     uploads = render(
-        "charts/apps/helivanta-api", "documents.enabled=true", "documents.acceptUploads=true"
+        "charts/apps/helivanta-api",
+        "documents.enabled=true",
+        "documents.acceptUploads=true",
     )
     api = resource(uploads, "Deployment", "helivanta-api")["spec"]["template"]
     assert api["metadata"]["labels"]["sidecar.istio.io/inject"] == "true"
@@ -482,18 +518,24 @@ def test_mesh_enrolment_keeps_every_api_caller_on_mtls():
     pod = resource(shell, "Deployment", "helivanta-shell")["spec"]["template"]
     assert pod["metadata"]["labels"]["sidecar.istio.io/inject"] == "true"
     istiod = resource(shell, "NetworkPolicy", "helivanta-shell-istiod")["spec"]
-    assert istiod["podSelector"]["matchLabels"] == {"app.kubernetes.io/name": "helivanta-shell"}
+    assert istiod["podSelector"]["matchLabels"] == {
+        "app.kubernetes.io/name": "helivanta-shell"
+    }
     assert istiod["egress"][0]["ports"] == [{"protocol": "TCP", "port": 15012}]
 
 
 def test_istiod_admits_only_sidecar_pods_from_sidecar_namespaces():
     policy = resource(
-        render("charts/thirdparty/istio-config"), "NetworkPolicy", "allow-webhook-to-istiod"
+        render("charts/thirdparty/istio-config"),
+        "NetworkPolicy",
+        "allow-webhook-to-istiod",
     )["spec"]
     sources = [
         rule
         for rule in policy["ingress"]
-        if rule["from"][0]["namespaceSelector"]["matchLabels"]["kubernetes.io/metadata.name"]
+        if rule["from"][0]["namespaceSelector"]["matchLabels"][
+            "kubernetes.io/metadata.name"
+        ]
         == "helivanta"
     ]
     assert sources == [

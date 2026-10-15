@@ -11,6 +11,12 @@ owning production values only after these checks pass. Enabling acceptance
 without the processing runtime fails Helm rendering. Disabling acceptance is
 the immediate GitOps containment action; it preserves metadata and objects.
 
+Acceptance also enables the API mesh proxy. The API ingress policy allows only
+the `istio-ingress/istio-ingressgateway` and `helivanta/helivanta-shell` workload
+identities on its service port. API authentication and tenant/hospital permissions
+remain enforced after this mesh check. If login fails with `RBAC: access denied`,
+check this policy and both workload identities; never remove the mesh default deny.
+
 ```mermaid
 flowchart LR
   UI[Authorized staff-file action] --> API[API: tenant + hospital + file authorization]
