@@ -19,11 +19,18 @@ spec:
       maxSurge: 1
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
+        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts":true}'
+        sidecar.istio.io/proxyCPU: 50m
+        sidecar.istio.io/proxyCPULimit: 250m
+        sidecar.istio.io/proxyMemory: 64Mi
+        sidecar.istio.io/proxyMemoryLimit: 128Mi
       labels:
+        # Mesh-wide STRICT mTLS: the shell must hold a mesh identity before the API enrols.
+        sidecar.istio.io/inject: "true"
         {{- include "helivanta-shell.selectorLabels" . | nindent 8 }}
         {{- include "helivanta-shell.labels" . | nindent 8 }}
     spec:
