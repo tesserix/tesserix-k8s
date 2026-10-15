@@ -152,6 +152,11 @@ class TerraformGraphTests(unittest.TestCase):
                 ("google_storage_bucket", "helivanta_files"),
                 ("google_storage_bucket_iam_member", "helivanta_files"),
                 ("google_storage_bucket_iam_binding", "helivanta_legacy_grants"),
+                ("google_kms_crypto_key", "helivanta_audit"),
+                ("google_kms_crypto_key_iam_member", "helivanta_audit"),
+                ("google_logging_project_bucket_config", "helivanta_files"),
+                ("google_logging_project_sink", "helivanta_files"),
+                ("google_project_iam_audit_config", "helivanta_storage"),
             },
             resources,
         )
