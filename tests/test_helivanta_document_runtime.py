@@ -147,7 +147,9 @@ def test_worker_reuses_api_artifact_and_has_only_restricted_credentials():
     assert worker["image"] == api["spec"]["containers"][0]["image"]
     assert worker["command"] == ["/app/document-worker"]
     assert pod["spec"]["serviceAccountName"] == "helivanta-document-worker"
-    assert pod["metadata"]["annotations"]["sidecar.istio.io/inject"] == "true"
+    for name in ["helivanta-api", "helivanta-document-worker", "helivanta-clamav"]:
+        runtime = resource(resources, "Deployment", name)["spec"]["template"]
+        assert runtime["metadata"]["labels"]["sidecar.istio.io/inject"] == "true"
     assert pod["spec"]["terminationGracePeriodSeconds"] >= 120
     assert deployment["spec"]["replicas"] == 2
     env = {item["name"]: item for item in worker["env"]}
@@ -278,6 +280,9 @@ def test_scanner_is_private_bounded_nonroot_and_definition_storage_is_disposable
         "MaxScanSize 30M",
         "MaxFileSize 10M",
         "MaxRecursion 8",
+        "AlertExceedsMax yes",
+        "AlertEncryptedArchive yes",
+        "AlertEncryptedDoc yes",
         "MaxThreads 4",
         "LogClean no",
         "LogVerbose no",
@@ -288,6 +293,24 @@ def test_scanner_is_private_bounded_nonroot_and_definition_storage_is_disposable
         * container["startupProbe"]["periodSeconds"]
         >= 600
     )
+
+
+def test_scanner_https_egress_is_limited_to_the_definition_mirror():
+    resources = render("charts/apps/helivanta-api", "documents.enabled=true")
+    mirror = resource(resources, "ServiceEntry", "helivanta-clamav-updates")["spec"]
+    assert mirror["hosts"] == ["database.clamav.net"]
+    assert mirror["exportTo"] == ["."]
+    assert mirror["location"] == "MESH_EXTERNAL"
+    assert mirror["resolution"] == "DNS"
+    assert mirror["ports"] == [
+        {"name": "tls-definitions", "number": 443, "protocol": "TLS"}
+    ]
+    sidecar = resource(resources, "Sidecar", "helivanta-clamav")["spec"]
+    assert sidecar["workloadSelector"]["labels"] == {
+        "app.kubernetes.io/name": "helivanta-clamav"
+    }
+    assert sidecar["outboundTrafficPolicy"]["mode"] == "REGISTRY_ONLY"
+    assert sidecar["egress"] == [{"hosts": ["./database.clamav.net"]}]
 
 
 def test_mesh_requires_worker_identity_for_scanner_and_only_frontend_for_temporal():

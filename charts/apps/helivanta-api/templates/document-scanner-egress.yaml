@@ -1,0 +1,28 @@
+{{- if .Values.documents.enabled }}
+apiVersion: networking.istio.io/v1
+kind: ServiceEntry
+metadata:
+  name: helivanta-clamav-updates
+  namespace: {{ .Release.Namespace }}
+spec:
+  exportTo: ["."]
+  hosts: [database.clamav.net]
+  location: MESH_EXTERNAL
+  ports:
+    - {name: tls-definitions, number: 443, protocol: TLS}
+  resolution: DNS
+---
+apiVersion: networking.istio.io/v1
+kind: Sidecar
+metadata:
+  name: helivanta-clamav
+  namespace: {{ .Release.Namespace }}
+spec:
+  workloadSelector:
+    labels:
+      app.kubernetes.io/name: helivanta-clamav
+  outboundTrafficPolicy:
+    mode: REGISTRY_ONLY
+  egress:
+    - hosts: ["./database.clamav.net"]
+{{- end }}
