@@ -86,6 +86,18 @@ spec:
                   name: {{ .Values.database.tesserix.secretName | quote }}
                   key: password
             {{- end }}
+            {{- if .Values.repos.githubApp.enabled }}
+            # The repos module's GitHub App (tesserix-home#654). All three from
+            # one Secret under one guard: the service panics at startup on a
+            # half-configured App, so a split would make that expressible.
+            {{- range $name := list "REPOS_GITHUB_APP_ID" "REPOS_GITHUB_APP_INSTALLATION_ID" "REPOS_GITHUB_APP_PRIVATE_KEY" }}
+            - name: {{ $name }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.repos.githubApp.secretName | quote }}
+                  key: {{ $name }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.federation.enabled }}
             # Federation (tesserix-home#334). All three variables per product
             # are emitted from ONE guard on purpose: LoadRegistry fails closed,
