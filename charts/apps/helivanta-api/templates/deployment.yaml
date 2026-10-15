@@ -24,8 +24,7 @@ spec:
     metadata:
       annotations:
         {{- toYaml .Values.podAnnotations | nindent 8 }}
-        {{- /* The API reaches Temporal only once it accepts uploads; mesh-wide STRICT would otherwise reject plaintext callers first. */}}
-        {{- if .Values.documents.acceptUploads }}
+        {{- if include "helivanta-api.meshed" . }}
         proxy.istio.io/config: '{"holdApplicationUntilProxyStarts":true}'
         sidecar.istio.io/proxyCPU: 50m
         sidecar.istio.io/proxyCPULimit: 250m
@@ -33,7 +32,7 @@ spec:
         sidecar.istio.io/proxyMemoryLimit: 128Mi
         {{- end }}
       labels:
-        {{- if .Values.documents.acceptUploads }}
+        {{- if include "helivanta-api.meshed" . }}
         sidecar.istio.io/inject: "true"
         {{- end }}
         {{- include "helivanta-api.selectorLabels" . | nindent 8 }}
@@ -118,10 +117,13 @@ spec:
                   key: password
             - name: SYSTEM_DATABASE_URL
               value: "postgres://$(SYSTEM_DB_USER):$(SYSTEM_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
+            {{- /* global enforces STRICT mTLS, so without a sidecar every call fails; unset keeps the in-memory limiter. */}}
+            {{- if and .Values.valkey.url (include "helivanta-api.meshed" .) }}
             - name: VALKEY_URL
               value: {{ .Values.valkey.url | quote }}
             - name: VALKEY_TIMEOUT
               value: {{ .Values.valkey.timeout | quote }}
+            {{- end }}
             - name: NATS_URL
               value: {{ .Values.nats.url | quote }}
             {{- if and .Values.documents.enabled .Values.documents.acceptUploads }}

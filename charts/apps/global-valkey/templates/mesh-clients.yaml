@@ -1,0 +1,53 @@
+{{- if and .Values.meshClients .Values.haproxy.enabled }}
+# Sidecar clients tunnel HBONE (15008) straight to HAProxy, so the 6379 namespace allowlist never matches them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "global-valkey.name" . }}-mesh-clients
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "global-valkey.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "global-valkey.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: haproxy
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range .Values.meshClients }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ required "meshClients[].namespace is required" .namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ required "meshClients[].app is required" .app }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: 15008}
+---
+# The namespace-wide allow-mesh-internal ALLOWs everything, so only a DENY can pin tunnelled clients to the data port.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "global-valkey.name" . }}-mesh-clients
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "global-valkey.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "global-valkey.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: haproxy
+  action: DENY
+  rules:
+    - from:
+        - source:
+            principals:
+              {{- range .Values.meshClients }}
+              - cluster.local/ns/{{ .namespace }}/sa/{{ required "meshClients[].serviceAccount is required" .serviceAccount }}
+              {{- end }}
+      to:
+        - operation:
+            notPorts: [{{ .Values.haproxy.port | quote }}]
+{{- end }}
