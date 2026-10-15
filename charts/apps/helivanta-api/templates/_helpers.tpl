@@ -31,3 +31,8 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- default "default" .Values.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
+
+{{/* The API joins the mesh only once it accepts uploads; everything needing its mesh identity keys off this. */}}
+{{- define "helivanta-api.meshed" -}}
+{{- if .Values.documents.acceptUploads }}true{{ end }}
+{{- end }}
