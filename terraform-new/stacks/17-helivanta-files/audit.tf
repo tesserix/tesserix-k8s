@@ -1,9 +1,6 @@
-data "google_logging_project_cmek_settings" "logging" {
-  project = var.project_id
-}
-
 locals {
-  helivanta_audit_key_id = "${local.helivanta_file_keyring}/cryptoKeys/helivanta-file-audit"
+  helivanta_audit_key_id     = "${local.helivanta_file_keyring}/cryptoKeys/helivanta-file-audit"
+  helivanta_logging_identity = "service-${data.google_project.project.number}@gcp-sa-logging.iam.gserviceaccount.com"
 }
 
 resource "google_kms_crypto_key" "helivanta_audit" {
@@ -20,7 +17,7 @@ resource "google_kms_crypto_key" "helivanta_audit" {
 resource "google_kms_crypto_key_iam_member" "helivanta_audit" {
   crypto_key_id = local.helivanta_audit_key_id
   role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
-  member        = "serviceAccount:${data.google_logging_project_cmek_settings.logging.service_account_id}"
+  member        = "serviceAccount:${local.helivanta_logging_identity}"
   depends_on    = [google_kms_crypto_key.helivanta_audit]
 }
 

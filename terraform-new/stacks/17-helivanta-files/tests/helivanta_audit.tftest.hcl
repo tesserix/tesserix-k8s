@@ -4,13 +4,27 @@ override_data {
   target = data.google_project.project
   values = { number = "849928263410" }
 }
+
+run "audit_key_identity_follows_the_current_project" {
+  command = plan
+  override_data {
+    target = data.google_project.project
+    values = { number = "123456789012" }
+  }
+  variables {
+    project_id       = "another-synthetic-project"
+    region           = "asia-south1"
+    kms_location     = "asia-south1"
+    kms_keyring_name = "synthetic-keyring"
+  }
+  assert {
+    condition     = google_kms_crypto_key_iam_member.helivanta_audit.member == "serviceAccount:service-123456789012@gcp-sa-logging.iam.gserviceaccount.com"
+    error_message = "Only the current project's verified Logging service identity may use the audit encryption key."
+  }
+}
 override_data {
   target = data.google_kms_key_ring.existing
   values = { id = "projects/synthetic-project/locations/asia-south1/keyRings/synthetic-keyring" }
-}
-override_data {
-  target = data.google_logging_project_cmek_settings.logging
-  values = { service_account_id = "service-849928263410@gcp-sa-logging.iam.gserviceaccount.com" }
 }
 
 run "private_file_access_has_auditable_regional_retention" {

@@ -29,6 +29,14 @@ is granted access. The existing Logging service identity alone gets use of the
 new key. Same-project bucket routing needs no additional project bucket-writer
 grant. `_Default` routing remains unchanged and can retain its own encrypted copy.
 
+An authorized read verified the existing Logging identity as
+`service-849928263410@gcp-sa-logging.iam.gserviceaccount.com`. Its documented
+project-number form is derived from the existing project lookup; Terraform does
+not need to read or change project-level CMEK settings. The first Atlantis plan
+was denied `logging.settings.get` on that unnecessary lookup. Removing the
+lookup grants no additional provider permissions. Mock coverage checks a second
+project number to prevent a cross-project key grant.
+
 At the planning assumption of 10,000 files/month, eight 2-KiB audit records per
 file are about 0.15 GiB/month and 2 GiB at 400 days. This excludes other buckets,
 whose project-wide logging volume must be reviewed. Cloud Logging's free allowance
