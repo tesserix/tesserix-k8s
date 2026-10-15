@@ -1,4 +1,8 @@
 {{- $c := include "document-intelligence.config" . | fromYaml }}
+{{- $executionImage := .Values.workers.execution.image | default "" }}
+{{- if and $executionImage (or (not (hasPrefix (printf "%s@" .Values.image.repository) $executionImage)) (not (regexMatch "@sha256:[a-f0-9]{64}$" $executionImage))) }}
+{{- fail "execution worker image must use the owned repository and a sha256 digest" }}
+{{- end }}
 {{- $labels := include "document-intelligence.labels" . }}
 {{- $apiEnv := list
   (dict "name" "DATABASE_URL" "valueFrom" (dict "secretKeyRef" (dict "name" $c.database.secretName "key" "DATABASE_URL")))
@@ -55,7 +59,7 @@ spec:
       {{- end }}
       containers:
         - name: app
-          image: {{ include "document-intelligence.image" $ }}
+          image: {{ if eq $workload.name "execution-worker" }}{{ $.Values.workers.execution.image | default (include "document-intelligence.image" $) }}{{ else }}{{ include "document-intelligence.image" $ }}{{ end }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           command: {{ toJson $workload.command }}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"]}}
