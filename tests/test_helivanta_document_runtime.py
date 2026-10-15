@@ -295,6 +295,24 @@ def test_scanner_is_private_bounded_nonroot_and_definition_storage_is_disposable
     )
 
 
+def test_scanner_https_egress_is_limited_to_the_definition_mirror():
+    resources = render("charts/apps/helivanta-api", "documents.enabled=true")
+    mirror = resource(resources, "ServiceEntry", "helivanta-clamav-updates")["spec"]
+    assert mirror["hosts"] == ["database.clamav.net"]
+    assert mirror["exportTo"] == ["."]
+    assert mirror["location"] == "MESH_EXTERNAL"
+    assert mirror["resolution"] == "DNS"
+    assert mirror["ports"] == [
+        {"name": "tls-definitions", "number": 443, "protocol": "TLS"}
+    ]
+    sidecar = resource(resources, "Sidecar", "helivanta-clamav")["spec"]
+    assert sidecar["workloadSelector"]["labels"] == {
+        "app.kubernetes.io/name": "helivanta-clamav"
+    }
+    assert sidecar["outboundTrafficPolicy"]["mode"] == "REGISTRY_ONLY"
+    assert sidecar["egress"] == [{"hosts": ["./database.clamav.net"]}]
+
+
 def test_mesh_requires_worker_identity_for_scanner_and_only_frontend_for_temporal():
     resources = render("charts/apps/helivanta-api", "documents.enabled=true")
     policy = resource(resources, "AuthorizationPolicy", "helivanta-clamav")["spec"]
