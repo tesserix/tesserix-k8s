@@ -1,7 +1,9 @@
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import yaml
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -9,7 +11,7 @@ CHART = ROOT / "charts/apps/document-intelligence"
 ISTIO_CONFIG_VALUES = ROOT / "charts/thirdparty/istio-config/values.yaml"
 
 
-def render(environment: str) -> list[dict]:
+def render(environment: str, extra_args: tuple[str, ...] = ()) -> list[dict[str, Any]]:
     output = subprocess.run(
         [
             "helm",
@@ -20,6 +22,7 @@ def render(environment: str) -> list[dict]:
             "document-intelligence",
             "--values",
             str(CHART / f"values-{environment}.yaml"),
+            *extra_args,
         ],
         check=True,
         capture_output=True,
@@ -28,7 +31,7 @@ def render(environment: str) -> list[dict]:
     return [resource for resource in yaml.safe_load_all(output) if resource]
 
 
-def deployment(resources: list[dict], name: str) -> dict:
+def deployment(resources: list[dict[str, Any]], name: str) -> dict[str, Any]:
     return next(
         resource
         for resource in resources
@@ -36,7 +39,7 @@ def deployment(resources: list[dict], name: str) -> dict:
     )
 
 
-def environment(deployment: dict) -> dict[str, str]:
+def environment(deployment: dict[str, Any]) -> dict[str, str]:
     return {
         item["name"]: item["value"]
         for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
@@ -64,9 +67,15 @@ def test_runtime_separates_upload_job_and_worker_privileges() -> None:
     execution = deployment(resources, "document-intelligence-prod-execution-worker")
 
     assert upload["spec"]["template"]["spec"]["serviceAccountName"] == "kora-doc-signer"
-    assert jobs["spec"]["template"]["spec"]["serviceAccountName"] == "kora-doc-result-api"
-    assert dispatch["spec"]["template"]["spec"]["serviceAccountName"] == "kora-doc-scanner"
-    assert execution["spec"]["template"]["spec"]["serviceAccountName"] == "kora-doc-worker"
+    assert (
+        jobs["spec"]["template"]["spec"]["serviceAccountName"] == "kora-doc-result-api"
+    )
+    assert (
+        dispatch["spec"]["template"]["spec"]["serviceAccountName"] == "kora-doc-scanner"
+    )
+    assert (
+        execution["spec"]["template"]["spec"]["serviceAccountName"] == "kora-doc-worker"
+    )
     assert environment(upload)["OCR_API_CAPABILITY"] == "uploads"
     assert environment(jobs)["OCR_API_CAPABILITY"] == "jobs"
     assert "RESULT_BUCKETS" not in environment(upload)
@@ -82,12 +91,28 @@ def test_sandbox_uses_dev_credentials_and_ephemeral_document_buckets() -> None:
     dispatch = deployment(resources, "document-intelligence-sandbox-dispatch-worker")
     execution = deployment(resources, "document-intelligence-sandbox-execution-worker")
 
-    assert upload["spec"]["template"]["spec"]["serviceAccountName"] == "kora-dev-doc-signer"
-    assert jobs["spec"]["template"]["spec"]["serviceAccountName"] == "kora-dev-doc-result-api"
-    assert dispatch["spec"]["template"]["spec"]["serviceAccountName"] == "kora-dev-doc-scanner"
-    assert execution["spec"]["template"]["spec"]["serviceAccountName"] == "kora-dev-doc-worker"
-    assert environment(execution)["TEMPORAL_NAMESPACE"] == "document-intelligence-sandbox"
-    assert environment(upload)["QUARANTINE_BUCKETS"] == "kora=kora-dev-doc-quarantine-in"
+    assert (
+        upload["spec"]["template"]["spec"]["serviceAccountName"]
+        == "kora-dev-doc-signer"
+    )
+    assert (
+        jobs["spec"]["template"]["spec"]["serviceAccountName"]
+        == "kora-dev-doc-result-api"
+    )
+    assert (
+        dispatch["spec"]["template"]["spec"]["serviceAccountName"]
+        == "kora-dev-doc-scanner"
+    )
+    assert (
+        execution["spec"]["template"]["spec"]["serviceAccountName"]
+        == "kora-dev-doc-worker"
+    )
+    assert (
+        environment(execution)["TEMPORAL_NAMESPACE"] == "document-intelligence-sandbox"
+    )
+    assert (
+        environment(upload)["QUARANTINE_BUCKETS"] == "kora=kora-dev-doc-quarantine-in"
+    )
     assert environment(execution)["RESULT_BUCKETS"] == "kora=kora-dev-doc-results-in"
 
 
@@ -112,7 +137,9 @@ def test_execution_capacity_is_bounded_and_survives_one_pod_loss() -> None:
 
 def test_runtime_images_use_in_region_artifact_registry_mirrors() -> None:
     resources = render("sandbox")
-    deployments = [resource for resource in resources if resource["kind"] == "Deployment"]
+    deployments = [
+        resource for resource in resources if resource["kind"] == "Deployment"
+    ]
     images = [
         container["image"]
         for resource in deployments
@@ -123,21 +150,55 @@ def test_runtime_images_use_in_region_artifact_registry_mirrors() -> None:
     ]
 
     assert all(image.startswith("asia-south1-docker.pkg.dev/") for image in images)
-    assert any("/ghcr-remote/tesserix/document-intelligence/ocr-service:" in image for image in images)
+    assert any(
+        "/ghcr-remote/tesserix/document-intelligence/ocr-service:" in image
+        for image in images
+    )
     assert any("/docker-remote/clamav/clamav@sha256:" in image for image in images)
+
+
+def test_execution_image_override_changes_only_the_execution_worker() -> None:
+    image = (
+        "asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/document-intelligence/ocr-service@sha256:"
+        + "a" * 64
+    )
+    baseline = render("sandbox")
+    candidate = render("sandbox", ("--set-string", f"workers.execution.image={image}"))
+    name = "document-intelligence-sandbox-execution-worker"
+    execution = deployment(candidate, name)
+    assert execution["spec"]["template"]["spec"]["containers"][0]["image"] == image
+    expected = deployment(baseline, name)
+    expected["spec"]["template"]["spec"]["containers"][0]["image"] = image
+    assert execution == expected
+    assert [item for item in candidate if item["metadata"]["name"] != name] == [
+        item for item in baseline if item["metadata"]["name"] != name
+    ]
+
+
+@pytest.mark.parametrize(
+    "image", ["example.org/worker:latest", "example.org/worker@sha256:" + "a" * 64]
+)
+def test_execution_image_override_requires_a_digest_from_the_owned_repository(
+    image: str,
+) -> None:
+    with pytest.raises(subprocess.CalledProcessError, match="helm"):
+        render("sandbox", ("--set-string", f"workers.execution.image={image}"))
 
 
 def test_runtime_remains_internal_hardened_and_secret_free() -> None:
     resources = render("prod")
     assert not any(
-        resource["kind"] in {"Ingress", "Gateway", "HTTPRoute"} for resource in resources
+        resource["kind"] in {"Ingress", "Gateway", "HTTPRoute"}
+        for resource in resources
     )
     assert all(
         resource["spec"].get("type", "ClusterIP") == "ClusterIP"
         for resource in resources
         if resource["kind"] == "Service"
     )
-    policies = [resource for resource in resources if resource["kind"] == "NetworkPolicy"]
+    policies = [
+        resource for resource in resources if resource["kind"] == "NetworkPolicy"
+    ]
     assert policies
     assert not any(resource["kind"] == "Secret" for resource in resources)
     for resource in resources:
@@ -155,7 +216,9 @@ def test_runtime_remains_internal_hardened_and_secret_free() -> None:
 
 
 def test_clamd_has_a_writable_runtime_directory_with_a_read_only_root() -> None:
-    dispatch = deployment(render("sandbox"), "document-intelligence-sandbox-dispatch-worker")
+    dispatch = deployment(
+        render("sandbox"), "document-intelligence-sandbox-dispatch-worker"
+    )
     init = next(
         container
         for container in dispatch["spec"]["template"]["spec"]["initContainers"]
@@ -195,7 +258,9 @@ def test_clamd_has_a_writable_runtime_directory_with_a_read_only_root() -> None:
 
 def test_runtime_allows_only_required_dns_and_workload_identity_egress() -> None:
     resources = render("sandbox")
-    policy = next(resource for resource in resources if resource["kind"] == "NetworkPolicy")
+    policy = next(
+        resource for resource in resources if resource["kind"] == "NetworkPolicy"
+    )
     egress = policy["spec"]["egress"]
 
     assert any(
@@ -204,7 +269,11 @@ def test_runtime_allows_only_required_dns_and_workload_identity_egress() -> None
         for rule in egress
     )
     assert any(
-        {target["ipBlock"]["cidr"] for target in rule.get("to", []) if "ipBlock" in target}
+        {
+            target["ipBlock"]["cidr"]
+            for target in rule.get("to", [])
+            if "ipBlock" in target
+        }
         == {"169.254.169.254/32"}
         and {port["port"] for port in rule["ports"]} == {80}
         for rule in egress
@@ -226,7 +295,9 @@ def test_runtime_allows_only_required_dns_and_workload_identity_egress() -> None
         "document-intelligence-sandbox-dispatch-worker",
         "document-intelligence-sandbox-execution-worker",
     }:
-        annotations = deployment(resources, name)["spec"]["template"]["metadata"]["annotations"]
+        annotations = deployment(resources, name)["spec"]["template"]["metadata"][
+            "annotations"
+        ]
         assert annotations["traffic.istio.io/excludeOutboundIPRanges"] == (
             "169.254.169.254/32,169.254.169.252/32"
         )
@@ -234,7 +305,9 @@ def test_runtime_allows_only_required_dns_and_workload_identity_egress() -> None
 
 def test_sandbox_allows_the_devai_test_console_without_exposing_the_api() -> None:
     resources = render("sandbox")
-    policy = next(resource for resource in resources if resource["kind"] == "NetworkPolicy")
+    policy = next(
+        resource for resource in resources if resource["kind"] == "NetworkPolicy"
+    )
 
     assert policy["spec"]["ingress"] == [
         {
@@ -245,7 +318,10 @@ def test_sandbox_allows_the_devai_test_console_without_exposing_the_api() -> Non
                     }
                 }
             ],
-            "ports": [{"port": 8080, "protocol": "TCP"}, {"port": 15008, "protocol": "TCP"}],
+            "ports": [
+                {"port": 8080, "protocol": "TCP"},
+                {"port": 15008, "protocol": "TCP"},
+            ],
         }
     ]
 
