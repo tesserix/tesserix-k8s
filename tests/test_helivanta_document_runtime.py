@@ -109,6 +109,7 @@ def test_login_refuses_activation_without_credential_projection():
             "--set",
             "documentWorker.login=true",
         ],
+        check=False,
         capture_output=True,
         text=True,
     )
@@ -185,6 +186,65 @@ def test_worker_reuses_api_artifact_and_has_only_restricted_credentials():
         env["CLAMAV_ADDRESS"]["value"]
         == "helivanta-clamav.helivanta.svc.cluster.local:3310"
     )
+
+
+def test_processing_runtime_can_be_readied_before_accepting_uploads():
+    resources = render("charts/apps/helivanta-api", "documents.enabled=true")
+    resource(resources, "Deployment", "helivanta-document-worker")
+    resource(resources, "Deployment", "helivanta-clamav")
+    api = resource(resources, "Deployment", "helivanta-api")
+    env = api["spec"]["template"]["spec"]["containers"][0]["env"]
+    assert not any(item["name"].startswith("DOCUMENT_") for item in env)
+
+    active = render(
+        "charts/apps/helivanta-api",
+        "documents.enabled=true",
+        "documents.acceptUploads=true",
+    )
+    api = resource(active, "Deployment", "helivanta-api")
+    env = {
+        item["name"]: item.get("value")
+        for item in api["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    assert (
+        env["DOCUMENT_QUARANTINE_BUCKET"]
+        == "tesseracthub-480811-helivanta-prod-quarantine"
+    )
+    assert (
+        env["DOCUMENT_RELEASED_BUCKET"] == "tesseracthub-480811-helivanta-prod-released"
+    )
+    assert env["TEMPORAL_NAMESPACE"] == "helivanta-documents-prod"
+
+
+def test_upload_acceptance_requires_the_processing_runtime():
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "helivanta-api",
+            str(ROOT / "charts/apps/helivanta-api"),
+            "--set",
+            "documents.acceptUploads=true",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "upload acceptance requires document processing" in result.stderr
+
+
+def test_production_activation_uses_the_dedicated_worker_identity():
+    applications = ROOT / "argocd/prod/apps/helivanta"
+    api = yaml.safe_load((applications / "helivanta-api.yaml").read_text())
+    settings = api["spec"]["source"]["helm"].get("valuesObject", {})
+    assert settings.get("documents", {}).get("enabled") is True
+    assert isinstance(settings["documents"]["acceptUploads"], bool)
+    postgres = yaml.safe_load((applications / "helivanta-postgres.yaml").read_text())
+    settings = postgres["spec"]["source"]["helm"]["valuesObject"]
+    assert settings["instances"] == 2
+    assert settings["documentWorker"]["credentials"]["enabled"] is True
+    assert settings["documentWorker"]["login"] is True
 
 
 def test_scanner_is_private_bounded_nonroot_and_definition_storage_is_disposable():
