@@ -1,0 +1,23 @@
+# The shell calls the API over mesh mTLS, so its sidecar needs xDS and certificates from istiod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "helivanta-shell.fullname" . }}-istiod
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "helivanta-shell.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "helivanta-shell.name" . }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - {protocol: TCP, port: 15012}
