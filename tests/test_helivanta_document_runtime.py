@@ -147,7 +147,9 @@ def test_worker_reuses_api_artifact_and_has_only_restricted_credentials():
     assert worker["image"] == api["spec"]["containers"][0]["image"]
     assert worker["command"] == ["/app/document-worker"]
     assert pod["spec"]["serviceAccountName"] == "helivanta-document-worker"
-    assert pod["metadata"]["annotations"]["sidecar.istio.io/inject"] == "true"
+    for name in ["helivanta-api", "helivanta-document-worker", "helivanta-clamav"]:
+        runtime = resource(resources, "Deployment", name)["spec"]["template"]
+        assert runtime["metadata"]["labels"]["sidecar.istio.io/inject"] == "true"
     assert pod["spec"]["terminationGracePeriodSeconds"] >= 120
     assert deployment["spec"]["replicas"] == 2
     env = {item["name"]: item for item in worker["env"]}

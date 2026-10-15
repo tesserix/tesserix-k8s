@@ -25,7 +25,6 @@ spec:
       annotations:
         {{- toYaml .Values.podAnnotations | nindent 8 }}
         {{- if .Values.documents.enabled }}
-        sidecar.istio.io/inject: "true"
         proxy.istio.io/config: '{"holdApplicationUntilProxyStarts":true}'
         sidecar.istio.io/proxyCPU: 50m
         sidecar.istio.io/proxyCPULimit: 250m
@@ -33,6 +32,9 @@ spec:
         sidecar.istio.io/proxyMemoryLimit: 128Mi
         {{- end }}
       labels:
+        {{- if .Values.documents.enabled }}
+        sidecar.istio.io/inject: "true"
+        {{- end }}
         {{- include "helivanta-api.selectorLabels" . | nindent 8 }}
         {{- include "helivanta-api.labels" . | nindent 8 }}
     spec:
