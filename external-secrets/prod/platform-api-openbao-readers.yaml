@@ -1,0 +1,27 @@
+# platform-api's OpenBao reader (tesserix-home#654). Its own service account
+# and role rather than the shared tesserix one, so the GitHub App key that can
+# publish or archive any org repository is readable by exactly one store.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-api-production-reader
+  namespace: tesserix
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-platform-api-production
+  namespace: tesserix
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-platform-api-tesserix-production
+          serviceAccountRef:
+            name: platform-api-production-reader

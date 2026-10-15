@@ -318,6 +318,14 @@ bootstrap:
         path "kv/data/console/app/console-stripe-restricted-read-key-live" { capabilities = ["read"] }
         path "kv/data/console/app/console-stripe-write-key-live" { capabilities = ["read"] }
         path "kv/data/console/app/console-stripe-write-key-test" { capabilities = ["read"] }
+    # platform-api's repos module (tesserix-home#654): the org-wide GitHub App
+    # `tesserix-console-repos`. Exact paths, read only — NOT the secret-service
+    # App, which is scoped to tesserix-k8s and must stay that way.
+    - name: read-platform-api-tesserix-production
+      hcl: |
+        path "kv/data/platform-api/app/platform-api-repos-github-app-id" { capabilities = ["read"] }
+        path "kv/data/platform-api/app/platform-api-repos-github-app-installation-id" { capabilities = ["read"] }
+        path "kv/data/platform-api/app/platform-api-repos-github-app-private-key" { capabilities = ["read"] }
     - name: read-tesserix-tesserix-production
       hcl: |
         path "kv/data/tesserix/app/tesserix-internal-service-key" { capabilities = ["read"] }
@@ -913,6 +921,11 @@ bootstrap:
       serviceAccounts: ["console-production-reader"]
       namespaces: ["tesserix"]
       policies: ["read-console-tesserix-production"]
+      ttl: "1h"
+    - name: read-platform-api-tesserix-production
+      serviceAccounts: ["platform-api-production-reader"]
+      namespaces: ["tesserix"]
+      policies: ["read-platform-api-tesserix-production"]
       ttl: "1h"
     - name: read-tesserix-tesserix-production
       serviceAccounts: ["tesserix-production-reader"]
