@@ -34,6 +34,55 @@ def resource(resources, kind, name):
     )
 
 
+def test_document_proxies_can_reach_only_the_istiod_control_port():
+    policy = resource(
+        render("charts/thirdparty/istio-config"),
+        "NetworkPolicy",
+        "allow-helivanta-documents-to-istiod",
+    )
+    assert policy["metadata"]["namespace"] == "istio-system"
+    assert policy["spec"] == {
+        "podSelector": {"matchLabels": {"app": "istiod"}},
+        "policyTypes": ["Ingress"],
+        "ingress": [
+            {
+                "from": [
+                    {
+                        "namespaceSelector": {
+                            "matchLabels": {"kubernetes.io/metadata.name": "helivanta"}
+                        },
+                        "podSelector": {
+                            "matchExpressions": [
+                                {
+                                    "key": "app.kubernetes.io/name",
+                                    "operator": "In",
+                                    "values": [
+                                        "helivanta-api",
+                                        "helivanta-document-worker",
+                                        "helivanta-clamav",
+                                    ],
+                                }
+                            ]
+                        },
+                    }
+                ],
+                "ports": [{"protocol": "TCP", "port": 15012}],
+            }
+        ],
+    }
+
+
+def test_disabled_mesh_network_policies_omit_document_istiod_access():
+    resources = render(
+        "charts/thirdparty/istio-config", "features.networkPolicies.enabled=false"
+    )
+    assert not any(
+        item["kind"] == "NetworkPolicy"
+        and item["metadata"]["name"] == "allow-helivanta-documents-to-istiod"
+        for item in resources
+    )
+
+
 def test_worker_credential_has_an_exact_namespace_bound_reader():
     config = resource(
         render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap"

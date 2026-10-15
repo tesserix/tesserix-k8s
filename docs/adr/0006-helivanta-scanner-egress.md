@@ -25,6 +25,13 @@ port 443 and a scanner-selected Sidecar with `REGISTRY_ONLY` outbound traffic.
 Its egress registry contains only that mirror. Keep the existing NetworkPolicy,
 mesh authentication and workload authorization. No other workload's egress changes.
 
+The control plane also needs the reciprocal ingress permission. A dedicated
+Istiod NetworkPolicy permits only TCP 15012 from the three named Helivanta
+document-processing workload labels in namespace `helivanta`. It grants no
+webhook, debug or cross-product application access. Live rollout exposed this
+missing ingress half as certificate-signing timeouts; injected proxies retain
+their startup hold until the authenticated mesh connection is ready.
+
 This is a layered hostname restriction, not content inspection of encrypted
 outbound traffic or a guarantee against a compromised privileged network stack.
 The container remains non-root without network administration capabilities.
