@@ -29,9 +29,16 @@ Required ordering before accepting confidential uploads:
    [apply evidence](https://github.com/tesserix/tesserix-k8s/pull/1414#issuecomment-6174222813).
    GCP inspection verifies all four regional buckets have enforced public-access
    prevention, uniform access, CMEK, versioning and seven-day soft deletion.
-   GCS also seeded legacy project grants; the follow-up removes these through
-   16 authoritative empty role bindings. That correction needs its own approved
-   plan. It preserves workload grants and does not alter inherited project IAM.
+   GCS also seeded legacy project grants. Approved follow-up
+   [PR #1415](https://github.com/tesserix/tesserix-k8s/pull/1415) removed the sixteen
+   bindings through Atlantis and merged at `f01b19c49c4638ecddc949d3d39b2880582da2f9`:
+   [apply evidence](https://github.com/tesserix/tesserix-k8s/pull/1415#issuecomment-6180513365).
+   The authorized Cloud Asset IAM view confirms the exact workload get/create
+   grants remain and public/legacy bucket grants are absent. Direct bucket-policy
+   reads correctly became unavailable to the active account; no access was
+   regranted. Private recovery/evidence captures are
+   `/tmp/helivanta-bucket-iam-{before,after}-hardening-20261015.json`.
+   This preserves workload grants and does not alter inherited project IAM.
 3. Prepare a separate OpenBao worker credential and namespace-bound reader,
    its CNPG basic-auth secret and reviewed LOGIN activation. Neither the API
    owner/system DSNs nor unrelated tenant credentials belong in the worker.
@@ -75,6 +82,33 @@ Credential projection and LOGIN are separate disabled PostgreSQL chart switches:
 credential projection fails rendering. Provision a cryptographically random,
 URI-safe credential through the approved secret-service writer, using the
 `password` property. Never print it or put it in Git.
+
+The preparatory applications reconciled Synced/Healthy at `f01b19c`.
+`documentWorker.credentials.enabled`, `documentWorker.login` and
+`documents.enabled` remain false. The Kubernetes service account and bounded
+OpenBao reader exist; no worker credential was provisioned, no LOGIN enabled,
+no production migration 0008 run and no application artifact promoted.
+
+The application draft now includes generated Go/TypeScript contracts, the bounded
+record-choice API, tenant-pinned cancellable queries and the staff-file UI.
+Local Go1.27.2 race/coverage, web checks and actual disposable API/browser checks
+passed at application commit `5b0e1915056e128e6177823dc4d4e0b309ebf2af`.
+The browser used synthetic fixtures in a separate local database/store/JetStream
+server because the existing CNPG verification roles expired on 14 October.
+Their expiry renewal awaits specific approval. These checks are not production
+workload-identity or CNPG acceptance; see the
+[application evidence](https://github.com/tesserix/helivanta/blob/5b0e1915056e128e6177823dc4d4e0b309ebf2af/docs/private-staff-files-verification-2026-10-15.md).
+
+Read-only project IAM and ancestry inspection on 15 October found no
+`storage.googleapis.com` or `allServices` Data Access audit configuration and no
+folder/organization ancestor from which one can be inherited. Regional logging
+bucket discovery returned no buckets; global `_Default` retains thirty days and
+`_Required` four hundred days, neither using CMEK. Storage Data Access evidence
+is therefore missing, not merely unverified. A reviewed logging configuration,
+retention/access policy and attributable synthetic access test are required
+before confidential uploads. Enabling project-level Storage audit logging can
+affect every bucket and logging cost; it is a separate named change, not part of
+the approved bucket-grant removals. No project logging policy was changed.
 
 Existing namespace-wide ingress excludes scanner and worker, so additive
 NetworkPolicies cannot bypass scanner isolation. Only the worker can call
