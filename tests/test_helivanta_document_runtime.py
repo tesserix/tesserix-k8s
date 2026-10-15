@@ -83,6 +83,13 @@ def test_disabled_mesh_network_policies_omit_document_istiod_access():
     )
 
 
+def test_nats_server_first_service_explicitly_uses_tcp():
+    service = resource(render("charts/apps/nats"), "Service", "helivanta-nats")
+    client = next(port for port in service["spec"]["ports"] if port["port"] == 4222)
+    assert client["appProtocol"] == "tcp"
+    assert client["targetPort"] == "client"
+
+
 def test_worker_credential_has_an_exact_namespace_bound_reader():
     config = resource(
         render("charts/thirdparty/openbao"), "ConfigMap", "openbao-bootstrap"
