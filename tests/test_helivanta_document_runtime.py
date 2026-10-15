@@ -509,3 +509,30 @@ def test_istiod_admits_only_sidecar_pods_from_sidecar_namespaces():
             "ports": [{"protocol": "TCP", "port": 15012}],
         }
     ]
+
+
+def test_meshed_api_admits_only_the_gateway_and_shell():
+    assert not [i for i in render("charts/apps/helivanta-api") if i["kind"] == "AuthorizationPolicy"]
+    resources = render(
+        "charts/apps/helivanta-api", "documents.enabled=true", "documents.acceptUploads=true"
+    )
+    policy = resource(resources, "AuthorizationPolicy", "helivanta-api")["spec"]
+    pod = resource(resources, "Deployment", "helivanta-api")["spec"]["template"]["metadata"]
+    assert pod["labels"]["sidecar.istio.io/inject"] == "true"
+    assert policy["selector"]["matchLabels"].items() <= pod["labels"].items()
+    assert policy["action"] == "ALLOW"
+    assert policy["rules"] == [
+        {
+            "from": [
+                {
+                    "source": {
+                        "principals": [
+                            "cluster.local/ns/istio-ingress/sa/istio-ingressgateway",
+                            "cluster.local/ns/helivanta/sa/helivanta-shell",
+                        ]
+                    }
+                }
+            ],
+            "to": [{"operation": {"ports": ["8080"]}}],
+        }
+    ]

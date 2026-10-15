@@ -1,0 +1,25 @@
+{{- if include "helivanta-api.meshed" . }}
+# istio-system/deny-all-default denies every meshed workload; admit only the public gateway and the shell's server calls.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "helivanta-api.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "helivanta-api.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "helivanta-api.selectorLabels" . | nindent 6 }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              {{- range .Values.mesh.callers }}
+              - {{ . | quote }}
+              {{- end }}
+      to:
+        - operation:
+            ports: [{{ .Values.service.port | quote }}]
+{{- end }}
