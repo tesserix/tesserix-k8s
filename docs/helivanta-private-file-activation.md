@@ -2,6 +2,27 @@
 
 Tracks [helivanta #1105](https://github.com/tesserix/helivanta/issues/1105).
 
+## Bounded audit provisioning permission
+
+The approved apply created the audit key and Logging key grant, then stopped at
+`logging.buckets.create` (403). Those two resources remain in the isolated
+Terraform state. No deletion or replacement is required.
+
+The proposed fix grants the existing
+`tesseract-prod-atlantis@tesseracthub-480811.iam.gserviceaccount.com` deployment
+identity a dedicated six-permission role: `logging.buckets.create/get/update`
+and `logging.sinks.create/get/update`. These are project-scoped configuration
+permissions, so they can also update other bucket or sink configurations in
+the project; the grant is not restricted to the new resource names. It adds no
+log-entry reading, object-byte access, log deletion or configuration deletion
+permissions. Workload identities and secret readers stay unchanged.
+
+This new IAM capability requires named user approval before apply. Review the
+refreshed actual plan: expect the new role and binding plus the three remaining
+Logging resources, with no existing-resource changes or destroys. Mock tests
+assert the exact permissions and sole recipient; the isolated resource inventory
+continues rejecting additions outside its reviewed list.
+
 The user authorized the merged application rollout and additive migrations on
 15 October 2026. Apply the combined roster/document API and UI through the
 existing image-build → deploy branch → Kargo → Argo path. Keep the structurally

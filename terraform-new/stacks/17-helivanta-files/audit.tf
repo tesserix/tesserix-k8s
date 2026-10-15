@@ -3,6 +3,23 @@ locals {
   helivanta_logging_identity = "service-${data.google_project.project.number}@gcp-sa-logging.iam.gserviceaccount.com"
 }
 
+resource "google_project_iam_custom_role" "helivanta_audit_provisioner" {
+  project     = var.project_id
+  role_id     = "helivantaFileAuditProvisioner"
+  title       = "Helivanta file audit provisioner"
+  description = "Provision the private-file audit bucket and sink without log payload access or deletion permissions."
+  permissions = [
+    "logging.buckets.create", "logging.buckets.get", "logging.buckets.update",
+    "logging.sinks.create", "logging.sinks.get", "logging.sinks.update"
+  ]
+}
+
+resource "google_project_iam_member" "helivanta_audit_provisioner" {
+  project = var.project_id
+  role    = google_project_iam_custom_role.helivanta_audit_provisioner.name
+  member  = "serviceAccount:tesseract-prod-atlantis@${var.project_id}.iam.gserviceaccount.com"
+}
+
 resource "google_kms_crypto_key" "helivanta_audit" {
   name            = "helivanta-file-audit"
   key_ring        = local.helivanta_file_keyring
@@ -33,7 +50,10 @@ resource "google_logging_project_bucket_config" "helivanta_files" {
   lifecycle {
     prevent_destroy = true
   }
-  depends_on = [google_kms_crypto_key_iam_member.helivanta_audit]
+  depends_on = [
+    google_kms_crypto_key_iam_member.helivanta_audit,
+    google_project_iam_member.helivanta_audit_provisioner
+  ]
 }
 
 resource "google_logging_project_sink" "helivanta_files" {

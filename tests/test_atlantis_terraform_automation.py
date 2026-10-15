@@ -157,6 +157,8 @@ class TerraformGraphTests(unittest.TestCase):
                 ("google_logging_project_bucket_config", "helivanta_files"),
                 ("google_logging_project_sink", "helivanta_files"),
                 ("google_project_iam_audit_config", "helivanta_storage"),
+                ("google_project_iam_custom_role", "helivanta_audit_provisioner"),
+                ("google_project_iam_member", "helivanta_audit_provisioner"),
             },
             resources,
         )
