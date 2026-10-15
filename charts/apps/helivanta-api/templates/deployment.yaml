@@ -1,3 +1,6 @@
+{{- if and .Values.documents.acceptUploads (not .Values.documents.enabled) }}
+{{- fail "upload acceptance requires document processing" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -114,7 +117,7 @@ spec:
               value: "postgres://$(SYSTEM_DB_USER):$(SYSTEM_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
             - name: NATS_URL
               value: {{ .Values.nats.url | quote }}
-            {{- if .Values.documents.enabled }}
+            {{- if and .Values.documents.enabled .Values.documents.acceptUploads }}
             - name: DOCUMENT_QUARANTINE_BUCKET
               value: {{ required "documents.quarantineBucket is required" .Values.documents.quarantineBucket | quote }}
             - name: DOCUMENT_RELEASED_BUCKET

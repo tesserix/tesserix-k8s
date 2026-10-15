@@ -2,6 +2,15 @@
 
 Owner: Helivanta. Scope: private staff documents, story #1105.
 
+Activation is staged. `documents.enabled` provisions the processing runtime;
+`documents.acceptUploads` separately configures the API to accept files. First
+project the dedicated OpenBao credential and reconcile CNPG LOGIN. Start workers
+and the scanner with acceptance false, then verify their actual database, GCS,
+Temporal, scanner definitions and audit behavior. Enable acceptance through the
+owning production values only after these checks pass. Enabling acceptance
+without the processing runtime fails Helm rendering. Disabling acceptance is
+the immediate GitOps containment action; it preserves metadata and objects.
+
 ```mermaid
 flowchart LR
   UI[Authorized staff-file action] --> API[API: tenant + hospital + file authorization]
