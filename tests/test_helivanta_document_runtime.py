@@ -93,6 +93,7 @@ def test_document_proxies_can_reach_only_the_istiod_control_port():
                                     "values": [
                                         "helivanta-api",
                                         "helivanta-document-worker",
+                                        "helivanta-supply-evidence-worker",
                                         "helivanta-clamav",
                                     ],
                                 }
@@ -453,7 +454,11 @@ def test_existing_broad_ingress_cannot_bypass_private_scanner_policy():
         assert {
             "key": "app.kubernetes.io/name",
             "operator": "NotIn",
-            "values": ["helivanta-clamav", "helivanta-document-worker"],
+            "values": [
+                "helivanta-clamav",
+                "helivanta-document-worker",
+                "helivanta-supply-evidence-worker",
+            ],
         } in selector["matchExpressions"]
     scanner = resource(
         render("charts/apps/helivanta-api", "documents.enabled=true"),
