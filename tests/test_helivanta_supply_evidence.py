@@ -1,5 +1,5 @@
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import yaml
 
@@ -148,6 +148,45 @@ def test_supply_credential_reader_is_exact_and_clinical_worker_is_preserved() ->
     auth = store["spec"]["provider"]["vault"]["auth"]["kubernetes"]
     assert auth["role"] == "read-helivanta-supply-evidence-worker-production"
     assert auth["serviceAccountRef"]["name"] == "helivanta-supply-evidence-worker"
+
+
+def test_production_supply_login_uses_the_separate_secret_without_inheritance() -> None:
+    application = yaml.safe_load(
+        (ROOT / "argocd/prod/apps/helivanta/helivanta-postgres.yaml").read_text()
+    )
+    resources = list(
+        yaml.safe_load_all(
+            subprocess.check_output(
+                [
+                    "helm",
+                    "template",
+                    "production-test",
+                    str(ROOT / "charts/apps/helivanta-postgres"),
+                    "-n",
+                    "helivanta",
+                    "-f",
+                    "-",
+                ],
+                input=yaml.safe_dump(
+                    application["spec"]["source"]["helm"]["valuesObject"]
+                ),
+                text=True,
+            )
+        )
+    )
+    cluster = resource(resources, "Cluster", "helivanta-postgres")
+    roles = {role["name"]: role for role in cluster["spec"]["managed"]["roles"]}
+    role = roles["helivanta_supply_evidence_worker"]
+    assert role["login"] is True
+    assert role["inherit"] is False
+    assert (
+        role["passwordSecret"]["name"] == "helivanta-supply-evidence-worker-credentials"
+    )
+    assert (
+        roles["helivanta_document_worker"]["passwordSecret"]["name"]
+        == "helivanta-document-worker-credentials"
+    )
+    assert cluster["spec"]["instances"] == 2
 
 
 def test_supply_network_admits_only_the_separate_worker_and_required_ports() -> None:
