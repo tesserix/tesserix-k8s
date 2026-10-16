@@ -12,24 +12,67 @@ Infrastructure PRs #1429, #1430 and #1431 are merged. The organisation-only GCS
 bindings were applied through Atlantis. OpenBao credential projection is Ready;
 the separate CNPG role has LOGIN, NOINHERIT, no elevated attributes and no
 memberships. Both PostgreSQL instances and both Supply workers are Ready.
-Application PR tesserix/helivanta#1165 and migration `0003_supply` are deployed on
-image commit `faa2c6ff36e9a3014d84b395b03553f67b62081b`.
+No credential value was read, printed or committed during activation.
 
-Synthetic production UI acceptance exposed a shared outbox policy referencing
-`workforce_documents`: PostgreSQL checks that subquery's permissions even when
-its CASE branch is not selected. The Supply worker correctly lacks HR access,
-so completion cannot commit and the evidence stays unavailable. Do not grant
-clinical permissions to resolve this error.
+Application PR tesserix/helivanta#1166 is merged and deployed at
+`5e73de6475d68be315c9254334a6cef576454709`. After explicit approval, the normal
+Argo migration hook applied `0018_workforce_worker_outbox_scope`. The HR outbox
+predicate is now restricted to the HR role; the Supply worker still has no
+SELECT privilege on HR document identifiers or filenames. Both workers retain
+their restrictive outbox boundaries. The release also preserves initial upload
+chronology under clock correction without changing timestamps on replay.
 
-Repair PR tesserix/helivanta#1166 appends
-`0018_workforce_worker_outbox_scope`, moving the existing HR checks into a
-role-specific restrictive policy while retaining both workers' boundaries.
-That new production migration and rollout await explicit approval. Verify the
-full registry regression, then live synthetic scan, download, replay and
-revocation after the approved release. Download/revocation acceptance and wider
-licence verification are not complete. If bounded workflow retries have ended,
-replay the synthetic workflow through the approved Temporal recovery procedure;
-do not update lifecycle rows or provenance by hand.
+Main CI [38855558825](https://github.com/tesserix/helivanta/actions/runs/38855558825)
+and image workflow
+[38855558429](https://github.com/tesserix/helivanta/actions/runs/38855558429)
+succeeded. Kargo promotion `prod.01m51jwpjb1f6ppcady5wy5qc5.66bb7eb` succeeded.
+API, shell, HR document workers and Supply evidence workers each have two ready,
+updated replicas on the exact release, with zero restarts. Observed digests:
+
+- API and both worker types: `sha256:6987a22be5b702494d81b24b5e22112d39eb588509a27dc1b31506e5e981aef0`.
+- Shell: `sha256:00c7b2e402df1e8f1537252759e95c830e99b1101fc1d579e12a884de7fd4de6`.
+
+All Helivanta Argo applications are Synced/Healthy. CNPG has two healthy
+instances. Synthetic signed-in YES HOSPITAL acceptance on 2026-10-16 verified:
+
+- The formerly failed synthetic scan completed after a narrowly scoped Temporal
+  reset at its first workflow task. No lifecycle row, provenance, permission or
+  object was repaired by hand.
+- The UI showed Ready; a new browser download was 179 bytes and matched the
+  synthetic source SHA-256
+  `a4d936d98cd9b0e4ed3c021b0d68e37dd9172c76d22329c013c104fd089b9059`.
+  A fresh filesystem baseline excluded historical downloads from this result.
+- Replaying the completed workflow retained one evidence row, one published
+  available event, the same object generation and scan/upload timestamps.
+- A new image uploaded through the UI reached Ready through the normal
+  NATS/Temporal/ClamAV path, without workflow recovery.
+- Both synthetic records were revoked through the UI. A second tab retaining
+  its stale Download button received a not-found error after revocation; no
+  download file appeared. Retained rows and audit history were preserved.
+  Each record has one published available event and one published revoked event.
+- ClamAV reported engine 1.5.4 and definitions 28154 dated
+  `2026-10-15T06:24:22Z`, younger than 24 hours during these scans. Unsupported
+  text evidence was rejected without another record during initial acceptance.
+
+Live acceptance proves the synthetic same-tenant lifecycle and stale-client
+revocation. Cross-tenant and denied clinical/bucket operations are covered by
+local real-database tests and reviewed IAM conditions; they are not claimed as
+live negative probes using a second production tenant or GCS identity.
+Both API replicas and both HR/Supply worker pairs had no ERROR, panic or
+SQLSTATE records during post-release inspection. JetStream's
+`supply-evidence-scan` and `workforce-document-scan` consumers each had zero
+pending, unacknowledged or redelivered messages.
+
+Monitoring remains an explicit operational gap: the Supply PrometheusRule exists,
+but production Prometheus and Alertmanager StatefulSets have desired replicas
+zero and their services have no endpoints. Alert evaluation and delivery were
+therefore not exercised. Track this under application metrics #606 and the
+platform monitoring issue tesserix/tesserix-k8s#710; restoring monitoring needs
+its own reviewed GitOps change and rollout approval.
+
+Licence verification, country-policy approval, trading approval and wider B2B
+acceptance remain open under #1135, #1133 and parent #979. A clean image never
+constitutes a verified licence or permission to trade.
 
 ## Approved release sequence
 
