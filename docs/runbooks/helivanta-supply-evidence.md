@@ -3,8 +3,33 @@
 Story: tesserix/helivanta#1135; epic: tesserix/helivanta#1133.
 Application implementation: `feat/1135-licence-evidence`.
 
-Prepared changes are disabled by default. No credential has been created and no
-Supply worker or application migration has been activated in production.
+Chart defaults remain disabled; production activation is explicit through the
+owning Application values.
+
+## Production status: 2026-10-16
+
+Infrastructure PRs #1429, #1430 and #1431 are merged. The organisation-only GCS
+bindings were applied through Atlantis. OpenBao credential projection is Ready;
+the separate CNPG role has LOGIN, NOINHERIT, no elevated attributes and no
+memberships. Both PostgreSQL instances and both Supply workers are Ready.
+Application PR tesserix/helivanta#1165 and migration `0003_supply` are deployed on
+image commit `faa2c6ff36e9a3014d84b395b03553f67b62081b`.
+
+Synthetic production UI acceptance exposed a shared outbox policy referencing
+`workforce_documents`: PostgreSQL checks that subquery's permissions even when
+its CASE branch is not selected. The Supply worker correctly lacks HR access,
+so completion cannot commit and the evidence stays unavailable. Do not grant
+clinical permissions to resolve this error.
+
+Repair PR tesserix/helivanta#1166 appends
+`0018_workforce_worker_outbox_scope`, moving the existing HR checks into a
+role-specific restrictive policy while retaining both workers' boundaries.
+That new production migration and rollout await explicit approval. Verify the
+full registry regression, then live synthetic scan, download, replay and
+revocation after the approved release. Download/revocation acceptance and wider
+licence verification are not complete. If bounded workflow retries have ended,
+replay the synthetic workflow through the approved Temporal recovery procedure;
+do not update lifecycle rows or provenance by hand.
 
 ## Approved release sequence
 
