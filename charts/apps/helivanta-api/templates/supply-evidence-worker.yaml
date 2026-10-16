@@ -1,0 +1,115 @@
+{{- if .Values.supplyEvidence.enabled }}
+{{- if not .Values.documents.enabled }}
+{{- fail "Supply evidence requires the private storage and scanner pipeline" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helivanta-supply-evidence-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: helivanta-supply-evidence-worker
+    app.kubernetes.io/part-of: helivanta
+spec:
+  replicas: {{ .Values.supplyEvidence.worker.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helivanta-supply-evidence-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  template:
+    metadata:
+      labels:
+        sidecar.istio.io/inject: "true"
+        app.kubernetes.io/name: helivanta-supply-evidence-worker
+        app.kubernetes.io/part-of: helivanta
+      annotations:
+        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts":true}'
+        sidecar.istio.io/proxyCPU: 50m
+        sidecar.istio.io/proxyCPULimit: 250m
+        sidecar.istio.io/proxyMemory: 64Mi
+        sidecar.istio.io/proxyMemoryLimit: 128Mi
+    spec:
+      serviceAccountName: helivanta-supply-evidence-worker
+      automountServiceAccountToken: true
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: helivanta-supply-evidence-worker
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [/app/supply-evidence-worker]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - {name: HELIVANTA_ENV, value: production}
+            - {name: PORT, value: "8080"}
+            - {name: LOG_LEVEL, value: info}
+            - name: WORKER_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.supplyEvidence.worker.secretName }}
+                  key: username
+            - name: WORKER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.supplyEvidence.worker.secretName }}
+                  key: password
+            - name: SUPPLY_EVIDENCE_WORKER_DATABASE_URL
+              value: "postgres://$(WORKER_DB_USER):$(WORKER_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode={{ .Values.database.sslMode }}"
+            - name: DOCUMENT_QUARANTINE_BUCKET
+              value: {{ .Values.documents.quarantineBucket | quote }}
+            - name: DOCUMENT_RELEASED_BUCKET
+              value: {{ .Values.documents.releasedBucket | quote }}
+            - name: TEMPORAL_ADDRESS
+              value: {{ .Values.documents.temporalAddress | quote }}
+            - name: TEMPORAL_NAMESPACE
+              value: {{ .Values.documents.temporalNamespace | quote }}
+            - name: CLAMAV_ADDRESS
+              value: helivanta-clamav.{{ .Release.Namespace }}.svc.cluster.local:3310
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            timeoutSeconds: 6
+            periodSeconds: 10
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            timeoutSeconds: 3
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.documents.worker.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: helivanta-supply-evidence-worker
+  namespace: {{ .Release.Namespace }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helivanta-supply-evidence-worker
+{{- end }}
