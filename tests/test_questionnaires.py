@@ -54,6 +54,15 @@ class QuestionnaireContracts(unittest.TestCase):
         for reader in readers:
             self.assertEqual(reader['spec']['refreshInterval'],'1m')
 
+    def test_credential_changes_reach_database_roles_and_consumers(self):
+        docs=render('charts/apps/tesserix-postgres','--set','questionnaires.enabled=true')
+        for reader in (d for d in docs if d['kind']=='ExternalSecret'):
+            self.assertEqual(reader['spec']['target']['template']['metadata']['labels']['cnpg.io/reload'],'true')
+        for chart,role in [('company','writer'),('console','reader')]:
+            docs=render(f'charts/apps/{chart}','--set','questionnaires.enabled=true')
+            deployment=next(d for d in docs if d['kind']=='Deployment')
+            self.assertEqual(deployment['metadata']['annotations']['secret.reloader.stakater.com/reload'],f'questionnaires-{role}')
+
     def test_disabled_feature_adds_no_database_or_secret_seed(self):
         docs=render('charts/apps/tesserix-postgres')
         self.assertFalse(any(d['kind'] in ['Database','Job','ExternalSecret'] for d in docs))

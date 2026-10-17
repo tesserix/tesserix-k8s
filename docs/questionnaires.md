@@ -95,3 +95,12 @@ A failed early schema run before managed roles exist is safe: the transaction ro
 Verify a later successful run, both ESO Ready conditions and reconciled CNPG roles before
 publishing the forms. A refresh annotation can request immediate ESO reconciliation
 without changing or rotating the stored credential.
+
+ESO-generated database credentials carry `cnpg.io/reload: "true"`, matching the
+existing CNPG secret-watch convention. This is required for the database controller
+to observe initial creation and later approved credential updates. The existing Reloader
+watches the exact writer secret for company and reader secret for console, so consumers
+refresh their environment and connection pools after a change. No rotation is performed
+by bootstrap; its CAS=0 writes preserve existing values. An approved future rotation
+must verify the CNPG role update and both application rollouts before retiring recovery
+material. Do not assume overlapping database passwords or a zero-disruption rotation.
