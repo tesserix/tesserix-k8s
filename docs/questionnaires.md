@@ -109,3 +109,31 @@ The company and console Argo Applications ignore and preserve only their exact
 Reloader checksum environment variable (`STAKATER_QUESTIONNAIRES_WRITER_SECRET` and
 `STAKATER_QUESTIONNAIRES_READER_SECRET`). Image tags and every other environment value
 remain reconciled normally; this avoids a self-heal loop after a credential reload.
+
+## Regional image cache and workload identity
+
+Questionnaire runtime and support images pull from
+`asia-south1-docker.pkg.dev/tesseracthub-480811`, in the GKE region. Existing
+`ghcr-remote` and `docker-remote` repositories cache the upstream manifests and
+layers. Company/console retain Kargo's immutable main-commit tags. The seed,
+schema client, uptime probe, database autoheal tool, CNPG operator and Tesserix
+PostgreSQL server use regional mirrors and pinned digests. Database and operator
+digests were compared to the running images before changing their registry path;
+their versions are 16.4 and 1.30.0 respectively. No container is manually built or pushed.
+The first cache fill may contact the upstream registry; Kubernetes pulls from GAR.
+
+The seed Job name includes its image and script checksum so an image-source change
+creates a new immutable Job. Its CAS=0 operation preserves existing credentials.
+The database image-source change uses CNPG's managed rolling update across two
+instances. The shared CNPG operator already has in-place manager updates enabled.
+Capture the live image/health inventory before this rollout and verify all clusters
+retain their ready instances afterward. Completed historical Jobs can still display
+old image strings; check current controller templates and active pods for pull sources.
+
+Company's production pod alone opts into Istio ambient mode. This supplies the
+existing `cluster.local/ns/tesserix/sa/company` identity already admitted by Mark8ly.
+It is needed because the source namespace is outside the mesh and Mark8ly enforces
+authenticated namespace/principal admission. No Mark8ly authorization exception or
+broader anonymous service access is introduced. Verify the country catalog and
+address endpoint from a running company pod, and anonymous lookup through the public
+BFF. Keep manual completion available during provider or mesh outages.
