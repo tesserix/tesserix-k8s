@@ -1,34 +1,46 @@
-# `onboarding-service` — the platform onboarding API and console
+# Identity provisioning API and platform console
 
-> Application credentials belong in OpenBao with product-prefixed identifiers.
-> GCP Secret Manager is reserved for critical platform/bootstrap/recovery
-> credentials. See [the policy](application-secret-policy.md).
->
-> Implementation status (2026-09-27): product registration currently stores
-> product metadata; the provisioning sequence below is the target design, not
-> evidence of automated credential creation. Generated access manifests still
-> require GitOps review and credential staging. Onboarding-service PR #7 updates
-> those manifests to OpenBao; deployment remains pending.
+The deployed UI is [Identity onboarding](https://console.tesserix.app/platform/provisioning)
+in `tesserix/tesserix-home/apps/console`. Product registration, tenant onboarding,
+Helivanta adoption/resume, organization configuration and identity audit live there.
+The standalone onboarding web app and public hostname were retired on 2026-10-17.
+The old hostname returns 403 at the gateway; it has no dedicated Cloudflare DNS
+record because the estate uses a wildcard.
 
-`https://onboard.tesserix.app` — one API that creates organizations, onboards
-products to them, and lets a customer connect their own SSO. A Next.js console
-on the same host for the platform team, and the identical REST surface for
-products to call.
+| Interface | Current contract |
+| --- | --- |
+| Human console | `/platform/provisioning`; platform capability for reads, plus `rotate-credentials` for provisioning writes and `hard-delete` for deletion/deactivation. |
+| Browser BFF | `/api/onboarding/*`; console session, same-origin checks, bounded requests, server-held human token only. |
+| Product API | `https://console.tesserix.app/v1/*`; original product audience, registered machine identity, per-product/object authorization and stable request keys. |
+| Private API | `onboarding-api.onboarding.svc.cluster.local:8080`; Go 1.27.2, retained `onboarding_db` and append-only audit. |
+| Operator activation | Private workload route and exact namespace/account/audience; unchanged by UI retirement. |
+| Legacy login | `LEGACY_CONSOLE_ENABLED=false`; old Google routes and sealed cookies are refused. Old login secrets are no longer materialized into the API secret. |
 
-This is the concrete build of the `identity-service` sketched in
-[`identity-control-plane.md`](identity-control-plane.md) § 5. That doc explains
-*why* org-per-tenant and where the Zitadel/OpenFGA line falls; read it first.
-This doc is the *what to build*: API surface, authorization model, storage,
-and the failure cases that matter.
+The API verifies the exact console project/client and project-scoped grants in the
+platform org. Browser-provided identity headers never define the actor. Product
+machines cannot adopt Helivanta tenants or use generic org routes to bypass held
+identity records. An accepted request is not Ready until activation and the held
+receipt are verified.
 
-| | |
-|---|---|
-| Repo | `tesserix/onboarding-service` — `apps/api` (Go 1.26 + Gin), `apps/web` (Next.js 16) |
-| Chart | `charts/apps/onboarding-service/` |
-| Namespace | `onboarding` |
-| Host | `onboard.tesserix.app` — `/api/*` → API, everything else → console |
-| Database | `onboarding_db` on **`global-postgres`** (no new cluster) |
-| Identity | Zitadel `https://auth.tesserix.app`, `iam-admin` machine credential |
+Follow the [Helivanta onboarding runbook](https://github.com/tesserix/helivanta/blob/main/docs/delivery/hospital-onboarding.md)
+and [console integration decision](https://github.com/tesserix/tesserix-home/blob/main/docs/adr/0058-console-identity-onboarding.md).
+Use one org per independent customer/group identity administration boundary and
+one shared Helivanta project; hospitals, branches, pharmacy outlets and labs need
+explicit product resource permissions. Identity readiness does not complete every
+clinical provisioning step.
+
+Application and operational secrets belong in exact product/environment OpenBao
+paths with namespace-bound identities. Do not add GCP Secret Manager dependencies.
+Existing transitional bootstrap/recovery sources remain independently recoverable
+until their consumer, recovery and deletion checks pass. Customer identities,
+database/schema, private claims and held GCS records were preserved during retirement.
+
+## Original API and design reference
+
+The sections below preserve the original design and API scenarios. Their broad
+provisioning roadmap is not proof every target is implemented. The current human
+authentication, UI ownership and deployment contracts above supersede the original
+standalone-console assumptions. Use the current runbook for production changes.
 
 ---
 
@@ -65,7 +77,7 @@ Three classes, and they must not be allowed to blur into "has a valid token".
 ```
  ┌─────────────────────┐   OIDC code+PKCE, session cookie   ┌──────────────┐
  │ Platform engineer   │──────────────────────────────────► │              │
- │ onboard.tesserix.app│   role platform-admin/operator     │              │
+ │ console.tesserix.app│   role platform-admin/operator     │              │
  └─────────────────────┘                                    │              │
                                                             │  onboarding  │
  ┌─────────────────────┐   machine-user JWT, project scope  │   -service   │
@@ -365,10 +377,12 @@ gets `404`, not `403`, so the API does not confirm that an org id exists.
 
 ## 5. The console — what a human actually sees
 
-`onboard.tesserix.app` is a thin Next.js front end over the same API. It holds no
-credential of its own, adds no endpoint, and every action it takes is one a
-product could take with a machine token. If a screen needs something the API
-cannot do, the API is what is wrong.
+The UI now runs inside the platform console at `/platform/provisioning`. It
+uses the same underlying authorized API, with a server-only operator credential
+and audit subject. Product and human privileges differ: for example, existing
+Helivanta adoption is platform-admin-only. The screen list below records the
+original standalone design; the console's identity onboarding landing page is the
+current navigation entry point.
 
 | Screen | Who | What it does | API it calls |
 |---|---|---|---|
@@ -594,42 +608,25 @@ The numeric platform org id is **not** configured. The API resolves it from
 startup on anything but one exact match, so a recreated org cannot silently
 scope every management call to the wrong tenant.
 
-### 9.2 The console's Google client
+### 9.2 Retired standalone login
 
-Google Cloud → Google Auth Platform → Clients → Create client → Web application,
-in `tesseracthub-480811`:
+The old Google login/callback routes and sealed-cookie authentication are disabled
+in production. The platform console uses its own existing Zitadel session and
+server-side token store. Do not create another Google client or copy the retired
+session key into the console. Independent recovery sources have not been deleted.
 
-| Field | Value |
-|---|---|
-| Authorised JavaScript origin | `https://onboard.tesserix.app` |
-| Authorised redirect URI | `https://onboard.tesserix.app/api/auth/callback` |
+### 9.3 Current routing and delivery
 
-The client id is `console.googleClientId` in `values-prod.yaml` — public, and
-kept in git so the value in use is reviewable. The secret half belongs in
-OpenBao at `onboarding/app/onboarding-google-client-secret`. It authenticates
-this console and is not the shared Zitadel management authority. Stage it using
-short-lived exact-path write access, then use a namespace-bound ESO reader.
-Existing GCP readers must be inventoried and migrated with byte equality and
-functional sign-in verification before deleting their source; this documentation
-change does not perform that migration.
+The console VirtualService sends `/v1/*` to the private provisioning API and its
+catch-all to the console. `/api/onboarding/*` reaches the console's authenticated
+BFF. Internal workload activation is not exposed by the console route. The old
+frontend Deployment, Service, service account, PDB, mesh policy, VirtualService
+and gateway host allowance are removed. Kargo promotes only the retained API;
+the console UI follows the existing `tesserix-home` release stream.
 
-Rotation writes a new OpenBao KV version; ESO picks it up within its refresh interval.
-Who may sign in is `console.adminEmails`, not part of this credential — see §2.
-
-### 9.3 Reaching the host
-
-`onboard.tesserix.app` already resolves through the `*.tesserix.app` Cloudflare
-wildcard to the ingress gateway, and the gateway's port-80 server accepts every
-host, so no Gateway server is needed. What is needed is a `frontendApps` entry:
-without it the gateway answers `403 RBAC: access denied` before any route is
-consulted, and the pods never see the request. The entry carries no `namespace`
-— the chart ships its own pod-level ALLOWs for both workloads.
-
-Put it in `argocd/prod/infrastructure/istio-auth-policies.yaml`, **not** in the
-chart's `values-prod.yaml`. That Application carries an inline `helm.values`
-block, and Helm replaces lists rather than merging them, so the inline
-`frontendApps` wins outright and an entry added to the chart values is silently
-never rendered — ArgoCD still reports `Synced`.
+Recovery must use a reviewed GitOps change with the captured frontend/routing
+state; never restore or replace customer identities to recover a UI. Database,
+OpenBao and retained archive recovery remain separate procedures.
 
 ---
 

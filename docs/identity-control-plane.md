@@ -14,9 +14,13 @@ products with an anonymous tier — a guest opens a room, no account, data gone
 shortly after — see [`tenancy-model.md`](tenancy-model.md), which covers
 capability-based authorization, data TTL, and per-tenant secrets.
 
-The worked example throughout is **HMS**, where a **hospital is a tenant**: one
-Zitadel organization per hospital, one Zitadel project for the product, and
-OpenFGA for every role and permission inside it.
+The worked example is Helivanta. A tenant is an independently administered
+customer or hospital group, normally one Zitadel organization. A group may own
+several hospitals/branches, pharmacies or labs, each with explicit resource
+permissions. Independent entities use separate tenants; shared people require
+explicit memberships. Use the shared product project. Follow the
+[current onboarding runbook](https://github.com/tesserix/helivanta/blob/main/docs/delivery/hospital-onboarding.md)
+for the implemented flow; this document also contains target design.
 
 ---
 
@@ -28,7 +32,7 @@ terminology overlaps with words this estate already uses for other things.
 | Zitadel object | What it is | In our estate |
 |---|---|---|
 | **Instance** | The whole deployment behind one hostname. Owns default policies, SMTP, the IAM role set. | Exactly one, `auth.tesserix.app`. Never more. |
-| **Organization** | A container of *users*, *domains*, *IdP connections* and *policies*. The unit of isolation. | **One per customer tenant** — one per hospital for HMS — plus TESSERIX for our own staff and every product project. |
+| **Organization** | A container of *users*, *domains*, *IdP connections* and *policies*. The unit of isolation. | **One per customer/group identity administration boundary** — plus TESSERIX for our own staff and every product project. |
 | **Project** | A container of *applications* and *roles*. The unit of a product. | **One per product**: `hms`, `homechef`, `mark8ly`. All of them in TESSERIX. |
 | **Application** | One OIDC/SAML client inside a project. Holds client id, secret, redirect URIs, grant types. | One per deployable: web, mobile, API. |
 | **Grant** | Gives an organization access to a project. | The join between a hospital and the product they bought. |
@@ -356,12 +360,13 @@ evaluate HTTP attributes and drops those rules silently
 
 ## 5. `identity-service` — hospitals, at runtime
 
-> Built as **`onboarding-service`** behind `onboard.tesserix.app`. The API
+> The private **`onboarding-service`** API is retained in namespace `onboarding`;
+> the UI and public product API are at `console.tesserix.app`. The API
 > surface, authorization model, audit ledger and every onboarding scenario are
 > specified in [`onboarding-api.md`](onboarding-api.md); this section stays as
 > the rationale.
 
-A Go service in the `zitadel` namespace holding the `iam-admin` credential and
+A Go service in the `onboarding` namespace holding the `iam-admin` credential and
 exposing a small REST API that **every product calls** instead of each product
 learning the Zitadel management API. This is the "global API" the design is for.
 
