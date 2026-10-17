@@ -63,6 +63,7 @@ class OnboardingMCPContract(unittest.TestCase):
         self.assertEqual(policy['spec']['targetRefs'], [{'group': 'gateway.networking.k8s.io', 'kind': 'HTTPRoute', 'name': 'onboarding-operator-onboarding-mcp'}])
         traffic = policy['spec']['traffic']
         self.assertEqual(traffic['jwtAuthentication']['mode'], 'Strict')
+        self.assertEqual(traffic['jwtAuthentication'].get('location'), {'expression': 'request.headers["authorization"].replace("Bearer ", "")'})
         expression = traffic['authorization']['policy']['matchExpressions'][0]
         self.assertIn('agentgateway.onboarding', expression)
         self.assertIn('onboarding.helivanta.read', expression)
