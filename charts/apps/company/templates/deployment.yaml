@@ -50,6 +50,20 @@ spec:
                 name: {{ include "company.fullname" . }}-secrets
           {{- end }}
           env:
+            {{- if .Values.questionnaires.enabled }}
+            - name: QUESTIONNAIRES_DB_USER
+              value: questionnaires_writer
+            - name: QUESTIONNAIRES_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: questionnaires-writer
+                  key: password
+            - name: QUESTIONNAIRES_DB_CA
+              valueFrom:
+                secretKeyRef:
+                  name: tesserix-postgres-ca
+                  key: ca.crt
+            {{- end }}
             {{- if .Values.openpanel.enabled }}
             # Written into this namespace by the openpanel project-init job;
             # optional so a first deploy doesn't block on the job finishing.

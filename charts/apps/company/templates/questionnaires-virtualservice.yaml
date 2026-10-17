@@ -1,0 +1,35 @@
+{{- if .Values.questionnaires.enabled }}
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: questionnaires
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: questionnaire.tesserix.app
+spec:
+  gateways: [istio-ingress/tesseract-gateway]
+  hosts: [questionnaire.tesserix.app]
+  http:
+    - match:
+        - uri: {exact: /}
+      rewrite: {uri: /questionnaire}
+      route:
+        - destination:
+            host: {{ include "company.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+            port: {number: {{ .Values.service.port }} }
+      timeout: 10s
+    - match:
+        - uri: {regex: '^/(vending-customers|vending-business)/?$'}
+        - uri: {exact: /questionnaire}
+        - uri: {exact: /questionnaire/privacy}
+        - uri: {prefix: /_next/}
+        - uri: {exact: /favicon.ico}
+        - uri: {regex: '^/api/questionnaires/(vending-customers|vending-business)/?$'}
+      route:
+        - destination:
+            host: {{ include "company.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+            port: {number: {{ .Values.service.port }} }
+      timeout: 10s
+    - directResponse:
+        status: 404
+        body: {string: Not found}
+{{- end }}
