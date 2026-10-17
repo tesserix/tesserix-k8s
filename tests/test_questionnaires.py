@@ -23,6 +23,15 @@ class QuestionnaireContracts(unittest.TestCase):
             self.assertNotIn('/admin/*',op['paths'])
         self.assertEqual(policy['spec']['rules'][1]['to'][0]['operation']['methods'],['POST'])
 
+    def test_public_lookup_is_admitted_without_exposing_other_api_routes(self):
+        docs=render('charts/apps/company','--set','questionnaires.enabled=true')
+        vs=next(d for d in docs if d['kind']=='VirtualService' and d['metadata']['name']=='questionnaires')
+        matches=[m for route in vs['spec']['http'] for m in route.get('match',[])]
+        self.assertIn({'uri':{'exact':'/api/questionnaires/location'}},matches)
+        docs=render('charts/thirdparty/istio-config','-f','charts/thirdparty/istio-config/values-prod.yaml')
+        policy=next(d for d in docs if d['kind']=='AuthorizationPolicy' and d['metadata']['name']=='allow-questionnaires-public')
+        self.assertIn('/api/questionnaires/location',policy['spec']['rules'][1]['to'][0]['operation']['paths'])
+
     def test_database_is_retained_on_the_existing_cluster_and_roles_have_no_admin_grant(self):
         docs=render('charts/apps/tesserix-postgres','--set','questionnaires.enabled=true')
         db=next(d for d in docs if d['kind']=='Database')

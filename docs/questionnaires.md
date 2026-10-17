@@ -30,7 +30,7 @@ with their existing images during provisioning. Revert questionnaire routing and
 application image/config through GitOps for rollback; retain database and secrets.
 There is no destructive production down migration.
 
-The public role may only execute questionnaires_api.submit; it may not read,
+The public role may only execute questionnaires_api.submit and questionnaires_api.reserve_lookup; it may not read,
 update or delete responses. The console role can select the two response schemas
 but cannot execute submission or mutate data. The function compares exact JSON
 for replay, bounds inputs, atomically stores preferences, and uses shared durable
@@ -51,6 +51,7 @@ questionnaires with ordinary PGHOST/PGPORT/PGUSER/PGPASSWORD variables and run:
 
 ```
 python scripts/test_questionnaires.py
+python scripts/test_questionnaires_locations.py
 ```
 
 This creates two scratch roles, verifies denial before schema installation,
@@ -65,3 +66,23 @@ clearly named synthetic responses and retain their references in private test
 evidence. Do not print credentials or genuine respondent data. Existing cluster
 backup applies to this database; a fresh full-cluster disaster restore is outside
 this feature's verification and must not be implied by a schema test.
+
+## Existing location integration
+
+The company app reuses `mark8ly-platform-api.mark8ly.svc.cluster.local:8086` for
+`GET /api/v1/locations/countries` and `mark8ly-storefront.mark8ly.svc.cluster.local:4203`
+for `GET /api/locations/autocomplete`, using the fixed public marketing Host
+`mark8ly.com` required by the storefront's host router. These are existing public
+reference endpoints; no internal credential or respondent session is forwarded.
+The existing `allow-tesserix-egress` policy already admits the Mark8ly namespace,
+and no NetworkPolicy selects the destination frontend/API pods. No broader network
+rule or product configuration is needed for this integration.
+
+The questionnaire gateway and VirtualService admit only the exact anonymous
+`POST /api/questionnaires/location` endpoint. It accepts a bounded JSON body, applies
+origin and input checks, and reserves shared admission before fetching at most eight
+validated suggestions. Limits are 300/minute global and 30/minute per hashed client.
+Writer cannot read counters or responses; reader cannot execute either public function.
+No new provider key, OpenBao path or external service is created. Optional location
+search failure falls back to manual fields. The public catalog's current 16 currencies
+are supported, including whole-unit JPY; existing responses and receipts retain meaning.

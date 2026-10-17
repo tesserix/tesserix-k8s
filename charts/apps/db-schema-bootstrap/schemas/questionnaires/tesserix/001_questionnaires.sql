@@ -34,6 +34,16 @@ CREATE TABLE IF NOT EXISTS vending_business.responses (
  answers jsonb NOT NULL CHECK(jsonb_typeof(answers)='object' AND octet_length(answers::text)<=16384 AND answers->'consent'='true'::jsonb AND answers->>'website'=''),
  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
+DO $$
+DECLARE target regclass;
+BEGIN
+ FOREACH target IN ARRAY ARRAY['vending_customers.responses'::regclass,'vending_business.responses'::regclass] LOOP
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=target AND conname='responses_currency_check' AND position('JPY' in pg_get_constraintdef(oid))>0) THEN
+   EXECUTE format('ALTER TABLE %s DROP CONSTRAINT IF EXISTS responses_currency_check',target);
+   EXECUTE format('ALTER TABLE %s ADD CONSTRAINT responses_currency_check CHECK(currency IN (''AUD'',''NZD'',''INR'',''USD'',''GBP'',''EUR'',''SGD'',''AED'',''BRL'',''CAD'',''IDR'',''JPY'',''MYR'',''PHP'',''SAR'',''THB''))',target);
+  END IF;
+ END LOOP;
+END $$;
 CREATE TABLE IF NOT EXISTS vending_customers.product_preferences (
  response_id bigint NOT NULL REFERENCES vending_customers.responses(id) ON DELETE CASCADE,
  product text NOT NULL CHECK(product IN ('water','sparkling-water','electrolyte-drinks','protein-shakes','fresh-juice','low-sugar-drinks','coffee-tea','energy-drinks','protein-bars','nuts-seeds','fruit','yoghurt','sandwiches-wraps','savoury-snacks','chocolate','confectionery')),
@@ -79,11 +89,25 @@ BEGIN
  END IF;
  RETURN p_key;
 END $$;
+CREATE OR REPLACE FUNCTION questionnaires_api.reserve_lookup(p_fingerprint text)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $$
+DECLARE amount integer;
+BEGIN
+ IF p_fingerprint IS NULL OR p_fingerprint !~ '^[a-f0-9]{64}$' THEN RAISE EXCEPTION 'Invalid lookup' USING ERRCODE='22023'; END IF;
+ DELETE FROM questionnaires_api.rate_limits WHERE period < now()-interval '1 day';
+ INSERT INTO questionnaires_api.rate_limits(bucket,period,hits) VALUES('lookup-global',date_trunc('minute',now()),1)
+ ON CONFLICT(bucket,period) DO UPDATE SET hits=questionnaires_api.rate_limits.hits+1,updated_at=now() RETURNING hits INTO amount;
+ IF amount>300 THEN RAISE EXCEPTION 'Lookup limit' USING ERRCODE='P0003'; END IF;
+ INSERT INTO questionnaires_api.rate_limits(bucket,period,hits) VALUES('lookup-'||p_fingerprint,date_trunc('minute',now()),1)
+ ON CONFLICT(bucket,period) DO UPDATE SET hits=questionnaires_api.rate_limits.hits+1,updated_at=now() RETURNING hits INTO amount;
+ IF amount>30 THEN RAISE EXCEPTION 'Lookup limit' USING ERRCODE='P0003'; END IF;
+END $$;
 REVOKE ALL ON ALL TABLES IN SCHEMA vending_customers,vending_business,questionnaires_api FROM PUBLIC,questionnaires_writer,questionnaires_reader;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA vending_customers,vending_business,questionnaires_api FROM PUBLIC,questionnaires_writer,questionnaires_reader;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA questionnaires_api FROM PUBLIC,questionnaires_reader;
 GRANT USAGE ON SCHEMA questionnaires_api TO questionnaires_writer;
 GRANT EXECUTE ON FUNCTION questionnaires_api.submit(text,uuid,jsonb,text,integer,integer) TO questionnaires_writer;
+GRANT EXECUTE ON FUNCTION questionnaires_api.reserve_lookup(text) TO questionnaires_writer;
 GRANT USAGE ON SCHEMA vending_customers,vending_business TO questionnaires_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA vending_customers,vending_business TO questionnaires_reader;
 COMMIT;
