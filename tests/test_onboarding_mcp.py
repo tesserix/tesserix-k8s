@@ -9,6 +9,16 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class OnboardingMCPContract(unittest.TestCase):
+    def test_gateway_egress_is_scoped_and_admits_ambient_transport(self):
+        output = subprocess.check_output(['kubectl', 'kustomize', 'manifests/agentic-istio'], cwd=ROOT, text=True)
+        policies = {d['metadata']['name']: d for d in yaml.safe_load_all(output) if d and d['kind'] == 'NetworkPolicy'}
+        policy = policies['allow-agentgateway-mcp-to-onboarding']
+        self.assertEqual(policy['spec']['podSelector']['matchLabels'], {'gateway.networking.k8s.io/gateway-name': 'agentgateway-mcp'})
+        rule = policy['spec']['egress'][0]
+        self.assertEqual(rule['to'][0]['namespaceSelector']['matchLabels']['kubernetes.io/metadata.name'], 'onboarding')
+        self.assertEqual(rule['to'][0]['podSelector']['matchLabels']['app.kubernetes.io/name'], 'onboarding-api')
+        self.assertEqual({p['port'] for p in rule['ports']}, {8080, 15008})
+
     def test_catalog_and_gateway_publication_use_the_existing_separate_identities(self):
         output = subprocess.check_output(['helm', 'template', 'test', 'charts/apps/agentgateway-route-sync'], cwd=ROOT, text=True)
         jobs = {d['metadata']['name']: d for d in yaml.safe_load_all(output) if d and d['kind'] == 'Job'}
