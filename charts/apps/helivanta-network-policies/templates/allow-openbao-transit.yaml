@@ -1,0 +1,24 @@
+# Transit only: OpenBao's allow-known-sources pins this principal to 8200 and its policy to transit/*/helivanta-staff-*.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-helivanta-api-openbao
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: helivanta-api
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.openbao.namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
+      ports:
+        - protocol: TCP
+          port: {{ .Values.openbao.port }}
+        - protocol: TCP
+          port: 15008
