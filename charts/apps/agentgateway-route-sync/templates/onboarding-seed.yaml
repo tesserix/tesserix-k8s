@@ -1,0 +1,83 @@
+{{- if .Values.onboardingSeed.enabled }}
+{{- $access := dict "apiVersion" "v1" "kind" "List" "items" (list (fromYaml (tpl (.Files.Get "files/onboarding/access.yaml") .))) | toPrettyJson }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: operator-onboarding-registry-resources
+  namespace: {{ .Values.namespace }}
+data:
+  access.json: |
+    {{- $access | nindent 4 }}
+  registry.yaml: |
+    {{- .Files.Get "files/onboarding/registry.yaml" | nindent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: operator-onboarding-registry-seed
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
+    checksum/registry: {{ .Files.Get "files/onboarding/registry.yaml" | sha256sum }}
+    checksum/access: {{ $access | sha256sum }}
+spec:
+  ttlSecondsAfterFinished: {{ .Values.registryPlatformSeed.ttlSecondsAfterFinished }}
+  backoffLimit: 3
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels:
+        {{- include "agentgateway-route-sync.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: seed
+          image: "{{ .Values.images.curl.repository }}@{{ .Values.images.curl.digest }}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              status="$(curl --silent --show-error --fail --max-time 30 \
+                --output /dev/null --write-out '%{http_code}' \
+                --request POST \
+                --header "Authorization: Bearer ${REGISTRY_DEPLOY_KEY}" \
+                --header 'Content-Type: application/yaml' \
+                --data-binary @/seed/registry.yaml \
+                '{{ .Values.registry.endpoint }}/v0/apply')"
+              test "$status" = 200
+              curl --silent --show-error --fail --max-time 30 \
+                --output /dev/null --request POST \
+                --header "Authorization: Bearer ${REGISTRY_DEPLOY_KEY}" \
+                --header 'Content-Type: application/json' \
+                --data-binary @/seed/access.json \
+                '{{ .Values.registry.endpoint }}/v0/agentgateway/import'
+              echo 'Published operator onboarding server and five typed tools'
+          env:
+            - name: REGISTRY_DEPLOY_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.registry.authSecret.name }}
+                  key: {{ .Values.registry.authSecret.key }}
+          volumeMounts:
+            - name: seed
+              mountPath: /seed
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: seed
+          configMap:
+            name: operator-onboarding-registry-resources
+{{- end }}

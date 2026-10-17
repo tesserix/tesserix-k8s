@@ -1,0 +1,46 @@
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: operator-onboarding-mcp-access
+  namespace: {{ .Values.namespace }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: onboarding-operator-onboarding-mcp
+  traffic:
+    jwtAuthentication:
+      mode: Strict
+      providers:
+        - issuer: {{ .Values.oauth.issuer }}
+          audiences: [{{ .Values.oauth.audience | quote }}]
+          jwks:
+            remote:
+              jwksPath: {{ .Values.oauth.jwks.path }}
+              cacheDuration: {{ .Values.oauth.jwks.cacheDuration }}
+              backendRef:
+                group: agentgateway.dev
+                kind: AgentgatewayBackend
+                name: mcp-zitadel-jwks
+                port: 443
+    authorization:
+      action: Allow
+      policy:
+        matchExpressions:
+          - {{ printf "%q in jwt[%q][%q] && %q in jwt[%q][%q]" .Values.onboardingSeed.organizationId .Values.oauth.roleClaim "agentgateway.onboarding" .Values.onboardingSeed.organizationId .Values.oauth.roleClaim "onboarding.helivanta.read" | quote }}
+    timeouts:
+      request: 20s
+    rateLimit:
+      global:
+        backendRef:
+          name: {{ .Values.rateLimit.backend }}
+          port: {{ .Values.rateLimit.port }}
+        domain: {{ .Values.rateLimit.domain }}
+        failureMode: FailClosed
+        descriptors:
+          - entries:
+              - name: gateway
+                expression: '"mcp"'
+              - name: oauth_subject
+                expression: jwt.sub
+            unit: Requests
