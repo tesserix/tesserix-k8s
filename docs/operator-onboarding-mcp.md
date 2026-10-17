@@ -21,7 +21,7 @@ Claude setup, tenant modelling, OAuth scopes and examples live in the
 | Exact OpenBao writer and read-only namespace-bound reader | `charts/thirdparty/openbao/values.yaml` |
 | Gateway egress / API ingress | Agentic Istio manifest and onboarding chart |
 
-The machine `onboarding-mcp-claude-prod` receives only `agentgateway.mcp`,
+The machine `onboarding-mcp-claude-prod` receives only `agentgateway.onboarding`,
 `onboarding.helivanta.read` and `onboarding.helivanta.create`. It has no adoption
 or identity-management role. Its credential is published once at
 `kv/onboarding/prod/app/onboarding-mcp-claude-prod`. The only Kubernetes reader

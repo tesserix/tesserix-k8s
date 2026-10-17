@@ -29,7 +29,21 @@ class OnboardingMCPContract(unittest.TestCase):
         projects = values['desired']['platformProjects']
         gateway = next(p for p in projects if p['name'] == 'AgentGateway')
         grant = next(g for g in gateway['machineGrants'] if g['login'] == 'onboarding-mcp-claude-prod')
-        self.assertEqual(set(grant['roles']), {'agentgateway.mcp', 'onboarding.helivanta.read', 'onboarding.helivanta.create'})
+        self.assertEqual(set(grant['roles']), {'agentgateway.onboarding', 'onboarding.helivanta.read', 'onboarding.helivanta.create'})
+
+    def test_gateway_admission_is_scoped_to_only_the_onboarding_route(self):
+        output = subprocess.check_output(['helm', 'template', 'test', 'charts/apps/agentgateway-route-sync'], cwd=ROOT, text=True)
+        docs = list(yaml.safe_load_all(output))
+        config = next(d for d in docs if d and d['kind'] == 'ConfigMap' and d['metadata']['name'] == 'operator-onboarding-registry-resources')
+        policy = json.loads(config['data']['access.json'])['items'][0]
+        self.assertEqual(policy['spec']['targetRefs'], [{'group': 'gateway.networking.k8s.io', 'kind': 'HTTPRoute', 'name': 'onboarding-operator-onboarding-mcp'}])
+        traffic = policy['spec']['traffic']
+        self.assertEqual(traffic['jwtAuthentication']['mode'], 'Strict')
+        expression = traffic['authorization']['policy']['matchExpressions'][0]
+        self.assertIn('agentgateway.onboarding', expression)
+        self.assertIn('onboarding.helivanta.read', expression)
+        self.assertNotIn('agentgateway.mcp', expression)
+        self.assertEqual(traffic['rateLimit']['global']['failureMode'], 'FailClosed')
 
     def test_registry_uses_original_caller_and_stateless_private_endpoint(self):
         manifest = list(yaml.safe_load_all((ROOT / 'charts/apps/agentgateway-route-sync/files/onboarding/registry.yaml').read_text()))
