@@ -1,0 +1,36 @@
+{{- if .Values.questionnairesPublic.enabled }}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-questionnaires-public
+  namespace: istio-ingress
+spec:
+  selector:
+    matchLabels:
+      istio: ingressgateway
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            hosts: [questionnaire.tesserix.app, 'questionnaire.tesserix.app:*']
+            methods: [GET, HEAD]
+            paths:
+              - /
+              - /questionnaire
+              - /questionnaire/privacy
+              - /vending-customers
+              - /vending-customers/
+              - /vending-business
+              - /vending-business/
+              - /_next/*
+              - /favicon.ico
+    - to:
+        - operation:
+            hosts: [questionnaire.tesserix.app, 'questionnaire.tesserix.app:*']
+            methods: [POST]
+            paths:
+              - /api/questionnaires/vending-customers
+              - /api/questionnaires/vending-customers/
+              - /api/questionnaires/vending-business
+              - /api/questionnaires/vending-business/
+{{- end }}

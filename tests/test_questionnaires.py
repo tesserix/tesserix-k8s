@@ -9,6 +9,20 @@ def render(chart,*args):
     return [d for d in yaml.safe_load_all(subprocess.check_output(['helm','template','test',chart,*args],cwd=ROOT,text=True)) if d]
 
 class QuestionnaireContracts(unittest.TestCase):
+    def test_gateway_admits_only_public_research_paths_without_a_principal(self):
+        docs=render('charts/thirdparty/istio-config','-f','charts/thirdparty/istio-config/values-prod.yaml')
+        policy=next(d for d in docs if d['kind']=='AuthorizationPolicy' and d['metadata']['name']=='allow-questionnaires-public')
+        self.assertEqual(policy['metadata']['namespace'],'istio-ingress')
+        self.assertEqual(policy['spec']['selector']['matchLabels'],{'istio':'ingressgateway'})
+        for rule in policy['spec']['rules']:
+            self.assertNotIn('from',rule)
+            self.assertNotIn('when',rule)
+            op=rule['to'][0]['operation']
+            self.assertEqual(op['hosts'],['questionnaire.tesserix.app','questionnaire.tesserix.app:*'])
+            self.assertNotIn('/api/*',op['paths'])
+            self.assertNotIn('/admin/*',op['paths'])
+        self.assertEqual(policy['spec']['rules'][1]['to'][0]['operation']['methods'],['POST'])
+
     def test_database_is_retained_on_the_existing_cluster_and_roles_have_no_admin_grant(self):
         docs=render('charts/apps/tesserix-postgres','--set','questionnaires.enabled=true')
         db=next(d for d in docs if d['kind']=='Database')
