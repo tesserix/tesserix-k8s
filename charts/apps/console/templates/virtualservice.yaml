@@ -1,5 +1,7 @@
 {{/*
-Routing for console.tesserix.app. Single catch-all destination — the console
+Routing for console.tesserix.app. Product machine /v1 routes reach the private
+onboarding API, which independently authenticates and authorizes each caller.
+The final catch-all serves the console, which
 has no auth-bff hand-off and no realtime paths of its own: the login redirect
 leaves for tesserix.app entirely (NEXT_PUBLIC_WEB_URL) rather than being routed
 here, and the dashboard read is a server-side ClusterIP call that never comes
@@ -20,6 +22,15 @@ spec:
   hosts:
     - {{ (index .Values.ingress.hosts 0).host }}
   http:
+    - match:
+        - uri:
+            prefix: /v1/
+      route:
+        - destination:
+            host: onboarding-api.onboarding.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
     - route:
         - destination:
             host: {{ include "console.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
