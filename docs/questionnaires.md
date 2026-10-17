@@ -144,3 +144,10 @@ upstream version is unchanged. After the operator migration, a one-time
 so pre-existing immutable init-container specs also use GAR. CNPG handles replica
 readiness and the primary transition. No PVCs, databases or credentials are removed.
 The marker is stable; do not update it during routine application releases.
+
+Completed hash-named credential seed Jobs are retained as history. Their
+`IgnoreExtraneous` comparison annotation prevents an old hash from leaving the
+non-pruning database application OutOfSync; it does not suppress drift on desired
+resources or enable pruning. For pre-annotation history, after verifying the exact
+Job is Complete, apply that metadata annotation to the old Job once. Do not delete
+seed history or enable pruning on the database application just to clear drift.
