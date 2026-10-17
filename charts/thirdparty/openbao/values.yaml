@@ -279,6 +279,8 @@ bootstrap:
     size: 1Gi
   # KV v2 mount every application secret lives under.
   kvMount: kv
+  # Transit mount for application-side field encryption; keys never leave OpenBao.
+  transitMount: transit
   # The Job's own way back in on later runs. Created during init, bound to the
   # bootstrap ServiceAccount, so the root token is revoked and never stored.
   bootstrapRole: bootstrap
@@ -894,8 +896,21 @@ bootstrap:
     - name: read-helivanta-supply-evidence-worker-production
       hcl: |
         path "kv/data/helivanta/production/helivanta-supply-evidence-worker-db-password" { capabilities = ["read"] }
+    # Staff bank/PAN/UAN field encryption (helivanta#1041). Encrypt may create a
+    # tenant's key on first use; nothing here can read, rotate, export or delete keys.
+    - name: helivanta-api-transit
+      hcl: |
+        path "transit/encrypt/helivanta-staff-*" { capabilities = ["create", "update"] }
+        path "transit/decrypt/helivanta-staff-*" { capabilities = ["update"] }
+        path "transit/hmac/helivanta-staff-*"    { capabilities = ["update"] }
 
   kubernetesRoles:
+    # Separate from the ESO role app-helivanta_helivanta-api so ESO never gains Transit.
+    - name: helivanta-api-transit
+      serviceAccounts: [helivanta-api]
+      namespaces: [helivanta]
+      policies: [helivanta-api-transit]
+      ttl: 1h
     - name: read-helivanta-document-worker-production
       serviceAccounts: [helivanta-document-worker]
       namespaces: [helivanta]

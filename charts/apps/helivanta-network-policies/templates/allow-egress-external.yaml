@@ -13,16 +13,8 @@ exchange and validation — the same in-cluster path vehicle-rental-network-
 policies uses — so this chart adds the matching egress allow rather than
 routing that traffic back out through the public gateway.
 
-OpenBao is deliberately absent here — this is not a gap to fill in. OpenBao's
-own NetworkPolicy admits only `external-secrets` and `secret-service` as
-callers on 8200; helivanta is not and should not be on that list. ESO already
-reads OpenBao on this namespace's behalf via the existing SecretStore
-(openbao-helivanta-api) and writes plain Kubernetes Secrets here — no
-secret-store code runs in Helivanta, by design. An egress allow from this
-namespace to OpenBao would be traffic OpenBao's own ingress policy rejects on
-arrival: dead configuration, and worse, it would read as an invitation for a
-future change to route around ESO. See values.yaml for the fuller version of
-this note.
+OpenBao is not here: helivanta-api's Transit-only path has its own policy in
+allow-openbao-transit.yaml, and boot secrets still arrive only through ESO.
 */ -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

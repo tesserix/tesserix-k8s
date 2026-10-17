@@ -125,6 +125,17 @@ spec:
             - name: VALKEY_TIMEOUT
               value: {{ .Values.valkey.timeout | quote }}
             {{- end }}
+            {{- /* OpenBao admits only this pod's mTLS principal; unmeshed, identifier writes and reveals fail closed with 503. */}}
+            {{- if and .Values.openbao.addr (include "helivanta-api.meshed" .) }}
+            - name: OPENBAO_ADDR
+              value: {{ .Values.openbao.addr | quote }}
+            - name: OPENBAO_TRANSIT_MOUNT
+              value: {{ required "openbao.transitMount is required" .Values.openbao.transitMount | quote }}
+            - name: OPENBAO_AUTH_ROLE
+              value: {{ required "openbao.authRole is required" .Values.openbao.authRole | quote }}
+            - name: OPENBAO_TOKEN_PATH
+              value: /var/run/secrets/openbao/token
+            {{- end }}
             - name: NATS_URL
               value: {{ .Values.nats.url | quote }}
             {{- if and .Values.documents.enabled .Values.documents.acceptUploads }}
@@ -215,9 +226,23 @@ spec:
             # mount.
             - name: tmp
               mountPath: /tmp
+            {{- if and .Values.openbao.addr (include "helivanta-api.meshed" .) }}
+            - name: openbao-token
+              mountPath: /var/run/secrets/openbao
+              readOnly: true
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- /* The SA disables automount; this short-lived token is only for the Transit login. */}}
+        {{- if and .Values.openbao.addr (include "helivanta-api.meshed" .) }}
+        - name: openbao-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 600
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
