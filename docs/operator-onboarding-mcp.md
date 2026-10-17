@@ -15,7 +15,8 @@ Claude setup, tenant modelling, OAuth scopes and examples live in the
 |---|---|
 | MCP enablement / Gateway project | `charts/apps/onboarding-service/values-prod.yaml` |
 | Gateway export and typed tools | `charts/apps/agentgateway-route-sync/files/onboarding/registry.yaml` |
-| Registry publication | `templates/onboarding-seed.yaml` in the route-sync chart |
+| Catalog publication | `devai/devai-registry-bootstrap` via `templates/onboarding-seed.yaml` |
+| Gateway-policy import | `agentgateway-system/agentgateway-route-sync` via the same template |
 | Signed role definitions / exact machine grants | `charts/apps/zitadel-bootstrap/values.yaml` |
 | Dedicated machine / one-time credential issue | `k8s/operators/zitadel/claims/onboarding.yaml` |
 | Exact OpenBao writer and read-only namespace-bound reader | `charts/thirdparty/openbao/values.yaml` |

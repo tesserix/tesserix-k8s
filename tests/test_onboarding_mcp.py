@@ -9,6 +9,20 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class OnboardingMCPContract(unittest.TestCase):
+    def test_catalog_and_gateway_publication_use_the_existing_separate_identities(self):
+        output = subprocess.check_output(['helm', 'template', 'test', 'charts/apps/agentgateway-route-sync'], cwd=ROOT, text=True)
+        jobs = {d['metadata']['name']: d for d in yaml.safe_load_all(output) if d and d['kind'] == 'Job'}
+        catalog = jobs['operator-onboarding-registry-publish']
+        self.assertEqual(catalog['metadata']['namespace'], 'devai')
+        pod = catalog['spec']['template']['spec']
+        self.assertEqual(pod['serviceAccountName'], 'devai-registry-bootstrap')
+        self.assertEqual(pod['restartPolicy'], 'Never')
+        self.assertIn('/v0/apply', pod['containers'][0]['args'][0])
+        gateway = jobs['operator-onboarding-registry-seed']['spec']['template']['spec']
+        self.assertEqual(gateway['serviceAccountName'], 'agentgateway-route-sync')
+        self.assertNotIn('/v0/apply', gateway['containers'][0]['args'][0])
+        self.assertIn('/v0/agentgateway/import', gateway['containers'][0]['args'][0])
+
     def test_private_api_enables_dedicated_gateway_verification(self):
         output = subprocess.check_output([
             'helm', 'template', 'onboarding', 'charts/apps/onboarding-service',

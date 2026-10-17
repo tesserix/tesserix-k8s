@@ -8,8 +8,6 @@ metadata:
 data:
   access.json: |
     {{- $access | nindent 4 }}
-  registry.yaml: |
-    {{- .Files.Get "files/onboarding/registry.yaml" | nindent 4 }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -32,7 +30,7 @@ spec:
       serviceAccountName: {{ .Values.serviceAccount.name }}
       automountServiceAccountToken: false
       enableServiceLinks: false
-      restartPolicy: OnFailure
+      restartPolicy: Never
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -49,17 +47,14 @@ spec:
                 --output /dev/null --write-out '%{http_code}' \
                 --request POST \
                 --header "Authorization: Bearer ${REGISTRY_DEPLOY_KEY}" \
-                --header 'Content-Type: application/yaml' \
-                --data-binary @/seed/registry.yaml \
-                '{{ .Values.registry.endpoint }}/v0/apply')"
-              test "$status" = 200
-              curl --silent --show-error --fail --max-time 30 \
-                --output /dev/null --request POST \
-                --header "Authorization: Bearer ${REGISTRY_DEPLOY_KEY}" \
                 --header 'Content-Type: application/json' \
                 --data-binary @/seed/access.json \
-                '{{ .Values.registry.endpoint }}/v0/agentgateway/import'
-              echo 'Published operator onboarding server and five typed tools'
+                '{{ .Values.registry.endpoint }}/v0/agentgateway/import')" || {
+                  echo "Gateway policy publication failed (HTTP ${status:-unavailable})"
+                  exit 1
+                }
+              echo "Gateway policy publication HTTP $status"
+              test "$status" = 200
           env:
             - name: REGISTRY_DEPLOY_KEY
               valueFrom:
@@ -80,4 +75,80 @@ spec:
         - name: seed
           configMap:
             name: operator-onboarding-registry-resources
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: operator-onboarding-registry-catalog
+  namespace: devai
+data:
+  registry.yaml: |
+    {{- .Files.Get "files/onboarding/registry.yaml" | nindent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: operator-onboarding-registry-publish
+  namespace: devai
+  annotations:
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
+    checksum/catalog: {{ .Files.Get "files/onboarding/registry.yaml" | sha256sum }}
+spec:
+  ttlSecondsAfterFinished: {{ .Values.registryPlatformSeed.ttlSecondsAfterFinished }}
+  backoffLimit: 3
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: devai-registry-bootstrap
+        app.kubernetes.io/component: onboarding-registry-publisher
+    spec:
+      serviceAccountName: devai-registry-bootstrap
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: publish
+          image: "{{ .Values.images.curl.repository }}@{{ .Values.images.curl.digest }}"
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              status="$(curl --silent --show-error --fail --max-time 30 \
+                --output /dev/null --write-out '%{http_code}' \
+                --request POST \
+                --header "Authorization: Bearer ${REGISTRY_DEPLOY_KEY}" \
+                --header 'Content-Type: application/yaml' \
+                --data-binary @/seed/registry.yaml \
+                '{{ .Values.registry.endpoint }}/v0/apply')" || {
+                  echo "Catalog publication failed (HTTP ${status:-unavailable})"
+                  exit 1
+                }
+              echo "Catalog publication HTTP $status"
+              test "$status" = 200
+          env:
+            - name: REGISTRY_DEPLOY_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: agentic-registry-deploy-key
+                  key: API_KEY
+          volumeMounts:
+            - name: seed
+              mountPath: /seed
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: seed
+          configMap:
+            name: operator-onboarding-registry-catalog
 {{- end }}
