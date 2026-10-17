@@ -37,8 +37,8 @@ could overwrite it with a shared service identity. The existing route-sync
 controller exports the HTTPRoute; do not hand-create a duplicate route or
 change the global prune floor.
 
-Validation before merge: twelve focused onboarding/chart tests, four MCP
-security contracts, bootstrap's 121 tests, changed-chart lint/render, API
+Validation before merge: focused onboarding/chart and MCP security contracts,
+bootstrap's 121 tests, changed-chart lint/render, API
 PostgreSQL/race suite, and Australis client tests/type-independent Go checks.
 Generate Registry metadata in the API repository and copy it unchanged here.
 The runtime compiler test prevents schema/metadata drift at the source.
