@@ -25,6 +25,7 @@ class HospitalIdentity(unittest.TestCase):
         crds = {d["metadata"]["name"]: d for d in docs if d and d["kind"] == "CustomResourceDefinition"}
         self.assertIn("zitadelorganizations.identity.tesserix.app", crds)
         deploy = next(d for d in docs if d and d["kind"] == "Deployment")
+        self.assertEqual(deploy["spec"]["strategy"], {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0}})
         spec = deploy["spec"]["template"]["spec"]
         token = next(v for v in spec["volumes"] if v["name"] == "onboarding-identity")
         self.assertEqual(token["projected"]["sources"][0]["serviceAccountToken"]["audience"], "onboarding-provisioning")
