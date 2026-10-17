@@ -23,7 +23,7 @@ resource "google_project_iam_custom_role" "onboarding_record_writer" {
 resource "google_storage_bucket_iam_member" "onboarding_record_writer" {
   bucket = google_storage_bucket.onboarding_records.name
   role   = google_project_iam_custom_role.onboarding_record_writer.name
-  member = "principal://iam.googleapis.com/projects/849928263410/locations/global/workloadIdentityPools/${var.project_id}.svc.id.goog/subject/ns/identity-operator/sa/zitadel-operator"
+  member = "serviceAccount:zitadel-operator-gip-migrator@${var.project_id}.iam.gserviceaccount.com"
   condition {
     title      = "helivanta-production-records-only"
     expression = "resource.name.startsWith('projects/_/buckets/${google_storage_bucket.onboarding_records.name}/objects/helivanta/prod/tenants/')"
