@@ -23,6 +23,18 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: onboarding-api
+      {{- if .Values.hospitalProvisioning.enabled }}
+      automountServiceAccountToken: true
+      volumes:
+        - name: helivanta-provisioning
+          projected:
+            defaultMode: 288
+            sources:
+              - serviceAccountToken:
+                  audience: helivanta-provisioning
+                  expirationSeconds: 600
+                  path: token
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -36,7 +48,17 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.api.port }}
+          {{- if .Values.hospitalProvisioning.enabled }}
+          volumeMounts:
+            - name: helivanta-provisioning
+              mountPath: /var/run/helivanta-provisioning
+              readOnly: true
+          {{- end }}
           env:
+            - name: HOSPITAL_PROVISIONING_ENABLED
+              value: {{ .Values.hospitalProvisioning.enabled | quote }}
+            - name: HELIVANTA_PROVISIONING_URL
+              value: {{ .Values.hospitalProvisioning.helivantaURL | quote }}
             - name: PORT
               value: {{ .Values.api.port | quote }}
             - name: ZITADEL_ISSUER

@@ -1,0 +1,77 @@
+{{- if .Values.hospitalProvisioning.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hospital-workload-tokenreview
+rules:
+  - apiGroups: [authentication.k8s.io]
+    resources: [tokenreviews]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hospital-workload-tokenreview
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: hospital-workload-tokenreview
+subjects:
+  - kind: ServiceAccount
+    name: onboarding-api
+    namespace: {{ .Values.namespace }}
+  - kind: ServiceAccount
+    name: helivanta-api
+    namespace: helivanta
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: onboarding-hospital-claims
+  namespace: identity-operator
+rules:
+  - apiGroups: [identity.tesserix.app]
+    resources: [zitadelorganizations]
+    verbs: [create, get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: onboarding-hospital-claims
+  namespace: identity-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: onboarding-hospital-claims
+subjects:
+  - kind: ServiceAccount
+    name: onboarding-api
+    namespace: {{ .Values.namespace }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-identity-provisioner
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "onboarding-service.selectorLabels" (dict "component" "onboarding-api" "release" .Release.Name) | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: identity-operator
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: zitadel-operator
+      ports:
+        - {protocol: TCP, port: {{ .Values.api.port }}}
+  egress:
+    - to:
+        {{- range required "hospitalProvisioning.apiServerCIDRs must name the Kubernetes API endpoints" .Values.hospitalProvisioning.apiServerCIDRs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports: [{protocol: TCP, port: 443}]
+{{- end }}
