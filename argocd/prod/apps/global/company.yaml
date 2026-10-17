@@ -87,6 +87,14 @@ spec:
   # fresh — so the old ignoreDifferences/RespectIgnoreDifferences hack
   # (which was needed when CI ran `kubectl set image`) is no longer
   # required, and Argo reconciles the image normally.
+  # Preserve only the existing Reloader's checksum for this credential.
+  ignoreDifferences:
+  - group: apps
+    kind: Deployment
+    name: company
+    namespace: tesserix
+    jqPathExpressions:
+    - '.spec.template.spec.containers[].env[]? | select(.name == "STAKATER_QUESTIONNAIRES_WRITER_SECRET")'
   syncPolicy:
     automated:
       # prune: true is required for this app to ever converge. With only
@@ -96,6 +104,7 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
+    - RespectIgnoreDifferences=true
     - CreateNamespace=true
     - PruneLast=true
     retry:

@@ -62,6 +62,12 @@ class QuestionnaireContracts(unittest.TestCase):
             docs=render(f'charts/apps/{chart}','--set','questionnaires.enabled=true')
             deployment=next(d for d in docs if d['kind']=='Deployment')
             self.assertEqual(deployment['metadata']['annotations']['secret.reloader.stakater.com/reload'],f'questionnaires-{role}')
+            app=yaml.safe_load((ROOT/f'argocd/prod/apps/global/{chart}.yaml').read_text())['spec']
+            self.assertIn('RespectIgnoreDifferences=true',app['syncPolicy']['syncOptions'])
+            rule=next(r for r in app['ignoreDifferences'] if r['kind']=='Deployment')
+            self.assertEqual(rule['name'],chart)
+            self.assertEqual(rule['jqPathExpressions'],[f'.spec.template.spec.containers[].env[]? | select(.name == "STAKATER_QUESTIONNAIRES_{role.upper()}_SECRET")'])
+
 
     def test_disabled_feature_adds_no_database_or_secret_seed(self):
         docs=render('charts/apps/tesserix-postgres')

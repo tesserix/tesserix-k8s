@@ -104,3 +104,8 @@ refresh their environment and connection pools after a change. No rotation is pe
 by bootstrap; its CAS=0 writes preserve existing values. An approved future rotation
 must verify the CNPG role update and both application rollouts before retiring recovery
 material. Do not assume overlapping database passwords or a zero-disruption rotation.
+
+The company and console Argo Applications ignore and preserve only their exact
+Reloader checksum environment variable (`STAKATER_QUESTIONNAIRES_WRITER_SECRET` and
+`STAKATER_QUESTIONNAIRES_READER_SECRET`). Image tags and every other environment value
+remain reconciled normally; this avoids a self-heal loop after a credential reload.
