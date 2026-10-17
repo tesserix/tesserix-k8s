@@ -45,11 +45,20 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: tesserix
+  # Preserve only the existing Reloader's checksum for this credential.
+  ignoreDifferences:
+  - group: apps
+    kind: Deployment
+    name: console
+    namespace: tesserix
+    jqPathExpressions:
+    - '.spec.template.spec.containers[].env[]? | select(.name == "STAKATER_QUESTIONNAIRES_READER_SECRET")'
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
+    - RespectIgnoreDifferences=true
     - CreateNamespace=true
     - PruneLast=true
     retry:

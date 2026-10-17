@@ -86,3 +86,26 @@ Writer cannot read counters or responses; reader cannot execute either public fu
 No new provider key, OpenBao path or external service is created. Optional location
 search failure falls back to manual fields. The public catalog's current 16 currencies
 are supported, including whole-unit JPY; existing responses and receipts retain meaning.
+
+Credential readers refresh every minute so an initial not-found result recovers
+promptly after the write-once seed succeeds. OpenBao namespace admission can reconcile
+later than the seed Job; Kubernetes retries seed attempts for up to ten minutes.
+Schema bootstrap retries on its five-minute schedule and never changes other databases.
+A failed early schema run before managed roles exist is safe: the transaction rolls back.
+Verify a later successful run, both ESO Ready conditions and reconciled CNPG roles before
+publishing the forms. A refresh annotation can request immediate ESO reconciliation
+without changing or rotating the stored credential.
+
+ESO-generated database credentials carry `cnpg.io/reload: "true"`, matching the
+existing CNPG secret-watch convention. This is required for the database controller
+to observe initial creation and later approved credential updates. The existing Reloader
+watches the exact writer secret for company and reader secret for console, so consumers
+refresh their environment and connection pools after a change. No rotation is performed
+by bootstrap; its CAS=0 writes preserve existing values. An approved future rotation
+must verify the CNPG role update and both application rollouts before retiring recovery
+material. Do not assume overlapping database passwords or a zero-disruption rotation.
+
+The company and console Argo Applications ignore and preserve only their exact
+Reloader checksum environment variable (`STAKATER_QUESTIONNAIRES_WRITER_SECRET` and
+`STAKATER_QUESTIONNAIRES_READER_SECRET`). Image tags and every other environment value
+remain reconciled normally; this avoids a self-heal loop after a credential reload.
