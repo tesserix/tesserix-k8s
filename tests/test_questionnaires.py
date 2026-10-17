@@ -69,6 +69,33 @@ class QuestionnaireContracts(unittest.TestCase):
             self.assertEqual(rule['jqPathExpressions'],[f'.spec.template.spec.containers[].env[]? | select(.name == "STAKATER_QUESTIONNAIRES_{role.upper()}_SECRET")'])
 
 
+    def test_company_uses_its_existing_mesh_identity_for_location_calls(self):
+        docs=render('charts/apps/company','-f','charts/apps/company/values-prod.yaml','--set','questionnaires.enabled=true')
+        deployment=next(d for d in docs if d['kind']=='Deployment')
+        self.assertEqual(deployment['spec']['template']['metadata']['labels']['istio.io/dataplane-mode'],'ambient')
+
+    def test_questionnaire_runtime_and_support_images_use_regional_gar(self):
+        prefix='asia-south1-docker.pkg.dev/tesseracthub-480811/'
+        for chart in ['company','console']:
+            docs=render(f'charts/apps/{chart}','-f',f'charts/apps/{chart}/values-prod.yaml','--set','questionnaires.enabled=true')
+            for doc in docs:
+                if doc['kind'] not in ['Deployment','CronJob']: continue
+                spec=doc['spec']['template']['spec'] if doc['kind']=='Deployment' else doc['spec']['jobTemplate']['spec']['template']['spec']
+                for container in spec.get('initContainers',[])+spec['containers']:
+                    self.assertTrue(container['image'].startswith(prefix),container['image'])
+        docs=render('charts/apps/tesserix-postgres','--set','questionnaires.enabled=true')
+        cluster=next(d for d in docs if d['kind']=='Cluster')
+        self.assertTrue(cluster['spec']['imageName'].startswith(prefix))
+        self.assertIn('@sha256:99be063781d171d3971089b49c992706bdab9ccbd2b57cdf126c7542773aedfe',cluster['spec']['imageName'])
+        for doc in docs:
+            if doc['kind'] not in ['Job','CronJob']: continue
+            spec=doc['spec']['template']['spec'] if doc['kind']=='Job' else doc['spec']['jobTemplate']['spec']['template']['spec']
+            for container in spec['containers']: self.assertTrue(container['image'].startswith(prefix),container['image'])
+        app=yaml.safe_load((ROOT/'argocd/prod/apps/global/questionnaires-db-schema-bootstrap.yaml').read_text())
+        self.assertTrue(app['spec']['source']['helm']['valuesObject']['image']['postgres'].startswith(prefix))
+        operator=yaml.safe_load((ROOT/'charts/thirdparty/cloudnative-pg/values.yaml').read_text())['cloudnative-pg']['image']
+        self.assertTrue(operator['repository'].startswith(prefix))
+
     def test_disabled_feature_adds_no_database_or_secret_seed(self):
         docs=render('charts/apps/tesserix-postgres')
         self.assertFalse(any(d['kind'] in ['Database','Job','ExternalSecret'] for d in docs))

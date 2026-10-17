@@ -32,7 +32,7 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: questionnaires-secret-seed-{{ .Files.Get "files/questionnaires-seed.py" | sha256sum | trunc 8 }}
+  name: questionnaires-secret-seed-{{ printf "%s:%s" (.Files.Get "files/questionnaires-seed.py") .Values.questionnaires.seedImage | sha256sum | trunc 8 }}
   namespace: {{ .Values.namespace }}
 spec:
   backoffLimit: 5
@@ -51,7 +51,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: seed
-          image: python:3.13-alpine@sha256:2d9aefe2fef018a7eb2c13064c89c71929800fd2e5dccdbf52ea5da5bb8d929a
+          image: {{ .Values.questionnaires.seedImage | quote }}
           command: [python, /scripts/seed.py]
           securityContext:
             allowPrivilegeEscalation: false
