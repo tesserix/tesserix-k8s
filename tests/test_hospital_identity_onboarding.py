@@ -6,13 +6,14 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 class HospitalIdentity(unittest.TestCase):
-    def test_product_oauth_reaches_only_the_reviewed_onboarding_host(self):
+    def test_product_oauth_reaches_the_reviewed_console_host(self):
         app = yaml.safe_load((ROOT / "argocd/prod/infrastructure/istio-auth-policies.yaml").read_text())
         values = yaml.safe_load((ROOT / "charts/infrastructure/istio-auth-policies/values.yaml").read_text())
         values.update(yaml.safe_load(app["spec"]["source"]["helm"]["values"]))
         zitadel = next(e for e in values["extraGip"] if e["issuer"] == "https://auth.tesserix.app")
         self.assertIn("395476377970673709", zitadel["audiences"])
-        self.assertIn("onboard.tesserix.app", zitadel["restrictToHosts"])
+        self.assertIn("console.tesserix.app", zitadel["restrictToHosts"])
+        self.assertNotIn("onboard.tesserix.app", zitadel["restrictToHosts"])
         rendered = list(yaml.safe_load_all(subprocess.check_output(["helm", "template", "istio-auth-policies", str(ROOT / "charts/infrastructure/istio-auth-policies"), "-f", "-"], input=yaml.safe_dump(values), text=True)))
         rules = [r for d in rendered if d and d["kind"] == "RequestAuthentication" for r in d["spec"].get("jwtRules", []) if r["issuer"] == "https://auth.tesserix.app"]
         self.assertEqual(len(rules), len(values["ingressGateways"]))
