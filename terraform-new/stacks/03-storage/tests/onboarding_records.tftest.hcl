@@ -21,7 +21,7 @@ run "onboarding_records_cannot_be_pruned_by_the_writer" {
     error_message = "Customer configuration must never be public."
   }
   assert {
-    condition = google_storage_bucket_iam_member.onboarding_record_writer.member == "serviceAccount:zitadel-operator-gip-migrator@synthetic-project.iam.gserviceaccount.com"
+    condition     = google_storage_bucket_iam_member.onboarding_record_writer.member == "serviceAccount:zitadel-operator-gip-migrator@synthetic-project.iam.gserviceaccount.com"
     error_message = "Archive access must match the operator's existing GKE service-account impersonation."
   }
   assert {
