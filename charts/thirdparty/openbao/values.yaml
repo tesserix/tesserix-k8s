@@ -287,6 +287,17 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: questionnaires-writer-reader
+      hcl: |
+        path "kv/data/questionnaires/prod/app/questionnaires-writer-password" { capabilities = ["read"] }
+    - name: questionnaires-reader-reader
+      hcl: |
+        path "kv/data/questionnaires/prod/app/questionnaires-reader-password" { capabilities = ["read"] }
+    - name: questionnaires-secret-seed
+      hcl: |
+        path "kv/data/questionnaires/prod/app/questionnaires-writer-password" { capabilities = ["create", "read"] }
+        path "kv/data/questionnaires/prod/app/questionnaires-reader-password" { capabilities = ["create", "read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-ocr-sandbox-document-intelligence-production
       hcl: |
         path "kv/data/ocr-sandbox/app/ocr-sandbox-core-db-password" { capabilities = ["read"] }
@@ -913,6 +924,21 @@ bootstrap:
         path "transit/hmac/helivanta-staff-*"    { capabilities = ["update"] }
 
   kubernetesRoles:
+    - name: questionnaires-writer-reader
+      serviceAccounts: ["questionnaires-writer-reader"]
+      namespaces: ["tesserix"]
+      policies: ["questionnaires-writer-reader"]
+      ttl: 5m
+    - name: questionnaires-reader-reader
+      serviceAccounts: ["questionnaires-reader-reader"]
+      namespaces: ["tesserix"]
+      policies: ["questionnaires-reader-reader"]
+      ttl: 5m
+    - name: questionnaires-secret-seed
+      serviceAccounts: ["questionnaires-secret-seed"]
+      namespaces: ["tesserix"]
+      policies: ["questionnaires-secret-seed"]
+      ttl: 5m
     # Separate from the ESO role app-helivanta_helivanta-api so ESO never gains Transit.
     - name: helivanta-api-transit
       serviceAccounts: [helivanta-api]

@@ -1,0 +1,157 @@
+{{- if .Values.questionnaires.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: questionnaires
+  namespace: {{ .Values.namespace }}
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  cluster:
+    name: {{ .Values.clusterName }}
+  name: questionnaires
+  owner: {{ .Values.bootstrap.primaryOwner }}
+  ensure: present
+  databaseReclaimPolicy: retain
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: questionnaires-secret-seed
+  namespace: {{ .Values.namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: questionnaires-secret-seed
+  namespace: {{ .Values.namespace }}
+data:
+  seed.py: |
+{{ .Files.Get "files/questionnaires-seed.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: questionnaires-secret-seed-{{ .Files.Get "files/questionnaires-seed.py" | sha256sum | trunc 8 }}
+  namespace: {{ .Values.namespace }}
+spec:
+  backoffLimit: 5
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: questionnaires-secret-seed
+    spec:
+      serviceAccountName: questionnaires-secret-seed
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seed
+          image: python:3.13-alpine@sha256:2d9aefe2fef018a7eb2c13064c89c71929800fd2e5dccdbf52ea5da5bb8d929a
+          command: [python, /scripts/seed.py]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: script
+          configMap:
+            name: questionnaires-secret-seed
+{{- range $role := list "writer" "reader" }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: questionnaires-{{ $role }}-reader
+  namespace: {{ $.Values.namespace }}
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: questionnaires-{{ $role }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: questionnaires-{{ $role }}-reader
+          serviceAccountRef:
+            name: questionnaires-{{ $role }}-reader
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: questionnaires-{{ $role }}
+  namespace: {{ $.Values.namespace }}
+spec:
+  refreshInterval: 5m
+  secretStoreRef:
+    kind: SecretStore
+    name: questionnaires-{{ $role }}
+  target:
+    name: questionnaires-{{ $role }}
+    creationPolicy: Owner
+    template:
+      type: kubernetes.io/basic-auth
+      data:
+        username: questionnaires_{{ $role }}
+        password: '{{ "{{ .password }}" }}'
+  data:
+    - secretKey: password
+      remoteRef:
+        key: questionnaires/prod/app/questionnaires-{{ $role }}-password
+        property: value
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: questionnaires-seed-egress
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: questionnaires-secret-seed
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    - to:
+        - ipBlock: {cidr: 10.30.0.10/32}
+        - ipBlock: {cidr: 169.254.20.10/32}
+      ports:
+        - {port: 53, protocol: UDP}
+        - {port: 53, protocol: TCP}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+      ports:
+        - {port: 8200, protocol: TCP}
+        - {port: 15008, protocol: TCP}
+{{- end }}

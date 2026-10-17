@@ -1,0 +1,38 @@
+name: Questionnaire database
+on:
+  pull_request:
+    paths:
+      - charts/apps/db-schema-bootstrap/schemas/questionnaires/**
+      - scripts/test_questionnaires*.py
+      - .github/workflows/questionnaires-db.yml
+  push:
+    branches: [main]
+    paths:
+      - charts/apps/db-schema-bootstrap/schemas/questionnaires/**
+      - scripts/test_questionnaires*.py
+      - .github/workflows/questionnaires-db.yml
+permissions:
+  contents: read
+jobs:
+  postgres-contract:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+        env:
+          POSTGRES_DB: questionnaires
+          POSTGRES_PASSWORD: '00000000000000000000000000000001'
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Verify isolation and durable submissions against PostgreSQL
+        run: |
+          python3 scripts/test_questionnaires.py
+          python3 scripts/test_questionnaires_locations.py
+        env:
+          PGHOST: '127.0.0.1'
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGDATABASE: questionnaires
+          PGPASSWORD: '00000000000000000000000000000001'
