@@ -20,12 +20,24 @@ resource "google_project_iam_custom_role" "onboarding_record_writer" {
   permissions = ["storage.objects.create", "storage.objects.get"]
 }
 
-resource "google_storage_bucket_iam_member" "onboarding_record_writer" {
-  bucket = google_storage_bucket.onboarding_records.name
-  role   = google_project_iam_custom_role.onboarding_record_writer.name
-  member = "serviceAccount:zitadel-operator-gip-migrator@${var.project_id}.iam.gserviceaccount.com"
-  condition {
-    title      = "helivanta-production-records-only"
-    expression = "resource.name.startsWith('projects/_/buckets/${google_storage_bucket.onboarding_records.name}/objects/helivanta/prod/tenants/')"
+removed {
+  from = google_storage_bucket_iam_member.onboarding_record_writer
+  lifecycle {
+    destroy = false
   }
+}
+
+resource "google_storage_bucket_iam_policy" "onboarding_records" {
+  bucket = google_storage_bucket.onboarding_records.name
+  policy_data = jsonencode({
+    version = 3
+    bindings = [{
+      role    = google_project_iam_custom_role.onboarding_record_writer.id
+      members = ["serviceAccount:zitadel-operator-gip-migrator@${var.project_id}.iam.gserviceaccount.com"]
+      condition = {
+        title      = "helivanta-production-records-only"
+        expression = "resource.name.startsWith('projects/_/buckets/${google_storage_bucket.onboarding_records.name}/objects/helivanta/prod/tenants/')"
+      }
+    }]
+  })
 }
