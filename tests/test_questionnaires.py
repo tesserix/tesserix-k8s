@@ -96,6 +96,13 @@ class QuestionnaireContracts(unittest.TestCase):
         operator=yaml.safe_load((ROOT/'charts/thirdparty/cloudnative-pg/values.yaml').read_text())['cloudnative-pg']['image']
         self.assertTrue(operator['repository'].startswith(prefix))
 
+    def test_completed_seed_history_can_be_retained_without_database_pruning(self):
+        docs=render('charts/apps/tesserix-postgres','--set','questionnaires.enabled=true')
+        seed=next(d for d in docs if d['kind']=='Job')
+        self.assertEqual(seed['metadata'].get('annotations',{}).get('argocd.argoproj.io/compare-options'),'IgnoreExtraneous')
+        app=yaml.safe_load((ROOT/'argocd/prod/apps/global/tesserix-postgres.yaml').read_text())
+        self.assertFalse(app['spec']['syncPolicy']['automated'].get('prune',False))
+
     def test_explicit_restart_marker_is_rendered_only_when_requested(self):
         docs=render('charts/apps/tesserix-postgres','--set-string','restartAt=2026-10-17T16:00:00Z')
         cluster=next(d for d in docs if d['kind']=='Cluster')
