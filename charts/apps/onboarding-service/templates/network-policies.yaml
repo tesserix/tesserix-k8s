@@ -125,3 +125,28 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: istio-system
 {{- end }}
+
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-console-onboarding
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: onboarding-api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tesserix
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: console
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.port }}
+{{- end }}
