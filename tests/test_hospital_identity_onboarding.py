@@ -24,3 +24,18 @@ class HospitalIdentity(unittest.TestCase):
         self.assertEqual(route["rewrite"]["uri"], "/internal/v1/hospital-enrolments")
         self.assertEqual(route["route"][0]["destination"]["host"], "helivanta-api.helivanta.svc.cluster.local")
         self.assertFalse(any(m.get("uri", {}).get("prefix", "").startswith("/api/internal") for r in service["spec"]["http"] for m in r.get("match", [])))
+
+    def test_product_reader_is_namespace_bound_and_cannot_rotate_credentials(self):
+        values = yaml.safe_load((ROOT / "charts/thirdparty/openbao/values.yaml").read_text())
+        bootstrap = values["bootstrap"]
+        name = "helivanta-onboarding-client-reader"
+        role = next((r for r in bootstrap["kubernetesRoles"] if r["name"] == name), None)
+        self.assertIsNotNone(role, "The product needs its own namespace-bound reader, separate from the operator writer")
+        self.assertEqual(role["serviceAccounts"], ["helivanta-api"])
+        self.assertEqual(role["namespaces"], ["helivanta"])
+        self.assertEqual(role["policies"], [name])
+        policy = next(p["hcl"] for p in bootstrap["policies"] if p["name"] == name)
+        self.assertIn('path "kv/data/helivanta/prod/app/helivanta-onboarding-client" { capabilities = ["read"] }', policy)
+        self.assertNotIn('"update"', policy)
+        self.assertNotIn('"delete"', policy)
+        self.assertNotIn('*', policy)
