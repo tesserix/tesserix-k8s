@@ -30,3 +30,18 @@ class ConsoleIdentityOnboarding(unittest.TestCase):
         self.assertNotIn('rewrite',machine)
         self.assertNotIn('headers',machine)
         self.assertNotIn('match',vs['spec']['http'][-1])
+
+    def test_standalone_web_and_legacy_login_are_retired_without_customer_storage(self):
+        docs=render('onboarding-service','-f',str(ROOT/'charts/apps/onboarding-service/values-prod.yaml'))
+        self.assertFalse(any(d['metadata']['name']=='onboarding-web' for d in docs))
+        self.assertFalse(any(d['kind']=='VirtualService' for d in docs))
+        api=next(d for d in docs if d['kind']=='Deployment' and d['metadata']['name']=='onboarding-api')
+        env={e['name']:e.get('value') for e in api['spec']['template']['spec']['containers'][0]['env']}
+        self.assertEqual(env['LEGACY_CONSOLE_ENABLED'],'false')
+        self.assertNotIn('GOOGLE_CLIENT_ID',env)
+        secret=next(d for d in docs if d['kind']=='ExternalSecret')
+        self.assertEqual(set(secret['spec']['target']['template']['data']),{'DATABASE_URL','ZITADEL_MACHINE_KEY'})
+        self.assertTrue((ROOT/'charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql').is_file())
+        app=yaml.safe_load((ROOT/'argocd/prod/infrastructure/istio-auth-policies.yaml').read_text())
+        values=yaml.safe_load(app['spec']['source']['helm']['values'])
+        self.assertNotIn('onboard.tesserix.app',yaml.safe_dump(values))
