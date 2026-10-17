@@ -137,3 +137,10 @@ authenticated namespace/principal admission. No Mark8ly authorization exception 
 broader anonymous service access is introduced. Verify the country catalog and
 address endpoint from a running company pod, and anonymous lookup through the public
 BFF. Keep manual completion available during provider or mesh outages.
+
+The Barman plugin controller and sidecar are also digest-pinned through GAR; their
+upstream version is unchanged. After the operator migration, a one-time
+`restartAt` marker on the Tesserix Cluster requests CNPG's managed rolling restart
+so pre-existing immutable init-container specs also use GAR. CNPG handles replica
+readiness and the primary transition. No PVCs, databases or credentials are removed.
+The marker is stable; do not update it during routine application releases.

@@ -96,6 +96,23 @@ class QuestionnaireContracts(unittest.TestCase):
         operator=yaml.safe_load((ROOT/'charts/thirdparty/cloudnative-pg/values.yaml').read_text())['cloudnative-pg']['image']
         self.assertTrue(operator['repository'].startswith(prefix))
 
+    def test_explicit_restart_marker_is_rendered_only_when_requested(self):
+        docs=render('charts/apps/tesserix-postgres','--set-string','restartAt=2026-10-17T16:00:00Z')
+        cluster=next(d for d in docs if d['kind']=='Cluster')
+        self.assertEqual(cluster['metadata']['annotations']['kubectl.kubernetes.io/restartedAt'],'2026-10-17T16:00:00Z')
+        docs=render('charts/apps/tesserix-postgres')
+        cluster=next(d for d in docs if d['kind']=='Cluster')
+        self.assertNotIn('kubectl.kubernetes.io/restartedAt',cluster['metadata'].get('annotations',{}))
+
+    def test_backup_plugin_and_sidecars_use_pinned_regional_images(self):
+        app=yaml.safe_load((ROOT/'argocd/prod/infrastructure/cnpg-barman-plugin.yaml').read_text())
+        values=app['spec']['source']['helm'].get('valuesObject',{})
+        for key in ['image','sidecarImage']:
+            image=values.get(key,{})
+            self.assertEqual(image.get('registry'),'asia-south1-docker.pkg.dev')
+            self.assertTrue(image.get('repository','').startswith('tesseracthub-480811/ghcr-remote/cloudnative-pg/'))
+            self.assertIn('@sha256:',image.get('tag',''))
+
     def test_disabled_feature_adds_no_database_or_secret_seed(self):
         docs=render('charts/apps/tesserix-postgres')
         self.assertFalse(any(d['kind'] in ['Database','Job','ExternalSecret'] for d in docs))
