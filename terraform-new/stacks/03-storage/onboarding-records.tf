@@ -30,7 +30,6 @@ removed {
 resource "google_storage_bucket_iam_policy" "onboarding_records" {
   bucket = google_storage_bucket.onboarding_records.name
   policy_data = jsonencode({
-    version = 3
     bindings = [{
       role    = google_project_iam_custom_role.onboarding_record_writer.id
       members = ["serviceAccount:zitadel-operator-gip-migrator@${var.project_id}.iam.gserviceaccount.com"]
