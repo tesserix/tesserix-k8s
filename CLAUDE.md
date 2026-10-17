@@ -141,7 +141,7 @@ be retrofitted cheaply. **Ask the user; never assume a default.**
 
 | Answer | What it means | What you build |
 |---|---|---|
-| **Zitadel** (`auth.tesserix.app`) | Multi-tenant. Customers get their own org and connect their own Okta/Entra/Google/SAML. This is the target for every new product. | Project + apps via `zitadel-bootstrap` `desired.projects`, issuer in `extraGip`, project-audience scope, org onboarded through `onboard.tesserix.app` |
+| **Zitadel** (`auth.tesserix.app`) | Multi-tenant. Customers get their own org and connect their own Okta/Entra/Google/SAML. This is the target for every new product. | Project + apps via `zitadel-bootstrap` `desired.projects`, issuer in `extraGip`, project-audience scope, org onboarded through `console.tesserix.app/platform/provisioning` |
 | **GIP** (Google Identity Platform) | Single-tenant or consumer sign-in, one GIP tenant per product. Grandfathered — HomeChef, blog, HMS today. | GIP tenant, auth-BFF on the `devai-auth-bff` pattern, `docs/gip-migration-plan.md` |
 
 Pick Zitadel unless the product genuinely has no notion of a customer
@@ -286,7 +286,7 @@ validation.
 | **Auth — GIP tenants, auth-BFF wiring, admin claims** | [`docs/gip-migration-plan.md`](docs/gip-migration-plan.md) |
 | **Keycloak decommission** — what was removed and what still needs cutting over | [`docs/keycloak-decommission-plan.md`](docs/keycloak-decommission-plan.md) |
 | **Zitadel object model, org-per-tenant, and automating onboarding** | [`docs/identity-control-plane.md`](docs/identity-control-plane.md) |
-| **`onboard.tesserix.app`** — the onboarding API/console, its authorization model and audit ledger | [`docs/onboarding-api.md`](docs/onboarding-api.md) |
+| **Console identity onboarding** — `console.tesserix.app/platform/provisioning`, private API, its authorization model and audit ledger | [`docs/onboarding-api.md`](docs/onboarding-api.md) |
 | **Anonymous/ephemeral vs onboarded tenants, data TTL, tier upgrades** | [`docs/tenancy-model.md`](docs/tenancy-model.md) |
 | **Per-tenant secrets at runtime** — OpenBao namespaces, path standard, why not ESO | [`docs/tenant-secrets.md`](docs/tenant-secrets.md) |
 | **HomeChef platform topology** — services, domains, infra, E2E | [`docs/homechef-platform.md`](docs/homechef-platform.md) |
@@ -340,7 +340,7 @@ Admin access is the `admin: true` custom claim, granted by `gip-admin-claims`.
 
 ## New product — ask these two before writing anything
 
-Every new product is onboarded through `onboard.tesserix.app`, and the wizard
+Every new product is onboarded through `console.tesserix.app/platform/provisioning`, and the wizard
 asks two questions that decide what gets built. Ask them here too, and do not
 guess a default:
 
