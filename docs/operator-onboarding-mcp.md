@@ -38,6 +38,12 @@ could overwrite it with a shared service identity. The existing route-sync
 controller exports the HTTPRoute; do not hand-create a duplicate route or
 change the global prune floor.
 
+The route-specific JWT policy uses expression-based credential extraction.
+AgentGateway's default header extraction strips Authorization after validation;
+expression extraction keeps this onboarding-resource token for the API's own
+signature, audience and role verification. Other routes retain their existing
+header behavior. Never replace the caller with an upstream administrator key.
+
 Validation before merge: focused onboarding/chart and MCP security contracts,
 bootstrap's 121 tests, changed-chart lint/render, API
 PostgreSQL/race suite, and Australis client tests/type-independent Go checks.

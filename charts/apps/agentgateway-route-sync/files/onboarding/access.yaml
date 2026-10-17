@@ -11,6 +11,10 @@ spec:
   traffic:
     jwtAuthentication:
       mode: Strict
+      # Header extraction removes the bearer; expression extraction preserves
+      # this resource-bound token for the API's independent verification.
+      location:
+        expression: 'request.headers["authorization"].replace("Bearer ", "")'
       providers:
         - issuer: {{ .Values.oauth.issuer }}
           audiences: [{{ .Values.oauth.audience | quote }}]
