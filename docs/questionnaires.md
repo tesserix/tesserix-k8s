@@ -86,3 +86,12 @@ Writer cannot read counters or responses; reader cannot execute either public fu
 No new provider key, OpenBao path or external service is created. Optional location
 search failure falls back to manual fields. The public catalog's current 16 currencies
 are supported, including whole-unit JPY; existing responses and receipts retain meaning.
+
+Credential readers refresh every minute so an initial not-found result recovers
+promptly after the write-once seed succeeds. OpenBao namespace admission can reconcile
+later than the seed Job; Kubernetes retries seed attempts for up to ten minutes.
+Schema bootstrap retries on its five-minute schedule and never changes other databases.
+A failed early schema run before managed roles exist is safe: the transaction rolls back.
+Verify a later successful run, both ESO Ready conditions and reconciled CNPG roles before
+publishing the forms. A refresh annotation can request immediate ESO reconciliation
+without changing or rotating the stored credential.

@@ -47,6 +47,13 @@ class QuestionnaireContracts(unittest.TestCase):
                 self.assertEqual(doc['spec']['secretStoreRef']['kind'],'SecretStore')
                 self.assertTrue(doc['spec']['data'][0]['remoteRef']['key'].startswith('questionnaires/prod/app/'))
 
+    def test_credential_readers_recover_promptly_after_seed(self):
+        docs=render('charts/apps/tesserix-postgres','--set','questionnaires.enabled=true')
+        readers=[d for d in docs if d['kind']=='ExternalSecret']
+        self.assertEqual(len(readers),2)
+        for reader in readers:
+            self.assertEqual(reader['spec']['refreshInterval'],'1m')
+
     def test_disabled_feature_adds_no_database_or_secret_seed(self):
         docs=render('charts/apps/tesserix-postgres')
         self.assertFalse(any(d['kind'] in ['Database','Job','ExternalSecret'] for d in docs))
