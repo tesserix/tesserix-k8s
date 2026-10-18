@@ -99,7 +99,7 @@ def test_supply_worker_uses_its_own_runtime_secret_and_same_release_artifact() -
     )
     assert worker["securityContext"]["readOnlyRootFilesystem"]
     assert worker["readinessProbe"]["httpGet"]["path"] == "/readyz"
-    assert deployment["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 0
+    assert deployment["spec"]["strategy"]["rollingUpdate"]["maxUnavailable"] == 1
 
 
 def test_supply_activation_requires_storage_and_separate_credential_projection() -> (

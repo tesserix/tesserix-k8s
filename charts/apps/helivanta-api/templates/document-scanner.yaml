@@ -6,46 +6,6 @@ metadata:
   namespace: {{ .Release.Namespace }}
 automountServiceAccountToken: false
 ---
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: helivanta-clamav
-  namespace: {{ .Release.Namespace }}
-data:
-  clamd.conf: |
-    Foreground yes
-    User clamav
-    DatabaseDirectory /var/lib/clamav
-    TemporaryDirectory /tmp
-    TCPSocket 3310
-    TCPAddr 0.0.0.0
-    StreamMaxLength 10M
-    MaxScanSize 30M
-    MaxFileSize 10M
-    MaxRecursion 8
-    AlertExceedsMax yes
-    AlertEncryptedArchive yes
-    AlertEncryptedDoc yes
-    MaxFiles 256
-    MaxThreads 4
-    MaxQueue 8
-    ReadTimeout 90
-    CommandReadTimeout 10
-    SendBufTimeout 10
-    SelfCheck 60
-    LogClean no
-    LogVerbose no
-    LogTime no
-  freshclam.conf: |
-    Foreground yes
-    DatabaseDirectory /var/lib/clamav
-    DatabaseOwner clamav
-    DatabaseMirror database.clamav.net
-    Checks 12
-    ConnectTimeout 15
-    ReceiveTimeout 60
-    MaxAttempts 3
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -68,6 +28,7 @@ spec:
         app.kubernetes.io/name: helivanta-clamav
         app.kubernetes.io/part-of: helivanta
       annotations:
+        checksum/scanner-config: {{ include (print $.Template.BasePath "/document-scanner-config.yaml") . | sha256sum }}
         proxy.istio.io/config: '{"holdApplicationUntilProxyStarts":true}'
         sidecar.istio.io/proxyCPU: 50m
         sidecar.istio.io/proxyCPULimit: 250m
@@ -91,16 +52,19 @@ spec:
           command: [/bin/sh, -ec]
           args:
             - |
-              freshclam --config-file=/config/freshclam.conf --quiet
-              freshclam --config-file=/config/freshclam.conf --daemon --quiet &
+              freshclam --config-file=/config/freshclam.conf
+              freshclam --config-file=/config/freshclam.conf --daemon &
               updater=$!
               clamd --config-file=/config/clamd.conf &
               scanner=$!
               trap 'kill -TERM "$scanner" "$updater" 2>/dev/null; wait "$scanner"; exit 0' TERM INT
-              code=0
-              wait "$scanner" || code=$?
-              kill -TERM "$updater" 2>/dev/null || true
-              exit "$code"
+              while kill -0 "$scanner" 2>/dev/null && kill -0 "$updater" 2>/dev/null; do
+                sleep 1
+              done
+              kill -TERM "$scanner" "$updater" 2>/dev/null || true
+              wait "$scanner" 2>/dev/null || true
+              wait "$updater" 2>/dev/null || true
+              exit 1
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

@@ -1,6 +1,8 @@
 import json
+import os
 import re
 import subprocess
+import pytest
 from pathlib import Path
 
 import yaml
@@ -556,3 +558,60 @@ def test_istiod_admits_only_sidecar_pods_from_sidecar_namespaces():
             "ports": [{"protocol": "TCP", "port": 15012}],
         }
     ]
+
+
+def test_workers_roll_in_place_without_needing_additional_namespace_quota():
+    resources = render(
+        "charts/apps/helivanta-api",
+        "documents.enabled=true",
+        "supplyEvidence.enabled=true",
+    )
+    for name in ["helivanta-document-worker", "helivanta-supply-evidence-worker"]:
+        spec = resource(resources, "Deployment", name)["spec"]
+        assert spec["replicas"] == 2
+        assert spec["strategy"] == {
+            "type": "RollingUpdate",
+            "rollingUpdate": {"maxUnavailable": 1, "maxSurge": 0},
+        }
+
+
+def test_scanner_rolls_config_updates_and_supervises_the_signature_updater():
+    resources = render("charts/apps/helivanta-api", "documents.enabled=true")
+    template = resource(resources, "Deployment", "helivanta-clamav")["spec"]["template"]
+    checksum = template["metadata"]["annotations"].get("checksum/scanner-config", "")
+    assert re.fullmatch(r"[a-f0-9]{64}", checksum)
+    config = resource(resources, "ConfigMap", "helivanta-clamav")["data"]
+    assert "NotifyClamd /config/clamd.conf" in config["freshclam.conf"]
+    script = template["spec"]["containers"][0]["args"][0]
+    assert "--quiet" not in script
+    assert 'kill -TERM "$scanner" "$updater"' in script
+
+
+@pytest.mark.parametrize("updater_exit", [0, 7])
+def test_scanner_exits_and_stops_clamd_when_signature_updater_stops(
+    tmp_path, updater_exit
+):
+    resources = render("charts/apps/helivanta-api", "documents.enabled=true")
+    container = resource(resources, "Deployment", "helivanta-clamav")["spec"][
+        "template"
+    ]["spec"]["containers"][0]
+    (tmp_path / "entrypoint.sh").write_text(container["args"][0])
+    (tmp_path / "freshclam").write_text(
+        "#!/bin/sh\ncase \" $* \" in *' --daemon '*) exit "
+        + str(updater_exit)
+        + ";; esac\nexit 0\n"
+    )
+    (tmp_path / "clamd").write_text(
+        "#!/bin/sh\ntrap 'echo scanner-stopped; exit 0' TERM INT\nwhile :; do :; done\n"
+    )
+    for name in ["freshclam", "clamd"]:
+        (tmp_path / name).chmod(0o755)
+    result = subprocess.run(
+        ["bash", "-ec", (tmp_path / "entrypoint.sh").read_text()],
+        env={**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"]},
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 1, result.stderr

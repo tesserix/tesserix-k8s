@@ -1,0 +1,42 @@
+{{- if .Values.documents.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: helivanta-clamav
+  namespace: {{ .Release.Namespace }}
+data:
+  clamd.conf: |
+    Foreground yes
+    User clamav
+    DatabaseDirectory /var/lib/clamav
+    TemporaryDirectory /tmp
+    TCPSocket 3310
+    TCPAddr 0.0.0.0
+    StreamMaxLength 10M
+    MaxScanSize 30M
+    MaxFileSize 10M
+    MaxRecursion 8
+    AlertExceedsMax yes
+    AlertEncryptedArchive yes
+    AlertEncryptedDoc yes
+    MaxFiles 256
+    MaxThreads 4
+    MaxQueue 8
+    ReadTimeout 90
+    CommandReadTimeout 10
+    SendBufTimeout 10
+    SelfCheck 60
+    LogClean no
+    LogVerbose no
+    LogTime no
+  freshclam.conf: |
+    Foreground yes
+    DatabaseDirectory /var/lib/clamav
+    DatabaseOwner clamav
+    DatabaseMirror database.clamav.net
+    NotifyClamd /config/clamd.conf
+    Checks 12
+    ConnectTimeout 15
+    ReceiveTimeout 60
+    MaxAttempts 3
+{{- end }}
