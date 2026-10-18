@@ -93,8 +93,44 @@ scoped metadata; structural field classification is not legal de-identification.
 No SOC 2 attestation, HIPAA compliance certification or operational emergency
 service integration is established by this release.
 
-The image audit found upstream Istio/CNPG references beyond the application
-images. The [registry cutover plan](helivanta-registry-cutover.md) prepares their
-GCP mirror migration; it requires separate maintenance approval for database
-switchover and the single-instance scanner restart. Historical terminal Job
-records retain their original image references for audit accuracy.
+## Approved registry cutover results
+
+The user approved the named maintenance and registry-only recovery. The shared
+injector change [#1464](https://github.com/tesserix/tesserix-k8s/pull/1464)
+was merged first at `0dffc696651180dc96e11a849d73f644668db647`.
+Both Istiod replicas and the injector hub were verified before merging
+[#1465](https://github.com/tesserix/tesserix-k8s/pull/1465) at
+`13ca7379d02c65868e32534363affdf1d59c3adb`. No registry recovery was needed.
+
+Post-cutover checks at 2026-10-18 15:15 UTC (19 October in Melbourne) confirmed:
+
+- All 15 active Helivanta pods use GCP Artifact Registry for application,
+  database, bootstrap, init and injected proxy images. Desired Deployments,
+  StatefulSets and CronJobs also use GCP. Application digests above are unchanged.
+- PostgreSQL returned to 2/2 with continuous archiving and last-backup success.
+  CNPG used its configured `primaryUpdateMethod: restart`, retained
+  `helivanta-postgres-1` as primary, and completed its 180-second graceful shutdown
+  before replacement. This was a primary restart, not a switchover; readiness
+  was reduced during maintenance. No pod or volume was manually deleted.
+- API, web and all three worker deployments returned to 2/2; ClamAV returned
+  to 1/1. All active application containers had zero restarts. Istio and all ten
+  Helivanta Argo applications were Healthy/Synced. All 16 ExternalSecrets were
+  Ready; worker database privilege restrictions were rechecked.
+- ClamAV reported `1.5.4/28157`, definitions dated 18 October 2026. A live
+  `INSTREAM` check accepted harmless content and detected the standard EICAR
+  test signature. No clinical document or patient record was created.
+- Both replacement emergency workers registered fresh workflow and activity
+  pollers. Anonymous origin checks again returned 401 for the protected bases,
+  crew assignments and receiving facilities APIs, and 200 for `/ambulance`.
+- Signed-in checks verified the receiving page and pharmacy stock workspace.
+  Resource usage remained 11,450m/12 CPU and 14,720Mi/16Gi memory limits, with
+  2,100m/4 CPU and 5Gi/6Gi memory requests. Processing remained enabled and new
+  reservations disabled.
+- Cutover PR checks passed, including repository tests, Helm rendering and
+  security scans. The three registry contract tests were also rerun locally:
+  `uv run --python 3.12 --with pytest --with pyyaml python -m pytest
+  tests/test_helivanta_registry_cutover.py -q`.
+
+The [registry runbook](helivanta-registry-cutover.md) remains the procedure for
+future changes; this approval does not authorize future maintenance. Historical
+terminal Job records retain their original image references for audit accuracy.
