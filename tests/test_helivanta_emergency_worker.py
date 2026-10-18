@@ -90,7 +90,7 @@ def test_emergency_worker_is_private_and_uses_verified_database_tls_without_surg
         "DOCUMENT_WORKER_DATABASE_URL",
         "OPENBAO_TOKEN",
     }.intersection(env)
-    assert "cpu" not in container["resources"]["limits"]
+    assert container["resources"]["limits"]["cpu"] == "250m"
     ca = next(v for v in pod["volumes"] if v["name"] == "database-ca")
     assert ca["secret"]["items"] == [{"key": "ca.crt", "path": "ca.crt"}]
     assert (
@@ -196,3 +196,67 @@ def test_emergency_worker_does_not_project_a_kubernetes_or_cloud_credential():
     sa = resource(rows, "ServiceAccount", "helivanta-emergency-worker")
     assert sa["automountServiceAccountToken"] is False
     assert "iam.gke.io/gcp-service-account" not in sa["metadata"].get("annotations", {})
+
+
+def test_suspending_new_reservations_keeps_existing_workflows_running():
+    rows = render(
+        "charts/apps/helivanta-api",
+        "emergencyDispatch.enabled=true",
+        "emergencyDispatch.acceptNew=false",
+    )
+    api = resource(rows, "Deployment", "helivanta-api")
+    env = {
+        x["name"]: x.get("value")
+        for x in api["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    assert env["EMERGENCY_DISPATCH_ENABLED"] == "false"
+    assert env["EMERGENCY_WORKFLOWS_ENABLED"] == "true"
+    assert (
+        resource(rows, "Deployment", "helivanta-emergency-worker")["spec"]["replicas"]
+        == 2
+    )
+
+
+def test_secret_seed_is_disabled_by_default_and_has_scoped_short_lived_identity():
+    assert not any(
+        x["kind"] == "Job"
+        and x["metadata"]["name"].startswith("helivanta-emergency-secret-seed")
+        for x in render("charts/apps/helivanta-postgres")
+    )
+    rows = render("charts/apps/helivanta-postgres", "emergencyWorker.seed.enabled=true")
+    job = next(
+        x
+        for x in rows
+        if x["kind"] == "Job"
+        and x["metadata"]["name"].startswith("helivanta-emergency-secret-seed")
+    )
+    pod = job["spec"]["template"]["spec"]
+    assert pod["serviceAccountName"] == "helivanta-emergency-secret-seed"
+    assert pod["automountServiceAccountToken"] is False
+    token = next(x for x in pod["volumes"] if x["name"] == "token")
+    assert (
+        token["projected"]["sources"][0]["serviceAccountToken"]["expirationSeconds"]
+        == 600
+    )
+    assert (
+        job["spec"]["template"]["metadata"]["annotations"][
+            "sidecar.istio.io/nativeSidecar"
+        ]
+        == "true"
+    )
+    assert pod["containers"][0]["image"].startswith("asia-south1-docker.pkg.dev/")
+    assert "@sha256:" in pod["containers"][0]["image"]
+    assert not pod["containers"][0].get("envFrom")
+
+
+def test_workers_leave_capacity_for_the_next_migration():
+    rows = render("charts/apps/helivanta-api", "emergencyDispatch.enabled=true")
+    worker = resource(rows, "Deployment", "helivanta-emergency-worker")
+    annotations = worker["spec"]["template"]["metadata"]["annotations"]
+    proxy_limit = int(annotations["sidecar.istio.io/proxyCPULimit"].removesuffix("m"))
+    limit = int(
+        worker["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"][
+            "cpu"
+        ].removesuffix("m")
+    )
+    assert 10750 + worker["spec"]["replicas"] * (proxy_limit + limit) + 500 < 12000

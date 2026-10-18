@@ -146,8 +146,10 @@ spec:
             - name: DOCUMENT_RELEASED_BUCKET
               value: {{ required "documents.releasedBucket is required" .Values.documents.releasedBucket | quote }}
             {{- end }}
-            - name: EMERGENCY_DISPATCH_ENABLED
+            - name: EMERGENCY_WORKFLOWS_ENABLED
               value: {{ .Values.emergencyDispatch.enabled | quote }}
+            - name: EMERGENCY_DISPATCH_ENABLED
+              value: {{ and .Values.emergencyDispatch.enabled .Values.emergencyDispatch.acceptNew | quote }}
             {{- if and .Values.documents.enabled .Values.emergencyDispatch.enabled }}
             {{- if or (ne .Values.documents.temporalAddress .Values.emergencyDispatch.temporalAddress) (ne .Values.documents.temporalNamespace .Values.emergencyDispatch.temporalNamespace) }}
             {{- fail "API dispatch and document workflows must use the same configured Temporal namespace/address" }}
