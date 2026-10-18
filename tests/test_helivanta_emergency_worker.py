@@ -262,6 +262,27 @@ def test_workers_leave_capacity_for_the_next_migration():
     assert 10750 + worker["spec"]["replicas"] * (proxy_limit + limit) + 500 < 12000
 
 
+def test_production_processes_existing_trips_without_accepting_new_reservations():
+    api = yaml.safe_load(
+        (ROOT / "argocd/prod/apps/helivanta/helivanta-api.yaml").read_text()
+    )
+    dispatch = (
+        api["spec"]["source"]["helm"]
+        .get("valuesObject", {})
+        .get("emergencyDispatch", {})
+    )
+    assert dispatch == {"enabled": True, "acceptNew": False}
+    postgres = yaml.safe_load(
+        (ROOT / "argocd/prod/apps/helivanta/helivanta-postgres.yaml").read_text()
+    )
+    worker = postgres["spec"]["source"]["helm"]["valuesObject"]["emergencyWorker"]
+    assert worker == {
+        "seed": {"enabled": True},
+        "credentials": {"enabled": True},
+        "login": True,
+    }
+
+
 def test_seed_proxy_memory_is_sufficient_and_changes_create_a_new_job():
     rows = render("charts/apps/helivanta-postgres", "emergencyWorker.seed.enabled=true")
     job = next(

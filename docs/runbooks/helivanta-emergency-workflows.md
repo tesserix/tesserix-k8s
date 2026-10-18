@@ -14,7 +14,7 @@ The API/web, document and evidence workers share their existing GAR delivery;
    value. Do not copy an API/owner credential or add a GCP Secret Manager fallback.
 3. Enable `emergencyWorker.credentials.enabled` and `emergencyWorker.login` in the
    owning Postgres values. Wait for the ExternalSecret and CNPG role reconciliation.
-4. Approve application migrations `0004_emergency`, `0005_emergency` and `0006_emergency` and merge
+4. Approve application migrations `0004_emergency`, `0005_emergency`, `0006_emergency` and `0007_emergency` and merge
    the reviewed application release. Confirm the GAR artifact contains the new
    binary and the scoped grants exist before enabling its deployment.
 5. Set `emergencyDispatch.enabled: true` in the owning API values. It enables the
@@ -71,3 +71,19 @@ With the observed 10,750m namespace CPU limits, two workers add 700m, leaving
 this arithmetic is a snapshot, not a capacity guarantee. Worker deployment has
 no surge. The temporary seed Job needs 200m and must complete before workers
 are first enabled.
+
+
+## Initial production processing gate
+
+The initial release enables `emergencyDispatch.enabled=true` while explicitly
+keeping `acceptNew=false`. Existing-trip orchestration, hospital receiving and
+worker health can run without enabling new reservations. The dedicated database
+login/ESO credential must be enabled only after the create-only seed Job succeeds
+and the application image containing migrations through `0007_emergency` is
+running. Migration 0007 resolves the actual relation owner; never create a
+privileged `hms_owner` alias or weaken FORCE RLS to reproduce test naming.
+
+Verify both workers are ready, the exact image matches the promoted application
+commit, the namespace CPU limit leaves migration headroom and the database role
+is NOINHERIT/NOSUPERUSER/NOBYPASSRLS with no memberships. Record only secret
+synchronization status and version metadata, never credential values.
