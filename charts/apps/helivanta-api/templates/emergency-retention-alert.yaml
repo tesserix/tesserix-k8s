@@ -1,0 +1,25 @@
+{{- if .Values.emergencyRetention.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: helivanta-emergency-retention
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: helivanta
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: helivanta.emergency-retention
+      rules:
+        - alert: HelivantaEmergencyContactRetentionOverdue
+          expr: |
+            (kube_cronjob_spec_suspend{namespace="{{ .Release.Namespace }}",cronjob="{{ include "helivanta-api.fullname" . }}-emergency-retention"} == 0)
+            unless on (namespace,cronjob)
+            ((time() - kube_cronjob_status_last_successful_time{namespace="{{ .Release.Namespace }}",cronjob="{{ include "helivanta-api.fullname" . }}-emergency-retention"}) < 3600)
+          for: 30m
+          labels: {severity: warning, owner: helivanta}
+          annotations:
+            summary: Emergency caller-contact maintenance has no recent successful run
+            description: Read-time expiry still masks contacts. Investigate the unsuspended job, database access and bounded purge logs; do not expose expired caller data to compensate.
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/helivanta-emergency-retention.md
+{{- end }}
