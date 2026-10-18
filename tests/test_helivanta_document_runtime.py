@@ -1,6 +1,8 @@
 import json
+import math
 import re
 import subprocess
+from decimal import Decimal
 from pathlib import Path
 
 import yaml
@@ -488,7 +490,58 @@ def test_quota_covers_sidecars_migration_and_concurrent_rollout_surges():
         "ResourceQuota",
         "helivanta-compute",
     )["spec"]["hard"]
-    assert int(quota["limits.cpu"]) >= 12
+
+    def cpu(value):
+        value = str(value)
+        return Decimal(value[:-1]) / 1000 if value.endswith("m") else Decimal(value)
+
+    api = render(
+        "charts/apps/helivanta-api",
+        "documents.enabled=true",
+        "documents.acceptUploads=true",
+        "supplyEvidence.enabled=true",
+    )
+    deployments = [item for item in api if item["kind"] == "Deployment"]
+    deployments += [
+        item
+        for item in render("charts/apps/helivanta-shell")
+        if item["kind"] == "Deployment"
+    ]
+    # Two CNPG instances (1 each), OpenFGA (1), and NATS (0.5).
+    required = Decimal("3.5")
+    for deployment in deployments:
+        spec = deployment["spec"]
+        pod = spec["template"]
+        pod_cpu = sum(
+            cpu(c["resources"]["limits"]["cpu"]) for c in pod["spec"]["containers"]
+        )
+        pod_cpu += cpu(
+            pod["metadata"]
+            .get("annotations", {})
+            .get("sidecar.istio.io/proxyCPULimit", "0")
+        )
+        replicas = spec.get("replicas", 1)
+        strategy = spec.get("strategy", {})
+        surge = (
+            0
+            if strategy.get("type") == "Recreate"
+            else strategy.get("rollingUpdate", {}).get("maxSurge", "25%")
+        )
+        if isinstance(surge, str) and surge.endswith("%"):
+            surge = math.ceil(replicas * int(surge[:-1]) / 100)
+        required += pod_cpu * (replicas + int(surge))
+    migration = next(
+        item
+        for item in api
+        if item["kind"] == "Job" and item["metadata"]["name"].endswith("-migrate")
+    )
+    required += sum(
+        cpu(c["resources"]["limits"]["cpu"])
+        for c in migration["spec"]["template"]["spec"]["containers"]
+    )
+    assert cpu(quota["limits.cpu"]) >= required, (
+        f"rollout requires {required} CPU, quota permits {quota['limits.cpu']}"
+    )
     assert int(quota["limits.memory"].removesuffix("Gi")) >= 16
 
 
