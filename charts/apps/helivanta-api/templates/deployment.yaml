@@ -145,10 +145,26 @@ spec:
               value: {{ required "documents.quarantineBucket is required" .Values.documents.quarantineBucket | quote }}
             - name: DOCUMENT_RELEASED_BUCKET
               value: {{ required "documents.releasedBucket is required" .Values.documents.releasedBucket | quote }}
+            {{- end }}
+            - name: EMERGENCY_WORKFLOWS_ENABLED
+              value: {{ .Values.emergencyDispatch.enabled | quote }}
+            - name: EMERGENCY_DISPATCH_ENABLED
+              value: {{ and .Values.emergencyDispatch.enabled .Values.emergencyDispatch.acceptNew | quote }}
+            {{- if and .Values.documents.enabled .Values.emergencyDispatch.enabled }}
+            {{- if or (ne .Values.documents.temporalAddress .Values.emergencyDispatch.temporalAddress) (ne .Values.documents.temporalNamespace .Values.emergencyDispatch.temporalNamespace) }}
+            {{- fail "API dispatch and document workflows must use the same configured Temporal namespace/address" }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.emergencyDispatch.enabled }}
             - name: TEMPORAL_ADDRESS
-              value: {{ required "documents.temporalAddress is required" .Values.documents.temporalAddress | quote }}
+              value: {{ required "emergencyDispatch.temporalAddress required" .Values.emergencyDispatch.temporalAddress | quote }}
             - name: TEMPORAL_NAMESPACE
-              value: {{ required "documents.temporalNamespace is required" .Values.documents.temporalNamespace | quote }}
+              value: {{ required "emergencyDispatch.temporalNamespace required" .Values.emergencyDispatch.temporalNamespace | quote }}
+            {{- else if .Values.documents.enabled }}
+            - name: TEMPORAL_ADDRESS
+              value: {{ required "documents.temporalAddress required" .Values.documents.temporalAddress | quote }}
+            - name: TEMPORAL_NAMESPACE
+              value: {{ required "documents.temporalNamespace required" .Values.documents.temporalNamespace | quote }}
             {{- end }}
             - name: OPENFGA_URL
               value: {{ .Values.openfga.url | quote }}

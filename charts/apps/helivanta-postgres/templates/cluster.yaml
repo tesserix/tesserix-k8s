@@ -155,6 +155,18 @@ spec:
     roles:
       # Register before the workforce migration grants scoped table access.
       # No login or role memberships before private credential activation is reviewed.
+      - name: helivanta_emergency_worker
+        ensure: present
+        connectionLimit: 16
+        inherit: false
+        {{- if .Values.emergencyWorker.login }}
+        {{- if not .Values.emergencyWorker.credentials.enabled }}
+        {{- fail "emergency worker login requires credential projection" }}
+        {{- end }}
+        login: true
+        passwordSecret:
+          name: {{ .Values.emergencyWorker.credentials.secretName }}
+        {{- end }}
       - name: helivanta_document_worker
         ensure: present
         inherit: false

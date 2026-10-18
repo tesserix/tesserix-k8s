@@ -77,7 +77,7 @@ def test_transit_role_is_bound_to_the_api_alone_and_separate_from_eso():
             assert "helivanta-api-transit" not in json.loads(body)["token_policies"]
 
 
-def test_openbao_admits_only_the_api_pod_and_principal_from_helivanta():
+def test_openbao_admits_only_the_api_and_create_only_seed_from_helivanta():
     documents = render("charts/apps/openbao-namespace")
     ingress = resource(documents, "NetworkPolicy", "allow-clients-to-openbao")["spec"][
         "ingress"
@@ -91,8 +91,9 @@ def test_openbao_admits_only_the_api_pod_and_principal_from_helivanta():
     assert sources == [
         {
             "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "helivanta"}},
-            "podSelector": {"matchLabels": {"app.kubernetes.io/name": "helivanta-api"}},
+            "podSelector": {"matchLabels": {"app.kubernetes.io/name": name}},
         }
+        for name in ["helivanta-emergency-secret-seed", "helivanta-api"]
     ]
     assert ingress["ports"] == [{"protocol": "TCP", "port": 8200}]
     auth = resource(documents, "AuthorizationPolicy", "allow-known-sources")
@@ -103,7 +104,7 @@ def test_openbao_admits_only_the_api_pod_and_principal_from_helivanta():
         for principal in source["source"].get("principals", [])
         if "/ns/helivanta/" in principal
     ]
-    assert helivanta == [PRINCIPAL]
+    assert helivanta == ["cluster.local/ns/helivanta/sa/helivanta-emergency-secret-seed", PRINCIPAL]
     for rule in auth["spec"]["rules"]:
         if any(PRINCIPAL in s["source"].get("principals", []) for s in rule.get("from", [])):
             assert rule["to"] == [{"operation": {"ports": ["8200"]}}]
