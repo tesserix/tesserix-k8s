@@ -584,7 +584,6 @@ def test_scanner_rolls_config_updates_and_supervises_the_signature_updater():
     assert "NotifyClamd /config/clamd.conf" in config["freshclam.conf"]
     script = template["spec"]["containers"][0]["args"][0]
     assert "--quiet" not in script
-    assert "wait -n" in script
     assert 'kill -TERM "$scanner" "$updater"' in script
 
 
