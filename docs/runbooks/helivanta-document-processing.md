@@ -91,3 +91,26 @@ Delivery gates
 Rollback disables new uploads and restores the previous workload configuration
 and image through GitOps. Preserve metadata, objects, role grants and history.
 Do not reverse the additive migration or delete confidential data as a rollback.
+
+
+Worker and signature recovery
+
+Both workers roll with `maxSurge: 0` and `maxUnavailable: 1`, retaining two
+configured replicas and the existing disruption budget. This releases the old
+pod's quota before replacement; persisted Temporal work is retried by the other
+worker. Do not increase the namespace quota to make repeated surge pods fit.
+Check actual pod resources, sidecars and the migration hook before changing sizing.
+
+Scanner configuration is checksummed into its pod template. A configuration
+change recreates its disposable definition cache and runs FreshClam before clamd.
+The updater checks the vendor twelve times per day, notifies clamd after an update,
+and logs failures. The container exits if either clamd or the updater stops.
+Inspect scanner logs and its VERSION response to confirm the loaded definition
+version after reconciliation. A live updater process alone does not prove that
+updates have succeeded. Freshness remains limited to 24 hours, including the
+before/after scan provenance checks; never change file timestamps to bypass it.
+
+If the vendor has no definitions within that window, processing remains unavailable
+and files stay quarantined. Restore approved current definitions and verify both
+worker readiness and a synthetic clean/infected processing journey before
+claiming recovery. Public API and metadata readiness do not prove file release.
