@@ -48,12 +48,15 @@ def test_bootstrap_mounts_transit_after_kv_and_before_policies():
     assert kv < transit < script.index("==> policies")
 
 
-def test_transit_policy_grants_only_encrypt_decrypt_and_hmac_on_staff_keys():
+def test_transit_policy_grants_only_encrypt_decrypt_and_hmac_on_staff_and_emergency_keys():
     policy = bootstrap()["policy-helivanta-api-transit.hcl"]
     assert re.findall(r'path "([^"]+)"\s*\{ capabilities = \[([^]]+)\] \}', policy) == [
         ("transit/encrypt/helivanta-staff-*", '"create", "update"'),
         ("transit/decrypt/helivanta-staff-*", '"update"'),
         ("transit/hmac/helivanta-staff-*", '"update"'),
+        ("transit/encrypt/helivanta-emergency-*", '"create", "update"'),
+        ("transit/decrypt/helivanta-emergency-*", '"update"'),
+        ("transit/hmac/helivanta-emergency-*", '"update"'),
     ]
     assert "kv/" not in policy
     for forbidden in ("keys/", "export", "rotate", "rewrap", "backup", "restore", "delete", "sudo"):
