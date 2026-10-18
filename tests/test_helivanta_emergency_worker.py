@@ -281,3 +281,31 @@ def test_production_processes_existing_trips_without_accepting_new_reservations(
         "credentials": {"enabled": True},
         "login": True,
     }
+
+
+def test_seed_proxy_memory_is_sufficient_and_changes_create_a_new_job():
+    rows = render("charts/apps/helivanta-postgres", "emergencyWorker.seed.enabled=true")
+    job = next(
+        r
+        for r in rows
+        if r["kind"] == "Job"
+        and r["metadata"]["name"].startswith("helivanta-emergency-secret-seed")
+    )
+    assert (
+        job["spec"]["template"]["metadata"]["annotations"][
+            "sidecar.istio.io/proxyMemoryLimit"
+        ]
+        == "256Mi"
+    )
+    changed = render(
+        "charts/apps/helivanta-postgres",
+        "emergencyWorker.seed.enabled=true",
+        "emergencyWorker.seed.proxyMemoryLimit=384Mi",
+    )
+    new_job = next(
+        r
+        for r in changed
+        if r["kind"] == "Job"
+        and r["metadata"]["name"].startswith("helivanta-emergency-secret-seed")
+    )
+    assert new_job["metadata"]["name"] != job["metadata"]["name"]
