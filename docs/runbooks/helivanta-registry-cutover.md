@@ -1,10 +1,13 @@
 # Helivanta registry cutover
 
-This is a prepared maintenance change. Do not apply it without approval for the
-PostgreSQL switchover and single-instance antivirus restart. It follows the shared
-Istio hub change in [PR 1464](https://github.com/tesserix/tesserix-k8s/pull/1464).
-The staff application release `9285628e61030794310efb7382b61f94db4aa916` is already
-running and stays at that commit throughout the cutover.
+This maintenance was approved and completed on 19 October 2026 in Melbourne.
+The shared Istio hub change in
+[PR 1464](https://github.com/tesserix/tesserix-k8s/pull/1464) was verified first,
+followed by [PR 1465](https://github.com/tesserix/tesserix-k8s/pull/1465).
+See the [observed results](helivanta-emergency-release-2026-10-19.md#approved-registry-cutover-results).
+The staff application remained at `9285628e61030794310efb7382b61f94db4aa916`.
+Future maintenance still requires approval for its specific database and
+single-instance antivirus interruption; prior approval is not reusable.
 
 ## Scope and expected effects
 
@@ -13,7 +16,8 @@ running and stays at that commit throughout the cutover.
 - Helivanta PostgreSQL remains at two instances on the existing **16.4 image
   digest** `sha256:99be063781d171d3971089b49c992706bdab9ccbd2b57cdf126c7542773aedfe`.
   Changing its repository can cause a controlled rolling update and primary
-  switchover. Connections may briefly retry. This changes no database schema,
+  restart or switchover, according to the cluster's configured update method.
+  Connections may retry during the configured graceful shutdown. This changes no database schema,
   role, password, storage volume or retention policy.
 - A GitOps pod annotation refreshes the six meshed application/scanner workloads
   after the injector uses the GCP hub. Application images remain at `9285628`.
@@ -51,7 +55,9 @@ to make an image-reference audit pass.
    Verify two healthy Istiod replicas and the injector configuration hub before
    applying the Helivanta refresh. No mTLS or authorization setting changes.
 2. Merge the approved `fix/helivanta-registry-cutover` change through GitOps.
-   Watch standby readiness, primary switchover, application and scanner readiness.
+   Watch standby readiness, primary restart or switchover, and application and
+   scanner readiness. The completed cutover retained the primary and used the
+   configured restart method with a 180-second smart shutdown timeout.
    Do not delete database pods/PVCs or manually bypass reconciliation.
 3. Verify every active/pending Helivanta application, database, init and injected
    proxy image starts with `asia-south1-docker.pkg.dev/`. Verify actual running
