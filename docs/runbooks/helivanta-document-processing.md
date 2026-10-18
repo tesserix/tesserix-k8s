@@ -103,14 +103,16 @@ Check actual pod resources, sidecars and the migration hook before changing sizi
 
 Scanner configuration is checksummed into its pod template. A configuration
 change recreates its disposable definition cache and runs FreshClam before clamd.
-The updater checks the vendor twelve times per day, notifies clamd after an update,
+The updater checks the vendor hourly, notifies clamd after an update,
 and logs failures. The container exits if either clamd or the updater stops.
 Inspect scanner logs and its VERSION response to confirm the loaded definition
 version after reconciliation. A live updater process alone does not prove that
-updates have succeeded. Freshness remains limited to 24 hours, including the
-before/after scan provenance checks; never change file timestamps to bypass it.
+updates have succeeded. Workers stay running but report unready once definitions
+pass 36 hours, which raises the worker-unavailable alerts; scans, including the
+before/after provenance checks, refuse definitions past 48 hours
+(helivanta#1242). Never change file timestamps to bypass either bound.
 
-If the vendor has no definitions within that window, processing remains unavailable
+If the vendor has no definitions within 48 hours, processing remains unavailable
 and files stay quarantined. Restore approved current definitions and verify both
 worker readiness and a synthetic clean/infected processing journey before
 claiming recovery. Public API and metadata readiness do not prove file release.
