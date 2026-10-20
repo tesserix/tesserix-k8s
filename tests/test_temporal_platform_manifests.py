@@ -169,7 +169,6 @@ class TemporalPlatformManifestTests(unittest.TestCase):
                 "document-intelligence-roamie-prod",
                 "document-intelligence-homechef-prod",
                 "document-intelligence-sandbox",
-                "document-intelligence-ocr-sandbox-prod",
                 "dwellm8",
                 "homechef",
                 "helivanta-documents-prod",
