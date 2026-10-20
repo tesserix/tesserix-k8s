@@ -318,6 +318,22 @@ class TemporalPlatformManifestTests(unittest.TestCase):
             }.issubset(principals)
         )
 
+        # Every release's workers dial Temporal, so a new product file must be authorized too.
+        chart = ROOT / "charts/apps/document-intelligence"
+        for values in [chart / "values-prod.yaml", chart / "values-sandbox.yaml", *sorted((chart / "products").glob("*.yaml"))]:
+            rendered = subprocess.run(
+                ["helm", "template", "r", str(chart), "--namespace", "document-intelligence", "-f", str(values)],
+                check=True, capture_output=True, text=True,
+            ).stdout
+            workers = {
+                f"cluster.local/ns/document-intelligence/sa/{d['spec']['template']['spec']['serviceAccountName']}"
+                for d in yaml.safe_load_all(rendered)
+                if d and d["kind"] == "Deployment"
+                and d["spec"]["template"]["metadata"]["labels"].get("app.kubernetes.io/component") in ("dispatch-worker", "execution-worker")
+            }
+            self.assertEqual(2, len(workers), values.name)
+            self.assertTrue(workers <= principals, (values.name, workers - principals))
+
     def test_alerts_cover_availability_persistence_and_failures(self):
         documents = render_resources()
         rule = resource(
