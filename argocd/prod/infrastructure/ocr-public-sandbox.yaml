@@ -4,6 +4,8 @@ metadata:
   name: ocr-public-sandbox
   namespace: argocd
   labels: {app.kubernetes.io/part-of: document-intelligence, environment: prod}
+  # Deleting this Application removes its resources instead of orphaning them.
+  finalizers: [resources-finalizer.argocd.argoproj.io]
 spec:
   project: infrastructure
   source:
@@ -13,8 +15,8 @@ spec:
     helm:
       releaseName: ocr-public-sandbox
       valuesObject:
-        admissionEnabled: true
-        publicAPIEnabled: true
+        admissionEnabled: false
+        publicAPIEnabled: false
         replicas: 0
   destination: {server: https://kubernetes.default.svc, namespace: document-intelligence}
   syncPolicy:

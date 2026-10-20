@@ -122,3 +122,9 @@ def test_public_sandbox_gateway_preserves_the_large_upload_timeout():
     ], text=True)))
     service = next(d for d in docs if d and d['kind'] == 'VirtualService')
     assert service['spec']['http'][0]['timeout'] == '95s'
+
+
+def test_public_sandbox_application_is_closed_and_cascades_on_removal():
+    app = yaml.safe_load((ROOT / 'argocd/prod/infrastructure/ocr-public-sandbox.yaml').read_text())
+    assert app['metadata']['finalizers'] == ['resources-finalizer.argocd.argoproj.io']
+    assert app['spec']['source']['helm']['valuesObject'] == {'admissionEnabled': False, 'publicAPIEnabled': False, 'replicas': 0}
