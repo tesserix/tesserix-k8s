@@ -98,6 +98,9 @@ spec:
     roles:
       {{- range .Values.managedRoles }}
       - name: {{ .name }}
+        {{- if eq (.ensure | default "present") "absent" }}
+        ensure: absent
+        {{- else }}
         ensure: present
         login: true
         {{- if .createdb }}
@@ -108,6 +111,7 @@ spec:
         {{- end }}
         passwordSecret:
           name: {{ .passwordSecret }}
+        {{- end }}
       {{- end }}
   {{- end }}
 

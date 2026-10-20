@@ -8,22 +8,19 @@ locals {
   gcp_secret_releases = {
     for name, r in local.releases : name => r if try(r.secretBackend, "openbao") == "gcp"
   }
-  public_sandboxes = { for name, r in local.releases : name => r if try(r.publicSandbox, false) }
-  products         = toset([for r in local.releases : r.product])
-  sandbox_products = toset([for r in local.public_sandboxes : r.product])
+  products = toset([for r in local.releases : r.product])
 
   # purpose => retentionDays key
   bucket_purposes = { quarantine = "quarantine", accepted = "source", derived = "pages", results = "results" }
   buckets = merge([
     for name, r in local.releases : {
       for purpose, retention in local.bucket_purposes : "${name}-${purpose}" => {
-        release   = name
-        product   = r.product
-        env       = r.environment
-        name      = "${name}-doc-${purpose}-in"
-        purpose   = purpose
-        age       = r.retentionDays[retention]
-        ephemeral = try(r.publicSandbox, false)
+        release = name
+        product = r.product
+        env     = r.environment
+        name    = "${name}-doc-${purpose}-in"
+        purpose = purpose
+        age     = r.retentionDays[retention]
       }
     }
   ]...)
@@ -52,7 +49,7 @@ locals {
 check "registry_names" {
   assert {
     condition = alltrue([
-      for name, r in local.releases : name == "${r.product}-${r.environment}" && (can(regex("^[a-z][a-z0-9]*$", r.product)) || (r.product == "ocr-sandbox" && try(r.publicSandbox, false))) && length("${name}-ocr-scanner") <= 30
+      for name, r in local.releases : name == "${r.product}-${r.environment}" && can(regex("^[a-z][a-z0-9]*$", r.product)) && length("${name}-ocr-scanner") <= 30
     ])
     error_message = "Registry files must be named <product>-<environment>.yaml, product lowercase alphanumeric, and <product>-<environment>-ocr-scanner at most 30 characters."
   }
@@ -66,7 +63,7 @@ data "google_kms_key_ring" "prod" {
 data "google_storage_project_service_account" "gcs" {}
 
 resource "google_kms_crypto_key" "document_data" {
-  for_each = setsubtract(local.products, local.sandbox_products)
+  for_each = local.products
 
   name            = "${each.key}-document-data-key"
   key_ring        = data.google_kms_key_ring.prod.id
@@ -79,37 +76,16 @@ resource "google_kms_crypto_key" "document_data" {
   }
 }
 
-# Public sandbox data is disposable, so its key and buckets carry no destroy protection.
-resource "google_kms_crypto_key" "sandbox_document_data" {
-  for_each = local.sandbox_products
-
-  name            = "${each.key}-document-data-key"
-  key_ring        = data.google_kms_key_ring.prod.id
-  rotation_period = "7776000s"
-  purpose         = "ENCRYPT_DECRYPT"
-  labels          = { tier = "product", product = each.key, purpose = "document-encryption" }
-}
-
-moved {
-  from = google_kms_crypto_key.document_data["ocr-sandbox"]
-  to   = google_kms_crypto_key.sandbox_document_data["ocr-sandbox"]
-}
-
-locals {
-  document_keys    = merge(google_kms_crypto_key.document_data, google_kms_crypto_key.sandbox_document_data)
-  document_buckets = merge(google_storage_bucket.document, google_storage_bucket.sandbox_document)
-}
-
 resource "google_kms_crypto_key_iam_member" "gcs_agent" {
   for_each = local.products
 
-  crypto_key_id = local.document_keys[each.key].id
+  crypto_key_id = google_kms_crypto_key.document_data[each.key].id
   role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
   member        = "serviceAccount:${data.google_storage_project_service_account.gcs.email_address}"
 }
 
 resource "google_storage_bucket" "document" {
-  for_each = { for key, bucket in local.buckets : key => bucket if !bucket.ephemeral }
+  for_each = local.buckets
 
   name                        = each.value.name
   location                    = var.region
@@ -143,61 +119,6 @@ resource "google_storage_bucket" "document" {
   depends_on = [google_kms_crypto_key_iam_member.gcs_agent]
 }
 
-resource "google_storage_bucket" "sandbox_document" {
-  for_each = { for key, bucket in local.buckets : key => bucket if bucket.ephemeral }
-
-  name                        = each.value.name
-  location                    = var.region
-  storage_class               = "STANDARD"
-  force_destroy               = true
-  uniform_bucket_level_access = true
-  public_access_prevention    = "enforced"
-  labels                      = { product = each.value.product, environment = each.value.env, purpose = "document-${each.value.purpose}", region = "in", data_class = "restricted" }
-
-  versioning {
-    enabled = false
-  }
-
-  soft_delete_policy {
-    retention_duration_seconds = 0
-  }
-
-  encryption {
-    default_kms_key_name = google_kms_crypto_key.sandbox_document_data[each.value.product].id
-  }
-
-  lifecycle_rule {
-    action {
-      type = "Delete"
-    }
-    condition {
-      age = each.value.age
-    }
-  }
-
-  depends_on = [google_kms_crypto_key_iam_member.gcs_agent]
-}
-
-moved {
-  from = google_storage_bucket.document["ocr-sandbox-prod-quarantine"]
-  to   = google_storage_bucket.sandbox_document["ocr-sandbox-prod-quarantine"]
-}
-
-moved {
-  from = google_storage_bucket.document["ocr-sandbox-prod-accepted"]
-  to   = google_storage_bucket.sandbox_document["ocr-sandbox-prod-accepted"]
-}
-
-moved {
-  from = google_storage_bucket.document["ocr-sandbox-prod-derived"]
-  to   = google_storage_bucket.sandbox_document["ocr-sandbox-prod-derived"]
-}
-
-moved {
-  from = google_storage_bucket.document["ocr-sandbox-prod-results"]
-  to   = google_storage_bucket.sandbox_document["ocr-sandbox-prod-results"]
-}
-
 resource "google_service_account" "ocr" {
   for_each = local.identities
 
@@ -226,7 +147,7 @@ resource "google_service_account_iam_member" "signer_self_token_creator" {
 resource "google_storage_bucket_iam_member" "ocr" {
   for_each = local.bucket_grants
 
-  bucket = local.document_buckets[each.value.bucket].name
+  bucket = google_storage_bucket.document[each.value.bucket].name
   role   = each.value.role
   member = google_service_account.ocr[each.value.identity].member
 }
@@ -285,29 +206,4 @@ resource "google_secret_manager_secret_version" "database_gcp" {
 
   secret      = google_secret_manager_secret.database_gcp[each.key].id
   secret_data = random_password.database_gcp[each.key].result
-}
-
-resource "google_service_account" "public_sandbox_cleanup" {
-  for_each     = local.public_sandboxes
-  account_id   = "${each.key}-cleanup"
-  display_name = "Public OCR sandbox verified cleanup"
-}
-resource "google_project_iam_custom_role" "public_sandbox_cleanup" {
-  count       = length(local.public_sandboxes) > 0 ? 1 : 0
-  project     = var.project_id
-  role_id     = "ocrSandboxCleanup"
-  title       = "OCR sandbox verified cleanup"
-  permissions = ["storage.buckets.get", "storage.objects.list", "storage.objects.delete"]
-}
-resource "google_storage_bucket_iam_member" "public_sandbox_cleanup" {
-  for_each = { for key, bucket in local.buckets : key => bucket if bucket.ephemeral }
-  bucket   = local.document_buckets[each.key].name
-  role     = google_project_iam_custom_role.public_sandbox_cleanup[0].name
-  member   = google_service_account.public_sandbox_cleanup[each.value.release].member
-}
-resource "google_service_account_iam_member" "public_sandbox_cleanup" {
-  for_each           = local.public_sandboxes
-  service_account_id = google_service_account.public_sandbox_cleanup[each.key].name
-  role               = "roles/iam.workloadIdentityUser"
-  member             = "serviceAccount:${var.project_id}.svc.id.goog[document-intelligence/ocr-public-sandbox]"
 }
