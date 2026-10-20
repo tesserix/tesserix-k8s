@@ -19,11 +19,19 @@
   (dict "name" "TEMPORAL_TARGET" "value" $c.temporal.target)
   (dict "name" "TEMPORAL_NAMESPACE" "value" $c.temporal.namespace)
   (dict "name" "TEMPORAL_TASK_QUEUE" "value" $c.temporal.taskQueue) }}
+{{- /* The anonymous public sandbox stays native-only so its uploads never reach paid Document AI. */}}
+{{- $documentAiEnv := list }}
+{{- if not .Values.publicSandbox }}
+{{- $documentAiEnv = list
+  (dict "name" "DOCUMENT_AI_PROJECT_ID" "value" .Values.documentAi.projectId)
+  (dict "name" "DOCUMENT_AI_LOCATION" "value" .Values.documentAi.location)
+  (dict "name" "DOCUMENT_AI_PROCESSOR_ID" "value" .Values.documentAi.processorId) }}
+{{- end }}
 {{- range $workload := list
   (dict "name" "upload-api" "sa" $c.serviceAccounts.upload "command" (list "/app/ocr-service") "replicas" 2 "resources" $.Values.resources.api "env" (concat $apiEnv (list (dict "name" "OCR_API_CAPABILITY" "value" "uploads") (dict "name" "QUARANTINE_BUCKETS" "value" (printf "%s=%s" $.Values.product $c.buckets.quarantine)))) "port" true)
   (dict "name" "job-api" "sa" $c.serviceAccounts.jobs "command" (list "/app/ocr-service") "replicas" 2 "resources" $.Values.resources.api "env" (concat $apiEnv (list (dict "name" "OCR_API_CAPABILITY" "value" "jobs") (dict "name" "RESULT_BUCKETS" "value" $c.buckets.results))) "port" true)
   (dict "name" "dispatch-worker" "sa" $c.serviceAccounts.dispatch "command" (list "/app/ocr-dispatch-worker") "replicas" 1 "resources" $.Values.resources.worker "env" (concat $workerEnv (list (dict "name" "WORK_SCOPE_DATABASE_URL" "valueFrom" (dict "secretKeyRef" (dict "name" $c.database.secretName "key" "DATABASE_URL"))) (dict "name" "QUARANTINE_BUCKETS" "value" (printf "%s=%s" $.Values.product $c.buckets.quarantine)) (dict "name" "SOURCE_BUCKETS" "value" (printf "%s=%s" $.Values.product $c.buckets.source)) (dict "name" "CLAMD_ADDRESS" "value" "127.0.0.1:3310") (dict "name" "PARSER_EXECUTABLE" "value" "/app/ocr-parser-sandbox") (dict "name" "WORKER_ID" "value" (printf "dispatch-%s" $.Values.environment)))) "clamd" true)
-  (dict "name" "execution-worker" "sa" $c.serviceAccounts.execution "command" (list "/app/ocr-execution-worker") "replicas" $.Values.workers.execution.replicas "resources" $.Values.resources.executionWorker "env" (concat $workerEnv (list (dict "name" "SOURCE_BUCKETS" "value" (printf "%s=%s" $.Values.product $c.buckets.source)) (dict "name" "PAGE_BUCKETS" "value" (printf "%s=%s" $.Values.product $c.buckets.pages)) (dict "name" "RESULT_BUCKETS" "value" (printf "%s=%s" $.Values.product $c.buckets.results)) (dict "name" "DOCUMENT_AI_PROJECT_ID" "value" $.Values.documentAi.projectId) (dict "name" "DOCUMENT_AI_LOCATION" "value" $.Values.documentAi.location) (dict "name" "DOCUMENT_AI_PROCESSOR_ID" "value" $.Values.documentAi.processorId) (dict "name" "PAGE_BATCH_SIZE" "value" (toString $.Values.workers.execution.pageBatchSize)) (dict "name" "PAGE_CONCURRENCY" "value" (toString $.Values.workers.execution.pageConcurrency)) (dict "name" "FINALIZATION_CONCURRENCY" "value" (toString $.Values.workers.execution.finalizationConcurrency)) (dict "name" "WORKER_ID" "value" (printf "execution-%s" $.Values.environment)))) ) }}
+  (dict "name" "execution-worker" "sa" $c.serviceAccounts.execution "command" (list "/app/ocr-execution-worker") "replicas" $.Values.workers.execution.replicas "resources" $.Values.resources.executionWorker "env" (concat $workerEnv (list (dict "name" "SOURCE_BUCKETS" "value" (printf "%s=%s" $.Values.product $c.buckets.source)) (dict "name" "PAGE_BUCKETS" "value" (printf "%s=%s" $.Values.product $c.buckets.pages)) (dict "name" "RESULT_BUCKETS" "value" (printf "%s=%s" $.Values.product $c.buckets.results))) $documentAiEnv (list (dict "name" "PAGE_BATCH_SIZE" "value" (toString $.Values.workers.execution.pageBatchSize)) (dict "name" "PAGE_CONCURRENCY" "value" (toString $.Values.workers.execution.pageConcurrency)) (dict "name" "FINALIZATION_CONCURRENCY" "value" (toString $.Values.workers.execution.finalizationConcurrency)) (dict "name" "WORKER_ID" "value" (printf "execution-%s" $.Values.environment)))) ) }}
 ---
 apiVersion: apps/v1
 kind: Deployment

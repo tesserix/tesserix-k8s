@@ -122,3 +122,12 @@ def test_public_sandbox_gateway_preserves_the_large_upload_timeout():
     ], text=True)))
     service = next(d for d in docs if d and d['kind'] == 'VirtualService')
     assert service['spec']['http'][0]['timeout'] == '95s'
+
+
+def test_only_the_public_sandbox_never_reaches_document_ai():
+    from test_kora_ai_gateway_manifests import render_chart
+    for product, managed in (('ocr-sandbox-prod', False), ('roamie-prod', True)):
+        docs = render_chart('charts/apps/document-intelligence', product, 'document-intelligence', f'products/{product}.yaml')
+        worker = next(d for d in docs if d['kind'] == 'Deployment' and d['metadata']['name'].endswith('-execution-worker'))
+        names = {e['name'] for e in worker['spec']['template']['spec']['containers'][0]['env']}
+        assert {'DOCUMENT_AI_PROJECT_ID', 'DOCUMENT_AI_LOCATION', 'DOCUMENT_AI_PROCESSOR_ID'} <= names if managed else not any(n.startswith('DOCUMENT_AI_') for n in names), product
