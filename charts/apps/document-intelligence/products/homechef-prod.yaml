@@ -1,0 +1,21 @@
+# One file per product release. Adding a file here creates the release (ApplicationSet
+# document-intelligence-products) and its GCP resources (stack 15-document-intelligence-products).
+product: homechef
+secretBackend: openbao
+database:
+  openbaoKey: homechef/app/homechef-document-intelligence-db-password
+  openbaoStore: openbao-homechef-production
+identity:
+  openbaoStore: openbao-homechef-production
+environment: prod
+# First sync only; Kargo owns image.tag after that.
+image: {tag: a02ddfbecc03c959486303aabe8dbb7909ec1978}
+# Licences, PAN cards and utility bills are read once for pre-fill; keep nothing longer than a day.
+retentionDays: {quarantine: 1, source: 1, pages: 1, results: 1}
+clients:
+  - {namespace: homechef, serviceAccount: homechef-api, keyId: homechef-v1, openbaoKey: homechef/app/homechef-api-ocr-key, openbaoStore: openbao-homechef-production}
+
+schemaMigration:
+  enabled: true
+secretSeed:
+  enabled: true
