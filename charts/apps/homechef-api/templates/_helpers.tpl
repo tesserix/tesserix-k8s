@@ -250,6 +250,15 @@ fail because Apple credentials are misconfigured.
       name: {{ include "homechef-api.fullname" . }}-secrets
       key: MAPPLS_CLIENT_SECRET
       optional: true
+{{- if .Values.ocr.enabled }}
+# Optional: absent ⇒ OCR pre-fill is off and chefs type the fields; startup never blocks.
+- name: OCR_KEY_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: homechef-ocr-client
+      key: OCR_KEY_SECRET
+      optional: true
+{{- end }}
 {{- if .Values.email }}
 - name: FROM_EMAIL
   value: {{ .Values.email.fromEmail | quote }}

@@ -629,6 +629,21 @@ bootstrap:
       hcl: |
         path "kv/data/homechef/homechef-api/fe3dr-postgresql-password" { capabilities = ["read"] }
         path "kv/data/homechef/homechef-api/fe3dr-platform-admin-password" { capabilities = ["read"] }
+    - name: read-homechef-document-intelligence-production
+      hcl: |
+        path "kv/data/homechef/app/homechef-api-ocr-key" { capabilities = ["read"] }
+        path "kv/data/homechef/app/homechef-document-intelligence-db-password" { capabilities = ["read"] }
+    - name: read-homechef-global-production
+      hcl: |
+        path "kv/data/homechef/app/homechef-document-intelligence-db-password" { capabilities = ["read"] }
+    - name: read-homechef-homechef-production
+      hcl: |
+        path "kv/data/homechef/app/homechef-api-ocr-key" { capabilities = ["read"] }
+    - name: seed-homechef-document-intelligence-production
+      hcl: |
+        path "kv/data/homechef/app/homechef-document-intelligence-db-password" { capabilities = ["create", "read"] }
+        path "kv/data/homechef/app/homechef-api-ocr-key" { capabilities = ["create", "read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-kora-global-production
       hcl: |
         path "kv/data/kora/app/kora-postgresql-password" { capabilities = ["read"] }
@@ -1247,6 +1262,26 @@ bootstrap:
       namespaces: ["global"]
       policies: ["read-homechef-global"]
       ttl: 15m
+    - name: read-homechef-document-intelligence-production
+      serviceAccounts: ["homechef-production-reader"]
+      namespaces: ["document-intelligence"]
+      policies: ["read-homechef-document-intelligence-production"]
+      ttl: 15m
+    - name: read-homechef-global-production
+      serviceAccounts: ["homechef-production-reader"]
+      namespaces: ["global"]
+      policies: ["read-homechef-global-production"]
+      ttl: 15m
+    - name: read-homechef-homechef-production
+      serviceAccounts: ["homechef-production-reader"]
+      namespaces: ["homechef"]
+      policies: ["read-homechef-homechef-production"]
+      ttl: 15m
+    - name: seed-homechef-document-intelligence-production
+      serviceAccounts: ["document-intelligence-homechef-prod-secret-seed"]
+      namespaces: ["document-intelligence"]
+      policies: ["seed-homechef-document-intelligence-production"]
+      ttl: 5m
     - name: read-kora-global-production
       serviceAccounts: ["kora-production-reader"]
       namespaces: ["global"]

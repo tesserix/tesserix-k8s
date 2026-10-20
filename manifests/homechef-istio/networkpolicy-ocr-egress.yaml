@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-homechef-api-to-ocr-egress
+  namespace: homechef
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: homechef-api
+  policyTypes:
+    - Egress
+  # Only HomeChef's own release; other products' OCR APIs stay unreachable.
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: document-intelligence
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: document-intelligence-homechef-prod
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [upload-api, job-api]
+      ports:
+        - protocol: TCP
+          port: 8080
+        # Ambient mesh carries the API connection over HBONE.
+        - protocol: TCP
+          port: 15008
