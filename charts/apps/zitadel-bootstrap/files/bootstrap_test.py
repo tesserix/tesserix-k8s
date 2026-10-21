@@ -55,6 +55,7 @@ class RoamieLoginConfigurationTest(unittest.TestCase):
         roamie = next(project for project in desired["platformProjects"] if project["name"] == "Roamie")
         self.assertEqual("392328861469115174", roamie["expectedId"])
         self.assertEqual("TESSERIX", roamie["org"])
+        self.assertEqual("product", roamie["kind"])
         self.assertNotIn("projectRoleCheck", roamie)
         self.assertEqual({"Roamie iOS", "Roamie Android"}, {app["name"] for app in roamie["oidcApps"]})
         for app in roamie["oidcApps"]:
