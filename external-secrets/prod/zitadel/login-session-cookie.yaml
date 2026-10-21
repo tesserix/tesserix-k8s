@@ -1,0 +1,33 @@
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: zitadel-login-session-cookie
+  namespace: zitadel
+spec:
+  # No symbols: the Login UI reads the value as a comma-separated rotation list.
+  length: 64
+  digits: 16
+  symbols: 0
+  noUpper: false
+  allowRepeat: true
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: zitadel-login-session-cookie
+  namespace: zitadel
+spec:
+  # Generated once and never refreshed: a new value signs every user out of the Login UI.
+  refreshInterval: "0"
+  target:
+    name: zitadel-login-session-cookie
+    creationPolicy: Owner
+    template:
+      data:
+        ZITADEL_SESSION_COOKIE_SECRET: "{{ .password }}"
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: zitadel-login-session-cookie
