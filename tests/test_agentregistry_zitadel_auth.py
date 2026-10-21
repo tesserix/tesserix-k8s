@@ -202,6 +202,7 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
                 "name": "agentregistry-cli",
                 "appType": "OIDC_APP_TYPE_NATIVE",
                 "authMethodType": "OIDC_AUTH_METHOD_TYPE_NONE",
+                "loginBaseUri": "https://auth.tesserix.app/ui/v2/login",
                 "grantTypes": [
                     "OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
                     "OIDC_GRANT_TYPE_REFRESH_TOKEN",
@@ -304,10 +305,12 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
                 grant["login"]: set(grant["roles"])
                 for grant in project.get("humanGrants", [])
             }
+            # A project declaring no roles leaves grants unmanaged; an empty
+            # grant would strip the admins' live roles.
             for login in platform_admins:
                 self.assertEqual(
                     declared_roles,
-                    grants.get(login),
+                    grants.get(login, set()),
                     f"{login} must have full access to {project['name']}",
                 )
 

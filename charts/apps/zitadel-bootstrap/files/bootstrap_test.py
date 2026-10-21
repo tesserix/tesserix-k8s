@@ -999,6 +999,21 @@ class PlatformProjectTest(unittest.TestCase):
         self.assertEqual(update_headers["Connect-Protocol-Version"], "1")
         self.assertEqual(update_headers["x-zitadel-orgid"], "org-zitadel")
 
+    def test_enabling_login_v2_preserves_clock_skew(self):
+        recorder = self._recorder()
+        app_path = ("GET", "/management/v1/projects/p-agentgateway/apps/app-mcp")
+        app = json.loads(recorder.responses[app_path][1])
+        app["app"]["oidcConfig"]["clockSkew"] = "2s"
+        recorder.responses[app_path] = (200, json.dumps(app).encode())
+        recorder.responses[
+            ("POST", "/zitadel.application.v2.ApplicationService/GetApplication")
+        ] = (200, json.dumps({"application": {"oidcConfiguration": {}}}).encode())
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(dict(self.PROJECT))
+        update = next(call[2] for call in recorder.calls
+                      if call[:2] == ("POST", "/zitadel.application.v2.ApplicationService/UpdateApplication"))
+        self.assertEqual("2s", update["oidcConfiguration"]["clockSkew"])
+
     def test_login_v2_update_failure_stops_reconciliation(self):
         recorder = self._recorder()
         recorder.responses[
