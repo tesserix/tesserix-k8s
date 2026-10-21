@@ -869,7 +869,17 @@ def reconcile_platform_project(desired):
             if "grantTypes" in wanted:
                 actual["grantTypes"] = sorted(live.get("grantTypes", []))
                 expected["grantTypes"] = sorted(wanted["grantTypes"])
-            if actual != expected:
+            restore_refresh_grant = (
+                bool(wanted.get("loginBaseUri"))
+                and expected["appType"] == "OIDC_APP_TYPE_NATIVE"
+                and expected["authMethodType"] == "OIDC_AUTH_METHOD_TYPE_NONE"
+                and expected.get("grantTypes") == [
+                    "OIDC_GRANT_TYPE_AUTHORIZATION_CODE",
+                    "OIDC_GRANT_TYPE_REFRESH_TOKEN",
+                ]
+                and actual == {**expected, "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"]}
+            )
+            if actual != expected and not restore_refresh_grant:
                 raise SystemExit(
                     f"platform OIDC application {wanted['name']!r} configuration drifted; "
                     "reconcile it through the identity onboarding runbook"
@@ -896,9 +906,12 @@ def reconcile_platform_project(desired):
                 .get("loginVersion", {})
             )
             actual_base_uri = login_version.get("loginV2", {}).get("baseUri")
-            if actual_base_uri == login_base_uri:
+            if actual_base_uri == login_base_uri and not restore_refresh_grant:
                 log(f"platform OIDC application {wanted['name']}: in sync")
                 continue
+            grant_types = wanted.get("grantTypes", live.get("grantTypes"))
+            if not grant_types:
+                raise SystemExit(f"cannot preserve grant types for {wanted['name']!r}")
             status, payload = request(
                 "POST",
                 "/zitadel.application.v2.ApplicationService/UpdateApplication",
@@ -906,6 +919,8 @@ def reconcile_platform_project(desired):
                     "applicationId": matches[0]["id"],
                     "projectId": project_id,
                     "oidcConfiguration": {
+                        # The V2 update clears refresh grants if this field is omitted.
+                        "grantTypes": grant_types,
                         "loginVersion": {
                             "loginV2": {"baseUri": login_base_uri}
                         }
@@ -918,7 +933,7 @@ def reconcile_platform_project(desired):
                     f"platform OIDC application {wanted['name']!r} login version update "
                     f"failed: {status} {payload!r}"
                 )
-            log(f"platform OIDC application {wanted['name']}: enabled Login V2")
+            log(f"platform OIDC application {wanted['name']}: reconciled Login V2 and grant types")
 
     roles_path = f"/management/v1/projects/{project_id}/roles/_search"
     status, payload = request("POST", roles_path, {"query": {"limit": 100}}, headers=scope)
