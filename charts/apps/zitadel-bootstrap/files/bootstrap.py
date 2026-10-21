@@ -912,19 +912,23 @@ def reconcile_platform_project(desired):
             grant_types = wanted.get("grantTypes", live.get("grantTypes"))
             if not grant_types:
                 raise SystemExit(f"cannot preserve grant types for {wanted['name']!r}")
+            oidc_configuration = {
+                # The V2 update clears refresh grants if this field is omitted.
+                "grantTypes": grant_types,
+                "loginVersion": {
+                    "loginV2": {"baseUri": login_base_uri}
+                }
+            }
+            # It also resets clock skew to zero when omitted.
+            if live.get("clockSkew"):
+                oidc_configuration["clockSkew"] = live["clockSkew"]
             status, payload = request(
                 "POST",
                 "/zitadel.application.v2.ApplicationService/UpdateApplication",
                 {
                     "applicationId": matches[0]["id"],
                     "projectId": project_id,
-                    "oidcConfiguration": {
-                        # The V2 update clears refresh grants if this field is omitted.
-                        "grantTypes": grant_types,
-                        "loginVersion": {
-                            "loginV2": {"baseUri": login_base_uri}
-                        }
-                    },
+                    "oidcConfiguration": oidc_configuration,
                 },
                 headers=connect_headers,
             )

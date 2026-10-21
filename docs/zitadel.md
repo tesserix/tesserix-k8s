@@ -218,7 +218,8 @@ Notable choices:
   every tenant's SSO.
 - `Features.LoginV2.Required: false` — applications opt into login v2 with
   their own `loginVersion`; forcing it instance-wide overrides per-app base
-  URIs in the deployed Zitadel version.
+  URIs in the deployed Zitadel version. Every client now selects V2 except
+  Kora's, which kora-api routes through its own login client.
 - `LockoutPolicy` 10 attempts — upstream ships `0`, meaning no lockout at all.
 - `PasswordComplexityPolicy.MinLength: 12`.
 
