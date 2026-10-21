@@ -23,7 +23,7 @@ deployment itself.
 | `zitadel` | `charts/thirdparty/zitadel` | 1 |
 
 All three sit in the `identity` AppProject. The chart wraps upstream
-`zitadel/zitadel` 10.0.4 (app v4.15.3).
+`zitadel/zitadel` 10.4.0 (app v4.19.5).
 
 The API and console are one HTTP/2 service on 8080; the login UI is a separate
 Next.js service on 3000 serving `/ui/v2/login`. The VirtualService splits on
@@ -53,8 +53,8 @@ the shared gateway is still in front of it.
 
 ## The login UI is a fork
 
-Login v2 runs from `tesserix/zitadel`, branch `feat/aurora-theme`, cut from tag
-`v4.15.3` — it carries the aurora background and the side-by-side brand panel.
+Login v2 runs from `tesserix/zitadel`, branch `release/v4.19.5-aurora`, cut from
+tag `v4.19.5` — it carries the aurora background and the side-by-side brand panel.
 The UI has no standalone repo; it is `apps/login` inside the monorepo.
 
 Release it whenever the theme changes, then bump `login.image.tag`. The image is
@@ -62,9 +62,21 @@ built by `tesserix-login-release.yml` in the fork, which fires on any
 `v*-aurora.*` tag — never build it by hand:
 
 ```bash
-git tag v4.15.3-aurora.N && git push origin v4.15.3-aurora.N
+git tag v4.19.5-aurora.N && git push origin v4.19.5-aurora.N
 gh run watch --repo tesserix/zitadel
 ```
+
+On a Zitadel upgrade, cut `release/<version>-aurora` from the upstream tag and
+cherry-pick the aurora commits from the previous release branch. The API and
+login images must move together: login fixes such as the v4.19.2 session-cookie
+signing ship only in the login image. Keep `@tesserix/web` at the version the
+previous lockfile resolved unless the theme change is intended.
+
+The Login UI signs its session cookie with `zitadel-login-session-cookie`, a
+random value External Secrets generates once in-cluster
+(`external-secrets/prod/zitadel/login-session-cookie.yaml`). It has no copy
+elsewhere because it needs none: deleting the Secret regenerates it and only
+signs users out of the Login UI; application sessions and tokens survive.
 
 The workflow generates `@zitadel/proto` and builds `@zitadel/client` first;
 neither is produced by `pnpm install` and the Next build cannot resolve them

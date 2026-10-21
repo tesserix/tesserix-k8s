@@ -37,7 +37,7 @@ zitadel:
   # docker.io directly, same as the rest of the estate.
   image:
     repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/zitadel/zitadel
-    tag: v4.15.3
+    tag: v4.19.5
     pullPolicy: IfNotPresent
 
   # Applies to the wait4x and kubectl tool images only, which the chart
@@ -352,11 +352,13 @@ zitadel:
     # a NEXT_PUBLIC_ var inlined at build time, so it cannot be set from pod env.
     image:
       repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/zitadel-login
-      tag: v4.15.3-aurora.4
+      tag: v4.19.5-aurora.1
     # Left to the chart, the login client keypair is regenerated on every
     # render because `lookup` returns nothing under Argo CD's client-side
     # templating — each sync would rotate the key and log everyone out.
     loginServiceKeySecretName: zitadel-login-service-key
+    # Generated in-cluster by External Secrets; losing it only signs users out of the Login UI.
+    sessionCookieSecretName: zitadel-login-session-cookie
     # Branding is cached per pod for an hour by default, so a logo or colour
     # change stays invisible until the pods are restarted — unacceptable once
     # tenants set their own. One small RPC a minute is cheaper than that.
