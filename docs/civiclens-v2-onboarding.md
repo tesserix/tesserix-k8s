@@ -21,7 +21,7 @@ Accepted releases (2026-10-22):
 
 | Component | Accepted workflow | Immutable digest |
 |---|---|---|
-| Operator `97d2a56` | [release 39731361287](https://github.com/tesserix/tesserix-operators/actions/runs/39731361287), tests and scan passed | `sha256:1a9da3a6a0968a8cfc1001bc1a5948abca57bed3df762c296a0d4ad28a63398e` |
+| Operator `d5172cb` | [release 39734137204](https://github.com/tesserix/tesserix-operators/actions/runs/39734137204), tests and scan passed | `sha256:ab3678239a700c1319da3f0bd10954dda56b73856d8d8f4fb113d33b972ba407` |
 | Broker `29986e1b8` | [build 39724595193](https://github.com/tesserix/zitadel/actions/runs/39724595193), provider/V2 tests, API/console build and scan passed | `sha256:22ab1fb4abe6a5f279c5509fa2bbb10358a2fc9fb479af013235add8af1188ac` |
 
 Both digests are pinned on this branch. Helm rendering confirms the broker
@@ -126,3 +126,21 @@ locally at `/private/tmp/civiclens-duplicate-provider-recovery.json`. Cleanup is
 separate explicitly approved deletion, preserving the attached IDs and rechecking
 that candidates remain unlinked with no users. Do not report onboarding complete
 until the project and both clients have current-generation Ready receipts.
+
+On 2026-10-22, the owner approved deleting the exact 54 unused retry-created
+provider definitions. Cleanup verified organization ownership, zero users and the
+three original policy links before every deletion. All 54 deletions succeeded;
+only the three original providers remain. The mode-0600 recovery inventory is
+`/private/tmp/civiclens-duplicate-provider-recovery.json`; deletion receipts are
+`/private/tmp/civiclens-provider-cleanup-receipts.json`. OpenBao credentials remain
+at version 1, and the namespace/audience-bound reader remains read-only with
+development and other-product paths denied.
+
+The next controller retry exposed an incorrect provider-update path in the
+initial implementation and fixture. Upstream v4.19.5 requires
+`/management/v1/idps/{kind}/{id}`. Correction `d5172cb` reproduces the old HTTP 404
+with the corrected fixture, then passes the full Zitadel race suite, repository
+vet/build and changed-code lint checks. Full local lint also reports eight
+pre-existing findings outside the route correction. The signed release and digest
+scan passed before this GitOps pin. Native-client Ready and hosted-login checks
+remain live acceptance gates.
