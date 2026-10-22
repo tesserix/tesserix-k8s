@@ -23,6 +23,6 @@ def test_public_ocr_sandbox_databases_and_roles_are_dropped():
     assert databases['document_intelligence_roamie_prod_db'] == 'present'
     cluster = next(d for d in docs if d['kind'] == 'Cluster')
     roles = {r['name']: r for r in cluster['spec']['managed']['roles']}
-    for name in ['ocr_public_core', 'ocr_public_ledger']:
-        assert roles[name]['ensure'] == 'absent' and 'passwordSecret' not in roles[name], name
+    # CNPG reported both roles dropped and reconciled, so they are no longer managed.
+    assert not {'ocr_public_core', 'ocr_public_ledger'} & roles.keys()
     assert roles['document_intelligence_roamie_prod']['ensure'] == 'present'
