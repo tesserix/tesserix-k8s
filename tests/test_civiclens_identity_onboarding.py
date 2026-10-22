@@ -20,6 +20,19 @@ class CivicLensIdentityOnboarding(unittest.TestCase):
             self.assertEqual(claim['spec']['applicationType'], 'native')
             self.assertTrue(claim['spec']['idTokenUserinfoAssertion'])
 
+    def test_rollout_uses_scanned_immutable_releases_and_preserves_login(self):
+        operator = yaml.safe_load(
+            (ROOT / 'k8s/operators/zitadel/kustomization.yaml').read_text()
+        )
+        self.assertEqual(operator['images'][0]['digest'],
+                         'sha256:e092189d7a152dc2a366ada533fcafdea8edcbd6e4e1ed258f555f89ac436119')
+        values = yaml.safe_load((ROOT / 'charts/thirdparty/zitadel/values.yaml').read_text())['zitadel']
+        self.assertEqual(values['image']['repository'],
+                         'asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/zitadel-api-patched')
+        self.assertEqual(values['image']['tag'],
+                         'sha-29986e1b8b3e606d20871a2e73874b91f9b5b695@sha256:22ab1fb4abe6a5f279c5509fa2bbb10358a2fc9fb479af013235add8af1188ac')
+        self.assertEqual(values['login']['image']['tag'], 'v4.19.5-aurora.3')
+
     def test_openbao_reader_is_bound_to_operator_with_exact_read_only_paths(self):
         rendered = subprocess.check_output(['helm', 'template', 'openbao', 'charts/thirdparty/openbao', '--show-only', 'templates/bootstrap-configmap.yaml'], cwd=ROOT, text=True)
         document = yaml.safe_load(rendered)

@@ -17,6 +17,17 @@ release acceptance below.
 - The broker patch maps typed Generic OAuth profile data for Meta on V2. It keeps
   email unverified. There are no legacy V1 mapping actions.
 
+Accepted releases (2026-10-22):
+
+| Component | Accepted workflow | Immutable digest |
+|---|---|---|
+| Operator `8e09079` | [release 39724585022](https://github.com/tesserix/tesserix-operators/actions/runs/39724585022), tests and scan passed | `sha256:e092189d7a152dc2a366ada533fcafdea8edcbd6e4e1ed258f555f89ac436119` |
+| Broker `29986e1b8` | [build 39724595193](https://github.com/tesserix/zitadel/actions/runs/39724595193), provider/V2 tests, API/console build and scan passed | `sha256:22ab1fb4abe6a5f279c5509fa2bbb10358a2fc9fb479af013235add8af1188ac` |
+
+Both digests are pinned on this branch. Helm rendering confirms the broker
+Deployment and both setup Jobs use the accepted image; the hosted Login V2 image
+remains `v4.19.5-aurora.3`. Kustomize rendering and the three onboarding tests pass.
+
 ## Credential and identity contract
 
 The operator uses a dedicated read-only OpenBao role,
@@ -35,9 +46,25 @@ revoke another product's provider configuration, or put credential values in git
 
 The KV `value` string contains provider JSON as documented in the operator's
 `operators/zitadel/docs/consumer-organizations.md`. Public provider IDs and client
-IDs are not credentials. Existing GCP credential resource names have been located
-for Google and Meta; this document does not claim their values have been copied
-or that a CivicLens Apple Services ID/private key has been provisioned.
+IDs are not credentials. Google and Meta were copied after explicit production-copy approval on
+2026-10-22. Both destination writes used CAS=0 and returned version 1; metadata
+confirmed current version 1. Pinned sources were `prod-google-client-id` version 3,
+`prod-google-client-secret` version 3, `prod-facebook-app-id` version 2, and
+`prod-facebook-app-secret` version 2. The Meta app ID was checked against the
+reviewed public ID `785895364534694`. Source values and versions were unchanged.
+A functional operator read and real provider login remain rollout acceptance checks.
+
+Apple Developer was inspected under Tesserix team `2CRHRRYBPL`. The shared
+Zitadel provider uses Services ID `com.tesserix.signin.web` and key ID
+`946A8XWHKB`; OpenBao metadata has no Apple-named entry for that key. The migrated
+HomeChef and Kora Apple private keys are valid, but belong to different registered
+keys. They have not been copied or changed. A dedicated CivicLens App ID
+`app.tesserix.civiclens` with Sign in with Apple is prepared at Apple's final
+registration screen. Creation is pending action-time approval. The proposed
+Services ID is `app.tesserix.civiclens.web`, associated with that primary App ID,
+with domain `auth.tesserix.app` and return URL
+`https://auth.tesserix.app/idps/callback`. Store the downloaded key only in the
+CivicLens production path above; do not put it into Git or GCP Secret Manager.
 
 `k8s/operators/zitadel/claims/civiclens.yaml` creates a dedicated CivicLens org,
 Google/Apple/Meta connectors, social-only policy and cobalt/light branding, plus
