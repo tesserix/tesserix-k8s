@@ -144,3 +144,32 @@ vet/build and changed-code lint checks. Full local lint also reports eight
 pre-existing findings outside the route correction. The signed release and digest
 scan passed before this GitOps pin. Native-client Ready and hosted-login checks
 remain live acceptance gates.
+
+## Hosted Login V2 organization parsing repair
+
+After PR #1490, CivicLens project `396202441151873204` and both native clients
+are Ready at generation 1. iOS client `396202442007511220` and Android client
+`396202441755852980` are public authorization-code clients with callback
+`civiclens:/auth/callback`, no refresh grant and Login V2 inherited from the
+instance base URL. Active social-only policy, original provider IDs and cobalt
+branding were verified through the broker API. All three Argo applications are
+Synced/Healthy, and all PR #1490 checks passed.
+
+A real native authorization request exposed a frontend bug in the deployed
+Login V2 image: its organization-scope parser recognized only numeric IDs,
+causing `consumer-civiclens` to fall back to the shared policy and theme. The
+scoped repair is based on the exact deployed `v4.19.5-aurora.3` source, not the
+fork's unrelated main. Regression-first CI reproduced a missing custom ID and a
+truncated digit-prefixed ID while the numeric case passed. Correction `868feebd1`
+preserves the complete scope ID under the production `/ui/v2/login` base path.
+All 1,093 Login V2 tests, workspace generation, Next production build, packaged
+static-asset verification and high/critical image scan passed in
+[release 39737051434](https://github.com/tesserix/zitadel/actions/runs/39737051434).
+The chart pins its published image by digest
+`sha256:a47579408f4d27764192d4b9b84bf15166c8dab8cb0c6f2beba128375b01f467`.
+
+The product mobile client also selects its provider through the supported
+`urn:zitadel:iam:org:idp:id:<id>` scope, alongside organization and project
+audience scopes, rather than an unsupported hint parameter. Its five platform/
+provider regressions and complete mobile checks/exports passed. Hosted UI and
+provider redirect checks remain live acceptance gates after this frontend pin.
