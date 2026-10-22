@@ -287,6 +287,15 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: read-civiclens-civiclens-production
+      hcl: |
+        path "kv/data/civiclens/prod/app/civiclens-db-runtime-password" { capabilities = ["read"] }
+        path "kv/data/civiclens/prod/app/civiclens-db-migrator-password" { capabilities = ["read"] }
+        path "kv/data/civiclens/prod/app/civiclens-identity-key" { capabilities = ["read"] }
+    - name: read-civiclens-global-production
+      hcl: |
+        path "kv/data/civiclens/prod/app/civiclens-db-runtime-password" { capabilities = ["read"] }
+        path "kv/data/civiclens/prod/app/civiclens-db-migrator-password" { capabilities = ["read"] }
     - name: zitadel-consumer-provider-reader
       hcl: |
         path "kv/data/civiclens/prod/app/civiclens-google-idp-prod" { capabilities = ["read"] }
@@ -942,6 +951,16 @@ bootstrap:
         path "transit/hmac/helivanta-emergency-*" { capabilities = ["update"] }
 
   kubernetesRoles:
+    - name: read-civiclens-civiclens-production
+      serviceAccounts: ["civiclens-production-reader"]
+      namespaces: ["civiclens"]
+      policies: ["read-civiclens-civiclens-production"]
+      ttl: 15m
+    - name: read-civiclens-global-production
+      serviceAccounts: ["civiclens-production-reader"]
+      namespaces: ["global"]
+      policies: ["read-civiclens-global-production"]
+      ttl: 15m
     - name: zitadel-consumer-provider-reader
       serviceAccounts: ["zitadel-operator"]
       namespaces: ["identity-operator"]

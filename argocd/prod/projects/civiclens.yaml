@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: civiclens
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: civiclens
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  description: CivicLens — civic issue reporting API on the shared global CNPG cluster
+  sourceRepos:
+    - https://github.com/tesserix/tesserix-k8s.git
+  destinations:
+    - namespace: civiclens
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  orphanedResources:
+    warn: true

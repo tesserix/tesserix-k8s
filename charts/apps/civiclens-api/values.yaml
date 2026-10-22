@@ -1,0 +1,37 @@
+replicaCount: 2
+
+image:
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/global/civiclens-api
+  # First CI-verified image; Kargo overrides tag and digest together on promotion and the chart prefers the digest.
+  digest: "sha256:c8e330f43e9ff2c8d2c41d7a366b6139a222df319952072345e1f17997ff97a3"
+  tag: "deploy-fe65225"
+
+env:
+  CIVICLENS_ENV: production
+  CIVICLENS_BIND: 0.0.0.0:8080
+  CIVICLENS_PUBLISHING_ENABLED: "false"
+  CIVICLENS_OIDC_ORGANIZATION_ID: consumer-civiclens
+  CIVICLENS_OIDC_PROJECT_ID: "396202441151873204"
+  CIVICLENS_OIDC_IOS_CLIENT_ID: "396202442007511220"
+  CIVICLENS_OIDC_ANDROID_CLIENT_ID: "396202441755852980"
+  CIVICLENS_GOOGLE_IDP_ID: "396197391444740172"
+  CIVICLENS_APPLE_IDP_ID: "396197391629289548"
+  CIVICLENS_FACEBOOK_IDP_ID: "396197391763507276"
+
+resources:
+  requests:
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+database:
+  host: global-postgres-rw.global.svc.cluster.local
+  name: civiclens_db
+  # Published from global by external-secrets/prod/civiclens-postgres-ca.yaml; CNPG rotates it every 90 days.
+  caSecret: global-postgres-ca
+
+# OpenBao paths synced through the openbao-civiclens-production SecretStore.
+secrets:
+  runtimePassword: civiclens/prod/app/civiclens-db-runtime-password
+  migratorPassword: civiclens/prod/app/civiclens-db-migrator-password
+  identityKey: civiclens/prod/app/civiclens-identity-key
