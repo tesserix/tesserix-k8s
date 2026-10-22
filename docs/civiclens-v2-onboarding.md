@@ -21,7 +21,7 @@ Accepted releases (2026-10-22):
 
 | Component | Accepted workflow | Immutable digest |
 |---|---|---|
-| Operator `8e09079` | [release 39724585022](https://github.com/tesserix/tesserix-operators/actions/runs/39724585022), tests and scan passed | `sha256:e092189d7a152dc2a366ada533fcafdea8edcbd6e4e1ed258f555f89ac436119` |
+| Operator `97d2a56` | [release 39731361287](https://github.com/tesserix/tesserix-operators/actions/runs/39731361287), tests and scan passed | `sha256:1a9da3a6a0968a8cfc1001bc1a5948abca57bed3df762c296a0d4ad28a63398e` |
 | Broker `29986e1b8` | [build 39724595193](https://github.com/tesserix/zitadel/actions/runs/39724595193), provider/V2 tests, API/console build and scan passed | `sha256:22ab1fb4abe6a5f279c5509fa2bbb10358a2fc9fb479af013235add8af1188ac` |
 
 Both digests are pinned on this branch. Helm rendering confirms the broker
@@ -95,3 +95,34 @@ rollout is separate: use the existing `global/global-postgres` CNPG cluster with
 `civiclens_db`/`civiclens`, runtime/migrator separation, product-scoped OpenBao
 secrets, and approved migrations/grants. No new database cluster or load balancer
 is required. Public application data remains session-, owner-, and role-checked.
+
+## Live rollout receipt and retry repair
+
+PR #1488 activated the broker, OpenBao reader and initial operator. All three
+owning Argo applications reconciled Synced/Healthy. The broker has 3/3 ready
+replicas and the hosted login 2/2. All 12 existing clients remain Ready at their
+current generations with unchanged IDs and declared login URLs. Read-only API
+checks confirmed Login V2 for all 12 and preserved Helivanta's custom V2 URL.
+
+The operator's audience-bound OpenBao role read and validated the three production
+provider records, including byte equality of the Apple key. Capabilities are
+read-only on those paths; development and Kora Apple paths are denied. Apple's
+token endpoint accepted the signed client credential and returned `invalid_grant`
+for the deliberately invalid authorization code, as expected.
+
+Live reconciliation exposed response-contract bugs in the initial fixture:
+provider names are title-cased, provider ownership is `owner`, and the default
+`PASSWORDLESS_TYPE_NOT_ALLOWED` enum is omitted. The correction reuses matching
+provider IDs and normalizes that omitted enum, avoiding unchanged-policy writes
+that Zitadel rejects. Regression tests reproduce both failures and pass after
+correction; the complete Zitadel race suite, repository vet and build passed.
+
+CivicLens's isolated organization is `consumer-civiclens`. Initial provider IDs
+`396197391444740172` (Google), `396197391629289548` (Apple), and
+`396197391763507276` (Facebook) are attached to its login policy. Failed retries
+created unlinked duplicate definitions before the correction; no CivicLens users
+exist. Public configuration snapshots and pinned OpenBao references are archived
+locally at `/private/tmp/civiclens-duplicate-provider-recovery.json`. Cleanup is a
+separate explicitly approved deletion, preserving the attached IDs and rechecking
+that candidates remain unlinked with no users. Do not report onboarding complete
+until the project and both clients have current-generation Ready receipts.
