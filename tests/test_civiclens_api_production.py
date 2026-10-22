@@ -27,6 +27,14 @@ def named(resources, kind):
     return {r["metadata"]["name"]: r for r in resources if r["kind"] == kind}
 
 
+class CivicLensSecretWatch(unittest.TestCase):
+    def test_cnpg_observes_created_and_rotated_password_secrets(self):
+        resources = named(load_all("external-secrets/prod/global/externalsecret.yaml"), "ExternalSecret")
+        for role in ("runtime", "migrator"):
+            template = resources[f"global-postgres-civiclens-{role}"]["spec"]["target"]["template"]
+            self.assertEqual(template.get("metadata", {}).get("labels", {}).get("cnpg.io/reload"), "true")
+
+
 class CivicLensApiChart(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
