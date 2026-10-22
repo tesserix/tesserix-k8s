@@ -6,6 +6,27 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_email_key_is_server_only_and_resolves_from_scoped_openbao():
+    docs = list(yaml.safe_load_all(subprocess.check_output([
+        'helm', 'template', 'roamie-api', str(ROOT / 'charts/apps/roamie-api')
+    ], text=True)))
+    app = next(d for d in docs if d and d['kind'] == 'Deployment')
+    env = {e['name']: e for e in app['spec']['template']['spec']['containers'][0]['env']}
+    assert env['RESEND_FROM']['value'] == 'Roamie <roamie@tesserix.app>'
+    assert env['RESEND_API_KEY']['valueFrom']['secretKeyRef'] == {
+        'name': 'roamie-api-secrets', 'key': 'resend_api_key'
+    }
+    secret = next(d for d in docs if d and d['kind'] == 'ExternalSecret'
+                  and d['metadata']['name'] == 'roamie-api-secrets')
+    assert secret['spec']['secretStoreRef']['name'] == 'openbao-roamie-production'
+    entry = next(e for e in secret['spec']['data'] if e['secretKey'] == 'resend_api_key')
+    assert entry['remoteRef'] == {
+        'key': 'roamie/app/roamie-resend-api-key', 'property': 'value'
+    }
+    migration = next(d for d in docs if d and d['kind'] == 'Job')
+    assert 'RESEND_API_KEY' not in str(migration['spec']['template']['spec']['containers'][0]['env'])
+
+
 def test_runtime_uses_non_owner_and_migration_precedes_rollout():
     docs = list(yaml.safe_load_all(subprocess.check_output([
         'helm', 'template', 'roamie-api', str(ROOT / 'charts/apps/roamie-api'),

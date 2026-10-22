@@ -8,6 +8,7 @@ import json
 import os
 import tempfile
 import unittest
+import subprocess
 from unittest import mock
 
 WORKDIR = tempfile.mkdtemp()
@@ -40,6 +41,30 @@ SHORT_LIFETIME = "12h0m0s"
 REDIRECT_URI = "https://app.example.test"
 
 VALUES_YAML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "values.yaml")
+
+
+class RoamieLoginConfigurationTest(unittest.TestCase):
+    def test_roamie_keeps_native_pkce_clients_when_enabling_product_login(self):
+        chart = os.path.dirname(VALUES_YAML)
+        rendered = subprocess.check_output(
+            ["helm", "template", "zitadel-bootstrap", chart, "--show-only", "templates/configmap.yaml"],
+            text=True,
+        )
+        desired_line = next(line for line in rendered.splitlines() if line.startswith("  desired.json: "))
+        desired = json.loads(json.loads(desired_line.split(": ", 1)[1]))
+        roamie = next(project for project in desired["platformProjects"] if project["name"] == "Roamie")
+        self.assertEqual("392328861469115174", roamie["expectedId"])
+        self.assertEqual("TESSERIX", roamie["org"])
+        self.assertEqual("product", roamie["kind"])
+        self.assertNotIn("projectRoleCheck", roamie)
+        self.assertEqual({"Roamie iOS", "Roamie Android"}, {app["name"] for app in roamie["oidcApps"]})
+        for app in roamie["oidcApps"]:
+            self.assertEqual(["roamie:/auth/callback"], app["redirectUris"])
+            self.assertEqual([], app["postLogoutRedirectUris"])
+            self.assertEqual("OIDC_APP_TYPE_NATIVE", app["appType"])
+            self.assertEqual("OIDC_AUTH_METHOD_TYPE_NONE", app["authMethodType"])
+            self.assertEqual({"OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"}, set(app["grantTypes"]))
+            self.assertEqual("https://auth.tesserix.app/ui/v2/login", app["loginBaseUri"])
 
 
 def yaml_lockout_policy():
@@ -656,6 +681,7 @@ class PlatformProjectTest(unittest.TestCase):
                         "oidcConfig": {
                             "redirectUris": ["https://mcp.tesserix.app/oauth2/callback"],
                             "postLogoutRedirectUris": ["https://mcp.tesserix.app"],
+                            "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"],
                         },
                     }
                 }).encode(),
@@ -872,6 +898,63 @@ class PlatformProjectTest(unittest.TestCase):
 
         self.assertEqual([], [call for call in recorder.calls if call[0] in ("PUT", "DELETE")])
 
+    def _native_client(self, grant_types):
+        project = dict(self.PROJECT)
+        app = dict(
+            self.PROJECT["oidcApps"][0],
+            redirectUris=["roamie:/auth/callback"],
+            postLogoutRedirectUris=[],
+            appType="OIDC_APP_TYPE_NATIVE",
+            authMethodType="OIDC_AUTH_METHOD_TYPE_NONE",
+            grantTypes=["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"],
+        )
+        project["oidcApps"] = [app]
+        recorder = self._recorder()
+        recorder.responses[("GET", "/management/v1/projects/p-agentgateway/apps/app-mcp")] = (
+            200, json.dumps({"app": {"oidcConfig": {**app, "grantTypes": grant_types}}}).encode(),
+        )
+        return project, recorder
+
+    def test_reconciliation_restores_only_missing_native_refresh_grants(self):
+        project, recorder = self._native_client(["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"])
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(project)
+        updates = [call[2] for call in recorder.calls
+                   if call[:2] == ("POST", "/zitadel.application.v2.ApplicationService/UpdateApplication")]
+        self.assertEqual(1, len(updates))
+        self.assertEqual(project["oidcApps"][0]["grantTypes"], updates[0]["oidcConfiguration"]["grantTypes"])
+
+    def test_unexpected_native_grant_changes_still_fail_closed(self):
+        project, recorder = self._native_client([
+            "OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_DEVICE_CODE",
+        ])
+        with mock.patch.object(bootstrap, "request", recorder):
+            with self.assertRaises(SystemExit):
+                bootstrap.reconcile_platform_project(project)
+        self.assertFalse(any(call[:2] == ("POST", "/zitadel.application.v2.ApplicationService/UpdateApplication")
+                             for call in recorder.calls))
+
+    def test_in_sync_native_login_does_not_write(self):
+        project, recorder = self._native_client([
+            "OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN",
+        ])
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(project)
+        self.assertFalse(any(call[:2] == ("POST", "/zitadel.application.v2.ApplicationService/UpdateApplication")
+                             for call in recorder.calls))
+
+    def test_enabling_login_v2_preserves_native_refresh_tokens(self):
+        grants = ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE", "OIDC_GRANT_TYPE_REFRESH_TOKEN"]
+        project, recorder = self._native_client(grants)
+        recorder.responses[("POST", "/zitadel.application.v2.ApplicationService/GetApplication")] = (
+            200, json.dumps({"application": {"oidcConfiguration": {}}}).encode(),
+        )
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(project)
+        update = next(call[2] for call in recorder.calls
+                      if call[:2] == ("POST", "/zitadel.application.v2.ApplicationService/UpdateApplication"))
+        self.assertEqual(grants, update["oidcConfiguration"]["grantTypes"])
+
     def test_missing_login_v2_is_reconciled_without_changing_client_config(self):
         recorder = self._recorder()
         recorder.responses[
@@ -898,6 +981,7 @@ class PlatformProjectTest(unittest.TestCase):
                 "applicationId": "app-mcp",
                 "projectId": "p-agentgateway",
                 "oidcConfiguration": {
+                    "grantTypes": ["OIDC_GRANT_TYPE_AUTHORIZATION_CODE"],
                     "loginVersion": {
                         "loginV2": {
                             "baseUri": "https://auth.tesserix.app/ui/v2/login"
@@ -914,6 +998,21 @@ class PlatformProjectTest(unittest.TestCase):
         ][0]
         self.assertEqual(update_headers["Connect-Protocol-Version"], "1")
         self.assertEqual(update_headers["x-zitadel-orgid"], "org-zitadel")
+
+    def test_enabling_login_v2_preserves_clock_skew(self):
+        recorder = self._recorder()
+        app_path = ("GET", "/management/v1/projects/p-agentgateway/apps/app-mcp")
+        app = json.loads(recorder.responses[app_path][1])
+        app["app"]["oidcConfig"]["clockSkew"] = "2s"
+        recorder.responses[app_path] = (200, json.dumps(app).encode())
+        recorder.responses[
+            ("POST", "/zitadel.application.v2.ApplicationService/GetApplication")
+        ] = (200, json.dumps({"application": {"oidcConfiguration": {}}}).encode())
+        with mock.patch.object(bootstrap, "request", recorder):
+            bootstrap.reconcile_platform_project(dict(self.PROJECT))
+        update = next(call[2] for call in recorder.calls
+                      if call[:2] == ("POST", "/zitadel.application.v2.ApplicationService/UpdateApplication"))
+        self.assertEqual("2s", update["oidcConfiguration"]["clockSkew"])
 
     def test_login_v2_update_failure_stops_reconciliation(self):
         recorder = self._recorder()

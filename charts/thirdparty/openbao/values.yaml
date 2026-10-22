@@ -287,6 +287,20 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: read-civiclens-civiclens-production
+      hcl: |
+        path "kv/data/civiclens/prod/app/civiclens-db-runtime-password" { capabilities = ["read"] }
+        path "kv/data/civiclens/prod/app/civiclens-db-migrator-password" { capabilities = ["read"] }
+        path "kv/data/civiclens/prod/app/civiclens-identity-key" { capabilities = ["read"] }
+    - name: read-civiclens-global-production
+      hcl: |
+        path "kv/data/civiclens/prod/app/civiclens-db-runtime-password" { capabilities = ["read"] }
+        path "kv/data/civiclens/prod/app/civiclens-db-migrator-password" { capabilities = ["read"] }
+    - name: zitadel-consumer-provider-reader
+      hcl: |
+        path "kv/data/civiclens/prod/app/civiclens-google-idp-prod" { capabilities = ["read"] }
+        path "kv/data/civiclens/prod/app/civiclens-apple-idp-prod" { capabilities = ["read"] }
+        path "kv/data/civiclens/prod/app/civiclens-facebook-idp-prod" { capabilities = ["read"] }
     - name: questionnaires-writer-reader
       hcl: |
         path "kv/data/questionnaires/prod/app/questionnaires-writer-password" { capabilities = ["read"] }
@@ -906,6 +920,7 @@ bootstrap:
         path "kv/data/roamie/app/roamie-postgresql-password" { capabilities = ["read"] }
         path "kv/data/roamie/app/roamie-postgresql-runtime-password" { capabilities = ["read"] }
         path "kv/data/roamie/app/roamie-profile-signing-key" { capabilities = ["read"] }
+        path "kv/data/roamie/app/roamie-resend-api-key" { capabilities = ["read"] }
         path "kv/data/roamie/app/roamie-travel-mcp-key" { capabilities = ["read"] }
 
     - name: seed-helivanta-emergency-worker-production
@@ -936,6 +951,22 @@ bootstrap:
         path "transit/hmac/helivanta-emergency-*" { capabilities = ["update"] }
 
   kubernetesRoles:
+    - name: read-civiclens-civiclens-production
+      serviceAccounts: ["civiclens-production-reader"]
+      namespaces: ["civiclens"]
+      policies: ["read-civiclens-civiclens-production"]
+      ttl: 15m
+    - name: read-civiclens-global-production
+      serviceAccounts: ["civiclens-production-reader"]
+      namespaces: ["global"]
+      policies: ["read-civiclens-global-production"]
+      ttl: 15m
+    - name: zitadel-consumer-provider-reader
+      serviceAccounts: ["zitadel-operator"]
+      namespaces: ["identity-operator"]
+      policies: ["zitadel-consumer-provider-reader"]
+      audience: openbao
+      ttl: "5m"
     - name: questionnaires-writer-reader
       serviceAccounts: ["questionnaires-writer-reader"]
       namespaces: ["tesserix"]

@@ -1,0 +1,49 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: civiclens-production-reader
+  namespace: civiclens
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-civiclens-production
+  namespace: civiclens
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-civiclens-civiclens-production
+          serviceAccountRef:
+            name: civiclens-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: civiclens-production-reader
+  namespace: global
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-civiclens-production
+  namespace: global
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-civiclens-global-production
+          serviceAccountRef:
+            name: civiclens-production-reader

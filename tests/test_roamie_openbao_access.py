@@ -31,6 +31,7 @@ READERS = {
         "postgresql-password",
         "postgresql-runtime-password",
         "profile-signing-key",
+        "resend-api-key",
         "travel-mcp-key",
     ],
 }

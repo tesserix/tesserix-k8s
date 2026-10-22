@@ -26,10 +26,41 @@ spec:
           properties:
             spec:
               type: object
+              x-kubernetes-validations:
+                - rule: '!has(oldSelf.consumerOrganization) || has(self.consumerOrganization)'
+                  message: consumer organization management cannot be removed
+                - rule: '!has(self.consumerOrganization) || (has(self.access) && self.access.mode == "public")'
+                  message: consumer organizations require public project access
               required:
                 - displayName
                 - organization
               properties:
+                consumerOrganization:
+                  type: object
+                  required: [initialAdminUserId, providers, primaryColor, backgroundColor, fontColor]
+                  properties:
+                    initialAdminUserId:
+                      type: string
+                      minLength: 1
+                      maxLength: 200
+                      x-kubernetes-validations:
+                        - rule: self == oldSelf
+                          message: initial administrator is immutable
+                    primaryColor: {type: string, pattern: '^#[A-Fa-f0-9]{6}$'}
+                    backgroundColor: {type: string, pattern: '^#[A-Fa-f0-9]{6}$'}
+                    fontColor: {type: string, pattern: '^#[A-Fa-f0-9]{6}$'}
+                    providers:
+                      type: array
+                      minItems: 1
+                      maxItems: 3
+                      x-kubernetes-list-type: map
+                      x-kubernetes-list-map-keys: [kind]
+                      items:
+                        type: object
+                        required: [kind, secretName]
+                        properties:
+                          kind: {type: string, enum: [google, apple, facebook]}
+                          secretName: {type: string, minLength: 1, maxLength: 63, pattern: '^[a-z][a-z0-9-]+$'}
                 displayName:
                   type: string
                   minLength: 1
@@ -66,7 +97,7 @@ spec:
                             maxLength: 320
                           roles:
                             type: array
-                            maxItems: 20
+                            maxItems: 30
                             items:
                               type: string
                               minLength: 1
@@ -74,6 +105,17 @@ spec:
             status:
               type: object
               properties:
+                consumerIdentity:
+                  type: object
+                  required: [organizationId, providerIds]
+                  properties:
+                    organizationId: {type: string}
+                    providerIds:
+                      type: object
+                      additionalProperties: {type: string}
+                    credentialDigests:
+                      type: object
+                      additionalProperties: {type: string, pattern: '^[a-f0-9]{64}$'}
                 projectId:
                   type: string
                 observedGeneration:
@@ -383,6 +425,13 @@ spec:
             - --organization-products=helivanta/helivanta
             - --onboarding-archive-bucket=tesseracthub-480811-onboarding-records-prod
             - --onboarding-api-url=http://onboarding-api.onboarding.svc.cluster.local:8080
+          env:
+            - name: CONSUMER_PROVIDER_SECRETS
+              value: civiclens/prod/civiclens-google-idp-prod,civiclens/prod/civiclens-apple-idp-prod,civiclens/prod/civiclens-facebook-idp-prod
+            - name: CONSUMER_PROVIDER_OPENBAO_ROLE
+              value: zitadel-consumer-provider-reader
+            - name: CONSUMER_PROVIDER_WORKLOAD_JWT_FILE
+              value: /var/run/openbao/token
           ports: [{name: healthz, containerPort: 8081}]
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: [ALL]}}
           resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {memory: 256Mi}}
@@ -390,8 +439,17 @@ spec:
           livenessProbe: {httpGet: {path: /healthz, port: healthz}, initialDelaySeconds: 10}
           volumeMounts:
             - {name: machine-key, mountPath: /var/run/zitadel-admin, readOnly: true}
+            - {name: openbao-token, mountPath: /var/run/openbao, readOnly: true}
             - {name: onboarding-identity, mountPath: /var/run/onboarding, readOnly: true}
       volumes:
+        - name: openbao-token
+          projected:
+            defaultMode: 288
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: openbao
+                  expirationSeconds: 600
         - name: onboarding-identity
           projected:
             defaultMode: 288

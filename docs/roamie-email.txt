@@ -1,0 +1,12 @@
+Roamie email — 21 October 2026
+
+Resend key: roamie-production-send; sending-only, restricted to the verified tesserix.app domain. Provider identifier: 33947be3-3068-4d51-89ec-c532bf6c0351. No key material is stored in Git or on mobile.
+OpenBao production path: roamie/app/roamie-resend-api-key, property value, initial version 1. Created through the authenticated secrets console, which exposes metadata only after creation. No development credential shares this production path.
+
+GitOps grants the namespace-bound production reader exact-path read access, projects the value through roamie-api-secrets, and injects RESEND_API_KEY into the API only. RESEND_FROM is Roamie <roamie@tesserix.app>. Database migration jobs do not receive the email credential.
+
+The group-budget API uses an explicit user-requested reminder command after 30 days unpaid, a durable Postgres outbox, current-state revalidation, bounded retries and provider idempotency. Queued/accepted/failed/cancelled statuses are visible to members; accepted is not proof of delivery. WhatsApp remains an explicit handoff. No scheduled or unsolicited email is enabled by this change.
+
+Rollout order: deploy the tested additive group-budget and email-outbox migrations with the matching API image, then enable the Resend runtime configuration. Both production actions require named approval. The secret is already stored; this branch alone has not changed application readers or restarted workloads.
+
+Rollback: revert runtime Resend configuration to disable sending; retain the additive database schema and financial/audit history. Do not remove the stored key or delete reminder records as an automatic rollback. Cost: existing Resend plan usage only; no new service or infrastructure deployment.

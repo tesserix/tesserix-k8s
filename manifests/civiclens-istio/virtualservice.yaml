@@ -1,0 +1,34 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: civiclens-api
+  namespace: civiclens
+  labels:
+    app.kubernetes.io/part-of: civiclens
+    app.kubernetes.io/component: networking
+  annotations:
+    external-dns.alpha.kubernetes.io/cloudflare-proxied: "true"
+spec:
+  gateways:
+    - istio-ingress/tesseract-gateway
+  hosts:
+    - civiclns-api.tesserix.app
+  http:
+    # Only the versioned API is public; /healthz and /readyz stay in-cluster.
+    - match:
+        - uri:
+            prefix: /v1/
+      headers:
+        request:
+          set:
+            x-forwarded-host: civiclns-api.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: civiclens-api.civiclens.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
+      # Report submissions are not idempotent; never replay them.
+      retries:
+        attempts: 0
