@@ -1,0 +1,50 @@
+apiVersion: identity.tesserix.app/v1alpha1
+kind: ZitadelProject
+metadata:
+  name: civiclens
+  namespace: identity-operator
+  labels: { app.kubernetes.io/part-of: civiclens }
+spec:
+  displayName: CivicLens
+  organization: CivicLens
+  consumerOrganization:
+    initialAdminUserId: "387369508416782636"
+    primaryColor: "#3858F5"
+    backgroundColor: "#F7F8FA"
+    fontColor: "#151923"
+    providers:
+      - kind: google
+        secretName: civiclens-google-idp-prod
+      - kind: apple
+        secretName: civiclens-apple-idp-prod
+      - kind: facebook
+        secretName: civiclens-facebook-idp-prod
+  access: { mode: public }
+---
+apiVersion: identity.tesserix.app/v1alpha1
+kind: ZitadelApplication
+metadata:
+  name: civiclens-ios
+  namespace: identity-operator
+  labels: { app.kubernetes.io/part-of: civiclens }
+spec:
+  projectRef: { name: civiclens }
+  displayName: CivicLens iOS
+  applicationType: native
+  refreshToken: false
+  idTokenUserinfoAssertion: true
+  redirectUris: ["civiclens:/auth/callback"]
+---
+apiVersion: identity.tesserix.app/v1alpha1
+kind: ZitadelApplication
+metadata:
+  name: civiclens-android
+  namespace: identity-operator
+  labels: { app.kubernetes.io/part-of: civiclens }
+spec:
+  projectRef: { name: civiclens }
+  displayName: CivicLens Android
+  applicationType: native
+  refreshToken: false
+  idTokenUserinfoAssertion: true
+  redirectUris: ["civiclens:/auth/callback"]

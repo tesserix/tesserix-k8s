@@ -203,12 +203,13 @@ data:
 
 {{- range .Values.bootstrap.kubernetesRoles }}
   role-{{ .name }}.json: |
-{{/* No `audience`: OpenBao then skips audience validation, which is what we
-     want — ESO mints tokens with the API server's default audience and a
-     mismatch fails the login with an opaque "invalid role name". */}}
-{{ dict "bound_service_account_names" .serviceAccounts
+{{- $role := dict "bound_service_account_names" .serviceAccounts
         "bound_service_account_namespaces" .namespaces
         "token_policies" .policies
-        "token_ttl" .ttl | toPrettyJson | indent 4 }}
+        "token_ttl" .ttl }}
+{{- if .audience }}
+{{- $_ := set $role "audience" .audience }}
+{{- end }}
+{{ $role | toPrettyJson | indent 4 }}
 {{- end }}
 {{- end }}
