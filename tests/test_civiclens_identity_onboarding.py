@@ -25,7 +25,7 @@ class CivicLensIdentityOnboarding(unittest.TestCase):
             (ROOT / 'k8s/operators/zitadel/kustomization.yaml').read_text()
         )
         self.assertEqual(operator['images'][0]['digest'],
-                         'sha256:e092189d7a152dc2a366ada533fcafdea8edcbd6e4e1ed258f555f89ac436119')
+                         'sha256:1a9da3a6a0968a8cfc1001bc1a5948abca57bed3df762c296a0d4ad28a63398e')
         values = yaml.safe_load((ROOT / 'charts/thirdparty/zitadel/values.yaml').read_text())['zitadel']
         self.assertEqual(values['image']['repository'],
                          'asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/zitadel-api-patched')
