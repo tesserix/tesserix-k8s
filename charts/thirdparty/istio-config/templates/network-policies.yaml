@@ -433,6 +433,42 @@ spec:
 {{- end }}
 
 # =============================================================================
+# CivicLens Namespace Policies
+# Ambient: the gateway arrives over HBONE (15008), which default-deny-ingress drops without this.
+# =============================================================================
+{{- if .Values.appNamespaces.civiclens }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-civiclens-ingress
+  namespace: {{ .Values.appNamespaces.civiclens }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.appNamespaces.civiclens }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+{{- end }}
+
+# =============================================================================
 # GameVerse Namespace Policies
 # Allow from ingress, global, monitoring
 # =============================================================================

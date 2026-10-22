@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "civiclens-api.fullname" . }}
+  labels:
+    {{- include "civiclens-api.labels" . | nindent 4 }}
+  annotations:
+    # The secrets file is read once at boot, so roll pods when a synced Secret changes.
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "civiclens-api.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "civiclens-api.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "civiclens-api.fullname" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        {{- include "civiclens-api.podSecurityContext" . | nindent 8 }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "civiclens-api.selectorLabels" . | nindent 14 }}
+      volumes:
+        {{- include "civiclens-api.configVolumes" (dict "values" .Values "secret" "civiclens-api-config") | nindent 8 }}
+      containers:
+        - name: civiclens-api
+          image: {{ include "civiclens-api.image" . | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            {{- range $key, $value := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- include "civiclens-api.configEnv" . | nindent 12 }}
+          volumeMounts:
+            {{- include "civiclens-api.configMounts" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- include "civiclens-api.containerSecurityContext" . | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 3
+            failureThreshold: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10

@@ -100,6 +100,12 @@ bootstrap:
 # works even for a role that never has direct superuser access. Same pattern
 # as mark8ly-postgres's `openfga` / `marketplace_api` secondary roles.
 managedRoles:
+  - name: civiclens_migrator
+    passwordSecret: global-postgres-civiclens-migrator  # ggignore: Secret name, not a value
+    comment: CivicLens schema owner; migration jobs only
+  - name: civiclens_runtime
+    passwordSecret: global-postgres-civiclens-runtime
+    comment: CivicLens runtime; explicit DML grants only
   - name: homechef
     passwordSecret: global-postgres-homechef
   - name: homechef_platform_admin
@@ -235,6 +241,8 @@ replication:
 # bootstrap and db-schema-bootstrap applies DDL only on the run that creates the
 # database, so neither can fix ownership for a role created afterwards.
 databases:
+  - name: civiclens_db
+    owner: civiclens_migrator
   - name: homechef_db
     owner: homechef
   - name: agentgateway_config

@@ -1,0 +1,75 @@
+# Copies only ca.crt of the CNPG-rotated global-postgres CA into civiclens so the API can verify-full; ca.key never leaves global.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: civiclens-ca-publisher
+  namespace: global
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: civiclens-ca-publisher
+  namespace: civiclens
+rules:
+  # RBAC cannot scope create by name.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["global-postgres-ca"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: civiclens-ca-publisher
+  namespace: civiclens
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: civiclens-ca-publisher
+subjects:
+  - kind: ServiceAccount
+    name: civiclens-ca-publisher
+    namespace: global
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: civiclens-ca-publisher
+  namespace: global
+spec:
+  provider:
+    kubernetes:
+      remoteNamespace: civiclens
+      server:
+        caProvider:
+          type: ConfigMap
+          name: kube-root-ca.crt
+          key: ca.crt
+      auth:
+        serviceAccount:
+          name: civiclens-ca-publisher
+---
+apiVersion: external-secrets.io/v1alpha1
+kind: PushSecret
+metadata:
+  name: civiclens-postgres-ca
+  namespace: global
+spec:
+  refreshInterval: 1h
+  deletionPolicy: None
+  secretStoreRefs:
+    - name: civiclens-ca-publisher
+      kind: SecretStore
+  selector:
+    secret:
+      name: global-postgres-ca
+  data:
+    - match:
+        secretKey: ca.crt
+        remoteRef:
+          remoteKey: global-postgres-ca
+          property: ca.crt
