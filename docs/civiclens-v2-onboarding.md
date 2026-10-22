@@ -1,8 +1,8 @@
 # CivicLens social identity onboarding
 
-This change is prepared on `feat/civiclens-v2-onboarding`. It has not been
-activated in production. Do not merge before the named rollout approval and
-release acceptance below.
+The owner explicitly approved the production identity rollout and dedicated
+CivicLens Apple setup on 2026-10-22. The reviewed change is on
+`feat/civiclens-v2-onboarding`; activation and live acceptance are tracked below.
 
 ## Release acceptance
 
@@ -59,12 +59,14 @@ Zitadel provider uses Services ID `com.tesserix.signin.web` and key ID
 `946A8XWHKB`; OpenBao metadata has no Apple-named entry for that key. The migrated
 HomeChef and Kora Apple private keys are valid, but belong to different registered
 keys. They have not been copied or changed. A dedicated CivicLens App ID
-`app.tesserix.civiclens` with Sign in with Apple is prepared at Apple's final
-registration screen. Creation is pending action-time approval. The proposed
-Services ID is `app.tesserix.civiclens.web`, associated with that primary App ID,
-with domain `auth.tesserix.app` and return URL
-`https://auth.tesserix.app/idps/callback`. Store the downloaded key only in the
-CivicLens production path above; do not put it into Git or GCP Secret Manager.
+`app.tesserix.civiclens` was registered with Sign in with Apple enabled. Services
+ID `app.tesserix.civiclens.web` is associated with that primary App ID, with domain
+`auth.tesserix.app` and return URL `https://auth.tesserix.app/idps/callback`.
+Dedicated key `CD8RKNWDJV` is restricted to the CivicLens primary App ID. Its
+downloaded PKCS#8/P-256 key and provider configuration were stored at version 1
+in the CivicLens Apple production path using CAS=0; metadata confirmed version 1.
+No key material was printed, committed, or stored in GCP Secret Manager. Functional
+operator reads and provider login remain rollout acceptance checks.
 
 `k8s/operators/zitadel/claims/civiclens.yaml` creates a dedicated CivicLens org,
 Google/Apple/Meta connectors, social-only policy and cobalt/light branding, plus
