@@ -215,7 +215,9 @@ def test_cluster_cutover_preserves_primary_and_children_and_is_retryable(monkeyp
     monkeypatch.setattr(recreate, "request", api)
     monkeypatch.setattr(recreate, "wait_deleted", lambda path: None)
     recreate.main()
+    retained_claim = state.pop(pvc_path)
     recreate.main()
+    state[pvc_path] = retained_claim
     assert deleted == [cluster_path]
     assert state[cluster_path]["spec"]["storage"]["size"] == "60Gi"
     assert state[cluster_path]["status"]["currentPrimary"] == "db-3"
@@ -224,3 +226,30 @@ def test_cluster_cutover_preserves_primary_and_children_and_is_retryable(monkeyp
     assert (
         json.loads(state[cm_path]["data"]["cluster.json"])["metadata"]["uid"] == "old"
     )
+
+
+def test_binding_does_not_mutate_when_cluster_recreation_failed(monkeypatch):
+    import json
+
+    bind = module(SCRIPT.with_name("bind.py"))
+    calls = []
+
+    def api(path, method="GET", body=None):
+        calls.append(method)
+        return {"status": {"failed": 1}}
+
+    monkeypatch.setattr(bind, "request", api)
+    monkeypatch.setenv(
+        "PLAN",
+        json.dumps(
+            {
+                "namespace": "db",
+                "name": "data",
+                "target": "temporary",
+                "recreateJob": "recreate",
+            }
+        ),
+    )
+    with pytest.raises(RuntimeError, match="recreation failed"):
+        bind.main()
+    assert calls == ["GET"]

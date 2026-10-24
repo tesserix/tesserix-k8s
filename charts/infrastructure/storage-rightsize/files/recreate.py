@@ -90,6 +90,10 @@ def main():
             "/api/v1/namespaces/" + ns + "/persistentvolumeclaims/" + claim["name"]
         )
         pvc = request(pvc_path)
+        if pvc is None:
+            if claim["name"].endswith("-wal"):
+                raise RuntimeError("WAL claim unexpectedly missing")
+            continue
         if pvc["metadata"]["uid"] != claim["uid"]:
             raise RuntimeError("original claim identity changed")
         request(pvc_path, "PATCH", {"metadata": {"ownerReferences": [owner]}})
