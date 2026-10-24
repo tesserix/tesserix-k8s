@@ -312,6 +312,7 @@ def test_openpanel_uses_the_verified_120gi_disk_under_existing_claim_name():
 
 def test_blog_backup_creates_the_service_account_used_by_its_job():
     import subprocess
+
     import yaml
 
     app = yaml.safe_load(
