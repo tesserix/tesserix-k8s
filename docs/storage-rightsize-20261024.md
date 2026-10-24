@@ -72,3 +72,9 @@ Blog MongoDB's stopped StatefulSet is recreated with explicit PVC Retain policie
 to change its immutable claim template. Remove the temporary Force/Replace
 annotation before resuming it. Resume Mark8ly only after both replacements are
 Bound at 60Gi and its original primary is preserved. FE3DR remains hibernated.
+
+The five 60Gi claims are now Bound to the verified copied disks. Both PostgreSQL
+Clusters retain their original primary identities. Mark8ly and blog MongoDB can
+resume; FE3DR remains hibernated. Reconciliation freezes and the temporary blog
+Force/Replace annotation are removed. OpenPanel needs a 2Gi-memory verification
+retry after its large file inventory exhausted the previous 512Mi limit.
