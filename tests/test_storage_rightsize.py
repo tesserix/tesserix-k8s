@@ -69,3 +69,26 @@ def test_verification_checks_root_permissions_and_file_types(tmp_path):
     (target / "data").write_text("not a directory")
     with pytest.raises(RuntimeError, match="type mismatch"):
         module().verify(source, target, metadata=False)
+
+
+def test_partial_copy_requires_explicit_retry_and_rechecks_content(
+    tmp_path, monkeypatch
+):
+    source, target = tmp_path / "source", tmp_path / "target"
+    source.mkdir()
+    target.mkdir()
+    import shutil
+    import subprocess
+
+    copy = module()
+    run = subprocess.run
+    executable = shutil.which("gcp") or "cp"
+    monkeypatch.setattr(
+        copy.subprocess, "run", lambda args, **kw: run([executable, *args[1:]], **kw)
+    )
+    (source / "data").write_bytes(b"complete database file")
+    (target / "data").write_bytes(b"partial")
+    with pytest.raises(RuntimeError, match="content mismatch"):
+        copy.copy_or_repair(source, target, False)
+    copy.copy_or_repair(source, target, True)
+    assert module().verify(source, target) == 1

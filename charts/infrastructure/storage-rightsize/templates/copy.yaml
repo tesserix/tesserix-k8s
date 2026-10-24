@@ -100,6 +100,7 @@ metadata:
   name: {{ .target }}-v2
   namespace: {{ .namespace }}
 spec:
+  suspend: {{ eq .namespace "openpanel" }}
   backoffLimit: 0
   activeDeadlineSeconds: 7200
   template:
@@ -169,4 +170,84 @@ spec:
         - name: scripts
           configMap:
             name: {{ .target }}
+{{- if eq .namespace "openpanel" }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .target }}-v3
+  namespace: {{ .namespace }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200
+  template:
+    metadata:
+      labels:
+        app: storage-rightsize
+      annotations:
+        sidecar.istio.io/inject: "false"
+        istio.io/dataplane-mode: none
+    spec:
+      serviceAccountName: storage-rightsize
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: copy
+          image: {{ $.Values.image }}
+          command: [python, -u, /scripts/copy.py]
+          env:
+            - name: ALLOW_RECOPY
+              value: "true"
+            - name: SOURCE_CLAIM
+              value: {{ .name }}
+            - name: SOURCE_UID
+              value: {{ .sourceUID }}
+            - name: TARGET_CLAIM
+              value: {{ .target }}
+            - name: TARGET_UID
+              value: {{ .targetUID }}
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          securityContext:
+            # Copy exact database ownership; no network/admin capabilities.
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, DAC_OVERRIDE, FOWNER, FSETID]
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: source
+              mountPath: /source
+              readOnly: true
+            - name: target
+              mountPath: /target
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: source
+          persistentVolumeClaim:
+            claimName: {{ .name }}
+            readOnly: true
+        - name: target
+          persistentVolumeClaim:
+            claimName: {{ .target }}
+        - name: scripts
+          configMap:
+            name: {{ .target }}
+{{- end }}
 {{- end }}

@@ -86,3 +86,6 @@ Database/PVC ownership, restore requirements and retention must be checked befor
 any separate deletion proposal. FE3DR shutdown frees capacity for other products;
 significant further cash savings need storage reclamation and avoiding new
 uncommitted compute, rather than shrinking below already-paid commitments.
+
+The namespaced MongoDB operator is also parked at zero after the database reports
+`paused`. Restore its replicaCount to 1 before unpausing MongoDB.

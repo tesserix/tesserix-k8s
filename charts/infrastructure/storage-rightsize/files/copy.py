@@ -81,32 +81,8 @@ def api(path):
         return json.load(response)
 
 
-def main():
-    namespace, claim = os.environ["NAMESPACE"], os.environ["SOURCE_CLAIM"]
-    prefix = "/api/v1/namespaces/" + namespace
-    source_claim = api(prefix + "/persistentvolumeclaims/" + claim)
-    if source_claim["metadata"]["uid"] != os.environ["SOURCE_UID"]:
-        raise RuntimeError("source PVC identity changed; refusing copy")
-    target_claim = api(prefix + "/persistentvolumeclaims/" + os.environ["TARGET_CLAIM"])
-    if target_claim["metadata"]["uid"] != os.environ["TARGET_UID"]:
-        raise RuntimeError("target PVC identity changed")
-    for attempt in range(120):
-        try:
-            assert_quiescent(
-                api(prefix + "/pods")["items"], claim, os.environ["POD_NAME"]
-            )
-            assert_quiescent(
-                api(prefix + "/pods")["items"],
-                os.environ["TARGET_CLAIM"],
-                os.environ["POD_NAME"],
-            )
-            break
-        except RuntimeError:
-            if attempt == 119:
-                raise
-            time.sleep(10)
-    source, target = Path("/source"), Path("/target")
-    if entries(target):
+def copy_or_repair(source, target, recopy=False):
+    if entries(target) and not recopy:
         verify(source, target, metadata=False)
         items = entries(source)
         items[Path(".")] = source
@@ -136,8 +112,35 @@ def main():
             ],
             check=True,
         )
-    os.sync()
-    count = verify(source, target)
+    return verify(source, target)
+
+
+def main():
+    namespace, claim = os.environ["NAMESPACE"], os.environ["SOURCE_CLAIM"]
+    prefix = "/api/v1/namespaces/" + namespace
+    source_claim = api(prefix + "/persistentvolumeclaims/" + claim)
+    if source_claim["metadata"]["uid"] != os.environ["SOURCE_UID"]:
+        raise RuntimeError("source PVC identity changed; refusing copy")
+    target_claim = api(prefix + "/persistentvolumeclaims/" + os.environ["TARGET_CLAIM"])
+    if target_claim["metadata"]["uid"] != os.environ["TARGET_UID"]:
+        raise RuntimeError("target PVC identity changed")
+    for attempt in range(120):
+        try:
+            assert_quiescent(
+                api(prefix + "/pods")["items"], claim, os.environ["POD_NAME"]
+            )
+            assert_quiescent(
+                api(prefix + "/pods")["items"],
+                os.environ["TARGET_CLAIM"],
+                os.environ["POD_NAME"],
+            )
+            break
+        except RuntimeError:
+            if attempt == 119:
+                raise
+            time.sleep(10)
+    source, target = Path("/source"), Path("/target")
+    count = copy_or_repair(source, target, os.environ.get("ALLOW_RECOPY") == "true")
     assert_quiescent(api(prefix + "/pods")["items"], claim, os.environ["POD_NAME"])
     (target / ".rightsize-verified.json").write_text(
         json.dumps(
