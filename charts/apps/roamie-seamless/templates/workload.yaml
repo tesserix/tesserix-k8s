@@ -1,0 +1,167 @@
+{{- if .Values.enabled }}
+{{- $digest := required "Kargo must provide image.digest before enabling the model" .Values.image.digest }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: roamie-seamless
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: roamie-seamless-cache
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: standard-rwo-retain
+  resources:
+    requests:
+      storage: {{ .Values.cacheSize }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: roamie-seamless
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: roamie-seamless
+  template:
+    metadata:
+      labels:
+        app: roamie-seamless
+        app.kubernetes.io/part-of: roamie
+    spec:
+      serviceAccountName: roamie-seamless
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 330
+      nodeSelector:
+        cloud.google.com/gke-nodepool: models-e2
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: models
+          effect: NoSchedule
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: model
+          image: "{{ .Values.image.repository }}@{{ $digest }}"
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: SEAMLESS_THREADS
+              value: "6"
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 180
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: roamie-seamless-cache
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: roamie-seamless
+spec:
+  selector:
+    app: roamie-seamless
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: roamie-seamless
+spec:
+  selector:
+    matchLabels:
+      app: roamie-seamless
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: roamie-seamless
+spec:
+  selector:
+    matchLabels:
+      app: roamie-seamless
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: [cluster.local/ns/roamie/sa/roamie-api]
+      to:
+        - operation:
+            ports: ["8080"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: roamie-seamless
+spec:
+  podSelector:
+    matchLabels:
+      app: roamie-seamless
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: roamie-api
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: roamie
+      ports:
+        - protocol: TCP
+          port: 15008
+{{- end }}
