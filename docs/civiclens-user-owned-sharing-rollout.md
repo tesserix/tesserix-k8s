@@ -1,4 +1,4 @@
-# CivicLens user-owned sharing rollout — prepared, not applied
+# CivicLens user-owned sharing rollout — completed
 
 ## Target and authorization boundary
 
@@ -7,11 +7,55 @@ Account: `unidevidp@gmail.com`; project: `tesseracthub-480811`; cluster/context:
 `civiclens`; product DB: `civiclens_db` on `global/global-postgres`.
 Existing API: `https://civiclns-api.tesserix.app`.
 
-The app's AGENTS says "No live cloud changes" and the working agreement requires
-explicit approval for migrations and production rollout. This document prepares
-that named approval; no cloud changes, migrations or registry push were made.
-No public Apple App Store or Google Play release is authorized. The requested
-mobile distribution is existing internal CivicLens TestFlight groups only.
+The user explicitly approved this named rollout. It completed on 25 October 2026
+(Australia/Melbourne). No public Apple App Store, Google Play or external beta
+release is authorized. Internal TestFlight 0.1.5 (12) is available in both existing
+groups. The preparation/ordered procedure below remains the recovery reference.
+
+## Execution receipt
+
+- Infrastructure PR #1526 merged as `dd962901d87292de374f6103ddc0c26a35341db8`.
+  Native app PR #10 merged as `1c5ab95fe808c20b441887b9fe914607f81bba49`.
+- The reviewed Terraform plan created the bucket and custom role. The first
+  binding attempt hit IAM role-propagation delay; a fresh plan verified only the
+  original exact binding remained, then succeeded. Atlantis applied standard
+  production bucket labels through a separately reviewed scoped plan. No shared
+  stack drift, deletion, replacement or unrelated resource change was applied.
+- Fresh custom-format product backup SHA-256:
+  `069f00a18c6e21416320ef102652bb2a2ce4fb9bc46057d5b3ec7f153e2df8fc`.
+  Protected local capture: app worktree
+  `artifacts/qa/user-sharing-rollout/backup/` (ignored, mode-restricted).
+  Isolated restore verified users=2,reports=0,migrations=5,audit=0. The live counts
+  were unchanged immediately before deployment. No production data was copied
+  into Git or logs.
+- App release CI `40104327068` passed native AMD64 build, database coverage,
+  mobile checks, published-image TLS/migration/auth smoke and digest validation.
+  Kargo promoted `deploy-1c5ab95`; Argo ran migration 0006 before the new pods.
+  Live ledger confirms six successful migrations and report_photos exists.
+- Two ready replicas, zero restarts, run
+  `sha256:fb761d44c5bafb8b458690179fc00209d840522b7d89fcb8e4339bc4a915fb2b`.
+  Argo civiclens-api and civiclens-istio are Synced/Healthy. Upload/export routes
+  have 90-second deadlines, ordinary routes 30 seconds, retry attempts zero.
+- Bucket public-access prevention and uniform access are enforced. Live workload
+  created/read an exact object generation, got 412 on immutable collision, 403 on
+  listing and 401 on anonymous read; original data remained unchanged. A small,
+  non-personal deployment probe remains under qa/deployment-20261025; runtime has
+  no deletion permission. Protected receipt records its exact generation.
+- Live capabilities: manualSharing=true,maxPhotos=5,rules=2026-10-24,assist=true;
+  managed Facebook/Instagram/WhatsApp publishing=false. Unauthenticated account,
+  report creation/read, moderation photo and share-package requests returned 401.
+  Actual owner/all-photo isolation was exercised with real scratch PostgreSQL in
+  CI; no live roles were granted or moderation checks bypassed for rollout QA.
+- Exact real signed IPA 0.1.5 (12) SHA-256:
+  `3bd1e33695faccec0d286fa995f45ad4df4c42517052d55adcf1b4a5646c7c80`.
+  EAS submission `9e3614e7-2a4f-4de6-b1e2-d74c740fc0b2` FINISHED;
+  Apple build `f0cf649c-3534-4675-90d2-f4d1a941e4b3` VALID/IN_BETA_TESTING
+  in Internal Testing and CivicLens Internal. Existing tester membership verified,
+  no invitations. Physical-device/provider delivery remains user acceptance.
+
+Existing OpenBao credentials and readers were retained. Verified authority routing
+remains Melbourne waste/litter only. Expansion is tracked in CivicLens #11–#13;
+no broader reviewed routing or new participation feature was deployed here.
 
 ## Concrete change
 
