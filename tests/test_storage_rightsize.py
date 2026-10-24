@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from test_homechef_park import render
+from test_homechef_park import ROOT, render
 
 SCRIPT = (
     Path(__file__).resolve().parents[1]
@@ -307,4 +307,42 @@ def test_openpanel_uses_the_verified_120gi_disk_under_existing_claim_name():
     assert any(
         v.get("persistentVolumeClaim", {}).get("claimName") == pvc["metadata"]["name"]
         for v in deployment["spec"]["template"]["spec"]["volumes"]
+    )
+
+
+def test_blog_backup_creates_the_service_account_used_by_its_job():
+    import subprocess
+
+    import yaml
+
+    app = yaml.safe_load(
+        (ROOT / "argocd/prod/infrastructure/mongodb-blog-backup.yaml").read_text()
+    )
+    values = app["spec"]["source"]["helm"]["values"]
+    docs = list(
+        yaml.safe_load_all(
+            subprocess.check_output(
+                [
+                    "helm",
+                    "template",
+                    "mongodb-blog-backup",
+                    str(ROOT / "charts/thirdparty/mongodb-backup"),
+                    "--values",
+                    "-",
+                ],
+                input=values,
+                text=True,
+            )
+        )
+    )
+    account = next(d for d in docs if d and d["kind"] == "ServiceAccount")
+    cron = next(d for d in docs if d and d["kind"] == "CronJob")
+    assert (
+        account["metadata"]["name"]
+        == cron["spec"]["jobTemplate"]["spec"]["template"]["spec"]["serviceAccountName"]
+        == "postgres-backup"
+    )
+    assert (
+        account["metadata"]["annotations"]["iam.gke.io/gcp-service-account"]
+        == "postgres-backup-sa@tesseracthub-480811.iam.gserviceaccount.com"
     )
