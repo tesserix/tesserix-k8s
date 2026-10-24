@@ -28,12 +28,11 @@ def main():
     if saved is None:
         validate_cluster(current, plan["uid"])
         for pod in request("/api/v1/namespaces/" + ns + "/pods")["items"]:
-            if pod["metadata"].get("labels", {}).get(
-                "cnpg.io/cluster"
-            ) == name and pod.get("status", {}).get("phase") not in (
-                "Succeeded",
-                "Failed",
-            ):
+            claims = {claim["name"] for claim in plan["claims"]}
+            if any(
+                volume.get("persistentVolumeClaim", {}).get("claimName") in claims
+                for volume in pod["spec"].get("volumes", [])
+            ) and pod.get("status", {}).get("phase") not in ("Succeeded", "Failed"):
                 raise RuntimeError("database pod remains active")
         saved = request(
             cm_path.rsplit("/", 1)[0],

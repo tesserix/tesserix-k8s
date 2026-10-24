@@ -168,7 +168,15 @@ def test_cluster_cutover_preserves_primary_and_children_and_is_retryable(monkeyp
             "status": {"currentPrimary": "db-3", "latestGeneratedNode": 3},
         },
         pvc_path: {"metadata": {"uid": "data-uid"}},
-        "/api/v1/namespaces/db/pods": {"items": []},
+        "/api/v1/namespaces/db/pods": {
+            "items": [
+                {
+                    "metadata": {"name": "pooler", "labels": {"cnpg.io/cluster": "db"}},
+                    "spec": {"volumes": []},
+                    "status": {"phase": "Running"},
+                }
+            ]
+        },
     }
     deleted = []
 
