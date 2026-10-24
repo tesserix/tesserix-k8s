@@ -38,7 +38,10 @@ class HospitalIdentity(unittest.TestCase):
         route = next((r for r in service["spec"]["http"] if r.get("match") == [{"uri": {"exact": "/api/internal/v1/hospital-enrolments"}}]), None)
         self.assertIsNotNone(route, "Workload provisioning must bypass the shell's browser-cookie middleware")
         self.assertEqual(route["rewrite"]["uri"], "/internal/v1/hospital-enrolments")
-        self.assertEqual(route["route"][0]["destination"]["host"], "helivanta-api.helivanta.svc.cluster.local")
+        self.assertEqual(route["route"][0]["destination"], {
+            "host": "helivanta-global-api.helivanta.svc.cluster.local",
+            "port": {"number": 8081},
+        })
         self.assertFalse(any(m.get("uri", {}).get("prefix", "").startswith("/api/internal") for r in service["spec"]["http"] for m in r.get("match", [])))
 
     def test_product_reader_is_namespace_bound_and_cannot_rotate_credentials(self):
