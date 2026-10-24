@@ -37,7 +37,7 @@ def kustomize(path):
     return [d for d in yaml.safe_load_all(output) if d]
 
 
-def release():
+def release(*overrides):
     return helm(
         RELEASE,
         "charts/apps/document-intelligence",
@@ -45,6 +45,7 @@ def release():
         "document-intelligence",
         "-f",
         str(PRODUCT),
+        *overrides,
     )
 
 
@@ -70,8 +71,9 @@ def test_release_reads_homechef_paths_and_admits_only_the_api():
         ]
 
 
-def test_credentials_are_seeded_create_only_before_the_release_syncs():
-    docs = release()
+def test_credentials_are_seeded_create_only_when_explicitly_resumed():
+    assert not any(d["kind"] == "Job" for d in release())
+    docs = release("--set", "secretSeed.enabled=true")
     job = resource(docs, "Job", SEED)
     assert job["metadata"]["annotations"]["argocd.argoproj.io/hook"] == "PreSync"
     pod = job["spec"]["template"]

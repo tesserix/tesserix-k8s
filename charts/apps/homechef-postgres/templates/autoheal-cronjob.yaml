@@ -10,7 +10,7 @@ clusters render nothing. Defaults are inlined via `dig` so a chart needs no
 `autoheal:` values block unless it wants to override.
 */ -}}
 {{- $ah := .Values.autoheal | default dict -}}
-{{- if and (dig "enabled" true $ah) (gt (int .Values.instances) 1) (not .Values.hibernate) }}
+{{- if and (dig "enabled" true $ah) (gt (int .Values.instances) 1)  }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -68,6 +68,7 @@ metadata:
     app.kubernetes.io/component: database
     app.kubernetes.io/part-of: {{ .Values.clusterName }}
 spec:
+  suspend: {{ .Values.hibernate }}
   schedule: {{ dig "schedule" "*/10 * * * *" $ah | quote }}
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 120

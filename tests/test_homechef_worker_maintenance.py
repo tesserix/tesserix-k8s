@@ -17,7 +17,8 @@ def test_production_replica_intent_survives_kargo_image_parameter_ownership():
     for chart in ('homechef-api', 'company'):
         app_path = 'homechef/homechef-api.yaml' if chart == 'homechef-api' else 'global/company.yaml'
         app = yaml.safe_load((ROOT / 'argocd/prod/apps' / app_path).read_text())
-        paused = any(p['name'] == 'replicaCount' and p['value'] == '0' for p in app['spec']['source']['helm']['parameters'])
+        paused = chart == 'homechef-api'
+        assert all(p['name'] != 'replicaCount' for p in app['spec']['source']['helm']['parameters'])
         chart_path = ROOT / 'charts/apps' / chart
         result = subprocess.run(
             ['helm', 'template', chart, str(chart_path), '--namespace', 'homechef' if chart == 'homechef-api' else 'tesserix', '-f', str(chart_path / 'values-prod.yaml'), '--set', 'image.tag=verified-release'],
