@@ -28,7 +28,8 @@ def test_global_api_has_its_own_unprivileged_identity_and_bounded_resources():
     assert "cpu" not in c["resources"]["requests"]
     env = {x["name"]: x["value"] for x in c["env"]}
     assert env["GLOBAL_API_TRANSPORT_SECURITY"] == "istio"
-    assert set(json.loads(env["GLOBAL_API_UPSTREAMS"])) == {"platform", "medicore", "workforce", "pharmacy", "supply", "lab", "emergency"}
+    assert set(json.loads(env["GLOBAL_API_UPSTREAMS"])) == {"platform", "medicore", "workforce", "pharmacy", "supply", "lab", "emergency", "mediconnect"}
+    assert json.loads(env["GLOBAL_API_UPSTREAMS"])["mediconnect"] == "http://helivanta-api.helivanta.svc.cluster.local:8080"
     assert not any(x["kind"] in {"Secret", "ExternalSecret", "Job"} for x in rows)
     assert any(x["kind"] == "PeerAuthentication" and x["spec"]["mtls"]["mode"] == "STRICT" for x in rows)
     assert any(x["kind"] == "PodDisruptionBudget" for x in rows)

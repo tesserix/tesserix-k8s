@@ -21,7 +21,7 @@ application secrets, no database credentials and no migration hook.
    Enable `enforceOwnerBoundary` only after edge/shell cutover is verified. That
    DENY policy prevents direct gateway/shell access to product port 8080.
 
-Keep the running product API image unchanged during this rollout. Its existing
+During the original connector-only rollout, keep the running product API image unchanged. Its existing
 Argo sync is failed at the migrate hook; newer main includes country-data
 migrations outside the connector deployment. The source feature branch must not
 be merged into main's automatic API promotion as part of this rollout.
@@ -95,3 +95,33 @@ expected Via header. Runtime digest matched
 `sha256:5dea64c9593f6f0b601ff8d0f4c1e69401cb291738d312b041a13f0bc84f0269`.
 These checks establish the routing slice, not every domain workflow or absent
 product API. Record public cutover and final boundary evidence in their rollout PRs.
+
+
+## MediConnect owner rollout — 2026-10-25
+
+The next reviewed source is `30efb51d17986a1f77136129a056ae3f833d82d4`
+([Helivanta PR #1318](https://github.com/tesserix/helivanta/pull/1318)). Its full
+Go, web, browser E2E, image and secret checks passed before merge. It implements
+accounts and unverified link intake, not clinical patient grants.
+
+The confirmed Pakistan test-fixture cleanup was separately requested and applied:
+97 captured rows removed, 97 explicit audits retained, all 12 India release
+preflight counts zero, India parents unchanged, FK/trigger/RLS protection metadata
+unchanged. Recovery capture, restore rehearsal and exact operation are documented
+in [Helivanta PR #1319](https://github.com/tesserix/helivanta/pull/1319). No real
+patient rows, historical audits or stored objects were deleted.
+
+Keep Kargo auto-promotion disabled. Select only the published freight for the
+reviewed source SHA and promote through the existing prod Stage, which updates
+API, connector and shell in order. The API PreSync hook applies the migrations;
+verify readiness and migrations before continuing. A new connector with the old
+explicit owner map continues existing routes and reports the missing MediConnect
+owner unavailable. Then merge this chart's eighth owner mapping to
+`http://helivanta-api.helivanta.svc.cluster.local:8080`. Do not add the mapping to
+the old connector binary: it rejects unknown owners at startup. The chart's
+fallback image is the reviewed SHA, but Kargo owns live image-tag parameters.
+
+Verify both connector replicas, existing product denials, MediConnect denials
+with forged headers, unknown-route 404, expected Via header, and the direct-owner
+mesh boundary. Authenticated patient workflows require verified session and
+tenant authority; readiness and unauthorized probes do not prove those workflows.
