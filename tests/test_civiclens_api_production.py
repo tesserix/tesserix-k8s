@@ -222,7 +222,10 @@ class CivicLensNetwork(unittest.TestCase):
         [vs] = load_all("manifests/civiclens-istio/virtualservice.yaml")
         self.assertEqual(vs["spec"]["hosts"], ["civiclns-api.tesserix.app"])
         self.assertEqual(vs["spec"]["gateways"], ["istio-ingress/tesseract-gateway"])
-        [route] = vs["spec"]["http"]
+        large, route = vs["spec"]["http"]
+        self.assertEqual(large["timeout"], "90s")
+        self.assertEqual(large["match"][0], {"uri":{"exact":"/v1/reports"},"method":{"exact":"POST"}})
+        self.assertEqual(large["retries"], {"attempts":0})
         self.assertEqual(route["match"], [{"uri": {"prefix": "/v1/"}}])
         self.assertEqual(route["route"][0]["destination"]["host"], "civiclens-api.civiclens.svc.cluster.local")
         self.assertEqual(route["retries"], {"attempts": 0})
