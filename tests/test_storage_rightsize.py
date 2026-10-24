@@ -346,3 +346,7 @@ def test_blog_backup_creates_the_service_account_used_by_its_job():
         account["metadata"]["annotations"]["iam.gke.io/gcp-service-account"]
         == "postgres-backup-sa@tesseracthub-480811.iam.gserviceaccount.com"
     )
+
+
+def test_completed_migration_renders_no_jobs_or_temporary_permissions():
+    assert render("charts/infrastructure/storage-rightsize") == []
