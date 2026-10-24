@@ -1,0 +1,180 @@
+import re
+import subprocess
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_email_state_uses_authenticated_non_evicting_valkey():
+    app = yaml.safe_load(
+        (ROOT / "argocd/prod/infrastructure/zitadel-email-valkey.yaml").read_text()
+    )
+    values = app["spec"]["source"]["helm"]["valuesObject"]
+    assert app["spec"]["destination"]["namespace"] == "zitadel"
+    assert values["auth"] == {"enabled": True, "existingSecret": "zitadel-email-valkey"}
+    assert values["acl"]["enabled"] is False
+    assert values["valkey"]["maxmemoryPolicy"] == "noeviction"
+    assert values["persistence"]["enabled"] is True
+    assert values["replicaCount"] == 3
+    assert values["networkPolicy"]["allowedNamespaces"] == []
+    rendered = subprocess.run(
+        [
+            "helm",
+            "template",
+            "zitadel-email-valkey",
+            str(ROOT / "charts/apps/global-valkey"),
+            "--namespace",
+            "zitadel",
+            "--values",
+            "-",
+        ],
+        input=yaml.safe_dump(values),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    docs = [d for d in yaml.safe_load_all(rendered.stdout) if d]
+    for workload in (d for d in docs if d["kind"] in ("StatefulSet", "Deployment")):
+        assert (
+            workload["spec"]["template"]["spec"]["serviceAccountName"]
+            == "zitadel-email-valkey"
+        )
+        for container in workload["spec"]["template"]["spec"]["containers"]:
+            assert any(
+                e.get("valueFrom", {}).get("secretKeyRef", {}).get("name")
+                == "zitadel-email-valkey"
+                for e in container.get("env", [])
+            )
+
+
+def test_email_secret_reader_has_one_exact_openbao_path():
+    values = yaml.safe_load(
+        (ROOT / "charts/thirdparty/openbao/values.yaml").read_text()
+    )["bootstrap"]
+    name = "read-zitadel-email-zitadel-production"
+    policy = next(p["hcl"] for p in values["policies"] if p["name"] == name)
+    assert re.findall(r'path "([^"]+)"', policy) == [
+        "kv/data/zitadel/prod/app/zitadel-email-valkey-password"
+    ]
+    assert 'capabilities = ["read"]' in policy
+    role = next(r for r in values["kubernetesRoles"] if r["name"] == name)
+    assert role["serviceAccounts"] == ["zitadel-email-production-reader"]
+    assert role["namespaces"] == ["zitadel"]
+    docs = list(
+        yaml.safe_load_all(
+            (ROOT / "external-secrets/prod/zitadel/email-valkey.yaml").read_text()
+        )
+    )
+    secret = next(d for d in docs if d["kind"] == "ExternalSecret")
+    assert (
+        secret["spec"]["secretStoreRef"]["name"] == "openbao-zitadel-email-production"
+    )
+    assert secret["spec"]["data"][0]["remoteRef"] == {
+        "key": "zitadel/prod/app/zitadel-email-valkey-password",
+        "property": "value",
+    }
+    data = secret["spec"]["target"]["template"]["data"]
+    assert (
+        "zitadel-email-valkey.zitadel.svc.cluster.local:6379"
+        in data["CONSUMER_EMAIL_VALKEY_URL"]
+    )
+    assert "{{ .password }}" in data["password"]
+
+
+def test_email_state_mesh_access_is_limited_to_login_and_its_own_cluster():
+    docs = list(
+        yaml.safe_load_all(
+            (
+                ROOT / "external-secrets/prod/zitadel/email-valkey-network.yaml"
+            ).read_text()
+        )
+    )
+    deny = next(d for d in docs if d["kind"] == "AuthorizationPolicy")
+    assert deny["spec"]["action"] == "DENY"
+    assert deny["spec"]["rules"][0]["from"][0]["source"]["notPrincipals"] == [
+        "cluster.local/ns/zitadel/sa/zitadel-login",
+        "cluster.local/ns/zitadel/sa/zitadel-email-valkey",
+    ]
+    assert (
+        deny["spec"]["selector"]["matchLabels"]["app.kubernetes.io/name"]
+        == "zitadel-email-valkey"
+    )
+    login = next(
+        d
+        for d in docs
+        if d["kind"] == "NetworkPolicy"
+        and d["metadata"]["name"] == "zitadel-login-email-egress"
+    )
+    assert (
+        login["spec"]["podSelector"]["matchLabels"]["app.kubernetes.io/name"]
+        == "zitadel-login"
+    )
+    assert login["spec"]["egress"][0]["ports"] == [{"protocol": "TCP", "port": 6379}]
+
+
+def test_optional_email_secret_cannot_block_existing_login_pods():
+    values = yaml.safe_load(
+        (ROOT / "charts/thirdparty/zitadel/values.yaml").read_text()
+    )
+    env = next(
+        e
+        for e in values["zitadel"]["login"]["env"]
+        if e["name"] == "CONSUMER_EMAIL_VALKEY_URL"
+    )
+    assert env["valueFrom"]["secretKeyRef"] == {
+        "name": "zitadel-email-valkey",
+        "key": "CONSUMER_EMAIL_VALKEY_URL",
+        "optional": True,
+    }
+
+
+def test_rendered_login_uses_candidate_and_optional_secret_without_api_upgrade():
+    output = subprocess.check_output(
+        [
+            "helm",
+            "template",
+            "zitadel",
+            str(ROOT / "charts/thirdparty/zitadel"),
+            "--namespace",
+            "zitadel",
+        ],
+        text=True,
+    )
+    deployments = {
+        d["metadata"]["name"]: d
+        for d in yaml.safe_load_all(output)
+        if d and d["kind"] == "Deployment"
+    }
+    login = deployments["zitadel-login"]["spec"]["template"]["spec"]
+    assert login["serviceAccountName"] == "zitadel-login"
+    container = next(c for c in login["containers"] if c["name"] == "zitadel-login")
+    assert container["image"].endswith(
+        "feat-consumer-email-otp-e688e06@sha256:856166971b3f157e61860778ab4ba1d76f52a21cde8466e1984aa8dbfb59d103"
+    )
+    env = next(e for e in container["env"] if e["name"] == "CONSUMER_EMAIL_VALKEY_URL")
+    assert env["valueFrom"]["secretKeyRef"]["optional"] is True
+    api = deployments["zitadel"]["spec"]["template"]["spec"]["containers"][0]
+    assert (
+        "sha-29986e1b8b3e606d20871a2e73874b91f9b5b695@sha256:22ab1fb4abe6a5f279c5509fa2bbb10358a2fc9fb479af013235add8af1188ac"
+        in api["image"]
+    )
+
+
+def test_existing_cache_proxy_identity_remains_unchanged():
+    output = subprocess.check_output(
+        [
+            "helm",
+            "template",
+            "global-valkey-cache",
+            str(ROOT / "charts/apps/global-valkey"),
+            "--values",
+            str(ROOT / "charts/apps/global-valkey/values-cache.yaml"),
+        ],
+        text=True,
+    )
+    proxy = next(
+        d for d in yaml.safe_load_all(output) if d and d["kind"] == "Deployment"
+    )
+    assert "serviceAccountName" not in proxy["spec"]["template"]["spec"]

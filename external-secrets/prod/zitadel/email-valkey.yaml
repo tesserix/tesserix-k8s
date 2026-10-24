@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: zitadel-email-production-reader
+  namespace: zitadel
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-zitadel-email-production
+  namespace: zitadel
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-zitadel-email-zitadel-production
+          serviceAccountRef:
+            name: zitadel-email-production-reader
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: zitadel-email-valkey
+  namespace: zitadel
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-zitadel-email-production
+    kind: SecretStore
+  target:
+    name: zitadel-email-valkey
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        password: "{{ .password }}"
+        CONSUMER_EMAIL_VALKEY_URL: "redis://:{{ .password }}@zitadel-email-valkey.zitadel.svc.cluster.local:6379"
+  data:
+    - secretKey: password
+      remoteRef:
+        key: zitadel/prod/app/zitadel-email-valkey-password
+        property: value
