@@ -70,6 +70,12 @@ class CivicLensAI(unittest.TestCase):
         self.assertIn("secrets.token_hex(32)", script)
         self.assertIn("auth/token/revoke-self", script)
 
+    def test_seed_image_has_a_valid_pinned_digest(self):
+        resources = render("civiclens-ai-gateway", "agentgateway-system")
+        job = next(r for r in resources if r["kind"] == "Job")
+        container = job["spec"]["template"]["spec"]["containers"][0]
+        self.assertRegex(container["image"], r"@sha256:[a-f0-9]{64}$")
+
     def test_api_uses_same_key_and_private_gateway_with_publishing_off(self):
         resources = render("civiclens-api", "civiclens")
         deployment = next(r for r in resources if r["kind"] == "Deployment")
