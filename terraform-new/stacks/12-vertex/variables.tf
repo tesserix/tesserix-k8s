@@ -122,3 +122,9 @@ variable "roamie_agentgateway_ksa" {
   type        = string
   default     = "agentgateway-system/roamie-ai"
 }
+
+variable "civiclens_agentgateway_ksa" {
+  description = "Kubernetes SA of the private CivicLens API model gateway"
+  type        = string
+  default     = "agentgateway-system/civiclens-ai"
+}

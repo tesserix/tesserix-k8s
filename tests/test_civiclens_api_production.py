@@ -53,7 +53,8 @@ class CivicLensApiChart(unittest.TestCase):
         self.assertEqual(
             {d["remoteRef"]["key"] for d in runtime["data"]},
             {"civiclens/prod/app/civiclens-db-runtime-password",
-             "civiclens/prod/app/civiclens-identity-key"},
+             "civiclens/prod/app/civiclens-identity-key",
+             "civiclens/prod/app/civiclens-ai-gateway-key"},
         )
         self.assertEqual(
             {d["remoteRef"]["key"] for d in migration["data"]},
@@ -131,7 +132,7 @@ class CivicLensDelivery(unittest.TestCase):
         self.assertEqual(app["spec"]["source"]["path"], "charts/apps/civiclens-api")
         self.assertEqual(app["spec"]["destination"]["namespace"], "civiclens")
         self.assertEqual(set(load("argocd/prod/apps/civiclens/kustomization.yaml")["resources"]),
-                         {"civiclens-api.yaml", "civiclens-istio.yaml"})
+                         {"civiclens-api.yaml", "civiclens-ai-gateway.yaml", "civiclens-istio.yaml"})
         self.assertIn("civiclens-app-of-apps.yaml", load("argocd/prod/apps/kustomization.yaml")["resources"])
         self.assertIn("civiclens.yaml", load("argocd/prod/projects/kustomization.yaml")["resources"])
 
@@ -158,14 +159,15 @@ class CivicLensSecrets(unittest.TestCase):
         stores = {d["metadata"]["namespace"]: d
                   for d in load_all("external-secrets/prod/civiclens-openbao-readers.yaml")
                   if d["kind"] == "SecretStore"}
-        self.assertEqual(set(stores), {"civiclens", "global"})
+        self.assertEqual(set(stores), {"civiclens", "global", "agentgateway-system"})
         bootstrap = load("charts/thirdparty/openbao/values.yaml")["bootstrap"]
         policies = {p["name"]: p["hcl"] for p in bootstrap["policies"]}
         roles = {r["name"]: r for r in bootstrap["kubernetesRoles"]}
         expected = {
             "civiclens": {"civiclens-db-runtime-password", "civiclens-db-migrator-password",
-                          "civiclens-identity-key"},
+                          "civiclens-identity-key", "civiclens-ai-gateway-key"},
             "global": {"civiclens-db-runtime-password", "civiclens-db-migrator-password"},
+            "agentgateway-system": {"civiclens-ai-gateway-key"},
         }
         for namespace, names in expected.items():
             store = stores[namespace]
@@ -243,6 +245,78 @@ class CivicLensNetwork(unittest.TestCase):
         egress = str(policies[("civiclens", "allow-civiclens-egress")]["spec"])
         self.assertIn("'kubernetes.io/metadata.name': 'global'", egress)
         self.assertIn("'civiclens'", str(policies[("global", "allow-global-ingress")]["spec"]))
+
+
+class CivicLensAiGateway(unittest.TestCase):
+    URL = "http://civiclens-ai.agentgateway-system.svc.cluster.local:8080"
+
+    @classmethod
+    def setUpClass(cls):
+        cls.resources = render("apps/civiclens-ai-gateway", "--namespace", "agentgateway-system")
+
+    def test_only_the_api_service_account_may_invoke_the_model_route(self):
+        [policy] = named(self.resources, "AuthorizationPolicy").values()
+        self.assertEqual(policy["spec"]["action"], "ALLOW")
+        self.assertEqual(policy["spec"]["selector"]["matchLabels"],
+                         {"gateway.networking.k8s.io/gateway-name": "civiclens-ai"})
+        invoke, sidecar = policy["spec"]["rules"]
+        self.assertEqual(invoke["from"], [{"source": {"principals": ["cluster.local/ns/civiclens/sa/civiclens-api"]}}])
+        self.assertEqual(invoke["to"], [{"operation": {"methods": ["POST"], "paths": ["/v1/chat/completions"],
+                                                       "ports": ["8080"]}}])
+        self.assertEqual(sidecar, {"to": [{"operation": {"notPorts": ["8080"]}}]})
+        [netpol] = named(self.resources, "NetworkPolicy").values()
+        callers = [r["from"] for r in netpol["spec"]["ingress"] if any(p["port"] == 8080 for p in r["ports"])]
+        self.assertEqual(callers, [[{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "civiclens"}},
+                                     "podSelector": {"matchLabels": {"app.kubernetes.io/name": "civiclens-api"}}}]])
+
+    def test_model_route_requires_the_openbao_client_key_and_the_compose_model(self):
+        [route] = named(self.resources, "HTTPRoute").values()
+        self.assertEqual(route["spec"]["parentRefs"], [{"name": "civiclens-ai", "sectionName": "http"}])
+        self.assertEqual(route["spec"]["rules"][0]["matches"], [{"path": {"type": "Exact", "value": "/v1/chat/completions"}}])
+        traffic = named(self.resources, "AgentgatewayPolicy")["civiclens-api-model-traffic"]["spec"]["traffic"]
+        self.assertEqual(traffic["apiKeyAuthentication"],
+                         {"mode": "Strict", "secretRef": {"name": "civiclens-ai-gateway-clients"}})
+        self.assertIn('json(request.body).model == "civiclens-compose"',
+                      traffic["authorization"]["policy"]["matchExpressions"][0])
+        self.assertEqual(traffic["timeouts"]["request"], "15s")
+        [client] = named(self.resources, "ExternalSecret").values()
+        self.assertEqual(client["spec"]["secretStoreRef"], {"name": STORE, "kind": "SecretStore"})
+        self.assertEqual(client["spec"]["target"]["name"], "civiclens-ai-gateway-clients")
+        self.assertEqual(client["spec"]["data"], [{"secretKey": "civiclens-api", "remoteRef": {
+            "key": "civiclens/prod/app/civiclens-ai-gateway-key", "property": "value"}}])
+
+    def test_gateway_reaches_vertex_through_workload_identity_only(self):
+        [params] = named(self.resources, "AgentgatewayParameters").values()
+        self.assertEqual(params["spec"]["serviceAccount"]["metadata"]["annotations"]["iam.gke.io/gcp-service-account"],
+                         "agentgateway-llm@tesseracthub-480811.iam.gserviceaccount.com")
+        main = (ROOT / "terraform-new/stacks/12-vertex/main.tf").read_text()
+        variables = (ROOT / "terraform-new/stacks/12-vertex/variables.tf").read_text()
+        self.assertIn('resource "google_service_account_iam_member" "civiclens_agentgateway_wi"', main)
+        self.assertIn('"agentgateway-system/civiclens-ai"', variables)
+        [backend] = named(self.resources, "AgentgatewayBackend").values()
+        [provider] = backend["spec"]["ai"]["groups"][0]["providers"]
+        self.assertEqual(provider["policies"]["auth"], {"gcp": {}})
+
+    def test_api_calls_the_private_gateway_and_may_reach_only_its_pods(self):
+        resources = render("apps/civiclens-api", "--namespace", "civiclens")
+        container = named(resources, "Deployment")["civiclens-api"]["spec"]["template"]["spec"]["containers"][0]
+        env = {e["name"]: e.get("value") for e in container["env"]}
+        self.assertEqual(env["CIVICLENS_AI_GATEWAY_URL"], self.URL)
+        egress = named(resources, "NetworkPolicy")["civiclens-api-ai-gateway-egress"]["spec"]
+        self.assertEqual(egress["podSelector"]["matchLabels"]["app.kubernetes.io/name"], "civiclens-api")
+        [rule] = egress["egress"]
+        self.assertEqual(rule["to"], [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "agentgateway-system"}},
+                                       "podSelector": {"matchLabels": {"gateway.networking.k8s.io/gateway-name": "civiclens-ai"}}}])
+        self.assertEqual({p["port"] for p in rule["ports"]}, {8080, 15008})
+
+    def test_gateway_application_syncs_manually_into_agentgateway_system(self):
+        app = load("argocd/prod/apps/civiclens/civiclens-ai-gateway.yaml")
+        self.assertEqual(app["spec"]["project"], "civiclens")
+        self.assertEqual(app["spec"]["source"]["path"], "charts/apps/civiclens-ai-gateway")
+        self.assertEqual(app["spec"]["destination"]["namespace"], "agentgateway-system")
+        self.assertNotIn("automated", app["spec"]["syncPolicy"])
+        destinations = {d["namespace"] for d in load("argocd/prod/projects/civiclens.yaml")["spec"]["destinations"]}
+        self.assertIn("agentgateway-system", destinations)
 
 
 class CivicLensDatabase(unittest.TestCase):

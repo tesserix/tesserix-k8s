@@ -1,0 +1,31 @@
+gateway:
+  name: civiclens-ai
+  className: agentgateway
+  port: 8080
+  replicas: 2
+  serviceAccount:
+    gcpServiceAccount: agentgateway-llm@tesseracthub-480811.iam.gserviceaccount.com
+  resources:
+    requests:
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+providers:
+  vertex:
+    projectId: tesseracthub-480811
+    region: global
+    model: gemini-2.5-flash
+# Matches the API's 15 s assist deadline, so the gateway never outlives its caller.
+timeout: 15s
+tracing:
+  serviceName: ai-usage-ingest
+  namespace: tesserix
+  port: 4318
+# Per gateway replica; the API also limits each account to 20 suggestions per 15 minutes.
+limits:
+  requestsPerMinute: 60
+  requestBurst: 10
+  tokensPerHour: 300000
+clientKey:
+  secretName: civiclens-ai-gateway-clients
+  remoteKey: civiclens/prod/app/civiclens-ai-gateway-key

@@ -153,3 +153,9 @@ resource "google_service_account_iam_member" "roamie_agentgateway_wi" {
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.roamie_agentgateway_ksa}]"
 }
+
+resource "google_service_account_iam_member" "civiclens_agentgateway_wi" {
+  service_account_id = google_service_account.agentgateway_llm.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[${var.civiclens_agentgateway_ksa}]"
+}

@@ -1,0 +1,24 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: civiclens-api-model-invocation
+  labels:
+    {{- include "civiclens-ai-gateway.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: {{ .Values.gateway.name }}
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/civiclens/sa/civiclens-api
+      to:
+        - operation:
+            methods: ["POST"]
+            paths: ["/v1/chat/completions"]
+            ports: ["{{ .Values.gateway.port }}"]
+    - to:
+        - operation:
+            notPorts: ["{{ .Values.gateway.port }}"]
