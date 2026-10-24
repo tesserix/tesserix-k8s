@@ -49,4 +49,4 @@ def test_clickhouse_bounds_cpu_and_stops_persisting_its_own_text_logs():
         if doc["kind"] == "PersistentVolumeClaim"
         and doc["metadata"]["name"] == "openpanel-clickhouse"
     )
-    assert claim["spec"]["resources"]["requests"]["storage"] == "240Gi"
+    assert claim["spec"]["resources"]["requests"]["storage"] == "120Gi"
