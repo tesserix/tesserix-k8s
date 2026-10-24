@@ -72,6 +72,7 @@ def test_dedicated_workloads_stay_at_zero_without_autoscalers(chart, values):
     assert not any(
         doc["kind"] in ("HorizontalPodAutoscaler", "ScaledObject") for doc in docs
     )
+    assert not any(doc["kind"] == "Job" for doc in docs)
 
 
 def test_other_ocr_products_keep_running():
