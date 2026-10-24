@@ -44,14 +44,14 @@ def test_verification_detects_corruption_and_preserves_symlinks(tmp_path):
         module().verify(source, target)
 
 
-def test_databases_are_quiesced_without_removing_existing_claims():
+def test_active_databases_resume_on_smaller_claims():
     docs = render("charts/apps/mark8ly-postgres")
     cluster = next(d for d in docs if d["kind"] == "Cluster")
-    assert cluster["metadata"]["annotations"]["cnpg.io/hibernation"] == "on"
+    assert cluster["metadata"]["annotations"]["cnpg.io/hibernation"] == "off"
     assert cluster["spec"]["storage"]["size"] == "60Gi"
     docs = render("charts/thirdparty/mongodb-blog")
     statefulset = next(d for d in docs if d["kind"] == "StatefulSet")
-    assert statefulset["spec"]["replicas"] == 0
+    assert statefulset["spec"]["replicas"] == 1
     assert (
         statefulset["spec"]["volumeClaimTemplates"][0]["spec"]["resources"]["requests"][
             "storage"

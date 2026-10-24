@@ -13,7 +13,7 @@ These changes are prepared locally; deployment must be verified separately.
   PVCs, network policy and backup configuration. Keep both Pooler resources with
   zero instances; suspend scheduled backups and autoheal while offline.
 - Pause the Percona MongoDB cluster using `spec.pause: true`. Keep its volumes
-  and the namespaced operator running so pause/resume remains reconciled.
+  and stop the namespaced operator after the database reports paused.
 - Suspend database bootstrap and the orphaned legacy Keycloak bootstrap CronJob.
   Adopt the latter back into GitOps with a suspended no-op job: its original chart
   no longer exists and Keycloak is retired. Do not restore that legacy job.
@@ -40,7 +40,7 @@ After the reviewed change is merged, verify all affected Argo applications use
 the new revision, all dedicated runtime deployments show zero desired replicas,
 FE3DR HPAs/ScaledObjects are absent, PostgreSQL reports hibernation, MongoDB
 reports paused, and all three homechef CronJobs are suspended. The MongoDB
-operator is intentionally the only remaining dedicated management deployment.
+operator is also at zero; restore it before unpausing MongoDB.
 Check shared services remain healthy and confirm PVC names/UIDs are unchanged.
 Do not claim bill savings from freed RAM alone: paid commitments remain fixed.
 
