@@ -10,8 +10,8 @@ SCRIPT = (
 )
 
 
-def module():
-    spec = importlib.util.spec_from_file_location("rightsize_copy", SCRIPT)
+def module(path=SCRIPT):
+    spec = importlib.util.spec_from_file_location("rightsize_copy", path)
     result = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(result)
     return result
@@ -56,3 +56,16 @@ def test_databases_are_quiesced_without_removing_existing_claims():
         ]
         == "120Gi"
     )
+
+
+def test_verification_checks_root_permissions_and_file_types(tmp_path):
+    source, target = tmp_path / "source", tmp_path / "target"
+    source.mkdir(mode=0o750)
+    target.mkdir(mode=0o700)
+    with pytest.raises(RuntimeError, match="ownership or mode"):
+        module().verify(source, target)
+    target.chmod(0o750)
+    (source / "data").mkdir()
+    (target / "data").write_text("not a directory")
+    with pytest.raises(RuntimeError, match="type mismatch"):
+        module().verify(source, target, metadata=False)
