@@ -14,7 +14,28 @@ spec:
   hosts:
     - civiclns-api.tesserix.app
   http:
-    # Only the versioned API is public; /healthz and /readyz stay in-cluster.
+    - match:
+        - uri:
+            exact: /v1/reports
+          method:
+            exact: POST
+        - uri:
+            regex: ^/v1/reports/[0-9a-fA-F-]+/share-package$
+          method:
+            exact: POST
+      headers:
+        request:
+          set:
+            x-forwarded-host: civiclns-api.tesserix.app
+            x-forwarded-proto: https
+      route:
+        - destination:
+            host: civiclens-api.civiclens.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 90s
+      retries:
+        attempts: 0
     - match:
         - uri:
             prefix: /v1/
@@ -29,6 +50,5 @@ spec:
             port:
               number: 8080
       timeout: 30s
-      # Report submissions are not idempotent; never replay them.
       retries:
         attempts: 0
