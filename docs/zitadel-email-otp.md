@@ -74,7 +74,7 @@ password enforcement and cache readiness are verified.
 7. Close the tracking issue only after those live checks. A Ready claim, rendered
    chart, unit suite or isolated native integration test is not production proof.
 
-Production rollout has not been performed. The operator shared-workflow pin and
+The login/Valkey bundle has not been deployed. The operator shared-workflow pin and
 unavailable base image pins have been corrected; all required checks must pass.
 The live `kargo-zitadel-operator` ProjectConfig automatically promotes to `prod`,
 so merging the operator release is itself a production rollout and requires the
@@ -85,5 +85,12 @@ The login candidate is `feat-consumer-email-otp-e688e06` at digest
 Operator PR #27 merged with rollout approval at `e9959df9def7bfe3a0cdcd76455b4c2462a5f0fa`.
 Its published image is pinned to
 `sha256:44c41e4f7355e5e45e3240031586d0624b7f31090fbd081bb71fb284a4c0e626`.
-Verify the running operator matches it before test opt-in. The user selected an
+The operator-only GitOps PR #1523 deployed this digest; rollout status and all
+seven existing project claims were healthy on 2026-10-24. Kargo direct pushes were
+rejected by branch protection; follow-up issue #1524 tracks PR-based promotion.
+The user selected an
 isolated test organization; existing product claims remain unchanged.
+
+The remaining named rollout and isolated OTP/failover tests were approved on
+2026-10-24, conditional on all pending CI passing. Admin merge bypass is authorized
+for branch restrictions; it does not waive failing validation.
