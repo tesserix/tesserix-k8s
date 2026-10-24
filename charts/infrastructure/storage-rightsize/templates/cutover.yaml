@@ -1,0 +1,130 @@
+{{- if eq .Values.phase "cutover" }}
+{{- range .Values.clusters }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rightsize-recreate
+  namespace: {{ .namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+data:
+  recreate.py: |
+{{ $.Files.Get "files/recreate.py" | indent 4 }}
+  bind.py: |
+{{ $.Files.Get "files/bind.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rightsize-recreate
+  namespace: {{ .namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app: storage-rightsize
+      annotations:
+        sidecar.istio.io/inject: "false"
+        istio.io/dataplane-mode: none
+    spec:
+      serviceAccountName: storage-rightsize-cutover
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: recreate
+          image: {{ $.Values.image }}
+          command: [python, -B, -u, /scripts/recreate.py]
+          env:
+            - name: PLAN
+              value: {{ . | toJson | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: rightsize-recreate
+{{- end }}
+{{- range .Values.volumes }}
+{{- if .cutover }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bind-{{ .name }}
+  namespace: {{ .namespace }}
+data:
+  bind.py: |
+{{ $.Files.Get "files/bind.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: bind-{{ .name }}
+  namespace: {{ .namespace }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1200
+  template:
+    metadata:
+      labels:
+        app: storage-rightsize
+      annotations:
+        sidecar.istio.io/inject: "false"
+        istio.io/dataplane-mode: none
+    spec:
+      serviceAccountName: storage-rightsize-cutover
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bind
+          image: {{ $.Values.image }}
+          command: [python, -B, -u, /scripts/bind.py]
+          env:
+            - name: PLAN
+              value: {{ . | toJson | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: bind-{{ .name }}
+{{- end }}
+{{- end }}
+{{- end }}

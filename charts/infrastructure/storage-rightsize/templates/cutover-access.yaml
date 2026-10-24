@@ -1,0 +1,127 @@
+{{- if eq .Values.phase "cutover" }}
+{{- $namespaces := dict }}
+{{- range .Values.volumes }}
+{{- $_ := set $namespaces .namespace true }}
+{{- end }}
+{{- range $namespace, $_ := $namespaces }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: storage-rightsize-cutover
+  namespace: {{ $namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: storage-rightsize-cutover
+  namespace: {{ $namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [get, delete, patch]
+    resourceNames:
+{{- range $.Values.volumes }}
+{{- if eq .namespace $namespace }}
+      - {{ .name }}
+      - {{ .target }}
+{{- end }}
+{{- end }}
+{{- range $.Values.clusters }}
+{{- if eq .namespace $namespace }}
+{{- range .claims }}
+      - {{ .name }}
+{{- end }}
+{{- end }}
+{{- end }}
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims, configmaps]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get]
+    resourceNames: [rightsize-cluster-recovery]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, delete]
+    resourceNames:
+{{- range $.Values.volumes }}
+{{- if eq .namespace $namespace }}
+{{- range .copyJobs }}
+      - {{ . }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- range $.Values.clusters }}
+{{- if eq .namespace $namespace }}
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters]
+    verbs: [get, delete]
+    resourceNames: [{{ .name }}]
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters]
+    verbs: [create]
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters/status]
+    verbs: [patch]
+    resourceNames: [{{ .name }}]
+{{- end }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: storage-rightsize-cutover
+  namespace: {{ $namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+subjects:
+  - kind: ServiceAccount
+    name: storage-rightsize-cutover
+    namespace: {{ $namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: storage-rightsize-cutover
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: storage-rightsize-{{ $namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+rules:
+  - apiGroups: [""]
+    resources: [persistentvolumes]
+    verbs: [get, patch]
+    resourceNames:
+{{- range $.Values.volumes }}
+{{- if eq .namespace $namespace }}
+      - {{ .sourcePV }}
+      - {{ .targetPV }}
+{{- end }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: storage-rightsize-{{ $namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+subjects:
+  - kind: ServiceAccount
+    name: storage-rightsize-cutover
+    namespace: {{ $namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: storage-rightsize-{{ $namespace }}
+{{- end }}
+{{- end }}
