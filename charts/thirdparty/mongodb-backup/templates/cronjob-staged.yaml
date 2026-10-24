@@ -1,0 +1,96 @@
+{{- if and .Values.backup.enabled .Values.backup.staged.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "mongodb-backup.fullname" . }}
+  labels:
+    {{- include "mongodb-backup.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  suspend: {{ .Values.suspend | default false }}
+  concurrencyPolicy: {{ .Values.cronJob.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ .Values.cronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.cronJob.failedJobsHistoryLimit }}
+  startingDeadlineSeconds: {{ .Values.cronJob.startingDeadlineSeconds }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.cronJob.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.cronJob.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "mongodb-backup.selectorLabels" . | nindent 12 }}
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          serviceAccountName: {{ include "mongodb-backup.serviceAccountName" . }}
+          restartPolicy: {{ .Values.cronJob.restartPolicy }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          initContainers:
+            - name: dump
+              image: {{ .Values.backup.staged.dumpImage | quote }}
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/bash
+                - -c
+                - |
+{{ .Files.Get "files/dump.sh" | indent 18 }}
+              env:
+                - name: MONGO_HOST
+                  value: {{ .Values.backup.database.host | quote }}
+                - name: MONGO_PORT
+                  value: {{ .Values.backup.database.port | quote }}
+                - name: MONGO_USER
+                  value: {{ .Values.backup.database.user | quote }}
+                - name: MONGO_AUTH_DB
+                  value: {{ .Values.backup.database.authDatabase | quote }}
+                - name: AUTH_ENABLED
+                  value: {{ .Values.backup.database.authEnabled | quote }}
+                {{- if .Values.backup.database.authEnabled }}
+                - name: MONGO_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backup.database.passwordSecretName }}
+                      key: {{ .Values.backup.database.passwordSecretKey }}
+                {{- end }}
+                - name: ALL_DATABASES
+                  value: {{ .Values.backup.settings.allDatabases | quote }}
+                - name: EXCLUDED_DATABASES
+                  value: {{ .Values.backup.settings.excludeDatabases | toJson | quote }}
+                - name: DATABASES
+                  value: {{ .Values.backup.settings.databases | toJson | quote }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          containers:
+            - name: upload
+              image: {{ .Values.backup.staged.uploadImage | quote }}
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/bash
+                - -c
+                - |
+{{ .Files.Get "files/upload.sh" | indent 18 }}
+              env:
+                - name: GCS_BUCKET
+                  value: {{ .Values.backup.gcs.bucket | quote }}
+                - name: GCS_PREFIX
+                  value: {{ .Values.backup.gcs.prefix | quote }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+                  readOnly: true
+          volumes:
+            - name: backups
+              emptyDir:
+                sizeLimit: {{ .Values.backup.staged.scratchSize }}
+{{- end }}
