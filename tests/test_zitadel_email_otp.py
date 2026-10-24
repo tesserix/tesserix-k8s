@@ -219,3 +219,57 @@ def test_isolated_email_test_claim_starts_disabled_with_loopback_pkce_client():
     assert (
         application["spec"]["loginBaseUri"] == "https://auth.tesserix.app/ui/v2/login/"
     )
+
+
+def test_seed_identity_can_only_create_or_read_its_password():
+    values = yaml.safe_load(
+        (ROOT / "charts/thirdparty/openbao/values.yaml").read_text()
+    )["bootstrap"]
+    policy = next(
+        p["hcl"]
+        for p in values["policies"]
+        if p["name"] == "seed-zitadel-email-production"
+    )
+    assert re.findall(r'path "([^"]+)"', policy) == [
+        "kv/data/zitadel/prod/app/zitadel-email-valkey-password",
+        "auth/token/revoke-self",
+    ]
+    assert 'capabilities = ["create", "read"]' in policy
+    role = next(
+        r
+        for r in values["kubernetesRoles"]
+        if r["name"] == "seed-zitadel-email-production"
+    )
+    assert role["serviceAccounts"] == ["zitadel-email-secret-seed"]
+    assert role["namespaces"] == ["zitadel"]
+    assert role["audience"] == "openbao"
+    network = yaml.safe_load(
+        (ROOT / "charts/apps/openbao-namespace/values.yaml").read_text()
+    )
+    assert "zitadel/zitadel-email-secret-seed" in network["allowedPrincipals"]
+    assert {
+        "namespace": "zitadel",
+        "podLabels": {"app.kubernetes.io/name": "zitadel-email-secret-seed"},
+    } in network["allowedPodSources"]
+    docs = list(
+        yaml.safe_load_all(
+            subprocess.check_output(
+                ["kubectl", "kustomize", str(ROOT / "external-secrets/prod/zitadel")],
+                text=True,
+            )
+        )
+    )
+    job = next(
+        d
+        for d in docs
+        if d["kind"] == "Job"
+        and d["metadata"]["name"] == "zitadel-email-secret-seed-v1"
+    )
+    pod = job["spec"]["template"]["spec"]
+    assert pod["serviceAccountName"] == "zitadel-email-secret-seed"
+    assert pod["automountServiceAccountToken"] is False
+    assert (
+        pod["volumes"][1]["projected"]["sources"][0]["serviceAccountToken"]["audience"]
+        == "openbao"
+    )
+    assert "@sha256:" in pod["containers"][0]["image"]

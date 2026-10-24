@@ -287,6 +287,10 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: seed-zitadel-email-production
+      hcl: |
+        path "kv/data/zitadel/prod/app/zitadel-email-valkey-password" { capabilities = ["create", "read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: seed-civiclens-ai-production
       hcl: |
         path "kv/data/civiclens/prod/app/civiclens-ai-gateway-key" { capabilities = ["read", "create", "update"] }
@@ -962,6 +966,12 @@ bootstrap:
         path "transit/hmac/helivanta-emergency-*" { capabilities = ["update"] }
 
   kubernetesRoles:
+    - name: seed-zitadel-email-production
+      serviceAccounts: ["zitadel-email-secret-seed"]
+      namespaces: ["zitadel"]
+      policies: ["seed-zitadel-email-production"]
+      audience: openbao
+      ttl: 5m
     - name: seed-civiclens-ai-production
       serviceAccounts: ["civiclens-ai-secret-seed"]
       namespaces: ["agentgateway-system"]

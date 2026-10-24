@@ -22,8 +22,18 @@ reject email sign-in; there is no in-process fallback.
 All login replicas use `CONSUMER_EMAIL_VALKEY_URL` from the
 `zitadel-email-valkey` Kubernetes Secret. Its OpenBao source is the exact path
 `zitadel/prod/app/zitadel-email-valkey-password`, property `value`, containing a
-new 64-character hexadecimal password. Do not overwrite an existing different
-value or rotate existing credentials as part of deployment. The dedicated reader
+new 64-character hexadecimal password. The GitOps Job
+`zitadel-email-secret-seed-v1` creates it with KV v2 CAS=0, preserves a valid
+existing value, and refuses to overwrite deleted or invalid values. Its distinct
+`seed-zitadel-email-production` role lasts five minutes and grants only create/read
+on this exact path; it cannot update, rotate or delete a password. It revokes its
+token on completion/failure. Namespace networking and mesh identity admit only the
+seed workload. The job makes at most one create request per attempt and has a
+15-minute deadline with eight retries; failures keep the OTP feature unavailable.
+The one 64-byte secret is owned by OpenBao and consumed by ESO, Valkey and Login V2.
+The seed uses 10m CPU/32Mi requested memory while running, with no persistent worker.
+A manual console seed was rejected as the normal path because a GitOps deployment
+must be reproducible without handling plaintext credentials on a workstation. The dedicated reader
 role is read-only and bound to `zitadel-email-production-reader` in `zitadel`.
 No new GCP Secret Manager source is introduced.
 
@@ -47,8 +57,9 @@ password enforcement and cache readiness are verified.
    GitOps changes. Targets are OpenBao's new reader policy/role, Zitadel's new
    secret reader, dedicated Valkey resources, login environment/image, and the
    compatible operator/CRD. Preserve Helivanta's migration and promotion hold.
-3. Seed the new OpenBao path without displaying the value. Reconcile the reader
-   policy/role and ESO resources; require the ExternalSecret to become Ready.
+3. Reconcile the scoped seed/reader policies, namespace networking and ESO
+   resources. Require the create-once seed Job to complete and the ExternalSecret
+   to become Ready; never print its password.
 4. Reconcile the dedicated Valkey application. Verify three members, Sentinel
    quorum, writable primary, both proxies, unauthenticated rejection, login
    connectivity, and rejection from an unrelated service account. Confirm no
