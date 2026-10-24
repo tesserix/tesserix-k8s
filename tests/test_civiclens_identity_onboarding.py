@@ -31,7 +31,7 @@ class CivicLensIdentityOnboarding(unittest.TestCase):
                          'asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/zitadel-api-patched')
         self.assertEqual(values['image']['tag'],
                          'sha-29986e1b8b3e606d20871a2e73874b91f9b5b695@sha256:22ab1fb4abe6a5f279c5509fa2bbb10358a2fc9fb479af013235add8af1188ac')
-        self.assertEqual(values['login']['image']['tag'], 'fix-civiclens-login-org-scope-868feeb@sha256:a47579408f4d27764192d4b9b84bf15166c8dab8cb0c6f2beba128375b01f467')
+        self.assertEqual(values['login']['image']['tag'], 'feat-consumer-email-otp-e688e06@sha256:856166971b3f157e61860778ab4ba1d76f52a21cde8466e1984aa8dbfb59d103')
 
     def test_openbao_reader_is_bound_to_operator_with_exact_read_only_paths(self):
         rendered = subprocess.check_output(['helm', 'template', 'openbao', 'charts/thirdparty/openbao', '--show-only', 'templates/bootstrap-configmap.yaml'], cwd=ROOT, text=True)

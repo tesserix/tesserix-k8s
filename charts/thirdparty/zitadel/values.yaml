@@ -352,7 +352,7 @@ zitadel:
     # a NEXT_PUBLIC_ var inlined at build time, so it cannot be set from pod env.
     image:
       repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/zitadel-login
-      tag: fix-civiclens-login-org-scope-868feeb@sha256:a47579408f4d27764192d4b9b84bf15166c8dab8cb0c6f2beba128375b01f467
+      tag: feat-consumer-email-otp-e688e06@sha256:856166971b3f157e61860778ab4ba1d76f52a21cde8466e1984aa8dbfb59d103
     # Left to the chart, the login client keypair is regenerated on every
     # render because `lookup` returns nothing under Argo CD's client-side
     # templating — each sync would rotate the key and log everyone out.
@@ -363,6 +363,12 @@ zitadel:
     # change stays invisible until the pods are restarted — unacceptable once
     # tenants set their own. One small RPC a minute is cheaper than that.
     env:
+      - name: CONSUMER_EMAIL_VALKEY_URL
+        valueFrom:
+          secretKeyRef:
+            name: zitadel-email-valkey
+            key: CONSUMER_EMAIL_VALKEY_URL
+            optional: true
       - name: API_CACHE_CONFIG
         value: '{"getBrandingSettings":1}'
     service:
