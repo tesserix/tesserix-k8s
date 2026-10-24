@@ -13,10 +13,26 @@ spec:
         spec:
           automountServiceAccountToken: false
           restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: bootstrap
               image: asia-south1-docker.pkg.dev/tesseracthub-480811/docker-remote/library/python:3.12-alpine
               command: ["python", "-c", "pass"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 10001
+                runAsGroup: 10001
+                seccompProfile:
+                  type: RuntimeDefault
+                capabilities:
+                  drop: ["ALL"]
               resources:
                 requests:
                   memory: 16Mi
