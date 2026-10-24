@@ -78,3 +78,16 @@ Clusters retain their original primary identities. Mark8ly and blog MongoDB can
 resume; FE3DR remains hibernated. Reconciliation freezes and the temporary blog
 Force/Replace annotation are removed. OpenPanel needs a 2Gi-memory verification
 retry after its large file inventory exhausted the previous 512Mi limit.
+
+OpenPanel v4 verified 195,420 regular files with SHA-256 after restoring source
+ownership and modes. Its 120Gi replacement is explicitly pinned to the verified
+PV in production values so GitOps cannot provision an empty replacement during
+binding. Keep this pin aligned with the restored PV during future disaster
+recovery. The final ownership pass also reconnects the retained PodMonitors.
+
+The five original 60Gi-migration source disks (720Gi total) were retired only
+after verified replacements, READY snapshots, successful authenticated MongoDB
+health checks, two healthy streaming PostgreSQL instances and a new completed
+Barman backup (`mark8ly-post-rightsize-20261024`). FE3DR remains hibernated; its
+WAL recovery snapshots are also READY. Deletion captures and the retirement log
+are in `/tmp/fe3dr-park-20261024/retire-*.json` and `retired-disks.jsonl`.
