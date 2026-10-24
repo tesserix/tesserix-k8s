@@ -43,3 +43,10 @@ existing copies before metadata repair, and include FSETID to preserve setgid
 bits. Kubernetes API access uses the injected service IP. Root-directory ownership
 and modes and every entry's file type are included in verification. No source PVC
 or disk is removed during this phase. OpenPanel remains targeted at 120Gi.
+
+The OpenPanel copy was interrupted by suspension and requires a full recopy into
+its identity-checked temporary target. Only its v3 Job explicitly permits this.
+The PostgreSQL operator rejects storage decreases. Both hibernated Cluster
+reconciliation loops are temporarily disabled before their controlled metadata
+recreation; all PVCs, secrets and database data must be orphan-preserved, and
+current-primary/status metadata restored before reconciliation resumes.
