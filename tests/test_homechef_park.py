@@ -32,7 +32,7 @@ def test_postgres_hibernates_without_removing_database_or_poolers():
     cluster = next(doc for doc in docs if doc["kind"] == "Cluster")
     assert cluster["metadata"]["annotations"]["cnpg.io/hibernation"] == "on"
     assert cluster["spec"]["instances"] == 2
-    assert cluster["spec"]["storage"]["size"] == "100Gi"
+    assert cluster["spec"]["storage"]["size"] == "60Gi"
     poolers = [doc for doc in docs if doc["kind"] == "Pooler"]
     assert len(poolers) == 2
     assert all(doc["spec"]["instances"] == 0 for doc in poolers)

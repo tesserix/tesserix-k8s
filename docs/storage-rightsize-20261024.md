@@ -50,3 +50,25 @@ The PostgreSQL operator rejects storage decreases. Both hibernated Cluster
 reconciliation loops are temporarily disabled before their controlled metadata
 recreation; all PVCs, secrets and database data must be orphan-preserved, and
 current-primary/status metadata restored before reconciliation resumes.
+
+Cutover phase: all six zonal source snapshots reached READY (names
+`rightsize-<original-claim>-20261024`, project `tesseracthub-480811`). Local
+metadata, snapshots and copy logs are in `/tmp/fe3dr-park-20261024`. The five
+60Gi copies passed SHA-256 verification. OpenPanel stays in copy mode until its
+separate completion evidence is recorded.
+
+For PostgreSQL, a wave -1 Job first stores the frozen Cluster definition/status
+in `rightsize-cluster-recovery` in its own namespace, deletes only that Cluster
+with Orphan propagation, recreates it at 60Gi with reconciliation disabled,
+restores the recorded primary/status and reattaches the original data/WAL PVC
+owner references. No child resources or secret values are deleted/read. Wave 0
+Jobs retain both physical disks, remove only identity-checked old/temporary
+claims, and prebind the copied disk under the original claim name. The original
+physical disks remain retained until post-startup verification. Temporary access
+is scoped to named PVs, PVCs, copy Jobs and Clusters; create permissions cannot be
+resource-name restricted by Kubernetes RBAC.
+
+Blog MongoDB's stopped StatefulSet is recreated with explicit PVC Retain policies
+to change its immutable claim template. Remove the temporary Force/Replace
+annotation before resuming it. Resume Mark8ly only after both replacements are
+Bound at 60Gi and its original primary is preserved. FE3DR remains hibernated.
