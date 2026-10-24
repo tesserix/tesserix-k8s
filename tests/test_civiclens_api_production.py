@@ -264,7 +264,7 @@ class CivicLensAiGateway(unittest.TestCase):
         self.assertEqual(invoke["to"], [{"operation": {"methods": ["POST"], "paths": ["/v1/chat/completions"],
                                                        "ports": ["8080"]}}])
         self.assertEqual(sidecar, {"to": [{"operation": {"notPorts": ["8080"]}}]})
-        [netpol] = named(self.resources, "NetworkPolicy").values()
+        netpol = named(self.resources, "NetworkPolicy")["civiclens-ai"]
         callers = [r["from"] for r in netpol["spec"]["ingress"] if any(p["port"] == 8080 for p in r["ports"])]
         self.assertEqual(callers, [[{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "civiclens"}},
                                      "podSelector": {"matchLabels": {"app.kubernetes.io/name": "civiclens-api"}}}]])
@@ -272,7 +272,7 @@ class CivicLensAiGateway(unittest.TestCase):
     def test_model_route_requires_the_openbao_client_key_and_the_compose_model(self):
         [route] = named(self.resources, "HTTPRoute").values()
         self.assertEqual(route["spec"]["parentRefs"], [{"name": "civiclens-ai", "sectionName": "http"}])
-        self.assertEqual(route["spec"]["rules"][0]["matches"], [{"path": {"type": "Exact", "value": "/v1/chat/completions"}}])
+        self.assertEqual(route["spec"]["rules"][0]["matches"], [{"path": {"type": "Exact", "value": "/v1/chat/completions"}, "method": "POST"}])
         traffic = named(self.resources, "AgentgatewayPolicy")["civiclens-api-model-traffic"]["spec"]["traffic"]
         self.assertEqual(traffic["apiKeyAuthentication"],
                          {"mode": "Strict", "secretRef": {"name": "civiclens-ai-gateway-clients"}})
@@ -309,12 +309,12 @@ class CivicLensAiGateway(unittest.TestCase):
                                        "podSelector": {"matchLabels": {"gateway.networking.k8s.io/gateway-name": "civiclens-ai"}}}])
         self.assertEqual({p["port"] for p in rule["ports"]}, {8080, 15008})
 
-    def test_gateway_application_syncs_manually_into_agentgateway_system(self):
+    def test_gateway_application_syncs_into_agentgateway_system(self):
         app = load("argocd/prod/apps/civiclens/civiclens-ai-gateway.yaml")
         self.assertEqual(app["spec"]["project"], "civiclens")
         self.assertEqual(app["spec"]["source"]["path"], "charts/apps/civiclens-ai-gateway")
         self.assertEqual(app["spec"]["destination"]["namespace"], "agentgateway-system")
-        self.assertNotIn("automated", app["spec"]["syncPolicy"])
+        self.assertTrue(app["spec"]["syncPolicy"]["automated"]["selfHeal"])
         destinations = {d["namespace"] for d in load("argocd/prod/projects/civiclens.yaml")["spec"]["destinations"]}
         self.assertIn("agentgateway-system", destinations)
 

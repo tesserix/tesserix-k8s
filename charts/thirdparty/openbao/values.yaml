@@ -287,6 +287,10 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: seed-civiclens-ai-production
+      hcl: |
+        path "kv/data/civiclens/prod/app/civiclens-ai-gateway-key" { capabilities = ["read", "create", "update"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: read-civiclens-civiclens-production
       hcl: |
         path "kv/data/civiclens/prod/app/civiclens-db-runtime-password" { capabilities = ["read"] }
@@ -955,6 +959,11 @@ bootstrap:
         path "transit/hmac/helivanta-emergency-*" { capabilities = ["update"] }
 
   kubernetesRoles:
+    - name: seed-civiclens-ai-production
+      serviceAccounts: ["civiclens-ai-secret-seed"]
+      namespaces: ["agentgateway-system"]
+      policies: ["seed-civiclens-ai-production"]
+      ttl: 5m
     - name: read-civiclens-civiclens-production
       serviceAccounts: ["civiclens-production-reader"]
       namespaces: ["civiclens"]
