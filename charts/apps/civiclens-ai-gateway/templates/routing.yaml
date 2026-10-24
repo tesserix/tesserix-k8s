@@ -1,0 +1,86 @@
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayBackend
+metadata:
+  name: civiclens-compose
+spec:
+  ai:
+    groups:
+      - providers:
+          - name: civiclens-compose
+            vertexai:
+              projectId: tesseracthub-480811
+              region: global
+              model: gemini-3.5-flash
+            policies:
+              auth:
+                gcp: {}
+              tls: {}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: civiclens-ai
+spec:
+  parentRefs:
+    - name: civiclens-ai
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /v1/chat/completions
+          method: POST
+      backendRefs:
+        - group: agentgateway.dev
+          kind: AgentgatewayBackend
+          name: civiclens-compose
+---
+apiVersion: agentgateway.dev/v1alpha1
+kind: AgentgatewayPolicy
+metadata:
+  name: civiclens-ai
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: civiclens-ai
+  traffic:
+    apiKeyAuthentication:
+      mode: Strict
+      secretRef:
+        name: civiclens-ai-clients
+    rateLimit:
+      local:
+        - requests: 120
+          unit: Minutes
+          burst: 20
+        - tokens: 200000
+          unit: Hours
+    timeouts:
+      request: 15s
+    buffer:
+      request:
+        maxBytes: 16Mi
+        failureMode: FailClosed
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: civiclens-ai
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: civiclens-ai
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/civiclens/sa/civiclens-api
+      to:
+        - operation:
+            ports: ["8080"]
+            methods: ["POST"]
+            paths: ["/v1/chat/completions"]
+    - to:
+        - operation:
+            ports: ["15021"]

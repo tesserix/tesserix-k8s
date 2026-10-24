@@ -53,7 +53,8 @@ class CivicLensApiChart(unittest.TestCase):
         self.assertEqual(
             {d["remoteRef"]["key"] for d in runtime["data"]},
             {"civiclens/prod/app/civiclens-db-runtime-password",
-             "civiclens/prod/app/civiclens-identity-key"},
+             "civiclens/prod/app/civiclens-identity-key",
+             "civiclens/prod/app/civiclens-ai-gateway-key"},
         )
         self.assertEqual(
             {d["remoteRef"]["key"] for d in migration["data"]},
@@ -131,7 +132,7 @@ class CivicLensDelivery(unittest.TestCase):
         self.assertEqual(app["spec"]["source"]["path"], "charts/apps/civiclens-api")
         self.assertEqual(app["spec"]["destination"]["namespace"], "civiclens")
         self.assertEqual(set(load("argocd/prod/apps/civiclens/kustomization.yaml")["resources"]),
-                         {"civiclens-api.yaml", "civiclens-istio.yaml"})
+                         {"civiclens-api.yaml", "civiclens-istio.yaml", "civiclens-ai.yaml"})
         self.assertIn("civiclens-app-of-apps.yaml", load("argocd/prod/apps/kustomization.yaml")["resources"])
         self.assertIn("civiclens.yaml", load("argocd/prod/projects/kustomization.yaml")["resources"])
 
@@ -158,13 +159,14 @@ class CivicLensSecrets(unittest.TestCase):
         stores = {d["metadata"]["namespace"]: d
                   for d in load_all("external-secrets/prod/civiclens-openbao-readers.yaml")
                   if d["kind"] == "SecretStore"}
-        self.assertEqual(set(stores), {"civiclens", "global"})
+        self.assertEqual(set(stores), {"civiclens", "global", "agentgateway-system"})
         bootstrap = load("charts/thirdparty/openbao/values.yaml")["bootstrap"]
         policies = {p["name"]: p["hcl"] for p in bootstrap["policies"]}
         roles = {r["name"]: r for r in bootstrap["kubernetesRoles"]}
         expected = {
             "civiclens": {"civiclens-db-runtime-password", "civiclens-db-migrator-password",
-                          "civiclens-identity-key"},
+                          "civiclens-identity-key", "civiclens-ai-gateway-key"},
+            "agentgateway-system": {"civiclens-ai-gateway-key"},
             "global": {"civiclens-db-runtime-password", "civiclens-db-migrator-password"},
         }
         for namespace, names in expected.items():
