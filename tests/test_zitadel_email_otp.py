@@ -199,3 +199,23 @@ def test_operator_crd_allows_optional_email_only_and_explicit_revocation():
     rules = {v["rule"] for v in consumer["x-kubernetes-validations"]}
     assert "has(self.emailOtp) || size(self.providers) > 0" in rules
     assert "!has(oldSelf.emailOtp) || has(self.emailOtp)" in rules
+
+
+def test_isolated_email_test_claim_starts_disabled_with_loopback_pkce_client():
+    docs = list(
+        yaml.safe_load_all(
+            (ROOT / "k8s/operators/zitadel/claims/email-otp-test.yaml").read_text()
+        )
+    )
+    project, application = docs
+    assert project["metadata"]["name"] == "email-otp-test"
+    assert project["spec"]["organization"] == "Tesserix Email OTP Test"
+    assert project["spec"]["consumerOrganization"]["emailOtp"] is False
+    assert project["spec"]["consumerOrganization"]["providers"] == []
+    assert application["spec"]["projectRef"]["name"] == "email-otp-test"
+    assert application["spec"]["applicationType"] == "native"
+    assert application["spec"]["redirectUris"] == ["http://127.0.0.1:18085/callback"]
+    assert application["spec"]["refreshToken"] is False
+    assert (
+        application["spec"]["loginBaseUri"] == "https://auth.tesserix.app/ui/v2/login/"
+    )
