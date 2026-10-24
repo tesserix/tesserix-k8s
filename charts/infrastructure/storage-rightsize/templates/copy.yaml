@@ -1,0 +1,95 @@
+{{- range .Values.volumes }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .target }}
+  namespace: {{ .namespace }}
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .storageClass }}
+  resources:
+    requests:
+      storage: {{ .size }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .target }}
+  namespace: {{ .namespace }}
+data:
+  copy.py: |
+{{ $.Files.Get "files/copy.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .target }}
+  namespace: {{ .namespace }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200
+  template:
+    metadata:
+      labels:
+        app: storage-rightsize
+      annotations:
+        sidecar.istio.io/inject: "false"
+        istio.io/dataplane-mode: none
+    spec:
+      serviceAccountName: storage-rightsize
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: copy
+          image: {{ $.Values.image }}
+          command: [python, -u, /scripts/copy.py]
+          env:
+            - name: SOURCE_CLAIM
+              value: {{ .name }}
+            - name: SOURCE_UID
+              value: {{ .sourceUID }}
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          securityContext:
+            # Copy exact database ownership; no network/admin capabilities.
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, DAC_OVERRIDE, FOWNER]
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: source
+              mountPath: /source
+              readOnly: true
+            - name: target
+              mountPath: /target
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: source
+          persistentVolumeClaim:
+            claimName: {{ .name }}
+            readOnly: true
+        - name: target
+          persistentVolumeClaim:
+            claimName: {{ .target }}
+        - name: scripts
+          configMap:
+            name: {{ .target }}
+{{- end }}

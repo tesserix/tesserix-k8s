@@ -1,0 +1,61 @@
+{{- $namespaces := dict }}
+{{- range .Values.volumes }}
+{{- $_ := set $namespaces .namespace true }}
+{{- end }}
+{{- range $namespace, $_ := $namespaces }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: storage-rightsize
+  namespace: {{ $namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: storage-rightsize
+  namespace: {{ $namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [pods, persistentvolumeclaims]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: storage-rightsize
+  namespace: {{ $namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: storage-rightsize
+    namespace: {{ $namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: storage-rightsize
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: storage-rightsize
+  namespace: {{ $namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: storage-rightsize
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}
