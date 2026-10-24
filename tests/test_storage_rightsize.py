@@ -292,3 +292,19 @@ def test_child_adoption_uses_metadata_only_and_refuses_other_owners(monkeypatch)
     with pytest.raises(RuntimeError, match="different owner"):
         adopt.main()
     assert patches == []
+
+
+def test_openpanel_uses_the_verified_120gi_disk_under_existing_claim_name():
+    docs = render("charts/thirdparty/openpanel", "values-prod.yaml")
+    pvc = next(d for d in docs if d["kind"] == "PersistentVolumeClaim")
+    assert pvc["spec"]["resources"]["requests"]["storage"] == "120Gi"
+    assert pvc["spec"]["volumeName"] == "pvc-7428c4f7-82a2-410f-8559-32731384660f"
+    deployment = next(
+        d
+        for d in docs
+        if d["kind"] == "Deployment" and d["metadata"]["name"].endswith("-clickhouse")
+    )
+    assert any(
+        v.get("persistentVolumeClaim", {}).get("claimName") == pvc["metadata"]["name"]
+        for v in deployment["spec"]["template"]["spec"]["volumes"]
+    )
