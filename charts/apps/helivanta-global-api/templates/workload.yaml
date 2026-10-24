@@ -1,0 +1,145 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: helivanta-global-api
+  namespace: {{ .Release.Namespace }}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helivanta-global-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: helivanta-global-api
+    app.kubernetes.io/part-of: helivanta
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helivanta-global-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: helivanta-global-api
+        app.kubernetes.io/part-of: helivanta
+        sidecar.istio.io/inject: "true"
+      annotations:
+        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts":true}'
+        sidecar.istio.io/proxyMemory: 64Mi
+        sidecar.istio.io/proxyMemoryLimit: 128Mi
+    spec:
+      serviceAccountName: helivanta-global-api
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      imagePullSecrets:
+        - name: ghcr-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: helivanta-global-api
+      containers:
+        - name: global-api
+          image: "{{ .Values.image.repository }}:{{ required "a published Global API image tag is required" .Values.image.tag }}"
+          imagePullPolicy: IfNotPresent
+          command: ["/app/global-api"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          env:
+            - name: GIN_MODE
+              value: release
+            - name: HELIVANTA_ENV
+              value: production
+            - name: GLOBAL_API_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: GLOBAL_API_UPSTREAMS
+              value: {{ .Values.upstreams | toJson | quote }}
+            - name: GLOBAL_API_TRANSPORT_SECURITY
+              value: istio
+            - name: GLOBAL_API_TRUSTED_PROXY_CIDRS
+              value: {{ .Values.trustedProxyCIDRs | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            timeoutSeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            timeoutSeconds: 2
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: helivanta-global-api
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: helivanta-global-api
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: helivanta-global-api
+  namespace: {{ .Release.Namespace }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helivanta-global-api
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: helivanta-global-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: helivanta-global-api
+      rules:
+        - alert: HelivantaGlobalAPIUnavailable
+          expr: kube_deployment_status_replicas_available{namespace="helivanta",deployment="helivanta-global-api"} < 1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: Helivanta client API has no ready replicas
+            runbook_url: https://github.com/tesserix/helivanta/blob/main/docs/delivery/global-api.md

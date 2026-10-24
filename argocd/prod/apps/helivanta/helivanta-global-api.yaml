@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: helivanta-global-api
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: helivanta
+    environment: prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    kargo.akuity.io/authorized-stage: kargo-helivanta:prod
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: helivanta
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/apps/helivanta-global-api
+    helm:
+      valueFiles: [values.yaml]
+      parameters:
+        - name: image.tag
+          value: ede362a567dce01f6eaf31d8598cfe4eb95c4903
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: helivanta
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
