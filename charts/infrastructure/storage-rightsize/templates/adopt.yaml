@@ -1,0 +1,68 @@
+{{- if eq .Values.phase "cutover" }}
+{{- range .Values.clusters }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rightsize-adopt
+  namespace: {{ .namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+data:
+  adopt.py: |
+{{ $.Files.Get "files/adopt.py" | indent 4 }}
+  bind.py: |
+{{ $.Files.Get "files/bind.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rightsize-adopt
+  namespace: {{ .namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app: storage-rightsize
+      annotations:
+        sidecar.istio.io/inject: "false"
+        istio.io/dataplane-mode: none
+    spec:
+      serviceAccountName: storage-rightsize-cutover
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: recreate
+          image: {{ $.Values.image }}
+          command: [python, -B, -u, /scripts/adopt.py]
+          env:
+            - name: PLAN
+              value: {{ . | toJson | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: rightsize-adopt
+{{- end }}
+{{- end }}

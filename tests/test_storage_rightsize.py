@@ -253,3 +253,42 @@ def test_binding_does_not_mutate_when_cluster_recreation_failed(monkeypatch):
     with pytest.raises(RuntimeError, match="recreation failed"):
         bind.main()
     assert calls == ["GET"]
+
+
+def test_child_adoption_uses_metadata_only_and_refuses_other_owners(monkeypatch):
+    import json
+
+    adopt = module(SCRIPT.with_name("adopt.py"))
+    patches = []
+
+    def api(path, method="GET", body=None, metadata=False):
+        if "/clusters/" in path:
+            return {"metadata": {"uid": "cluster"}}
+        assert metadata is True
+        if method == "PATCH":
+            patches.append(body)
+            assert set(body) == {"metadata"}
+            return {}
+        return {
+            "metadata": {
+                "uid": "child",
+                "resourceVersion": "1",
+                "ownerReferences": [{"kind": "ExternalSecret"}],
+            }
+        }
+
+    monkeypatch.setattr(adopt, "request", api)
+    monkeypatch.setenv(
+        "PLAN",
+        json.dumps(
+            {
+                "namespace": "db",
+                "name": "db",
+                "currentUID": "cluster",
+                "children": [{"path": "/secret", "uid": "child"}],
+            }
+        ),
+    )
+    with pytest.raises(RuntimeError, match="different owner"):
+        adopt.main()
+    assert patches == []

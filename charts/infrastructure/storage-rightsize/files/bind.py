@@ -7,9 +7,13 @@ import urllib.request
 from pathlib import Path
 
 
-def request(path, method="GET", body=None):
+def request(path, method="GET", body=None, metadata=False):
     mount = Path("/var/run/secrets/kubernetes.io/serviceaccount")
     headers = {"Authorization": "Bearer " + (mount / "token").read_text().strip()}
+    if metadata:
+        headers["Accept"] = (
+            "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1"
+        )
     if body is not None:
         headers["Content-Type"] = (
             "application/merge-patch+json" if method == "PATCH" else "application/json"
