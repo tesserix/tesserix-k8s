@@ -71,4 +71,8 @@ same named approval. The deployment bundle now includes the canonical optional
 email OTP CRD; finalize its matching operator image before promotion.
 The login candidate is `feat-consumer-email-otp-e688e06` at digest
 `sha256:856166971b3f157e61860778ab4ba1d76f52a21cde8466e1984aa8dbfb59d103`.
-Operator CRD/image promotion must be finalized before this deployment is approved.
+Operator PR #27 merged with rollout approval at `e9959df9def7bfe3a0cdcd76455b4c2462a5f0fa`.
+Its published image is pinned to
+`sha256:44c41e4f7355e5e45e3240031586d0624b7f31090fbd081bb71fb284a4c0e626`.
+Verify the running operator matches it before test opt-in. The user selected an
+isolated test organization; existing product claims remain unchanged.
