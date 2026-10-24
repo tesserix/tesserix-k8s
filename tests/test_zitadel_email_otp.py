@@ -178,3 +178,24 @@ def test_existing_cache_proxy_identity_remains_unchanged():
         d for d in yaml.safe_load_all(output) if d and d["kind"] == "Deployment"
     )
     assert "serviceAccountName" not in proxy["spec"]["template"]["spec"]
+
+
+def test_operator_crd_allows_optional_email_only_and_explicit_revocation():
+    docs = yaml.safe_load_all(
+        (ROOT / "k8s/operators/zitadel/resources.yaml").read_text()
+    )
+    crd = next(
+        d
+        for d in docs
+        if d
+        and d.get("metadata", {}).get("name") == "zitadelprojects.identity.tesserix.app"
+    )
+    spec = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]
+    consumer = spec["properties"]["consumerOrganization"]
+    assert "emailOtp" not in consumer["required"]
+    assert consumer["properties"]["emailOtp"]["type"] == "boolean"
+    assert "default" not in consumer["properties"]["emailOtp"]
+    assert consumer["properties"]["providers"]["minItems"] == 0
+    rules = {v["rule"] for v in consumer["x-kubernetes-validations"]}
+    assert "has(self.emailOtp) || size(self.providers) > 0" in rules
+    assert "!has(oldSelf.emailOtp) || has(self.emailOtp)" in rules

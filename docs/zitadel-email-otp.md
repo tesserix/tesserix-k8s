@@ -63,9 +63,12 @@ password enforcement and cache readiness are verified.
 7. Close the tracking issue only after those live checks. A Ready claim, rendered
    chart, unit suite or isolated native integration test is not production proof.
 
-Production rollout has not been performed. Operator CI currently fails before
-jobs start because GitHub cannot resolve its referenced shared Go workflow,
-despite the revision being publicly readable. Do not merge around that failure.
+Production rollout has not been performed. The operator shared-workflow pin and
+unavailable base image pins have been corrected; all required checks must pass.
+The live `kargo-zitadel-operator` ProjectConfig automatically promotes to `prod`,
+so merging the operator release is itself a production rollout and requires the
+same named approval. The deployment bundle now includes the canonical optional
+email OTP CRD; finalize its matching operator image before promotion.
 The login candidate is `feat-consumer-email-otp-e688e06` at digest
 `sha256:856166971b3f157e61860778ab4ba1d76f52a21cde8466e1984aa8dbfb59d103`.
 Operator CRD/image promotion must be finalized before this deployment is approved.
