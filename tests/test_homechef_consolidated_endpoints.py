@@ -16,4 +16,4 @@ def test_runtime_pooling_and_bootstrap_use_same_homechef_database():
     assert company['database']['homechef']['name'] == 'homechef_db'
     assert bootstrap['targets'][0]['host'] == 'global-postgres-rw.global.svc.cluster.local'
     assert bootstrap['targets'][0]['user'] == 'homechef'
-    assert not bootstrap.get('suspend', False)
+    assert bootstrap['suspend'] is True

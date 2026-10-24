@@ -5,6 +5,19 @@ DestinationRule, EnvoyFilter) for namespaces enrolled in ambient mode.
 Only deployed for namespaces that need L7 features.
 */}}
 {{- range .Values.ambient.waypointNamespaces }}
+{{- $parked := hasKey ($.Values.ambient.parkedWaypoints | default dict) . }}
+{{- if $parked }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: waypoint-parked
+  namespace: {{ . }}
+data:
+  deployment: |
+    spec:
+      replicas: 0
+{{- end }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
@@ -15,10 +28,18 @@ metadata:
     istio.io/waypoint-for: service
 spec:
   gatewayClassName: istio-waypoint
-  {{- with $.Values.ambient.waypointTrafficDistribution }}
+  {{- if or $parked $.Values.ambient.waypointTrafficDistribution }}
   infrastructure:
+    {{- if $parked }}
+    parametersRef:
+      group: ""
+      kind: ConfigMap
+      name: waypoint-parked
+    {{- end }}
+    {{- with $.Values.ambient.waypointTrafficDistribution }}
     annotations:
       networking.istio.io/traffic-distribution: {{ . | quote }}
+    {{- end }}
   {{- end }}
   listeners:
     - name: mesh

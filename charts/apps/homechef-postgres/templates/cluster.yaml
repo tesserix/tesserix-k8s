@@ -1,9 +1,10 @@
-{{- if not .Values.hibernate }}
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   name: {{ .Values.clusterName }}
   namespace: {{ .Values.namespace }}
+  annotations:
+    cnpg.io/hibernation: {{ ternary "on" "off" .Values.hibernate | quote }}
   labels:
     app.kubernetes.io/part-of: home-chef-app
     app.kubernetes.io/component: database
@@ -145,4 +146,3 @@ spec:
   # PDB — maintain quorum during node drains
   # =========================================================================
   enablePDB: true
-{{- end }}

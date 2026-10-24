@@ -1,4 +1,4 @@
-{{- if and .Values.pooler.enabled (not .Values.hibernate) }}
+{{- if .Values.pooler.enabled }}
 apiVersion: postgresql.cnpg.io/v1
 kind: Pooler
 metadata:
@@ -7,7 +7,7 @@ metadata:
 spec:
   cluster:
     name: {{ .Values.clusterName }}
-  instances: {{ .Values.pooler.instances }}
+  instances: {{ ternary 0 (int .Values.pooler.instances) .Values.hibernate }}
   type: rw
   template:
     metadata:
@@ -46,7 +46,7 @@ metadata:
 spec:
   cluster:
     name: {{ .Values.clusterName }}
-  instances: {{ .Values.pooler.instances }}
+  instances: {{ ternary 0 (int .Values.pooler.instances) .Values.hibernate }}
   type: ro
   template:
     metadata:
