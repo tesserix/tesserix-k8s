@@ -118,15 +118,34 @@ readiness baselines still match. FE3DR deployments remain at zero, CronJobs are
 suspended, PostgreSQL is hibernated and MongoDB is paused. The migration
 application is Synced/Healthy and its temporary Jobs and RBAC were pruned.
 
-The blog backup repair is incomplete. PR #1512 separated the MongoDB dump and
-GCS upload into compatible pinned images; the dump now succeeds, but upload
-fails because `tesseract-database-backups` no longer exists. The existing backup
-Google service account has no direct project grant or bucket grant on
-`tesseract-prod-backups-in`. Do not point the CronJob at that bucket and claim
-success without resolving its access and verifying a completed archive. No IAM
-permissions were changed. The migration recovery snapshot remains available;
-it does not replace scheduled database backups. Mark8ly's fresh post-migration
-Barman backup completed successfully.
+The blog backup repair completed through PRs #1514 and #1515. The CronJob now
+uploads to `gs://tesseract-prod-backups-in/prod/mongodb-blog/` using its existing
+Workload Identity. Terraform owns an objectCreator grant restricted to that
+prefix; the uploader cannot read or delete backup objects. An explicit directory
+destination prevents gsutil from requesting bucket-list access.
+
+The Cron-owned verification Job `mongodb-blog-fixed-v2-20261024` completed at
+2026-10-24 04:35:34 UTC. The 364,106-byte archive
+`tesserix_blog-2026-10-24T04-35-22Z.archive.gz` was read back from GCS and restored
+into an isolated, temporary MongoDB instance: **81 documents restored, zero
+failures**, including all 23 posts. No live database was modified by this check.
+Argo reports the backup application Synced/Healthy. The CronJob remains enabled
+at 00:00 and 12:00 UTC (nominal RPO 12 hours). The existing bucket enforces
+30-day retention and a 37-day deletion lifecycle, versioning and seven-day
+soft deletion. At the verified archive size, 74 twice-daily archives total about
+26 MiB before version/soft-delete overhead. No new compute service runs between
+backup jobs. Recovery RTO has not been benchmarked; this small restore succeeded
+in seconds. The previously verified Mark8ly Barman backup also remains available.
+
+Validation: five staged-backup tests, Terraform prefix/role regression test,
+Terraform validate, Ruff, Bash syntax and Helm lint passed. Terraform applied
+exactly one IAM member addition to the existing storage state; other resources
+were not reconciled as part of this targeted incident repair. Restore manifest
+and result log are in `/tmp/fe3dr-park-20261024/`; the temporary restore pod was
+removed after verification. For a future restore, an authorized operator must
+read the archive and run `mongorestore --archive --gzip` against an isolated
+MongoDB instance; the write-only scheduled-backup identity intentionally cannot
+perform restores. Verify restored counts before planning any production cutover.
 
 Argo reports blog MongoDB Healthy/OutOfSync, although the effective rendered
 StatefulSet and live diff produced no differences. Its live claim is correctly
