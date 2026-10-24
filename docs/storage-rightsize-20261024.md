@@ -1,5 +1,13 @@
 # Application storage reduction, 2026-10-24
 
+Completed: five data volumes are 60Gi and OpenPanel ClickHouse is 120Gi.
+All six originals have been retired after verification. Net provisioned capacity
+falls by 540Gi, approximately A$86/month at observed rates, before recovery
+snapshot costs. FE3DR stays parked; Mark8ly, blog MongoDB and OpenPanel are
+running. Recovery snapshots and metadata are retained. Temporary migration
+resources are removed by setting the migration chart to `phase: complete`.
+
+
 Approved targets: OpenPanel ClickHouse 120Gi; the two Mark8ly PostgreSQL data
 volumes, two parked FE3DR PostgreSQL data volumes and blog MongoDB volume 60Gi
 each. Smaller WAL and application volumes are unchanged. Expected reduction:
