@@ -33,15 +33,22 @@ def entries(root):
     }
 
 
-def verify(source, target):
+def verify(source, target, metadata=True):
     left, right = entries(source), entries(target)
+    left[Path(".")], right[Path(".")] = source, target
     if left.keys() != right.keys():
         raise RuntimeError("file inventory mismatch")
     count = 0
     for name, a in left.items():
         b = right[name]
         sa, sb = a.lstat(), b.lstat()
-        if (sa.st_mode, sa.st_uid, sa.st_gid) != (sb.st_mode, sb.st_uid, sb.st_gid):
+        if stat.S_IFMT(sa.st_mode) != stat.S_IFMT(sb.st_mode):
+            raise RuntimeError("file type mismatch")
+        if metadata and (sa.st_mode, sa.st_uid, sa.st_gid) != (
+            sb.st_mode,
+            sb.st_uid,
+            sb.st_gid,
+        ):
             raise RuntimeError("file ownership or mode mismatch")
         if stat.S_ISLNK(sa.st_mode):
             if os.readlink(a) != os.readlink(b):
@@ -63,7 +70,7 @@ def api(path):
     mount = Path("/var/run/secrets/kubernetes.io/serviceaccount")
     token = (mount / "token").read_text().strip()
     request = urllib.request.Request(
-        "https://kubernetes.default.svc" + path,
+        "https://" + os.environ["KUBERNETES_SERVICE_HOST"] + path,
         headers={"Authorization": "Bearer " + token},
     )
     with urllib.request.urlopen(
@@ -80,10 +87,18 @@ def main():
     source_claim = api(prefix + "/persistentvolumeclaims/" + claim)
     if source_claim["metadata"]["uid"] != os.environ["SOURCE_UID"]:
         raise RuntimeError("source PVC identity changed; refusing copy")
+    target_claim = api(prefix + "/persistentvolumeclaims/" + os.environ["TARGET_CLAIM"])
+    if target_claim["metadata"]["uid"] != os.environ["TARGET_UID"]:
+        raise RuntimeError("target PVC identity changed")
     for attempt in range(120):
         try:
             assert_quiescent(
                 api(prefix + "/pods")["items"], claim, os.environ["POD_NAME"]
+            )
+            assert_quiescent(
+                api(prefix + "/pods")["items"],
+                os.environ["TARGET_CLAIM"],
+                os.environ["POD_NAME"],
             )
             break
         except RuntimeError:
@@ -92,18 +107,35 @@ def main():
             time.sleep(10)
     source, target = Path("/source"), Path("/target")
     if entries(target):
-        raise RuntimeError("target is not empty; refusing overwrite")
-    bytes_needed = sum(
-        p.lstat().st_size
-        for p in entries(source).values()
-        if p.is_file() and not p.is_symlink()
-    )
-    if bytes_needed > shutil.disk_usage(target).free * 0.85:
-        raise RuntimeError("insufficient target headroom")
-    subprocess.run(
-        ["cp", "--archive", "--sparse=always", "--", str(source) + "/.", str(target)],
-        check=True,
-    )
+        verify(source, target, metadata=False)
+        items = entries(source)
+        items[Path(".")] = source
+        for name, item in items.items():
+            destination = target / name
+            info = item.lstat()
+            os.chown(destination, info.st_uid, info.st_gid, follow_symlinks=False)
+            if not item.is_symlink():
+                os.chmod(destination, stat.S_IMODE(info.st_mode))
+        print("Existing copy contents verified; restoring exact metadata", flush=True)
+    else:
+        bytes_needed = sum(
+            p.lstat().st_size
+            for p in entries(source).values()
+            if p.is_file() and not p.is_symlink()
+        )
+        if bytes_needed > shutil.disk_usage(target).free * 0.85:
+            raise RuntimeError("insufficient target headroom")
+        subprocess.run(
+            [
+                "cp",
+                "--archive",
+                "--sparse=always",
+                "--",
+                str(source) + "/.",
+                str(target),
+            ],
+            check=True,
+        )
     os.sync()
     count = verify(source, target)
     assert_quiescent(api(prefix + "/pods")["items"], claim, os.environ["POD_NAME"])

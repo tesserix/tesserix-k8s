@@ -36,3 +36,10 @@ consistent fresh backup/restore, not a stale filesystem swap.
 
 The copy Jobs do not delete sources or perform the binding cutover. Their success
 is evidence of a verified copy, not evidence that a migration is complete.
+
+Copy retry: original Jobs are suspended before separate v2 Jobs run. Retries
+validate target PVC identity, wait for exclusive source/target access, hash-check
+existing copies before metadata repair, and include FSETID to preserve setgid
+bits. Kubernetes API access uses the injected service IP. Root-directory ownership
+and modes and every entry's file type are included in verification. No source PVC
+or disk is removed during this phase. OpenPanel remains targeted at 120Gi.
