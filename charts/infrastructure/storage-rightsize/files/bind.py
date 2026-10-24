@@ -72,6 +72,18 @@ def main():
     source_path = prefix + "/persistentvolumeclaims/" + plan["name"]
     target_path = prefix + "/persistentvolumeclaims/" + plan["target"]
     job_prefix = "/apis/batch/v1/namespaces/" + plan["namespace"] + "/jobs/"
+    if plan.get("recreateJob"):
+        for _ in range(120):
+            job = request(job_prefix + plan["recreateJob"])
+            if job and job.get("status", {}).get("succeeded") == 1:
+                break
+            if job and job.get("status", {}).get("failed"):
+                raise RuntimeError(
+                    "cluster recreation failed; refusing binding changes"
+                )
+            time.sleep(3)
+        else:
+            raise RuntimeError("cluster recreation has not completed")
     source, target = request(source_path), request(target_path)
     if plan.get("copyVerified") is not True or plan.get("snapshotStatus") != "READY":
         raise RuntimeError("verified copy and snapshot evidence required")
