@@ -107,3 +107,27 @@ def test_upload_failure_is_not_reported_as_success(tmp_path):
     )
     assert result.returncode != 0
     assert "upload completed" not in result.stdout
+
+
+def test_upload_uses_explicit_directory_without_bucket_listing(tmp_path):
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    command = binary / "gsutil"
+    command.write_text('#!/bin/bash\nprintf "%s\\n" "$@" > "$ARG_CAPTURE"\n')
+    command.chmod(0o755)
+    (tmp_path / "dump-complete").write_text("1\n")
+    (tmp_path / "db.archive.gz").write_bytes(b"fixture")
+    capture = tmp_path / "args"
+    subprocess.run(
+        ["bash", str(FILES / "upload.sh")],
+        env=dict(
+            os.environ,
+            PATH=str(binary) + os.pathsep + os.environ["PATH"],
+            BACKUP_DIR=str(tmp_path),
+            GCS_BUCKET="test",
+            GCS_PREFIX="prod/blog",
+            ARG_CAPTURE=str(capture),
+        ),
+        check=True,
+    )
+    assert capture.read_text().splitlines()[-1] == "gs://test/prod/blog/"
