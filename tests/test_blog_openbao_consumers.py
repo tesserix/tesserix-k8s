@@ -74,7 +74,7 @@ def test_production_blog_and_database_use_openbao_with_unchanged_kubernetes_keys
         statefulset["spec"]["volumeClaimTemplates"][0]["spec"]["resources"]["requests"][
             "storage"
         ]
-        == "120Gi"
+        == "60Gi"
     )
 
 
