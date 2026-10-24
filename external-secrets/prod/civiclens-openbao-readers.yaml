@@ -47,3 +47,28 @@ spec:
           role: read-civiclens-global-production
           serviceAccountRef:
             name: civiclens-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: civiclens-production-reader
+  namespace: agentgateway-system
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-civiclens-production
+  namespace: agentgateway-system
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-civiclens-agentgateway-system-production
+          serviceAccountRef:
+            name: civiclens-production-reader

@@ -53,6 +53,27 @@ no manual step. `ca.key` never leaves `global`.
 5. Verify: `/v1/capabilities` 200, `/v1/me` and `/v1/reports` 401 without a
    session, then a real Google/Apple login from the app on two accounts.
 
+## Writing-assist gateway
+
+The API calls the dedicated `agentgateway-system/civiclens-ai` gateway with
+`civiclens-ai-gateway-key`. Images before the assist release reject unknown
+`secrets.json` fields, so order matters:
+
+1. Kargo promotes a `tesserix/civiclens` image that includes `POST /v1/assist`;
+   confirm it is running before step 3.
+2. Merge the gateway configuration. Argo reconciles the namespace-bound OpenBao
+   reader and seeder roles. The gateway PreSync job creates its credential with
+   compare-and-set version 0 and preserves existing values; it never logs the key.
+   Both API and gateway ExternalSecrets read this one production path.
+3. Argo automatically syncs the gateway and API. The seed job retries if the
+   OpenBao bootstrap has not reconciled yet. Check ExternalSecret readiness.
+4. Apply the additive `12-vertex` Workload Identity binding for
+   `agentgateway-system/civiclens-ai` through the reviewed Terraform plan.
+5. Verify `/v1/capabilities` reports `assist: true` and a signed-in "Fix spelling"
+   succeeds. Gateway requests without the client key must get 401.
+
+Rollback is removing `CIVICLENS_AI_GATEWAY_URL`; assist then reports unavailable.
+
 ## Recovery
 
 A failed migration leaves the previous ReplicaSet serving; fix the cause and
