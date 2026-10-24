@@ -5,6 +5,6 @@ shopt -s nullglob
 archives=("$BACKUP_DIR"/*.archive.gz)
 [ "${#archives[@]}" -gt 0 ]
 for archive in "${archives[@]}"; do
-  gsutil -q cp "$archive" "gs://$GCS_BUCKET/$GCS_PREFIX/$(basename "$archive")"
+  gsutil -q cp "$archive" "gs://$GCS_BUCKET/$GCS_PREFIX/"
 done
 echo "Backup upload completed: ${#archives[@]} archive(s)"
