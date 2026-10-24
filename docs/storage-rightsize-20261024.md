@@ -91,3 +91,10 @@ health checks, two healthy streaming PostgreSQL instances and a new completed
 Barman backup (`mark8ly-post-rightsize-20261024`). FE3DR remains hibernated; its
 WAL recovery snapshots are also READY. Deletion captures and the retirement log
 are in `/tmp/fe3dr-park-20261024/retire-*.json` and `retired-disks.jsonl`.
+
+All six replacement PVCs are now Bound at 60Gi/120Gi. OpenPanel may resume its
+original API/worker/dashboard replicas (two each) and ClickHouse replica (one).
+The unrelated blog backup CronJob was found to reference a missing Kubernetes
+service account. Its existing Google service account and Workload Identity IAM
+binding were verified; restore only the missing Kubernetes identity through the
+owning backup application, without changing IAM permissions.
