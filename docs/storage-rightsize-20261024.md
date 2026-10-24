@@ -100,9 +100,35 @@ Barman backup (`mark8ly-post-rightsize-20261024`). FE3DR remains hibernated; its
 WAL recovery snapshots are also READY. Deletion captures and the retirement log
 are in `/tmp/fe3dr-park-20261024/retire-*.json` and `retired-disks.jsonl`.
 
-All six replacement PVCs are now Bound at 60Gi/120Gi. OpenPanel may resume its
-original API/worker/dashboard replicas (two each) and ClickHouse replica (one).
+All six replacement PVCs are now Bound at 60Gi/120Gi. OpenPanel resumed its chart-rendered desired counts: one ready replica for each
+deployment, including API, worker, dashboard and ClickHouse.
 The unrelated blog backup CronJob was found to reference a missing Kubernetes
 service account. Its existing Google service account and Workload Identity IAM
 binding were verified; restore only the missing Kubernetes identity through the
 owning backup application, without changing IAM permissions.
+
+
+## Final verification
+
+All six original physical disks and retained PVs have been retired after copy,
+snapshot and application verification. Five replacement claims are Bound at
+60Gi; OpenPanel is Bound at 120Gi. Mark8ly has two ready PostgreSQL instances;
+blog MongoDB and every OpenPanel deployment are ready. All 15 shared deployment
+readiness baselines still match. FE3DR deployments remain at zero, CronJobs are
+suspended, PostgreSQL is hibernated and MongoDB is paused. The migration
+application is Synced/Healthy and its temporary Jobs and RBAC were pruned.
+
+The blog backup repair is incomplete. PR #1512 separated the MongoDB dump and
+GCS upload into compatible pinned images; the dump now succeeds, but upload
+fails because `tesseract-database-backups` no longer exists. The existing backup
+Google service account has no direct project grant or bucket grant on
+`tesseract-prod-backups-in`. Do not point the CronJob at that bucket and claim
+success without resolving its access and verifying a completed archive. No IAM
+permissions were changed. The migration recovery snapshot remains available;
+it does not replace scheduled database backups. Mark8ly's fresh post-migration
+Barman backup completed successfully.
+
+Argo reports blog MongoDB Healthy/OutOfSync, although the effective rendered
+StatefulSet and live diff produced no differences. Its live claim is correctly
+Bound at 60Gi; no destructive recreation or blanket diff suppression was used
+just to clear that flag.
