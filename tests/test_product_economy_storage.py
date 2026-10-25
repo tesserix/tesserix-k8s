@@ -58,6 +58,61 @@ def test_completed_economy_migration_has_no_remaining_jobs_or_permissions():
     assert docs == []
 
 
+def test_non_postgres_cutover_has_no_cnpg_permissions(tmp_path):
+    import subprocess
+
+    import yaml
+
+    config = tmp_path / "non-pg.yaml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "economy": {
+                    "phase": "cutover",
+                    "volumes": [
+                        {
+                            "namespace": "mongo",
+                            "name": "data",
+                            "target": "restored",
+                            "sourcePV": "old",
+                            "targetPV": "new",
+                            "copyJob": "verify",
+                            "copyJobs": ["verify"],
+                            "copyVerified": True,
+                            "snapshot": "backup",
+                            "snapshotStatus": "READY",
+                        }
+                    ],
+                }
+            }
+        )
+    )
+    docs = [
+        d
+        for d in yaml.safe_load_all(
+            subprocess.check_output(
+                [
+                    "helm",
+                    "template",
+                    "migration",
+                    "charts/infrastructure/storage-rightsize",
+                    "-f",
+                    str(config),
+                ],
+                text=True,
+            )
+        )
+        if d
+    ]
+    roles = [d for d in docs if d["kind"] == "Role"]
+    assert roles
+    assert all(
+        "postgresql.cnpg.io" not in rule["apiGroups"]
+        for role in roles
+        for rule in role["rules"]
+    )
+
+
 def test_prepare_allocates_retained_standard_targets_without_copy_or_cutover(tmp_path):
     import subprocess
 
