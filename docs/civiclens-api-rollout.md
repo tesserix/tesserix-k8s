@@ -83,3 +83,18 @@ an isolated cluster and export only CivicLens data if recovery is needed.
 
 Social publishing stays disabled (`CIVICLENS_PUBLISHING_ENABLED=false`) until a
 real Page, scoped credentials and verified authority records exist.
+
+## Community links
+
+The CivicLens VirtualService also admits the two exact `/.well-known/` association
+documents, UUID-shaped `/community/{id}` pages and `/assets/civiclens.png` to the
+same API service. Health/readiness probes and unrelated assets stay in-cluster.
+The API only renders independently approved community cards and serves reviewed
+public text, never account responses or private report data. Existing upload
+deadlines, session checks and disabled gateway retries remain in force.
+
+Before calling app links ready, verify the public Apple association contains
+`2CRHRRYBPL.app.tesserix.civiclens`, and register the actual Google Play app-signing
+SHA-256 certificate in the application's `shared/app-links.json`. An empty Android
+association list is intentional until that certificate is verified. Public store
+download buttons remain disabled until each listing is actually available.

@@ -1,4 +1,5 @@
 import pathlib
+import re
 import subprocess
 import unittest
 
@@ -218,7 +219,35 @@ class CivicLensSecrets(unittest.TestCase):
 
 
 class CivicLensNetwork(unittest.TestCase):
-    def test_gateway_host_routes_versioned_api_only(self):
+    def test_public_share_urls_route_without_exposing_probes_or_other_assets(self):
+        [vs] = load_all("manifests/civiclens-istio/virtualservice.yaml")
+
+        def routes_get(path):
+            return any(
+                match.get("method", {}).get("exact", "GET") == "GET"
+                and any(
+                    (kind == "exact" and path == value)
+                    or (kind == "prefix" and path.startswith(value))
+                    or (kind == "regex" and re.fullmatch(value, path))
+                    for kind, value in match["uri"].items()
+                )
+                for route in vs["spec"]["http"]
+                for match in route["match"]
+            )
+
+        for path in (
+            "/v1/capabilities", "/.well-known/apple-app-site-association",
+            "/.well-known/assetlinks.json", "/assets/civiclens.png",
+            "/community/4c49f0fa-1103-4fc1-8bee-f541555ab40e",
+        ):
+            with self.subTest(public=path):
+                self.assertTrue(routes_get(path), path)
+        for path in ("/", "/healthz", "/readyz", "/metrics",
+                     "/.well-known/secrets", "/assets/private.png"):
+            with self.subTest(private=path):
+                self.assertFalse(routes_get(path), path)
+
+    def test_gateway_preserves_upload_deadlines_and_disables_retries(self):
         [vs] = load_all("manifests/civiclens-istio/virtualservice.yaml")
         self.assertEqual(vs["spec"]["hosts"], ["civiclns-api.tesserix.app"])
         self.assertEqual(vs["spec"]["gateways"], ["istio-ingress/tesseract-gateway"])
@@ -226,7 +255,7 @@ class CivicLensNetwork(unittest.TestCase):
         self.assertEqual(large["timeout"], "90s")
         self.assertEqual(large["match"][0], {"uri":{"exact":"/v1/reports"},"method":{"exact":"POST"}})
         self.assertEqual(large["retries"], {"attempts":0})
-        self.assertEqual(route["match"], [{"uri": {"prefix": "/v1/"}}])
+        self.assertIn({"uri": {"prefix": "/v1/"}}, route["match"])
         self.assertEqual(route["route"][0]["destination"]["host"], "civiclens-api.civiclens.svc.cluster.local")
         self.assertEqual(route["retries"], {"attempts": 0})
 
