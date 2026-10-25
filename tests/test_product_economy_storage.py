@@ -216,3 +216,64 @@ def test_cutover_requires_verified_copy_and_ready_snapshot(tmp_path):
             "resourceNames": ["old", "new"],
         }
     ]
+
+
+def test_actual_argocd_overlays_keep_product_identity_and_replication(tmp_path):
+    import subprocess
+
+    import yaml
+
+    from test_homechef_park import ROOT
+
+    products = {
+        "planning-poker",
+        "helivanta",
+        "devai",
+        "dwellm8",
+        "dwellm8-temporal",
+        "kora",
+        "mark8ly",
+        "postiz",
+        "roamie",
+        "support-platform",
+        "tesserix",
+        "homechef",
+    }
+    checked = set()
+    for path in (ROOT / "argocd/prod").rglob("*-postgres.yaml"):
+        app = yaml.safe_load(path.read_text())
+        name = app.get("metadata", {}).get("name", "")
+        if name.removesuffix("-postgres") not in products:
+            continue
+        spec = app["spec"]
+        source = spec["source"]
+        helm = source.get("helm", {})
+        command = [
+            "helm",
+            "template",
+            helm.get("releaseName", name),
+            str(ROOT / source["path"]),
+        ]
+        for file in helm.get("valueFiles", []):
+            command.extend(["-f", str(ROOT / source["path"] / file)])
+        for key in ("values", "valuesObject"):
+            if helm.get(key):
+                config = tmp_path / (name + key + ".yaml")
+                config.write_text(
+                    yaml.safe_dump(helm[key]) if key == "valuesObject" else helm[key]
+                )
+                command.extend(["-f", str(config)])
+        for parameter in helm.get("parameters", []):
+            command.extend(["--set", parameter["name"] + "=" + parameter["value"]])
+        cluster = next(
+            d
+            for d in yaml.safe_load_all(subprocess.check_output(command, text=True))
+            if d and d["kind"] == "Cluster"
+        )
+        assert cluster["metadata"]["namespace"] == spec["destination"]["namespace"]
+        assert cluster["metadata"]["name"] == name
+        assert cluster["spec"]["storage"]["storageClass"] == "economy-rwo-retain"
+        if "instances" in helm.get("valuesObject", {}):
+            assert cluster["spec"]["instances"] == helm["valuesObject"]["instances"]
+        checked.add(name.removesuffix("-postgres"))
+    assert checked == products
