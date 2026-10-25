@@ -239,10 +239,19 @@ def test_actual_argocd_overlays_keep_product_identity_and_replication(tmp_path):
         "homechef",
     }
     checked = set()
-    for path in (ROOT / "argocd/prod").rglob("*-postgres.yaml"):
-        app = yaml.safe_load(path.read_text())
+    apps = (
+        doc
+        for path in (ROOT / "argocd/prod").rglob("*.yaml")
+        for doc in yaml.safe_load_all(path.read_text())
+        if isinstance(doc, dict)
+    )
+    for app in apps:
         name = app.get("metadata", {}).get("name", "")
-        if name.removesuffix("-postgres") not in products:
+        if (
+            not name.endswith("-postgres")
+            or name.removesuffix("-postgres") not in products
+            or "source" not in app.get("spec", {})
+        ):
             continue
         spec = app["spec"]
         source = spec["source"]
