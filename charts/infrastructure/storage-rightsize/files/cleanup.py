@@ -4,6 +4,17 @@ import os
 from bind import disk, request
 
 
+def assert_unmounted(prefix, name):
+    for pod in request(prefix + "/pods")["items"]:
+        if pod.get("status", {}).get("phase") in ("Succeeded", "Failed"):
+            continue
+        if any(
+            v.get("persistentVolumeClaim", {}).get("claimName") == name
+            for v in pod["spec"].get("volumes", [])
+        ):
+            raise RuntimeError("a pod still references the parked or empty target")
+
+
 def remove_empty_target(prefix, name, uid):
     path = prefix + "/persistentvolumeclaims/" + name
     claim = request(path)
@@ -18,14 +29,7 @@ def remove_empty_target(prefix, name, uid):
         )
     ):
         raise RuntimeError("target is not the exact empty unbound claim")
-    for pod in request(prefix + "/pods")["items"]:
-        if pod.get("status", {}).get("phase") in ("Succeeded", "Failed"):
-            continue
-        if any(
-            v.get("persistentVolumeClaim", {}).get("claimName") == name
-            for v in pod["spec"].get("volumes", [])
-        ):
-            raise RuntimeError("a pod still references the empty target")
+    assert_unmounted(prefix, name)
     request(
         path,
         "DELETE",
@@ -41,14 +45,14 @@ def remove_empty_target(prefix, name, uid):
 def main():
     plan = json.loads(os.environ["PLAN"])
     if not (
-        plan.get("resumeVerified") is True
+        (plan.get("resumeVerified") is True or plan.get("parkedVerified") is True)
         and plan.get("copyVerified") is True
         and plan.get("snapshot")
         and plan.get("snapshotStatus") == "READY"
         and plan.get("snapshotSourceDiskId")
         and plan.get("sourceDiskDeletedId") == plan["snapshotSourceDiskId"]
     ):
-        raise RuntimeError("healthy cutover and exact cloud deletion receipt required")
+        raise RuntimeError("verified state and exact cloud deletion receipt required")
     prefix = "/api/v1/namespaces/" + plan["namespace"]
     claim = request(prefix + "/persistentvolumeclaims/" + plan["name"])
     if not (
@@ -58,6 +62,8 @@ def main():
         and claim.get("status", {}).get("phase") == "Bound"
     ):
         raise RuntimeError("healthy replacement binding changed")
+    if plan.get("parkedVerified") is True:
+        assert_unmounted(prefix, plan["name"])
     if plan.get("previousEmptyTarget"):
         remove_empty_target(
             prefix, plan["previousEmptyTarget"], plan["previousEmptyTargetUID"]

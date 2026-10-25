@@ -5,7 +5,10 @@ import pytest
 from test_storage_rightsize import SCRIPT, module
 
 
-def test_cleanup_reclaims_only_exact_released_source_after_healthy_cutover(monkeypatch):
+@pytest.mark.parametrize("verification_key", ["resumeVerified", "parkedVerified"])
+def test_cleanup_reclaims_only_exact_released_source_after_verified_state(
+    monkeypatch, verification_key
+):
     cleanup = module(SCRIPT.with_name("cleanup.py"))
     plan = {
         "namespace": "db",
@@ -20,10 +23,11 @@ def test_cleanup_reclaims_only_exact_released_source_after_healthy_cutover(monke
         "snapshotStatus": "READY",
         "snapshotSourceDiskId": "123",
         "sourceDiskDeletedId": "123",
-        "resumeVerified": True,
+        verification_key: True,
         "copyVerified": True,
     }
     state = {
+        "/api/v1/namespaces/db/pods": {"items": []},
         "/api/v1/namespaces/db/persistentvolumeclaims/data": {
             "metadata": {"uid": "current"},
             "spec": {"volumeName": "new"},
@@ -49,7 +53,7 @@ def test_cleanup_reclaims_only_exact_released_source_after_healthy_cutover(monke
         return copy.deepcopy(state.get(path))
 
     monkeypatch.setattr(cleanup, "request", api)
-    for key in ("resumeVerified", "copyVerified", "sourceDiskDeletedId"):
+    for key in (verification_key, "copyVerified", "sourceDiskDeletedId"):
         invalid = {**plan, key: False}
         monkeypatch.setenv("PLAN", json.dumps(invalid))
         with pytest.raises(RuntimeError):
@@ -62,6 +66,17 @@ def test_cleanup_reclaims_only_exact_released_source_after_healthy_cutover(monke
         cleanup.main()
     assert not mutations
     pv["spec"]["claimRef"]["uid"] = "original"
+    if verification_key == "parkedVerified":
+        state["/api/v1/namespaces/db/pods"]["items"] = [
+            {
+                "status": {"phase": "Running"},
+                "spec": {"volumes": [{"persistentVolumeClaim": {"claimName": "data"}}]},
+            }
+        ]
+        with pytest.raises(RuntimeError, match="pod"):
+            cleanup.main()
+        assert not mutations
+        state["/api/v1/namespaces/db/pods"]["items"] = []
     cleanup.main()
     assert mutations == [
         (
