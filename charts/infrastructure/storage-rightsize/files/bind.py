@@ -103,6 +103,21 @@ def main():
             raise RuntimeError("replacement exists but is not bound")
         print("Replacement already bound; no mutation required", flush=True)
         return
+    if plan.get("cluster"):
+        cluster = request(
+            "/apis/postgresql.cnpg.io/v1/namespaces/"
+            + plan["namespace"]
+            + "/clusters/"
+            + plan["cluster"]
+        )
+        annotations = (cluster or {}).get("metadata", {}).get("annotations", {})
+        if (
+            annotations.get("cnpg.io/reconciliationLoop") != "disabled"
+            or annotations.get("cnpg.io/hibernation") != "on"
+        ):
+            raise RuntimeError(
+                "cluster must be hibernated with reconciliation disabled"
+            )
     validate(plan, source, target, request(job_prefix + plan["copyJob"]))
     for pod in request(prefix + "/pods")["items"]:
         if pod.get("status", {}).get("phase") in ("Succeeded", "Failed"):
