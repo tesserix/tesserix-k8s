@@ -158,3 +158,17 @@ operator resume recreates the StatefulSet from its new claim-template class.
 Do not start HomeChef to claim runtime verification: acceptance remains offline
 and explicitly parked. Retain private recovery metadata outside temporary
 storage before deleting claim objects or source disks.
+
+OpenPanel resume requires stores and clients to be available before its PreSync
+migration and project-init hooks. With automation disabled, selectively warm up
+the restored Deployments, then run a fresh full sync with normal hooks. Wait for
+the previous operation to terminate and its spec operation to clear; reset the
+completed operationState when submitting an explicitly empty resource filter
+so a previous selective filter cannot survive merge patching. Restore automation
+only after acceptance. Project-init labels exported public client IDs using
+`kubectl label --local` before apply; `create secret generic --labels` is not
+supported by the pinned kubectl.
+
+After all source disks are confirmed absent and source PV cleanup jobs succeed,
+set economy phase to complete with an empty volume list and sync with pruning.
+Retain recovery snapshots and private recovery metadata independently.
