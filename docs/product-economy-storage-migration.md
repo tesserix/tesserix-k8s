@@ -79,3 +79,20 @@ proved by the actual GCE disk type for every scoped volume, not a Helm value or
 a successful ArgoCD sync. The older general PVC runbook's blanket exclusion of
 database migrations is superseded only for this explicitly authorized
 preproduction storage change.
+
+## Original disk reclamation
+
+After healthy restart, matching application schema and fresh WAL archival, capture
+an exact cloud deletion receipt for each migration original. Immediately before
+GCE deletion, require the captured disk ID, zero attachments, no current Bound PV
+claim, a READY recovery snapshot with matching sourceDiskId, and a verified
+standard replacement disk. Keep the cloud snapshot and recovery metadata.
+Do not apply this procedure to unrelated historical retained generations.
+
+Only then set `resumeVerified`, `sourceDiskDeletedId` and `sourcePVUID` in the
+migration ledger and use phase `cleanup`. The restricted cleanup job verifies
+the current replacement UID/PV binding and deletes only the exact Released,
+Retain original PV, with UID/resourceVersion preconditions. It may remove a
+recorded prior empty target only if its UID matches, it is Pending, has no
+volume or snapshot source, and no active pod references it. Return to `complete`
+and prune temporary jobs and permissions after successful cleanup.
