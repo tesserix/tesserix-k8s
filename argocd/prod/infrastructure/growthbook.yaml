@@ -17,59 +17,42 @@ spec:
     path: charts/thirdparty/growthbook
     targetRevision: HEAD
     helm:
-      valuesObject:
-        storageMigrationPhase: ""
       releaseName: growthbook
       values: |
-        # GrowthBook configuration for PRODUCTION environment
-        # One replica: the uploads PVC is ReadWriteOnce, so a second pod
-        # scheduled to another node sits in ContainerCreating forever.
         replicaCount: 1
-
         image:
           repository: growthbook/growthbook
-          tag: "latest"
-          # IfNotPresent: crashlooping pod re-pulled the full image from
-          # docker.io every restart (Always), driving Cloud NAT cost.
+          tag: latest
           pullPolicy: IfNotPresent
-
-        # Service configuration
         service:
           type: ClusterIP
           appPort: 3000
           apiPort: 3100
-
-        # Resource configuration for production (higher than devtest)
         resources:
           requests:
             memory: 1Gi
           limits:
             memory: 2Gi
-
-        # GrowthBook environment configuration
         config:
-          nodeEnv: "production"
-          appOrigin: "https://growthbook.mark8ly.com"
-          apiHost: "https://growthbook.mark8ly.com:443"
-          uploadMethod: "local"
+          nodeEnv: production
+          appOrigin: https://growthbook.mark8ly.com
+          apiHost: https://growthbook.mark8ly.com:443
+          uploadMethod: local
           disableTelemetry: true
           enableOpenFeature: true
-
-        # Secrets reference
         secrets:
-          jwtSecretName: "growthbook-secrets"
-          jwtSecretKey: "jwt-secret"
-          encryptionKeySecretName: "growthbook-secrets"
-          encryptionKeyKey: "encryption-key"
-
-        # MongoDB configuration
+          jwtSecretName: growthbook-secrets
+          jwtSecretKey: jwt-secret
+          encryptionKeySecretName: growthbook-secrets
+          encryptionKeyKey: encryption-key
         mongodb:
           enabled: true
           image:
             repository: mongo
-            tag: "7.0"
+            tag: '7.0'
           auth:
-                persistence:
+            enabled: false
+          persistence:
             enabled: true
             size: 20Gi
             storageClassName: economy-rwo-retain
@@ -78,52 +61,42 @@ spec:
               memory: 512Mi
             limits:
               memory: 1Gi
-
-        # Persistence for local uploads
         persistence:
           enabled: true
           size: 10Gi
           storageClassName: standard-rwo-retain
-
-        # Extra environment variables for self-hosted setup
         extraEnv:
-          - name: ALLOW_SELF_ORG_CREATION
-            value: "true"
-          - name: IS_MULTI_ORG
-            value: "false"
-          # Explicitly mark as self-hosted (not cloud)
-          - name: IS_CLOUD
-            value: "false"
-          # Allow local authentication without SSO
-          - name: AUTH_TYPE
-            value: "local"
-          # Enable unauthenticated API access for SDK
-          - name: ALLOW_UNAUTHENTICATED_API
-            value: "true"
-
-        # Feature Seeding Configuration
-        # Automatically creates all 34 feature flags on install/upgrade
-        # SAME features as devtest - environment-specific config only
+        - name: ALLOW_SELF_ORG_CREATION
+          value: 'true'
+        - name: IS_MULTI_ORG
+          value: 'false'
+        - name: IS_CLOUD
+          value: 'false'
+        - name: AUTH_TYPE
+          value: local
+        - name: ALLOW_UNAUTHENTICATED_API
+          value: 'true'
         featureSeeding:
           enabled: true
-          environment: "prod"
-          organizationName: "Tesserix"
-          sdkConnectionName: "Tesserix Platform"
-          sdkEnvironment: "production"
-          adminEmail: "admin@mark8ly.com"
-          adminName: "Tesserix Admin"
+          environment: prod
+          organizationName: Tesserix
+          sdkConnectionName: Tesserix Platform
+          sdkEnvironment: production
+          adminEmail: admin@mark8ly.com
+          adminName: Tesserix Admin
           createAdminSecret: false
           adminPasswordSecret:
-            name: "growthbook-admin-secret"
-            key: "password"
+            name: growthbook-admin-secret
+            key: password
           image:
             repository: curlimages/curl
-            tag: "8.5.0"
+            tag: 8.5.0
           resources:
             requests:
               memory: 64Mi
             limits:
               memory: 128Mi
+        storageMigrationPhase: ''
 
   destination:
     server: https://kubernetes.default.svc

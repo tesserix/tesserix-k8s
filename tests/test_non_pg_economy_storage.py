@@ -82,3 +82,15 @@ def test_mongo_force_replacement_only_during_stopped_reconcile(chart, phase):
         )
     else:
         assert flags is None
+
+
+def test_growthbook_preserves_inline_configuration_during_migration():
+    app = yaml.safe_load(
+        (ROOT / "argocd/prod/infrastructure/growthbook.yaml").read_text()
+    )
+    helm = app["spec"]["source"]["helm"]
+    assert "valuesObject" not in helm
+    values = yaml.safe_load(helm["values"])
+    assert values["resources"]["limits"]["memory"] == "2Gi"
+    assert values["mongodb"]["persistence"]["storageClassName"] == "economy-rwo-retain"
+    assert values["persistence"]["storageClassName"] == "standard-rwo-retain"
