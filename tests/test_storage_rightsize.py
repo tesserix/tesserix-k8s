@@ -350,3 +350,41 @@ def test_blog_backup_creates_the_service_account_used_by_its_job():
 
 def test_completed_migration_renders_no_jobs_or_temporary_permissions():
     assert render("charts/infrastructure/storage-rightsize") == []
+
+
+def test_snapshot_verification_runs_on_read_only_volumes_without_repair_or_marker(
+    tmp_path, monkeypatch
+):
+    copy = module()
+    source, target = tmp_path / "source", tmp_path / "target"
+    source.mkdir()
+    target.mkdir()
+    for path in (source, target):
+        (path / "data").write_bytes(b"offline database")
+        (path / "data").chmod(0o440)
+        path.chmod(0o550)
+    for key, value in {
+        "NAMESPACE": "db",
+        "SOURCE_CLAIM": "source",
+        "SOURCE_UID": "s",
+        "TARGET_CLAIM": "target",
+        "TARGET_UID": "t",
+        "POD_NAME": "verify",
+        "VERIFY_ONLY": "true",
+    }.items():
+        monkeypatch.setenv(key, value)
+
+    def api(path):
+        if path.endswith("/pods"):
+            return {"items": []}
+        return {"metadata": {"uid": "s" if path.endswith("/source") else "t"}}
+
+    monkeypatch.setattr(copy, "api", api)
+    try:
+        copy.main(source, target)
+        assert (target / "data").read_bytes() == b"offline database"
+        assert not (target / ".rightsize-verified.json").exists()
+        assert target.stat().st_mode == source.stat().st_mode
+    finally:
+        source.chmod(0o750)
+        target.chmod(0o750)

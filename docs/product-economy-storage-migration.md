@@ -38,9 +38,14 @@ value blindly: some legacy charts remove the Cluster instead of hibernating it.
 
 The migration chart's separate `economy-values.yaml` records exact source PVC
 UIDs, PVs, physical disk handles, same-sized target claims, and cutover evidence.
-Prepare retained standard targets first. Record their observed UIDs before
-enabling copy. Copy jobs mount the source read-only and fail if any other active
-pod references either volume. They verify data and file metadata before success.
+Import READY cold GCP snapshots as retained VolumeSnapshotContent and
+VolumeSnapshot resources, then restore same-sized standard target PVCs from
+them. Record the observed target UIDs before enabling verification. Non-root
+verification jobs mount both volumes read-only, fail if any other active pod
+references either volume, and compare file data and metadata without repairs
+or writing a marker. This satisfies restricted Pod Security without weakening
+the namespace policy. Workload dry runs alone do not prove Pod admission;
+validate the actual Pod template as well.
 
 Capture the quiescent source disks as READY GCP snapshots with recorded source
 disk identities, and keep original PVC/PV configuration in a private evidence
