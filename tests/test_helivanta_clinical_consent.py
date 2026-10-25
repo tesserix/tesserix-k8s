@@ -375,3 +375,39 @@ def test_production_activation_pairs_both_boundaries_and_isolates_review_egress(
         ]
         == "migrate"
     )
+
+
+def test_proxy_capture_is_explicitly_disabled_until_readers_are_ready():
+    rows = render("helivanta-api")
+    pod = named(rows, "Deployment", "helivanta-api")["spec"]["template"]["spec"]
+    env = {item["name"]: item.get("value") for item in pod["containers"][0]["env"]}
+    assert env["PATIENTMASTER_PROXY_CLINICAL_CAPTURE_ENABLED"] == "false"
+
+    rows = render(
+        "helivanta-api",
+        "clinicalConsent.enabled=true",
+        "clinicalConsent.kubernetesApiCIDR=172.16.0.2/32",
+        "clinicalConsent.proxyCaptureEnabled=true",
+    )
+    pod = named(rows, "Deployment", "helivanta-api")["spec"]["template"]["spec"]
+    env = {item["name"]: item.get("value") for item in pod["containers"][0]["env"]}
+    assert env["PATIENTMASTER_PROXY_CLINICAL_CAPTURE_ENABLED"] == "true"
+    assert env["MEDICONNECT_CLAIM_VERIFICATION_ENABLED"] == "true"
+
+
+def test_proxy_capture_cannot_bypass_the_live_claim_verifier():
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "helivanta-api",
+            str(ROOT / "charts/apps/helivanta-api"),
+            "--set",
+            "clinicalConsent.proxyCaptureEnabled=true",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "proxy clinical capture requires clinicalConsent.enabled" in result.stderr
