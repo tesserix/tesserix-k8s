@@ -1,29 +1,112 @@
 economy:
-  phase: cleanup
+  phase: prepare
   volumes:
-  - namespace: helivanta
-    name: data-helivanta-nats-0
-    sourceUID: 067447b5-4657-4903-adae-596a6731a9e9
-    sourcePV: pvc-067447b5-4657-4903-adae-596a6731a9e9
-    sourcePVUID: c83739ac-88c0-4f1c-8205-59415c2acb1f
-    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-b/disks/pvc-067447b5-4657-4903-adae-596a6731a9e9
-    target: snap-data-helivanta-nats-0
-    size: 5Gi
+  - namespace: openpanel
+    name: openpanel-postgresql
+    sourceUID: 13646daf-32c9-428e-8f73-a19784cbcaa7
+    sourcePV: pvc-13646daf-32c9-428e-8f73-a19784cbcaa7
+    sourcePVUID: 1f8e65de-23b8-4b60-bd77-ff3d2784d9ae
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-a/disks/pvc-13646daf-32c9-428e-8f73-a19784cbcaa7
+    target: snap-openpanel-postgresql
+    size: 20Gi
     storageClass: economy-rwo-retain
-    copyJob: snap-data-helivanta-nats-0-verify
+    copyJob: snap-openpanel-postgresql-verify
     copyJobs:
-    - snap-data-helivanta-nats-0-verify
-    verifyUser: 1000
-    verifyGroup: 1000
+    - snap-openpanel-postgresql-verify
+    verifyUser: 999
+    verifyGroup: 999
     replacement:
       apiVersion: v1
       kind: PersistentVolumeClaim
       metadata:
-        name: data-helivanta-nats-0
-        namespace: helivanta
+        name: openpanel-postgresql
+        namespace: openpanel
         labels:
-          app.kubernetes.io/instance: helivanta-nats
-          app.kubernetes.io/name: nats
+          app.kubernetes.io/component: postgresql
+          app.kubernetes.io/instance: openpanel
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: openpanel
+          app.kubernetes.io/part-of: tesseract-hub
+          app.kubernetes.io/version: 2.1.0
+          helm.sh/chart: openpanel-1.8.9
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 20Gi
+        storageClassName: economy-rwo-retain
+        volumeMode: Filesystem
+    snapshotSourceDiskId: '6737064516509177291'
+    snapshot: eco-db-13646daf-32c9-428e-8f73-a19784cbcaa7-20261026
+    snapshotStatus: READY
+  - namespace: openpanel
+    name: openpanel-clickhouse
+    sourceUID: b8ed3f58-2c71-4b00-b0a4-f4916b1a8210
+    sourcePV: pvc-7428c4f7-82a2-410f-8559-32731384660f
+    sourcePVUID: 364c3339-6b0c-405f-9eb5-155d1407ba2b
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-c/disks/pvc-7428c4f7-82a2-410f-8559-32731384660f
+    target: snap-openpanel-clickhouse
+    size: 120Gi
+    storageClass: economy-rwo-retain
+    copyJob: snap-openpanel-clickhouse-verify
+    copyJobs:
+    - snap-openpanel-clickhouse-verify
+    verifyUser: 101
+    verifyGroup: 101
+    replacement:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: openpanel-clickhouse
+        namespace: openpanel
+        labels:
+          app.kubernetes.io/component: clickhouse
+          app.kubernetes.io/instance: openpanel
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: openpanel
+          app.kubernetes.io/part-of: tesseract-hub
+          app.kubernetes.io/version: 2.1.0
+          helm.sh/chart: openpanel-1.8.9
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 120Gi
+        storageClassName: economy-rwo-retain
+        volumeMode: Filesystem
+    snapshotSourceDiskId: '6984384229604963832'
+    snapshot: eco-db-b8ed3f58-2c71-4b00-b0a4-f4916b1a8210-20261026
+    snapshotStatus: READY
+  - namespace: openpanel
+    name: openpanel-redis
+    sourceUID: 5fbd7bbb-816c-45ab-98a5-e7952c4caa25
+    sourcePV: pvc-5fbd7bbb-816c-45ab-98a5-e7952c4caa25
+    sourcePVUID: af021c1d-d66e-4583-83ad-b73b6f902aba
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-a/disks/pvc-5fbd7bbb-816c-45ab-98a5-e7952c4caa25
+    target: snap-openpanel-redis
+    size: 5Gi
+    storageClass: economy-rwo-retain
+    copyJob: snap-openpanel-redis-verify
+    copyJobs:
+    - snap-openpanel-redis-verify
+    verifyUser: 999
+    verifyGroup: 999
+    replacement:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: openpanel-redis
+        namespace: openpanel
+        labels:
+          app.kubernetes.io/component: redis
+          app.kubernetes.io/instance: openpanel
+          app.kubernetes.io/managed-by: Helm
+          app.kubernetes.io/name: openpanel
+          app.kubernetes.io/part-of: tesseract-hub
+          app.kubernetes.io/version: 2.1.0
+          helm.sh/chart: openpanel-1.8.9
       spec:
         accessModes:
         - ReadWriteOnce
@@ -32,54 +115,123 @@ economy:
             storage: 5Gi
         storageClassName: economy-rwo-retain
         volumeMode: Filesystem
-    snapshotSourceDiskId: '7798444930655757617'
-    snapshot: eco-db-067447b5-4657-4903-adae-596a6731a9e9-20261026
+    snapshotSourceDiskId: '9010944679753749963'
+    snapshot: eco-db-5fbd7bbb-816c-45ab-98a5-e7952c4caa25-20261026
     snapshotStatus: READY
-    targetUID: c5143323-cad9-4984-9c21-b25ac3df5efa
-    targetPV: pvc-c5143323-cad9-4984-9c21-b25ac3df5efa
-    targetDisk: projects/tesseracthub-480811/zones/asia-south1-b/disks/pvc-c5143323-cad9-4984-9c21-b25ac3df5efa
-    copyVerified: true
-    currentUID: 0c5ab3c0-9168-48b7-8ae0-ac3dd1d1d08a
-    resumeVerified: true
-    sourceDiskDeletedId: '7798444930655757617'
-  - namespace: dwellm8
-    name: data-dwellm8-nats-0
-    sourceUID: 46edbc9a-4792-446f-8554-4ee814785a54
-    sourcePV: pvc-46edbc9a-4792-446f-8554-4ee814785a54
-    sourcePVUID: 0f0ddb19-4942-4e0c-abed-c575f21da5e1
-    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-a/disks/pvc-46edbc9a-4792-446f-8554-4ee814785a54
-    target: snap-data-dwellm8-nats-0
-    size: 5Gi
+  - namespace: homechef
+    name: mongod-data-homechef-mongodb-rs0-0
+    sourceUID: de3ae0b2-97a2-4e81-9452-3bd09ca89317
+    sourcePV: pvc-de3ae0b2-97a2-4e81-9452-3bd09ca89317
+    sourcePVUID: 3a03cacb-6cb3-435e-b80d-2891873fc531
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-c/disks/pvc-de3ae0b2-97a2-4e81-9452-3bd09ca89317
+    target: snap-homechef-mongo-0
+    size: 20Gi
     storageClass: economy-rwo-retain
-    copyJob: snap-data-dwellm8-nats-0-verify
+    copyJob: snap-homechef-mongo-0-verify
     copyJobs:
-    - snap-data-dwellm8-nats-0-verify
-    verifyUser: 1000
-    verifyGroup: 1000
+    - snap-homechef-mongo-0-verify
+    verifyUser: 1001
+    verifyGroup: 1001
     replacement:
       apiVersion: v1
       kind: PersistentVolumeClaim
       metadata:
-        name: data-dwellm8-nats-0
-        namespace: dwellm8
+        name: mongod-data-homechef-mongodb-rs0-0
+        namespace: homechef
         labels:
-          app.kubernetes.io/instance: dwellm8-nats
-          app.kubernetes.io/name: nats
+          app.kubernetes.io/component: mongod
+          app.kubernetes.io/instance: homechef-mongodb
+          app.kubernetes.io/managed-by: percona-server-mongodb-operator
+          app.kubernetes.io/name: percona-server-mongodb
+          app.kubernetes.io/part-of: percona-server-mongodb
+          app.kubernetes.io/replset: rs0
+          istio.io/use-waypoint: none
       spec:
         accessModes:
         - ReadWriteOnce
         resources:
           requests:
-            storage: 5Gi
+            storage: 20Gi
         storageClassName: economy-rwo-retain
         volumeMode: Filesystem
-    snapshotSourceDiskId: '1192629665701902268'
-    snapshot: eco-db-46edbc9a-4792-446f-8554-4ee814785a54-20261026
+    snapshot: eco-db-de3ae0b2-97a2-4e81-9452-3bd09ca89317-20261026
+    snapshotSourceDiskId: '4717907434635028788'
     snapshotStatus: READY
-    targetUID: 60326a75-7224-4a19-ad32-93a2e10980d2
-    targetPV: pvc-60326a75-7224-4a19-ad32-93a2e10980d2
-    targetDisk: projects/tesseracthub-480811/zones/asia-south1-a/disks/pvc-60326a75-7224-4a19-ad32-93a2e10980d2
-    copyVerified: true
-    currentUID: 1e708188-5e35-407d-bd14-8fd98941ff29
-    resumeVerified: true
-    sourceDiskDeletedId: '1192629665701902268'
+  - namespace: homechef
+    name: mongod-data-homechef-mongodb-rs0-1
+    sourceUID: d8826aa7-fe73-46b2-9792-36bd6c9cb1cd
+    sourcePV: pvc-d8826aa7-fe73-46b2-9792-36bd6c9cb1cd
+    sourcePVUID: 16b65106-61c2-4a88-a0cc-06a02cf9bf9e
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-a/disks/pvc-d8826aa7-fe73-46b2-9792-36bd6c9cb1cd
+    target: snap-homechef-mongo-1
+    size: 20Gi
+    storageClass: economy-rwo-retain
+    copyJob: snap-homechef-mongo-1-verify
+    copyJobs:
+    - snap-homechef-mongo-1-verify
+    verifyUser: 1001
+    verifyGroup: 1001
+    replacement:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: mongod-data-homechef-mongodb-rs0-1
+        namespace: homechef
+        labels:
+          app.kubernetes.io/component: mongod
+          app.kubernetes.io/instance: homechef-mongodb
+          app.kubernetes.io/managed-by: percona-server-mongodb-operator
+          app.kubernetes.io/name: percona-server-mongodb
+          app.kubernetes.io/part-of: percona-server-mongodb
+          app.kubernetes.io/replset: rs0
+          istio.io/use-waypoint: none
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 20Gi
+        storageClassName: economy-rwo-retain
+        volumeMode: Filesystem
+    snapshot: eco-db-d8826aa7-fe73-46b2-9792-36bd6c9cb1cd-20261026
+    snapshotSourceDiskId: '3229948102636273462'
+    snapshotStatus: READY
+  - namespace: homechef
+    name: mongod-data-homechef-mongodb-rs0-2
+    sourceUID: a302e2eb-b692-4ccc-bc2b-01a89d474bce
+    sourcePV: pvc-a302e2eb-b692-4ccc-bc2b-01a89d474bce
+    sourcePVUID: a1768fe3-117a-4046-b0a5-bd13e705b3c2
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-b/disks/pvc-a302e2eb-b692-4ccc-bc2b-01a89d474bce
+    target: snap-homechef-mongo-2
+    size: 20Gi
+    storageClass: economy-rwo-retain
+    copyJob: snap-homechef-mongo-2-verify
+    copyJobs:
+    - snap-homechef-mongo-2-verify
+    verifyUser: 1001
+    verifyGroup: 1001
+    replacement:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: mongod-data-homechef-mongodb-rs0-2
+        namespace: homechef
+        labels:
+          app.kubernetes.io/component: mongod
+          app.kubernetes.io/instance: homechef-mongodb
+          app.kubernetes.io/managed-by: percona-server-mongodb-operator
+          app.kubernetes.io/name: percona-server-mongodb
+          app.kubernetes.io/part-of: percona-server-mongodb
+          app.kubernetes.io/replset: rs0
+          istio.io/use-waypoint: none
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 20Gi
+        storageClassName: economy-rwo-retain
+        volumeMode: Filesystem
+    snapshot: eco-db-a302e2eb-b692-4ccc-bc2b-01a89d474bce-20261026
+    snapshotSourceDiskId: '2831994978657920908'
+    snapshotStatus: READY
