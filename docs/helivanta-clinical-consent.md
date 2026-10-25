@@ -99,3 +99,21 @@ Run Helm lint on both charts with the feature enabled and use strict native
 Kubernetes schema validation on rendered output. The local `kubeconform` check
 skips unavailable Istio/ExternalSecret schemas; rendered policy assertions and
 actual runtime enforcement verification remain separate evidence.
+
+## Guardian declaration rollout gate
+
+`clinicalConsent.proxyCaptureEnabled` renders the explicit
+`PATIENTMASTER_PROXY_CLINICAL_CAPTURE_ENABLED` writer switch. It defaults false
+and cannot be enabled without the workload-authenticated live claim verifier.
+This chart change does not activate it in production. Deploy the reader-compatible
+application from helivanta#1341 to every API owner/reader before activation, verify
+image revisions and readiness, then enable through a separate GitOps change.
+
+Schema-v2 proxy receipts are incompatible with self-v1-only readers. After proxy
+capture, disable writes for recovery but retain a compatible reader and additive
+schema/history. Do not roll back to an older reader or remove retained receipts.
+Approved parental/appointed-guardian notice wording and independent recipient
+review remain hospital controls; no real wording or policy is approved here.
+Live QA must use the isolated synthetic tenant, withdraw/revoke test links and
+restore any temporary reviewer privileges. Registry identity approval, signed
+declarations and recipient consent checks do not release clinical records.

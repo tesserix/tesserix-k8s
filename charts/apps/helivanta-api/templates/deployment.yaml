@@ -1,3 +1,6 @@
+{{- if and .Values.clinicalConsent.proxyCaptureEnabled (not .Values.clinicalConsent.enabled) }}
+{{- fail "proxy clinical capture requires clinicalConsent.enabled" }}
+{{- end }}
 {{- if and .Values.documents.acceptUploads (not .Values.documents.enabled) }}
 {{- fail "upload acceptance requires document processing" }}
 {{- end }}
@@ -143,6 +146,8 @@ spec:
             - name: OPENBAO_TOKEN_PATH
               value: /var/run/secrets/openbao/token
             {{- end }}
+            - name: PATIENTMASTER_PROXY_CLINICAL_CAPTURE_ENABLED
+              value: {{ .Values.clinicalConsent.proxyCaptureEnabled | quote }}
             {{- if .Values.clinicalConsent.enabled }}
             - name: MEDICONNECT_CLAIM_VERIFICATION_ENABLED
               value: "true"
