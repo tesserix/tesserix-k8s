@@ -5,6 +5,26 @@ from test_homechef_park import render
 @pytest.mark.parametrize(
     "chart",
     [
+        "guardix",
+        "fanzone",
+        "stockpilot",
+        "postsocial",
+        "horoscope",
+        "gameverse",
+        "homechef-temporal",
+    ],
+)
+def test_other_product_database_defaults_provision_standard_storage(chart):
+    cluster = next(
+        d for d in render(f"charts/apps/{chart}-postgres") if d["kind"] == "Cluster"
+    )
+    assert cluster["spec"]["storage"]["storageClass"] == "economy-rwo-retain"
+    assert cluster["spec"]["walStorage"]["storageClass"] == "economy-rwo-retain"
+
+
+@pytest.mark.parametrize(
+    "chart",
+    [
         "planning-poker",
         "helivanta",
         "devai",
