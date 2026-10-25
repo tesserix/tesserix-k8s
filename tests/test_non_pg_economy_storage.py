@@ -93,4 +93,5 @@ def test_growthbook_preserves_inline_configuration_during_migration():
     values = yaml.safe_load(helm["values"])
     assert values["resources"]["limits"]["memory"] == "2Gi"
     assert values["mongodb"]["persistence"]["storageClassName"] == "economy-rwo-retain"
-    assert values["persistence"]["storageClassName"] == "standard-rwo-retain"
+    assert values["persistence"]["storageClassName"] == "economy-rwo"
+    assert "Replace=true" not in app["spec"]["syncPolicy"]["syncOptions"]
