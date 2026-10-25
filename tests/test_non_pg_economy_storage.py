@@ -159,3 +159,21 @@ def test_openpanel_migration_stops_database_writers_and_clients(phase):
         "redis",
     ]:
         assert workloads[component]["spec"]["replicas"] == (0 if phase else 1)
+
+
+def test_openpanel_static_claims_preserve_verified_postgres_and_redis_bindings():
+    docs = render(
+        "charts/thirdparty/openpanel",
+        "values-prod.yaml",
+        overrides=(
+            "postgresql.persistence.volumeName=postgres-verified",
+            "redis.persistence.volumeName=redis-verified",
+        ),
+    )
+    claims = {
+        d["metadata"]["name"].rsplit("-", 1)[-1]: d
+        for d in docs
+        if d["kind"] == "PersistentVolumeClaim"
+    }
+    assert claims["postgresql"]["spec"]["volumeName"] == "postgres-verified"
+    assert claims["redis"]["spec"]["volumeName"] == "redis-verified"
