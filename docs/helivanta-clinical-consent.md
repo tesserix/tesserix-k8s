@@ -33,6 +33,23 @@ is denied. ESO and all other Kubernetes auth roles do not receive this policy.
 The raw string parameter matches the application request and the actual OpenBao
 ACL behavior exercised in the application integration tests.
 
+## Activation evidence and remaining live check
+
+Application `dff023ce383f3f478214e13a34fdec8e60b68d18` is deployed through Kargo
+promotion `prod.01m5sfrfytv2kmscr5f5ymsahy.54f6b9a`. API, Global API and shell
+independent rollout checks passed with two updated/ready replicas each.
+`0007_mediconnect` and `0008_patientmaster` were read back from PostgreSQL;
+all four new consent/recipient/decision/incident tables force RLS and the three
+scale-related exact/approved indexes exist. The workload-identity Application and
+OpenBao bootstrap are Healthy/Synced/Succeeded. These are prerequisites, not an
+authenticated consent capture or record-release result.
+
+Production values now enable both sides of the clinical-sharing workload link
+with the re-observed control-plane address. TokenReview egress selects only API
+component pods, excluding the migration Job. Kargo retains ownership of image
+parameters. Verify the actual rollout and genuine authenticated isolated-tenant
+journey after this activation; do not infer either from this document.
+
 ## Rollout sequence and remaining gates
 
 1. Complete application PR CI and merge. Promote the corresponding reviewed image

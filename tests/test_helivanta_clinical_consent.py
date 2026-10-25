@@ -328,3 +328,50 @@ def test_tokenreview_delivery_uses_platform_project_without_broadening_product_a
         (ROOT / "argocd/prod/apps/global/kustomization.yaml").read_text()
     )
     assert "helivanta-workload-identity.yaml" in kustomization["resources"]
+
+
+def test_production_activation_pairs_both_boundaries_and_isolates_review_egress():
+    import ipaddress
+    import tempfile
+
+    deployed = {}
+    for chart in ["helivanta-api", "helivanta-global-api"]:
+        application = yaml.safe_load(
+            (ROOT / f"argocd/prod/apps/helivanta/{chart}.yaml").read_text()
+        )
+        settings = application["spec"]["source"]["helm"]["valuesObject"]
+        assert settings["clinicalConsent"]["enabled"] is True
+        deployed[chart] = settings
+    network = ipaddress.ip_network(
+        deployed["helivanta-api"]["clinicalConsent"]["kubernetesApiCIDR"]
+    )
+    assert network.version == 4 and network.prefixlen == 32
+    with tempfile.TemporaryDirectory() as directory:
+        values = Path(directory) / "values.yaml"
+        values.write_text(yaml.safe_dump(deployed["helivanta-api"]))
+        rendered = subprocess.check_output(
+            [
+                "helm",
+                "template",
+                "helivanta-api",
+                str(ROOT / "charts/apps/helivanta-api"),
+                "--namespace",
+                "helivanta",
+                "-f",
+                str(values),
+            ],
+            text=True,
+        )
+        rows = [row for row in yaml.load_all(rendered, Loader=StrictLoader) if row]
+    policy = named(rows, "NetworkPolicy", "helivanta-api-claim-review")
+    assert (
+        policy["spec"]["podSelector"]["matchLabels"]["app.kubernetes.io/component"]
+        == "api"
+    )
+    migration = next(row for row in rows if row["kind"] == "Job")
+    assert (
+        migration["spec"]["template"]["metadata"]["labels"][
+            "app.kubernetes.io/component"
+        ]
+        == "migrate"
+    )
