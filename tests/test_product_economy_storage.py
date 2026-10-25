@@ -222,7 +222,6 @@ def test_actual_argocd_overlays_keep_product_identity_and_replication(tmp_path):
     import subprocess
 
     import yaml
-
     from test_homechef_park import ROOT
 
     products = {
