@@ -149,6 +149,15 @@ spec:
             - name: DOCUMENT_RELEASED_BUCKET
               value: {{ required "documents.releasedBucket is required" .Values.documents.releasedBucket | quote }}
             {{- end }}
+            - name: PRIVACY_DEADLINES_ENABLED
+              value: {{ .Values.privacyDeadlines.enabled | quote }}
+            {{- if .Values.privacyDeadlines.enabled }}
+            {{- range $other := list .Values.documents .Values.emergencyDispatch }}
+            {{- if and $other.enabled (or (ne $other.temporalAddress $.Values.privacyDeadlines.temporalAddress) (ne $other.temporalNamespace $.Values.privacyDeadlines.temporalNamespace)) }}
+            {{- fail "API privacy and other enabled workflows must use the same Temporal namespace/address" }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             - name: EMERGENCY_WORKFLOWS_ENABLED
               value: {{ .Values.emergencyDispatch.enabled | quote }}
             - name: EMERGENCY_DISPATCH_ENABLED
@@ -168,6 +177,11 @@ spec:
               value: {{ required "documents.temporalAddress required" .Values.documents.temporalAddress | quote }}
             - name: TEMPORAL_NAMESPACE
               value: {{ required "documents.temporalNamespace required" .Values.documents.temporalNamespace | quote }}
+            {{- else if .Values.privacyDeadlines.enabled }}
+            - name: TEMPORAL_ADDRESS
+              value: {{ required "privacyDeadlines.temporalAddress required" .Values.privacyDeadlines.temporalAddress | quote }}
+            - name: TEMPORAL_NAMESPACE
+              value: {{ required "privacyDeadlines.temporalNamespace required" .Values.privacyDeadlines.temporalNamespace | quote }}
             {{- end }}
             - name: OPENFGA_URL
               value: {{ .Values.openfga.url | quote }}

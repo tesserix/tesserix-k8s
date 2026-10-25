@@ -1,0 +1,116 @@
+{{- if .Values.privacyDeadlines.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: helivanta-privacy-worker
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    secret.reloader.stakater.com/reload: {{ .Values.privacyDeadlines.secretName | quote }}
+  labels:
+    app.kubernetes.io/name: helivanta-privacy-worker
+    app.kubernetes.io/part-of: helivanta
+spec:
+  replicas: {{ .Values.privacyDeadlines.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helivanta-privacy-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 1, maxSurge: 0}
+  template:
+    metadata:
+      labels:
+        sidecar.istio.io/inject: "true"
+        app.kubernetes.io/name: helivanta-privacy-worker
+        app.kubernetes.io/part-of: helivanta
+      annotations:
+        {{- if .Values.meshRegistryRevision }}
+        tesserix.app/registry-mirror-revision: {{ .Values.meshRegistryRevision | quote }}
+        {{- end }}
+        proxy.istio.io/config: '{"holdApplicationUntilProxyStarts":true}'
+        sidecar.istio.io/proxyCPU: "0"
+        sidecar.istio.io/proxyCPULimit: "0"
+        sidecar.istio.io/proxyMemory: 64Mi
+        sidecar.istio.io/proxyMemoryLimit: 128Mi
+    spec:
+      serviceAccountName: helivanta-privacy-worker
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        {{- toYaml .Values.imagePullSecrets | nindent 8 }}
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: helivanta-privacy-worker
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [/app/privacy-worker]
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - {name: HELIVANTA_ENV, value: production}
+            - {name: PORT, value: "8080"}
+            - {name: LOG_LEVEL, value: info}
+            - name: WORKER_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.privacyDeadlines.secretName }}
+                  key: username
+            - name: WORKER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.privacyDeadlines.secretName }}
+                  key: password
+            - name: PRIVACY_WORKER_DATABASE_URL
+              value: "postgres://$(WORKER_DB_USER):$(WORKER_DB_PASSWORD)@{{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}?sslmode=verify-full&sslrootcert=/etc/postgres-ca/ca.crt"
+            - name: TEMPORAL_ADDRESS
+              value: {{ .Values.privacyDeadlines.temporalAddress | quote }}
+            - name: TEMPORAL_NAMESPACE
+              value: {{ .Values.privacyDeadlines.temporalNamespace | quote }}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            timeoutSeconds: 6
+            periodSeconds: 10
+            failureThreshold: 2
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            timeoutSeconds: 3
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.privacyDeadlines.resources | nindent 12 }}
+          volumeMounts:
+            - {name: database-ca, mountPath: /etc/postgres-ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: database-ca
+          secret:
+            secretName: {{ .Values.privacyDeadlines.databaseCASecret }}
+            items: [{key: ca.crt, path: ca.crt}]
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: helivanta-privacy-worker
+  namespace: {{ .Release.Namespace }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helivanta-privacy-worker
+{{- end }}
