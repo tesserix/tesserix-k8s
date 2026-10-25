@@ -102,3 +102,28 @@ normal scheduling can use the new pool. Review hourly CPU/RAM billing credits
 after the export catches up. Recreating `models-e2` requires restoring its
 captured configuration and approval; prefer repairing the general pool rather
 than restoring model isolation.
+
+## Applied verification, 2026-10-25
+
+PR #1533 merged as `98db0ad00d28572897f722f2dd77ecb45dab6126`.
+The saved scoped plan applied successfully: four existing commitments imported,
+one pool added, optimized autoscaling updated, one empty pool destroyed.
+Read-only checks confirmed seven Ready nodes and seven running E2 standard-8
+VMs in Mumbai. `general-e2` is RUNNING with no taints, scheduling enabled,
+110-pod capacity and a one-node maximum. `optimized-v2` has a six-node maximum.
+`models-e2` and the verified orphan VM are absent. The subsequent scoped
+Terraform plan returned no changes.
+
+Validation passed: 18 Terraform tests (including rejection of an uncovered
+eighth production node), 53 upgrade-helper tests, preflight and upgrade tests,
+Terraform validate/fmt, ShellCheck, Helm lint and enabled workload rendering.
+The new scheduling regression failed against the prior model-only configuration
+and passed after the change. A follow-up bumps the changed chart to 0.1.1 as
+required by repository chart CI.
+
+Atlantis automatic planning crashed with a Terraform nil-pointer panic across
+all 17 stacks. The separately reviewed local scoped plan succeeded; this does
+not claim the broader Atlantis failure is repaired. GitHub's Terraform
+validation and GKE upgrade checks passed. The original chart lint required the
+version bump recorded above. Invoice confirmation remains subject to export lag;
+current CPU/RAM coverage is verified from live quantities and commitments.
