@@ -33,7 +33,7 @@ def entries(root):
     }
 
 
-def verify(source, target, metadata=True):
+def verify(source, target, metadata=True, mongo_diagnostics=False):
     left, right = entries(source), entries(target)
     left[Path(".")], right[Path(".")] = source, target
     if left.keys() != right.keys():
@@ -54,6 +54,16 @@ def verify(source, target, metadata=True):
             if os.readlink(a) != os.readlink(b):
                 raise RuntimeError("symlink mismatch")
         elif stat.S_ISREG(sa.st_mode):
+            if (
+                mongo_diagnostics
+                and len(name.parts) == 3
+                and name.parts[:2] == (".mongodb", "mongosh")
+                and name.name.endswith("_log")
+            ):
+                if (sa.st_size, sa.st_mtime_ns) != (sb.st_size, sb.st_mtime_ns):
+                    raise RuntimeError("mongosh diagnostic metadata mismatch")
+                print(f"Metadata-only mongosh diagnostic: {name}", flush=True)
+                continue
             with a.open("rb") as x, b.open("rb") as y:
                 if (
                     hashlib.file_digest(x, "sha256").digest()
@@ -141,7 +151,12 @@ def main(source=Path("/source"), target=Path("/target")):
             time.sleep(10)
     verify_only = os.environ.get("VERIFY_ONLY") == "true"
     count = (
-        verify(source, target)
+        verify(
+            source,
+            target,
+            mongo_diagnostics=os.environ.get("MONGO_DIAGNOSTIC_METADATA_ONLY")
+            == "true",
+        )
         if verify_only
         else copy_or_repair(source, target, os.environ.get("ALLOW_RECOPY") == "true")
     )
