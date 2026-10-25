@@ -7,7 +7,10 @@ metadata:
     {{- include "mark8ly-mongodb.labels" . | nindent 4 }}
 spec:
   serviceName: {{ include "mark8ly-mongodb.fullname" . }}
-  replicas: 1
+  replicas: {{ if .Values.storageMigrationPhase }}0{{ else }}1{{ end }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   selector:
     matchLabels:
       {{- include "mark8ly-mongodb.selectorLabels" . | nindent 6 }}

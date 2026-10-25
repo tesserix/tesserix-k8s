@@ -7,7 +7,10 @@ metadata:
     {{- include "support-platform-mongo.labels" . | nindent 4 }}
 spec:
   serviceName: {{ .Values.name }}
-  replicas: 1
+  replicas: {{ if .Values.storageMigrationPhase }}0{{ else }}1{{ end }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   selector:
     matchLabels:
       {{- include "support-platform-mongo.selectorLabels" . | nindent 6 }}
