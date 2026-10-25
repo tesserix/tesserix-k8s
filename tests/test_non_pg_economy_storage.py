@@ -136,3 +136,26 @@ def test_product_nats_migration_stops_and_retains_without_affecting_normal_mode(
     assert sts["metadata"].get("annotations", {}).get(
         "argocd.argoproj.io/sync-options"
     ) == ("Force=true,Replace=true" if phase == "reconcile" else None)
+
+
+@pytest.mark.parametrize("phase", ["", "quiesce", "copy"])
+def test_openpanel_migration_stops_database_writers_and_clients(phase):
+    docs = render(
+        "charts/thirdparty/openpanel",
+        "values-prod.yaml",
+        overrides=(f"storageMigrationPhase={phase}",),
+    )
+    workloads = {
+        d["metadata"]["name"].rsplit("-", 1)[-1]: d
+        for d in docs
+        if d["kind"] == "Deployment"
+    }
+    for component in [
+        "api",
+        "worker",
+        "dashboard",
+        "postgresql",
+        "clickhouse",
+        "redis",
+    ]:
+        assert workloads[component]["spec"]["replicas"] == (0 if phase else 1)
