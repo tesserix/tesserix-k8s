@@ -967,6 +967,21 @@ bootstrap:
         path "transit/decrypt/helivanta-emergency-*" { capabilities = ["update"] }
         path "transit/hmac/helivanta-emergency-*" { capabilities = ["update"] }
 
+    - name: helivanta-clinical-consent
+      hcl: |
+        path "transit/keys/helivanta-consent-*" {
+          capabilities = ["create", "update"]
+          required_parameters = ["type", "key_size", "exportable", "allow_plaintext_backup"]
+          allowed_parameters = {
+            "type" = ["hmac"]
+            "key_size" = ["32"]
+            "exportable" = [false]
+            "allow_plaintext_backup" = [false]
+          }
+        }
+        path "transit/keys/+/*" { capabilities = ["deny"] }
+        path "transit/hmac/helivanta-consent-*" { capabilities = ["update"] }
+
   kubernetesRoles:
     - name: seed-civiclens-ai-production
       serviceAccounts: ["civiclens-ai-secret-seed"]
@@ -1013,7 +1028,7 @@ bootstrap:
     - name: helivanta-api-transit
       serviceAccounts: [helivanta-api]
       namespaces: [helivanta]
-      policies: [helivanta-api-transit]
+      policies: [helivanta-api-transit, helivanta-clinical-consent]
       ttl: 1h
     - name: seed-helivanta-privacy-worker-production
       serviceAccounts: [helivanta-privacy-secret-seed]

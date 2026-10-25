@@ -39,7 +39,6 @@ spec:
         {{- if include "helivanta-api.meshed" . }}
         sidecar.istio.io/inject: "true"
         {{- end }}
-        {{- include "helivanta-api.selectorLabels" . | nindent 8 }}
         {{- include "helivanta-api.labels" . | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
@@ -47,6 +46,9 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "helivanta-api.serviceAccountName" . }}
+      {{- if .Values.clinicalConsent.enabled }}
+      automountServiceAccountToken: false
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       # Long enough for the process to stop being ready, let one readiness
@@ -140,6 +142,18 @@ spec:
               value: {{ required "openbao.authRole is required" .Values.openbao.authRole | quote }}
             - name: OPENBAO_TOKEN_PATH
               value: /var/run/secrets/openbao/token
+            {{- end }}
+            {{- if .Values.clinicalConsent.enabled }}
+            - name: MEDICONNECT_CLAIM_VERIFICATION_ENABLED
+              value: "true"
+            - name: MEDICONNECT_CLAIM_CALLER
+              value: "system:serviceaccount:{{ .Release.Namespace }}:{{ include "helivanta-api.serviceAccountName" . }}"
+            - name: MEDICONNECT_CLAIM_ORIGIN
+              value: "http://{{ include "helivanta-api.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}"
+            - name: MEDICONNECT_CLAIM_TRANSPORT
+              value: istio-mtls
+            - name: MEDICONNECT_CLAIM_TOKEN_FILE
+              value: /var/run/secrets/mediconnect-claim/token
             {{- end }}
             - name: NATS_URL
               value: {{ .Values.nats.url | quote }}
@@ -266,7 +280,43 @@ spec:
               mountPath: /var/run/secrets/openbao
               readOnly: true
             {{- end }}
+            {{- if .Values.clinicalConsent.enabled }}
+            - name: mediconnect-claim
+              mountPath: /var/run/secrets/mediconnect-claim
+              readOnly: true
+            - name: kubernetes-api
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+            {{- end }}
       volumes:
+        {{- if .Values.clinicalConsent.enabled }}
+        - name: mediconnect-claim
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  audience: helivanta-mediconnect-claim
+                  expirationSeconds: 600
+                  path: token
+        - name: kubernetes-api
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  expirationSeconds: 600
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        apiVersion: v1
+                        fieldPath: metadata.namespace
+        {{- end }}
         - name: tmp
           emptyDir: {}
         {{- /* The SA disables automount; this short-lived token is only for the Transit login. */}}

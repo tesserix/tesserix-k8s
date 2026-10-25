@@ -1,3 +1,6 @@
+{{- if and .Values.clinicalConsent.enabled (not .Values.enforceOwnerBoundary) }}
+{{- fail "clinicalConsent requires enforceOwnerBoundary" }}
+{{- end }}
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication
 metadata:
@@ -80,6 +83,19 @@ spec:
       to:
         - operation:
             ports: ["8080"]
+            {{- if .Values.clinicalConsent.enabled }}
+            notPaths: ["/internal/v1/mediconnect/current-claim"]
+            {{- end }}
+    {{- if .Values.clinicalConsent.enabled }}
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/{{ .Release.Namespace }}/sa/helivanta-api
+      to:
+        - operation:
+            ports: ["8080"]
+            paths: ["/internal/v1/mediconnect/current-claim"]
+    {{- end }}
 {{- end }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -122,3 +138,27 @@ spec:
       ports:
         - protocol: TCP
           port: 15012
+
+{{- if .Values.clinicalConsent.enabled }}
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: helivanta-claim-owner
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: helivanta-api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/{{ .Release.Namespace }}/sa/helivanta-api
+      to:
+        - operation:
+            ports: ["8080"]
+            methods: ["POST"]
+            paths: ["/internal/v1/mediconnect/current-claim"]
+{{- end }}

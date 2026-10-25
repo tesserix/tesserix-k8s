@@ -69,7 +69,7 @@ def test_transit_role_is_bound_to_the_api_alone_and_separate_from_eso():
     assert role == {
         "bound_service_account_names": ["helivanta-api"],
         "bound_service_account_namespaces": ["helivanta"],
-        "token_policies": ["helivanta-api-transit"],
+        "token_policies": ["helivanta-api-transit", "helivanta-clinical-consent"],
         "token_ttl": "1h",
     }
     for name, body in config.items():
