@@ -177,3 +177,12 @@ def test_openpanel_static_claims_preserve_verified_postgres_and_redis_bindings()
     }
     assert claims["postgresql"]["spec"]["volumeName"] == "postgres-verified"
     assert claims["redis"]["spec"]["volumeName"] == "redis-verified"
+
+
+def test_new_product_nats_file_store_defaults_to_standard_disks():
+    docs = render("charts/apps/nats")
+    sts = next(d for d in docs if d["kind"] == "StatefulSet")
+    assert (
+        sts["spec"]["volumeClaimTemplates"][0]["spec"]["storageClassName"]
+        == "economy-rwo-retain"
+    )
