@@ -32,7 +32,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
-{{/* The API joins the mesh only once it accepts uploads; everything needing its mesh identity keys off this. */}}
+{{/* Uploads and clinical sharing require the API mesh identity. */}}
 {{- define "helivanta-api.meshed" -}}
-{{- if .Values.documents.acceptUploads }}true{{ end }}
+{{- if or .Values.documents.acceptUploads .Values.clinicalConsent.enabled }}true{{ end }}
 {{- end }}

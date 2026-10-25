@@ -1,0 +1,29 @@
+{{- if .Values.clinicalConsent.enabled }}
+{{- $octet := "(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])" }}
+{{- if not (regexMatch (printf "^(%s\\.){3}%s/32$" $octet $octet) (.Values.clinicalConsent.kubernetesApiCIDR | default "")) }}
+{{- fail "clinicalConsent.kubernetesApiCIDR must be an explicit IPv4 /32" }}
+{{- end }}
+{{- if ne (include "helivanta-api.serviceAccountName" .) "helivanta-api" }}
+{{- fail "clinicalConsent requires the helivanta-api owner service account" }}
+{{- end }}
+{{- if ne (include "helivanta-api.name" .) "helivanta-api" }}
+{{- fail "clinicalConsent requires the canonical helivanta-api workload selector" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: helivanta-api-claim-review
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "helivanta-api.selectorLabels" . | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.clinicalConsent.kubernetesApiCIDR | quote }}
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}
