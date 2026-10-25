@@ -5,8 +5,8 @@ metadata:
   name: {{ .Values.clusterName }}
   namespace: {{ .Values.namespace }}
   annotations:
-    cnpg.io/reconciliationLoop: "enabled"
-    cnpg.io/hibernation: {{ ternary "on" "off" (.Values.maintenance | default false) | quote }}
+    cnpg.io/reconciliationLoop: {{ if eq .Values.storageMigrationPhase "copy" }}"disabled"{{ else }}"enabled"{{ end }}
+    cnpg.io/hibernation: {{ if .Values.storageMigrationPhase }}"on"{{ else }}{{ ternary "on" "off" (.Values.maintenance | default false) | quote }}{{ end }}
   labels:
     app.kubernetes.io/part-of: mark8ly
     app.kubernetes.io/component: database

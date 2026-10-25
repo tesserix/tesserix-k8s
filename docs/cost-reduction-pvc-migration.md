@@ -1,5 +1,11 @@
 # PVC Migration Runbook: pd-balanced → pd-standard
 
+> On 2026-10-26 the owner explicitly authorized standard disks for product
+> databases before production, including Helivanta, with downtime approved.
+> Follow [the product database migration](product-economy-storage-migration.md)
+> for those databases. The exclusions and imperative examples below describe
+> the older cache/upload-only scope, not authorization for a new live action.
+
 ## Why
 8 PVCs hold caches / model files / uploads that don't need pd-balanced IOPS.
 Migrating them to pd-standard saves ~10–15 AUD/mo and removes future growth.

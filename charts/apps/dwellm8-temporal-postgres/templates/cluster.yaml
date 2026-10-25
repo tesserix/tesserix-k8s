@@ -7,6 +7,11 @@ metadata:
   labels:
     app.kubernetes.io/part-of: home-chef-app
     app.kubernetes.io/component: database
+{{- if .Values.storageMigrationPhase }}
+  annotations:
+    cnpg.io/hibernation: "on"
+    cnpg.io/reconciliationLoop: {{ ternary "disabled" "enabled" (eq .Values.storageMigrationPhase "copy") | quote }}
+{{- end }}
 spec:
   instances: {{ .Values.instances }}
   imageName: {{ .Values.imageName }}
