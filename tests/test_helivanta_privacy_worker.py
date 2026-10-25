@@ -249,3 +249,36 @@ def test_privacy_initializer_preserves_existing_secret_and_scopes_new_secret(
     assert len(writes) == 1
     assert writes[0]["options"] == {"cas": 0}
     assert len(writes[0]["data"]["password"]) == 64
+
+
+def test_privacy_pods_use_admission_cpu_defaults_and_version_job_template():
+    worker = resource(
+        render("charts/apps/helivanta-api", "privacyDeadlines.enabled=true"),
+        "Deployment",
+        "helivanta-privacy-worker",
+    )
+    seed_rows = render(
+        "charts/apps/helivanta-postgres", "privacyWorker.seed.enabled=true"
+    )
+    seed = next(
+        row
+        for row in seed_rows
+        if row["kind"] == "Job"
+        and row["metadata"]["name"].startswith("helivanta-privacy-secret-seed-")
+    )
+    for workload in [worker, seed]:
+        annotations = workload["spec"]["template"]["metadata"]["annotations"]
+        assert "sidecar.istio.io/proxyCPU" not in annotations
+        assert "sidecar.istio.io/proxyCPULimit" not in annotations
+    updated = render(
+        "charts/apps/helivanta-postgres",
+        "privacyWorker.seed.enabled=true",
+        "privacyWorker.seed.podTemplateRevision=next",
+    )
+    next_job = next(
+        row
+        for row in updated
+        if row["kind"] == "Job"
+        and row["metadata"]["name"].startswith("helivanta-privacy-secret-seed-")
+    )
+    assert next_job["metadata"]["name"] != seed["metadata"]["name"]
