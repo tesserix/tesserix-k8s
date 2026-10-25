@@ -58,3 +58,27 @@ def test_mongo_owner_automation_is_paused_in_git_during_claim_replacement(file):
         assert enabled is False
     else:
         assert enabled is not False
+
+
+@pytest.mark.parametrize(
+    "chart", ["charts/apps/mark8ly-mongodb", "charts/apps/support-platform-mongo"]
+)
+@pytest.mark.parametrize("phase", ["", "quiesce", "copy", "reconcile"])
+def test_mongo_force_replacement_only_during_stopped_reconcile(chart, phase):
+    sts = next(
+        d
+        for d in render(chart, overrides=(f"storageMigrationPhase={phase}",))
+        if d["kind"] == "StatefulSet"
+    )
+    flags = (
+        sts["metadata"].get("annotations", {}).get("argocd.argoproj.io/sync-options")
+    )
+    if phase == "reconcile":
+        assert flags == "Force=true,Replace=true"
+        assert sts["spec"]["replicas"] == 0
+        assert (
+            sts["spec"]["persistentVolumeClaimRetentionPolicy"]["whenDeleted"]
+            == "Retain"
+        )
+    else:
+        assert flags is None

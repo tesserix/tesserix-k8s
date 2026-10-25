@@ -3,6 +3,10 @@ kind: StatefulSet
 metadata:
   name: {{ include "mark8ly-mongodb.fullname" . }}
   namespace: {{ .Release.Namespace }}
+  {{- if eq .Values.storageMigrationPhase "reconcile" }}
+  annotations:
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
+  {{- end }}
   labels:
     {{- include "mark8ly-mongodb.labels" . | nindent 4 }}
 spec:
