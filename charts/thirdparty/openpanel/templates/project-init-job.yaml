@@ -370,9 +370,12 @@ spec:
                 kubectl create secret generic "$SECRET_NAME" \
                   --namespace "$ns" \
                   --from-file="$secret_dir" \
-                  --labels="app.kubernetes.io/managed-by=openpanel-init,app.kubernetes.io/part-of=tesseract-hub" \
                   --dry-run=client \
-                  --output=yaml | kubectl apply -f - >/dev/null
+                  --output=yaml |
+                  kubectl label --local -f - \
+                    app.kubernetes.io/managed-by=openpanel-init \
+                    app.kubernetes.io/part-of=tesseract-hub \
+                    --overwrite --output=yaml | kubectl apply -f - >/dev/null
                 echo "  $ns/$SECRET_NAME reconciled"
               }
 
