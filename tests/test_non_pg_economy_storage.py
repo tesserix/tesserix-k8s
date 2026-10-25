@@ -115,3 +115,24 @@ def test_growthbook_retains_explicit_existing_pvc_bindings():
     assert (
         claims["park-test-growthbook-mongodb"]["spec"]["volumeName"] == "mongo-verified"
     )
+
+
+@pytest.mark.parametrize("product", ["helivanta", "dwellm8"])
+@pytest.mark.parametrize("phase", ["", "quiesce", "reconcile"])
+def test_product_nats_migration_stops_and_retains_without_affecting_normal_mode(
+    product, phase
+):
+    docs = render(
+        "charts/apps/nats",
+        f"values-{product}.yaml",
+        overrides=(f"storageMigrationPhase={phase}",),
+    )
+    sts = next(d for d in docs if d["kind"] == "StatefulSet")
+    assert sts["spec"]["replicas"] == (0 if phase else 1)
+    assert sts["spec"]["persistentVolumeClaimRetentionPolicy"] == {
+        "whenDeleted": "Retain",
+        "whenScaled": "Retain",
+    }
+    assert sts["metadata"].get("annotations", {}).get(
+        "argocd.argoproj.io/sync-options"
+    ) == ("Force=true,Replace=true" if phase == "reconcile" else None)

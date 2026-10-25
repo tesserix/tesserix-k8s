@@ -36,13 +36,20 @@ data:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
+  {{- if eq .Values.storageMigrationPhase "reconcile" }}
+  annotations:
+    argocd.argoproj.io/sync-options: Force=true,Replace=true
+  {{- end }}
   name: {{ include "nats.fullname" . }}
   namespace: {{ .Values.namespace | default .Release.Namespace }}
   labels:
     {{- include "nats.labels" . | nindent 4 }}
 spec:
   serviceName: {{ include "nats.fullname" . }}
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ if .Values.storageMigrationPhase }}0{{ else }}{{ .Values.replicaCount }}{{ end }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   selector:
     matchLabels:
       {{- include "nats.selectorLabels" . | nindent 6 }}
