@@ -446,3 +446,36 @@ def test_snapshot_verification_runs_on_read_only_volumes_without_repair_or_marke
     finally:
         source.chmod(0o750)
         target.chmod(0o750)
+
+
+def test_mongo_diagnostic_metadata_exception_never_skips_database_files(
+    tmp_path, monkeypatch, capsys
+):
+    source, target = tmp_path / "source", tmp_path / "target"
+    for root in (source, target):
+        (root / ".mongodb/mongosh").mkdir(parents=True)
+        (root / ".mongodb/mongosh/session_log").write_text("diagnostic")
+        (root / "WiredTiger.wt").write_text("database")
+    import shutil
+
+    shutil.copystat(
+        source / ".mongodb/mongosh/session_log", target / ".mongodb/mongosh/session_log"
+    )
+    original = Path.open
+
+    def deny_diagnostic(path, *args, **kwargs):
+        if path.name == "session_log":
+            raise PermissionError("other user")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", deny_diagnostic)
+    with pytest.raises(PermissionError):
+        module().verify(source, target)
+    assert module().verify(source, target, mongo_diagnostics=True) == 1
+    assert (
+        "Metadata-only mongosh diagnostic: .mongodb/mongosh/session_log"
+        in capsys.readouterr().out
+    )
+    (target / "WiredTiger.wt").write_text("corrupt!")
+    with pytest.raises(RuntimeError, match="content mismatch"):
+        module().verify(source, target, mongo_diagnostics=True)
