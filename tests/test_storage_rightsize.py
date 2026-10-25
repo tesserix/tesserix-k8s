@@ -255,6 +255,64 @@ def test_binding_does_not_mutate_when_cluster_recreation_failed(monkeypatch):
     assert calls == ["GET"]
 
 
+def test_binding_refuses_unfrozen_cluster_before_any_mutation(monkeypatch):
+    import json
+
+    bind = module(SCRIPT.with_name("bind.py"))
+    plan = {
+        "namespace": "db",
+        "name": "data",
+        "target": "temporary",
+        "cluster": "db",
+        "sourceUID": "source",
+        "targetUID": "target",
+        "sourcePV": "old",
+        "targetPV": "new",
+        "sourceDisk": "old-disk",
+        "targetDisk": "new-disk",
+        "snapshot": "snapshot",
+        "snapshotStatus": "READY",
+        "copyVerified": True,
+        "copyJob": "verify",
+    }
+
+    def api(path, method="GET", body=None):
+        assert method == "GET", (
+            "mutation attempted before validating the cluster freeze"
+        )
+        if "/clusters/" in path:
+            return {
+                "metadata": {
+                    "annotations": {
+                        "cnpg.io/hibernation": "on",
+                        "cnpg.io/reconciliationLoop": "enabled",
+                    }
+                }
+            }
+        if path.endswith("/data"):
+            return {"metadata": {"uid": "source"}, "spec": {"volumeName": "old"}}
+        if path.endswith("/temporary"):
+            return {"metadata": {"uid": "target"}, "spec": {"volumeName": "new"}}
+        if "/persistentvolumes/" in path:
+            source = path.endswith("/old")
+            return {
+                "spec": {
+                    "csi": {"volumeHandle": "old-disk" if source else "new-disk"},
+                    "claimRef": {"uid": "source" if source else "target"},
+                }
+            }
+        if "/jobs/" in path:
+            return {"status": {"succeeded": 1}}
+        if path.endswith("/pods"):
+            return {"items": []}
+        raise AssertionError(path)
+
+    monkeypatch.setenv("PLAN", json.dumps(plan))
+    monkeypatch.setattr(bind, "request", api)
+    with pytest.raises(RuntimeError, match="disabled"):
+        bind.main()
+
+
 def test_child_adoption_uses_metadata_only_and_refuses_other_owners(monkeypatch):
     import json
 
