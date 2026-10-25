@@ -102,3 +102,24 @@ Retain original PV, with UID/resourceVersion preconditions. It may remove a
 recorded prior empty target only if its UID matches, it is Pending, has no
 volume or snapshot source, and no active pod references it. Return to `complete`
 and prune temporary jobs and permissions after successful cleanup.
+
+## Non PostgreSQL writer quiescence
+
+For Mark8ly MongoDB, Support Platform MongoDB and GrowthBook MongoDB,
+`storageMigrationPhase` holds the database controller at zero replicas without
+removing its claims. StatefulSet claims explicitly retain data when scaled or
+deleted. Leave the original storage class unchanged during the initial pause.
+
+Disable the owning Application's automated sync in Git before claim replacement,
+then selectively sync the named database controller to zero. This maintenance
+sync deliberately does not run application seeding hooks against a stopped
+store. Verify the live automation flag, a terminal sync operation, no active
+pod references and detached source disks before cold snapshots. This prevents
+self-heal from recreating a static PVC while the binding job replaces it.
+
+StatefulSet volumeClaimTemplate storage classes are immutable. Reconcile a
+zero-replica retained controller to its new class only after exact standard
+bindings and offline verification are established. Restore the original sync
+policy and clear the migration phase for the full resume sync and its normal
+hooks. Verify writable database state, the application and recovery receipts
+before source reclamation. Previously parked HomeChef remains parked.
