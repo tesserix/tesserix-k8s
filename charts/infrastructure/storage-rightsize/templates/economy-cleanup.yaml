@@ -1,0 +1,67 @@
+{{- with .Values.economy }}
+{{- if eq .phase "cleanup" }}
+{{- range .volumes }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .target }}-cleanup
+  namespace: {{ .namespace }}
+data:
+  cleanup.py: |
+{{ $.Files.Get "files/cleanup.py" | indent 4 }}
+  bind.py: |
+{{ $.Files.Get "files/bind.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .target }}-cleanup
+  namespace: {{ .namespace }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1200
+  template:
+    metadata:
+      labels:
+        app: storage-rightsize
+      annotations:
+        sidecar.istio.io/inject: "false"
+        istio.io/dataplane-mode: none
+    spec:
+      serviceAccountName: storage-economy
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cleanup
+          image: {{ $.Values.image }}
+          command: [python, -B, -u, /scripts/cleanup.py]
+          env:
+            - name: PLAN
+              value: {{ . | toJson | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ .target }}-cleanup
+{{- end }}
+{{- end }}
+{{- end }}

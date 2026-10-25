@@ -1,5 +1,5 @@
 {{- with .Values.economy }}
-{{- if has .phase (list "copy" "cutover") }}
+{{- if has .phase (list "copy" "cutover" "cleanup") }}
 {{- $phase := .phase }}
 {{- $volumes := .volumes }}
 {{- $namespaces := dict }}
@@ -31,6 +31,23 @@ rules:
 {{- if eq .namespace $namespace }}
       - {{ .name }}
       - {{ .target }}
+{{- end }}
+{{- end }}
+{{- $emptyTargets := list }}
+{{- range $volumes }}
+{{- if and (eq .namespace $namespace) .previousEmptyTarget }}
+{{- $emptyTargets = append $emptyTargets .previousEmptyTarget }}
+{{- end }}
+{{- end }}
+{{- if and (eq $phase "cleanup") (gt (len $emptyTargets) 0) }}
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [get, delete]
+    resourceNames:
+{{- range $volumes }}
+{{- if and (eq .namespace $namespace) .previousEmptyTarget }}
+      - {{ .previousEmptyTarget }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- if eq $phase "cutover" }}
@@ -110,7 +127,8 @@ spec:
 {{- end }}
 {{- end }}
 {{- with .Values.economy }}
-{{- if eq .phase "cutover" }}
+{{- if has .phase (list "cutover" "cleanup") }}
+{{- $phase := .phase }}
 {{- $volumes := .volumes }}
 {{- $namespaces := dict }}
 {{- range .volumes }}
@@ -125,12 +143,14 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [persistentvolumes]
-    verbs: [get, patch]
+    verbs: [get, {{ if eq $phase "cleanup" }}delete{{ else }}patch{{ end }}]
     resourceNames:
 {{- range $volumes }}
 {{- if eq .namespace $namespace }}
       - {{ required "observed source PV is required" .sourcePV }}
+{{- if eq $phase "cutover" }}
       - {{ required "observed target PV is required" .targetPV }}
+{{- end }}
 {{- end }}
 {{- end }}
 ---
