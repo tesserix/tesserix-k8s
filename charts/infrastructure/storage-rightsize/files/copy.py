@@ -115,7 +115,7 @@ def copy_or_repair(source, target, recopy=False):
     return verify(source, target)
 
 
-def main():
+def main(source=Path("/source"), target=Path("/target")):
     namespace, claim = os.environ["NAMESPACE"], os.environ["SOURCE_CLAIM"]
     prefix = "/api/v1/namespaces/" + namespace
     source_claim = api(prefix + "/persistentvolumeclaims/" + claim)
@@ -139,19 +139,24 @@ def main():
             if attempt == 119:
                 raise
             time.sleep(10)
-    source, target = Path("/source"), Path("/target")
-    count = copy_or_repair(source, target, os.environ.get("ALLOW_RECOPY") == "true")
-    assert_quiescent(api(prefix + "/pods")["items"], claim, os.environ["POD_NAME"])
-    (target / ".rightsize-verified.json").write_text(
-        json.dumps(
-            {
-                "source_uid": source_claim["metadata"]["uid"],
-                "files": count,
-                "verified": True,
-            }
-        )
+    verify_only = os.environ.get("VERIFY_ONLY") == "true"
+    count = (
+        verify(source, target)
+        if verify_only
+        else copy_or_repair(source, target, os.environ.get("ALLOW_RECOPY") == "true")
     )
-    os.sync()
+    assert_quiescent(api(prefix + "/pods")["items"], claim, os.environ["POD_NAME"])
+    if not verify_only:
+        (target / ".rightsize-verified.json").write_text(
+            json.dumps(
+                {
+                    "source_uid": source_claim["metadata"]["uid"],
+                    "files": count,
+                    "verified": True,
+                }
+            )
+        )
+        os.sync()
     print(f"Verified {count} regular files with SHA-256; source preserved", flush=True)
 
 

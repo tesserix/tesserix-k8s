@@ -1,6 +1,36 @@
 {{- with .Values.economy }}
 {{- if has .phase (list "prepare" "copy") }}
 {{- range .volumes }}
+{{- if not (and .snapshot (eq .snapshotStatus "READY")) }}
+{{- fail "economy restore requires a READY source snapshot" }}
+{{- end }}
+---
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotContent
+metadata:
+  name: import-{{ .snapshot }}
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  deletionPolicy: Retain
+  driver: pd.csi.storage.gke.io
+  sourceVolumeMode: Filesystem
+  source:
+    snapshotHandle: projects/tesseracthub-480811/global/snapshots/{{ .snapshot }}
+  volumeSnapshotRef:
+    name: {{ .snapshot }}
+    namespace: {{ .namespace }}
+---
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: {{ .snapshot }}
+  namespace: {{ .namespace }}
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  source:
+    volumeSnapshotContentName: import-{{ .snapshot }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -12,6 +42,10 @@ metadata:
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: {{ .storageClass }}
+  dataSource:
+    apiGroup: snapshot.storage.k8s.io
+    kind: VolumeSnapshot
+    name: {{ .snapshot }}
   resources:
     requests:
       storage: {{ .size }}
@@ -50,6 +84,9 @@ spec:
       serviceAccountName: storage-economy
       restartPolicy: Never
       securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ default 26 .verifyUser }}
+        runAsGroup: {{ default 26 .verifyGroup }}
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -57,6 +94,8 @@ spec:
           image: {{ $.Values.image }}
           command: [python, -B, -u, /scripts/copy.py]
           env:
+            - name: VERIFY_ONLY
+              value: "true"
             - name: SOURCE_CLAIM
               value: {{ .name | quote }}
             - name: SOURCE_UID
@@ -74,12 +113,10 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
           securityContext:
-            runAsUser: 0
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
-              add: [CHOWN, DAC_OVERRIDE, FOWNER, FSETID]
           resources:
             requests:
               memory: 256Mi
@@ -91,6 +128,7 @@ spec:
               readOnly: true
             - name: target
               mountPath: /target
+              readOnly: true
             - name: scripts
               mountPath: /scripts
               readOnly: true
@@ -102,6 +140,7 @@ spec:
         - name: target
           persistentVolumeClaim:
             claimName: {{ .target }}
+            readOnly: true
         - name: scripts
           configMap:
             name: {{ .target }}-copy
@@ -143,6 +182,7 @@ spec:
       serviceAccountName: storage-economy
       restartPolicy: Never
       securityContext:
+        runAsNonRoot: true
         runAsUser: 65532
         runAsGroup: 65532
         seccompProfile:

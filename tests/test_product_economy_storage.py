@@ -55,6 +55,8 @@ def test_prepare_allocates_retained_standard_targets_without_copy_or_cutover(tmp
                     "target": "eco-db-1",
                     "size": "10Gi",
                     "storageClass": "economy-rwo-retain",
+                    "snapshot": "snap",
+                    "snapshotStatus": "READY",
                 }
             ],
         }
@@ -81,6 +83,13 @@ def test_prepare_allocates_retained_standard_targets_without_copy_or_cutover(tmp
     claims = [d for d in docs if d["kind"] == "PersistentVolumeClaim"]
     assert len(claims) == 1
     assert claims[0]["spec"]["storageClassName"] == "economy-rwo-retain"
+    assert claims[0]["spec"]["dataSource"] == {
+        "apiGroup": "snapshot.storage.k8s.io",
+        "kind": "VolumeSnapshot",
+        "name": "snap",
+    }
+    snapshot = next(d for d in docs if d["kind"] == "VolumeSnapshotContent")
+    assert snapshot["spec"]["deletionPolicy"] == "Retain"
     assert (
         claims[0]["metadata"]["annotations"]["argocd.argoproj.io/sync-options"]
         == "Prune=false,Delete=false"
@@ -115,6 +124,8 @@ def test_copy_uses_recorded_identity_and_read_only_source(tmp_path):
                             "targetUID": "target",
                             "size": "10Gi",
                             "storageClass": "economy-rwo-retain",
+                            "snapshot": "snap",
+                            "snapshotStatus": "READY",
                             "copyJob": "eco-db-1-copy",
                         }
                     ],
@@ -143,7 +154,14 @@ def test_copy_uses_recorded_identity_and_read_only_source(tmp_path):
     assert len(jobs) == 1
     pod = jobs[0]["spec"]["template"]["spec"]
     container = pod["containers"][0]
+    assert pod["securityContext"]["runAsNonRoot"] is True
+    assert pod["securityContext"]["runAsUser"] == 26
+    assert container["securityContext"]["capabilities"] == {"drop": ["ALL"]}
+    assert next(v for v in container["volumeMounts"] if v["name"] == "target")[
+        "readOnly"
+    ]
     env = {x["name"]: x.get("value") for x in container["env"]}
+    assert env["VERIFY_ONLY"] == "true"
     assert env["SOURCE_UID"] == "source" and env["TARGET_UID"] == "target"
     assert next(v for v in container["volumeMounts"] if v["name"] == "source")[
         "readOnly"
