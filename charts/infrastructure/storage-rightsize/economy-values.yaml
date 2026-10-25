@@ -1,33 +1,35 @@
 economy:
-  phase: cleanup
+  phase: prepare
   volumes:
-  - namespace: helivanta
-    name: helivanta-postgres-1
-    sourceUID: a537dbb5-87d0-4101-8e83-e402ea975a9e
-    sourcePV: pvc-a537dbb5-87d0-4101-8e83-e402ea975a9e
-    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-a/disks/pvc-a537dbb5-87d0-4101-8e83-e402ea975a9e
-    target: snap-helivanta-postgres-1
+  - namespace: devai
+    name: devai-postgres-1
+    sourceUID: 270224eb-1413-423a-b5b1-2fd9ed32106b
+    sourcePV: pvc-270224eb-1413-423a-b5b1-2fd9ed32106b
+    sourcePVUID: 8e367e08-b69c-45e7-ae52-9d0179cb8026
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-b/disks/pvc-270224eb-1413-423a-b5b1-2fd9ed32106b
+    target: snap-devai-postgres-1
     size: 10Gi
     storageClass: economy-rwo-retain
-    cluster: helivanta-postgres
-    copyJob: snap-helivanta-postgres-1-verify
+    cluster: devai-postgres
+    copyJob: snap-devai-postgres-1-verify
     copyJobs:
-    - snap-helivanta-postgres-1-verify
+    - snap-devai-postgres-1-verify
     replacement:
       apiVersion: v1
       kind: PersistentVolumeClaim
       metadata:
-        name: helivanta-postgres-1
-        namespace: helivanta
+        name: devai-postgres-1
+        namespace: devai
         labels:
           app.kubernetes.io/component: database
           app.kubernetes.io/managed-by: cloudnative-pg
           app.kubernetes.io/name: postgresql
-          cnpg.io/cluster: helivanta-postgres
-          cnpg.io/instanceName: helivanta-postgres-1
-          cnpg.io/instanceRole: primary
+          cnpg.io/cluster: devai-postgres
+          cnpg.io/instanceName: devai-postgres-1
+          cnpg.io/instanceRole: replica
           cnpg.io/pvcRole: PG_DATA
-          role: primary
+          istio.io/use-waypoint: none
+          role: replica
         annotations:
           cnpg.io/nodeSerial: '1'
           cnpg.io/operatorVersion: 1.30.0
@@ -40,47 +42,38 @@ economy:
             storage: 10Gi
         storageClassName: economy-rwo-retain
         volumeMode: Filesystem
-    snapshot: eco-hms-a537dbb5-87d0-4101-8e83-e402ea975a9e-20261026
-    snapshotSourceDiskId: '1359266536986945757'
+    snapshot: eco-pg-270224eb-1413-423a-b5b1-2fd9ed32106b-20261026
+    snapshotSourceDiskId: '3918680872017885376'
     snapshotStatus: READY
-    targetUID: e2f5dd94-4f57-4db0-9403-4a73e8409a11
-    targetPV: pvc-e2f5dd94-4f57-4db0-9403-4a73e8409a11
-    targetDisk: projects/tesseracthub-480811/zones/asia-south1-a/disks/pvc-e2f5dd94-4f57-4db0-9403-4a73e8409a11
-    copyVerified: true
-    verifiedFiles: 4505
-    verifiedAt: '2026-10-25T14:51:23.158243+00:00'
-    currentUID: d178a28f-998b-4bb5-a078-c930524e0694
-    cutoverAt: '2026-10-25T14:54:09.396342+00:00'
-    sourcePVUID: 0200a7b2-9bf4-4968-bfaf-aa31790f1bd0
-    resumeVerified: true
-    sourceDiskDeletedId: '1359266536986945757'
-  - namespace: helivanta
-    name: helivanta-postgres-1-wal
-    sourceUID: 6d5435a8-2fb1-462f-beff-52e6fc41b4b5
-    sourcePV: pvc-6d5435a8-2fb1-462f-beff-52e6fc41b4b5
-    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-a/disks/pvc-6d5435a8-2fb1-462f-beff-52e6fc41b4b5
-    target: snap-helivanta-postgres-1-wal
-    size: 5Gi
+  - namespace: devai
+    name: devai-postgres-1-wal
+    sourceUID: efa23838-46bd-47ac-81df-678e348f4d0d
+    sourcePV: pvc-efa23838-46bd-47ac-81df-678e348f4d0d
+    sourcePVUID: 6fc96c62-e11d-4fb2-96ef-c1e35902dc54
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-b/disks/pvc-efa23838-46bd-47ac-81df-678e348f4d0d
+    target: snap-devai-postgres-1-wal
+    size: 10Gi
     storageClass: economy-rwo-retain
-    cluster: helivanta-postgres
-    copyJob: snap-helivanta-postgres-1-wal-verify
+    cluster: devai-postgres
+    copyJob: snap-devai-postgres-1-wal-verify
     copyJobs:
-    - snap-helivanta-postgres-1-wal-verify
+    - snap-devai-postgres-1-wal-verify
     replacement:
       apiVersion: v1
       kind: PersistentVolumeClaim
       metadata:
-        name: helivanta-postgres-1-wal
-        namespace: helivanta
+        name: devai-postgres-1-wal
+        namespace: devai
         labels:
           app.kubernetes.io/component: database
           app.kubernetes.io/managed-by: cloudnative-pg
           app.kubernetes.io/name: postgresql
-          cnpg.io/cluster: helivanta-postgres
-          cnpg.io/instanceName: helivanta-postgres-1
-          cnpg.io/instanceRole: primary
+          cnpg.io/cluster: devai-postgres
+          cnpg.io/instanceName: devai-postgres-1
+          cnpg.io/instanceRole: replica
           cnpg.io/pvcRole: PG_WAL
-          role: primary
+          istio.io/use-waypoint: none
+          role: replica
         annotations:
           cnpg.io/nodeSerial: '1'
           cnpg.io/operatorVersion: 1.30.0
@@ -90,50 +83,41 @@ economy:
         - ReadWriteOnce
         resources:
           requests:
-            storage: 5Gi
+            storage: 10Gi
         storageClassName: economy-rwo-retain
         volumeMode: Filesystem
-    snapshot: eco-hms-6d5435a8-2fb1-462f-beff-52e6fc41b4b5-20261026
-    snapshotSourceDiskId: '1313464636375214302'
+    snapshot: eco-pg-efa23838-46bd-47ac-81df-678e348f4d0d-20261026
+    snapshotSourceDiskId: '2411065068138428608'
     snapshotStatus: READY
-    targetUID: 8a984146-8bec-4b8a-89dc-761a28e1bd84
-    targetPV: pvc-8a984146-8bec-4b8a-89dc-761a28e1bd84
-    targetDisk: projects/tesseracthub-480811/zones/asia-south1-a/disks/pvc-8a984146-8bec-4b8a-89dc-761a28e1bd84
-    copyVerified: true
-    verifiedFiles: 78
-    verifiedAt: '2026-10-25T14:51:30.804188+00:00'
-    currentUID: ecfc96aa-6fc7-4b91-8573-80db0aad30fc
-    cutoverAt: '2026-10-25T14:54:09.396682+00:00'
-    sourcePVUID: 10e0a5c8-54db-4091-a248-9de1f12f5dc5
-    resumeVerified: true
-    sourceDiskDeletedId: '1313464636375214302'
-  - namespace: helivanta
-    name: helivanta-postgres-2
-    sourceUID: 89fc6434-fc4e-4cec-bb70-41ba08d3f42a
-    sourcePV: pvc-89fc6434-fc4e-4cec-bb70-41ba08d3f42a
-    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-b/disks/pvc-89fc6434-fc4e-4cec-bb70-41ba08d3f42a
-    target: snap-helivanta-postgres-2
+  - namespace: devai
+    name: devai-postgres-2
+    sourceUID: 888b5950-c251-4e27-91d9-75e7e33ae845
+    sourcePV: pvc-888b5950-c251-4e27-91d9-75e7e33ae845
+    sourcePVUID: 3689e9e5-69a3-435a-ac88-d0ebfbc7669e
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-c/disks/pvc-888b5950-c251-4e27-91d9-75e7e33ae845
+    target: snap-devai-postgres-2
     size: 10Gi
     storageClass: economy-rwo-retain
-    cluster: helivanta-postgres
-    copyJob: snap-helivanta-postgres-2-verify
+    cluster: devai-postgres
+    copyJob: snap-devai-postgres-2-verify
     copyJobs:
-    - snap-helivanta-postgres-2-verify
+    - snap-devai-postgres-2-verify
     replacement:
       apiVersion: v1
       kind: PersistentVolumeClaim
       metadata:
-        name: helivanta-postgres-2
-        namespace: helivanta
+        name: devai-postgres-2
+        namespace: devai
         labels:
           app.kubernetes.io/component: database
           app.kubernetes.io/managed-by: cloudnative-pg
           app.kubernetes.io/name: postgresql
-          cnpg.io/cluster: helivanta-postgres
-          cnpg.io/instanceName: helivanta-postgres-2
-          cnpg.io/instanceRole: replica
+          cnpg.io/cluster: devai-postgres
+          cnpg.io/instanceName: devai-postgres-2
+          cnpg.io/instanceRole: primary
           cnpg.io/pvcRole: PG_DATA
-          role: replica
+          istio.io/use-waypoint: none
+          role: primary
         annotations:
           cnpg.io/nodeSerial: '2'
           cnpg.io/operatorVersion: 1.30.0
@@ -146,47 +130,210 @@ economy:
             storage: 10Gi
         storageClassName: economy-rwo-retain
         volumeMode: Filesystem
-    snapshot: eco-hms-89fc6434-fc4e-4cec-bb70-41ba08d3f42a-20261026
-    snapshotSourceDiskId: '4616501190888432533'
+    snapshot: eco-pg-888b5950-c251-4e27-91d9-75e7e33ae845-20261026
+    snapshotSourceDiskId: '4064744897198072618'
     snapshotStatus: READY
-    targetUID: ef531fe0-0038-469a-b4bf-946adf88d9f3
-    targetPV: pvc-ef531fe0-0038-469a-b4bf-946adf88d9f3
-    targetDisk: projects/tesseracthub-480811/zones/asia-south1-b/disks/pvc-ef531fe0-0038-469a-b4bf-946adf88d9f3
-    copyVerified: true
-    verifiedFiles: 4505
-    verifiedAt: '2026-10-25T14:51:38.176368+00:00'
-    currentUID: 6d894eff-f1a0-496b-aecf-ee5f19bc85f7
-    cutoverAt: '2026-10-25T14:54:09.396686+00:00'
-    sourcePVUID: d69c5157-ce32-4d5c-81bb-3009de41d92b
-    resumeVerified: true
-    sourceDiskDeletedId: '4616501190888432533'
-  - namespace: helivanta
-    name: helivanta-postgres-2-wal
-    sourceUID: 0972f872-faf1-49a9-9c3b-301bf61465a2
-    sourcePV: pvc-0972f872-faf1-49a9-9c3b-301bf61465a2
-    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-b/disks/pvc-0972f872-faf1-49a9-9c3b-301bf61465a2
-    target: snap-helivanta-postgres-2-wal
-    size: 5Gi
+  - namespace: devai
+    name: devai-postgres-2-wal
+    sourceUID: bb333202-cb89-48dc-bb43-b141f83d36f6
+    sourcePV: pvc-bb333202-cb89-48dc-bb43-b141f83d36f6
+    sourcePVUID: 1657b8ce-91e8-47c9-9b7b-463ed2e9619e
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-c/disks/pvc-bb333202-cb89-48dc-bb43-b141f83d36f6
+    target: snap-devai-postgres-2-wal
+    size: 10Gi
     storageClass: economy-rwo-retain
-    cluster: helivanta-postgres
-    copyJob: snap-helivanta-postgres-2-wal-verify
+    cluster: devai-postgres
+    copyJob: snap-devai-postgres-2-wal-verify
     copyJobs:
-    - snap-helivanta-postgres-2-wal-verify
+    - snap-devai-postgres-2-wal-verify
     replacement:
       apiVersion: v1
       kind: PersistentVolumeClaim
       metadata:
-        name: helivanta-postgres-2-wal
-        namespace: helivanta
+        name: devai-postgres-2-wal
+        namespace: devai
         labels:
           app.kubernetes.io/component: database
           app.kubernetes.io/managed-by: cloudnative-pg
           app.kubernetes.io/name: postgresql
-          cnpg.io/cluster: helivanta-postgres
-          cnpg.io/instanceName: helivanta-postgres-2
+          cnpg.io/cluster: devai-postgres
+          cnpg.io/instanceName: devai-postgres-2
+          cnpg.io/instanceRole: primary
+          cnpg.io/pvcRole: PG_WAL
+          istio.io/use-waypoint: none
+          role: primary
+        annotations:
+          cnpg.io/nodeSerial: '2'
+          cnpg.io/operatorVersion: 1.30.0
+          cnpg.io/pvcStatus: ready
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: economy-rwo-retain
+        volumeMode: Filesystem
+    snapshot: eco-pg-bb333202-cb89-48dc-bb43-b141f83d36f6-20261026
+    snapshotSourceDiskId: '7195361312465134378'
+    snapshotStatus: READY
+  - namespace: kora
+    name: kora-postgres-1
+    sourceUID: 217bacfe-b3e6-4252-95f4-63772e6277ef
+    sourcePV: pvc-217bacfe-b3e6-4252-95f4-63772e6277ef
+    sourcePVUID: a9e298c5-a6b5-45bc-b916-bed53d063faf
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-b/disks/pvc-217bacfe-b3e6-4252-95f4-63772e6277ef
+    target: snap-kora-postgres-1
+    size: 20Gi
+    storageClass: economy-rwo-retain
+    cluster: kora-postgres
+    copyJob: snap-kora-postgres-1-verify
+    copyJobs:
+    - snap-kora-postgres-1-verify
+    replacement:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: kora-postgres-1
+        namespace: kora
+        labels:
+          app.kubernetes.io/component: database
+          app.kubernetes.io/managed-by: cloudnative-pg
+          app.kubernetes.io/name: postgresql
+          cnpg.io/cluster: kora-postgres
+          cnpg.io/instanceName: kora-postgres-1
+          cnpg.io/instanceRole: replica
+          cnpg.io/pvcRole: PG_DATA
+          role: replica
+        annotations:
+          cnpg.io/nodeSerial: '1'
+          cnpg.io/operatorVersion: 1.30.0
+          cnpg.io/pvcStatus: ready
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 20Gi
+        storageClassName: economy-rwo-retain
+        volumeMode: Filesystem
+    snapshot: eco-pg-217bacfe-b3e6-4252-95f4-63772e6277ef-20261026
+    snapshotSourceDiskId: '792310564500822445'
+    snapshotStatus: READY
+  - namespace: kora
+    name: kora-postgres-1-wal
+    sourceUID: 1c4d520d-f6ff-4d06-ad7f-dd38438ca9ad
+    sourcePV: pvc-1c4d520d-f6ff-4d06-ad7f-dd38438ca9ad
+    sourcePVUID: 2567cd9a-6e48-4895-8610-81d4a4dac9fe
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-b/disks/pvc-1c4d520d-f6ff-4d06-ad7f-dd38438ca9ad
+    target: snap-kora-postgres-1-wal
+    size: 5Gi
+    storageClass: economy-rwo-retain
+    cluster: kora-postgres
+    copyJob: snap-kora-postgres-1-wal-verify
+    copyJobs:
+    - snap-kora-postgres-1-wal-verify
+    replacement:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: kora-postgres-1-wal
+        namespace: kora
+        labels:
+          app.kubernetes.io/component: database
+          app.kubernetes.io/managed-by: cloudnative-pg
+          app.kubernetes.io/name: postgresql
+          cnpg.io/cluster: kora-postgres
+          cnpg.io/instanceName: kora-postgres-1
           cnpg.io/instanceRole: replica
           cnpg.io/pvcRole: PG_WAL
           role: replica
+        annotations:
+          cnpg.io/nodeSerial: '1'
+          cnpg.io/operatorVersion: 1.30.0
+          cnpg.io/pvcStatus: ready
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+        storageClassName: economy-rwo-retain
+        volumeMode: Filesystem
+    snapshot: eco-pg-1c4d520d-f6ff-4d06-ad7f-dd38438ca9ad-20261026
+    snapshotSourceDiskId: '1083070470231447981'
+    snapshotStatus: READY
+  - namespace: kora
+    name: kora-postgres-2
+    sourceUID: b84bd90c-2d02-433b-92cd-cbdb0fac2fcc
+    sourcePV: pvc-b84bd90c-2d02-433b-92cd-cbdb0fac2fcc
+    sourcePVUID: 577ded5d-fd01-4f05-a665-e1d2d07268e1
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-c/disks/pvc-b84bd90c-2d02-433b-92cd-cbdb0fac2fcc
+    target: snap-kora-postgres-2
+    size: 20Gi
+    storageClass: economy-rwo-retain
+    cluster: kora-postgres
+    copyJob: snap-kora-postgres-2-verify
+    copyJobs:
+    - snap-kora-postgres-2-verify
+    replacement:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: kora-postgres-2
+        namespace: kora
+        labels:
+          app.kubernetes.io/component: database
+          app.kubernetes.io/managed-by: cloudnative-pg
+          app.kubernetes.io/name: postgresql
+          cnpg.io/cluster: kora-postgres
+          cnpg.io/instanceName: kora-postgres-2
+          cnpg.io/instanceRole: primary
+          cnpg.io/pvcRole: PG_DATA
+          role: primary
+        annotations:
+          cnpg.io/nodeSerial: '2'
+          cnpg.io/operatorVersion: 1.30.0
+          cnpg.io/pvcStatus: ready
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 20Gi
+        storageClassName: economy-rwo-retain
+        volumeMode: Filesystem
+    snapshot: eco-pg-b84bd90c-2d02-433b-92cd-cbdb0fac2fcc-20261026
+    snapshotSourceDiskId: '6843565815469613865'
+    snapshotStatus: READY
+  - namespace: kora
+    name: kora-postgres-2-wal
+    sourceUID: b1e22aa4-d5b9-411b-b4bb-f096ae752c22
+    sourcePV: pvc-b1e22aa4-d5b9-411b-b4bb-f096ae752c22
+    sourcePVUID: 08e2706b-399a-444b-809e-9e45d4f81497
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-c/disks/pvc-b1e22aa4-d5b9-411b-b4bb-f096ae752c22
+    target: snap-kora-postgres-2-wal
+    size: 5Gi
+    storageClass: economy-rwo-retain
+    cluster: kora-postgres
+    copyJob: snap-kora-postgres-2-wal-verify
+    copyJobs:
+    - snap-kora-postgres-2-wal-verify
+    replacement:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: kora-postgres-2-wal
+        namespace: kora
+        labels:
+          app.kubernetes.io/component: database
+          app.kubernetes.io/managed-by: cloudnative-pg
+          app.kubernetes.io/name: postgresql
+          cnpg.io/cluster: kora-postgres
+          cnpg.io/instanceName: kora-postgres-2
+          cnpg.io/instanceRole: primary
+          cnpg.io/pvcRole: PG_WAL
+          role: primary
         annotations:
           cnpg.io/nodeSerial: '2'
           cnpg.io/operatorVersion: 1.30.0
@@ -199,17 +346,178 @@ economy:
             storage: 5Gi
         storageClassName: economy-rwo-retain
         volumeMode: Filesystem
-    snapshot: eco-hms-0972f872-faf1-49a9-9c3b-301bf61465a2-20261026
-    snapshotSourceDiskId: '9080967588813644693'
+    snapshot: eco-pg-b1e22aa4-d5b9-411b-b4bb-f096ae752c22-20261026
+    snapshotSourceDiskId: '1437772813964583721'
     snapshotStatus: READY
-    targetUID: c7bb9cb0-203d-43aa-ad2a-cabb2932bf14
-    targetPV: pvc-c7bb9cb0-203d-43aa-ad2a-cabb2932bf14
-    targetDisk: projects/tesseracthub-480811/zones/asia-south1-b/disks/pvc-c7bb9cb0-203d-43aa-ad2a-cabb2932bf14
-    copyVerified: true
-    verifiedFiles: 76
-    verifiedAt: '2026-10-25T14:51:45.705168+00:00'
-    currentUID: 480bfbe5-fa63-4b22-add2-a283304271d4
-    cutoverAt: '2026-10-25T14:54:09.396688+00:00'
-    sourcePVUID: ea02da3d-8813-417f-8422-a8bb188369cd
-    resumeVerified: true
-    sourceDiskDeletedId: '9080967588813644693'
+  - namespace: postiz
+    name: postiz-postgres-1
+    sourceUID: 806c9ba9-bf73-4232-a186-598b71b14095
+    sourcePV: pvc-806c9ba9-bf73-4232-a186-598b71b14095
+    sourcePVUID: 31b7e42c-b915-4e4f-b14c-507e1c3d10bb
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-a/disks/pvc-806c9ba9-bf73-4232-a186-598b71b14095
+    target: snap-postiz-postgres-1
+    size: 10Gi
+    storageClass: economy-rwo-retain
+    cluster: postiz-postgres
+    copyJob: snap-postiz-postgres-1-verify
+    copyJobs:
+    - snap-postiz-postgres-1-verify
+    replacement:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: postiz-postgres-1
+        namespace: postiz
+        labels:
+          app.kubernetes.io/component: database
+          app.kubernetes.io/managed-by: cloudnative-pg
+          app.kubernetes.io/name: postgresql
+          cnpg.io/cluster: postiz-postgres
+          cnpg.io/instanceName: postiz-postgres-1
+          cnpg.io/instanceRole: replica
+          cnpg.io/pvcRole: PG_DATA
+          role: replica
+        annotations:
+          cnpg.io/nodeSerial: '1'
+          cnpg.io/operatorVersion: 1.30.0
+          cnpg.io/pvcStatus: ready
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: economy-rwo-retain
+        volumeMode: Filesystem
+    snapshot: eco-pg-806c9ba9-bf73-4232-a186-598b71b14095-20261026
+    snapshotSourceDiskId: '3982148351076196117'
+    snapshotStatus: READY
+  - namespace: postiz
+    name: postiz-postgres-1-wal
+    sourceUID: 56259df4-7d04-45de-a864-deadf18e9e7d
+    sourcePV: pvc-56259df4-7d04-45de-a864-deadf18e9e7d
+    sourcePVUID: 9f3904f8-69d9-42bf-8391-b60b97ca32d7
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-a/disks/pvc-56259df4-7d04-45de-a864-deadf18e9e7d
+    target: snap-postiz-postgres-1-wal
+    size: 5Gi
+    storageClass: economy-rwo-retain
+    cluster: postiz-postgres
+    copyJob: snap-postiz-postgres-1-wal-verify
+    copyJobs:
+    - snap-postiz-postgres-1-wal-verify
+    replacement:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: postiz-postgres-1-wal
+        namespace: postiz
+        labels:
+          app.kubernetes.io/component: database
+          app.kubernetes.io/managed-by: cloudnative-pg
+          app.kubernetes.io/name: postgresql
+          cnpg.io/cluster: postiz-postgres
+          cnpg.io/instanceName: postiz-postgres-1
+          cnpg.io/instanceRole: replica
+          cnpg.io/pvcRole: PG_WAL
+          role: replica
+        annotations:
+          cnpg.io/nodeSerial: '1'
+          cnpg.io/operatorVersion: 1.30.0
+          cnpg.io/pvcStatus: ready
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+        storageClassName: economy-rwo-retain
+        volumeMode: Filesystem
+    snapshot: eco-pg-56259df4-7d04-45de-a864-deadf18e9e7d-20261026
+    snapshotSourceDiskId: '5222953283220266773'
+    snapshotStatus: READY
+  - namespace: postiz
+    name: postiz-postgres-2
+    sourceUID: 62f48c0c-9581-4754-83e1-7a27dfe44bfd
+    sourcePV: pvc-62f48c0c-9581-4754-83e1-7a27dfe44bfd
+    sourcePVUID: cf93df5c-1ebb-4009-b79c-4f2131bce450
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-c/disks/pvc-62f48c0c-9581-4754-83e1-7a27dfe44bfd
+    target: snap-postiz-postgres-2
+    size: 10Gi
+    storageClass: economy-rwo-retain
+    cluster: postiz-postgres
+    copyJob: snap-postiz-postgres-2-verify
+    copyJobs:
+    - snap-postiz-postgres-2-verify
+    replacement:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: postiz-postgres-2
+        namespace: postiz
+        labels:
+          app.kubernetes.io/component: database
+          app.kubernetes.io/managed-by: cloudnative-pg
+          app.kubernetes.io/name: postgresql
+          cnpg.io/cluster: postiz-postgres
+          cnpg.io/instanceName: postiz-postgres-2
+          cnpg.io/instanceRole: primary
+          cnpg.io/pvcRole: PG_DATA
+          role: primary
+        annotations:
+          cnpg.io/nodeSerial: '2'
+          cnpg.io/operatorVersion: 1.30.0
+          cnpg.io/pvcStatus: ready
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: economy-rwo-retain
+        volumeMode: Filesystem
+    snapshot: eco-pg-62f48c0c-9581-4754-83e1-7a27dfe44bfd-20261026
+    snapshotSourceDiskId: '4668935843855115043'
+    snapshotStatus: READY
+  - namespace: postiz
+    name: postiz-postgres-2-wal
+    sourceUID: fc8c7ca2-958f-478b-95be-0dee8c343089
+    sourcePV: pvc-fc8c7ca2-958f-478b-95be-0dee8c343089
+    sourcePVUID: 9338946c-645c-41ce-ae83-e90a97b38534
+    sourceDisk: projects/tesseracthub-480811/zones/asia-south1-c/disks/pvc-fc8c7ca2-958f-478b-95be-0dee8c343089
+    target: snap-postiz-postgres-2-wal
+    size: 5Gi
+    storageClass: economy-rwo-retain
+    cluster: postiz-postgres
+    copyJob: snap-postiz-postgres-2-wal-verify
+    copyJobs:
+    - snap-postiz-postgres-2-wal-verify
+    replacement:
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: postiz-postgres-2-wal
+        namespace: postiz
+        labels:
+          app.kubernetes.io/component: database
+          app.kubernetes.io/managed-by: cloudnative-pg
+          app.kubernetes.io/name: postgresql
+          cnpg.io/cluster: postiz-postgres
+          cnpg.io/instanceName: postiz-postgres-2
+          cnpg.io/instanceRole: primary
+          cnpg.io/pvcRole: PG_WAL
+          role: primary
+        annotations:
+          cnpg.io/nodeSerial: '2'
+          cnpg.io/operatorVersion: 1.30.0
+          cnpg.io/pvcStatus: ready
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+        storageClassName: economy-rwo-retain
+        volumeMode: Filesystem
+    snapshot: eco-pg-fc8c7ca2-958f-478b-95be-0dee8c343089-20261026
+    snapshotSourceDiskId: '6268731288108311331'
+    snapshotStatus: READY
