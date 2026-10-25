@@ -1,0 +1,173 @@
+{{- with .Values.economy }}
+{{- if eq .phase "retire-homechef-mongo" }}
+{{- $volumes := list }}
+{{- range .volumes }}
+{{- if eq .namespace "homechef" }}
+{{- $volumes = append $volumes . }}
+{{- end }}
+{{- end }}
+{{- $controller := required "observed HomeChef controller identities required" .homechefController }}
+{{- $plan := dict "controllerUID" (required "controller UID required" $controller.controllerUID) "clusterUID" (required "CR UID required" $controller.clusterUID) "operatorUID" (required "operator UID required" $controller.operatorUID) "volumes" $volumes }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: storage-economy-homechef-retire
+  namespace: homechef
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: storage-economy-homechef-retire
+  namespace: homechef
+rules:
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    resourceNames: [homechef-mongodb-rs0]
+    verbs: [get, delete]
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [homechef-mongodb-operator-psmdb-operator]
+    verbs: [get]
+  - apiGroups: [psmdb.percona.com]
+    resources: [perconaservermongodbs]
+    resourceNames: [homechef-mongodb]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [get]
+    resourceNames:
+{{- range $volumes }}
+      - {{ .name }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: storage-economy-homechef-retire
+  namespace: homechef
+subjects:
+  - kind: ServiceAccount
+    name: storage-economy-homechef-retire
+    namespace: homechef
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: storage-economy-homechef-retire
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: storage-economy-homechef-retire
+rules:
+  - apiGroups: [""]
+    resources: [persistentvolumes]
+    verbs: [get]
+    resourceNames:
+{{- range $volumes }}
+      - {{ required "observed target PV required" .targetPV }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: storage-economy-homechef-retire
+subjects:
+  - kind: ServiceAccount
+    name: storage-economy-homechef-retire
+    namespace: homechef
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: storage-economy-homechef-retire
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: storage-economy-homechef-retire
+  namespace: homechef
+spec:
+  podSelector:
+    matchLabels:
+      app: storage-rightsize
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homechef-mongodb-retire-stale-controller
+  namespace: homechef
+data:
+  retire_homechef_mongo.py: |
+{{ $.Files.Get "files/retire_homechef_mongo.py" | indent 4 }}
+  bind.py: |
+{{ $.Files.Get "files/bind.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: homechef-mongodb-retire-stale-controller
+  namespace: homechef
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1200
+  template:
+    metadata:
+      labels:
+        app: storage-rightsize
+      annotations:
+        sidecar.istio.io/inject: "false"
+        istio.io/dataplane-mode: none
+    spec:
+      serviceAccountName: storage-economy-homechef-retire
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: retire
+          image: {{ $.Values.image }}
+          command: [python, -B, -u, /scripts/retire_homechef_mongo.py]
+          env:
+            - name: PLAN
+              value: {{ $plan | toJson | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: homechef-mongodb-retire-stale-controller
+{{- end }}
+{{- end }}
