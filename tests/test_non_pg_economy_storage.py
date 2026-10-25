@@ -95,3 +95,23 @@ def test_growthbook_preserves_inline_configuration_during_migration():
     assert values["mongodb"]["persistence"]["storageClassName"] == "economy-rwo-retain"
     assert values["persistence"]["storageClassName"] == "economy-rwo"
     assert "Replace=true" not in app["spec"]["syncPolicy"]["syncOptions"]
+
+
+def test_growthbook_retains_explicit_existing_pvc_bindings():
+    docs = render(
+        "charts/thirdparty/growthbook",
+        overrides=(
+            "persistence.volumeName=uploads-existing",
+            "mongodb.persistence.volumeName=mongo-verified",
+        ),
+    )
+    claims = {
+        d["metadata"]["name"]: d for d in docs if d["kind"] == "PersistentVolumeClaim"
+    }
+    assert (
+        claims["park-test-growthbook-uploads"]["spec"]["volumeName"]
+        == "uploads-existing"
+    )
+    assert (
+        claims["park-test-growthbook-mongodb"]["spec"]["volumeName"] == "mongo-verified"
+    )
