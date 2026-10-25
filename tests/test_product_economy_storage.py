@@ -1,5 +1,4 @@
 import pytest
-
 from test_homechef_park import render
 
 
@@ -41,6 +40,7 @@ def test_completed_economy_migration_has_no_remaining_jobs_or_permissions():
 
 def test_prepare_allocates_retained_standard_targets_without_copy_or_cutover(tmp_path):
     import subprocess
+
     import yaml
 
     values = {
@@ -96,6 +96,7 @@ def test_prepare_allocates_retained_standard_targets_without_copy_or_cutover(tmp
 
 def test_copy_uses_recorded_identity_and_read_only_source(tmp_path):
     import subprocess
+
     import yaml
 
     config = tmp_path / "copy.yaml"
@@ -160,6 +161,7 @@ def test_copy_uses_recorded_identity_and_read_only_source(tmp_path):
 
 def test_cutover_requires_verified_copy_and_ready_snapshot(tmp_path):
     import subprocess
+
     import yaml
 
     value = {
@@ -193,7 +195,7 @@ def test_cutover_requires_verified_copy_and_ready_snapshot(tmp_path):
     config.write_text(
         yaml.safe_dump({"economy": {"phase": "cutover", "volumes": [value]}})
     )
-    failed = subprocess.run(command, capture_output=True, text=True)
+    failed = subprocess.run(command, check=False, capture_output=True, text=True)
     assert (
         failed.returncode != 0 and "verified copy and READY snapshot" in failed.stderr
     )
