@@ -30,7 +30,8 @@ Measure restart and application latency before accepting each product batch.
 ## Durable workflow
 
 Reuse the existing storage-rightsize copy and binding implementations. Migrate
-one product at a time. A chart value named `storageMigrationPhase` controls CNPG:
+a canary first, then small batches with independent recovery and verification
+receipts for each product. A chart value named `storageMigrationPhase` controls CNPG:
 `quiesce` requests data-preserving hibernation with the operator active.
 After all database pods terminate, `copy` additionally disables reconciliation
 so the controller cannot race PVC replacement. Never use a chart's `hibernate`
