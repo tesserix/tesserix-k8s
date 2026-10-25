@@ -1,0 +1,177 @@
+{{- with .Values.economy }}
+{{- if has .phase (list "prepare" "copy") }}
+{{- range .volumes }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .target }}
+  namespace: {{ .namespace }}
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .storageClass }}
+  resources:
+    requests:
+      storage: {{ .size }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- with .Values.economy }}
+{{- if eq .phase "copy" }}
+{{- range .volumes }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .target }}-copy
+  namespace: {{ .namespace }}
+data:
+  copy.py: |
+{{ $.Files.Get "files/copy.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .copyJob }}
+  namespace: {{ .namespace }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200
+  template:
+    metadata:
+      labels:
+        app: storage-rightsize
+      annotations:
+        sidecar.istio.io/inject: "false"
+        istio.io/dataplane-mode: none
+    spec:
+      serviceAccountName: storage-economy
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: copy
+          image: {{ $.Values.image }}
+          command: [python, -B, -u, /scripts/copy.py]
+          env:
+            - name: SOURCE_CLAIM
+              value: {{ .name | quote }}
+            - name: SOURCE_UID
+              value: {{ .sourceUID | quote }}
+            - name: TARGET_CLAIM
+              value: {{ .target | quote }}
+            - name: TARGET_UID
+              value: {{ required "observed target UID is required before copy" .targetUID | quote }}
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, DAC_OVERRIDE, FOWNER, FSETID]
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 2Gi
+          volumeMounts:
+            - name: source
+              mountPath: /source
+              readOnly: true
+            - name: target
+              mountPath: /target
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: source
+          persistentVolumeClaim:
+            claimName: {{ .name }}
+            readOnly: true
+        - name: target
+          persistentVolumeClaim:
+            claimName: {{ .target }}
+        - name: scripts
+          configMap:
+            name: {{ .target }}-copy
+{{- end }}
+{{- end }}
+{{- end }}
+{{- with .Values.economy }}
+{{- if eq .phase "cutover" }}
+{{- range .volumes }}
+{{- if not (and .copyVerified (eq .snapshotStatus "READY") .snapshot) }}
+{{- fail "economy cutover requires verified copy and READY snapshot" }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .target }}-bind
+  namespace: {{ .namespace }}
+data:
+  bind.py: |
+{{ $.Files.Get "files/bind.py" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .target }}-bind
+  namespace: {{ .namespace }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1200
+  template:
+    metadata:
+      labels:
+        app: storage-rightsize
+      annotations:
+        sidecar.istio.io/inject: "false"
+        istio.io/dataplane-mode: none
+    spec:
+      serviceAccountName: storage-economy
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bind
+          image: {{ $.Values.image }}
+          command: [python, -B, -u, /scripts/bind.py]
+          env:
+            - name: PLAN
+              value: {{ . | toJson | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ .target }}-bind
+{{- end }}
+{{- end }}
+{{- end }}

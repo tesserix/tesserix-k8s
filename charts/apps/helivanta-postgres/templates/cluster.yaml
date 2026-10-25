@@ -8,6 +8,10 @@ metadata:
     app.kubernetes.io/part-of: helivanta
     app.kubernetes.io/component: database
   annotations:
+{{- if .Values.storageMigrationPhase }}
+    cnpg.io/hibernation: "on"
+    cnpg.io/reconciliationLoop: {{ ternary "disabled" "enabled" (eq .Values.storageMigrationPhase "copy") | quote }}
+{{- end }}
     # The helivanta-postgres Application carries
     # resources-finalizer.argocd.argoproj.io, so deleting or renaming that
     # Application cascade-deletes every resource it manages — including this

@@ -4,8 +4,8 @@ metadata:
   name: {{ .Values.clusterName }}
   namespace: {{ .Values.namespace }}
   annotations:
-    cnpg.io/reconciliationLoop: "enabled"
-    cnpg.io/hibernation: {{ ternary "on" "off" .Values.hibernate | quote }}
+    cnpg.io/reconciliationLoop: {{ if eq .Values.storageMigrationPhase "copy" }}"disabled"{{ else }}"enabled"{{ end }}
+    cnpg.io/hibernation: {{ if .Values.storageMigrationPhase }}"on"{{ else }}{{ ternary "on" "off" .Values.hibernate | quote }}{{ end }}
   labels:
     app.kubernetes.io/part-of: home-chef-app
     app.kubernetes.io/component: database

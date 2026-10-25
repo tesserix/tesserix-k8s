@@ -1,0 +1,142 @@
+{{- with .Values.economy }}
+{{- if has .phase (list "copy" "cutover") }}
+{{- $phase := .phase }}
+{{- $volumes := .volumes }}
+{{- $namespaces := dict }}
+{{- range .volumes }}
+{{- $_ := set $namespaces .namespace true }}
+{{- end }}
+{{- range $namespace, $_ := $namespaces }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: storage-economy
+  namespace: {{ $namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: storage-economy
+  namespace: {{ $namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [get{{ if eq $phase "cutover" }}, delete, patch{{ end }}]
+    resourceNames:
+{{- range $volumes }}
+{{- if eq .namespace $namespace }}
+      - {{ .name }}
+      - {{ .target }}
+{{- end }}
+{{- end }}
+{{- if eq $phase "cutover" }}
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    verbs: [create]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, delete]
+    resourceNames:
+{{- range $volumes }}
+{{- if eq .namespace $namespace }}
+{{- range .copyJobs }}
+      - {{ . }}
+{{- end }}
+{{- end }}
+{{- end }}
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters]
+    verbs: [get]
+    resourceNames:
+{{- range $volumes }}
+{{- if and (eq .namespace $namespace) .cluster }}
+      - {{ .cluster }}
+{{- end }}
+{{- end }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: storage-economy
+  namespace: {{ $namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: storage-economy
+    namespace: {{ $namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: storage-economy
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: storage-economy
+  namespace: {{ $namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: storage-rightsize
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}
+{{- end }}
+{{- end }}
+{{- with .Values.economy }}
+{{- if eq .phase "cutover" }}
+{{- $volumes := .volumes }}
+{{- $namespaces := dict }}
+{{- range .volumes }}
+{{- $_ := set $namespaces .namespace true }}
+{{- end }}
+{{- range $namespace, $_ := $namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: storage-economy-{{ $namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [persistentvolumes]
+    verbs: [get, patch]
+    resourceNames:
+{{- range $volumes }}
+{{- if eq .namespace $namespace }}
+      - {{ required "observed source PV is required" .sourcePV }}
+      - {{ required "observed target PV is required" .targetPV }}
+{{- end }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: storage-economy-{{ $namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: storage-economy
+    namespace: {{ $namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: storage-economy-{{ $namespace }}
+{{- end }}
+{{- end }}
+{{- end }}

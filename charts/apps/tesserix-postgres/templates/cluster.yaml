@@ -4,9 +4,15 @@ kind: Cluster
 metadata:
   name: {{ .Values.clusterName }}
   namespace: {{ .Values.namespace }}
-  {{- with .Values.restartAt }}
+  {{- if or .Values.restartAt .Values.storageMigrationPhase }}
   annotations:
+{{- if .Values.storageMigrationPhase }}
+    cnpg.io/hibernation: "on"
+    cnpg.io/reconciliationLoop: {{ ternary "disabled" "enabled" (eq .Values.storageMigrationPhase "copy") | quote }}
+{{- end }}
+    {{- with .Values.restartAt }}
     kubectl.kubernetes.io/restartedAt: {{ . | quote }}
+    {{- end }}
   {{- end }}
   labels:
     app.kubernetes.io/part-of: tesserix
