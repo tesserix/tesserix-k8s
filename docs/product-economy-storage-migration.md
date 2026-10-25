@@ -145,3 +145,16 @@ ownership, mode, size and modification timestamp and logs every such path.
 It does not claim content hashes for those diagnostic logs or relax verification
 for database files. Both volume mounts remain read-only and cold recovery
 snapshots are retained.
+
+For parked HomeChef Percona MongoDB, keep the CR paused and its operator at zero.
+Render the pinned external chart and server-dry-run its CR; the only spec change
+is the retained standard storage class. After all three original claim names
+bind their verified targets, phase `retire-homechef-mongo` removes only the exact
+old zero-replica StatefulSet. Its API-only job checks CR/operator/controller UIDs,
+Retain policy, no active operator or volume users, and each current PVC/PV/disk
+binding without PVC controller owner references. Deletion uses UID and resource
+version preconditions. The paused CR is the permanent desired state; a future
+operator resume recreates the StatefulSet from its new claim-template class.
+Do not start HomeChef to claim runtime verification: acceptance remains offline
+and explicitly parked. Retain private recovery metadata outside temporary
+storage before deleting claim objects or source disks.

@@ -356,7 +356,7 @@ def test_openpanel_uses_the_verified_120gi_disk_under_existing_claim_name():
     docs = render("charts/thirdparty/openpanel", "values-prod.yaml")
     pvc = next(d for d in docs if d["kind"] == "PersistentVolumeClaim")
     assert pvc["spec"]["resources"]["requests"]["storage"] == "120Gi"
-    assert pvc["spec"]["volumeName"] == "pvc-7428c4f7-82a2-410f-8559-32731384660f"
+    assert pvc["spec"]["volumeName"] == "pvc-397dbafb-8c71-4762-8a5f-99fa7fa08cc2"
     deployment = next(
         d
         for d in docs

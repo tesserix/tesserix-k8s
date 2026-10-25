@@ -186,3 +186,12 @@ def test_new_product_nats_file_store_defaults_to_standard_disks():
         sts["spec"]["volumeClaimTemplates"][0]["spec"]["storageClassName"]
         == "economy-rwo-retain"
     )
+
+
+def test_openpanel_production_stores_use_standard_explicit_bindings():
+    docs = render("charts/thirdparty/openpanel", "values-prod.yaml")
+    claims = [d for d in docs if d["kind"] == "PersistentVolumeClaim"]
+    assert len(claims) == 3
+    for claim in claims:
+        assert claim["spec"]["storageClassName"] == "economy-rwo-retain"
+        assert claim["spec"]["volumeName"].startswith("pvc-")
