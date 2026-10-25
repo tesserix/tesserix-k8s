@@ -199,3 +199,15 @@ run "auxiliary_pools_cannot_expand_cluster" {
     error_message = "Empty auxiliary pools must not add upgrade surge capacity."
   }
 }
+
+run "shared_compute_is_unrestricted_and_cud_sized" {
+  command = plan
+  assert {
+    condition     = google_container_node_pool.general.name == "general-e2" && length(google_container_node_pool.general.node_config[0].taint) == 0 && google_container_node_pool.general.node_config[0].labels["workload"] == "general"
+    error_message = "Shared compute must have a general name and accept pods without model tolerations."
+  }
+  assert {
+    condition     = google_container_node_pool.general.autoscaling[0].total_max_node_count == 1 && google_container_node_pool.general.upgrade_settings[0].max_surge == 0 && google_container_node_pool.general.max_pods_per_node == 110
+    error_message = "Shared compute must fit the one-node CUD allocation without surge or a model-specific pod ceiling."
+  }
+}
