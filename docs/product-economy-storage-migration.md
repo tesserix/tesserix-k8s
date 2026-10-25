@@ -123,3 +123,25 @@ bindings and offline verification are established. Restore the original sync
 policy and clear the migration phase for the full resume sync and its normal
 hooks. Verify writable database state, the application and recovery receipts
 before source reclamation. Previously parked HomeChef remains parked.
+
+Product NATS uses the same paused controller and Retain policy. Only the
+explicit `reconcile` phase enables Argo force replacement of its stopped
+StatefulSet. Capture the old controller, verify every replacement claim has no
+controller owner reference, then verify the new controller UID, zero replicas,
+standard claim template and unchanged claim bindings before clearing the phase.
+Compare JetStream stream/consumer configuration and health after restart.
+
+Preserve each Application's Helm input format. Argo `valuesObject` takes
+precedence over inline `values`; put a migration override inside inline values
+when that is the application's existing configuration. Verify the complete
+effective overlay, not only the migration setting. Static claims with existing
+explicit bindings must retain their verified `volumeName`; normal reconciliation
+must not clear immutable fields.
+
+MongoDB database files require SHA-256 verification. The three active MongoDB
+stores contain operator-created `.mongodb/mongosh/*_log` diagnostics unreadable
+by the database UID. Their explicit opt-in exception compares inventory, type,
+ownership, mode, size and modification timestamp and logs every such path.
+It does not claim content hashes for those diagnostic logs or relax verification
+for database files. Both volume mounts remain read-only and cold recovery
+snapshots are retained.
