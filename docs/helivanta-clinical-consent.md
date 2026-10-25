@@ -117,3 +117,34 @@ review remain hospital controls; no real wording or policy is approved here.
 Live QA must use the isolated synthetic tenant, withdraw/revoke test links and
 restore any temporary reviewer privileges. Registry identity approval, signed
 declarations and recipient consent checks do not release clinical records.
+
+### Verified guardian reader baseline — 2026-10-26 Melbourne
+
+Application release `81655619078522ea4e60d80679993a5b0c7d9c07` passed PR and main
+CI and deployed through Kargo promotion
+`prod.01m5t5qv0jmefsrp6cheh92gsf.64b999f`, Warehouse `services` freight
+`64b999f364a8c60fadfd6807992ae99666795796`. API, Global API and shell each had two
+updated/ready replicas, current observed generations and runtime digests matching
+the release's linux/amd64 manifests. All three Argo applications were Healthy/Synced.
+Other API-chart workers also had two ready replicas.
+
+Production metadata verified migrations 0009/0010/0011, both concurrent indexes
+valid/ready, the proxy FK and exactly-one-authority constraints validated, and
+forced RLS on all five affected identity/consent tables. The pre-proxy signed
+self-v1 withdrawn receipt remained readable without quarantine. The explicit
+disabled-capture probe returned 503 and created no consent row. Both retained
+privacy initializer Job UIDs were unchanged. Protected evidence is retained
+outside this public repository.
+
+The two public transport probes observed 174 and 260 expected unauthenticated
+401 responses, with no other status in their samples. Fresh Zitadel password,
+PKCE and Global API session exchange passed during workload convergence and after
+it. These observations do not establish the original cause or resolution of
+helivanta#1338, which remains open.
+
+The production application now requests proxy capture enabled after that reader
+baseline. The chart default remains false; no real notice/policy is seeded or
+approved by this activation. Independent synthetic parental/appointed-guardian
+capture, recipient, withdrawal and cleanup verification remains the next gate.
+The root Application's live `RespectIgnoreDifferences=true` and ignored Helm
+parameters were verified so this configuration sync preserves Kargo's release tag.

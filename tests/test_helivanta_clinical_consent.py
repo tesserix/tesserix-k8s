@@ -363,6 +363,9 @@ def test_production_activation_pairs_both_boundaries_and_isolates_review_egress(
             text=True,
         )
         rows = [row for row in yaml.load_all(rendered, Loader=StrictLoader) if row]
+    pod = named(rows, "Deployment", "helivanta-api")["spec"]["template"]["spec"]
+    env = {item["name"]: item.get("value") for item in pod["containers"][0]["env"]}
+    assert env["PATIENTMASTER_PROXY_CLINICAL_CAPTURE_ENABLED"] == "true"
     policy = named(rows, "NetworkPolicy", "helivanta-api-claim-review")
     assert (
         policy["spec"]["podSelector"]["matchLabels"]["app.kubernetes.io/component"]
