@@ -1,4 +1,5 @@
 import json
+import os
 import secrets
 import urllib.error
 import urllib.request
@@ -6,8 +7,11 @@ from pathlib import Path
 from typing import Any
 
 BASE = "http://openbao.openbao.svc.cluster.local:8200/v1/"
-ROLE = "seed-helivanta-emergency-worker-production"
-DATA = "kv/data/helivanta/production/helivanta-emergency-worker-db-password"
+PRODUCT = os.environ.get("WORKER_PRODUCT", "emergency")
+if PRODUCT not in {"emergency", "privacy"}:
+    raise SystemExit("Unsupported worker credential scope")
+ROLE = f"seed-helivanta-{PRODUCT}-worker-production"
+DATA = f"kv/data/helivanta/production/helivanta-{PRODUCT}-worker-db-password"
 METADATA = DATA.replace("/data/", "/metadata/", 1)
 
 
@@ -67,7 +71,7 @@ def main() -> None:
     client = Client(BASE, token)
     try:
         initialize(client)
-        print("Emergency worker credential initialized; existing versions preserved")
+        print("Worker credential initialized; existing versions preserved")
     finally:
         client.call("auth/token/revoke-self", {})
 
@@ -77,5 +81,5 @@ if __name__ == "__main__":
         main()
     except (OSError, ValueError, KeyError, RuntimeError):
         raise SystemExit(
-            "Emergency credential initialization unavailable; payloads withheld"
+            "Worker credential initialization unavailable; payloads withheld"
         ) from None

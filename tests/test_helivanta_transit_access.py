@@ -93,7 +93,7 @@ def test_openbao_admits_only_the_api_and_create_only_seed_from_helivanta():
             "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "helivanta"}},
             "podSelector": {"matchLabels": {"app.kubernetes.io/name": name}},
         }
-        for name in ["helivanta-emergency-secret-seed", "helivanta-api"]
+        for name in ["helivanta-emergency-secret-seed", "helivanta-privacy-secret-seed", "helivanta-api"]
     ]
     assert ingress["ports"] == [{"protocol": "TCP", "port": 8200}]
     auth = resource(documents, "AuthorizationPolicy", "allow-known-sources")
@@ -104,7 +104,7 @@ def test_openbao_admits_only_the_api_and_create_only_seed_from_helivanta():
         for principal in source["source"].get("principals", [])
         if "/ns/helivanta/" in principal
     ]
-    assert helivanta == ["cluster.local/ns/helivanta/sa/helivanta-emergency-secret-seed", PRINCIPAL]
+    assert helivanta == ["cluster.local/ns/helivanta/sa/helivanta-emergency-secret-seed", "cluster.local/ns/helivanta/sa/helivanta-privacy-secret-seed", PRINCIPAL]
     for rule in auth["spec"]["rules"]:
         if any(PRINCIPAL in s["source"].get("principals", []) for s in rule.get("from", [])):
             assert rule["to"] == [{"operation": {"ports": ["8200"]}}]

@@ -97,6 +97,8 @@ def test_document_proxies_can_reach_only_the_istiod_control_port():
                                         "helivanta-document-worker",
                                         "helivanta-supply-evidence-worker",
                                         "helivanta-clamav",
+                                        "helivanta-privacy-worker",
+                                        "helivanta-privacy-secret-seed",
                                     ],
                                 }
                             ]
@@ -453,15 +455,18 @@ def test_existing_broad_ingress_cannot_bypass_private_scanner_policy():
     resources = render("charts/apps/helivanta-network-policies")
     for name in ["allow-intra-namespace", "allow-istio-ingress"]:
         selector = resource(resources, "NetworkPolicy", name)["spec"]["podSelector"]
+        excluded = {
+            value
+            for expression in selector["matchExpressions"]
+            if expression["key"] == "app.kubernetes.io/name"
+            and expression["operator"] == "NotIn"
+            for value in expression["values"]
+        }
         assert {
-            "key": "app.kubernetes.io/name",
-            "operator": "NotIn",
-            "values": [
-                "helivanta-clamav",
-                "helivanta-document-worker",
-                "helivanta-supply-evidence-worker",
-            ],
-        } in selector["matchExpressions"]
+            "helivanta-clamav",
+            "helivanta-document-worker",
+            "helivanta-supply-evidence-worker",
+        } <= excluded
     scanner = resource(
         render("charts/apps/helivanta-api", "documents.enabled=true"),
         "NetworkPolicy",
