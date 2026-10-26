@@ -345,3 +345,13 @@ Start by implementing this state machine over the already-tested APIs, with
 fake API boundary tests plus an isolated workspace integration suite. No new
 broker or persistent disk is needed. Any future Kubernetes pod should use the
 existing cluster and resource limits; standard-disk policy remains unchanged.
+
+## Support chat extension
+
+Support bridges have a different contract from one-way signup notifications.
+Use a separate product bot and channel credential, persist authenticated product
+provenance in the conversation owner, and document reply author/assignment
+rules. The shared Otto implementation and repeatable rollout/recovery steps are
+in [the mark8ly support runbook](mark8ly-rocketchat-support.md). Extend the proposed
+operator only after accounting for this boundary; do not reuse the onboarding
+identity or mark a support channel integrated after channel creation alone.
