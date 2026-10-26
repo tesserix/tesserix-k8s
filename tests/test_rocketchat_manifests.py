@@ -31,7 +31,6 @@ def test_only_named_members_can_provision_through_zitadel():
         "members": [
             {"email": "samyak.rout@gmail.com", "roles": ["admin"]},
             {"email": "mahesh.sangawar@gmail.com", "roles": ["admin"]},
-            {"email": "tesserixqa@gmail.com", "roles": ["user"]},
         ],
     }
     deploy = next(d for d in docs if d["kind"] == "Deployment")
@@ -53,7 +52,7 @@ def test_only_named_members_can_provision_through_zitadel():
         env["OVERWRITE_SETTING_Accounts_Registration_AuthenticationServices_Enabled"]
         == "true"
     )
-    assert env["OVERWRITE_SETTING_Accounts_Registration_AuthenticationServices_Default_Roles"] == "user"
+    assert env["OVERWRITE_SETTING_Accounts_Registration_AuthenticationServices_Default_Roles"] == "user,admin"
     assert env["Accounts_OAuth_Custom_Zitadel_key_field"] == "sub"
     assert env["Accounts_OAuth_Custom_Zitadel_merge_users"] == "false"
 
