@@ -35,6 +35,21 @@ spec:
             - name: http
               containerPort: {{ .Values.service.port }}
           env:
+            - name: ROCKETCHAT_SUPPORT_ENABLED
+              value: {{ .Values.rocketchat.enabled | quote }}
+            {{- if .Values.rocketchat.enabled }}
+            - name: ROCKETCHAT_URL
+              value: {{ .Values.rocketchat.url | quote }}
+            - name: ROCKETCHAT_SUPPORT_STAFF_IDS
+              value: {{ .Values.rocketchat.staffIDs | quote }}
+            {{- range $key := list "ROCKETCHAT_SUPPORT_AUTH_TOKEN" "ROCKETCHAT_SUPPORT_USER_ID" "ROCKETCHAT_SUPPORT_ROOM_ID" }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.rocketchat.secretName }}
+                  key: {{ $key }}
+            {{- end }}
+            {{- end }}
             - name: ENV
               value: "prod"
             - name: HTTP_PORT
