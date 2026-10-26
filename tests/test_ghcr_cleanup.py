@@ -23,9 +23,31 @@ UTC = dt.timezone.utc
 def version(version_id, days_old, *, now, tags=None):
     return {
         "id": version_id,
+        "name": digest(version_id),
         "updated_at": (now - dt.timedelta(days=days_old)).isoformat(),
         "metadata": {"container": {"tags": tags or []}},
     }
+
+
+def digest(version_id):
+    return f"sha256:{version_id:064x}"
+
+
+def multi_arch_push(index_id, days_old, *, now, tags):
+    """One buildx multi-arch push: a tagged index and two untagged platform manifests."""
+    return [
+        version(index_id, days_old, now=now, tags=tags),
+        version(index_id + 1, days_old, now=now),
+        version(index_id + 2, days_old, now=now),
+    ]
+
+
+class FakeRegistry:
+    def __init__(self, children):
+        self.children = children
+
+    def child_digests(self, repository, index_digest):
+        return self.children.get(index_digest, set())
 
 
 class FakeCleanupClient:
@@ -135,6 +157,59 @@ class RetentionTests(unittest.TestCase):
         # 1 is pinned and spared; 2 is untagged, old, and outside newest-3, so
         # cleanup still reclaims it.
         self.assertEqual([2], [item["id"] for item in selected])
+
+    def test_keeps_newest_three_multi_arch_images_with_their_platform_manifests(self):
+        # The base-go-builder outage (tesserix/helivanta#1361): one multi-arch
+        # push is three versions, so "newest 3 versions" kept a single image and
+        # deleted the digest a Dockerfile still pinned.
+        versions = (
+            multi_arch_push(10, 11, now=self.now, tags=["20261015"])
+            + multi_arch_push(20, 4, now=self.now, tags=["sha-997ab0287fd0"])
+            + multi_arch_push(30, 4, now=self.now, tags=["20261022"])
+            + multi_arch_push(40, 1, now=self.now, tags=["20261025", "latest"])
+        )
+        registry = FakeRegistry(
+            {
+                digest(index): {digest(index + 1), digest(index + 2)}
+                for index in (10, 20, 30, 40)
+            }
+        )
+        client = FakeCleanupClient(
+            [{"name": "base-go-builder"}], {"base-go-builder": versions}
+        )
+
+        ghcr_cleanup.cleanup(
+            client,
+            org="tesserix",
+            cutoff_delta=dt.timedelta(days=3),
+            keep=3,
+            dry_run=False,
+            registry=registry,
+            now=self.now,
+        )
+
+        deleted = sorted(int(path.rsplit("/", 1)[1]) for _, path in client.deleted)
+        self.assertEqual([10, 11, 12], deleted)
+
+    def test_signature_referrers_do_not_count_as_images(self):
+        # GHCR has no referrers API, so cosign tags a signature sha256-<image
+        # digest>. It belongs to its image: it neither uses up a keep slot nor
+        # outlives the image.
+        versions = []
+        for index, days_old in ((10, 40), (20, 30), (30, 20), (40, 10)):
+            versions.append(version(index, days_old, now=self.now, tags=[f"sha-{index}"]))
+            signature_tag = digest(index).replace(":", "-")
+            versions.append(
+                version(index + 1, days_old - 0.5, now=self.now, tags=[signature_tag])
+            )
+
+        selected = ghcr_cleanup.select_deletable_versions(
+            versions,
+            cutoff=self.now - dt.timedelta(days=3),
+            keep=3,
+        )
+
+        self.assertEqual([11, 10], [item["id"] for item in selected])
 
     def test_keeps_versions_newer_than_cutoff_beyond_newest_three(self):
         versions = [

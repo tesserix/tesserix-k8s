@@ -2,7 +2,8 @@ name: GHCR Cleanup (3-day retention)
 
 # For every container package in ghcr.io/tesserix:
 #   * always retain any version whose tag is pinned by a chart under charts/;
-#   * always retain the newest 3 package versions;
+#   * always retain the newest 3 images, with their platform manifests and
+#     signatures, and the newest 3 package versions;
 #   * retain every version updated within the last 3 days; and
 #   * delete all other tagged and untagged versions.
 #
@@ -13,9 +14,12 @@ name: GHCR Cleanup (3-day retention)
 # tesserix-storybook took all three down the next time GKE recycled their nodes,
 # months after the deletions, with nothing linking cause to effect.
 #
-# A GHCR package version can carry multiple tags and GitHub deletes the complete
-# version, so the newest-3 rule applies to versions rather than individual tag
-# aliases.
+# One multi-arch push is three package versions: a tagged index and an untagged
+# manifest per platform. Counting versions therefore kept a single image, and
+# the previous base image digest that consumers pin was deleted three days
+# after every rebuild (tesserix/helivanta#1361). An image is a tagged version
+# other than a `sha256-<digest>` signature or attestation, and GitHub deletes a
+# whole version with every tag on it.
 #
 # REQUIRES a GitHub App installed on the tesserix organization with access to
 # all repositories and Packages: write permission:
@@ -191,7 +195,7 @@ jobs:
             echo "- Versions examined: **$VERSIONS_EXAMINED**"
             echo "- Versions deleted: **$VERSIONS_DELETED**"
             echo "- Versions eligible in dry run: **$VERSIONS_WOULD_DELETE**"
-            echo "- Policy: retain every version newer than **$CUT_OFF** and always retain the newest 3 per package."
+            echo "- Policy: retain every version newer than **$CUT_OFF**, every tag pinned under charts/ and argocd/, and the newest 3 images per package with their platform manifests and signatures."
             if [[ "$STATUS" == "partial" ]]; then
               echo "- A continuation was dispatched after: **${RESUME_AFTER:-<start>}**"
             fi

@@ -92,6 +92,9 @@ _TAG_RE = re.compile(r'^\s*tag:\s*["\']?([A-Za-z0-9][A-Za-z0-9._-]*)["\']?\s*(?:
 _PARAM_VALUE_RE = re.compile(
     r'^\s*value:\s*["\']?([A-Za-z0-9][A-Za-z0-9._-]*)["\']?\s*(?:#.*)?$'
 )
+# GHCR has no OCI referrers API, so signatures and attestations are tagged
+# `sha256-<subject digest>`, optionally with a cosign `.sig`/`.att` suffix.
+_REFERRER_TAG_RE = re.compile(r"sha256-(?P<hex>[0-9a-f]{64})(?:\.[a-z]+)?")
 
 
 def deployed_image_tags(chart_root: str) -> set[str]:
@@ -121,6 +124,22 @@ def deployed_image_tags(chart_root: str) -> set[str]:
     return tags
 
 
+def is_image(version: Mapping[str, Any]) -> bool:
+    """A tagged version that is not only a signature or attestation."""
+    return any(
+        not _REFERRER_TAG_RE.fullmatch(tag) for tag in version_tag_list(version)
+    )
+
+
+def referrer_subjects(version: Mapping[str, Any]) -> set[str]:
+    """Digests of the images this version signs or attests."""
+    return {
+        f"sha256:{match['hex']}"
+        for tag in version_tag_list(version)
+        if (match := _REFERRER_TAG_RE.fullmatch(tag))
+    }
+
+
 def select_deletable_versions(
     versions: Sequence[Mapping[str, Any]],
     *,
@@ -128,7 +147,14 @@ def select_deletable_versions(
     keep: int,
     protected_tags: Iterable[str] = (),
 ) -> list[Mapping[str, Any]]:
-    """Return versions outside the newest `keep` whose updated_at is old enough.
+    """Return the versions no retention rule covers, newest first.
+
+    Retained: the newest `keep` images and the newest `keep` versions, every
+    version updated at or after `cutoff`, every version carrying a protected
+    tag, and the signatures and attestations of all of those. Images are counted
+    rather than versions because one multi-arch push is an index plus one
+    untagged version per platform; `drop_referenced_untagged` then spares the
+    platform manifests of retained images.
 
     A version carrying any protected tag is never deletable, however old it is:
     something in production is pinned to it. Age is a poor proxy for "unused" —
@@ -143,11 +169,24 @@ def select_deletable_versions(
         ),
         reverse=True,
     )
+    images = [version for version in ordered if is_image(version)]
+    retained = [
+        *ordered[:keep],
+        *images[:keep],
+        *(
+            version
+            for version in ordered
+            if parse_github_time(str(version["updated_at"])) >= cutoff
+            or protected & set(version_tag_list(version))
+        ),
+    ]
+    retained_ids = {int(version["id"]) for version in retained}
+    retained_digests = {str(version.get("name")) for version in retained}
     return [
         version
-        for version in ordered[keep:]
-        if parse_github_time(str(version["updated_at"])) < cutoff
-        and not (protected & set(version_tag_list(version)))
+        for version in ordered
+        if int(version["id"]) not in retained_ids
+        and not referrer_subjects(version) & retained_digests
     ]
 
 
@@ -585,7 +624,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--org", required=True)
     parser.add_argument("--cut-off", type=parse_duration, default=parse_duration("5d"))
-    parser.add_argument("--keep", type=int, default=3)
+    parser.add_argument(
+        "--keep",
+        type=int,
+        default=3,
+        help="Newest images (and newest versions) always retained per package",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--resume-after", default="")
     parser.add_argument(
