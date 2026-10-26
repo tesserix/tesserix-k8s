@@ -73,8 +73,8 @@ def test_project_verification_rejects_outsiders_unverified_email_and_disabled_ch
     with pytest.raises(ValueError, match="unique and verified"):
         bootstrap.verify_project(identity, {"id": "test-project"})
     identity = Identity()
-    identity.project["hasProjectCheck"] = False
-    with pytest.raises(ValueError, match="membership and roles"):
+    identity.project["projectRoleCheck"] = False
+    with pytest.raises(ValueError, match="user role grants"):
         bootstrap.verify_project(identity, {"id": "test-project"})
 
 
@@ -88,3 +88,9 @@ def test_missing_rocketchat_secret_is_treated_as_unprovisioned():
     bao = bootstrap.OpenBao("http://127.0.0.1:18200", "synthetic-token")
     bao.opener = Missing()
     assert bootstrap.read(bao, "mongodb-password") is None
+
+
+def test_role_grants_restrict_users_without_an_organization_access_check():
+    identity = Identity()
+    identity.project.pop("hasProjectCheck")
+    bootstrap.verify_project(identity, {"id": "test-project"})
