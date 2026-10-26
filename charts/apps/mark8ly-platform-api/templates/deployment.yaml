@@ -65,6 +65,19 @@ spec:
           env:
             - name: ENV
               value: "prod"
+            - name: ROCKETCHAT_ONBOARDING_ENABLED
+              value: {{ .Values.rocketChat.onboardingEnabled | quote }}
+            {{- if .Values.rocketChat.onboardingEnabled }}
+            - name: ROCKETCHAT_URL
+              value: {{ .Values.rocketChat.url | quote }}
+            {{- range $key := list "ROCKETCHAT_USER_ID" "ROCKETCHAT_AUTH_TOKEN" "ROCKETCHAT_ONBOARDING_ROOM_ID" }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.rocketChat.secretName }}
+                  key: {{ $key }}
+            {{- end }}
+            {{- end }}
             - name: HTTP_PORT
               value: {{ .Values.service.port | quote }}
 {{ include "mark8ly-platform-api.dbEnv" . | indent 12 }}
