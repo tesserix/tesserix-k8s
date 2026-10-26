@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: rocketchat
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: tesserix
+    app.kubernetes.io/component: collaboration
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: main
+    path: charts/thirdparty/rocketchat
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: rocketchat
+  syncPolicy:
+    syncOptions: [CreateNamespace=true]
+    managedNamespaceMetadata:
+      labels:
+        istio-injection: disabled

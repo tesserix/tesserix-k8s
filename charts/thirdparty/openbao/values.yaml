@@ -287,6 +287,22 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: seed-rocketchat-production
+      hcl: |
+        path "kv/data/rocketchat/prod/app/rocketchat-mongodb-uri" { capabilities = ["create", "read", "update"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-mongodb-root-password" { capabilities = ["create", "read", "update"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-mongodb-password" { capabilities = ["create", "read", "update"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-mongodb-keyfile" { capabilities = ["create", "read", "update"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-zitadel-client-id" { capabilities = ["create", "read", "update"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-zitadel-client-secret" { capabilities = ["create", "read", "update"] }
+    - name: read-rocketchat-production
+      hcl: |
+        path "kv/data/rocketchat/prod/app/rocketchat-mongodb-uri" { capabilities = ["read"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-mongodb-root-password" { capabilities = ["read"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-mongodb-password" { capabilities = ["read"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-mongodb-keyfile" { capabilities = ["read"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-zitadel-client-id" { capabilities = ["read"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-zitadel-client-secret" { capabilities = ["read"] }
     - name: seed-civiclens-ai-production
       hcl: |
         path "kv/data/civiclens/prod/app/civiclens-ai-gateway-key" { capabilities = ["read", "create", "update"] }
@@ -983,6 +999,16 @@ bootstrap:
         path "transit/hmac/helivanta-consent-*" { capabilities = ["update"] }
 
   kubernetesRoles:
+    - name: seed-rocketchat-production
+      serviceAccounts: [openbao-bootstrap]
+      namespaces: [openbao]
+      policies: [seed-rocketchat-production]
+      ttl: 15m
+    - name: read-rocketchat-production
+      serviceAccounts: [rocketchat-production-reader]
+      namespaces: [rocketchat]
+      policies: [read-rocketchat-production]
+      ttl: 15m
     - name: seed-civiclens-ai-production
       serviceAccounts: ["civiclens-ai-secret-seed"]
       namespaces: ["agentgateway-system"]
