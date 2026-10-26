@@ -72,7 +72,7 @@ def test_database_is_authenticated_replicated_and_storage_retained():
     }
     assert (
         db["spec"]["volumeClaimTemplates"][0]["spec"]["storageClassName"]
-        == "standard-rwo-retain"
+        == "economy-rwo-retain"
     )
     assert (
         next(d for d in docs if d["kind"] == "PodDisruptionBudget")["spec"][
@@ -145,3 +145,16 @@ def test_bootstrap_writer_is_bound_to_platform_bootstrap_identity():
     )
     assert "*" not in policy["hcl"]
     assert policy["hcl"].count('capabilities = ["create", "read", "update"]') == 6
+
+
+def test_dns_egress_allows_the_cluster_dns_service_ip():
+    dns = next(
+        d
+        for d in render()
+        if d["kind"] == "NetworkPolicy" and d["metadata"]["name"] == "dns"
+    )
+    assert any(
+        peer.get("ipBlock", {}).get("cidr") == "10.30.0.10/32"
+        for rule in dns["spec"]["egress"]
+        for peer in rule.get("to", [])
+    )
