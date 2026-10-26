@@ -64,3 +64,40 @@ dialog, refresh the page, and start a new **Sign in with Tesserix** attempt.
 For offboarding, remove the Zitadel grant AND deactivate the Rocket.Chat account
 and invalidate its sessions. For recovery, preserve PVCs and restore backups;
 do not assume a previous image can read a migrated database schema.
+
+## iOS login TLS compatibility (2026-10-26)
+
+Rocket.Chat iOS 4.77.2 uses a native WebSocket connection that failed against
+Cloudflare's TLS 1.3 minimum, even though HTTPS REST requests and Zitadel OAuth
+succeeded. The app returned to the sign-in screen. The native error was
+`OSStatus -9836`; a forced TLS 1.2 request failed with `protocol version`.
+
+Cloudflare Advanced Certificate Manager ($10/month, approved) enables the exact
+hostname exception. The zone `tesserix.app` retains minimum TLS 1.3. Only
+`rocketchat.tesserix.app` has a minimum TLS 1.2 override; TLS 1.3 remains enabled.
+No Kubernetes workload, disk, origin certificate, or Zitadel TLS change is needed.
+
+To reproduce this configuration:
+
+1. Enable Advanced Certificate Manager for the zone with billing approval.
+2. Use a temporary API token scoped to this zone with
+   `Zone / SSL and Certificates / Edit`. Do not broaden the shared DNS token.
+3. Record `GET /zones/{zone_id}/hostnames/settings/min_tls_version` before editing.
+4. Apply `PUT /zones/{zone_id}/hostnames/settings/min_tls_version/rocketchat.tesserix.app`
+   with JSON `{"value":"1.2"}`. Never lower the zone-wide minimum.
+5. Read back the hostname settings and confirm the zone minimum is still 1.3.
+6. Verify `curl --tlsv1.2 --tls-max 1.2 https://rocketchat.tesserix.app/api/info`
+   succeeds while the same TLS restriction against `https://auth.tesserix.app`
+   still fails. Test the native app, since generic clients may negotiate TLS 1.3
+   and miss this compatibility issue.
+7. Revoke the temporary Cloudflare token and remove local credential files.
+
+The native iPhone 17 Pro Max simulator WebSocket opened successfully after the
+change (normal close code 1000), and the owner confirmed mobile login worked.
+A transient Cloudflare 520 on the identity hostname occurred during retry;
+OIDC discovery returned HTTP 200 afterward. A 520 requires origin/Cloudflare
+investigation, not another reduction of the zone TLS policy.
+
+Temporary QA access must be removed after testing: remove the project member via
+GitOps, deactivate its Rocket.Chat account and invalidate sessions, and disable
+only the temporary TESSERIX identity. Preserve the separate CivicLens QA identity.
