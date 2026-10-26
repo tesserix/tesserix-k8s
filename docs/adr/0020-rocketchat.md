@@ -13,7 +13,7 @@ Initial sizing assumes two people, 5,000 notification messages/day averaging
 are about 3.7 GB/year, or 11 GB/three years, before indexes and metadata;
 attachments add about 3.8 GB/year. Three MongoDB members each have a retained
 20 GiB disk, plus a retained 20 GiB uploads disk. Growth requires disk expansion
-or retention limits before reaching capacity. Requests total 5 GiB memory,
+or retention limits before reaching capacity. Requests total 4.25 GiB memory,
 limits total 10 GiB. CPU requests follow the repository's memory-only convention.
 80 GiB balanced persistent disk is approximately US$8/month before region/tax;
 compute, snapshots and network charges depend on node headroom and backup design.

@@ -100,6 +100,7 @@ def test_database_ports_are_not_public_and_secrets_are_scoped():
     secrets = [d for d in docs if d["kind"] == "ExternalSecret"]
     assert len(secrets) == 2
     for secret in secrets:
+        assert secret["spec"]["refreshInterval"] == "1m"
         for item in secret["spec"]["data"]:
             assert item["remoteRef"]["key"].startswith(
                 "rocketchat/prod/app/rocketchat-"
