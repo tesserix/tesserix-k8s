@@ -76,3 +76,15 @@ def test_project_verification_rejects_outsiders_unverified_email_and_disabled_ch
     identity.project["hasProjectCheck"] = False
     with pytest.raises(ValueError, match="membership and roles"):
         bootstrap.verify_project(identity, {"id": "test-project"})
+
+
+def test_missing_rocketchat_secret_is_treated_as_unprovisioned():
+    import urllib.error
+
+    class Missing:
+        def open(self, request, timeout):
+            raise urllib.error.HTTPError(request.full_url, 404, "not found", {}, None)
+
+    bao = bootstrap.OpenBao("http://127.0.0.1:18200", "synthetic-token")
+    bao.opener = Missing()
+    assert bootstrap.read(bao, "mongodb-password") is None
