@@ -36,6 +36,11 @@ Paths (all hold a single `value` property):
 - `rocketchat/prod/app/rocketchat-zitadel-client-id`
 - `rocketchat/prod/app/rocketchat-zitadel-client-secret`
 
+Zitadel owns authentication and MFA. Rocket.Chat local two-factor challenges and
+automatic email-OTP enrollment are disabled; local password login and public
+registration remain disabled. After changing these settings, dismiss any old OTP
+dialog, refresh the page, and start a new **Sign in with Tesserix** attempt.
+
 ## Acceptance before replacing Slack
 
 - Sign in as both approved people, verify workspace administration and messaging.

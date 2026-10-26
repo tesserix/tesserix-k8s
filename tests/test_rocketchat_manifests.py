@@ -158,3 +158,18 @@ def test_dns_egress_allows_the_cluster_dns_service_ip():
         for rule in dns["spec"]["egress"]
         for peer in rule.get("to", [])
     )
+
+
+def test_zitadel_login_does_not_add_a_rocketchat_otp_challenge():
+    deployment = next(d for d in render() if d["kind"] == "Deployment")
+    env = {
+        item["name"]: item.get("value")
+        for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    assert env["OVERWRITE_SETTING_Accounts_TwoFactorAuthentication_Enabled"] == "false"
+    assert (
+        env["OVERWRITE_SETTING_Accounts_TwoFactorAuthentication_By_Email_Auto_Opt_In"]
+        == "false"
+    )
+    assert env["OVERWRITE_SETTING_Accounts_ShowFormLogin"] == "false"
+    assert env["OVERWRITE_SETTING_Accounts_RegistrationForm"] == "Disabled"
