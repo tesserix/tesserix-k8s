@@ -49,6 +49,8 @@ def test_support_platform_access_is_exact_and_namespace_bound():
             for s, t in targets.items()
             if ns != "agentgateway-system" or s.endswith("platform-mcp-key")
         }
+        if ns == "support-platform":
+            expected.add("kv/data/support-platform/app/support-platform-mark8ly-rocketchat")
         assert set(re.findall(r'path "(kv/data/[^\"]+)"', policy)) == expected
         assert "*" not in policy and '"delete"' not in policy
         assert (
