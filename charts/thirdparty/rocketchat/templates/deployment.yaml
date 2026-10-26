@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rocketchat
+  annotations:
+    secret.reloader.stakater.com/reload: rocketchat-runtime
+spec:
+  replicas: {{ .Values.replicas }}
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: rocketchat}
+  template:
+    metadata:
+      labels: {app: rocketchat}
+      annotations:
+        sidecar.istio.io/inject: "false"
+        checksum/settings: {{ toJson .Values.settings | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: rocketchat
+          image: {{ .Values.image | quote }}
+          ports: [{name: http, containerPort: 3000}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{ toJson .Values.resources }}
+          env:
+            - {name: ROOT_URL, value: {{ printf "https://%s" .Values.host | quote }}}
+            - {name: PORT, value: "3000"}
+            - {name: DEPLOY_METHOD, value: kubernetes}
+            - {name: HTTP_FORWARDED_COUNT, value: "2"}
+            - name: MONGO_URL
+              valueFrom: {secretKeyRef: {name: rocketchat-runtime, key: mongodb-uri}}
+            - {name: Accounts_OAuth_Custom_Zitadel, value: "true"}
+            - name: Accounts_OAuth_Custom_Zitadel_id
+              valueFrom: {secretKeyRef: {name: rocketchat-runtime, key: zitadel-client-id}}
+            - name: Accounts_OAuth_Custom_Zitadel_secret
+              valueFrom: {secretKeyRef: {name: rocketchat-runtime, key: zitadel-client-secret}}
+            - name: OVERWRITE_SETTING_Accounts_OAuth_Custom-Zitadel-id
+              valueFrom: {secretKeyRef: {name: rocketchat-runtime, key: zitadel-client-id}}
+            - name: OVERWRITE_SETTING_Accounts_OAuth_Custom-Zitadel-secret
+              valueFrom: {secretKeyRef: {name: rocketchat-runtime, key: zitadel-client-secret}}
+            - {name: Accounts_OAuth_Custom_Zitadel_url, value: "https://auth.tesserix.app"}
+            - {name: Accounts_OAuth_Custom_Zitadel_authorize_path, value: /oauth/v2/authorize}
+            - {name: Accounts_OAuth_Custom_Zitadel_token_path, value: /oauth/v2/token}
+            - {name: Accounts_OAuth_Custom_Zitadel_identity_path, value: /oidc/v1/userinfo}
+            - {name: Accounts_OAuth_Custom_Zitadel_scope, value: "openid profile email"}
+            - {name: Accounts_OAuth_Custom_Zitadel_token_sent_via, value: header}
+            - {name: Accounts_OAuth_Custom_Zitadel_identity_token_sent_via, value: header}
+            - {name: Accounts_OAuth_Custom_Zitadel_key_field, value: sub}
+            - {name: Accounts_OAuth_Custom_Zitadel_email_field, value: email}
+            - {name: Accounts_OAuth_Custom_Zitadel_username_field, value: preferred_username}
+            - {name: Accounts_OAuth_Custom_Zitadel_name_field, value: name}
+            - {name: Accounts_OAuth_Custom_Zitadel_login_style, value: redirect}
+            - {name: Accounts_OAuth_Custom_Zitadel_button_label_text, value: "Sign in with Tesserix"}
+            - {name: Accounts_OAuth_Custom_Zitadel_show_button, value: "true"}
+            - {name: Accounts_OAuth_Custom_Zitadel_merge_users, value: "false"}
+            - {name: Accounts_OAuth_Custom_Zitadel_merge_users_distinct_services, value: "false"}
+            {{- range $name, $value := .Values.settings }}
+            - {name: {{ printf "OVERWRITE_SETTING_%s" $name }}, value: {{ $value | toString | quote }}}
+            {{- end }}
+          startupProbe:
+            httpGet: {path: /api/info, port: http}
+            periodSeconds: 10
+            failureThreshold: 90
+          readinessProbe:
+            httpGet: {path: /api/info, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: http}
+            periodSeconds: 30
+            timeoutSeconds: 5
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: uploads, mountPath: /app/uploads}
+      volumes:
+        - {name: tmp, emptyDir: {}}
+        - name: uploads
+          persistentVolumeClaim: {claimName: rocketchat-uploads}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rocketchat-uploads
+  annotations:
+    helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ .Values.mongodb.storageClass }}
+  resources:
+    requests: {storage: 20Gi}

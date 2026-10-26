@@ -100,6 +100,7 @@ class OpenBao:
                         "kv/data/mark8ly-uat/app/",
                         "kv/data/kora/app/",
                         "kv/data/kora-development/app/",
+                        "kv/data/rocketchat/prod/app/",
                         "kv/data/roamie/app/",
                         "kv/data/roamie-development/app/",
                     )
