@@ -1,13 +1,26 @@
 # GHCR cleanup
 
-The `GHCR Cleanup (5-day retention)` workflow manages every container package
+The `GHCR Cleanup (3-day retention)` workflow manages every container package
 under `ghcr.io/tesserix`.
 
 For each package it:
 
-1. retains every version updated within the fixed 5-day cutoff;
-2. always retains the newest 3 versions, even when they are older; and
-3. deletes every other tagged or untagged version.
+1. retains every version updated within the fixed 3-day cutoff;
+2. retains every version carrying a tag pinned under `charts/` or `argocd/`;
+3. always retains the newest 3 images and the newest 3 versions, even when
+   they are older;
+4. retains the platform manifests, signatures and attestations of every
+   retained image; and
+5. deletes every other tagged or untagged version.
+
+An image is a tagged version other than a `sha256-<digest>` signature or
+attestation. One multi-arch push is three versions: the tagged index and an
+untagged manifest per platform. Untagged versions are deleted only when the
+registry confirms no retained image references them.
+
+Consumers that pin a base image by digest, such as Helivanta's
+`Dockerfile.api`, keep building until three newer images of that base exist
+and the pinned one is more than 3 days old. Re-pin before then.
 
 GHCR deletes package versions rather than individual tag aliases. If several
 tags point to one version, those tags are deleted together.
