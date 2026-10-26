@@ -37,7 +37,7 @@ workspace admins, appropriate for the initial two-person operations team.
 Public signup, anonymous access, password changes and password recovery are
 disabled; no local bootstrap administrator is provisioned. SSO provisions accounts
 using stable `sub` identities, without email-based account merging. Project
-membership and role checks must be enabled before creating the confidential OIDC
+user-role grant checks must be enabled before creating the confidential OIDC
 client. No wildcard callback, generic Gmail-domain allowlist, or browser proxy is
 used. The mobile app uses Rocket.Chat's own OAuth login flow.
 

@@ -55,8 +55,8 @@ def create(bao, name, value):
 
 def verify_project(client, project):
     detail = client.expect("GET", f"/management/v1/projects/{project['id']}")["project"]
-    if not detail.get("hasProjectCheck") or not detail.get("projectRoleCheck"):
-        raise ValueError("Project must enforce membership and roles")
+    if not detail.get("projectRoleCheck"):
+        raise ValueError("Project must enforce user role grants")
     users = client.expect(
         "POST", "/management/v1/users/_search", {"query": {"limit": 1000}}
     ).get("result", [])
