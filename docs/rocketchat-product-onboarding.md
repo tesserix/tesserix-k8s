@@ -320,6 +320,14 @@ channel only after validating visibility/name/ownership; ambiguous or mismatched
 resources become a condition requiring review. Never rename, delete, archive,
 rotate, widen access, add human users or replay old customers automatically.
 
+Only platform administrators should register integrations. Derive allowed channel
+prefixes, namespace, SecretStore and OpenBao paths from the product/environment
+registration; reject cross-product references or arbitrary workspace URLs even
+when a resource exists. Tenant application service accounts must not be able to
+create or edit integration resources. Validate this boundary before obtaining a
+writer token, so a malicious resource cannot turn the controller into a
+cross-namespace credential reader.
+
 The provisioner needs API access for channel/user membership management; delivery
 bots do not. Separate these identities and their secret paths. The controller's
 Kubernetes RBAC should cover only its resources/status and permitted namespace
