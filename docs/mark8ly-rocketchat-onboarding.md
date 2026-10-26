@@ -94,3 +94,18 @@ is in [`config/rocketchat/products.yaml`](../config/rocketchat/products.yaml).
 
 Bot ID: `2LnQXGYY2XPsJMCLZ`; room ID: `6adeda38dfe0bc336c6d4c03`.
 Temporary administrative/writer sessions and provisioning grants were removed.
+
+## Production verification — 2026-10-26
+
+Application PR `tesserix/mark8ly#1081` and infrastructure PRs
+`tesserix/tesserix-k8s#1604` / `#1605` are merged. Both platform API replicas
+were first upgraded with notifications disabled, then enabled via GitOps.
+A labelled synthetic event (outbox ID `91`) completed with zero attempts/errors;
+replaying the same event left exactly one correctly attributed message with an
+unchanged timestamp. The final event counts were one completed and zero pending,
+in-flight, or dead events of this kind. No actual customer signup or historical
+backfill was used for this verification. The channel topic now identifies the
+integration as live.
+
+See [mark8ly support integration](mark8ly-rocketchat-support.md) for the separate
+support bot, two-way thread replies and shared Otto ownership.
