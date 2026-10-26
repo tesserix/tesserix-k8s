@@ -33,6 +33,7 @@ def test_readers_only_access_their_namespace_app_dependencies():
         }
         if namespace == "mark8ly":
             expected.add("kv/data/mark8ly/app/mark8ly-geoapify-api-key")
+            expected.add("kv/data/mark8ly/app/mark8ly-rocketchat-onboarding")
         assert set(re.findall(r'path "([^"]+)"', policy)) == expected
         assert set(re.findall(r"capabilities = \[([^]]+)\]", policy)) == {'"read"'}
 
