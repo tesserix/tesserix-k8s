@@ -205,6 +205,16 @@ spec:
         passwordSecret:
           name: {{ .Values.supplyEvidenceWorker.credentials.secretName }}
         {{- end }}
+      # Drug master release stewards (helivanta #476): one stages a release,
+      # a different one decides it, and neither inherits the other. Present
+      # before the 0001_drugmaster migration grants to them; no login until
+      # credential custody by two different people is reviewed.
+      - name: helivanta_drug_stager
+        ensure: present
+        inherit: false
+      - name: helivanta_drug_approver
+        ensure: present
+        inherit: false
       - name: {{ .Values.bootstrap.owner }}
         ensure: present
         login: true
