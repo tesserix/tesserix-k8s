@@ -9,7 +9,7 @@ The existing `helivanta-api-transit` Kubernetes role binds only service account
 `helivanta-api` in namespace `helivanta`. Its policy grants `create, update` on
 `transit/encrypt/helivanta-payments-credentials` and `update` on the corresponding
 decrypt path. Existing staff and emergency grants remain scoped to their keys.
-Key administration and export stay outside this role.
+The payment-key grant excludes key administration and export.
 
 Apply the OpenBao bootstrap policy before promoting the application release.
 Use Kargo's `kargo-helivanta/prod` stage and a verified freight commit whose API
