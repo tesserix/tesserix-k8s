@@ -1,0 +1,28 @@
+{{- if .Values.pharmacyEvidence.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: helivanta-pharmacy-evidence-processing
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: helivanta
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: helivanta.pharmacy-evidence-processing
+      rules:
+        - alert: HelivantaPharmacyEvidenceWorkerUnavailable
+          expr: kube_deployment_status_replicas_available{namespace="{{ .Release.Namespace }}",deployment="helivanta-pharmacy-evidence-worker"} < 1
+          for: 5m
+          labels: {severity: critical, owner: helivanta}
+          annotations:
+            summary: No Pharmacy evidence worker is ready; scanner definitions are ageing or a dependency is down
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/helivanta-pharmacy-evidence.md
+        - alert: HelivantaPharmacyEvidenceWorkerRestarting
+          expr: sum(increase(kube_pod_container_status_restarts_total{namespace="{{ .Release.Namespace }}",container="worker",pod=~"helivanta-pharmacy-evidence-worker-.*"}[15m])) > 3
+          for: 5m
+          labels: {severity: warning, owner: helivanta}
+          annotations:
+            summary: Pharmacy evidence worker restarts require dependency and workflow recovery checks
+            runbook_url: https://github.com/tesserix/tesserix-k8s/blob/main/docs/runbooks/helivanta-pharmacy-evidence.md
+{{- end }}
