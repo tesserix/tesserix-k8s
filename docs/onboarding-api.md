@@ -1,5 +1,33 @@
 # Identity provisioning API and platform console
 
+## Draft Staff contact reservations — 2026-10-31
+
+Canonical `global/global/onboarding_db.sql` includes an append-only
+`staff_identity_contact_claims` root ledger. A unique source-organisation/contact
+key prevents different commands bypassing an uncertain creation by changing IDs.
+A composite FK retains the exact original command, source org and frozen email;
+an extra unique command index supports that FK. The application may SELECT/INSERT
+claims but cannot UPDATE/DELETE/TRUNCATE them. Preparation, reservation and
+mandatory audit commit atomically in the owner.
+
+The owner computes the key with Go `strings.ToLower`, matching the inspected
+Zitadel v4.15.3 event-store username normalization. It does not remove dots/plus
+suffixes or rewrite the frozen email. This is not an email-based identity link
+or proof of provider login availability; source policy can additionally require
+instance-global uniqueness. Source organisations have separate reservations and
+still require real provider acceptance.
+
+Historical commands receive no silent root backfill. New dispatch without a
+retained root fails closed; receipts remain readable for reviewed recovery.
+Operator replacement must retain explicit root/command/outcome lineage rather
+than delete/release the root or retry its old dispatch. That protocol and consumer
+creation/recovery UI remain incomplete in the owner draft.
+
+Chart 0.3.58 persists this additive schema candidate. Repeated SQL application,
+actual preparation races, audit rollback and application-role rewrite denial
+passed on disposable local PostgreSQL only. No production rollout/migration
+occurred or is authorized by this record.
+
 The deployed UI is [Identity onboarding](https://console.tesserix.app/platform/provisioning)
 in `tesserix/tesserix-home/apps/console`. Product registration, tenant onboarding,
 Helivanta adoption/resume, organization configuration and identity audit live there.

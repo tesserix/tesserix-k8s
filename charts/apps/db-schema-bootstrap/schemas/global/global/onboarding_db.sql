@@ -267,3 +267,25 @@ CREATE TABLE IF NOT EXISTS staff_identity_creations (
 
 GRANT SELECT, INSERT ON staff_identity_creations TO onboarding;
 REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_creations FROM onboarding;
+
+-- A new command cannot bypass an unresolved create by changing its command ID.
+-- The root is permanent; reviewed replacements must retain explicit lineage.
+CREATE UNIQUE INDEX IF NOT EXISTS staff_identity_commands_contact_idx
+    ON staff_identity_commands (id, provider_org_id, email);
+
+CREATE TABLE IF NOT EXISTS staff_identity_contact_claims (
+    root_command_id UUID PRIMARY KEY,
+    provider_org_id TEXT NOT NULL,
+    email           TEXT NOT NULL,
+    -- Computed by the owner with Go strings.ToLower, as in Zitadel v4.15.3
+    -- username constraints. Never use address-provider-specific rewriting.
+    email_key       TEXT NOT NULL CHECK (length(email_key) BETWEEN 3 AND 200
+                         AND email_key = btrim(email_key) AND email_key !~ '[[:cntrl:]]'),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (provider_org_id, email_key),
+    FOREIGN KEY (root_command_id, provider_org_id, email)
+        REFERENCES staff_identity_commands (id, provider_org_id, email) ON DELETE RESTRICT
+);
+
+GRANT SELECT, INSERT ON staff_identity_contact_claims TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_contact_claims FROM onboarding;
