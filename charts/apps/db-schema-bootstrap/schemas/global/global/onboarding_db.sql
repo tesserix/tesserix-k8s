@@ -207,3 +207,250 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
 -- and can do nothing else to it.
 GRANT SELECT, INSERT ON audit_events TO onboarding;
 REVOKE UPDATE, DELETE, TRUNCATE ON audit_events FROM onboarding;
+
+-- Durable Staff creation input outlives the expiring request cache. Retain the
+-- tenant/product references on offboarding; deleting an identity is no reason
+-- to discard whether its creation was already dispatched.
+CREATE TABLE IF NOT EXISTS staff_identity_commands (
+    id                  UUID PRIMARY KEY CHECK (substring(id::text, 15, 1) = '7'),
+    org_id              UUID NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+    product_key         TEXT NOT NULL REFERENCES products (key) ON DELETE RESTRICT,
+    machine_subject     TEXT NOT NULL CHECK (machine_subject ~ '^[A-Za-z0-9_-]{1,200}$'),
+    actor_subject       TEXT NOT NULL CHECK (actor_subject ~ '^[A-Za-z0-9_-]{1,200}$'),
+    provider_org_id     TEXT NOT NULL CHECK (provider_org_id ~ '^[A-Za-z0-9_-]{1,200}$'),
+    provider_project_id TEXT NOT NULL CHECK (provider_project_id ~ '^[A-Za-z0-9_-]{1,200}$'),
+    provider_user_id    TEXT NOT NULL UNIQUE CHECK (provider_user_id ~ '^[A-Za-z0-9_-]{1,200}$'),
+    binding_nonce       TEXT NOT NULL UNIQUE CHECK (binding_nonce ~ '^[A-Za-z0-9_-]{16,200}$'),
+    email               TEXT NOT NULL CHECK (length(email) BETWEEN 3 AND 200
+                            AND email = btrim(email) AND email !~ '[[:cntrl:]]'),
+    given_name          TEXT NOT NULL CHECK (length(given_name) BETWEEN 1 AND 200
+                            AND given_name = btrim(given_name) AND given_name !~ '[[:cntrl:]]'),
+    family_name         TEXT NOT NULL CHECK (length(family_name) BETWEEN 1 AND 200
+                            AND family_name = btrim(family_name) AND family_name !~ '[[:cntrl:]]'),
+    reason              TEXT NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 2000),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (id, provider_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS staff_identity_commands_org_idx
+    ON staff_identity_commands (org_id, product_key, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS staff_identity_commands_product_idx
+    ON staff_identity_commands (product_key, created_at DESC, id DESC);
+
+GRANT SELECT, INSERT ON staff_identity_commands TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_commands FROM onboarding;
+
+-- Never expire or delete dispatch claims: an uncertain response may conceal a
+-- successful provider creation, including one subsequently deleted upstream.
+CREATE TABLE IF NOT EXISTS staff_identity_dispatches (
+    command_id UUID PRIMARY KEY REFERENCES staff_identity_commands (id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+GRANT SELECT, INSERT ON staff_identity_dispatches TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_dispatches FROM onboarding;
+
+CREATE TABLE IF NOT EXISTS staff_identity_creations (
+    command_id          UUID PRIMARY KEY REFERENCES staff_identity_dispatches (command_id) ON DELETE RESTRICT,
+    provider_user_id    TEXT NOT NULL,
+    -- Preserve the provider timestamp's exact nanoseconds; PostgreSQL native
+    -- timestamps round to microseconds and cannot replay this source fact.
+    source_creation_time TEXT NOT NULL CHECK (
+        length(source_creation_time) BETWEEN 20 AND 30
+        AND source_creation_time ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?Z$'
+        AND source_creation_time::timestamptz > '0001-01-01T00:00:00Z'::timestamptz
+    ),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    FOREIGN KEY (command_id, provider_user_id)
+        REFERENCES staff_identity_commands (id, provider_user_id) ON DELETE RESTRICT
+);
+
+GRANT SELECT, INSERT ON staff_identity_creations TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_creations FROM onboarding;
+
+-- A new command cannot bypass an unresolved create by changing its command ID.
+-- The root is permanent; reviewed replacements must retain explicit lineage.
+CREATE UNIQUE INDEX IF NOT EXISTS staff_identity_commands_contact_idx
+    ON staff_identity_commands (id, provider_org_id, email);
+
+CREATE TABLE IF NOT EXISTS staff_identity_contact_claims (
+    root_command_id UUID PRIMARY KEY,
+    provider_org_id TEXT NOT NULL,
+    email           TEXT NOT NULL,
+    -- Computed by the owner with Go strings.ToLower, as in Zitadel v4.15.3
+    -- username constraints. Never use address-provider-specific rewriting.
+    email_key       TEXT NOT NULL CHECK (length(email_key) BETWEEN 3 AND 200
+                         AND email_key = btrim(email_key) AND email_key !~ '[[:cntrl:]]'),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (provider_org_id, email_key),
+    FOREIGN KEY (root_command_id, provider_org_id, email)
+        REFERENCES staff_identity_commands (id, provider_org_id, email) ON DELETE RESTRICT
+);
+
+GRANT SELECT, INSERT ON staff_identity_contact_claims TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_contact_claims FROM onboarding;
+
+CREATE INDEX IF NOT EXISTS audit_events_staff_command_idx
+    ON audit_events (org_id, product_key, actor_id, target, seq DESC)
+    WHERE actor_type = 'product' AND action LIKE 'staff.identity.%';
+
+-- Ephemeral pagination positions, not authority or immutable business facts.
+CREATE TABLE IF NOT EXISTS staff_identity_history_cursors (
+    token_hash  TEXT PRIMARY KEY CHECK (token_hash ~ '^[0-9a-f]{64}$'),
+    command_id  UUID NOT NULL REFERENCES staff_identity_commands(id) ON DELETE CASCADE,
+    scope_hash  TEXT NOT NULL CHECK (scope_hash ~ '^[0-9a-f]{64}$'),
+    before_seq  BIGINT NOT NULL CHECK (before_seq > 0),
+    expires_at  TIMESTAMPTZ NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (expires_at > created_at)
+);
+CREATE INDEX IF NOT EXISTS staff_identity_history_cursors_expiry_idx
+    ON staff_identity_history_cursors (expires_at, token_hash);
+CREATE INDEX IF NOT EXISTS staff_identity_history_cursors_command_idx
+    ON staff_identity_history_cursors (command_id);
+GRANT SELECT, INSERT, DELETE ON staff_identity_history_cursors TO onboarding;
+REVOKE UPDATE, TRUNCATE ON staff_identity_history_cursors FROM onboarding;
+-- PostgreSQL row locking needs an UPDATE privilege; RLS below rejects every
+-- actual update while allowing continuation/collector locks.
+GRANT UPDATE (token_hash) ON staff_identity_history_cursors TO onboarding;
+ALTER TABLE staff_identity_history_cursors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE staff_identity_history_cursors FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_policies WHERE schemaname='public'
+                   AND tablename='staff_identity_history_cursors' AND policyname='staff_history_cursor_select') THEN
+        CREATE POLICY staff_history_cursor_select ON staff_identity_history_cursors
+            FOR SELECT TO onboarding USING (true);
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_policies WHERE schemaname='public'
+                   AND tablename='staff_identity_history_cursors' AND policyname='staff_history_cursor_insert') THEN
+        CREATE POLICY staff_history_cursor_insert ON staff_identity_history_cursors
+            FOR INSERT TO onboarding WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_policies WHERE schemaname='public'
+                   AND tablename='staff_identity_history_cursors' AND policyname='staff_history_cursor_delete_expired') THEN
+        CREATE POLICY staff_history_cursor_delete_expired ON staff_identity_history_cursors
+            FOR DELETE TO onboarding USING (expires_at<=now());
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_policies WHERE schemaname='public'
+                   AND tablename='staff_identity_history_cursors' AND policyname='staff_history_cursor_lock_only') THEN
+        CREATE POLICY staff_history_cursor_lock_only ON staff_identity_history_cursors
+            FOR UPDATE TO onboarding USING (true) WITH CHECK (false);
+    END IF;
+END $$;
+
+-- Recovery retains the original initiator and separate maker/reviewer facts.
+CREATE UNIQUE INDEX IF NOT EXISTS staff_identity_commands_recovery_actor_idx
+    ON staff_identity_commands (id, actor_subject, provider_user_id);
+
+CREATE TABLE IF NOT EXISTS staff_identity_recovery_requests (
+    id                        UUID PRIMARY KEY CHECK (substring(id::text, 15, 1) = '7'),
+    command_id                UUID NOT NULL REFERENCES staff_identity_dispatches(command_id) ON DELETE RESTRICT,
+    original_actor_subject    TEXT NOT NULL,
+    original_user_id          TEXT NOT NULL,
+    requested_by              TEXT NOT NULL CHECK (requested_by ~ '^[A-Za-z0-9_-]{1,200}$'),
+    requested_action          TEXT NOT NULL CHECK (requested_action IN ('close_unresolved', 'replace')),
+    replacement_actor_subject TEXT NOT NULL DEFAULT '',
+    reason                    TEXT NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 2000
+                                  AND reason !~ '[[:cntrl:]]'),
+    evidence_reference        TEXT NOT NULL CHECK (evidence_reference ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$'),
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK ((requested_action = 'close_unresolved' AND replacement_actor_subject = '')
+        OR (requested_action = 'replace' AND replacement_actor_subject ~ '^[A-Za-z0-9_-]{1,200}$')),
+    FOREIGN KEY (command_id, original_actor_subject, original_user_id)
+        REFERENCES staff_identity_commands (id, actor_subject, provider_user_id) ON DELETE RESTRICT,
+    UNIQUE (id, command_id, requested_by, original_actor_subject, original_user_id, requested_action, replacement_actor_subject)
+);
+CREATE INDEX IF NOT EXISTS staff_identity_recovery_requests_command_idx
+    ON staff_identity_recovery_requests(command_id, created_at DESC, id DESC);
+GRANT SELECT, INSERT ON staff_identity_recovery_requests TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_recovery_requests FROM onboarding;
+
+CREATE TABLE IF NOT EXISTS staff_identity_recovery_decisions (
+    request_id                UUID PRIMARY KEY,
+    command_id                UUID NOT NULL,
+    requested_by              TEXT NOT NULL,
+    original_actor_subject    TEXT NOT NULL,
+    original_user_id          TEXT NOT NULL,
+    requested_action          TEXT NOT NULL,
+    replacement_actor_subject TEXT NOT NULL DEFAULT '',
+    reviewed_by               TEXT NOT NULL CHECK (reviewed_by ~ '^[A-Za-z0-9_-]{1,200}$'),
+    decision                  TEXT NOT NULL CHECK (decision IN ('approved', 'rejected')),
+    reason                    TEXT NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 2000
+                                  AND reason !~ '[[:cntrl:]]'),
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (reviewed_by <> requested_by AND reviewed_by <> original_actor_subject
+        AND reviewed_by <> replacement_actor_subject AND reviewed_by <> original_user_id),
+    FOREIGN KEY (request_id, command_id, requested_by, original_actor_subject, original_user_id, requested_action, replacement_actor_subject)
+        REFERENCES staff_identity_recovery_requests
+            (id, command_id, requested_by, original_actor_subject, original_user_id, requested_action, replacement_actor_subject)
+        ON DELETE RESTRICT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS staff_identity_recovery_decisions_replacement_idx
+    ON staff_identity_recovery_decisions(command_id)
+    WHERE decision = 'approved' AND requested_action = 'replace';
+CREATE INDEX IF NOT EXISTS staff_identity_recovery_decisions_command_idx
+    ON staff_identity_recovery_decisions(command_id, created_at DESC, request_id DESC);
+GRANT SELECT, INSERT ON staff_identity_recovery_decisions TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_recovery_decisions FROM onboarding;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_recovery_decisions_active_idx
+    ON staff_identity_recovery_decisions(command_id) WHERE decision = 'approved';
+
+-- Successors retain exact approval, source scope and a non-branching permanent root.
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_commands_lineage_scope_idx
+    ON staff_identity_commands (id, org_id, product_key, provider_org_id, provider_project_id, email);
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_recovery_decisions_lineage_idx
+    ON staff_identity_recovery_decisions
+        (request_id, command_id, replacement_actor_subject, requested_action, decision);
+
+CREATE TABLE IF NOT EXISTS staff_identity_replacements (
+    parent_command_id          UUID PRIMARY KEY,
+    successor_command_id       UUID NOT NULL UNIQUE,
+    root_command_id            UUID NOT NULL REFERENCES staff_identity_contact_claims(root_command_id) ON DELETE RESTRICT,
+    request_id                 UUID NOT NULL UNIQUE,
+    org_id                     UUID NOT NULL,
+    product_key                TEXT NOT NULL,
+    provider_org_id            TEXT NOT NULL,
+    provider_project_id        TEXT NOT NULL,
+    email                      TEXT NOT NULL,
+    replacement_actor_subject  TEXT NOT NULL,
+    successor_user_id          TEXT NOT NULL,
+    generation                 INTEGER NOT NULL CHECK (generation > 0),
+    parent_generation          INTEGER GENERATED ALWAYS AS (generation - 1) STORED,
+    previous_successor_id      UUID GENERATED ALWAYS AS
+        (CASE WHEN generation > 1 THEN parent_command_id ELSE NULL END) STORED,
+    requested_action           TEXT GENERATED ALWAYS AS ('replace'::text) STORED,
+    decision                   TEXT GENERATED ALWAYS AS ('approved'::text) STORED,
+    created_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (successor_command_id <> parent_command_id AND successor_command_id <> root_command_id),
+    CHECK ((generation = 1 AND parent_command_id = root_command_id)
+        OR (generation > 1 AND parent_command_id <> root_command_id)),
+    FOREIGN KEY (parent_command_id, org_id, product_key, provider_org_id, provider_project_id, email)
+        REFERENCES staff_identity_commands
+            (id, org_id, product_key, provider_org_id, provider_project_id, email) ON DELETE RESTRICT,
+    FOREIGN KEY (successor_command_id, org_id, product_key, provider_org_id, provider_project_id, email)
+        REFERENCES staff_identity_commands
+            (id, org_id, product_key, provider_org_id, provider_project_id, email) ON DELETE RESTRICT,
+    FOREIGN KEY (root_command_id, org_id, product_key, provider_org_id, provider_project_id, email)
+        REFERENCES staff_identity_commands
+            (id, org_id, product_key, provider_org_id, provider_project_id, email) ON DELETE RESTRICT,
+    FOREIGN KEY (successor_command_id, replacement_actor_subject, successor_user_id)
+        REFERENCES staff_identity_commands (id, actor_subject, provider_user_id) ON DELETE RESTRICT,
+    FOREIGN KEY (request_id, parent_command_id, replacement_actor_subject, requested_action, decision)
+        REFERENCES staff_identity_recovery_decisions
+            (request_id, command_id, replacement_actor_subject, requested_action, decision) ON DELETE RESTRICT,
+    UNIQUE (successor_command_id, root_command_id, generation),
+    FOREIGN KEY (previous_successor_id, root_command_id, parent_generation)
+        REFERENCES staff_identity_replacements
+            (successor_command_id, root_command_id, generation) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS staff_identity_replacements_root_idx
+    ON staff_identity_replacements(root_command_id, generation);
+GRANT SELECT, INSERT ON staff_identity_replacements TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_replacements FROM onboarding;
+
+-- Historical identity creators/accounts remain interested parties in later generations.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_replacements_actor_idx
+    ON staff_identity_replacements(root_command_id, replacement_actor_subject);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_replacements_user_idx
+    ON staff_identity_replacements(root_command_id, successor_user_id);

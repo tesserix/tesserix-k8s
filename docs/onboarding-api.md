@@ -1,5 +1,39 @@
 # Identity provisioning API and platform console
 
+## Draft Staff contact reservations — 2026-10-31
+
+Canonical `global/global/onboarding_db.sql` includes an append-only
+`staff_identity_contact_claims` root ledger. A unique source-organisation/contact
+key prevents different commands bypassing an uncertain creation by changing IDs.
+A composite FK retains the exact original command, source org and frozen email;
+an extra unique command index supports that FK. The application may SELECT/INSERT
+claims but cannot UPDATE/DELETE/TRUNCATE them. Preparation, reservation and
+mandatory audit commit atomically in the owner.
+
+The owner computes the key with Go `strings.ToLower`, matching the inspected
+Zitadel v4.15.3 event-store username normalization. It does not remove dots/plus
+suffixes or rewrite the frozen email. This is not an email-based identity link
+or proof of provider login availability; source policy can additionally require
+instance-global uniqueness. Source organisations have separate reservations and
+still require real provider acceptance.
+
+Historical commands receive no silent root backfill. New dispatch without a
+retained root fails closed; receipts remain readable for reviewed recovery.
+Operator replacement must retain explicit root/command/outcome lineage rather
+than delete/release the root or retry its old dispatch. That protocol and consumer
+creation/recovery UI remain incomplete in the owner draft.
+
+Chart 0.3.60 persists this additive schema candidate. It also adds exact-command
+history indexing and an ephemeral hash-only continuation cache. The cache is
+separate from immutable identity facts: forced RLS permits expired deletion but
+rejects actual updates/active deletion; a narrow hash-column privilege permits
+PostgreSQL row locks. Bounded collection skips locked rows. Every history page
+still needs fresh service authorization and atomic disclosure audit.
+Repeated SQL application,
+actual preparation races, audit rollback and application-role rewrite denial
+passed on disposable local PostgreSQL only. No production rollout/migration
+occurred or is authorized by this record.
+
 The deployed UI is [Identity onboarding](https://console.tesserix.app/platform/provisioning)
 in `tesserix/tesserix-home/apps/console`. Product registration, tenant onboarding,
 Helivanta adoption/resume, organization configuration and identity audit live there.
@@ -751,3 +785,40 @@ Each step is useful on its own; do not build the console before the API works.
 | Management API `403` with a good token | `iam-admin` token missing `…:project:id:zitadel:aud` scope |
 | Operating on the wrong org | `x-zitadel-orgid` omitted — every `/management/v1/…` call is org-scoped by it |
 | Org exists in Zitadel, absent locally | Projection drift; reproject from Zitadel, never repair Zitadel from the projection |
+
+### Staff identity recovery substrate (not a released API)
+
+The additive schema now retains exact dispatched-command recovery requests and
+independent immutable decisions. Composite FKs bind original initiating actor,
+original provider-user subject, maker, requested action and replacement initiator.
+All four interested subjects are excluded from review. Rejected requests remain
+final; one approved replacement per parent command can win concurrently, while
+attributable closure does not permanently block later reviewed replacement.
+Both ledgers are SELECT/INSERT only for onboarding. No recovery route is exposed
+by these tables. Store-level mandatory audit transactions and successor/root lineage are
+implemented in 0.3.61 below. Verified operator authorization, source-conflict/orphan
+handling, owner endpoints and consumer UI remain required release gates. See
+[Staff identity ledger](staff-identity-ledger.md) and owner ADR-0005.
+
+### Reviewed successor persistence (not an operator API release)
+
+Chart 0.3.61 adds immutable, exact-scope replacement lineage. Owner storage commits
+an independent decision, a new prepared command, permanent root/parent lineage
+and mandatory audit atomically, with exact replay and no implicit source dispatch.
+Only that prepared successor can enter normal creation; an approved closed or
+superseded parent remains ineligible. Receipt reads add optional recovery_state
+(closed_unresolved/superseded) and successor_command_id while preserving historical
+command_state/creation facts. Creation/observation conflict on observed closure,
+including during source I/O. Operator source proof, verified role authorization,
+public operator endpoints and UI are not implemented by this schema increment.
+Canonical indexes on existing ledgers are concurrent/autocommit; verify actual
+schema/index/privilege state because bootstrap Job success is insufficient proof.
+
+### Historical recovery independence
+
+Chart 0.3.62 indexes historical creator/account subjects by permanent contact root.
+The owner rejects their later-generation reviews even after a new command or
+provider account ID was prepared. Immediate request-maker/initiator/target exclusions
+remain database-bound; the owner additionally checks every retained root/successor
+creator and account. This guards independence, not verified current operator role
+or source quarantine: those still gate future authenticated operator endpoints.
