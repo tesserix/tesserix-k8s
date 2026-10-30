@@ -221,6 +221,14 @@ spec:
       - name: helivanta_pharmacy_evidence_worker
         ensure: present
         inherit: false
+        {{- if .Values.pharmacyEvidenceWorker.login }}
+        {{- if not .Values.pharmacyEvidenceWorker.credentials.enabled }}
+        {{- fail "worker login requires credential projection" }}
+        {{- end }}
+        login: true
+        passwordSecret:
+          name: {{ .Values.pharmacyEvidenceWorker.credentials.secretName }}
+        {{- end }}
       - name: {{ .Values.bootstrap.owner }}
         ensure: present
         login: true

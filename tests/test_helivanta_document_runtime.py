@@ -96,6 +96,7 @@ def test_document_proxies_can_reach_only_the_istiod_control_port():
                                         "helivanta-api",
                                         "helivanta-document-worker",
                                         "helivanta-supply-evidence-worker",
+                                    "helivanta-pharmacy-evidence-worker",
                                         "helivanta-clamav",
                                         "helivanta-privacy-worker",
                                         "helivanta-privacy-secret-seed",
@@ -466,6 +467,7 @@ def test_existing_broad_ingress_cannot_bypass_private_scanner_policy():
             "helivanta-clamav",
             "helivanta-document-worker",
             "helivanta-supply-evidence-worker",
+                                    "helivanta-pharmacy-evidence-worker",
         } <= excluded
     scanner = resource(
         render("charts/apps/helivanta-api", "documents.enabled=true"),
