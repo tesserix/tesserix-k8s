@@ -289,3 +289,51 @@ CREATE TABLE IF NOT EXISTS staff_identity_contact_claims (
 
 GRANT SELECT, INSERT ON staff_identity_contact_claims TO onboarding;
 REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_contact_claims FROM onboarding;
+
+CREATE INDEX IF NOT EXISTS audit_events_staff_command_idx
+    ON audit_events (org_id, product_key, actor_id, target, seq DESC)
+    WHERE actor_type = 'product' AND action LIKE 'staff.identity.%';
+
+-- Ephemeral pagination positions, not authority or immutable business facts.
+CREATE TABLE IF NOT EXISTS staff_identity_history_cursors (
+    token_hash  TEXT PRIMARY KEY CHECK (token_hash ~ '^[0-9a-f]{64}$'),
+    command_id  UUID NOT NULL REFERENCES staff_identity_commands(id) ON DELETE CASCADE,
+    scope_hash  TEXT NOT NULL CHECK (scope_hash ~ '^[0-9a-f]{64}$'),
+    before_seq  BIGINT NOT NULL CHECK (before_seq > 0),
+    expires_at  TIMESTAMPTZ NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (expires_at > created_at)
+);
+CREATE INDEX IF NOT EXISTS staff_identity_history_cursors_expiry_idx
+    ON staff_identity_history_cursors (expires_at, token_hash);
+CREATE INDEX IF NOT EXISTS staff_identity_history_cursors_command_idx
+    ON staff_identity_history_cursors (command_id);
+GRANT SELECT, INSERT, DELETE ON staff_identity_history_cursors TO onboarding;
+REVOKE UPDATE, TRUNCATE ON staff_identity_history_cursors FROM onboarding;
+-- PostgreSQL row locking needs an UPDATE privilege; RLS below rejects every
+-- actual update while allowing continuation/collector locks.
+GRANT UPDATE (token_hash) ON staff_identity_history_cursors TO onboarding;
+ALTER TABLE staff_identity_history_cursors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE staff_identity_history_cursors FORCE ROW LEVEL SECURITY;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_policies WHERE schemaname='public'
+                   AND tablename='staff_identity_history_cursors' AND policyname='staff_history_cursor_select') THEN
+        CREATE POLICY staff_history_cursor_select ON staff_identity_history_cursors
+            FOR SELECT TO onboarding USING (true);
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_policies WHERE schemaname='public'
+                   AND tablename='staff_identity_history_cursors' AND policyname='staff_history_cursor_insert') THEN
+        CREATE POLICY staff_history_cursor_insert ON staff_identity_history_cursors
+            FOR INSERT TO onboarding WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_policies WHERE schemaname='public'
+                   AND tablename='staff_identity_history_cursors' AND policyname='staff_history_cursor_delete_expired') THEN
+        CREATE POLICY staff_history_cursor_delete_expired ON staff_identity_history_cursors
+            FOR DELETE TO onboarding USING (expires_at<=now());
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_policies WHERE schemaname='public'
+                   AND tablename='staff_identity_history_cursors' AND policyname='staff_history_cursor_lock_only') THEN
+        CREATE POLICY staff_history_cursor_lock_only ON staff_identity_history_cursors
+            FOR UPDATE TO onboarding USING (true) WITH CHECK (false);
+    END IF;
+END $$;

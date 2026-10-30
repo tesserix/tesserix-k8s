@@ -23,7 +23,13 @@ Operator replacement must retain explicit root/command/outcome lineage rather
 than delete/release the root or retry its old dispatch. That protocol and consumer
 creation/recovery UI remain incomplete in the owner draft.
 
-Chart 0.3.58 persists this additive schema candidate. Repeated SQL application,
+Chart 0.3.59 persists this additive schema candidate. It also adds exact-command
+history indexing and an ephemeral hash-only continuation cache. The cache is
+separate from immutable identity facts: forced RLS permits expired deletion but
+rejects actual updates/active deletion; a narrow hash-column privilege permits
+PostgreSQL row locks. Bounded collection skips locked rows. Every history page
+still needs fresh service authorization and atomic disclosure audit.
+Repeated SQL application,
 actual preparation races, audit rollback and application-role rewrite denial
 passed on disposable local PostgreSQL only. No production rollout/migration
 occurred or is authorized by this record.

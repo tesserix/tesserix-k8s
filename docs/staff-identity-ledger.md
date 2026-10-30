@@ -10,10 +10,10 @@ employment, membership or Access/RBAC.
 
 Canonical input:
 `charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql`.
-Chart version: `0.3.58`. Existing onboarding databases receive the existing
+Chart version: `0.3.59`. Existing onboarding databases receive the existing
 idempotent schema replay; no separate application-owned table copy is created.
 SQL SHA-256:
-`676f5c8676e48d9647b3d08e37a6e82ca84c91d22d8d4d343ee9bc9e03fafb63`.
+`8e2f89da8e6f4771a7d0af3ca075094f2ec622ab6f0ce38475f9b7660018b382`.
 All new objects belong to the existing onboarding identity owner and existing
 `onboarding_db`; no new cloud service, role, credential or network path is added.
 
@@ -54,6 +54,27 @@ zero actual source memberships/user grants. That provider test uses fixture
 registry proof; it does not prove normal-role UI/recipient acceptance.
 
 ## Compatibility and recovery
+
+The history expansion adds a partial exact-command audit index and an ephemeral
+`staff_identity_history_cursors` cache, separate from the four immutable ledgers.
+Only token hashes, scope hashes, internal sequence positions and expiry are
+retained. Tokens carry no authorization, no global sequence is returned, and
+every continuation requires current principal/source/command checks. History
+pages and new cursors require an atomic mandatory disclosure audit.
+
+The cache permits SELECT/INSERT and database-enforced deletion of expired rows.
+PostgreSQL row locking requires a narrow `UPDATE(token_hash)` privilege; forced
+RLS with `WITH CHECK(false)` rejects every actual update, and TRUNCATE is denied.
+Real application-role tests first reproduced permission-denied continuation,
+then passed with lock-only policy, denied active deletion/rewrites and permitted
+expired cleanup. Collection is capped at 1,000 rows and skips locked rows.
+Cache expiry/cascade cannot delete commands, roots, dispatches, receipts or audit.
+
+The full SQL and policies were replayed twice against the disposable fixture.
+On a rolled-back 100,001-row synthetic audit transaction, the actual bounded
+history query used `audit_events_staff_command_idx` with 0.046 ms execution.
+That is local query-plan evidence, not an API SLO. The private plan is retained
+with QA evidence. No live database or provider permission was changed.
 
 The old application does not query these tables, so applying the expansion does
 not activate a new endpoint or change existing member invitations. Deploy the
