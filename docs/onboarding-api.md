@@ -795,7 +795,21 @@ All four interested subjects are excluded from review. Rejected requests remain
 final; one approved replacement per parent command can win concurrently, while
 attributable closure does not permanently block later reviewed replacement.
 Both ledgers are SELECT/INSERT only for onboarding. No recovery route is exposed
-by these tables. Actual operator authorization, mandatory audit transactions,
-successor/root lineage, source-conflict/orphan handling and consumer UI remain
-required before any approved record can affect dispatch or membership. See
+by these tables. Store-level mandatory audit transactions and successor/root lineage are
+implemented in 0.3.61 below. Verified operator authorization, source-conflict/orphan
+handling, owner endpoints and consumer UI remain required release gates. See
 [Staff identity ledger](staff-identity-ledger.md) and owner ADR-0005.
+
+### Reviewed successor persistence (not an operator API release)
+
+Chart 0.3.61 adds immutable, exact-scope replacement lineage. Owner storage commits
+an independent decision, a new prepared command, permanent root/parent lineage
+and mandatory audit atomically, with exact replay and no implicit source dispatch.
+Only that prepared successor can enter normal creation; an approved closed or
+superseded parent remains ineligible. Receipt reads add optional recovery_state
+(closed_unresolved/superseded) and successor_command_id while preserving historical
+command_state/creation facts. Creation/observation conflict on observed closure,
+including during source I/O. Operator source proof, verified role authorization,
+public operator endpoints and UI are not implemented by this schema increment.
+Canonical indexes on existing ledgers are concurrent/autocommit; verify actual
+schema/index/privilege state because bootstrap Job success is insufficient proof.

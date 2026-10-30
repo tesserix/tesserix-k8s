@@ -392,3 +392,59 @@ CREATE INDEX IF NOT EXISTS staff_identity_recovery_decisions_command_idx
     ON staff_identity_recovery_decisions(command_id, created_at DESC, request_id DESC);
 GRANT SELECT, INSERT ON staff_identity_recovery_decisions TO onboarding;
 REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_recovery_decisions FROM onboarding;
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_recovery_decisions_active_idx
+    ON staff_identity_recovery_decisions(command_id) WHERE decision = 'approved';
+
+-- Successors retain exact approval, source scope and a non-branching permanent root.
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_commands_lineage_scope_idx
+    ON staff_identity_commands (id, org_id, product_key, provider_org_id, provider_project_id, email);
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_recovery_decisions_lineage_idx
+    ON staff_identity_recovery_decisions
+        (request_id, command_id, replacement_actor_subject, requested_action, decision);
+
+CREATE TABLE IF NOT EXISTS staff_identity_replacements (
+    parent_command_id          UUID PRIMARY KEY,
+    successor_command_id       UUID NOT NULL UNIQUE,
+    root_command_id            UUID NOT NULL REFERENCES staff_identity_contact_claims(root_command_id) ON DELETE RESTRICT,
+    request_id                 UUID NOT NULL UNIQUE,
+    org_id                     UUID NOT NULL,
+    product_key                TEXT NOT NULL,
+    provider_org_id            TEXT NOT NULL,
+    provider_project_id        TEXT NOT NULL,
+    email                      TEXT NOT NULL,
+    replacement_actor_subject  TEXT NOT NULL,
+    successor_user_id          TEXT NOT NULL,
+    generation                 INTEGER NOT NULL CHECK (generation > 0),
+    parent_generation          INTEGER GENERATED ALWAYS AS (generation - 1) STORED,
+    previous_successor_id      UUID GENERATED ALWAYS AS
+        (CASE WHEN generation > 1 THEN parent_command_id ELSE NULL END) STORED,
+    requested_action           TEXT GENERATED ALWAYS AS ('replace'::text) STORED,
+    decision                   TEXT GENERATED ALWAYS AS ('approved'::text) STORED,
+    created_at                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (successor_command_id <> parent_command_id AND successor_command_id <> root_command_id),
+    CHECK ((generation = 1 AND parent_command_id = root_command_id)
+        OR (generation > 1 AND parent_command_id <> root_command_id)),
+    FOREIGN KEY (parent_command_id, org_id, product_key, provider_org_id, provider_project_id, email)
+        REFERENCES staff_identity_commands
+            (id, org_id, product_key, provider_org_id, provider_project_id, email) ON DELETE RESTRICT,
+    FOREIGN KEY (successor_command_id, org_id, product_key, provider_org_id, provider_project_id, email)
+        REFERENCES staff_identity_commands
+            (id, org_id, product_key, provider_org_id, provider_project_id, email) ON DELETE RESTRICT,
+    FOREIGN KEY (root_command_id, org_id, product_key, provider_org_id, provider_project_id, email)
+        REFERENCES staff_identity_commands
+            (id, org_id, product_key, provider_org_id, provider_project_id, email) ON DELETE RESTRICT,
+    FOREIGN KEY (successor_command_id, replacement_actor_subject, successor_user_id)
+        REFERENCES staff_identity_commands (id, actor_subject, provider_user_id) ON DELETE RESTRICT,
+    FOREIGN KEY (request_id, parent_command_id, replacement_actor_subject, requested_action, decision)
+        REFERENCES staff_identity_recovery_decisions
+            (request_id, command_id, replacement_actor_subject, requested_action, decision) ON DELETE RESTRICT,
+    UNIQUE (successor_command_id, root_command_id, generation),
+    FOREIGN KEY (previous_successor_id, root_command_id, parent_generation)
+        REFERENCES staff_identity_replacements
+            (successor_command_id, root_command_id, generation) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS staff_identity_replacements_root_idx
+    ON staff_identity_replacements(root_command_id, generation);
+GRANT SELECT, INSERT ON staff_identity_replacements TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_replacements FROM onboarding;

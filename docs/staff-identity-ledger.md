@@ -10,7 +10,7 @@ employment, membership or Access/RBAC.
 
 Canonical input:
 `charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql`.
-Chart version: `0.3.60`. Existing onboarding databases receive the existing
+Chart version: `0.3.61`. Existing onboarding databases receive the existing
 idempotent schema replay; no separate application-owned table copy is created.
 SQL SHA-256:
 `8e2f89da8e6f4771a7d0af3ca075094f2ec622ab6f0ce38475f9b7660018b382`.
@@ -70,9 +70,9 @@ new requests retain corrected evidence. Only one approved replacement can win fo
 an original command. Closing an unresolved investigation preserves the unknown
 outcome and allows a later reviewed replacement; it does not claim the original
 creation was unsent or clear the original dispatch/contact root. The approved
-replacement row alone grants no dispatch or membership authority. Atomic successor
-preparation/root lineage, audited owner commands, current operator/source scope,
-consumer/operator UI and normal-role acceptance remain unimplemented gates.
+replacement row alone grants no dispatch or membership authority. Atomic successor preparation/root lineage and audited store commands are now
+implemented in 0.3.61 below. Verified operator/source authority, owner endpoints,
+consumer/operator UI and normal-role acceptance remain open gates.
 
 Both tables permit the application role only SELECT/INSERT; UPDATE, DELETE and
 TRUNCATE are denied. FKs retain original commands, dispatches and reviewed requests.
@@ -80,6 +80,38 @@ Actual disposable-PostgreSQL tests cover self-review, forged actor/user/maker an
 request binding, NULL bypass, required evidence, undispatched commands, final
 rejection, closure then replacement, twelve competing replacement approvals with
 one winner and application-role mutation denial. No production migration ran.
+
+## Atomic successor lineage
+
+Chart 0.3.61 adds the SELECT/INSERT-only `staff_identity_replacements` ledger.
+Its parent/request/successor uniqueness prevents branching. Composite FKs bind
+parent, successor and original root to one tenant/product/source project/contact,
+the exact approved replacement request and its replacement initiator/provider ID.
+A self-reference binds each generation to the previous generation under the same
+permanent root. Generation checks plus unique successor prevent cycles without
+assuming client UUID timestamps are ordered. Root lookup and parent lookup are
+indexed, bounded point queries; no recursive traversal is required.
+
+Owner decision execution inserts decision, fresh prepared successor, lineage and
+mandatory audit in one transaction. It creates no contact root or source dispatch.
+A bare approved decision has no creation authority. The original dispatch/root
+remain immutable. Exact retry returns the frozen decision/successor, including
+server-selected provider ID/nonce; changed decision/reviewer/reason/successor ID
+conflicts. Approval and audit failure leave no partial successor facts.
+
+The normal product preparation/dispatch path admits the exact reviewed successor
+and blocks an approved closed/superseded parent. Private receipts retain historical
+creation facts plus additive recovery status/successor-command reference. Creation
+and observation return conflict if closure is observed before completion; a late
+creation fact is retained for reconciliation and does not restore eligibility.
+Verified operator authorization, actual source conflict/orphan proof, operator
+endpoints/UI and normal-role acceptance remain separate required release gates.
+
+Indexes added to existing command/decision ledgers use CONCURRENTLY and require
+autocommit psql execution; do not wrap the canonical SQL in a transaction. Check
+index validity and actual table/FK/privilege state before release. The existing
+bootstrap runner uses ON_ERROR_STOP=0, so Job success alone is not migration proof.
+No production migration occurred. Rollback retains all lineage and decision facts.
 
 ## Compatibility and recovery
 
