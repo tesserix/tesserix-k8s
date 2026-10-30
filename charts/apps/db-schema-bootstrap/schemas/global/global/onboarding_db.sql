@@ -207,3 +207,63 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
 -- and can do nothing else to it.
 GRANT SELECT, INSERT ON audit_events TO onboarding;
 REVOKE UPDATE, DELETE, TRUNCATE ON audit_events FROM onboarding;
+
+-- Durable Staff creation input outlives the expiring request cache. Retain the
+-- tenant/product references on offboarding; deleting an identity is no reason
+-- to discard whether its creation was already dispatched.
+CREATE TABLE IF NOT EXISTS staff_identity_commands (
+    id                  UUID PRIMARY KEY CHECK (substring(id::text, 15, 1) = '7'),
+    org_id              UUID NOT NULL REFERENCES organizations (id) ON DELETE RESTRICT,
+    product_key         TEXT NOT NULL REFERENCES products (key) ON DELETE RESTRICT,
+    machine_subject     TEXT NOT NULL CHECK (machine_subject ~ '^[A-Za-z0-9_-]{1,200}$'),
+    actor_subject       TEXT NOT NULL CHECK (actor_subject ~ '^[A-Za-z0-9_-]{1,200}$'),
+    provider_org_id     TEXT NOT NULL CHECK (provider_org_id ~ '^[A-Za-z0-9_-]{1,200}$'),
+    provider_project_id TEXT NOT NULL CHECK (provider_project_id ~ '^[A-Za-z0-9_-]{1,200}$'),
+    provider_user_id    TEXT NOT NULL UNIQUE CHECK (provider_user_id ~ '^[A-Za-z0-9_-]{1,200}$'),
+    binding_nonce       TEXT NOT NULL UNIQUE CHECK (binding_nonce ~ '^[A-Za-z0-9_-]{16,200}$'),
+    email               TEXT NOT NULL CHECK (length(email) BETWEEN 3 AND 200
+                            AND email = btrim(email) AND email !~ '[[:cntrl:]]'),
+    given_name          TEXT NOT NULL CHECK (length(given_name) BETWEEN 1 AND 200
+                            AND given_name = btrim(given_name) AND given_name !~ '[[:cntrl:]]'),
+    family_name         TEXT NOT NULL CHECK (length(family_name) BETWEEN 1 AND 200
+                            AND family_name = btrim(family_name) AND family_name !~ '[[:cntrl:]]'),
+    reason              TEXT NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 2000),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (id, provider_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS staff_identity_commands_org_idx
+    ON staff_identity_commands (org_id, product_key, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS staff_identity_commands_product_idx
+    ON staff_identity_commands (product_key, created_at DESC, id DESC);
+
+GRANT SELECT, INSERT ON staff_identity_commands TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_commands FROM onboarding;
+
+-- Never expire or delete dispatch claims: an uncertain response may conceal a
+-- successful provider creation, including one subsequently deleted upstream.
+CREATE TABLE IF NOT EXISTS staff_identity_dispatches (
+    command_id UUID PRIMARY KEY REFERENCES staff_identity_commands (id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+GRANT SELECT, INSERT ON staff_identity_dispatches TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_dispatches FROM onboarding;
+
+CREATE TABLE IF NOT EXISTS staff_identity_creations (
+    command_id          UUID PRIMARY KEY REFERENCES staff_identity_dispatches (command_id) ON DELETE RESTRICT,
+    provider_user_id    TEXT NOT NULL,
+    -- Preserve the provider timestamp's exact nanoseconds; PostgreSQL native
+    -- timestamps round to microseconds and cannot replay this source fact.
+    source_creation_time TEXT NOT NULL CHECK (
+        length(source_creation_time) BETWEEN 20 AND 30
+        AND source_creation_time ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?Z$'
+        AND source_creation_time::timestamptz > '0001-01-01T00:00:00Z'::timestamptz
+    ),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    FOREIGN KEY (command_id, provider_user_id)
+        REFERENCES staff_identity_commands (id, provider_user_id) ON DELETE RESTRICT
+);
+
+GRANT SELECT, INSERT ON staff_identity_creations TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_creations FROM onboarding;
