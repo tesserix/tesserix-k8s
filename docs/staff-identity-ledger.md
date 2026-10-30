@@ -10,7 +10,7 @@ employment, membership or Access/RBAC.
 
 Canonical input:
 `charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql`.
-Chart version: `0.3.59`. Existing onboarding databases receive the existing
+Chart version: `0.3.60`. Existing onboarding databases receive the existing
 idempotent schema replay; no separate application-owned table copy is created.
 SQL SHA-256:
 `8e2f89da8e6f4771a7d0af3ca075094f2ec622ab6f0ce38475f9b7660018b382`.
@@ -52,6 +52,34 @@ at `f7bc168` passed full local race tests, vet/build/lint and an actual isolated
 provider test: role-free creation, immutable replay, unverified observation and
 zero actual source memberships/user grants. That provider test uses fixture
 registry proof; it does not prove normal-role UI/recipient acceptance.
+
+## Attributable recovery request/decision substrate
+
+Chart 0.3.60 adds two append-only ledgers, without enabling a recovery endpoint:
+`staff_identity_recovery_requests` binds a UUIDv7 request to an actual dispatch,
+the original initiating actor and exact original provider-user ID. It retains
+requesting operator, action (`close_unresolved` or `replace`), mandatory reason,
+opaque evidence reference and, for replacement, its initiating actor.
+`staff_identity_recovery_decisions` retains one decision per request and binds all
+of those authority facts by composite FK. None of its binding fields is nullable;
+a NULL must not bypass PostgreSQL's composite-FK checks.
+
+The database rejects review by the requester, original initiator, original source
+account or proposed replacement initiator. Rejection is final for that request;
+new requests retain corrected evidence. Only one approved replacement can win for
+an original command. Closing an unresolved investigation preserves the unknown
+outcome and allows a later reviewed replacement; it does not claim the original
+creation was unsent or clear the original dispatch/contact root. The approved
+replacement row alone grants no dispatch or membership authority. Atomic successor
+preparation/root lineage, audited owner commands, current operator/source scope,
+consumer/operator UI and normal-role acceptance remain unimplemented gates.
+
+Both tables permit the application role only SELECT/INSERT; UPDATE, DELETE and
+TRUNCATE are denied. FKs retain original commands, dispatches and reviewed requests.
+Actual disposable-PostgreSQL tests cover self-review, forged actor/user/maker and
+request binding, NULL bypass, required evidence, undispatched commands, final
+rejection, closure then replacement, twelve competing replacement approvals with
+one winner and application-role mutation denial. No production migration ran.
 
 ## Compatibility and recovery
 

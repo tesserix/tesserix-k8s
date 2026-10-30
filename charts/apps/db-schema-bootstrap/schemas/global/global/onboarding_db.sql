@@ -337,3 +337,58 @@ DO $$ BEGIN
             FOR UPDATE TO onboarding USING (true) WITH CHECK (false);
     END IF;
 END $$;
+
+-- Recovery retains the original initiator and separate maker/reviewer facts.
+CREATE UNIQUE INDEX IF NOT EXISTS staff_identity_commands_recovery_actor_idx
+    ON staff_identity_commands (id, actor_subject, provider_user_id);
+
+CREATE TABLE IF NOT EXISTS staff_identity_recovery_requests (
+    id                        UUID PRIMARY KEY CHECK (substring(id::text, 15, 1) = '7'),
+    command_id                UUID NOT NULL REFERENCES staff_identity_dispatches(command_id) ON DELETE RESTRICT,
+    original_actor_subject    TEXT NOT NULL,
+    original_user_id          TEXT NOT NULL,
+    requested_by              TEXT NOT NULL CHECK (requested_by ~ '^[A-Za-z0-9_-]{1,200}$'),
+    requested_action          TEXT NOT NULL CHECK (requested_action IN ('close_unresolved', 'replace')),
+    replacement_actor_subject TEXT NOT NULL DEFAULT '',
+    reason                    TEXT NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 2000
+                                  AND reason !~ '[[:cntrl:]]'),
+    evidence_reference        TEXT NOT NULL CHECK (evidence_reference ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$'),
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK ((requested_action = 'close_unresolved' AND replacement_actor_subject = '')
+        OR (requested_action = 'replace' AND replacement_actor_subject ~ '^[A-Za-z0-9_-]{1,200}$')),
+    FOREIGN KEY (command_id, original_actor_subject, original_user_id)
+        REFERENCES staff_identity_commands (id, actor_subject, provider_user_id) ON DELETE RESTRICT,
+    UNIQUE (id, command_id, requested_by, original_actor_subject, original_user_id, requested_action, replacement_actor_subject)
+);
+CREATE INDEX IF NOT EXISTS staff_identity_recovery_requests_command_idx
+    ON staff_identity_recovery_requests(command_id, created_at DESC, id DESC);
+GRANT SELECT, INSERT ON staff_identity_recovery_requests TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_recovery_requests FROM onboarding;
+
+CREATE TABLE IF NOT EXISTS staff_identity_recovery_decisions (
+    request_id                UUID PRIMARY KEY,
+    command_id                UUID NOT NULL,
+    requested_by              TEXT NOT NULL,
+    original_actor_subject    TEXT NOT NULL,
+    original_user_id          TEXT NOT NULL,
+    requested_action          TEXT NOT NULL,
+    replacement_actor_subject TEXT NOT NULL DEFAULT '',
+    reviewed_by               TEXT NOT NULL CHECK (reviewed_by ~ '^[A-Za-z0-9_-]{1,200}$'),
+    decision                  TEXT NOT NULL CHECK (decision IN ('approved', 'rejected')),
+    reason                    TEXT NOT NULL CHECK (length(btrim(reason)) BETWEEN 1 AND 2000
+                                  AND reason !~ '[[:cntrl:]]'),
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (reviewed_by <> requested_by AND reviewed_by <> original_actor_subject
+        AND reviewed_by <> replacement_actor_subject AND reviewed_by <> original_user_id),
+    FOREIGN KEY (request_id, command_id, requested_by, original_actor_subject, original_user_id, requested_action, replacement_actor_subject)
+        REFERENCES staff_identity_recovery_requests
+            (id, command_id, requested_by, original_actor_subject, original_user_id, requested_action, replacement_actor_subject)
+        ON DELETE RESTRICT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS staff_identity_recovery_decisions_replacement_idx
+    ON staff_identity_recovery_decisions(command_id)
+    WHERE decision = 'approved' AND requested_action = 'replace';
+CREATE INDEX IF NOT EXISTS staff_identity_recovery_decisions_command_idx
+    ON staff_identity_recovery_decisions(command_id, created_at DESC, request_id DESC);
+GRANT SELECT, INSERT ON staff_identity_recovery_decisions TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_recovery_decisions FROM onboarding;

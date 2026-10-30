@@ -23,7 +23,7 @@ Operator replacement must retain explicit root/command/outcome lineage rather
 than delete/release the root or retry its old dispatch. That protocol and consumer
 creation/recovery UI remain incomplete in the owner draft.
 
-Chart 0.3.59 persists this additive schema candidate. It also adds exact-command
+Chart 0.3.60 persists this additive schema candidate. It also adds exact-command
 history indexing and an ephemeral hash-only continuation cache. The cache is
 separate from immutable identity facts: forced RLS permits expired deletion but
 rejects actual updates/active deletion; a narrow hash-column privilege permits
@@ -785,3 +785,17 @@ Each step is useful on its own; do not build the console before the API works.
 | Management API `403` with a good token | `iam-admin` token missing `…:project:id:zitadel:aud` scope |
 | Operating on the wrong org | `x-zitadel-orgid` omitted — every `/management/v1/…` call is org-scoped by it |
 | Org exists in Zitadel, absent locally | Projection drift; reproject from Zitadel, never repair Zitadel from the projection |
+
+### Staff identity recovery substrate (not a released API)
+
+The additive schema now retains exact dispatched-command recovery requests and
+independent immutable decisions. Composite FKs bind original initiating actor,
+original provider-user subject, maker, requested action and replacement initiator.
+All four interested subjects are excluded from review. Rejected requests remain
+final; one approved replacement per parent command can win concurrently, while
+attributable closure does not permanently block later reviewed replacement.
+Both ledgers are SELECT/INSERT only for onboarding. No recovery route is exposed
+by these tables. Actual operator authorization, mandatory audit transactions,
+successor/root lineage, source-conflict/orphan handling and consumer UI remain
+required before any approved record can affect dispatch or membership. See
+[Staff identity ledger](staff-identity-ledger.md) and owner ADR-0005.
