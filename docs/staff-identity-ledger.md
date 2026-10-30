@@ -10,14 +10,14 @@ employment, membership or Access/RBAC.
 
 Canonical input:
 `charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql`.
-Chart version: `0.3.57`. Existing onboarding databases receive the existing
+Chart version: `0.3.58`. Existing onboarding databases receive the existing
 idempotent schema replay; no separate application-owned table copy is created.
 SQL SHA-256:
-`706e027e603cd8b0a1320128b1c48da53106c90c421bcf359ec51a0aa7407954`.
+`676f5c8676e48d9647b3d08e37a6e82ca84c91d22d8d4d343ee9bc9e03fafb63`.
 All new objects belong to the existing onboarding identity owner and existing
 `onboarding_db`; no new cloud service, role, credential or network path is added.
 
-The additive expansion contains three append-only tables:
+The additive expansion contains four append-only tables:
 
 - `staff_identity_commands`: UUIDv7 command, canonical organisation/product,
   current machine and attributable human, frozen provider organisation/project,
@@ -31,13 +31,27 @@ The additive expansion contains three append-only tables:
   RFC3339 UTC creation timestamp is retained as bounded canonical source text to
   preserve all nine fractional digits; PostgreSQL timestamps round to six.
   Local recording times remain `timestamptz`.
+- `staff_identity_contact_claims`: one permanent root per source organisation
+  and owner-normalized contact, bound by composite FK to the exact original
+  command/source org/email. The owner uses the pinned provider's Go lowercase
+  normalization without dot/plus rewriting. Preparation/root/audit are atomic;
+  exact retry retains the original root, and competing command IDs conflict.
+  Historical commands receive no silent backfill. Operator replacement must
+  preserve explicit root/command/outcome lineage instead of freeing the root.
 
 The application role receives SELECT/INSERT only. UPDATE, DELETE and TRUNCATE
-are explicitly revoked for all three tables. Tenant/product references use
+are explicitly revoked for all four tables. Tenant/product references use
 RESTRICT: offboarding or source deletion must retain the creation/dispatch facts.
 The central owner service must still authorize every product/tenant command and
 receipt read. These grants are not browser access or a new tenant authorization
 model, and no role or permission is assigned by a creation receipt.
+
+Root SQL is persisted at `2214e7a7d6730570447bbe1f0ad8e341c5026c3b` and pinned
+by owner CI. Its Helm/repository/PR validation gates passed. Owner creation PUT
+at `f7bc168` passed full local race tests, vet/build/lint and an actual isolated
+provider test: role-free creation, immutable replay, unverified observation and
+zero actual source memberships/user grants. That provider test uses fixture
+registry proof; it does not prove normal-role UI/recipient acceptance.
 
 ## Compatibility and recovery
 
@@ -87,8 +101,9 @@ shared-buffer hits, and recorded 0.066 ms execution in this fixture. This is a
 local query-plan observation, not an API latency SLO. All planning rows were
 rolled back.
 
-No application database, production registry, provider account or cloud resource
-was changed. Before merging this schema into GitOps, capture its exact source
+No production database, registry, provider account or cloud resource was changed.
+Only disposable owner/provider fixtures were changed; their private synthetic
+account evidence is retained separately. Before merging this schema into GitOps, capture its exact source
 and SQL digest, verify owner/consumer compatibility and obtain approval for this
 named rollout/migration. Retain the source and application receipts for future
 environment replay. Do not infer rollout authority from the earlier Helivanta
