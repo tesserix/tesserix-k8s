@@ -448,3 +448,9 @@ CREATE INDEX IF NOT EXISTS staff_identity_replacements_root_idx
     ON staff_identity_replacements(root_command_id, generation);
 GRANT SELECT, INSERT ON staff_identity_replacements TO onboarding;
 REVOKE UPDATE, DELETE, TRUNCATE ON staff_identity_replacements FROM onboarding;
+
+-- Historical identity creators/accounts remain interested parties in later generations.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_replacements_actor_idx
+    ON staff_identity_replacements(root_command_id, replacement_actor_subject);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_replacements_user_idx
+    ON staff_identity_replacements(root_command_id, successor_user_id);

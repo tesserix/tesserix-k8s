@@ -10,7 +10,7 @@ employment, membership or Access/RBAC.
 
 Canonical input:
 `charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql`.
-Chart version: `0.3.61`. Existing onboarding databases receive the existing
+Chart version: `0.3.62`. Existing onboarding databases receive the existing
 idempotent schema replay; no separate application-owned table copy is created.
 SQL SHA-256:
 `8e2f89da8e6f4771a7d0af3ca075094f2ec622ab6f0ce38475f9b7660018b382`.
@@ -112,6 +112,20 @@ autocommit psql execution; do not wrap the canonical SQL in a transaction. Check
 index validity and actual table/FK/privilege state before release. The existing
 bootstrap runner uses ON_ERROR_STOP=0, so Job success alone is not migration proof.
 No production migration occurred. Rollback retains all lineage and decision facts.
+
+## Historical independence across generations
+
+Chart 0.3.62 adds concurrent `(root_command_id, replacement_actor_subject)` and
+`(root_command_id, successor_user_id)` indexes. Owner decision execution excludes
+both the original root's creator/account and every prior successor creator/account,
+in addition to the request's four immediate interested subjects. A new command ID
+cannot launder a historical party into an independent reviewer. These historical
+checks are application-owner guards over immutable records; the existing database
+FK/check exclusions still cover the immediate request. Root and historical-party
+lookups are indexed equality probes, not recursive or unbounded ancestor scans.
+Actual PostgreSQL cases first reproduced accepted self-review at depth one/two,
+then verified rejection for root/intermediate creators and account subjects.
+No operator write endpoint or production migration is enabled by these indexes.
 
 ## Compatibility and recovery
 

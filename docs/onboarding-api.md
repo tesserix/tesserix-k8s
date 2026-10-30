@@ -813,3 +813,12 @@ including during source I/O. Operator source proof, verified role authorization,
 public operator endpoints and UI are not implemented by this schema increment.
 Canonical indexes on existing ledgers are concurrent/autocommit; verify actual
 schema/index/privilege state because bootstrap Job success is insufficient proof.
+
+### Historical recovery independence
+
+Chart 0.3.62 indexes historical creator/account subjects by permanent contact root.
+The owner rejects their later-generation reviews even after a new command or
+provider account ID was prepared. Immediate request-maker/initiator/target exclusions
+remain database-bound; the owner additionally checks every retained root/successor
+creator and account. This guards independence, not verified current operator role
+or source quarantine: those still gate future authenticated operator endpoints.
