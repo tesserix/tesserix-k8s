@@ -16,11 +16,19 @@ included in preparation defaults.
    quarantine and CREATE/GET on released objects, only under
    `t/<tenant>/o/pharmacy_outlet/...`. No list, overwrite, delete, organisation,
    patient or staff access is introduced. Apply only that reviewed plan.
-2. Generate a separate random URI-safe password using the approved secret-service
-   writer. Store only `password` at
+2. Use the dedicated create-only GitOps initializer (the established Helivanta
+   emergency/privacy pattern) to generate a separate random URI-safe password.
+   It stores only `password` at
    `helivanta/production/helivanta-pharmacy-evidence-worker-db-password` in
    OpenBao. Never read/print credentials or put them in Git or command URLs.
-   The exact-path reader is bound to the one KSA/namespace.
+   The exact-path reader is bound to the one KSA/namespace. The initializer has
+   only create on that data path and read on its metadata, checks its own
+   capabilities, uses CAS 0, refuses deleted/destroyed history and revokes its
+   five-minute token. It cannot read or replace an existing credential.
+   Enable `pharmacyEvidenceWorker.seed.enabled` through GitOps; require Job
+   completion before enabling login/ESO. If policy reconciliation was delayed,
+   use a reviewed `seed.podTemplateRevision` change to retry the same create-only
+   operation. No root or operational credential needs to be read or copied.
 3. Through reviewed GitOps activation, enable
    `pharmacyEvidenceWorker.credentials.enabled` and `pharmacyEvidenceWorker.login`
    in the owning PostgreSQL Application. Verify ESO Ready, two healthy database
