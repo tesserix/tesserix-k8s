@@ -1,5 +1,30 @@
 # Pharmacy prescription-image worker (#1406)
 
+## Verified deployment evidence (2026-11-01 UTC)
+
+Preparation/IAM was delivered by [#1615](https://github.com/tesserix/tesserix-k8s/pull/1615).
+The create-only initializer was delivered by [#1617](https://github.com/tesserix/tesserix-k8s/pull/1617)
+and retried after policy bootstrap by [#1618](https://github.com/tesserix/tesserix-k8s/pull/1618).
+Job `helivanta-pharmacy-evidence-secret-seed-bc32fc3f` succeeded. Its predecessor
+exhausted retries before OpenBao bootstrap finished; a selective Argo prune
+removed only that obsolete failed Job. No secret values were read.
+
+[#1620](https://github.com/tesserix/tesserix-k8s/pull/1620) activated processing.
+Both API/PostgreSQL Argo Applications were Synced/Healthy; the dedicated worker
+had two updated, available replicas. Its ExternalSecret reported
+`Ready=True, SecretSynced`. A read-only `pg_roles`/`pg_auth_members` query verified
+LOGIN, NOINHERIT, no superuser/BYPASSRLS/CREATEDB/CREATEROLE and zero memberships.
+API and worker used the same promoted artifact
+`02b1e2b7e5a0fb9fa1fdbc65e449ca322cfda56a`. ClamAV reported engine 1.5.4,
+definitions 28171 updated 2026-11-01 06:27:34 UTC (under 24 hours old at check).
+These are point-in-time observations, not permanent readiness guarantees.
+
+Synthetic owner-API scan/release/rejection/recovery and disclosure acceptance
+remains pending a designated test tenant/outlet. These deployment observations
+do not close #1406 or authorize prescription-image enforcement PR
+[helivanta #1477](https://github.com/tesserix/helivanta/pull/1477).
+Alert evaluation and delivery have not been verified.
+
 This prepares a separate worker for retained prescription pages. It follows the
 reviewed Supply evidence release sequence; clean scanning is not prescription,
 drug, pharmacist or licence approval. Application #1467 restores the existing
