@@ -1,5 +1,27 @@
 # Pharmacy prescription-image worker (#1406)
 
+## Synthetic user credentials
+
+The production acceptance seed uses the separate OpenBao role
+`seed-helivanta-pharmacy-users-production`. It is bound only to the existing
+`helivanta/helivanta-pharmacy-evidence-secret-seed` bootstrap service account,
+with audience `openbao` and a five-minute maximum token lifetime. Runtime API
+and worker readers do not acquire this writer role.
+
+The role can create and read only
+`helivanta/production/helivanta-pharmacy-seed-users`, plus read its metadata.
+It has no overwrite, delete or list authority. Create the retained synthetic
+user intent and generated passwords with KV v2 CAS 0 before creating identities;
+resume the same intent on retry. Existing or deleted history requires explicit
+recovery rather than replacement. Keep passwords, identity bindings and sessions
+out of Git and logs, and revoke the short-lived OpenBao token after use.
+
+Create the TEST human identities through the identity owner's authenticated
+API, then use Helivanta's Global API for membership, outlet grants and pharmacy
+records. Seed credentials do not grant clinical authority or approve licences.
+
+## Worker rollout
+
 ## Verified deployment evidence (2026-11-01 UTC)
 
 Preparation/IAM was delivered by [#1615](https://github.com/tesserix/tesserix-k8s/pull/1615).
