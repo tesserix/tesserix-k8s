@@ -1,3 +1,13 @@
+{{- if and .Values.supplierTrade.enabled (not .Values.enforceOwnerBoundary) }}
+{{- fail "supplierTrade requires enforceOwnerBoundary" }}
+{{- end }}
+{{- $peerPaths := list }}
+{{- if .Values.clinicalConsent.enabled }}
+{{- $peerPaths = append $peerPaths "/internal/v1/mediconnect/current-claim" }}
+{{- end }}
+{{- if .Values.supplierTrade.enabled }}
+{{- $peerPaths = append $peerPaths "/v1/supply/internal/trading-source/check" }}
+{{- end }}
 {{- if and .Values.clinicalConsent.enabled (not .Values.enforceOwnerBoundary) }}
 {{- fail "clinicalConsent requires enforceOwnerBoundary" }}
 {{- end }}
@@ -83,10 +93,10 @@ spec:
       to:
         - operation:
             ports: ["8080"]
-            {{- if .Values.clinicalConsent.enabled }}
-            notPaths: ["/internal/v1/mediconnect/current-claim"]
+            {{- if $peerPaths }}
+            notPaths: {{ $peerPaths | toJson }}
             {{- end }}
-    {{- if .Values.clinicalConsent.enabled }}
+    {{- if $peerPaths }}
     - from:
         - source:
             notPrincipals:
@@ -94,7 +104,7 @@ spec:
       to:
         - operation:
             ports: ["8080"]
-            paths: ["/internal/v1/mediconnect/current-claim"]
+            paths: {{ $peerPaths | toJson }}
     {{- end }}
 {{- end }}
 ---

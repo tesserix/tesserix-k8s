@@ -49,7 +49,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "helivanta-api.serviceAccountName" . }}
-      {{- if .Values.clinicalConsent.enabled }}
+      {{- if or .Values.clinicalConsent.enabled .Values.supplierTrade.enabled }}
       automountServiceAccountToken: false
       {{- end }}
       securityContext:
@@ -145,6 +145,14 @@ spec:
               value: {{ required "openbao.authRole is required" .Values.openbao.authRole | quote }}
             - name: OPENBAO_TOKEN_PATH
               value: /var/run/secrets/openbao/token
+            {{- end }}
+            {{- if .Values.supplierTrade.enabled }}
+            - name: SUPPLIER_TRADE_CURRENT_URL
+              value: "http://{{ include "helivanta-api.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}/v1/supply/internal/trading-source/check"
+            - name: SUPPLIER_TRADE_CALLER_ACCOUNT
+              value: "system:serviceaccount:{{ .Release.Namespace }}:{{ include "helivanta-api.serviceAccountName" . }}"
+            - name: SUPPLIER_TRADE_TOKEN_FILE
+              value: /var/run/secrets/supplier-trade/token
             {{- end }}
             - name: PATIENTMASTER_PROXY_CLINICAL_CAPTURE_ENABLED
               value: {{ .Values.clinicalConsent.proxyCaptureEnabled | quote }}
@@ -291,6 +299,13 @@ spec:
             - name: mediconnect-claim
               mountPath: /var/run/secrets/mediconnect-claim
               readOnly: true
+            {{- end }}
+            {{- if .Values.supplierTrade.enabled }}
+            - name: supplier-trade
+              mountPath: /var/run/secrets/supplier-trade
+              readOnly: true
+            {{- end }}
+            {{- if or .Values.clinicalConsent.enabled .Values.supplierTrade.enabled }}
             - name: kubernetes-api
               mountPath: /var/run/secrets/kubernetes.io/serviceaccount
               readOnly: true
@@ -305,6 +320,18 @@ spec:
                   audience: helivanta-mediconnect-claim
                   expirationSeconds: 600
                   path: token
+        {{- end }}
+        {{- if .Values.supplierTrade.enabled }}
+        - name: supplier-trade
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  audience: helivanta-supplier-trade-current
+                  expirationSeconds: 600
+                  path: token
+        {{- end }}
+        {{- if or .Values.clinicalConsent.enabled .Values.supplierTrade.enabled }}
         - name: kubernetes-api
           projected:
             defaultMode: 0440
