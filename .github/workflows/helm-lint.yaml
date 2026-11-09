@@ -79,8 +79,8 @@ jobs:
             [ -f "$chart/Chart.yaml" ] || continue
             grep -q "^dependencies:" "$chart/Chart.yaml" || continue
             echo "Building dependencies for $chart..."
-            if ! helm dependency build "$chart" 2>&1 | tee /tmp/dep.log; then
-              echo "::error file=${chart}Chart.yaml::helm dependency build failed — $(grep -m1 -i 'error' /tmp/dep.log || echo 'see log above')"
+            if ! scripts/build-chart-dependency.sh "$chart"; then
+              echo "::error file=${chart}Chart.yaml::helm dependency build failed after bounded download recovery (see log above)"
               failed=1
             fi
           done
