@@ -68,5 +68,5 @@ class CustomerSignup(unittest.TestCase):
         namespace = next((d for d in docs if d["kind"] == "Namespace" and d["metadata"]["name"] == "helivanta"), None)
         self.assertIsNotNone(namespace, "Existing namespace metadata must reconcile as a declared resource")
         self.assertNotIn("istio.io/dataplane-mode", namespace["metadata"]["labels"])
-        self.assertEqual(namespace["metadata"]["labels"]["istio-injection"], "disabled")
+        self.assertNotIn("istio-injection", namespace["metadata"]["labels"], "Do not disable the existing opt-in native sidecars")
         self.assertIn("Prune=false", namespace["metadata"]["annotations"]["argocd.argoproj.io/sync-options"])
