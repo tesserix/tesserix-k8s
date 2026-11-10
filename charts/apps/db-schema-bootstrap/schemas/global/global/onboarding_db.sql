@@ -228,9 +228,12 @@ LANGUAGE plpgsql AS $$ BEGIN
     END IF;
     RETURN NEW;
 END $$;
-DROP TRIGGER IF EXISTS customer_signup_intent_immutable ON customer_signups;
-CREATE TRIGGER customer_signup_intent_immutable BEFORE UPDATE ON customer_signups
-    FOR EACH ROW EXECUTE FUNCTION preserve_customer_signup_intent();
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'customer_signups'::regclass AND tgname = 'customer_signup_intent_immutable') THEN
+        CREATE TRIGGER customer_signup_intent_immutable BEFORE UPDATE ON customer_signups
+            FOR EACH ROW EXECUTE FUNCTION preserve_customer_signup_intent();
+    END IF;
+END $$;
 
 GRANT USAGE ON SCHEMA public TO onboarding;
 
