@@ -206,6 +206,10 @@ CREATE TABLE IF NOT EXISTS customer_signups (
     receipt_hash BYTEA NOT NULL CHECK (octet_length(receipt_hash) = 32),
     receipt_expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '7 days',
     receipt_verified BOOLEAN NOT NULL DEFAULT false,
+    proof_attempts INTEGER NOT NULL DEFAULT 0 CHECK (proof_attempts BETWEEN 0 AND 5),
+    proof_window_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    mail_attempts INTEGER NOT NULL DEFAULT 0 CHECK (mail_attempts BETWEEN 0 AND 3),
+    mail_window_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     intent_hash BYTEA NOT NULL CHECK (octet_length(intent_hash) = 32),
     owner_email_hash BYTEA NOT NULL CHECK (octet_length(owner_email_hash) = 32),
     input JSONB NOT NULL CHECK (jsonb_typeof(input) = 'object' AND octet_length(input::text) <= 8192),
@@ -220,6 +224,7 @@ CREATE TABLE IF NOT EXISTS customer_signups (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS customer_signups_created_at ON customer_signups(created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS customer_signups_email_reservation
     ON customer_signups(product_key,owner_email_hash) WHERE state <> 'existing_account';
 CREATE INDEX IF NOT EXISTS customer_signups_retry
