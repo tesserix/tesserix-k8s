@@ -4,13 +4,13 @@ metadata:
   name: istio-ingress-gateway-internal
   namespace: argocd
   finalizers:
-    - resources-finalizer.argocd.argoproj.io
+  - resources-finalizer.argocd.argoproj.io
   labels:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: infrastructure
   annotations:
-    kargo.akuity.io/authorized-stage: "kargo-infra:istio-prod"
-    argocd.argoproj.io/sync-wave: "-1"
+    kargo.akuity.io/authorized-stage: kargo-infra:istio-prod
+    argocd.argoproj.io/sync-wave: '-1'
 spec:
   project: infrastructure
   source:
@@ -19,34 +19,24 @@ spec:
     targetRevision: 1.30.8
     helm:
       valuesObject:
-        podAnnotations:
-          istioUpgradeVersion: "1.30.8"
-      releaseName: istio-ingress-internal
-      values: |
-        # No live Gateway selects this legacy gateway; tunnels use other Services.
         name: istio-ingressgateway-internal
         replicaCount: 0
-
         service:
           type: ClusterIP
           annotations: {}
-
-          # Ports configuration
           ports:
-            - name: status-port
-              port: 15021
-              protocol: TCP
-              targetPort: 15021
-            - name: http2
-              port: 80
-              protocol: TCP
-              targetPort: 80
-            - name: https
-              port: 443
-              protocol: TCP
-              targetPort: 443
-
-        # Resource configuration
+          - name: status-port
+            port: 15021
+            protocol: TCP
+            targetPort: 15021
+          - name: http2
+            port: 80
+            protocol: TCP
+            targetPort: 80
+          - name: https
+            port: 443
+            protocol: TCP
+            targetPort: 443
         resources:
           requests:
             cpu: null
@@ -54,78 +44,59 @@ spec:
           limits:
             cpu: null
             memory: 512Mi
-
-        # Auto-scaling configuration
         autoscaling:
           enabled: false
           minReplicas: 2
           maxReplicas: 5
-          # CPU target zeroed rather than nulled: the chart's values schema types it
-          # as an integer, and 0 skips the metric just as null was meant to.
           targetCPUUtilizationPercentage: 0
           targetMemoryUtilizationPercentage: 80
-
-        # Pod disruption budget
         podDisruptionBudget:
           maxUnavailable: 1
-
-        # Service account
         serviceAccount:
           create: true
           name: istio-ingressgateway-internal
-
-        # Pod annotations
         podAnnotations:
-          prometheus.io/scrape: "true"
-          prometheus.io/port: "15020"
-          prometheus.io/path: "/stats/prometheus"
-
-        # Security context
+          prometheus.io/scrape: 'true'
+          prometheus.io/port: '15020'
+          prometheus.io/path: /stats/prometheus
+          istioUpgradeVersion: 1.30.8
         securityContext:
           runAsUser: 1337
           runAsGroup: 1337
           runAsNonRoot: true
-
-        # Container security context
         containerSecurityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
-              - ALL
+            - ALL
           readOnlyRootFilesystem: true
-
-        # Labels for the gateway pods
         labels:
           app: istio-ingressgateway-internal
           istio: ingressgateway-internal
-
-        # Topology spread constraints for HA
         topologySpreadConstraints:
-          - maxSkew: 1
-            topologyKey: topology.kubernetes.io/zone
-            whenUnsatisfiable: ScheduleAnyway
-            labelSelector:
-              matchLabels:
-                app: istio-ingressgateway-internal
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: istio-ingressgateway-internal
+      releaseName: istio-ingress-internal
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-ingress
   ignoreDifferences:
-    # No `group: ""`. It is the zero value, so the API server drops the key on
-    # write and the app-of-apps diffs git (present) against live (absent),
-    # pinning this app OutOfSync forever. Core group is the default.
-    - kind: Service
-      jsonPointers:
-        - /spec/clusterIP
-        - /spec/clusterIPs
-        - /spec/ports/0/nodePort
-        - /spec/ports/1/nodePort
-        - /spec/ports/2/nodePort
-        - /metadata/finalizers
+  - kind: Service
+    jsonPointers:
+    - /spec/clusterIP
+    - /spec/clusterIPs
+    - /spec/ports/0/nodePort
+    - /spec/ports/1/nodePort
+    - /spec/ports/2/nodePort
+    - /metadata/finalizers
   syncPolicy:
     syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
+    - CreateNamespace=true
+    - ServerSideApply=true
     retry:
       limit: 5
       backoff:
