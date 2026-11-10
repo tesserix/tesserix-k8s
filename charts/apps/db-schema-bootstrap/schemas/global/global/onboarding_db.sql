@@ -204,6 +204,8 @@ CREATE TABLE IF NOT EXISTS customer_signups (
     resource_id UUID NOT NULL UNIQUE,
     owner_subject TEXT NOT NULL UNIQUE,
     receipt_hash BYTEA NOT NULL CHECK (octet_length(receipt_hash) = 32),
+    receipt_expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '7 days',
+    receipt_verified BOOLEAN NOT NULL DEFAULT false,
     intent_hash BYTEA NOT NULL CHECK (octet_length(intent_hash) = 32),
     owner_email_hash BYTEA NOT NULL CHECK (octet_length(owner_email_hash) = 32),
     input JSONB NOT NULL CHECK (jsonb_typeof(input) = 'object' AND octet_length(input::text) <= 8192),
@@ -212,6 +214,8 @@ CREATE TABLE IF NOT EXISTS customer_signups (
     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 20),
     retry_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     lease_until TIMESTAMPTZ,
+    lease_id UUID,
+    CHECK ((lease_id IS NULL) = (lease_until IS NULL)),
     error_code TEXT NOT NULL DEFAULT '' CHECK (length(error_code) <= 80),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
