@@ -190,3 +190,15 @@ then passing render regression verifies actual Argo-effective values preserve
 Deployment/Service names, selectors and the intended Service exposure. Earlier
 render checks combined both value forms and did not expose this precedence
 error; use this effective-values regression for subsequent changes.
+
+### Native sidecar verification
+
+Kubernetes native sidecars run under `spec.initContainers` with
+`restartPolicy: Always` and report readiness under `status.initContainerStatuses`.
+The final audit must inspect these as well as regular containers; a regular-only
+inventory missed 15 Helivanta proxies. Preserve Helivanta application image/chart
+pins and use the Argo CD Deployment restart resource action to reinject them.
+The reviewed Argo customization ignores only the operational restart timestamp
+on Deployments in namespace `helivanta`; it keeps image, selector, other annotation
+and other namespace drift visible. Restart one Deployment at a time and wait for
+its existing rollout strategy and native-proxy readiness; ClamAV uses Recreate.
