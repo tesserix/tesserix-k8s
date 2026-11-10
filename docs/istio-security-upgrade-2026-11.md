@@ -176,3 +176,17 @@ Istio promotion remains disabled. After all runtime components reach 1.30.8,
 manual Kargo promotion proposes the final 1.31.4 PR and performs ordered syncs
 only after its reviewed merge. The documented temporary Kubernetes 1.37 support
 exception remains a risk of the approved bridge; complete it within this rollout.
+
+### Gateway effective-values correction
+
+Argo CD uses `valuesObject` instead of inline `values`; the initial annotation-only
+object hid gateway settings. The first egress sync created an unintended set
+of resources named `istio-egress`. The operator approved deleting only that
+Deployment, Service, HPA, ServiceAccount, Role and RoleBinding after their
+non-secret recreation state was captured. Existing `istio-egressgateway`
+resources were retained. All six gateway Applications now store their complete
+Helm values, including existing nested annotations, in `valuesObject`. A failing
+then passing render regression verifies actual Argo-effective values preserve
+Deployment/Service names, selectors and the intended Service exposure. Earlier
+render checks combined both value forms and did not expose this precedence
+error; use this effective-values regression for subsequent changes.
