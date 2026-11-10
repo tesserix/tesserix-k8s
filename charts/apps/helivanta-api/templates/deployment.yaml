@@ -287,6 +287,9 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             {{- if .Values.hospitalProvisioning.enabled }}
+            - name: owner-security
+              mountPath: /var/run/owner-security
+              readOnly: true
             - name: customer-onboarding
               mountPath: /var/run/customer-onboarding
               readOnly: true
@@ -317,6 +320,14 @@ spec:
             {{- end }}
       volumes:
         {{- if .Values.hospitalProvisioning.enabled }}
+        - name: owner-security
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  audience: helivanta-owner-security
+                  expirationSeconds: 600
+                  path: token
         - name: customer-onboarding
           projected:
             defaultMode: 0440

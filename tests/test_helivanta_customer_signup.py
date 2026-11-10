@@ -26,6 +26,18 @@ class CustomerSignup(unittest.TestCase):
                 continue
             self.assertFalse(any(v["name"] == "customer-onboarding" for v in doc["spec"]["template"]["spec"].get("volumes", [])))
 
+    def test_owner_security_has_separate_workload_and_metadata_patch_permission(self):
+        docs = render("helivanta-api", "helivanta-api", "helivanta")
+        api = next(d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "helivanta-api")
+        spec = api["spec"]["template"]["spec"]
+        volume = next(v for v in spec["volumes"] if v["name"] == "owner-security")
+        self.assertEqual(volume["projected"]["sources"], [{"serviceAccountToken": {"audience": "helivanta-owner-security", "expirationSeconds": 600, "path": "token"}}])
+        self.assertIn({"name": "owner-security", "mountPath": "/var/run/owner-security", "readOnly": True}, spec["containers"][0]["volumeMounts"])
+        docs = render("onboarding-service", "onboarding-service", "onboarding", "-f", str(ROOT / "charts/apps/onboarding-service/values-prod.yaml"))
+        role = next(d for d in docs if d["kind"] == "Role" and d["metadata"]["name"] == "onboarding-hospital-claims")
+        self.assertEqual(role["rules"][0]["verbs"], ["create", "get", "patch"])
+        self.assertNotIn("delete", role["rules"][0]["verbs"])
+
     def test_customer_setup_uses_an_exact_global_route(self):
         docs = render("helivanta-istio", "helivanta-istio", "helivanta")
         service = next(doc for doc in docs if doc["kind"] == "VirtualService")
