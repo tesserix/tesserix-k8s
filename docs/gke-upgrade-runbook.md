@@ -251,3 +251,5 @@ finishes. Retain the original failed workflow and operation ID in the audit
 trail; do not rewrite their statuses. Empty pool templates still require the
 configured version to match. Partial rollouts with old kubelets are not treated
 as completed.
+
+The GA gcloud SDK can submit `clusters upgrade --async` without returning an operation resource. In that case the workflow discovers exactly one operation matching the selected cluster/pool, upgrade type and submission time. Missing or ambiguous results stop the workflow without resubmitting. Inspect the provider operation before any retry.
