@@ -20,7 +20,12 @@ def test_production_ingress_prefers_local_ready_endpoints_without_restricting_fa
     app = yaml.safe_load(
         (ROOT / "argocd/prod/infrastructure/istio-ingress-gateway.yaml").read_text()
     )
-    values = app["spec"]["source"]["helm"]["values"]
+    helm = app["spec"]["source"]["helm"]
+    values = (
+        yaml.safe_dump(helm["valuesObject"])
+        if "valuesObject" in helm
+        else helm["values"]
+    )
     cmd = [
         "helm",
         "template",
