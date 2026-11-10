@@ -196,11 +196,61 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE INDEX IF NOT EXISTS audit_events_org_idx ON audit_events (org_id, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS audit_events_actor_idx ON audit_events (actor_id, occurred_at DESC);
 
+-- Submitted signup commands are private intake, not native or business masters.
+CREATE TABLE IF NOT EXISTS customer_signups (
+    id UUID PRIMARY KEY,
+    product_key TEXT NOT NULL REFERENCES products(key) CHECK (product_key = 'helivanta'),
+    tenant_id UUID NOT NULL UNIQUE,
+    resource_id UUID NOT NULL UNIQUE,
+    owner_subject TEXT NOT NULL UNIQUE,
+    receipt_hash BYTEA NOT NULL CHECK (octet_length(receipt_hash) = 32),
+    receipt_expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '7 days',
+    receipt_verified BOOLEAN NOT NULL DEFAULT false,
+    primary_credential_configured BOOLEAN NOT NULL DEFAULT false,
+    proof_attempts INTEGER NOT NULL DEFAULT 0 CHECK (proof_attempts BETWEEN 0 AND 5),
+    proof_window_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    mail_attempts INTEGER NOT NULL DEFAULT 0 CHECK (mail_attempts BETWEEN 0 AND 3),
+    mail_window_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    intent_hash BYTEA NOT NULL CHECK (octet_length(intent_hash) = 32),
+    owner_email_hash BYTEA NOT NULL CHECK (octet_length(owner_email_hash) = 32),
+    input JSONB NOT NULL CHECK (jsonb_typeof(input) = 'object' AND octet_length(input::text) <= 8192),
+    state TEXT NOT NULL DEFAULT 'recorded'
+        CHECK (state IN ('recorded','identity_requested','existing_account','needs_support','ready')),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 20),
+    retry_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    lease_until TIMESTAMPTZ,
+    lease_id UUID,
+    CHECK ((lease_id IS NULL) = (lease_until IS NULL)),
+    error_code TEXT NOT NULL DEFAULT '' CHECK (length(error_code) <= 80),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE customer_signups ADD COLUMN IF NOT EXISTS primary_credential_configured BOOLEAN NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS customer_signups_created_at ON customer_signups(created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS customer_signups_email_reservation
+    ON customer_signups(product_key,owner_email_hash) WHERE state <> 'existing_account';
+CREATE INDEX IF NOT EXISTS customer_signups_retry
+    ON customer_signups(retry_at,id) WHERE state IN ('recorded','identity_requested');
+CREATE OR REPLACE FUNCTION preserve_customer_signup_intent() RETURNS trigger
+LANGUAGE plpgsql AS $$ BEGIN
+    IF ROW(NEW.id,NEW.product_key,NEW.tenant_id,NEW.resource_id,NEW.owner_subject,NEW.intent_hash,NEW.owner_email_hash,NEW.input,NEW.created_at)
+        IS DISTINCT FROM ROW(OLD.id,OLD.product_key,OLD.tenant_id,OLD.resource_id,OLD.owner_subject,OLD.intent_hash,OLD.owner_email_hash,OLD.input,OLD.created_at) THEN
+        RAISE EXCEPTION 'customer signup intent is immutable' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'customer_signups'::regclass AND tgname = 'customer_signup_intent_immutable') THEN
+        CREATE TRIGGER customer_signup_intent_immutable BEFORE UPDATE ON customer_signups
+            FOR EACH ROW EXECUTE FUNCTION preserve_customer_signup_intent();
+    END IF;
+END $$;
+
 GRANT USAGE ON SCHEMA public TO onboarding;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON
     products, organizations, org_products, domains, idps, idempotency_keys,
-    registry_tenants, registry_credentials
+    registry_tenants, registry_credentials, customer_signups
     TO onboarding;
 
 -- The whole point: the application may append to the ledger and read it back,
