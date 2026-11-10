@@ -53,3 +53,16 @@ def test_parent_keeps_the_revision_kargo_pinned_only_on_promoted_applications():
         for r in rules
     )
     assert sorted(r.get("name") for r in rules) == sorted(promoted())
+
+
+def test_bootstrap_defaults_cannot_restore_floating_charts_or_mixed_images():
+    import re
+    apps = {app['metadata']['name']: app for app in applications() if app['metadata']['name'] in promoted()}
+    tags = {}
+    for name, app in apps.items():
+        source = app['spec']['source']
+        assert re.fullmatch(r'[0-9a-f]{40}', source['targetRevision'])
+        tags[name] = next(p['value'] for p in source['helm']['parameters'] if p['name'] == 'image.tag')
+        assert re.fullmatch(r'[0-9a-f]{40}@sha256:[0-9a-f]{64}', tags[name])
+    assert tags['helivanta-api'] == tags['helivanta-global-api']
+    assert len({tag.split('@')[0] for tag in tags.values()}) == 1
