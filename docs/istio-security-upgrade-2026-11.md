@@ -159,3 +159,20 @@ the preparatory Kargo changes would reintroduce the blocked direct-push path.
 
 Not run: production rollout, runtime security regression requests, live gateway
 reinjection and post-upgrade traffic checks. These remain required after approval.
+
+## Approved execution update
+
+The operator approved merging and deploying the staged plan, then explicitly
+authorized the admin merge path for the code-owner gate. The release source
+blocker is resolved by publishing unmodified Helm chart sources from the
+checksum-verified upstream 1.31.4 distribution as packages in
+`charts/thirdparty/istio-release`. Its `provenance.json` records the source archive
+and package digests. Argo CD and Kargo use the same reviewed public index;
+future packages must be introduced through reviewed Git changes and retain
+versioned filenames without replacing an existing published package.
+
+The bridge uses official 1.30.8 charts and explicit ordered Argo syncs. Automatic
+Istio promotion remains disabled. After all runtime components reach 1.30.8,
+manual Kargo promotion proposes the final 1.31.4 PR and performs ordered syncs
+only after its reviewed merge. The documented temporary Kubernetes 1.37 support
+exception remains a risk of the approved bridge; complete it within this rollout.
