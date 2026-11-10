@@ -28,7 +28,15 @@ set -eu
 case "$*" in
  *'--format=value(nodePools[].name)'*) echo workers ;;
  *'node-pools describe'*) echo "$POOL_VERSION" ;;
- *'clusters upgrade'*) echo "$*" >> "$FIXTURE/upgrades"; echo operation-test-123 ;;
+ *'clusters upgrade'*)
+  echo "$*" >> "$FIXTURE/upgrades"
+  case "$MODE" in empty|missing|ambiguous) ;; *) echo operation-test-123 ;; esac ;;
+ *'operations list'*)
+  case "$MODE" in
+   missing) echo '[]' ;;
+   ambiguous) echo '[{"name":"operation-one","targetLink":"https://api/clusters/cluster/nodePools/workers"},{"name":"operation-two","targetLink":"https://api/clusters/cluster/nodePools/workers"}]' ;;
+   *) echo '[{"name":"operation-test-123","targetLink":"https://api/clusters/cluster/nodePools/workers"},{"name":"operation-unrelated","targetLink":"https://api/clusters/cluster/nodePools/other"}]' ;;
+  esac ;;
  *'operations describe'*)
   n=0; [ ! -f "$FIXTURE/polls" ] || n=$(cat "$FIXTURE/polls")
   n=$((n+1)); echo "$n" > "$FIXTURE/polls"
@@ -103,3 +111,21 @@ def test_failure_or_wait_limit_does_not_reissue_upgrade(
     if mode == "forever":
         assert "operation-test-123" in result.stderr
         assert "still running" in result.stderr
+
+
+def test_empty_async_output_discovers_exact_pool_operation(tmp_path: Path) -> None:
+    result = run_upgrade(tmp_path, "empty")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert len((tmp_path / "upgrades").read_text().splitlines()) == 1
+    assert (tmp_path / "polls").read_text().strip() == "3"
+
+
+@pytest.mark.parametrize("mode", ["missing", "ambiguous"])
+def test_operation_discovery_refuses_missing_or_ambiguous_matches(
+    tmp_path: Path, mode: str
+) -> None:
+    result = run_upgrade(tmp_path, mode)
+    assert result.returncode != 0
+    assert len((tmp_path / "upgrades").read_text().splitlines()) == 1
+    assert not (tmp_path / "polls").exists()
+    assert "matching upgrade operation" in result.stderr

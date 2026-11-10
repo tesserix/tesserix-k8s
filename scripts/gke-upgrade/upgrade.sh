@@ -64,15 +64,49 @@ wait_for_operation() {
   return 1
 }
 
+discover_operation() {
+  local started=$1 suffix=$2 kind=$3 result count attempt
+  for ((attempt=0; attempt<5; attempt++)); do
+    result=$("${GC[@]}" operations list --region "$REGION" \
+      --filter="startTime>='$started' AND operationType='$kind'" --format=json) || return 1
+    result=$(jq --arg suffix "$suffix" '[.[] | select((.targetLink // "") | endswith($suffix))]' <<<"$result") || return 1
+    count=$(jq 'length' <<<"$result") || return 1
+    if [[ "$count" == 1 ]]; then
+      jq -r '.[0].name // ""' <<<"$result"
+      return 0
+    fi
+    if [[ "$count" != 0 ]]; then
+      die "more than one matching upgrade operation; inspect GKE before retrying"
+      return 1
+    fi
+    sleep "$OPERATION_POLL_SECONDS"
+  done
+  die "no matching upgrade operation found; inspect GKE before retrying"
+  return 1
+}
+
 run_upgrade() {
-  local operation
+  local operation started suffix kind arg
   if [[ "$DRY_RUN" == "true" ]]; then
     run "${GC[@]}" clusters upgrade "$CLUSTER" --region "$REGION" "$@" \
       --cluster-version="$TARGET" --quiet --async --format='value(name)'
     return 0
   fi
+  started=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  suffix="/clusters/$CLUSTER"
+  kind=UPGRADE_MASTER
+  for arg in "$@"; do
+    if [[ "$arg" == --node-pool=* ]]; then
+      suffix+="/nodePools/${arg#--node-pool=}"
+      kind=UPGRADE_NODES
+    fi
+  done
   operation=$(run "${GC[@]}" clusters upgrade "$CLUSTER" --region "$REGION" "$@" \
     --cluster-version="$TARGET" --quiet --async --format='value(name)') || return 1
+  # The GA SDK submits async upgrades without returning a resource.
+  if [[ -z "$operation" ]]; then
+    operation=$(discover_operation "$started" "$suffix" "$kind") || return 1
+  fi
   [[ "$operation" =~ ^operation-[a-zA-Z0-9-]+$ ]] ||
     { die "upgrade did not return a valid operation ID; inspect GKE before retrying"; return 1; }
   log "waiting for operation $operation"
