@@ -1,5 +1,5 @@
 # Keep this stack's reviewed version independent of shared application inputs.
-control_plane_version = "1.37.0-gke.3503000"
+control_plane_version = "1.37.2-gke.1042000"
 
 # The regular production ceiling remains seven. Future upgrades replace a
 # worker before adding its replacement, rather than exceeding that ceiling.
