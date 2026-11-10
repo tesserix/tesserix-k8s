@@ -23,6 +23,17 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: planning-poker-api
+      {{- if .Values.companyIdentity.enabled }}
+      volumes:
+        - name: company-onboarding
+          projected:
+            defaultMode: 288
+            sources:
+              - serviceAccountToken:
+                  audience: planning-poker-onboarding
+                  expirationSeconds: 600
+                  path: token
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -36,7 +47,19 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.api.port }}
+          {{- if .Values.companyIdentity.enabled }}
+          volumeMounts:
+            - name: company-onboarding
+              mountPath: /var/run/planning-poker-onboarding
+              readOnly: true
+          {{- end }}
           env:
+            {{- if .Values.companyIdentity.enabled }}
+            - name: ONBOARDING_API_URL
+              value: {{ .Values.companyIdentity.apiURL | quote }}
+            - name: ONBOARDING_WORKLOAD_TOKEN_FILE
+              value: /var/run/planning-poker-onboarding/token
+            {{- end }}
             - name: PORT
               value: {{ .Values.api.port | quote }}
             # Same origin as the UI — the VirtualService splits /api/ off to
