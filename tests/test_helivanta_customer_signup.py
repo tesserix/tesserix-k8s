@@ -60,3 +60,9 @@ class CustomerSignup(unittest.TestCase):
         destination = policy["spec"]["egress"][0]["to"][0]
         self.assertEqual(destination["namespaceSelector"]["matchLabels"], {"kubernetes.io/metadata.name": "onboarding"})
         self.assertEqual(destination["podSelector"]["matchLabels"]["app.kubernetes.io/name"], "onboarding-api")
+
+    def test_platform_api_owns_namespace_mesh_enrollment_for_private_signup(self):
+        app = yaml.safe_load((ROOT / "argocd/prod/apps/helivanta/helivanta-api.yaml").read_text())
+        labels = app["spec"]["syncPolicy"].get("managedNamespaceMetadata", {}).get("labels", {})
+        self.assertEqual(labels.get("istio.io/dataplane-mode"), "ambient")
+        self.assertEqual(labels.get("istio-injection"), "disabled")
