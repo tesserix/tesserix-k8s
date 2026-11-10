@@ -2,8 +2,6 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: homechef-ingress-gateway
-  annotations:
-    kargo.akuity.io/authorized-stage: "kargo-infra:istio-prod"
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -11,6 +9,7 @@ metadata:
     app.kubernetes.io/part-of: home-chef-app
     app.kubernetes.io/component: infrastructure
   annotations:
+    kargo.akuity.io/authorized-stage: "kargo-infra:istio-prod"
     # Provision the gateway pods before any VirtualService starts targeting them.
     argocd.argoproj.io/sync-wave: "-1"
 spec:
@@ -152,9 +151,6 @@ spec:
     server: https://kubernetes.default.svc
     namespace: istio-ingress
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
