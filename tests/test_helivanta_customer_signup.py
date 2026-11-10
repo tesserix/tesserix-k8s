@@ -61,12 +61,12 @@ class CustomerSignup(unittest.TestCase):
         self.assertEqual(destination["namespaceSelector"]["matchLabels"], {"kubernetes.io/metadata.name": "onboarding"})
         self.assertEqual(destination["podSelector"]["matchLabels"]["app.kubernetes.io/name"], "onboarding-api")
 
-    def test_namespace_mesh_enrollment_is_a_reconciled_resource(self):
+    def test_namespace_preserves_working_transport_until_l7_mesh_migration(self):
         import subprocess
         docs = list(yaml.safe_load_all(subprocess.check_output([
             "kubectl", "kustomize", str(ROOT / "argocd/prod/apps/helivanta")], text=True)))
         namespace = next((d for d in docs if d["kind"] == "Namespace" and d["metadata"]["name"] == "helivanta"), None)
         self.assertIsNotNone(namespace, "Existing namespace metadata must reconcile as a declared resource")
-        self.assertEqual(namespace["metadata"]["labels"]["istio.io/dataplane-mode"], "ambient")
+        self.assertNotIn("istio.io/dataplane-mode", namespace["metadata"]["labels"])
         self.assertEqual(namespace["metadata"]["labels"]["istio-injection"], "disabled")
         self.assertIn("Prune=false", namespace["metadata"]["annotations"]["argocd.argoproj.io/sync-options"])
