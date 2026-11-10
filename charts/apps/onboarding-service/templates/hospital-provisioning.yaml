@@ -75,3 +75,28 @@ spec:
         {{- end }}
       ports: [{protocol: TCP, port: 443}]
 {{- end }}
+{{- if .Values.hospitalProvisioning.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-helivanta-customer-signup
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "onboarding-service.selectorLabels" (dict "component" "onboarding-api" "release" .Release.Name) | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: helivanta
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: helivanta-api
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.port }}
+{{- end }}

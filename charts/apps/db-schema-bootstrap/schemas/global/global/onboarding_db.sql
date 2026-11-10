@@ -206,6 +206,7 @@ CREATE TABLE IF NOT EXISTS customer_signups (
     receipt_hash BYTEA NOT NULL CHECK (octet_length(receipt_hash) = 32),
     receipt_expires_at TIMESTAMPTZ NOT NULL DEFAULT now() + interval '7 days',
     receipt_verified BOOLEAN NOT NULL DEFAULT false,
+    primary_credential_configured BOOLEAN NOT NULL DEFAULT false,
     proof_attempts INTEGER NOT NULL DEFAULT 0 CHECK (proof_attempts BETWEEN 0 AND 5),
     proof_window_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     mail_attempts INTEGER NOT NULL DEFAULT 0 CHECK (mail_attempts BETWEEN 0 AND 3),
@@ -224,6 +225,7 @@ CREATE TABLE IF NOT EXISTS customer_signups (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE customer_signups ADD COLUMN IF NOT EXISTS primary_credential_configured BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS customer_signups_created_at ON customer_signups(created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS customer_signups_email_reservation
     ON customer_signups(product_key,owner_email_hash) WHERE state <> 'existing_account';

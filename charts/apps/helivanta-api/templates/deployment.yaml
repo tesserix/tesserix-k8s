@@ -49,7 +49,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "helivanta-api.serviceAccountName" . }}
-      {{- if or .Values.clinicalConsent.enabled .Values.supplierTrade.enabled }}
+      {{- if or .Values.clinicalConsent.enabled .Values.supplierTrade.enabled .Values.hospitalProvisioning.enabled }}
       automountServiceAccountToken: false
       {{- end }}
       securityContext:
@@ -286,6 +286,11 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if .Values.hospitalProvisioning.enabled }}
+            - name: customer-onboarding
+              mountPath: /var/run/customer-onboarding
+              readOnly: true
+            {{- end }}
             # readOnlyRootFilesystem is on, so anything that writes needs a
             # mount.
             - name: tmp
@@ -305,12 +310,22 @@ spec:
               mountPath: /var/run/secrets/supplier-trade
               readOnly: true
             {{- end }}
-            {{- if or .Values.clinicalConsent.enabled .Values.supplierTrade.enabled }}
+            {{- if or .Values.clinicalConsent.enabled .Values.supplierTrade.enabled .Values.hospitalProvisioning.enabled }}
             - name: kubernetes-api
               mountPath: /var/run/secrets/kubernetes.io/serviceaccount
               readOnly: true
             {{- end }}
       volumes:
+        {{- if .Values.hospitalProvisioning.enabled }}
+        - name: customer-onboarding
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  audience: helivanta-customer-onboarding
+                  expirationSeconds: 600
+                  path: token
+        {{- end }}
         {{- if .Values.clinicalConsent.enabled }}
         - name: mediconnect-claim
           projected:
@@ -331,7 +346,7 @@ spec:
                   expirationSeconds: 600
                   path: token
         {{- end }}
-        {{- if or .Values.clinicalConsent.enabled .Values.supplierTrade.enabled }}
+        {{- if or .Values.clinicalConsent.enabled .Values.supplierTrade.enabled .Values.hospitalProvisioning.enabled }}
         - name: kubernetes-api
           projected:
             defaultMode: 0440
