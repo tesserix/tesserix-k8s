@@ -61,8 +61,12 @@ class CustomerSignup(unittest.TestCase):
         self.assertEqual(destination["namespaceSelector"]["matchLabels"], {"kubernetes.io/metadata.name": "onboarding"})
         self.assertEqual(destination["podSelector"]["matchLabels"]["app.kubernetes.io/name"], "onboarding-api")
 
-    def test_platform_api_owns_namespace_mesh_enrollment_for_private_signup(self):
-        app = yaml.safe_load((ROOT / "argocd/prod/apps/helivanta/helivanta-api.yaml").read_text())
-        labels = app["spec"]["syncPolicy"].get("managedNamespaceMetadata", {}).get("labels", {})
-        self.assertEqual(labels.get("istio.io/dataplane-mode"), "ambient")
-        self.assertEqual(labels.get("istio-injection"), "disabled")
+    def test_namespace_mesh_enrollment_is_a_reconciled_resource(self):
+        import subprocess
+        docs = list(yaml.safe_load_all(subprocess.check_output([
+            "kubectl", "kustomize", str(ROOT / "argocd/prod/apps/helivanta")], text=True)))
+        namespace = next((d for d in docs if d["kind"] == "Namespace" and d["metadata"]["name"] == "helivanta"), None)
+        self.assertIsNotNone(namespace, "Existing namespace metadata must reconcile as a declared resource")
+        self.assertEqual(namespace["metadata"]["labels"]["istio.io/dataplane-mode"], "ambient")
+        self.assertEqual(namespace["metadata"]["labels"]["istio-injection"], "disabled")
+        self.assertIn("Prune=false", namespace["metadata"]["annotations"]["argocd.argoproj.io/sync-options"])
