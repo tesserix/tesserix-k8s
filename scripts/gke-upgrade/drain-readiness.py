@@ -90,6 +90,12 @@ def cnpg_failover(
     return False
 
 
+def pdb_applies(pod: dict[str, Any]) -> bool:
+    return not pod["metadata"].get("deletionTimestamp") and pod.get("status", {}).get(
+        "phase"
+    ) not in ("Pending", "Succeeded", "Failed")
+
+
 def blockers(inventory: dict[str, Any], pool: str) -> list[str]:
     nodes = {
         n["metadata"]["name"]
@@ -99,9 +105,7 @@ def blockers(inventory: dict[str, Any], pool: str) -> list[str]:
     }
     blocked = []
     for pod in inventory["pods"]:
-        if pod.get("spec", {}).get("nodeName") not in nodes or pod.get(
-            "status", {}
-        ).get("phase") in ("Succeeded", "Failed"):
+        if pod.get("spec", {}).get("nodeName") not in nodes or not pdb_applies(pod):
             continue
         meta = pod["metadata"]
         budgets = [
@@ -125,7 +129,7 @@ def blockers(inventory: dict[str, Any], pool: str) -> list[str]:
             for p in inventory["pods"]
             if p["metadata"]["namespace"] == namespace
             and p.get("spec", {}).get("nodeName") in nodes
-            and p.get("status", {}).get("phase") not in ("Succeeded", "Failed")
+            and pdb_applies(p)
             and matches(p["metadata"].get("labels", {}), selector)
         ]
         if selected and cnpg_failover(pdb, selected, inventory):
