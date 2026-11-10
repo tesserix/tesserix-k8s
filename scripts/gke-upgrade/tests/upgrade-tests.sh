@@ -14,6 +14,7 @@ set -euo pipefail
 case "$*" in
   *'--format=value(currentMasterVersion)'*) echo '1.36.4-gke.1391000' ;;
   *'--format=value(nodePools[].name)'*) echo 'gpu-l4-spot' ;;
+  *'node-pools describe'*) echo '1.36.4-gke.1391000' ;;
   *) printf '%s\n' "$*" >>"$CALL_LOG" ;;
 esac
 STUB
