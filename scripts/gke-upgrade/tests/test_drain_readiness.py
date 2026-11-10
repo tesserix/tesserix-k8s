@@ -233,3 +233,52 @@ def test_overlapping_positive_budgets_block_eviction(pool: str, expected: int) -
     assert result.returncode == expected
     if expected:
         assert "multiple PodDisruptionBudgets" in result.stdout
+
+
+@pytest.mark.parametrize(
+    ("phase", "blocked"),
+    [
+        ("Pending", False),
+        ("Succeeded", False),
+        ("Failed", False),
+        ("Running", True),
+        ("Unknown", True),
+        (None, True),
+    ],
+)
+def test_eviction_uses_kubernetes_pod_phase_exemptions(
+    phase: str | None, blocked: bool
+) -> None:
+    data = database_inventory()
+    data["clusters"] = []
+    data["pods"] = data["pods"][:1]
+    data["pods"][0]["status"]["phase"] = phase
+    data["pods"][0]["status"]["conditions"][0]["status"] = "False"
+    assert run_check(data, "workers").returncode == int(blocked)
+
+
+def test_pending_pod_with_overlapping_budgets_does_not_block_eviction() -> None:
+    data = database_inventory()
+    data["clusters"] = []
+    data["pods"] = data["pods"][:1]
+    data["pods"][0]["status"]["phase"] = "Pending"
+    duplicate = json.loads(json.dumps(data["pdbs"][0]))
+    duplicate["metadata"]["name"] = "overlap"
+    data["pdbs"].append(duplicate)
+    assert run_check(data, "workers").returncode == 0
+
+
+def test_pending_pod_does_not_exempt_running_pod_from_budget() -> None:
+    data = database_inventory()
+    data["clusters"] = []
+    data["pdbs"][0]["spec"]["selector"] = {"matchLabels": {"cnpg.io/cluster": "db"}}
+    data["pods"][1]["status"]["phase"] = "Pending"
+    assert run_check(data, "workers").returncode == 1
+
+
+def test_already_deleting_pod_does_not_block_eviction() -> None:
+    data = database_inventory()
+    data["clusters"] = []
+    data["pods"] = data["pods"][:1]
+    data["pods"][0]["metadata"]["deletionTimestamp"] = "2026-11-10T00:00:00Z"
+    assert run_check(data, "workers").returncode == 0
