@@ -27,3 +27,10 @@ def test_existing_owner_binding_preserves_signup_intent_and_new_owner_uniqueness
     assert "current_setting('app.customer_signup_existing_owner', true)" in sql
     assert "WHERE state <> 'existing_account' AND existing_owner_subject = ''" in sql
     assert "DROP INDEX IF EXISTS customer_signups_email_reservation" in sql
+def test_native_email_acceptance_keeps_only_nonsecret_evidence():
+    sql = (ROOT / "charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql").read_text()
+    assert "ADD COLUMN IF NOT EXISTS email_accepted_at TIMESTAMPTZ" in sql
+    assert "ADD COLUMN IF NOT EXISTS email_provider_id TEXT" in sql
+    assert "customer_signup_email_acceptance_evidence" in sql
+    assert "email_accepted_at IS NULL" in sql
+    assert "email_provider_id = ''" in sql
