@@ -30,8 +30,11 @@ storage and the runtime reader have been verified.
 
 ## Activation order
 
-This access change creates no ExternalSecret and activates no outbound mail.
-It is safe to reconcile before the key exists. Credential storage, namespace-
+The access preparation in #1658 activates no outbound mail. Once the key exists,
+the runtime chart creates a namespace-scoped SecretStore and ExternalSecret.
+Delivery remains disabled until `helivantaEmail.enabled` is explicitly enabled
+with an approved sender. A read-only directory mount then makes key rotation
+visible on the next send without restarting the application. Credential storage, namespace-
 scoped ESO reader, read-only runtime file mount, operator support for native
 code return, and onboarding delivery integration must be verified before mail
 activation. API keys and native codes must never be returned by public APIs.
