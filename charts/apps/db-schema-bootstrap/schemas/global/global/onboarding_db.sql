@@ -226,9 +226,19 @@ CREATE TABLE IF NOT EXISTS customer_signups (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE customer_signups ADD COLUMN IF NOT EXISTS primary_credential_configured BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE customer_signups ADD COLUMN IF NOT EXISTS existing_owner_subject TEXT NOT NULL DEFAULT ''
+    CHECK (existing_owner_subject = '' OR existing_owner_subject ~ '^[A-Za-z0-9_-]{1,200}$');
+ALTER TABLE customer_signups ADD COLUMN IF NOT EXISTS existing_owner_auth_time TIMESTAMPTZ;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='customer_signups'::regclass AND conname='customer_signup_existing_owner_evidence') THEN
+        ALTER TABLE customer_signups ADD CONSTRAINT customer_signup_existing_owner_evidence
+            CHECK ((existing_owner_subject = '') = (existing_owner_auth_time IS NULL));
+    END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS customer_signups_created_at ON customer_signups(created_at);
-CREATE UNIQUE INDEX IF NOT EXISTS customer_signups_email_reservation
-    ON customer_signups(product_key,owner_email_hash) WHERE state <> 'existing_account';
+CREATE UNIQUE INDEX IF NOT EXISTS customer_signups_new_owner_email_reservation
+    ON customer_signups(product_key,owner_email_hash) WHERE state <> 'existing_account' AND existing_owner_subject = '';
+DROP INDEX IF EXISTS customer_signups_email_reservation;
 CREATE INDEX IF NOT EXISTS customer_signups_retry
     ON customer_signups(retry_at,id) WHERE state IN ('recorded','identity_requested');
 CREATE OR REPLACE FUNCTION preserve_customer_signup_intent() RETURNS trigger
@@ -243,6 +253,37 @@ DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'customer_signups'::regclass AND tgname = 'customer_signup_intent_immutable') THEN
         CREATE TRIGGER customer_signup_intent_immutable BEFORE UPDATE ON customer_signups
             FOR EACH ROW EXECUTE FUNCTION preserve_customer_signup_intent();
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION guard_customer_signup_existing_owner() RETURNS trigger
+LANGUAGE plpgsql AS $$ BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.existing_owner_subject <> '' OR NEW.existing_owner_auth_time IS NOT NULL THEN
+            RAISE EXCEPTION 'existing signup owner requires authenticated continuation' USING ERRCODE = '23514';
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF ROW(NEW.existing_owner_subject,NEW.existing_owner_auth_time)
+        IS DISTINCT FROM ROW(OLD.existing_owner_subject,OLD.existing_owner_auth_time) THEN
+        IF OLD.existing_owner_subject <> '' OR NEW.existing_owner_subject = ''
+            OR OLD.state <> 'existing_account' OR NEW.state <> 'recorded'
+            OR NEW.existing_owner_auth_time IS NULL
+            OR NEW.existing_owner_auth_time < clock_timestamp() - interval '5 minutes'
+            OR NEW.existing_owner_auth_time > clock_timestamp() + interval '30 seconds'
+            OR NOT NEW.receipt_verified OR NOT NEW.primary_credential_configured
+            OR NEW.receipt_hash = OLD.receipt_hash OR NEW.lease_id IS NOT NULL
+            OR NEW.error_code <> ''
+            OR current_setting('app.customer_signup_existing_owner', true) IS DISTINCT FROM NEW.existing_owner_subject THEN
+            RAISE EXCEPTION 'existing signup owner binding is immutable or unverified' USING ERRCODE = '23514';
+        END IF;
+    END IF;
+    RETURN NEW;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='customer_signups'::regclass AND tgname='customer_signup_existing_owner_guard') THEN
+        CREATE TRIGGER customer_signup_existing_owner_guard BEFORE INSERT OR UPDATE ON customer_signups
+            FOR EACH ROW EXECUTE FUNCTION guard_customer_signup_existing_owner();
     END IF;
 END $$;
 
