@@ -229,6 +229,30 @@ ALTER TABLE customer_signups ADD COLUMN IF NOT EXISTS primary_credential_configu
 ALTER TABLE customer_signups ADD COLUMN IF NOT EXISTS existing_owner_subject TEXT NOT NULL DEFAULT ''
     CHECK (existing_owner_subject = '' OR existing_owner_subject ~ '^[A-Za-z0-9_-]{1,200}$');
 ALTER TABLE customer_signups ADD COLUMN IF NOT EXISTS existing_owner_auth_time TIMESTAMPTZ;
+ALTER TABLE customer_signups ADD COLUMN IF NOT EXISTS email_accepted_at TIMESTAMPTZ;
+ALTER TABLE customer_signups ADD COLUMN IF NOT EXISTS email_provider_id TEXT NOT NULL DEFAULT '';
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='customer_signups'::regclass AND conname='customer_signup_email_acceptance_evidence') THEN
+        ALTER TABLE customer_signups ADD CONSTRAINT customer_signup_email_acceptance_evidence
+            CHECK ((email_accepted_at IS NULL) = (email_provider_id = '') AND
+                (email_provider_id = '' OR email_provider_id ~ '^[A-Za-z0-9_-]{1,200}$'));
+    END IF;
+END $$;
+CREATE OR REPLACE FUNCTION preserve_customer_signup_email_acceptance() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.email_accepted_at IS NOT NULL AND
+        (NEW.email_accepted_at, NEW.email_provider_id) IS DISTINCT FROM (OLD.email_accepted_at, OLD.email_provider_id) THEN
+        RAISE EXCEPTION 'Initial email acceptance evidence is immutable';
+    END IF;
+    RETURN NEW;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='customer_signups'::regclass AND tgname='customer_signup_email_acceptance_immutable') THEN
+        CREATE TRIGGER customer_signup_email_acceptance_immutable BEFORE UPDATE ON customer_signups
+            FOR EACH ROW EXECUTE FUNCTION preserve_customer_signup_email_acceptance();
+    END IF;
+END $$;
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='customer_signups'::regclass AND conname='customer_signup_existing_owner_evidence') THEN
         ALTER TABLE customer_signups ADD CONSTRAINT customer_signup_existing_owner_evidence
