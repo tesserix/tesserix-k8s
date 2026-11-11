@@ -17,7 +17,7 @@ def test_signup_command_schema_preserves_identity_and_opaque_receipt_bounds():
     assert "WHERE state IN ('recorded','identity_requested')" in sql
 
 
-def test_existing_owner_binding_preserves_signup_intent_and_new_owner_uniqueness():
+def test_legacy_owner_evidence_is_preserved_without_cross_tenant_email_uniqueness():
     sql = (ROOT / 'charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql').read_text()
     assert "ADD COLUMN IF NOT EXISTS existing_owner_subject" in sql
     assert "ADD COLUMN IF NOT EXISTS existing_owner_auth_time" in sql
@@ -25,7 +25,8 @@ def test_existing_owner_binding_preserves_signup_intent_and_new_owner_uniqueness
     assert "OLD.existing_owner_subject <> ''" in sql
     assert "OLD.state <> 'existing_account'" in sql
     assert "current_setting('app.customer_signup_existing_owner', true)" in sql
-    assert "WHERE state <> 'existing_account' AND existing_owner_subject = ''" in sql
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS customer_signups_new_owner_email_reservation" not in sql
+    assert "DROP INDEX IF EXISTS customer_signups_new_owner_email_reservation" in sql
     assert "DROP INDEX IF EXISTS customer_signups_email_reservation" in sql
 def test_native_email_acceptance_keeps_only_nonsecret_evidence():
     sql = (ROOT / "charts/apps/db-schema-bootstrap/schemas/global/global/onboarding_db.sql").read_text()

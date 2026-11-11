@@ -260,11 +260,16 @@ DO $$ BEGIN
     END IF;
 END $$;
 CREATE INDEX IF NOT EXISTS customer_signups_created_at ON customer_signups(created_at);
-CREATE UNIQUE INDEX IF NOT EXISTS customer_signups_new_owner_email_reservation
-    ON customer_signups(product_key,owner_email_hash) WHERE state <> 'existing_account' AND existing_owner_subject = '';
+-- Email is a delivery address; each tenant owns an independent native user.
+DROP INDEX IF EXISTS customer_signups_new_owner_email_reservation;
 DROP INDEX IF EXISTS customer_signups_email_reservation;
+-- Non-unique delivery-abuse lookup; never an identity or account-reuse key.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS customer_signups_recipient_mail_budget
+    ON customer_signups(owner_email_hash,tenant_id);
 CREATE INDEX IF NOT EXISTS customer_signups_retry
     ON customer_signups(retry_at,id) WHERE state IN ('recorded','identity_requested');
+CREATE INDEX IF NOT EXISTS customer_signups_unbound_legacy_retry
+    ON customer_signups(retry_at,id) WHERE state='existing_account' AND existing_owner_subject='';
 CREATE OR REPLACE FUNCTION preserve_customer_signup_intent() RETURNS trigger
 LANGUAGE plpgsql AS $$ BEGIN
     IF ROW(NEW.id,NEW.product_key,NEW.tenant_id,NEW.resource_id,NEW.owner_subject,NEW.intent_hash,NEW.owner_email_hash,NEW.input,NEW.created_at)
