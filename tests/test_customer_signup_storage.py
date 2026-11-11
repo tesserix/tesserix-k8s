@@ -34,3 +34,6 @@ def test_native_email_acceptance_keeps_only_nonsecret_evidence():
     assert "customer_signup_email_acceptance_evidence" in sql
     assert "email_accepted_at IS NULL" in sql
     assert "email_provider_id = ''" in sql
+    assert "email_provider_id ~ '^[A-Za-z0-9_-]{1,200}$'" in sql
+    assert "OLD.email_accepted_at IS NOT NULL" in sql
+    assert "FOR EACH ROW EXECUTE FUNCTION preserve_customer_signup_email_acceptance()" in sql
