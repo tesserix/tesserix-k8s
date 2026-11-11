@@ -65,11 +65,20 @@ def test_production_mail_accounts_never_automount_credentials():
             ]
 
 
-def test_mail_access_is_opt_in_and_does_not_activate_delivery():
+def test_mail_access_is_opt_in_and_credential_uses_a_file_path():
     assert not any(
         d["metadata"]["name"].startswith("helivanta-onboarding-email-")
         for d in onboarding_documents(False)
     )
     documents = onboarding_documents(True)
     api = resource(documents, "Deployment", "onboarding-api")
-    assert "HELIVANTA_EMAIL_FROM" not in json.dumps(api)
+    environment = {
+        entry["name"]: entry.get("value")
+        for entry in api["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    assert environment["HELIVANTA_EMAIL_FROM"] == "onboarding@helivanta.app"
+    assert (
+        environment["HELIVANTA_RESEND_API_KEY_FILE"]
+        == "/var/run/helivanta-email/api-key"
+    )
+    assert "RESEND_API_KEY" not in environment

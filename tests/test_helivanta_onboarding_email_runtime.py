@@ -14,6 +14,7 @@ def documents(enabled=False):
         "-f",
         str(chart / "values-prod.yaml"),
     ]
+    args += ["--set", f"helivantaEmail.enabled={str(enabled).lower()}"]
     if enabled:
         args += [
             "--set",
@@ -26,6 +27,16 @@ def documents(enabled=False):
         for doc in yaml.safe_load_all(subprocess.check_output(args, text=True))
         if doc
     ]
+
+
+def test_production_activates_verified_sender_with_file_based_credential():
+    values = yaml.safe_load(
+        (ROOT / "charts/apps/onboarding-service/values-prod.yaml").read_text()
+    )
+    assert values["helivantaEmail"] == {
+        "enabled": True,
+        "from": "onboarding@helivanta.app",
+    }
 
 
 def test_product_secret_uses_exact_namespace_reader_and_property():
@@ -97,6 +108,8 @@ def test_missing_sender_refuses_mail_activation():
             str(chart / "values-prod.yaml"),
             "--set",
             "helivantaEmail.enabled=true",
+            "--set",
+            "helivantaEmail.from=",
         ],
         check=False,
         capture_output=True,
