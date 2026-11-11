@@ -71,7 +71,5 @@ def test_mail_access_is_opt_in_and_does_not_activate_delivery():
         for d in onboarding_documents(False)
     )
     documents = onboarding_documents(True)
-    assert not any(
-        d["kind"] == "ExternalSecret" and "resend" in json.dumps(d).lower()
-        for d in documents
-    )
+    api = resource(documents, "Deployment", "onboarding-api")
+    assert "HELIVANTA_EMAIL_FROM" not in json.dumps(api)
