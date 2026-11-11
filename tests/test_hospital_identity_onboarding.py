@@ -6,6 +6,15 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 class HospitalIdentity(unittest.TestCase):
+    def test_external_owner_mail_is_immutable_and_helivanta_only(self):
+        docs = list(yaml.safe_load_all(subprocess.check_output(["kubectl", "kustomize", str(ROOT / "k8s/operators/zitadel")], text=True)))
+        crd = next(d for d in docs if d and d["kind"] == "CustomResourceDefinition" and d["metadata"]["name"] == "zitadelorganizations.identity.tesserix.app")
+        spec = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]
+        self.assertEqual(spec["properties"]["externalInitialAdminEmail"], {"type": "boolean"})
+        rules = [v["rule"] for v in spec["x-kubernetes-validations"]]
+        self.assertIn("self == oldSelf", rules)
+        self.assertTrue(any('externalInitialAdminEmail' in r and '"helivanta"' in r and 'has(self.initialAdmin)' in r for r in rules))
+
     def test_product_oauth_reaches_the_reviewed_console_host(self):
         app = yaml.safe_load((ROOT / "argocd/prod/infrastructure/istio-auth-policies.yaml").read_text())
         values = yaml.safe_load((ROOT / "charts/infrastructure/istio-auth-policies/values.yaml").read_text())
