@@ -263,6 +263,9 @@ CREATE INDEX IF NOT EXISTS customer_signups_created_at ON customer_signups(creat
 -- Email is a delivery address; each tenant owns an independent native user.
 DROP INDEX IF EXISTS customer_signups_new_owner_email_reservation;
 DROP INDEX IF EXISTS customer_signups_email_reservation;
+-- Non-unique delivery-abuse lookup; never an identity or account-reuse key.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS customer_signups_recipient_mail_budget
+    ON customer_signups(owner_email_hash,tenant_id);
 CREATE INDEX IF NOT EXISTS customer_signups_retry
     ON customer_signups(retry_at,id) WHERE state IN ('recorded','identity_requested');
 CREATE INDEX IF NOT EXISTS customer_signups_unbound_legacy_retry
