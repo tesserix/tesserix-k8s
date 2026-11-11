@@ -287,6 +287,13 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: helivanta-onboarding-email-writer
+      hcl: |
+        path "kv/data/helivanta/prod/app/helivanta-onboarding-resend-api-key" { capabilities = ["create", "read", "update"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
+    - name: helivanta-onboarding-email-reader
+      hcl: |
+        path "kv/data/helivanta/prod/app/helivanta-onboarding-resend-api-key" { capabilities = ["read"] }
     - name: seed-rocketchat-production
       hcl: |
         path "kv/data/rocketchat/prod/app/rocketchat-mongodb-uri" { capabilities = ["create", "read", "update"] }
@@ -1021,6 +1028,20 @@ bootstrap:
         path "transit/hmac/helivanta-consent-*" { capabilities = ["update"] }
 
   kubernetesRoles:
+    - name: helivanta-onboarding-email-writer
+      serviceAccounts: [helivanta-onboarding-email-writer]
+      namespaces: [onboarding]
+      policies: [helivanta-onboarding-email-writer]
+      audience: vault
+      ttl: 5m
+      maxTTL: 5m
+    - name: helivanta-onboarding-email-reader
+      serviceAccounts: [helivanta-onboarding-email-reader]
+      namespaces: [onboarding]
+      policies: [helivanta-onboarding-email-reader]
+      audience: vault
+      ttl: 5m
+      maxTTL: 5m
     - name: seed-rocketchat-production
       serviceAccounts: [openbao-bootstrap]
       namespaces: [openbao]
