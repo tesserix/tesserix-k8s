@@ -31,6 +31,7 @@ def documents(enabled=False):
 def test_product_secret_uses_exact_namespace_reader_and_property():
     docs = documents()
     store = resource(docs, "SecretStore", "helivanta-onboarding-email")
+    assert store["apiVersion"] == "external-secrets.io/v1beta1"
     assert store["metadata"]["namespace"] == "onboarding"
     vault = store["spec"]["provider"]["vault"]
     assert vault["path"] == "kv"
@@ -44,6 +45,7 @@ def test_product_secret_uses_exact_namespace_reader_and_property():
         },
     }
     secret = resource(docs, "ExternalSecret", "onboarding-helivanta-resend")
+    assert secret["apiVersion"] == "external-secrets.io/v1beta1"
     assert secret["spec"]["secretStoreRef"] == {
         "name": "helivanta-onboarding-email",
         "kind": "SecretStore",
