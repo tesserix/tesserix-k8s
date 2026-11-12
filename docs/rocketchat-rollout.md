@@ -65,6 +65,121 @@ For offboarding, remove the Zitadel grant AND deactivate the Rocket.Chat account
 and invalidate its sessions. For recovery, preserve PVCs and restore backups;
 do not assume a previous image can read a migrated database schema.
 
+## Notifications and sound
+
+The chart explicitly defaults desktop and mobile push notifications to **All
+messages**, message sound to **chime**, master and notification volume to **100**,
+focused-conversation mute to **off**, and push to production gateway mode.
+These are account defaults; user and room overrides remain
+available. Do not overwrite individual preferences or subscriptions to enable
+notifications, since that would undo intentional mutes.
+
+Server settings alone do not establish delivery:
+
+1. A workspace owner must register the workspace with Rocket.Chat Cloud, accept
+   its terms, and verify the current push entitlement/quota. Do not purchase a
+   plan or accept terms on an owner's behalf without explicit approval.
+2. In the browser, open **User menu → Preferences → Notifications** and confirm
+   **All messages** for desktop and push. If it says **Desktop Notifications are
+   Disabled**, allow notifications for `https://rocketchat.tesserix.app` in the
+   browser's site settings. Check the site's sound permission, tab mute, and OS
+   notification/Focus settings too.
+3. In **Preferences → Sound**, select the message sound and volume. Use the
+   available sound preview to verify audio. Users can select no sound or lower
+   the volume to mute it, and choose a sound again to unmute it. Room notification
+   preferences provide per-conversation overrides.
+4. On each phone, allow Rocket.Chat notifications and sounds in OS settings,
+   confirm **All messages** in the app, and check room overrides, silent mode and
+   Focus/Do Not Disturb. A registered push token alone does not prove delivery.
+5. With a second authorized participant, test an ordinary message and a mention
+   in a joined room and a direct message. Test with the browser in the background
+   and the phone locked, then verify mute and unmute on each client. Do not use
+   self-sent messages as evidence. Check gateway errors and quota if push fails.
+
+### Read-only production check (2026-11-12)
+
+- Rocket.Chat 8.9.0 and all three MongoDB pods were running; Argo CD reported
+  `Synced` at `4e876121326b1d66242281fca1e614fd1429c380`.
+- Effective desktop and push defaults were `all`, message sound `chime`, volume
+  `100`, and push enabled with the production gateway.
+- `Cloud_Workspace_Id` and `Register_Server` were unset. Two iOS device records
+  existed in `_raix_push_app_tokens`; no Android record was present.
+- The signed-in Chrome account's notification screen showed **All messages**
+  for desktop and push, but **Desktop Notifications are Disabled**.
+- Chrome site notifications were subsequently enabled. The signed-in user's
+  sound preferences were saved with focused-conversation mute off; the UI showed
+  Chime and master/notification volume 100. A desktop test was triggered, but
+  actual OS delivery/audio was not independently observed.
+- Mahesh was added through the supported UI to the 14 missing channels. A
+  subsequent read-only check confirmed membership in all 18 public/private
+  channels. Both active admitted humans now belong to all existing channels.
+- Global focused-conversation mute and scheduled membership defaults are prepared
+  in this change, pending credential provisioning and an approved GitOps rollout.
+  Phone delivery and mute/unmute acceptance remain pending.
+- The owner then explicitly approved Cloud registration, the owner email
+  `samyak.rout@gmail.com`, and acceptance of the Rocket.Chat Terms/Privacy Policy.
+  Email verification completed. The workspace displayed **Workspace registered**
+  and mobile push availability; read-only settings confirmed `Register_Server`
+  and `Cloud_Workspace_Id` populated. Registration activated a Starter entitlement
+  automatically; no paid plan was purchased. Its actual push quota and delivery
+  still need verification.
+
+## Default channel membership
+
+The owner explicitly requires every admitted human account to belong to every
+active public and private channel, existing or new. This includes existing
+private-channel history. It does not authorize public registration, a broader
+Zitadel allowlist, bot access to other products, or access to direct messages.
+
+`rocketchat-membership` runs every minute when `membership.enabled=true`. It uses
+paginated supported APIs to list active human users and public/private channels,
+then idempotent invitation APIs to ensure their subscriptions. Eligible accounts
+have type `user` and the `user` role, as granted by the existing SSO configuration;
+bot/app/guest/anonymous identities and deactivated accounts are excluded. Removing
+a human from an active channel is repaired on a later run; personal mute and sound
+preferences are not changed. Archived channels are left untouched.
+
+The job fails on authentication/authorization/API errors and logs counts or
+sanitized errors, never messages or credentials. A failed run is retried by the
+next scheduled run; Kubernetes does not immediately retry a permanent API error.
+There is no membership deletion or account reactivation. Removing `user` from an
+account or deactivating it stops future additions; access revocation still needs
+normal Rocket.Chat session/account offboarding.
+
+Before enabling this in production:
+
+1. Obtain approval to provision a dedicated administrator automation credential
+   and publish/deploy this GitOps change. Community 8.9.0 does not offer custom
+   roles; listing all private rooms and inviting humans requires administrator
+   authority. Use a dedicated, named Personal Access Token on an existing admitted
+   administrator account, with normal two-factor checks retained. This avoids
+   adding an extra privileged login identity. Do not reuse a product bot
+   credential or export browser cookies. Revoke the named token on retirement.
+2. Using the supported administrator API/token workflow and a short-lived
+   OpenBao writer bound to `seed-rocketchat-membership-production`, create the
+   exact paths below with CAS=0. Refuse an existing differing value. Each stores
+   only a `value` property. Never print the token or commit credential material.
+   The dedicated namespace-bound ESO reader can read only these two paths.
+   - `rocketchat/prod/app/rocketchat-membership-auth-token`
+   - `rocketchat/prod/app/rocketchat-membership-user-id`
+3. Reconcile the OpenBao policies/roles first, then Rocket.Chat. Confirm the
+   `rocketchat-membership` ExternalSecret is Ready without displaying its data.
+   The CronJob uses the existing pinned Rocket.Chat image, no Kubernetes API
+   token, and network access limited to Rocket.Chat plus namespace DNS. Its
+   request is 10m CPU/64Mi memory only while running, with a 128Mi memory cap.
+4. Verify the first Job completes and its counts cover every eligible human and
+   active channel. With a newly approved human and a new public/private channel,
+   verify membership on the next completed run. Do not claim the automation is
+   active based solely on a rendered Helm chart or local tests.
+5. Monitor failed `rocketchat-membership` Jobs and delayed runs alongside the
+   existing Kubernetes job monitoring. The production `monitoring` namespace
+   currently has `KubeJobFailed` and `KubeJobNotCompleted` alert rules. To stop additions, deploy
+   `membership.enabled=false`; existing memberships are preserved. Credential
+   rotation requires separate approval: replace the API token, update the same
+   OpenBao path with CAS, wait for ESO refresh, verify a successful run, then
+   revoke the old token. Revoke access and remove membership explicitly when
+   offboarding; the job does not delete data or revoke access.
+
 ## iOS login TLS compatibility (2026-10-26)
 
 Rocket.Chat iOS 4.77.2 uses a native WebSocket connection that failed against

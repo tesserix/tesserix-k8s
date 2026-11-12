@@ -1,0 +1,119 @@
+{{- if .Values.membership.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rocketchat-membership
+data:
+  ensure-membership.mjs: |
+{{ .Files.Get "files/ensure-membership.mjs" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: rocketchat-membership
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 60
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels: {app: rocketchat-membership}
+          annotations:
+            sidecar.istio.io/inject: "false"
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: reconcile
+              image: {{ .Values.image | quote }}
+              command: [node, /scripts/ensure-membership.mjs]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: 10m, memory: 64Mi}
+                limits: {memory: 128Mi}
+              env:
+                - {name: ROCKETCHAT_URL, value: "http://rocketchat:3000"}
+                - name: ROCKETCHAT_AUTH_USER_ID
+                  valueFrom: {secretKeyRef: {name: rocketchat-membership, key: user-id}}
+                - name: ROCKETCHAT_AUTH_TOKEN
+                  valueFrom: {secretKeyRef: {name: rocketchat-membership, key: auth-token}}
+              volumeMounts:
+                - {name: script, mountPath: /scripts, readOnly: true}
+          volumes:
+            - name: script
+              configMap: {name: rocketchat-membership}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rocketchat-membership
+spec:
+  podSelector: {matchLabels: {app: rocketchat-membership}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app: rocketchat}}
+      ports: [{protocol: TCP, port: 3000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rocketchat-from-membership
+spec:
+  podSelector: {matchLabels: {app: rocketchat}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app: rocketchat-membership}}
+      ports: [{protocol: TCP, port: 3000}]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rocketchat-membership-reader
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-rocketchat-membership
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-rocketchat-membership-production
+          serviceAccountRef: {name: rocketchat-membership-reader}
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: rocketchat-membership
+spec:
+  refreshInterval: 1m
+  secretStoreRef: {kind: SecretStore, name: openbao-rocketchat-membership}
+  target: {name: rocketchat-membership, creationPolicy: Owner}
+  data:
+    - secretKey: auth-token
+      remoteRef: {key: rocketchat/prod/app/rocketchat-membership-auth-token, property: value}
+    - secretKey: user-id
+      remoteRef: {key: rocketchat/prod/app/rocketchat-membership-user-id, property: value}
+{{- end }}

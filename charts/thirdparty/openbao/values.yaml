@@ -310,6 +310,15 @@ bootstrap:
         path "kv/data/rocketchat/prod/app/rocketchat-mongodb-keyfile" { capabilities = ["read"] }
         path "kv/data/rocketchat/prod/app/rocketchat-zitadel-client-id" { capabilities = ["read"] }
         path "kv/data/rocketchat/prod/app/rocketchat-zitadel-client-secret" { capabilities = ["read"] }
+    - name: read-rocketchat-membership-production
+      hcl: |
+        path "kv/data/rocketchat/prod/app/rocketchat-membership-auth-token" { capabilities = ["read"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-membership-user-id" { capabilities = ["read"] }
+    - name: seed-rocketchat-membership-production
+      hcl: |
+        path "kv/data/rocketchat/prod/app/rocketchat-membership-auth-token" { capabilities = ["create", "read", "update"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-membership-user-id" { capabilities = ["create", "read", "update"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: seed-civiclens-ai-production
       hcl: |
         path "kv/data/civiclens/prod/app/civiclens-ai-gateway-key" { capabilities = ["read", "create", "update"] }
@@ -1051,6 +1060,16 @@ bootstrap:
       serviceAccounts: [rocketchat-production-reader]
       namespaces: [rocketchat]
       policies: [read-rocketchat-production]
+      ttl: 15m
+    - name: read-rocketchat-membership-production
+      serviceAccounts: [rocketchat-membership-reader]
+      namespaces: [rocketchat]
+      policies: [read-rocketchat-membership-production]
+      ttl: 15m
+    - name: seed-rocketchat-membership-production
+      serviceAccounts: [openbao-bootstrap]
+      namespaces: [openbao]
+      policies: [seed-rocketchat-membership-production]
       ttl: 15m
     - name: seed-civiclens-ai-production
       serviceAccounts: ["civiclens-ai-secret-seed"]

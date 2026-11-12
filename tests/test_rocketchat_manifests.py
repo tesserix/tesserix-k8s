@@ -52,7 +52,12 @@ def test_only_named_members_can_provision_through_zitadel():
         env["OVERWRITE_SETTING_Accounts_Registration_AuthenticationServices_Enabled"]
         == "true"
     )
-    assert env["OVERWRITE_SETTING_Accounts_Registration_AuthenticationServices_Default_Roles"] == "user,admin"
+    assert (
+        env[
+            "OVERWRITE_SETTING_Accounts_Registration_AuthenticationServices_Default_Roles"
+        ]
+        == "user,admin"
+    )
     assert env["Accounts_OAuth_Custom_Zitadel_key_field"] == "sub"
     assert env["Accounts_OAuth_Custom_Zitadel_merge_users"] == "false"
 
@@ -95,11 +100,16 @@ def test_database_ports_are_not_public_and_secrets_are_scoped():
     assert any(
         d["spec"]["podSelector"] == {} and d["spec"]["ingress"] == [] for d in policies
     )
-    store = next(d for d in docs if d["kind"] == "SecretStore")
+    store = next(
+        d
+        for d in docs
+        if d["kind"] == "SecretStore"
+        and d["metadata"]["name"] == "openbao-rocketchat-production"
+    )
     auth = store["spec"]["provider"]["vault"]["auth"]["kubernetes"]
     assert auth["role"] == "read-rocketchat-production"
     secrets = [d for d in docs if d["kind"] == "ExternalSecret"]
-    assert len(secrets) == 2
+    assert len(secrets) == 3
     for secret in secrets:
         assert secret["spec"]["refreshInterval"] == "1m"
         for item in secret["spec"]["data"]:
@@ -174,3 +184,85 @@ def test_zitadel_login_does_not_add_a_rocketchat_otp_challenge():
     )
     assert env["OVERWRITE_SETTING_Accounts_ShowFormLogin"] == "false"
     assert env["OVERWRITE_SETTING_Accounts_RegistrationForm"] == "Disabled"
+
+
+def test_notifications_default_to_all_messages_with_audible_chime():
+    deployment = next(d for d in render() if d["kind"] == "Deployment")
+    env = {
+        item["name"]: item.get("value")
+        for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    expected = {
+        "Push_enable": "true",
+        "Push_enable_gateway": "true",
+        "Push_production": "true",
+        "Accounts_Default_User_Preferences_desktopNotifications": "all",
+        "Accounts_Default_User_Preferences_pushNotifications": "all",
+        "Accounts_Default_User_Preferences_newMessageNotification": "chime",
+        "Accounts_Default_User_Preferences_notificationsSoundVolume": "100",
+        "Accounts_Default_User_Preferences_masterVolume": "100",
+        "Accounts_Default_User_Preferences_muteFocusedConversations": "false",
+    }
+    for setting, value in expected.items():
+        assert env.get(f"OVERWRITE_SETTING_{setting}") == value, setting
+
+
+def test_membership_job_uses_supported_api_and_a_separate_scoped_secret():
+    result = subprocess.run(
+        [
+            "helm",
+            "template",
+            "rocketchat",
+            str(ROOT / "charts/thirdparty/rocketchat"),
+            "--namespace",
+            "rocketchat",
+            "--set",
+            "membership.enabled=true",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    docs = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
+    job = next(d for d in docs if d["kind"] == "CronJob")
+    assert job["spec"]["schedule"] == "* * * * *"
+    assert job["spec"]["concurrencyPolicy"] == "Forbid"
+    pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+    assert pod["automountServiceAccountToken"] is False
+    container = pod["containers"][0]
+    assert "@sha256:" in container["image"]
+    assert container["command"] == ["node", "/scripts/ensure-membership.mjs"]
+    env = {item["name"]: item for item in container["env"]}
+    assert env["ROCKETCHAT_AUTH_TOKEN"]["valueFrom"]["secretKeyRef"] == {
+        "name": "rocketchat-membership",
+        "key": "auth-token",
+    }
+    assert "MONGO_URL" not in env
+    secret = next(
+        d
+        for d in docs
+        if d["kind"] == "ExternalSecret"
+        and d["metadata"]["name"] == "rocketchat-membership"
+    )
+    assert secret["spec"]["secretStoreRef"]["name"] == "openbao-rocketchat-membership"
+    assert {item["remoteRef"]["key"] for item in secret["spec"]["data"]} == {
+        "rocketchat/prod/app/rocketchat-membership-auth-token",
+        "rocketchat/prod/app/rocketchat-membership-user-id",
+    }
+    config = yaml.safe_load(
+        (ROOT / "charts/thirdparty/openbao/values.yaml").read_text()
+    )["bootstrap"]
+    policy = next(
+        p
+        for p in config["policies"]
+        if p["name"] == "read-rocketchat-membership-production"
+    )
+    assert "*" not in policy["hcl"]
+    assert policy["hcl"].count('capabilities = ["read"]') == 2
+    role = next(
+        r
+        for r in config["kubernetesRoles"]
+        if r["name"] == "read-rocketchat-membership-production"
+    )
+    assert role["namespaces"] == ["rocketchat"]
+    assert role["serviceAccounts"] == ["rocketchat-membership-reader"]

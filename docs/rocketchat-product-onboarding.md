@@ -52,12 +52,16 @@ information; apply the workspace/database/backup access and retention policies.
 5. The dialog defaults to **Private**. For the current two-user workspace,
    turn this off to make the channel discoverable to admitted workspace users.
    “Anyone can access” here means admitted users while anonymous access remains
-   disabled. If the workspace later admits more people, review customer-data
-   access and use a private channel with explicit membership where appropriate.
+   disabled. The workspace owner requires every admitted human to join all public
+   and private channels, including their history. Private visibility does not
+   isolate a channel from other admitted humans. Review that access before
+   granting any additional person workspace admission.
 6. Create the channel and verify it appears once in the sidebar/directory.
 7. Add the product service identity only after its permissions are restricted.
-   Add the humans who want notifications as channel members. Their personal
-   notification preferences and mobile push/device setup are separate steps.
+   Add all admitted humans as channel members. The membership job, once deployed,
+   also repairs missing memberships every minute for existing and new channels.
+   Its policy excludes product bots and deactivated users. Personal notification
+   preferences and mobile push/device setup are separate steps.
 8. Replace “Integration pending” in the topic after delivery is verified.
 
 For a private channel the API family is `groups.*`; for a workspace channel it
