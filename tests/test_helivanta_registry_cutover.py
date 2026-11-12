@@ -61,6 +61,7 @@ def test_cutover_recreates_each_injected_workload_with_no_application_surge():
         "helivanta-shell",
         "helivanta-document-worker",
         "helivanta-supply-evidence-worker",
+        "helivanta-pharmacy-evidence-worker",
         "helivanta-emergency-worker",
         "helivanta-clamav",
     }

@@ -23,6 +23,17 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: planning-poker-api
+      {{- if .Values.companyIdentity.enabled }}
+      volumes:
+        - name: company-onboarding
+          projected:
+            defaultMode: 288
+            sources:
+              - serviceAccountToken:
+                  audience: planning-poker-onboarding
+                  expirationSeconds: 600
+                  path: token
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -36,7 +47,19 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.api.port }}
+          {{- if .Values.companyIdentity.enabled }}
+          volumeMounts:
+            - name: company-onboarding
+              mountPath: /var/run/planning-poker-onboarding
+              readOnly: true
+          {{- end }}
           env:
+            {{- if .Values.companyIdentity.enabled }}
+            - name: ONBOARDING_API_URL
+              value: {{ .Values.companyIdentity.apiURL | quote }}
+            - name: ONBOARDING_WORKLOAD_TOKEN_FILE
+              value: /var/run/planning-poker-onboarding/token
+            {{- end }}
             - name: PORT
               value: {{ .Values.api.port | quote }}
             # Same origin as the UI — the VirtualService splits /api/ off to
@@ -58,6 +81,12 @@ spec:
               value: postgres://{{ .Values.postgres.user }}:$(PGPASSWORD)@{{ .Values.postgres.host }}:{{ .Values.postgres.port }}/{{ .Values.postgres.database }}?sslmode={{ .Values.postgres.sslMode }}
             - name: AUTH_REQUIRED
               value: {{ .Values.auth.required | quote }}
+            - name: OIDC_ISSUER
+              value: {{ .Values.auth.oidcIssuer | default "" | quote }}
+            - name: OIDC_CLIENT_ID
+              value: {{ .Values.auth.oidcClientID | default "" | quote }}
+            - name: ALLOW_GUEST_AUTH
+              value: {{ .Values.auth.allowGuestAuth | quote }}
             - name: OKTA_ISSUER
               value: {{ .Values.auth.oktaIssuer | quote }}
             - name: OKTA_CLIENT_ID

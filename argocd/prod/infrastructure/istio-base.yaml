@@ -2,8 +2,6 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: istio-base
-  annotations:
-    kargo.akuity.io/authorized-stage: "kargo-infra:istio-prod"
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
@@ -11,13 +9,14 @@ metadata:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: infrastructure
   annotations:
-    argocd.argoproj.io/sync-wave: "-3"
+    kargo.akuity.io/authorized-stage: "kargo-infra:istio-prod"
+    argocd.argoproj.io/sync-wave: "-5"
 spec:
   project: infrastructure
   source:
-    repoURL: https://istio-release.storage.googleapis.com/charts
+    repoURL: https://raw.githubusercontent.com/tesserix/tesserix-k8s/main/charts/thirdparty/istio-release
     chart: base
-    targetRevision: 1.29.6
+    targetRevision: 1.31.4
     helm:
       releaseName: istio-base
       values: |
@@ -42,13 +41,10 @@ spec:
         - .webhooks[].clientConfig.caBundle
         - .webhooks[].failurePolicy
   syncPolicy:
-    automated:
-      selfHeal: true
     syncOptions:
       - RespectIgnoreDifferences=true
       - CreateNamespace=true
       - ServerSideApply=true
-      - Replace=true
     retry:
       limit: 5
       backoff:

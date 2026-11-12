@@ -6,6 +6,15 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 class HospitalIdentity(unittest.TestCase):
+    def test_external_owner_mail_is_immutable_and_helivanta_only(self):
+        docs = list(yaml.safe_load_all(subprocess.check_output(["kubectl", "kustomize", str(ROOT / "k8s/operators/zitadel")], text=True)))
+        crd = next(d for d in docs if d and d["kind"] == "CustomResourceDefinition" and d["metadata"]["name"] == "zitadelorganizations.identity.tesserix.app")
+        spec = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]
+        self.assertEqual(spec["properties"]["externalInitialAdminEmail"], {"type": "boolean"})
+        rules = [v["rule"] for v in spec["x-kubernetes-validations"]]
+        self.assertIn("self == oldSelf", rules)
+        self.assertTrue(any('externalInitialAdminEmail' in r and '"helivanta"' in r and 'has(self.initialAdmin)' in r for r in rules))
+
     def test_product_oauth_reaches_the_reviewed_console_host(self):
         app = yaml.safe_load((ROOT / "argocd/prod/infrastructure/istio-auth-policies.yaml").read_text())
         values = yaml.safe_load((ROOT / "charts/infrastructure/istio-auth-policies/values.yaml").read_text())
@@ -31,6 +40,20 @@ class HospitalIdentity(unittest.TestCase):
         token = next(v for v in spec["volumes"] if v["name"] == "onboarding-identity")
         self.assertEqual(token["projected"]["sources"][0]["serviceAccountToken"]["audience"], "onboarding-provisioning")
         self.assertFalse(any(d and d["kind"] == "ZitadelOrganization" for d in docs), "Customer records must stay out of public GitOps")
+
+    def test_new_owner_profile_is_preserved_in_the_private_claim_schema(self):
+        docs = list(yaml.safe_load_all(subprocess.check_output(["kubectl", "kustomize", str(ROOT / "k8s/operators/zitadel")], text=True)))
+        crd = next(d for d in docs if d and d["kind"] == "CustomResourceDefinition" and d["metadata"]["name"] == "zitadelorganizations.identity.tesserix.app")
+        spec = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]
+        profile = spec["properties"].get("initialAdmin")
+        self.assertIsNotNone(profile, "Unknown owner input would otherwise be pruned before reconciliation")
+        self.assertEqual(set(profile["required"]), {"givenName", "familyName", "email"})
+        for field in profile["properties"].values():
+            self.assertEqual(field["type"], "string")
+            self.assertEqual(field["maxLength"], 200)
+        rules = [v["rule"] for v in spec["x-kubernetes-validations"]]
+        self.assertIn("self == oldSelf", rules)
+        self.assertTrue(any("initialAdminUserId" in r and '"owner-"' in r and "organizationId" in r for r in rules))
 
     def test_provisioning_reaches_workload_auth_without_browser_session(self):
         docs = list(yaml.safe_load_all(subprocess.check_output(["helm", "template", "helivanta-istio", str(ROOT / "charts/apps/helivanta-istio"), "--namespace", "helivanta"], text=True)))

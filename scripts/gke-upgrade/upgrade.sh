@@ -21,6 +21,11 @@ DRY_RUN=${DRY_RUN:-true}
 POOL_STRATEGY=${POOL_STRATEGY:-surge}
 RECREATE_POOLS=${RECREATE_POOLS:-}
 ONLY_POOL=${ONLY_POOL:-}
+OPERATION_MAX_POLLS=${OPERATION_MAX_POLLS:-720}
+OPERATION_POLL_SECONDS=${OPERATION_POLL_SECONDS:-20}
+
+[[ "$OPERATION_MAX_POLLS" =~ ^[1-9][0-9]*$ && "$OPERATION_POLL_SECONDS" =~ ^[0-9]+$ ]] ||
+  { die "operation polling must use bounded numeric settings"; exit 1; }
 
 case "$DRY_RUN" in
   true|false) ;;
@@ -38,6 +43,76 @@ run() {
   "$@"
 }
 
+wait_for_operation() {
+  local operation=$1 result status attempt
+  for ((attempt=0; attempt<OPERATION_MAX_POLLS; attempt++)); do
+    result=$("${GC[@]}" operations describe "$operation" --region "$REGION" --format=json) || return 1
+    status=$(jq -r '.status // ""' <<<"$result") || return 1
+    case "$status" in
+      DONE)
+        if jq -e '(.error.code // 0) != 0 or (.error.message // "") != ""' <<<"$result" >/dev/null; then
+          die "operation $operation failed: $(jq -r '.error.message // "unknown provider error"' <<<"$result")"
+          return 1
+        fi
+        return 0 ;;
+      RUNNING|PENDING) ;;
+      *) die "cannot determine operation $operation status"; return 1 ;;
+    esac
+    sleep "$OPERATION_POLL_SECONDS"
+  done
+  die "operation $operation is still running; monitor this operation before another upgrade"
+  return 1
+}
+
+discover_operation() {
+  local started=$1 suffix=$2 kind=$3 result count attempt
+  for ((attempt=0; attempt<5; attempt++)); do
+    result=$("${GC[@]}" operations list --region "$REGION" \
+      --filter="startTime>='$started' AND operationType='$kind'" --format=json) || return 1
+    result=$(jq --arg suffix "$suffix" '[.[] | select((.targetLink // "") | endswith($suffix))]' <<<"$result") || return 1
+    count=$(jq 'length' <<<"$result") || return 1
+    if [[ "$count" == 1 ]]; then
+      jq -r '.[0].name // ""' <<<"$result"
+      return 0
+    fi
+    if [[ "$count" != 0 ]]; then
+      die "more than one matching upgrade operation; inspect GKE before retrying"
+      return 1
+    fi
+    sleep "$OPERATION_POLL_SECONDS"
+  done
+  die "no matching upgrade operation found; inspect GKE before retrying"
+  return 1
+}
+
+run_upgrade() {
+  local operation started suffix kind arg
+  if [[ "$DRY_RUN" == "true" ]]; then
+    run "${GC[@]}" clusters upgrade "$CLUSTER" --region "$REGION" "$@" \
+      --cluster-version="$TARGET" --quiet --async --format='value(name)'
+    return 0
+  fi
+  started=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  suffix="/clusters/$CLUSTER"
+  kind=UPGRADE_MASTER
+  for arg in "$@"; do
+    if [[ "$arg" == --node-pool=* ]]; then
+      suffix+="/nodePools/${arg#--node-pool=}"
+      kind=UPGRADE_NODES
+    fi
+  done
+  operation=$(run "${GC[@]}" clusters upgrade "$CLUSTER" --region "$REGION" "$@" \
+    --cluster-version="$TARGET" --quiet --async --format='value(name)') || return 1
+  # The GA SDK submits async upgrades without returning a resource.
+  if [[ -z "$operation" ]]; then
+    operation=$(discover_operation "$started" "$suffix" "$kind") || return 1
+  fi
+  [[ "$operation" =~ ^operation-[a-zA-Z0-9-]+$ ]] ||
+    { die "upgrade did not return a valid operation ID; inspect GKE before retrying"; return 1; }
+  log "waiting for operation $operation"
+  wait_for_operation "$operation"
+}
+
 upgrade_control_plane() {
   local current
   current=$(gcloud container clusters describe "$CLUSTER" --region "$REGION" --project "$PROJECT" \
@@ -48,17 +123,26 @@ upgrade_control_plane() {
     return 0
   fi
   log "upgrading control plane $current -> $TARGET (10-20 min, API server briefly unavailable)"
-  run "${GC[@]}" clusters upgrade "$CLUSTER" --region "$REGION" --master \
-    --cluster-version="$TARGET" --quiet
+  run_upgrade --master
   summary "- Control plane \`$current\` → \`$TARGET\`"
 }
 
 # Surge upgrade in place. Safe when the pool can borrow capacity for an extra node.
 upgrade_pool_surge() {
-  local pool=$1
+  local pool=$1 current mismatch
+  current=$(gcloud container node-pools describe "$pool" --cluster "$CLUSTER" --region "$REGION" \
+    --project "$PROJECT" --format='value(version)') || return 1
+  if [[ "$current" == "$TARGET" ]]; then
+    mismatch=$(kubectl get nodes -l "cloud.google.com/gke-nodepool=$pool" -o json |
+      jq -r --arg target "$TARGET" '.items[] | select((.status.nodeInfo.kubeletVersion | ltrimstr("v")) != $target) | .metadata.name') || return 1
+    if [[ -z "$mismatch" ]]; then
+      log "node pool $pool and its kubelets already at $TARGET, nothing to do"
+      summary "- Node pool \`$pool\` already at \`$TARGET\`; no upgrade reissued"
+      return 0
+    fi
+  fi
   log "surge-upgrading node pool $pool -> $TARGET"
-  run "${GC[@]}" clusters upgrade "$CLUSTER" --region "$REGION" --node-pool="$pool" \
-    --cluster-version="$TARGET" --quiet
+  run_upgrade --node-pool="$pool"
   summary "- Node pool \`$pool\` surge-upgraded to \`$TARGET\`"
 }
 

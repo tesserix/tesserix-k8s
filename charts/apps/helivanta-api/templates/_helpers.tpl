@@ -34,5 +34,5 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{/* Uploads and clinical sharing require the API mesh identity. */}}
 {{- define "helivanta-api.meshed" -}}
-{{- if or .Values.documents.acceptUploads .Values.clinicalConsent.enabled }}true{{ end }}
+{{- if or .Values.documents.acceptUploads .Values.clinicalConsent.enabled .Values.supplierTrade.enabled }}true{{ end }}
 {{- end }}

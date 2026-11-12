@@ -43,11 +43,14 @@ kubectl get ds -A -o json 2>/dev/null | jq -r '
 ' | sort -u >>"$OUT/unhealthy-workloads.txt" || true
 sort -u -o "$OUT/unhealthy-workloads.txt" "$OUT/unhealthy-workloads.txt"
 
-# Pods that are neither running nor finished cleanly.
+# Keep controller failure counts stable when a node rollout replaces Pod names.
 kubectl get pods -A -o json 2>/dev/null | jq -r '
-  .items[]
-  | select(.status.phase != "Running" and .status.phase != "Succeeded")
-  | "\(.metadata.namespace)/\(.metadata.name)"
+  [.items[]
+   | select(.status.phase != "Running" and .status.phase != "Succeeded")
+   | (.metadata.ownerReferences // [] | map(select(.controller == true)) | first) as $owner
+   | "\(.metadata.namespace)/\($owner.kind // "Pod")/\($owner.name // .metadata.name)/\(.status.phase)"]
+  | group_by(.)[]
+  | "\(.[0]) count=\(length)"
 ' | sort -u >"$OUT/unhealthy-pods.txt" || true
 
 kubectl get cluster.postgresql.cnpg.io -A -o json 2>/dev/null | jq -r '

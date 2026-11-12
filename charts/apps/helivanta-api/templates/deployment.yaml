@@ -49,7 +49,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "helivanta-api.serviceAccountName" . }}
-      {{- if .Values.clinicalConsent.enabled }}
+      {{- if or .Values.clinicalConsent.enabled .Values.supplierTrade.enabled .Values.hospitalProvisioning.enabled }}
       automountServiceAccountToken: false
       {{- end }}
       securityContext:
@@ -145,6 +145,14 @@ spec:
               value: {{ required "openbao.authRole is required" .Values.openbao.authRole | quote }}
             - name: OPENBAO_TOKEN_PATH
               value: /var/run/secrets/openbao/token
+            {{- end }}
+            {{- if .Values.supplierTrade.enabled }}
+            - name: SUPPLIER_TRADE_CURRENT_URL
+              value: "http://{{ include "helivanta-api.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}/v1/supply/internal/trading-source/check"
+            - name: SUPPLIER_TRADE_CALLER_ACCOUNT
+              value: "system:serviceaccount:{{ .Release.Namespace }}:{{ include "helivanta-api.serviceAccountName" . }}"
+            - name: SUPPLIER_TRADE_TOKEN_FILE
+              value: /var/run/secrets/supplier-trade/token
             {{- end }}
             - name: PATIENTMASTER_PROXY_CLINICAL_CAPTURE_ENABLED
               value: {{ .Values.clinicalConsent.proxyCaptureEnabled | quote }}
@@ -261,6 +269,13 @@ spec:
                   name: helivanta-api-zitadel-login-client-token
                   key: ZITADEL_LOGIN_CLIENT_TOKEN
                   optional: true
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.startup.path }}
+              port: http
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
           livenessProbe:
             httpGet:
               path: {{ .Values.probes.liveness.path }}
@@ -278,6 +293,14 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if .Values.hospitalProvisioning.enabled }}
+            - name: owner-security
+              mountPath: /var/run/owner-security
+              readOnly: true
+            - name: customer-onboarding
+              mountPath: /var/run/customer-onboarding
+              readOnly: true
+            {{- end }}
             # readOnlyRootFilesystem is on, so anything that writes needs a
             # mount.
             - name: tmp
@@ -291,11 +314,36 @@ spec:
             - name: mediconnect-claim
               mountPath: /var/run/secrets/mediconnect-claim
               readOnly: true
+            {{- end }}
+            {{- if .Values.supplierTrade.enabled }}
+            - name: supplier-trade
+              mountPath: /var/run/secrets/supplier-trade
+              readOnly: true
+            {{- end }}
+            {{- if or .Values.clinicalConsent.enabled .Values.supplierTrade.enabled .Values.hospitalProvisioning.enabled }}
             - name: kubernetes-api
               mountPath: /var/run/secrets/kubernetes.io/serviceaccount
               readOnly: true
             {{- end }}
       volumes:
+        {{- if .Values.hospitalProvisioning.enabled }}
+        - name: owner-security
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  audience: helivanta-owner-security
+                  expirationSeconds: 600
+                  path: token
+        - name: customer-onboarding
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  audience: helivanta-customer-onboarding
+                  expirationSeconds: 600
+                  path: token
+        {{- end }}
         {{- if .Values.clinicalConsent.enabled }}
         - name: mediconnect-claim
           projected:
@@ -305,6 +353,18 @@ spec:
                   audience: helivanta-mediconnect-claim
                   expirationSeconds: 600
                   path: token
+        {{- end }}
+        {{- if .Values.supplierTrade.enabled }}
+        - name: supplier-trade
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  audience: helivanta-supplier-trade-current
+                  expirationSeconds: 600
+                  path: token
+        {{- end }}
+        {{- if or .Values.clinicalConsent.enabled .Values.supplierTrade.enabled .Values.hospitalProvisioning.enabled }}
         - name: kubernetes-api
           projected:
             defaultMode: 0440

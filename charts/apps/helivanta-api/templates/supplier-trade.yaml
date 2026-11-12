@@ -1,0 +1,69 @@
+{{- if .Values.supplierTrade.enabled }}
+{{- $octet := "(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])" }}
+{{- if not (regexMatch (printf "^(%s\\.){3}%s/32$" $octet $octet) (.Values.supplierTrade.kubernetesApiCIDR | default "")) }}
+{{- fail "supplierTrade.kubernetesApiCIDR must be an explicit IPv4 /32" }}
+{{- end }}
+{{- if ne (include "helivanta-api.serviceAccountName" .) "helivanta-api" }}
+{{- fail "supplierTrade requires the helivanta-api owner service account" }}
+{{- end }}
+{{- if ne (include "helivanta-api.name" .) "helivanta-api" }}
+{{- fail "supplierTrade requires the canonical helivanta-api workload selector" }}
+{{- end }}
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: helivanta-supplier-trade-owner
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "helivanta-api.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/{{ .Release.Namespace }}/sa/helivanta-api
+      to:
+        - operation:
+            ports: ["8080"]
+            methods: ["POST"]
+            paths: ["/v1/supply/internal/trading-source/check"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: helivanta-api-supplier-trade
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "helivanta-api.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "helivanta-api.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "helivanta-api.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.supplierTrade.kubernetesApiCIDR | quote }}
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}

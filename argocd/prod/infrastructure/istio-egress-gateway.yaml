@@ -2,58 +2,45 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: istio-egress-gateway
-  annotations:
-    kargo.akuity.io/authorized-stage: "kargo-infra:istio-prod"
   namespace: argocd
   finalizers:
-    - resources-finalizer.argocd.argoproj.io
+  - resources-finalizer.argocd.argoproj.io
   labels:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: infrastructure
   annotations:
-    argocd.argoproj.io/sync-wave: "-1"
+    kargo.akuity.io/authorized-stage: kargo-infra:istio-prod
+    argocd.argoproj.io/sync-wave: '-1'
 spec:
   project: infrastructure
   source:
-    repoURL: https://istio-release.storage.googleapis.com/charts
+    repoURL: https://raw.githubusercontent.com/tesserix/tesserix-k8s/main/charts/thirdparty/istio-release
     chart: gateway
-    targetRevision: 1.29.6
+    targetRevision: 1.31.4
     helm:
-      releaseName: istio-egress
-      values: |
-        # Gateway name
+      valuesObject:
         name: istio-egressgateway
-
-        # Image is set to "auto" by the chart and resolved by istiod's mutating webhook
-
-        # Service configuration
         service:
-          # ClusterIP for internal egress traffic control
           type: ClusterIP
-
           annotations:
             service.kubernetes.io/topology-aware-hints: auto
-
-          # Ports configuration
           ports:
-            - name: status-port
-              port: 15021
-              protocol: TCP
-              targetPort: 15021
-            - name: http2
-              port: 80
-              protocol: TCP
-              targetPort: 80
-            - name: https
-              port: 443
-              protocol: TCP
-              targetPort: 443
-            - name: tls
-              port: 15443
-              protocol: TCP
-              targetPort: 15443
-
-        # Resource configuration (required for AKS Azure Policy)
+          - name: status-port
+            port: 15021
+            protocol: TCP
+            targetPort: 15021
+          - name: http2
+            port: 80
+            protocol: TCP
+            targetPort: 80
+          - name: https
+            port: 443
+            protocol: TCP
+            targetPort: 443
+          - name: tls
+            port: 15443
+            protocol: TCP
+            targetPort: 15443
         resources:
           requests:
             cpu: null
@@ -61,60 +48,43 @@ spec:
           limits:
             cpu: null
             memory: 256Mi
-
-        # Auto-scaling configuration
         autoscaling:
           enabled: true
           minReplicas: 1
           maxReplicas: 3
-          # CPU target zeroed rather than nulled: the chart's values schema types it
-          # as an integer, and 0 skips the metric just as null was meant to.
           targetCPUUtilizationPercentage: 0
           targetMemoryUtilizationPercentage: 80
-
-        # Pod disruption budget
-        # Use maxUnavailable instead of minAvailable to allow node drains with single replica
         podDisruptionBudget:
           maxUnavailable: 1
-
-        # Service account
         serviceAccount:
           create: true
           name: istio-egressgateway
-
-        # Pod annotations
         podAnnotations:
-          prometheus.io/scrape: "true"
-          prometheus.io/port: "15020"
-          prometheus.io/path: "/stats/prometheus"
-
-        # Security context
+          prometheus.io/scrape: 'true'
+          prometheus.io/port: '15020'
+          prometheus.io/path: /stats/prometheus
+          istioUpgradeVersion: 1.31.4
         securityContext:
           runAsUser: 1337
           runAsGroup: 1337
           runAsNonRoot: true
-
-        # Container security context
         containerSecurityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
-              - ALL
+            - ALL
           readOnlyRootFilesystem: true
-
-        # Labels for the gateway pods
         labels:
           app: istio-egressgateway
           istio: egressgateway
+      releaseName: istio-egress
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-egress
   syncPolicy:
-    automated:
-      selfHeal: true
     syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
+    - CreateNamespace=true
+    - ServerSideApply=true
     managedNamespaceMetadata:
       labels:
         istio-injection: enabled

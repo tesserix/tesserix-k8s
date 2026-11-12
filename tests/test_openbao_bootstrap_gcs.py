@@ -43,7 +43,8 @@ def test_bootstrap_uses_independent_record_and_retained_staging():
     assert env["RECOVERY_KMS_KEY"].endswith("/cryptoKeys/openbao-bootstrap-key")
     assert env["ALLOW_INITIALIZATION"] == "false"
     assert container["command"] == [
-        "python3",
+        "/bin/sh",
+        "/config/bootstrap_entrypoint.sh",
         "/config/recovery_record.py",
         "run",
         "/config/bootstrap.sh",

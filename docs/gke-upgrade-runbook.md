@@ -234,3 +234,22 @@ to seven with workload health preserved, and confirm no operation remains active
 Do not force-delete nodes to achieve the count. If requests no longer fit within
 seven nodes, resolve their sizing and placement before declaring completion.
 Keep the GPU and sandbox pools empty unless their use has been explicitly scoped.
+
+## Long operations and safe retries
+
+The synchronous gcloud client can stop waiting after one hour while the GKE
+operation continues. The upgrade script now starts one asynchronous operation
+and polls that exact ID, with a default 720 polls at 20-second intervals. A
+provider error, malformed status, or exhausted wait fails without submitting a
+second upgrade. Always inspect an operation reported as still running before
+retrying; do not cancel it or dispatch a competing upgrade as a timeout fix.
+
+A completed pool is skipped only when its configured version and every actual
+kubelet in that pool match the target. This makes a fresh workflow on the
+reviewed main revision a safe verification path after the existing operation
+finishes. Retain the original failed workflow and operation ID in the audit
+trail; do not rewrite their statuses. Empty pool templates still require the
+configured version to match. Partial rollouts with old kubelets are not treated
+as completed.
+
+The GA gcloud SDK can submit `clusters upgrade --async` without returning an operation resource. In that case the workflow discovers exactly one operation matching the selected cluster/pool, upgrade type and submission time. Missing or ambiguous results stop the workflow without resubmitting. Inspect the provider operation before any retry.

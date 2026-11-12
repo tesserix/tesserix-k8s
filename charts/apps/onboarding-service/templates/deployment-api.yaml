@@ -1,3 +1,11 @@
+{{- if .Values.helivantaEmail.enabled }}
+{{- if not (and .Values.helivantaEmailAccess.enabled .Values.hospitalProvisioning.enabled) }}
+{{- fail "Helivanta mail requires product secret access and hospital provisioning" }}
+{{- end }}
+{{- if not (has .Values.helivantaEmail.from (list "onboarding@helivanta.app" "onboarding@helivanta.com")) }}
+{{- fail "Helivanta mail requires an approved product sender" }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,6 +34,12 @@ spec:
       {{- if .Values.hospitalProvisioning.enabled }}
       automountServiceAccountToken: true
       volumes:
+        {{- if .Values.helivantaEmail.enabled }}
+        - name: helivanta-email
+          secret:
+            secretName: onboarding-helivanta-resend
+            defaultMode: 288
+        {{- end }}
         - name: helivanta-provisioning
           projected:
             defaultMode: 288
@@ -50,11 +64,28 @@ spec:
               containerPort: {{ .Values.api.port }}
           {{- if .Values.hospitalProvisioning.enabled }}
           volumeMounts:
+            {{- if .Values.helivantaEmail.enabled }}
+            - name: helivanta-email
+              mountPath: /var/run/helivanta-email
+              readOnly: true
+            {{- end }}
             - name: helivanta-provisioning
               mountPath: /var/run/helivanta-provisioning
               readOnly: true
           {{- end }}
           env:
+            {{- if .Values.helivantaEmail.enabled }}
+            - name: HELIVANTA_EMAIL_FROM
+              value: {{ .Values.helivantaEmail.from | quote }}
+            - name: HELIVANTA_RESEND_API_KEY_FILE
+              value: /var/run/helivanta-email/api-key
+            {{- end }}
+            {{- if .Values.planningPoker.projectID }}
+            - name: PLANNING_POKER_PROJECT_ID
+              value: {{ .Values.planningPoker.projectID | quote }}
+            - name: PLANNING_POKER_CLIENT_ID
+              value: {{ .Values.planningPoker.clientID | quote }}
+            {{- end }}
             - name: MCP_GATEWAY_PROJECT_ID
               value: {{ .Values.mcp.gatewayProjectId | quote }}
             - name: HOSPITAL_PROVISIONING_ENABLED

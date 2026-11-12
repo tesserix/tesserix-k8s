@@ -4,84 +4,53 @@ metadata:
   name: istio-ingress-gateway
   namespace: argocd
   finalizers:
-    - resources-finalizer.argocd.argoproj.io
+  - resources-finalizer.argocd.argoproj.io
   labels:
     app.kubernetes.io/part-of: tesserix
     app.kubernetes.io/component: infrastructure
   annotations:
-    argocd.argoproj.io/sync-wave: "-1"
+    kargo.akuity.io/authorized-stage: kargo-infra:istio-prod
+    argocd.argoproj.io/sync-wave: '-1'
 spec:
-  # ArgoCD v2.13 schema does not know about the apps/v1 Deployment
-  # status.terminatingReplicas field introduced in K8s 1.33+. Ignoring
-  # it lets the structured merge diff complete on GKE 1.35 clusters.
   ignoreDifferences:
-    - group: apps
-      kind: Deployment
-      jsonPointers:
-        - /status/terminatingReplicas
+  - group: apps
+    kind: Deployment
+    jsonPointers:
+    - /status/terminatingReplicas
   project: infrastructure
-  # Source is a Tesserix-vendored copy of the upstream
-  # gateway-1.29.1 chart with a single delta — the chart default
-  # `istio.io/dataplane-mode: none` pod label removed (see
-  # charts/thirdparty/istio-ingress-gateway/values.yaml). The
-  # label key presence triggers an istiod bug where incremental
-  # LDS/RDS pushes silently never reach the public ingressgateway
-  # pods. Drop the chart fork once upstream Istio fixes the
-  # ambient-vs-router push filter.
   source:
     repoURL: https://github.com/tesserix/tesserix-k8s.git
     targetRevision: main
     path: charts/thirdparty/istio-ingress-gateway
     helm:
-      releaseName: istio-ingress
-      values: |
-        # Platform Gateway for mark8ly.com
-        # =================================================================
-        # SERVICE TYPE: ClusterIP (private access only)
-        # =================================================================
-        # Cloudflare Tunnel mode is active:
-        # - All platform traffic routes through cloudflared tunnel
-        # - DNS managed via Cloudflare Tunnel (CNAME to tunnel)
-        # - No public IP exposed, reduced attack surface
-        # - Only custom-ingressgateway has external LoadBalancer IP
-        # =================================================================
+      valuesObject:
         name: istio-ingressgateway
-
-        # Revision for canary upgrades
-        revision: ""
-
-        # Service configuration
+        revision: ''
         service:
           type: ClusterIP
           trafficDistribution: PreferSameZone
-
-          # Ports configuration
           ports:
-            - name: status-port
-              port: 15021
-              protocol: TCP
-              targetPort: 15021
-            - name: http2
-              port: 80
-              protocol: TCP
-              targetPort: 80
-            - name: https
-              port: 443
-              protocol: TCP
-              targetPort: 443
-            - name: tcp
-              port: 31400
-              protocol: TCP
-              targetPort: 31400
-            - name: tls
-              port: 15443
-              protocol: TCP
-              targetPort: 15443
-
-          # No annotations needed for ClusterIP mode (Cloudflare Tunnel)
+          - name: status-port
+            port: 15021
+            protocol: TCP
+            targetPort: 15021
+          - name: http2
+            port: 80
+            protocol: TCP
+            targetPort: 80
+          - name: https
+            port: 443
+            protocol: TCP
+            targetPort: 443
+          - name: tcp
+            port: 31400
+            protocol: TCP
+            targetPort: 31400
+          - name: tls
+            port: 15443
+            protocol: TCP
+            targetPort: 15443
           annotations: {}
-
-        # Resource configuration (required for AKS Azure Policy)
         resources:
           requests:
             cpu: null
@@ -89,92 +58,53 @@ spec:
           limits:
             cpu: null
             memory: 512Mi
-
-        # Auto-scaling configuration
         autoscaling:
           enabled: true
           minReplicas: 2
           maxReplicas: 5
-          # targetCPUUtilizationPercentage removed: this platform sets NO cpu
-          # requests, and an HPA cannot compute CPU utilisation without a request
-          # to divide by -- the metric reads <unknown> and the HPA never scales on
-          # it. Memory is the only usable signal here.
           targetMemoryUtilizationPercentage: 80
-
-        # Pod disruption budget
-        # Use maxUnavailable instead of minAvailable to allow node drains with single replica
         podDisruptionBudget:
           maxUnavailable: 1
-
-        # Service account
         serviceAccount:
           create: true
           name: istio-ingressgateway
           annotations:
             iam.gke.io/gcp-service-account: istio-gw-cr-invoker-sa@tesseracthub-480811.iam.gserviceaccount.com
-
-        # Pod annotations
         podAnnotations:
-          # Prometheus scraping
-          prometheus.io/scrape: "true"
-          prometheus.io/port: "15020"
-          prometheus.io/path: "/stats/prometheus"
-          # Force restart on 2026-05-14 to clear stale xDS route state.
-          # First bump caught the original Otto storefront routes; this
-          # second bump catches the /api/otto/ + WS-regex split that
-          # routes homechef REST through nginx for X-Internal-Auth.
-          tesserix.com/force-restart: "2026-05-14T01-15-00Z"
-          # Disable delta xDS on the gateway proxy. istiod 1.29.x's
-          # delta xDS implementation has a race where newly-connected
-          # gateway proxies after the first one in a Deployment can
-          # subscribe to CDS+EDS but never get LDS pushed, leaving
-          # Envoy stuck in INITIALIZING and the pod permanently
-          # un-Ready. Falling back to State-Of-The-World xDS works
-          # around it — istiod sends the complete config on every
-          # push so there's no incremental state to mis-track.
-          proxy.istio.io/config: |
-            proxyMetadata:
-              ISTIO_DELTA_XDS: "false"
-
-        # Security context
+          prometheus.io/scrape: 'true'
+          prometheus.io/port: '15020'
+          prometheus.io/path: /stats/prometheus
+          tesserix.com/force-restart: 2026-05-14T01-15-00Z
+          proxy.istio.io/config: "proxyMetadata:\n  ISTIO_DELTA_XDS: \"false\"\n"
+          istioUpgradeVersion: 1.31.4
         securityContext:
           runAsUser: 1337
           runAsGroup: 1337
           runAsNonRoot: true
-
-        # Container security context
         containerSecurityContext:
           allowPrivilegeEscalation: false
           capabilities:
             drop:
-              - ALL
+            - ALL
           readOnlyRootFilesystem: true
-
-        # Labels for the gateway pods. The vendored chart already drops
-        # the offending `istio.io/dataplane-mode` default, so this stays
-        # minimal — just the selector keys the chart consumes.
         labels:
           app: istio-ingressgateway
           istio: ingressgateway
-
-        # Topology spread constraints for HA
         topologySpreadConstraints:
-          - maxSkew: 1
-            topologyKey: topology.kubernetes.io/zone
-            whenUnsatisfiable: ScheduleAnyway
-            labelSelector:
-              matchLabels:
-                app: istio-ingressgateway
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: istio-ingressgateway
+      releaseName: istio-ingress
   destination:
     server: https://kubernetes.default.svc
     namespace: istio-ingress
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
+    - CreateNamespace=true
+    - ServerSideApply=true
     managedNamespaceMetadata:
       labels:
         istio-injection: enabled

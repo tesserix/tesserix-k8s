@@ -41,7 +41,7 @@ documents:
       requests: {cpu: 100m, memory: 128Mi}
       limits: {cpu: 500m, memory: 512Mi}
   scanner:
-    image: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/clamav:1.5.4_base@sha256:96b28b83eb72fb497c2400a94229844226e5fe4da9061fad1988092d9fcd88f3
+    image: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/third-party/clamav:1.5.4_base@sha256:a01a78acf14e356f9d95c0eeb640ac9fa48a98a59933dea877f5a4d01573a0eb
     replicas: 1
     resources:
       requests: {cpu: 250m, memory: 1536Mi}
@@ -305,6 +305,12 @@ trustedProxyCIDRs: "10.20.0.0/16"
 # with a TCP check; that would route traffic into a pod whose NATS or
 # OpenFGA connection is down.
 probes:
+  # Tenant permission reconciliation must finish before the HTTP listener starts.
+  startup:
+    path: /healthz
+    periodSeconds: 5
+    failureThreshold: 36
+    timeoutSeconds: 1
   liveness:
     path: /healthz
     initialDelaySeconds: 5
@@ -444,3 +450,8 @@ pharmacyEvidence:
   worker:
     replicas: 2
     secretName: helivanta-pharmacy-evidence-worker-credentials
+
+# Current supplier-source checks use a dedicated, short-lived workload audience.
+supplierTrade:
+  enabled: false
+  kubernetesApiCIDR: ""

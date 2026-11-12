@@ -255,7 +255,7 @@ bootstrap:
   enabled: true
   image:
     repository: google/cloud-sdk
-    tag: "slim"
+    tag: "slim@sha256:08c9cb2c82625689f26172f46f2cefdf30c3449959a71492569a824b537d369f"
     pullPolicy: IfNotPresent
   serviceAccount:
     name: openbao-bootstrap
@@ -287,6 +287,13 @@ bootstrap:
   # Policies applied on every run. Scope each one to a single path prefix —
   # a policy that can read `kv/data/*` makes the whole model decorative.
   policies:
+    - name: helivanta-onboarding-email-writer
+      hcl: |
+        path "kv/data/helivanta/prod/app/helivanta-onboarding-resend-api-key" { capabilities = ["create", "read", "update"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
+    - name: helivanta-onboarding-email-reader
+      hcl: |
+        path "kv/data/helivanta/prod/app/helivanta-onboarding-resend-api-key" { capabilities = ["read"] }
     - name: seed-rocketchat-production
       hcl: |
         path "kv/data/rocketchat/prod/app/rocketchat-mongodb-uri" { capabilities = ["create", "read", "update"] }
@@ -303,6 +310,15 @@ bootstrap:
         path "kv/data/rocketchat/prod/app/rocketchat-mongodb-keyfile" { capabilities = ["read"] }
         path "kv/data/rocketchat/prod/app/rocketchat-zitadel-client-id" { capabilities = ["read"] }
         path "kv/data/rocketchat/prod/app/rocketchat-zitadel-client-secret" { capabilities = ["read"] }
+    - name: read-rocketchat-membership-production
+      hcl: |
+        path "kv/data/rocketchat/prod/app/rocketchat-membership-auth-token" { capabilities = ["read"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-membership-user-id" { capabilities = ["read"] }
+    - name: seed-rocketchat-membership-production
+      hcl: |
+        path "kv/data/rocketchat/prod/app/rocketchat-membership-auth-token" { capabilities = ["create", "read", "update"] }
+        path "kv/data/rocketchat/prod/app/rocketchat-membership-user-id" { capabilities = ["create", "read", "update"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
     - name: seed-civiclens-ai-production
       hcl: |
         path "kv/data/civiclens/prod/app/civiclens-ai-gateway-key" { capabilities = ["read", "create", "update"] }
@@ -963,6 +979,19 @@ bootstrap:
         path "kv/data/helivanta/production/helivanta-emergency-worker-db-password" { capabilities = ["create"] }
         path "kv/metadata/helivanta/production/helivanta-emergency-worker-db-password" { capabilities = ["read"] }
         path "auth/token/revoke-self" { capabilities = ["update"] }
+    - name: seed-helivanta-pharmacy-users-production
+      hcl: |
+        path "kv/data/helivanta/production/helivanta-pharmacy-seed-users" { capabilities = ["create", "read"] }
+        path "kv/metadata/helivanta/production/helivanta-pharmacy-seed-users" { capabilities = ["read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
+        path "sys/capabilities-self" { capabilities = ["update"] }
+    - name: seed-helivanta-pharmacy-evidence-worker-production
+      hcl: |
+        path "kv/data/helivanta/production/helivanta-pharmacy-evidence-worker-db-password" { capabilities = ["create"] }
+        path "kv/metadata/helivanta/production/helivanta-pharmacy-evidence-worker-db-password" { capabilities = ["read"] }
+        path "auth/token/revoke-self" { capabilities = ["update"] }
+        path "sys/capabilities-self" { capabilities = ["update"] }
+
     - name: read-helivanta-emergency-worker-production
       hcl: |
         path "kv/data/helivanta/production/helivanta-emergency-worker-db-password" { capabilities = ["read"] }
@@ -1008,6 +1037,20 @@ bootstrap:
         path "transit/hmac/helivanta-consent-*" { capabilities = ["update"] }
 
   kubernetesRoles:
+    - name: helivanta-onboarding-email-writer
+      serviceAccounts: [helivanta-onboarding-email-writer]
+      namespaces: [onboarding]
+      policies: [helivanta-onboarding-email-writer]
+      audience: vault
+      ttl: 5m
+      maxTTL: 5m
+    - name: helivanta-onboarding-email-reader
+      serviceAccounts: [helivanta-onboarding-email-reader]
+      namespaces: [onboarding]
+      policies: [helivanta-onboarding-email-reader]
+      audience: vault
+      ttl: 5m
+      maxTTL: 5m
     - name: seed-rocketchat-production
       serviceAccounts: [openbao-bootstrap]
       namespaces: [openbao]
@@ -1017,6 +1060,16 @@ bootstrap:
       serviceAccounts: [rocketchat-production-reader]
       namespaces: [rocketchat]
       policies: [read-rocketchat-production]
+      ttl: 15m
+    - name: read-rocketchat-membership-production
+      serviceAccounts: [rocketchat-membership-reader]
+      namespaces: [rocketchat]
+      policies: [read-rocketchat-membership-production]
+      ttl: 15m
+    - name: seed-rocketchat-membership-production
+      serviceAccounts: [openbao-bootstrap]
+      namespaces: [openbao]
+      policies: [seed-rocketchat-membership-production]
       ttl: 15m
     - name: seed-civiclens-ai-production
       serviceAccounts: ["civiclens-ai-secret-seed"]
@@ -1079,6 +1132,18 @@ bootstrap:
       serviceAccounts: [helivanta-emergency-secret-seed]
       namespaces: [helivanta]
       policies: [seed-helivanta-emergency-worker-production]
+      ttl: 5m
+    - name: seed-helivanta-pharmacy-users-production
+      serviceAccounts: [helivanta-pharmacy-evidence-secret-seed]
+      namespaces: [helivanta]
+      policies: [seed-helivanta-pharmacy-users-production]
+      audience: openbao
+      ttl: 5m
+      maxTTL: 5m
+    - name: seed-helivanta-pharmacy-evidence-worker-production
+      serviceAccounts: [helivanta-pharmacy-evidence-secret-seed]
+      namespaces: [helivanta]
+      policies: [seed-helivanta-pharmacy-evidence-worker-production]
       ttl: 5m
     - name: read-helivanta-emergency-worker-production
       serviceAccounts: [helivanta-emergency-worker]

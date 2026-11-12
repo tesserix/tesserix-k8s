@@ -1,0 +1,147 @@
+--- a/argocd/prod/infrastructure/istio-base.yaml
++++ b/argocd/prod/infrastructure/istio-base.yaml
+@@ -16,7 +16,7 @@
+   source:
+     repoURL: https://istio-release.storage.googleapis.com/charts
+     chart: base
+-    targetRevision: 1.29.6
++    targetRevision: 1.30.8
+     helm:
+       releaseName: istio-base
+       values: |
+--- a/argocd/prod/infrastructure/istio-istiod.yaml
++++ b/argocd/prod/infrastructure/istio-istiod.yaml
+@@ -22,7 +22,7 @@
+     # that prevented incremental LDS/RDS from reaching new public
+     # ingressgateway pods. The rolling restart triggered by this
+     # bump is itself the clean way to recover from that state.
+-    targetRevision: 1.29.6
++    targetRevision: 1.30.8
+     helm:
+       releaseName: istiod
+       values: |
+--- a/argocd/prod/infrastructure/istio-cni.yaml
++++ b/argocd/prod/infrastructure/istio-cni.yaml
+@@ -16,7 +16,7 @@
+   source:
+     repoURL: https://istio-release.storage.googleapis.com/charts
+     chart: cni
+-    targetRevision: 1.29.6
++    targetRevision: 1.30.8
+     helm:
+       releaseName: istio-cni
+       values: |
+--- a/argocd/prod/infrastructure/istio-ztunnel.yaml
++++ b/argocd/prod/infrastructure/istio-ztunnel.yaml
+@@ -16,7 +16,7 @@
+   source:
+     repoURL: https://istio-release.storage.googleapis.com/charts
+     chart: ztunnel
+-    targetRevision: 1.29.6
++    targetRevision: 1.30.8
+     helm:
+       releaseName: ztunnel
+       values: |
+--- a/argocd/prod/infrastructure/istio-egress-gateway.yaml
++++ b/argocd/prod/infrastructure/istio-egress-gateway.yaml
+@@ -16,8 +16,11 @@
+   source:
+     repoURL: https://istio-release.storage.googleapis.com/charts
+     chart: gateway
+-    targetRevision: 1.29.6
++    targetRevision: 1.30.8
+     helm:
++      valuesObject:
++        podAnnotations:
++          istioUpgradeVersion: "1.30.8"
+       releaseName: istio-egress
+       values: |
+         # Gateway name
+--- a/argocd/prod/infrastructure/istio-ingress-gateway.yaml
++++ b/argocd/prod/infrastructure/istio-ingress-gateway.yaml
+@@ -34,6 +34,9 @@
+     targetRevision: main
+     path: charts/thirdparty/istio-ingress-gateway
+     helm:
++      valuesObject:
++        podAnnotations:
++          istioUpgradeVersion: "1.30.8"
+       releaseName: istio-ingress
+       values: |
+         # Platform Gateway for mark8ly.com
+--- a/argocd/prod/infrastructure/istio-ingress-gateway-internal.yaml
++++ b/argocd/prod/infrastructure/istio-ingress-gateway-internal.yaml
+@@ -16,8 +16,11 @@
+   source:
+     repoURL: https://istio-release.storage.googleapis.com/charts
+     chart: gateway
+-    targetRevision: 1.29.6
++    targetRevision: 1.30.8
+     helm:
++      valuesObject:
++        podAnnotations:
++          istioUpgradeVersion: "1.30.8"
+       releaseName: istio-ingress-internal
+       values: |
+         # No live Gateway selects this legacy gateway; tunnels use other Services.
+--- a/argocd/prod/infrastructure/custom-ingress-gateway.yaml
++++ b/argocd/prod/infrastructure/custom-ingress-gateway.yaml
+@@ -16,7 +16,7 @@
+   source:
+     repoURL: https://istio-release.storage.googleapis.com/charts
+     chart: gateway
+-    targetRevision: 1.29.6
++    targetRevision: 1.30.8
+     helm:
+       # The ArgoCD 3.4 repo-server's helm applies the gateway chart's
+       # values schema $defs to the root document and rejects every root
+@@ -24,6 +24,9 @@
+       # Local helm 3/4 validate the identical chart+values fine. Skip
+       # schema validation until upstream ships a compatible schema.
+       skipSchemaValidation: true
++      valuesObject:
++        podAnnotations:
++          istioUpgradeVersion: "1.30.8"
+       releaseName: custom-ingress
+       values: |
+         # =================================================================
+--- a/argocd/prod/infrastructure/homechef-ingress-gateway.yaml
++++ b/argocd/prod/infrastructure/homechef-ingress-gateway.yaml
+@@ -17,7 +17,7 @@
+   source:
+     repoURL: https://istio-release.storage.googleapis.com/charts
+     chart: gateway
+-    targetRevision: 1.29.6
++    targetRevision: 1.30.8
+     helm:
+       # The ArgoCD 3.4 repo-server's helm applies the gateway chart's
+       # values schema $defs to the root document and rejects every root
+@@ -25,6 +25,9 @@
+       # Local helm 3/4 validate the identical chart+values fine. Skip
+       # schema validation until upstream ships a compatible schema.
+       skipSchemaValidation: true
++      valuesObject:
++        podAnnotations:
++          istioUpgradeVersion: "1.30.8"
+       releaseName: homechef-ingress
+       values: |
+         # =================================================================
+--- a/argocd/prod/infrastructure/zitadel-ingress-gateway.yaml
++++ b/argocd/prod/infrastructure/zitadel-ingress-gateway.yaml
+@@ -17,12 +17,15 @@
+   source:
+     repoURL: https://istio-release.storage.googleapis.com/charts
+     chart: gateway
+-    targetRevision: 1.29.6
++    targetRevision: 1.30.8
+     helm:
+       # The ArgoCD 3.4 repo-server's helm applies the gateway chart's values
+       # schema $defs to the root document and rejects every root key. Same
+       # workaround as homechef-ingress-gateway.
+       skipSchemaValidation: true
++      valuesObject:
++        podAnnotations:
++          istioUpgradeVersion: "1.30.8"
+       releaseName: zitadel-ingress
+       values: |
+         # =================================================================

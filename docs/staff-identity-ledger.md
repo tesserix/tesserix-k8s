@@ -203,3 +203,12 @@ and SQL digest, verify owner/consumer compatibility and obtain approval for this
 named rollout/migration. Retain the source and application receipts for future
 environment replay. Do not infer rollout authority from the earlier Helivanta
 migration approvals.
+
+## Current-main integration — 2026-11-13
+
+Chart 0.3.63 combines the retained Staff identity expansion with current
+customer signup and email-first account discovery schema. It preserves the
+recipient proof ledgers, delivery budgets and existing application privileges.
+This refresh remains a draft: no schema, identity or access mutation has been
+applied to the live environment. Recipient setup and the Helivanta consumer
+journey remain separate acceptance gates.

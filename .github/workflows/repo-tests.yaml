@@ -16,7 +16,7 @@ on:
       - develop
 
 env:
-  HELM_VERSION: '3.14.0'
+  HELM_VERSION: '3.22.1'
   # Pinned to terraform.yml's version. One test drives a real `terraform`
   # binary against the failure-smoke stack; without it that test fails with a
   # bare FileNotFoundError, which is what the first run of this workflow did.
@@ -39,6 +39,14 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Set up Node for Rocket.Chat membership tests
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+
+      - name: Test Rocket.Chat membership behavior
+        run: node --test tests/rocketchat-membership.test.mjs
 
       # test_failure_smoke_stack_returns_an_intentional_plan_error shells out to
       # `terraform`. A developer machine usually has one, so this test passes
@@ -84,8 +92,8 @@ jobs:
           for chart in charts/apps/*/ charts/infrastructure/*/ charts/thirdparty/*/; do
             [ -f "$chart/Chart.yaml" ] || continue
             grep -q "^dependencies:" "$chart/Chart.yaml" || continue
-            if ! helm dependency build "$chart" 2>&1 | tee /tmp/dep.log; then
-              echo "::error file=${chart}Chart.yaml::helm dependency build failed — $(grep -m1 -i 'error' /tmp/dep.log || echo 'see log above')"
+            if ! scripts/build-chart-dependency.sh "$chart"; then
+              echo "::error file=${chart}Chart.yaml::helm dependency build failed after bounded download recovery (see log above)"
               failed=1
             fi
           done
