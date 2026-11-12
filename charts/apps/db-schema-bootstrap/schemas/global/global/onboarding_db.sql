@@ -593,3 +593,38 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_replacements_actor_idx
     ON staff_identity_replacements(root_command_id, replacement_actor_subject);
 CREATE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_replacements_user_idx
     ON staff_identity_replacements(root_command_id, successor_user_id);
+
+-- Recipient proof is separate from immutable account creation and business access.
+CREATE TABLE IF NOT EXISTS staff_identity_setups (
+    command_id UUID PRIMARY KEY REFERENCES staff_identity_creations(command_id) ON DELETE RESTRICT,
+    password_configured_at TIMESTAMPTZ,
+    lease_id UUID,
+    lease_until TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK ((lease_id IS NULL) = (lease_until IS NULL))
+);
+GRANT SELECT, INSERT ON staff_identity_setups TO onboarding;
+GRANT UPDATE (password_configured_at, lease_id, lease_until, updated_at) ON staff_identity_setups TO onboarding;
+REVOKE DELETE, TRUNCATE ON staff_identity_setups FROM onboarding;
+
+CREATE TABLE IF NOT EXISTS staff_identity_invitation_attempts (
+    id UUID PRIMARY KEY CHECK (substring(id::text, 15, 1) = '7'),
+    command_id UUID NOT NULL REFERENCES staff_identity_setups(command_id) ON DELETE RESTRICT,
+    sequence BIGINT GENERATED ALWAYS AS IDENTITY,
+    token_hash BYTEA NOT NULL UNIQUE CHECK (octet_length(token_hash) = 32),
+    phase TEXT NOT NULL CHECK (phase IN ('email', 'password')),
+    expires_at TIMESTAMPTZ NOT NULL,
+    accepted_at TIMESTAMPTZ,
+    provider_id TEXT CHECK (provider_id ~ '^[A-Za-z0-9_-]{1,200}$'),
+    consumed_at TIMESTAMPTZ,
+    proof_attempts INTEGER NOT NULL DEFAULT 0 CHECK (proof_attempts BETWEEN 0 AND 10),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (expires_at = created_at + interval '30 minutes'),
+    CHECK ((accepted_at IS NULL) = (provider_id IS NULL))
+);
+CREATE INDEX IF NOT EXISTS staff_identity_invitation_command_idx
+    ON staff_identity_invitation_attempts(command_id, created_at DESC, sequence DESC);
+GRANT SELECT, INSERT ON staff_identity_invitation_attempts TO onboarding;
+GRANT UPDATE (accepted_at, provider_id, consumed_at, proof_attempts) ON staff_identity_invitation_attempts TO onboarding;
+REVOKE DELETE, TRUNCATE ON staff_identity_invitation_attempts FROM onboarding;
