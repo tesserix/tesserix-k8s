@@ -751,3 +751,29 @@ Each step is useful on its own; do not build the console before the API works.
 | Management API `403` with a good token | `iam-admin` token missing `…:project:id:zitadel:aud` scope |
 | Operating on the wrong org | `x-zitadel-orgid` omitted — every `/management/v1/…` call is org-scoped by it |
 | Org exists in Zitadel, absent locally | Projection drift; reproject from Zitadel, never repair Zitadel from the projection |
+
+## Helivanta email-first account discovery
+
+`account_discovery_challenges` is a separate, purpose-bound mailbox proof ledger.
+It grants no product membership and does not reuse or mutate signup receipts.
+Eight-digit codes expire in ten minutes, allow five atomic attempts and cannot
+replay after verification. Only code/browser hashes are stored. The browser
+capability permits choice-list recovery until the same expiry; native and
+customer eligibility must be checked on every read. Raw codes are transient.
+
+Reservations serialize recipient (3/hour, 10/24h), source (10/hour, 30/24h), and
+service (1000/hour) delivery limits across replicas before provider I/O. Valid
+email requests are independent of account existence. These privacy/security
+limits fail closed. Provider timeouts consume a reservation; a fresh request
+gets a fresh code. Discovery leaves signup delivery budgets unchanged.
+
+The service's existing hourly retention task removes up to 5000 challenge rows
+older than 24 hours; at the 1000/hour intake cap this bounds steady-state
+retention to about 25 hours. An unavailable retention task delays erasure and
+must be investigated. Code expiry is enforced in SQL regardless of sweeping.
+Audit entries contain request IDs and actions, never codes or recipient emails.
+
+The schema is additive and reentrant. Roll out through the owning GitOps schema
+bootstrap before deploying consumers. Rolling back code retains this table;
+do not drop live challenge state or restore expired proofs. Normal signup,
+authentication, password and MFA ownership is unchanged.

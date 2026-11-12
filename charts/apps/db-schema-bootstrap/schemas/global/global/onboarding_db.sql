@@ -316,11 +316,30 @@ DO $$ BEGIN
     END IF;
 END $$;
 
+-- Mailbox discovery is separate from signup receipts and native authentication.
+CREATE TABLE IF NOT EXISTS account_discovery_challenges (
+    id UUID PRIMARY KEY CHECK (substring(id::text,15,1) = '7'),
+    browser_hash BYTEA NOT NULL CHECK (octet_length(browser_hash) = 32),
+    source_hash BYTEA NOT NULL CHECK (octet_length(source_hash) = 32),
+    email TEXT NOT NULL CHECK (length(email) BETWEEN 3 AND 200),
+    code_hash BYTEA NOT NULL CHECK (octet_length(code_hash) = 32),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 5),
+    verified_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    CHECK (expires_at > created_at AND expires_at <= created_at + INTERVAL '10 minutes'),
+    CHECK (verified_at IS NULL OR (verified_at >= created_at AND verified_at < expires_at))
+);
+CREATE INDEX IF NOT EXISTS account_discovery_recipient_budget ON account_discovery_challenges(email,created_at);
+CREATE INDEX IF NOT EXISTS account_discovery_source_budget ON account_discovery_challenges(source_hash,created_at);
+CREATE INDEX IF NOT EXISTS account_discovery_expiry ON account_discovery_challenges(created_at);
+
 GRANT USAGE ON SCHEMA public TO onboarding;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON
     products, organizations, org_products, domains, idps, idempotency_keys,
-    registry_tenants, registry_credentials, customer_signups
+    registry_tenants, registry_credentials, customer_signups, account_discovery_challenges
     TO onboarding;
 
 -- The whole point: the application may append to the ledger and read it back,
