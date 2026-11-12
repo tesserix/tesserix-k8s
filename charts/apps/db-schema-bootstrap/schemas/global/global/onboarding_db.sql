@@ -597,6 +597,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS staff_identity_replacements_user_idx
 -- Recipient proof is separate from immutable account creation and business access.
 CREATE TABLE IF NOT EXISTS staff_identity_setups (
     command_id UUID PRIMARY KEY REFERENCES staff_identity_creations(command_id) ON DELETE RESTRICT,
+    email_confirmed_at TIMESTAMPTZ,
     password_configured_at TIMESTAMPTZ,
     lease_id UUID,
     lease_until TIMESTAMPTZ,
@@ -605,7 +606,7 @@ CREATE TABLE IF NOT EXISTS staff_identity_setups (
     CHECK ((lease_id IS NULL) = (lease_until IS NULL))
 );
 GRANT SELECT, INSERT ON staff_identity_setups TO onboarding;
-GRANT UPDATE (password_configured_at, lease_id, lease_until, updated_at) ON staff_identity_setups TO onboarding;
+GRANT UPDATE (email_confirmed_at, password_configured_at, lease_id, lease_until, updated_at) ON staff_identity_setups TO onboarding;
 REVOKE DELETE, TRUNCATE ON staff_identity_setups FROM onboarding;
 
 CREATE TABLE IF NOT EXISTS staff_identity_invitation_attempts (
