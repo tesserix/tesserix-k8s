@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { reconcile } from "../charts/thirdparty/rocketchat/files/ensure-membership.mjs";
 
 const member = {
@@ -50,6 +55,40 @@ const options = {
   authUserId: "operator",
   authToken: "test-only",
 };
+
+test("executes the CLI through a ConfigMap-style symlink", () => {
+  const directory = mkdtempSync(join(tmpdir(), "rocketchat-cli-"));
+  try {
+    const mounted = join(directory, "mounted.mjs");
+    const preload = join(directory, "fetch.mjs");
+    symlinkSync(
+      fileURLToPath(
+        new URL(
+          "../charts/thirdparty/rocketchat/files/ensure-membership.mjs",
+          import.meta.url,
+        ),
+      ),
+      mounted,
+    );
+    writeFileSync(
+      preload,
+      "globalThis.fetch = async () => new Response('{}', {status: 403});",
+    );
+    const result = spawnSync(process.execPath, ["--import", preload, mounted], {
+      encoding: "utf8",
+      timeout: 5000,
+      env: {
+        ROCKETCHAT_URL: "https://rocketchat.example.invalid",
+        ROCKETCHAT_AUTH_USER_ID: "test-user",
+        ROCKETCHAT_AUTH_TOKEN: "test-only",
+      },
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Rocket.Chat users.list HTTP 403/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("joins existing public and private channels once and picks up a new channel", async () => {
   const rooms = [
