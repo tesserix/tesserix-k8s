@@ -619,6 +619,7 @@ CREATE TABLE IF NOT EXISTS staff_identity_invitation_attempts (
     provider_id TEXT CHECK (provider_id ~ '^[A-Za-z0-9_-]{1,200}$'),
     consumed_at TIMESTAMPTZ,
     proof_attempts INTEGER NOT NULL DEFAULT 0 CHECK (proof_attempts BETWEEN 0 AND 10),
+    proof_uncertain BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (expires_at = created_at + interval '30 minutes'),
     CHECK ((accepted_at IS NULL) = (provider_id IS NULL))
@@ -626,5 +627,5 @@ CREATE TABLE IF NOT EXISTS staff_identity_invitation_attempts (
 CREATE INDEX IF NOT EXISTS staff_identity_invitation_command_idx
     ON staff_identity_invitation_attempts(command_id, created_at DESC, sequence DESC);
 GRANT SELECT, INSERT ON staff_identity_invitation_attempts TO onboarding;
-GRANT UPDATE (accepted_at, provider_id, consumed_at, proof_attempts) ON staff_identity_invitation_attempts TO onboarding;
+GRANT UPDATE (accepted_at, provider_id, consumed_at, proof_attempts, proof_uncertain) ON staff_identity_invitation_attempts TO onboarding;
 REVOKE DELETE, TRUNCATE ON staff_identity_invitation_attempts FROM onboarding;
