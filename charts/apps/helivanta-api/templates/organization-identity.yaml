@@ -1,0 +1,42 @@
+{{- if .Values.organizationIdentity.enabled }}
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: helivanta-onboarding-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "helivanta-api.labels" . | nindent 4 }}
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: helivanta-onboarding-client-reader
+          serviceAccountRef:
+            name: {{ include "helivanta-api.serviceAccountName" . }}
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: helivanta-onboarding-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "helivanta-api.labels" . | nindent 4 }}
+spec:
+  refreshInterval: 5m
+  secretStoreRef:
+    name: helivanta-onboarding-client
+    kind: SecretStore
+  target:
+    name: helivanta-onboarding-client
+    creationPolicy: Owner
+  data:
+    - secretKey: client-secret
+      remoteRef:
+        key: helivanta/prod/app/helivanta-onboarding-client
+        property: value
+{{- end }}

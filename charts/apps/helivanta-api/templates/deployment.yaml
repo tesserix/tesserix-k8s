@@ -70,6 +70,18 @@ spec:
               containerPort: {{ .Values.service.port }}
               protocol: TCP
           env:
+            {{- if .Values.organizationIdentity.enabled }}
+            - name: ORGANIZATION_IDENTITY_URL
+              value: {{ .Values.organizationIdentity.url | quote }}
+            - name: ORGANIZATION_IDENTITY_PRODUCT_KEY
+              value: helivanta
+            - name: ORGANIZATION_IDENTITY_TOKEN_PROJECT_ID
+              value: {{ required "organizationIdentity.tokenProjectID is required" .Values.organizationIdentity.tokenProjectID | quote }}
+            - name: ORGANIZATION_IDENTITY_CLIENT_ID
+              value: helivanta-onboarding-client
+            - name: ORGANIZATION_IDENTITY_CLIENT_SECRET_FILE
+              value: /var/run/organization-identity/client-secret
+            {{- end }}
             - name: HOSPITAL_PROVISIONING_ENABLED
               value: {{ .Values.hospitalProvisioning.enabled | quote }}
             {{- range $k, $v := .Values.env }}
@@ -293,6 +305,11 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if .Values.organizationIdentity.enabled }}
+            - name: organization-identity
+              mountPath: /var/run/organization-identity
+              readOnly: true
+            {{- end }}
             {{- if .Values.hospitalProvisioning.enabled }}
             - name: owner-security
               mountPath: /var/run/owner-security
@@ -326,6 +343,15 @@ spec:
               readOnly: true
             {{- end }}
       volumes:
+        {{- if .Values.organizationIdentity.enabled }}
+        - name: organization-identity
+          secret:
+            secretName: helivanta-onboarding-client
+            defaultMode: 0440
+            items:
+              - key: client-secret
+                path: client-secret
+        {{- end }}
         {{- if .Values.hospitalProvisioning.enabled }}
         - name: owner-security
           projected:
