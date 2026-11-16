@@ -1,0 +1,44 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: helivanta-growthbook-name-recovery
+  annotations:
+    helivanta.tesserix.app/approved-recovery: kargo-manifests-79
+spec:
+  failurePolicy: Fail
+  reinvocationPolicy: Never
+  matchConstraints:
+    matchPolicy: Exact
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kargo-infra
+    resourceRules:
+      - apiGroups: [kargo.akuity.io]
+        apiVersions: [v1alpha1]
+        resources: [promotions]
+        resourceNames: [helivanta-growthbook-bootstrap-d5a84e8-sync-1794831055]
+        operations: [UPDATE]
+        scope: Namespaced
+  matchConditions:
+    - name: recovery-actor
+      expression: "request.userInfo.username == 'system:serviceaccount:kargo-infra:helivanta-growthbook-promotion-recovery'"
+    - name: archived-object
+      expression: >-
+        request.namespace == 'kargo-infra' && oldObject != null &&
+        oldObject.metadata.name == 'helivanta-growthbook-prod.01m7j491cvmf8n1jk9px5cdzra.8006e04' &&
+        oldObject.spec.stage == 'helivanta-growthbook-prod'
+  mutations:
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: '[JSONPatch{op: "replace", path: "/metadata/name", value: oldObject.metadata.name}]'
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: helivanta-growthbook-name-recovery
+spec:
+  policyName: helivanta-growthbook-name-recovery
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kargo-infra
