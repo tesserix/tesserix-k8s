@@ -7,6 +7,10 @@ export async function seedHelivanta(request, config) {
   if (config.dedicated && definitions.projects.some((p) => p.publicId !== "helivanta" && p.publicId !== "my-first-project")) throw new Error("Unexpected project in dedicated provider");
   let adopted;
   if (config.dedicated && !matches.length && definitions.projects.length === 1 && definitions.projects[0].publicId === "my-first-project") {
+    const defaultID = definitions.projects[0].id;
+    const usedFeatures = (await request("GET", "/feature?project=" + encodeURIComponent(defaultID))).features;
+    const usedConnections = (await request("GET", "/sdk-connections")).connections;
+    if (usedFeatures.length || usedConnections.some((row) => !row.projects?.length || row.projects.includes(defaultID))) throw new Error("Default project is in use");
     await request("PUT", "/projects/" + encodeURIComponent(definitions.projects[0].id), { name: "Helivanta", publicId: "helivanta", description: "Helivanta release availability" });
     adopted = (await request("GET", "/organization/definitions")).projects.find((p) => p.id === definitions.projects[0].id);
     if (!adopted) throw new Error("Dedicated project adoption failed");
