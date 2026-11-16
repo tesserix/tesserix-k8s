@@ -45,3 +45,21 @@ test("stores a new reader with CAS and never rotates a different existing creden
  assert.deepEqual(writes,[{path:"/v1/kv/data/helivanta/prod/app/helivanta-growthbook-sdk-key",body:{options:{cas:0},data:{value:"sdk-synthetic"}}}]);
  await assert.rejects(persistReader(async()=>({data:{data:{value:"sdk-other"}}}),"sdk-synthetic"),/rotation requires review/);
 });
+
+test("the explicit job entry point executes through a ConfigMap-style symlink", async () => {
+ const {mkdtemp,symlink,rm,access}=await import("node:fs/promises");
+ const {tmpdir}=await import("node:os");
+ const {join}=await import("node:path");
+ const {fileURLToPath}=await import("node:url");
+ const {spawnSync}=await import("node:child_process");
+ await assert.rejects(access("/config/helivanta-release.json"),/ENOENT/);
+ const directory=await mkdtemp(join(tmpdir(),"helivanta-seed-entry-"));
+ try {
+  const script=join(directory,"seed.mjs");
+  await symlink(fileURLToPath(new URL("../charts/thirdparty/growthbook/files/helivanta-release.mjs",import.meta.url)),script);
+  const result=spawnSync(process.execPath,[script,"--run"],{encoding:"utf8"});
+  assert.equal(result.status,1,"missing mounted configuration must fail, never silently succeed");
+  assert.match(result.stderr,/Helivanta release provisioning failed/);
+  assert.equal(result.stdout,"");
+ } finally {await rm(directory,{recursive:true});}
+});

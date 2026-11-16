@@ -159,6 +159,7 @@ def test_provider_seed_uses_the_pinned_provider_image_and_mounted_credentials():
     container = spec["containers"][0]
     assert "@sha256:" in container["image"] and ":latest" not in container["image"]
     assert container["securityContext"]["readOnlyRootFilesystem"] is True
+    assert container["command"] == ["node", "/config/helivanta-release.mjs", "--run"]
     assert "env" not in container
     volumes = {volume["name"]: volume for volume in spec["volumes"]}
     assert volumes["admin"]["secret"]["secretName"] == "growthbook-admin-secret"
