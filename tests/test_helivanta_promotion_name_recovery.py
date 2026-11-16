@@ -6,7 +6,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def recovery_resources(enabled=True):
-    result = subprocess.run(['helm', 'template', 'helivanta-growthbook-recovery', 'charts/infrastructure/helivanta-growthbook-recovery', '--namespace', 'argocd', '--set', f'enabled={str(enabled).lower()}'], cwd=ROOT, text=True, capture_output=True, check=True)
+    command = ['helm', 'template', 'helivanta-growthbook-recovery', 'charts/infrastructure/helivanta-growthbook-recovery', '--namespace', 'argocd']
+    if enabled is not None:
+        command += ['--set', f'enabled={str(enabled).lower()}']
+    result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=True)
     return [doc for doc in yaml.safe_load_all(result.stdout) if doc]
 
 
@@ -35,4 +38,4 @@ def test_mutation_only_restores_the_existing_immutable_name():
 
 
 def test_completed_recovery_renders_no_admission_exception_by_default():
-    assert recovery_resources(enabled=False) == []
+    assert recovery_resources(enabled=None) == []
