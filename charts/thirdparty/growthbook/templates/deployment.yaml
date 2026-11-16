@@ -47,6 +47,13 @@ spec:
               value: {{ .Values.config.appOrigin | quote }}
             - name: API_HOST
               value: {{ .Values.config.apiHost | quote }}
+            {{- if .Values.mongodb.auth.enabled }}
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "growthbook.fullname" . }}-mongodb
+                  key: mongodb-root-password
+            {{- end }}
             - name: MONGODB_URI
               value: {{ include "growthbook.mongoUri" . | quote }}
             - name: UPLOAD_METHOD

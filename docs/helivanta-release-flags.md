@@ -1,63 +1,52 @@
 # Helivanta foundation release flags
 
-Helivanta uses the existing pinned GrowthBook provider with a separate
-`Helivanta` project and `helivanta-production` environment. The dedicated reader
-selects only that project/environment; its key is never sent to the browser.
-The canonical application vocabulary remains in Helivanta's
-`contracts/release-capabilities.json`. The checked-in deployment selection is
-`charts/thirdparty/growthbook/files/helivanta-release.json`.
+Helivanta has a dedicated, private GrowthBook installation in namespace
+`helivanta-growthbook`, its own authenticated MongoDB and retained PVCs. It does
+not reuse the shared platform provider's organization, credentials or database.
+The provider is pinned to GrowthBook 5.2.0 and its immutable image digest; MongoDB
+is pinned separately to 7.0.45 and its digest. No public ingress is installed.
+Operators can use an authenticated Kubernetes port-forward for maintenance.
 
-The selected foundation enables onboarding, team accounts, core Staff,
-department teams, pharmacy setup and pharmacy Staff. Counter, catalogue, stock,
-receiving/supplier collaboration, payables, clinical, diagnostic, emergency,
-scheduling, payroll and other advanced groups remain off. The application still
-requires current IAM, hospital/outlet grants and professional prerequisites;
-flags confer no authority.
+A first-install Sync hook generates independent JWT, encryption, MongoDB and
+admin credentials in memory and writes them once with OpenBao CAS=0. Retries
+validate existing credentials and never rotate them. ESO readers and bootstrap
+writers are namespace-bound and restricted to exact Helivanta paths. The
+PostSync hook uses the supported first-install API, creates the sole Helivanta
+organization and renames its unused default project through the supported API.
+It refuses foreign projects and changed existing flags/readers. The standard
+`production` environment avoids a second project or custom environment. Shared
+GrowthBook seeding is disabled; shared products are untouched.
 
-The GrowthBook PostSync Job uses the same exact version/digest as the provider.
-It reads the existing admin credential from a mounted secret, appends its own
-project/environment and flags through the vendor API, then writes its reader to
-`helivanta/prod/app/helivanta-growthbook-sdk-key` in OpenBao. The namespace-bound
-writer can create/read that path, never update an existing different credential.
-CAS=0 handles simultaneous first creation; a retry reuses matching resources and
-refuses changed settings. Shared organizations, existing projects, environments
-and SDK connections are preserved. Job output contains only status and nonsecret
-resource identifiers. No management credential reaches the Helivanta namespace.
+The six enabled groups are onboarding, team accounts, core Staff, department
+teams, pharmacy setup and pharmacy Staff. All other configured groups remain off.
+The canonical application vocabulary is Helivanta's
+`contracts/release-capabilities.json`; the deployment selection is
+`charts/thirdparty/growthbook/files/helivanta-release.json`. Availability flags
+never confer IAM authority or bypass tenant, hospital, outlet or professional
+prerequisites.
 
-The reader role is restricted to `helivanta-api` in namespace `helivanta` and
-that single KV path. ESO materializes a read-only file in API pods. Egress and
-provider ingress allow only API pods to GrowthBook TCP 3100. A host-specific
-DestinationRule preserves HTTP/1.1 for the existing provider without a sidecar;
-the private connection is confined by network policies. This reuses existing
-provider/storage; the only additional compute is one bounded provisioning Job
-(50m CPU/64Mi request, 250m CPU/256Mi limit), not a persistent service.
+Only the SDK reader reaches the Helivanta API, through a read-only ESO file at
+`/var/run/growthbook/sdk-client-key`. The backend evaluates bounded snapshots;
+expired/unavailable provider state closes optional workflows. Baseline identity,
+password and security recovery remain available. The browser receives evaluated
+capabilities rather than provider credentials. Dedicated namespace default-deny
+network policies admit API TCP 3100, internal MongoDB, DNS and seed-to-OpenBao.
+The API uses an exact-host DestinationRule for the private HTTP provider.
 
-## Delivery and verification
+Deployment order: reconcile OpenBao roles and network access, reconcile the new
+provider/bootstrap/seeder, verify actual SDK payload and ESO SecretSynced, then
+promote API/shell through Helivanta's Kargo release workflow. Never promote the
+new production API while its required SDK file is absent. The dedicated Kargo
+stage updates only this installation's exact image pin through a reviewed PR.
 
-1. Merge this GitOps change after chart renders, secret/policy/network tests and
-   provisioning behavior tests pass. OpenBao applies its declared roles/policies.
-2. GrowthBook reconciles the PostSync Job. Require a completed Job and an ESO
-   SecretSynced condition before promoting the Helivanta application that
-   requires this configuration. The default chart leaves the dependency disabled;
-   the production Argo values enable it.
-3. Use Helivanta's Kargo release workflow for exact application images and chart
-   revision. Do not manually edit a live image, Secret or flag payload.
-4. Verify the reader payload contains exactly the known Helivanta flags and that
-   the effective public/account-bound snapshots agree. Check named owner and
-   scoped pharmacy accounts, hidden navigation, deep-link/direct API refusal,
-   provider expiry behavior and existing verification/password continuation.
-5. Record the image/chart revisions and effective enabled groups in the owner
-   release evidence. The Job and passing schemas alone do not establish live
-   acceptance.
+Recovery limits: retained disks and the independently backed-up OpenBao store
+preserve state across pod replacement. A dedicated MongoDB off-cluster backup
+and restore drill has not yet been verified; retained PVCs alone are not a
+backup. Do not claim disaster-recovery readiness. Seeder recreates the declared
+foundation configuration in a fresh provider but a changed reader requires
+explicit credential rotation review.
 
-No provider/Mongo version or schema changes in this rollout. Disabling the
-application groups retains identity/security and classified authorized recovery
-paths; existing tenant/clinical/stock/financial records are preserved. Reverting
-configuration does not delete the dedicated provider records or rotate the
-reader. A provider outage closes new optional work after the application's
-bounded snapshot lifetime, while baseline recovery remains available.
-
-Local checks: five rendered Helm secret/mount/network/provisioning assertions,
-existing GrowthBook image/secret tests, and Node tests of isolated creation,
-idempotent retry, conflicting reader/flag refusal and CAS-only persistence.
-Live reconciliation and browser acceptance must be recorded after deployment.
+Validation includes rendered Helm isolation/auth/mount/network tests, Node tests
+for CAS-only credentials, default-project adoption, idempotency and conflict
+refusal. CI, live reconciliation, actual SDK payload and browser evidence must
+be recorded separately; hook completion alone does not prove acceptance.

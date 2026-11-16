@@ -36,7 +36,7 @@ def test_reader_is_private_mounted_and_delivered_by_a_namespace_bound_identity()
     env = {row["name"]: row for row in api["env"]}
     assert (
         env["GROWTHBOOK_API_URL"]["value"]
-        == "http://growthbook.growthbook.svc.cluster.local:3100"
+        == "http://helivanta-growthbook.helivanta-growthbook.svc.cluster.local:3100"
     )
     assert (
         env["GROWTHBOOK_SDK_KEY_FILE"]["value"] == "/var/run/growthbook/sdk-client-key"
@@ -80,7 +80,7 @@ def test_disabled_chart_adds_no_optional_provider_dependency():
     assert not any(row["name"].startswith("GROWTHBOOK_") for row in api["env"])
 
 
-def test_provider_egress_targets_only_the_shared_provider_port_and_namespace():
+def test_provider_egress_targets_only_the_dedicated_provider_port_and_namespace():
     policy = next(
         doc
         for doc in rendered()
@@ -93,7 +93,7 @@ def test_provider_egress_targets_only_the_shared_provider_port_and_namespace():
             "to": [
                 {
                     "namespaceSelector": {
-                        "matchLabels": {"kubernetes.io/metadata.name": "growthbook"}
+                        "matchLabels": {"kubernetes.io/metadata.name": "helivanta-growthbook"}
                     },
                     "podSelector": {
                         "matchLabels": {"app.kubernetes.io/name": "growthbook"}
@@ -207,5 +207,26 @@ def test_seed_writer_can_create_but_cannot_rotate_existing_credentials():
         for row in values["kubernetesRoles"]
         if row["name"] == "helivanta-growthbook-writer"
     )
-    assert role["namespaces"] == ["growthbook"]
+    assert role["namespaces"] == ["helivanta-growthbook"]
     assert role["serviceAccounts"] == ["helivanta-growthbook-seed"]
+
+
+def test_dedicated_provider_has_no_shared_secret_or_database_dependency():
+    app = yaml.safe_load((ROOT / 'argocd/prod/apps/helivanta/helivanta-growthbook.yaml').read_text())
+    values = yaml.safe_load(app['spec']['source']['helm']['values'])
+    args = ['helm', 'template', 'helivanta-growthbook', 'charts/thirdparty/growthbook', '--namespace', 'helivanta-growthbook', '-f', '-']
+    result = subprocess.run(args, input=yaml.safe_dump(values), cwd=ROOT, capture_output=True, text=True, check=True)
+    docs = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
+    deployment = next(doc for doc in docs if doc['kind'] == 'Deployment' and doc['metadata']['name'] == 'helivanta-growthbook')
+    env = {row['name']: row for row in deployment['spec']['template']['spec']['containers'][0]['env']}
+    assert '$(MONGODB_PASSWORD)@helivanta-growthbook-mongodb' in env['MONGODB_URI']['value']
+    assert env['MONGODB_PASSWORD']['valueFrom']['secretKeyRef']['name'] == 'helivanta-growthbook-mongodb'
+    assert env['JWT_SECRET']['valueFrom']['secretKeyRef']['name'] == 'helivanta-growthbook-runtime'
+    assert any(doc['kind'] == 'NetworkPolicy' and doc['metadata']['name'] == 'default-deny' for doc in docs)
+    bootstrap = next(doc for doc in docs if doc['kind'] == 'Job' and doc['metadata']['name'] == 'helivanta-growthbook-bootstrap')
+    assert bootstrap['metadata']['annotations']['argocd.argoproj.io/sync-wave'] == '-2'
+    assert bootstrap['spec']['template']['spec']['automountServiceAccountToken'] is False
+    assert app['spec']['destination']['namespace'] == 'helivanta-growthbook'
+    assert app['metadata']['annotations']['kargo.akuity.io/authorized-stage'] == 'kargo-infra:helivanta-growthbook-prod'
+    shared = yaml.safe_load((ROOT / 'argocd/prod/infrastructure/growthbook.yaml').read_text())
+    assert yaml.safe_load(shared['spec']['source']['helm']['values'])['helivantaRelease']['enabled'] is False
