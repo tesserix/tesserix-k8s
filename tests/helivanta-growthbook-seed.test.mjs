@@ -81,3 +81,10 @@ test("dedicated provider refuses foreign projects",async()=>{
  const {request}=provider();
  await assert.rejects(seedHelivanta(request,{...config,dedicated:true}),/Unexpected project/);
 });
+test("dedicated provider will not adopt a used default project",async()=>{
+ const {state,request}=provider();
+ state.projects=[{id:"default",name:"My First Project",publicId:"my-first-project"}];
+ state.connections=[];state.features=[{id:"existing.flag",project:"default"}];
+ await assert.rejects(seedHelivanta(request,{...config,dedicated:true}),/Default project is in use/);
+ assert.equal(state.writes.length,0);
+});
