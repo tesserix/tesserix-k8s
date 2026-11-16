@@ -222,6 +222,7 @@ def test_dedicated_provider_has_no_shared_secret_or_database_dependency():
     assert '$(MONGODB_PASSWORD)@helivanta-growthbook-mongodb' in env['MONGODB_URI']['value']
     assert env['MONGODB_PASSWORD']['valueFrom']['secretKeyRef']['name'] == 'helivanta-growthbook-mongodb'
     assert env['JWT_SECRET']['valueFrom']['secretKeyRef']['name'] == 'helivanta-growthbook-runtime'
+    assert all(doc['apiVersion'] == 'external-secrets.io/v1beta1' for doc in docs if doc['kind'] in ['ExternalSecret', 'SecretStore'])
     assert any(doc['kind'] == 'NetworkPolicy' and doc['metadata']['name'] == 'default-deny' for doc in docs)
     bootstrap = next(doc for doc in docs if doc['kind'] == 'Job' and doc['metadata']['name'] == 'helivanta-growthbook-bootstrap')
     assert bootstrap['metadata']['annotations']['argocd.argoproj.io/sync-wave'] == '-2'
