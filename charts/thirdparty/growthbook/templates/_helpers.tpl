@@ -21,6 +21,17 @@ Create a default fully qualified app name.
 {{- end }}
 {{- end }}
 
+
+{{- define "growthbook.image" -}}
+{{- if not (regexMatch "^[0-9]+\\.[0-9]+\\.[0-9]+$" .Values.image.tag) -}}
+{{- fail "GrowthBook image.tag must be a stable three-part version" -}}
+{{- end -}}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" (default "" .Values.image.digest)) -}}
+{{- fail "GrowthBook image.digest must be a complete sha256 digest" -}}
+{{- end -}}
+{{- printf "%s:%s@%s" .Values.image.repository .Values.image.tag .Values.image.digest -}}
+{{- end -}}
+
 {{/*
 Create chart name and version as used by the chart label.
 */}}
