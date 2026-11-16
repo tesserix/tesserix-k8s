@@ -70,6 +70,12 @@ spec:
               containerPort: {{ .Values.service.port }}
               protocol: TCP
           env:
+            {{- if .Values.releaseCapabilities.enabled }}
+            - name: GROWTHBOOK_API_URL
+              value: {{ .Values.releaseCapabilities.url | quote }}
+            - name: GROWTHBOOK_SDK_KEY_FILE
+              value: /var/run/growthbook/sdk-client-key
+            {{- end }}
             {{- if .Values.organizationIdentity.enabled }}
             - name: ORGANIZATION_IDENTITY_URL
               value: {{ .Values.organizationIdentity.url | quote }}
@@ -305,6 +311,11 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if .Values.releaseCapabilities.enabled }}
+            - name: release-capabilities
+              mountPath: /var/run/growthbook
+              readOnly: true
+            {{- end }}
             {{- if .Values.organizationIdentity.enabled }}
             - name: organization-identity
               mountPath: /var/run/organization-identity
@@ -343,6 +354,12 @@ spec:
               readOnly: true
             {{- end }}
       volumes:
+        {{- if .Values.releaseCapabilities.enabled }}
+        - name: release-capabilities
+          secret:
+            secretName: {{ .Values.releaseCapabilities.secretName }}
+            defaultMode: 0440
+        {{- end }}
         {{- if .Values.organizationIdentity.enabled }}
         - name: organization-identity
           secret:

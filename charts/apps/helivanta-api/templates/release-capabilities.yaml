@@ -1,0 +1,78 @@
+{{- if .Values.releaseCapabilities.enabled }}
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: helivanta-growthbook-reader
+  namespace: {{ .Release.Namespace }}
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: helivanta-growthbook-reader
+          serviceAccountRef:
+            name: {{ include "helivanta-api.serviceAccountName" . }}
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: helivanta-growthbook-sdk-key
+  namespace: {{ .Release.Namespace }}
+spec:
+  refreshInterval: 5m
+  secretStoreRef:
+    name: helivanta-growthbook-reader
+    kind: SecretStore
+  target:
+    name: {{ .Values.releaseCapabilities.secretName }}
+    creationPolicy: Owner
+  data:
+    - secretKey: sdk-client-key
+      remoteRef:
+        key: helivanta/prod/app/helivanta-growthbook-sdk-key
+        property: value
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: helivanta-api-growthbook
+  namespace: {{ .Release.Namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "helivanta-api.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: growthbook
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: growthbook
+      ports:
+        - protocol: TCP
+          port: 3100
+{{- end }}
+{{- if and .Values.releaseCapabilities.enabled (include "helivanta-api.meshed" .) }}
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: helivanta-api-growthbook
+  namespace: {{ .Release.Namespace }}
+spec:
+  host: growthbook.growthbook.svc.cluster.local
+  exportTo: ["."]
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      tcp: {maxConnections: 5, connectTimeout: 5s}
+      http: {h2UpgradePolicy: DO_NOT_UPGRADE}
+{{- end }}
