@@ -1,0 +1,151 @@
+{{- if .Values.helivantaDedicated.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: helivanta-growthbook-bootstrap
+  annotations:
+    argocd.argoproj.io/sync-wave: '-3'
+data:
+  bootstrap.mjs: |
+{{ .Files.Get "files/helivanta-bootstrap.mjs" | indent 4 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: helivanta-growthbook-bootstrap
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: '-2'
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  activeDeadlineSeconds: 600
+  backoffLimit: 4
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: helivanta-growthbook-seed
+      annotations:
+        sidecar.istio.io/inject: 'false'
+    spec:
+      serviceAccountName: helivanta-growthbook-seed
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: bootstrap
+          image: {{ include "growthbook.image" . | quote }}
+          command: [node, /config/bootstrap.mjs, --run]
+          resources:
+            requests: {memory: 64Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: bao, mountPath: /var/run/bao, readOnly: true}
+      volumes:
+        - name: config
+          configMap: {name: helivanta-growthbook-bootstrap}
+        - name: bao
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken: {path: token, expirationSeconds: 600}
+---
+apiVersion: external-secrets.io/v1
+kind: SecretStore
+metadata:
+  name: helivanta-growthbook-runtime
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: helivanta-growthbook-runtime-reader
+          serviceAccountRef:
+            name: helivanta-growthbook
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: helivanta-growthbook-runtime
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {name: helivanta-growthbook-runtime, kind: SecretStore}
+  target: {name: helivanta-growthbook-runtime}
+  dataFrom:
+    - extract:
+        key: helivanta/prod/app/helivanta-growthbook-runtime
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: helivanta-growthbook-mongodb
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  refreshInterval: 1h
+  secretStoreRef: {name: helivanta-growthbook-runtime, kind: SecretStore}
+  target: {name: helivanta-growthbook-mongodb}
+  data:
+    - secretKey: mongodb-root-password
+      remoteRef:
+        key: helivanta/prod/app/helivanta-growthbook-runtime
+        property: mongodb-root-password
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: provider-traffic
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+      ports: [{port: 27017, protocol: TCP}, {port: 3100, protocol: TCP}]
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: helivanta}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: helivanta-api}
+      ports: [{port: 3100, protocol: TCP}]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to:
+        - ipBlock: {cidr: 10.30.0.10/32}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to:
+        - podSelector: {}
+      ports: [{port: 27017, protocol: TCP}, {port: 3100, protocol: TCP}]
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: openbao}
+      ports: [{port: 8200, protocol: TCP}]
+{{- end }}

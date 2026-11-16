@@ -63,3 +63,21 @@ test("the explicit job entry point executes through a ConfigMap-style symlink", 
   assert.equal(result.stdout,"");
  } finally {await rm(directory,{recursive:true});}
 });
+
+test("dedicated provider adopts only the unused default project", async () => {
+ const {state,request}=provider();
+ state.projects=[{id:"default",name:"My First Project",publicId:"my-first-project"}];
+ state.connections=[];
+ const dedicatedRequest=async(method,path,body)=>{
+  if(method==="PUT" && path==="/projects/default") {state.projects[0]={id:"default",...body};return {status:200};}
+  return request(method,path,body);
+ };
+ const result=await seedHelivanta(dedicatedRequest,{...config,dedicated:true});
+ assert.equal(state.projects.length,1);assert.equal(result.environment,"production");
+ assert.equal(state.projects[0].publicId,"helivanta");
+ await seedHelivanta(dedicatedRequest,{...config,dedicated:true});
+});
+test("dedicated provider refuses foreign projects",async()=>{
+ const {request}=provider();
+ await assert.rejects(seedHelivanta(request,{...config,dedicated:true}),/Unexpected project/);
+});

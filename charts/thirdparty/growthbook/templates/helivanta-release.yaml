@@ -3,6 +3,8 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: helivanta-growthbook-seed
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
   namespace: {{ .Release.Namespace }}
 automountServiceAccountToken: false
 ---
@@ -10,6 +12,8 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: growthbook-helivanta-release
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
   namespace: {{ .Release.Namespace }}
 data:
   helivanta-release.mjs: |
@@ -55,8 +59,8 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           resources:
-            requests: {cpu: 50m, memory: 64Mi}
-            limits: {cpu: 250m, memory: 256Mi}
+            requests: {memory: 64Mi}
+            limits: {memory: 256Mi}
           volumeMounts:
             - {name: config, mountPath: /config, readOnly: true}
             - {name: admin, mountPath: /var/run/growthbook-admin, readOnly: true}

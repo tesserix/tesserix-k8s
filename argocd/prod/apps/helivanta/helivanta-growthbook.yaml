@@ -1,0 +1,70 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: helivanta-growthbook
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+    kargo.akuity.io/authorized-stage: kargo-infra:helivanta-growthbook-prod
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: helivanta
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/thirdparty/growthbook
+    helm:
+      releaseName: helivanta-growthbook
+      parameters:
+        - {name: image.tag, value: '5.2.0', forceString: true}
+        - {name: image.digest, value: 'sha256:74844e961f4fb65785ddb351bb2417a33a9cbcf0b1aa73774709aee986324afb', forceString: true}
+      values: |
+        fullnameOverride: helivanta-growthbook
+        helivantaDedicated:
+          enabled: true
+        helivantaRelease:
+          enabled: true
+        resources:
+          requests: {memory: 512Mi}
+          limits: {memory: 1Gi}
+        config:
+          appOrigin: http://localhost:3000
+          apiHost: http://localhost:3100
+        podAnnotations:
+          sidecar.istio.io/inject: 'false'
+        secrets:
+          jwtSecretName: helivanta-growthbook-runtime
+          encryptionKeySecretName: helivanta-growthbook-runtime
+        mongodb:
+          image:
+            tag: '7.0.45@sha256:8bb4442761a63a8dda452744082cdac9644b429807eb977b42324a63cef59ca4'
+          sidecarInject: 'false'
+          auth:
+            enabled: true
+          persistence:
+            size: 8Gi
+          resources:
+            requests: {memory: 256Mi}
+            limits: {memory: 512Mi}
+        persistence:
+          size: 1Gi
+          storageClassName: economy-rwo-retain
+        extraEnv:
+          - {name: ALLOW_SELF_ORG_CREATION, value: 'true'}
+          - {name: IS_MULTI_ORG, value: 'false'}
+          - {name: IS_CLOUD, value: 'false'}
+          - {name: AUTH_TYPE, value: local}
+          - {name: ALLOW_UNAUTHENTICATED_API, value: 'false'}
+        featureSeeding:
+          enabled: false
+          adminPasswordSecret:
+            name: helivanta-growthbook-runtime
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: helivanta-growthbook
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true]
+    managedNamespaceMetadata:
+      labels:
+        istio-injection: disabled
