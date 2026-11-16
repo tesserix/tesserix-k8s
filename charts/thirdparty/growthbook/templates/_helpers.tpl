@@ -78,7 +78,7 @@ MongoDB connection string
 {{- define "growthbook.mongoUri" -}}
 {{- if .Values.mongodb.enabled }}
 {{- if .Values.mongodb.auth.enabled }}
-{{- printf "mongodb://%s:$(MONGODB_PASSWORD)@%s-mongodb:27017/growthbook?authSource=admin" .Values.mongodb.auth.rootUser (include "growthbook.fullname" .) }}
+{{- printf "mongodb://%s:$(MONGODB_PASSWORD)@%s-mongodb:27017/growthbook?authSource=admin" (required "mongodb.auth.rootUser is required when auth is enabled" .Values.mongodb.auth.rootUser) (include "growthbook.fullname" .) }}
 {{- else }}
 {{- printf "mongodb://%s-mongodb:27017/growthbook" (include "growthbook.fullname" .) }}
 {{- end }}

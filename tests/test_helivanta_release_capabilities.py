@@ -219,7 +219,10 @@ def test_dedicated_provider_has_no_shared_secret_or_database_dependency():
     docs = [doc for doc in yaml.safe_load_all(result.stdout) if doc]
     deployment = next(doc for doc in docs if doc['kind'] == 'Deployment' and doc['metadata']['name'] == 'helivanta-growthbook')
     env = {row['name']: row for row in deployment['spec']['template']['spec']['containers'][0]['env']}
-    assert '$(MONGODB_PASSWORD)@helivanta-growthbook-mongodb' in env['MONGODB_URI']['value']
+    assert 'mongodb://admin:$(MONGODB_PASSWORD)@helivanta-growthbook-mongodb' in env['MONGODB_URI']['value']
+    mongo = next(doc for doc in docs if doc['kind'] == 'Deployment' and doc['metadata']['name'] == 'helivanta-growthbook-mongodb')
+    mongoenv = {row['name']: row for row in mongo['spec']['template']['spec']['containers'][0]['env']}
+    assert mongoenv['MONGO_INITDB_ROOT_USERNAME']['value'] == 'admin'
     assert env['MONGODB_PASSWORD']['valueFrom']['secretKeyRef']['name'] == 'helivanta-growthbook-mongodb'
     assert env['JWT_SECRET']['valueFrom']['secretKeyRef']['name'] == 'helivanta-growthbook-runtime'
     assert all(doc['apiVersion'] == 'external-secrets.io/v1beta1' for doc in docs if doc['kind'] in ['ExternalSecret', 'SecretStore'])
