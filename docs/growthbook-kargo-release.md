@@ -2,7 +2,7 @@
 
 GrowthBook uses an exact stable version plus immutable image digest. The chart
 refuses floating/prerelease tags and missing or malformed SHA-256 digests. Argo
-`valuesObject.image` is the production override; the inline values must not
+`helm.parameters` for `image.tag` and `image.digest` are the production overrides; the inline values must not
 reintroduce a competing image tag. Default values are pinned for reproducible
 chart rendering, while devtest/pilot retain explicit independently pinned values.
 

@@ -65,12 +65,54 @@ def test_effective_argo_values_preserve_the_release_pin(
         (ROOT / f"argocd/{environment}/infrastructure/growthbook.yaml").read_text()
     )
     helm = app["spec"]["source"]["helm"]
-    inline = tmp_path / "inline.yaml"
-    inline.write_text(helm.get("values", "{}"))
-    objects = tmp_path / "objects.yaml"
-    objects.write_text(yaml.safe_dump(helm.get("valuesObject", {})))
-    result = render("-f", str(inline), "-f", str(objects))
+    values = tmp_path / "effective-values.yaml"
+    effective = (
+        yaml.safe_dump(helm["valuesObject"])
+        if helm.get("valuesObject") is not None
+        else helm.get("values", "{}")
+    )
+    values.write_text(effective)
+    parameters = [
+        argument
+        for parameter in helm.get("parameters", [])
+        for argument in (
+            "--set-string" if parameter.get("forceString") else "--set",
+            f"{parameter['name']}={parameter['value']}",
+        )
+    ]
+    result = render("-f", str(values), *parameters)
     assert result.returncode == 0, result.stderr
+    if environment == "prod":
+        documents = list(yaml.safe_load_all(result.stdout))
+        app_deployment = next(
+            item
+            for item in documents
+            if item
+            and item.get("kind") == "Deployment"
+            and item["metadata"]["name"] == "growthbook"
+        )
+        assert (
+            app_deployment["spec"]["template"]["spec"]["containers"][0]["resources"][
+                "limits"
+            ]["memory"]
+            == "2Gi"
+        )
+        claims = {
+            item["metadata"]["name"]: item["spec"]
+            for item in documents
+            if item and item.get("kind") == "PersistentVolumeClaim"
+        }
+        assert claims["growthbook-mongodb"]["storageClassName"] == "economy-rwo-retain"
+        assert claims["growthbook-uploads"]["storageClassName"] == "economy-rwo"
+        configured = yaml.safe_load(helm["values"])
+        assert (
+            claims["growthbook-mongodb"]["volumeName"]
+            == configured["mongodb"]["persistence"]["volumeName"]
+        )
+        assert (
+            claims["growthbook-uploads"]["volumeName"]
+            == configured["persistence"]["volumeName"]
+        )
     assert re.fullmatch(
         r"growthbook/growthbook:5\.2\.\d+@sha256:[0-9a-f]{64}",
         image_from(result.stdout),
