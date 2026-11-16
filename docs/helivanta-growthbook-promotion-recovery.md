@@ -45,3 +45,10 @@ Kargo could synchronize the chart commit while the live Application retained
 workload overrides retain their previous Kargo ownership. Release validation
 must compare the live Deployment image and ready replica with the promoted
 version/digest, in addition to Kargo and Argo health.
+
+The dedicated stage also pins `source.targetRevision` to the promoted commit.
+The parent ignores only that child's chart revision, preserving Kargo ownership,
+while still reconciling its version/digest parameters from Git. A one-shot Job
+re-promotes the same 5.2.1 Freight after the parent fix to align desired revision
+and live state; no new provider version or access privilege is introduced. This
+prevents unrelated main commits from invalidating a healthy promoted release.

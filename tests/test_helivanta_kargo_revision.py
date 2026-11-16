@@ -52,7 +52,7 @@ def test_parent_keeps_the_revision_kargo_pinned_only_on_promoted_applications():
         (r["group"], r["kind"], r.get("namespace")) == ("argoproj.io", "Application", "argocd")
         for r in rules
     )
-    assert sorted(r.get("name") for r in rules) == sorted(promoted())
+    assert sorted(r.get("name") for r in rules) == sorted(promoted() | {"helivanta-growthbook"})
 
 
 def test_bootstrap_defaults_cannot_restore_floating_charts_or_mixed_images():
