@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: helivanta-growthbook-recovery
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: helivanta
+    app.kubernetes.io/component: recovery
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: infrastructure
+  source:
+    repoURL: https://github.com/tesserix/tesserix-k8s.git
+    targetRevision: HEAD
+    path: charts/infrastructure/helivanta-growthbook-recovery
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [ServerSideApply=true]
