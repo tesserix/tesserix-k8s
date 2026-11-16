@@ -1,5 +1,4 @@
 import { readFile } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
 
 export async function seedHelivanta(request, config) {
   const definitions = await request("GET", "/organization/definitions");
@@ -83,4 +82,4 @@ async function run() {
   finally { await json(bao, baoHeaders, "POST", "/v1/auth/token/revoke-self", {}); }
   console.log(JSON.stringify({ project: result.project, environment: result.environment, flagCount: result.flags, readerStored: true }));
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) run().catch(() => { console.error("Helivanta release provisioning failed; no credentials are logged"); process.exitCode = 1; });
+if (process.argv.includes("--run")) run().catch((error) => { console.error("Helivanta release provisioning failed: " + (error instanceof Error ? error.message : "unknown error")); process.exitCode = 1; });
