@@ -26,3 +26,15 @@ Validation includes rendered scope/mutation assertions, executable recovery
 regressions and Kubernetes server-side dry-run acceptance of the admission policy
 and binding. An accepted policy does not prove deletion; verify both original API
 keys return 404 and the dedicated stage advances before marking recovery complete.
+
+Recovery completed on 2026-11-16: the scoped finalization Job succeeded, both
+original API keys returned NotFound, and the dedicated stage advanced to a valid
+promotion. The recovery chart now defaults to disabled so Argo prunes the policy
+and binding; its opt-in template remains only for reproducible audit tests. Do
+not re-enable it without a separately approved recovery action.
+
+The first resumed promotion exposed Kargo yaml-update scalar-line replacement
+truncating inline Helm parameter mappings. The dedicated Application now uses
+block mappings for both version and digest, with a regression check preserving
+that shape. The malformed generated proposal must be closed and regenerated
+from the corrected main branch before any provider upgrade is merged.

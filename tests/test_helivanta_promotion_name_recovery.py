@@ -5,8 +5,11 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def recovery_resources():
-    result = subprocess.run(['helm', 'template', 'helivanta-growthbook-recovery', 'charts/infrastructure/helivanta-growthbook-recovery', '--namespace', 'argocd'], cwd=ROOT, text=True, capture_output=True, check=True)
+def recovery_resources(enabled=True):
+    command = ['helm', 'template', 'helivanta-growthbook-recovery', 'charts/infrastructure/helivanta-growthbook-recovery', '--namespace', 'argocd']
+    if enabled is not None:
+        command += ['--set', f'enabled={str(enabled).lower()}']
+    result = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=True)
     return [doc for doc in yaml.safe_load_all(result.stdout) if doc]
 
 
@@ -32,3 +35,7 @@ def test_mutation_only_restores_the_existing_immutable_name():
     assert binding['spec']['policyName'] == policy['metadata']['name']
     assert binding['spec']['matchResources']['namespaceSelector']['matchLabels'] == {'kubernetes.io/metadata.name': 'kargo-infra'}
     assert len(docs) == 2
+
+
+def test_completed_recovery_renders_no_admission_exception_by_default():
+    assert recovery_resources(enabled=None) == []
