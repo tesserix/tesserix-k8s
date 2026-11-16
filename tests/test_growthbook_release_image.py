@@ -9,6 +9,17 @@ ROOT = Path(__file__).parents[1]
 CHART = ROOT / "charts/thirdparty/growthbook"
 
 
+def test_only_the_growthbook_promotion_lane_can_update_its_production_application() -> (
+    None
+):
+    app = yaml.safe_load(
+        (ROOT / "argocd/prod/infrastructure/growthbook.yaml").read_text()
+    )
+    assert app["metadata"]["annotations"].get("kargo.akuity.io/authorized-stage") == (
+        "kargo-infra:growthbook-prod"
+    )
+
+
 def render(*arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
