@@ -25,7 +25,7 @@ def revision_ignores(parent):
     return [
         rule
         for rule in parent["spec"]["ignoreDifferences"]
-        if "/spec/source/targetRevision" in rule["jsonPointers"]
+        if "/spec/source/targetRevision" in rule.get("jsonPointers", [])
     ]
 
 
