@@ -38,3 +38,10 @@ truncating inline Helm parameter mappings. The dedicated Application now uses
 block mappings for both version and digest, with a regression check preserving
 that shape. The malformed generated proposal must be closed and regenerated
 from the corrected main branch before any provider upgrade is merged.
+
+The 5.2.1 promotion then exposed the parent's blanket Helm-parameter ignore:
+Kargo could synchronize the chart commit while the live Application retained
+5.2.0 overrides. The ignore now excludes only `helivanta-growthbook`; application
+workload overrides retain their previous Kargo ownership. Release validation
+must compare the live Deployment image and ready replica with the promoted
+version/digest, in addition to Kargo and Argo health.
