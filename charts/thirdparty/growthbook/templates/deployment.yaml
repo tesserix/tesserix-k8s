@@ -33,10 +33,16 @@ spec:
         - name: growthbook
           image: {{ include "growthbook.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.apiOnly }}
+          command: [node, scripts/run-apps.js]
+          args: [start, ecosystem.config.js, --only, back-end]
+          {{- end }}
           ports:
+            {{- if not .Values.apiOnly }}
             - name: app
               containerPort: 3000
               protocol: TCP
+            {{- end }}
             - name: api
               containerPort: 3100
               protocol: TCP

@@ -24,7 +24,7 @@ def test_platform_api_reader_is_exact_read_only_and_namespace_bound():
     assert role["bound_service_account_namespaces"] == ["tesserix"]
     assert role["token_ttl"] == "1h"
     policy = config[f"policy-{name}.hcl"]
-    assert set(re.findall(r'path "kv/data/([^"]+)"', policy)) == PATHS
+    assert set(re.findall(r'path "kv/data/([^"]+)"', policy)) == PATHS | {"helivanta/prod/app/helivanta-growthbook-management"}
     assert "*" not in policy
     for line in policy.splitlines():
         if 'path "kv/data/' in line:

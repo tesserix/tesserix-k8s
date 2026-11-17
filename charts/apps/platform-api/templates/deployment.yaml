@@ -47,7 +47,22 @@ spec:
             - secretRef:
                 name: {{ include "platform-api.fullname" . }}-secrets
           {{- end }}
+          {{- if .Values.featureFlags.enabled }}
+          volumeMounts:
+            - name: helivanta-growthbook
+              mountPath: /var/run/helivanta-growthbook
+              readOnly: true
+          {{- end }}
           env:
+            {{- if .Values.featureFlags.enabled }}
+            - name: HELIVANTA_GROWTHBOOK_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.featureFlags.secretName | quote }}
+                  key: project-id
+            - name: HELIVANTA_GROWTHBOOK_MANAGEMENT_KEY_FILE
+              value: /var/run/helivanta-growthbook/management-key
+            {{- end }}
             {{- range $key, $value := .Values.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}
@@ -227,6 +242,13 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.featureFlags.enabled }}
+      volumes:
+        - name: helivanta-growthbook
+          secret:
+            secretName: {{ .Values.featureFlags.secretName | quote }}
+            defaultMode: 0440
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

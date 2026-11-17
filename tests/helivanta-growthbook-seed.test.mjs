@@ -88,3 +88,17 @@ test("dedicated provider will not adopt a used default project",async()=>{
  await assert.rejects(seedHelivanta(request,{...config,dedicated:true}),/Default project is in use/);
  assert.equal(state.writes.length,0);
 });
+
+test("console ownership preserves reviewed on/off values while rejecting targeting drift", async()=>{
+ const {state,request}=provider();
+ state.projects=[{id:"helivanta-project",name:"Helivanta",publicId:"helivanta"}];state.connections=[];
+ const managed={...config,dedicated:true,consoleManaged:true};
+ await seedHelivanta(request,managed);
+ state.features[0].rules=[];
+ state.features[1].rules=[{id:"console-rule",type:"force",value:"true",allEnvironments:false,environments:["production"],enabled:true}];
+ const count=state.writes.length;
+ await seedHelivanta(request,managed);
+ assert.equal(state.writes.length,count);
+ state.features[1].rules[0].condition='{"tenant":"other"}';
+ await assert.rejects(seedHelivanta(request,managed),/configuration/);
+});
