@@ -84,3 +84,16 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+
+    {{- if .Values.featureFlags.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: helivanta-growthbook}
+          podSelector:
+            matchLabels: {app.kubernetes.io/instance: helivanta-growthbook, app.kubernetes.io/name: growthbook}
+      ports: [{port: 3100, protocol: TCP}]
+    # The canonical released catalogue is fetched over HTTPS from GitHub.
+    - to:
+        - ipBlock: {cidr: 0.0.0.0/0}
+      ports: [{port: 443, protocol: TCP}]
+    {{- end }}

@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
+import { ensureManagement } from "./helivanta-management.mjs";
 
 export async function seedHelivanta(request, config) {
+  if (config.consoleManaged && !config.dedicated) throw new Error("Console ownership requires a dedicated provider");
   const definitions = await request("GET", "/organization/definitions");
   const matches = definitions.projects.filter((p) => p.publicId === "helivanta" || p.name === "Helivanta");
   if (matches.length > 1) throw new Error("Ambiguous Helivanta project");
@@ -30,10 +32,12 @@ export async function seedHelivanta(request, config) {
     const rules = enabled ? [{ id: "", type: "force", value: "true", description: "Helivanta foundation release", allEnvironments: false, environments: [env], enabled: true }] : [];
     if (current) {
       const settings = current.environmentSettings?.[env];
-      if (current.project !== project.id || current.valueType !== "boolean" || current.defaultValue !== "false" || !settings?.enabled ||
-          (enabled ? current.rules?.length !== 1 || current.rules[0].type !== "force" || current.rules[0].value !== "true" || current.rules[0].allEnvironments !== false || current.rules[0].environments?.length !== 1 || current.rules[0].environments[0] !== env || current.rules[0].enabled === false : !!current.rules?.length)) {
-        throw new Error("Existing Helivanta feature differs; reviewed configuration change required");
-      }
+      const controlledRules = (current.rules ?? []).length <= 1 && (current.rules ?? []).every((rule) =>
+        rule.type === "force" && ["true", "false"].includes(rule.value) && rule.allEnvironments === false &&
+        rule.environments?.length === 1 && rule.environments[0] === env && rule.enabled !== false &&
+        !rule.condition && !rule.prerequisites?.length && !rule.coverage && !rule.range && !rule.namespace);
+      const expectedRules = enabled ? current.rules?.length === 1 && current.rules[0].value === "true" : !current.rules?.length;
+      if (current.project !== project.id || current.archived || current.valueType !== "boolean" || current.defaultValue !== "false" || settings?.enabled !== true || !controlledRules || (!config.consoleManaged && !expectedRules)) throw new Error("Existing Helivanta feature differs; reviewed configuration change required");
       continue;
     }
     await request("POST", "/feature", {
