@@ -1,0 +1,17 @@
+{{- if .Values.helivantaFeatureCatalogue.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: helivanta-feature-catalogue
+  namespace: helivanta-growthbook
+  labels:
+    app.kubernetes.io/part-of: helivanta
+    app.kubernetes.io/component: feature-catalogue
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+data:
+  catalogue.json: |
+    {{- .Values.helivantaFeatureCatalogue.catalogue | toPrettyJson | nindent 4 }}
+  schema.json: |
+    {{- .Files.Get "files/helivanta-catalogue.schema.json" | nindent 4 }}
+{{- end }}
