@@ -1,0 +1,65 @@
+name: Helivanta catalogue provider contract
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - charts/apps/onboarding-service/files/helivanta-catalogue.schema.json
+      - charts/thirdparty/growthbook/**
+      - argocd/prod/apps/helivanta/helivanta-growthbook.yaml
+      - tests/integration/helivanta-catalogue.mjs
+      - .github/workflows/helivanta-catalogue-contract.yaml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: helivanta-catalogue-contract-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Resolve the declared production image pins
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import re
+          from pathlib import Path
+          import yaml
+          app = yaml.safe_load(Path('argocd/prod/apps/helivanta/helivanta-growthbook.yaml').read_text())
+          parameters = {row['name']: row['value'] for row in app['spec']['source']['helm']['parameters']}
+          tag, digest = parameters['image.tag'], parameters['image.digest']
+          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', tag)
+          assert re.fullmatch(r'sha256:[a-f0-9]{64}', digest)
+          mongo = yaml.safe_load(app['spec']['source']['helm']['values'])['mongodb']['image']['tag']
+          assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+@sha256:[a-f0-9]{64}', mongo)
+          print(f'GB_TEST_IMAGE=growthbook/growthbook:{tag}@{digest}')
+          print(f'MONGO_TEST_IMAGE=mongo:{mongo}')
+          PY
+      - name: Start disposable provider fixtures in hosted CI
+        run: |
+          docker network create helivanta-catalogue-contract
+          docker run -d --name catalogue-mongodb --network helivanta-catalogue-contract --network-alias mongodb "$MONGO_TEST_IMAGE"
+          GB_TEST_JWT=$(openssl rand -hex 32)
+          GB_TEST_ENCRYPTION=$(openssl rand -hex 32)
+          docker run -d --name catalogue-provider --network helivanta-catalogue-contract -p 3100:3100 \
+            -e MONGODB_URI=mongodb://mongodb:27017/growthbook -e AUTH_TYPE=local \
+            -e JWT_SECRET="$GB_TEST_JWT" -e ENCRYPTION_KEY="$GB_TEST_ENCRYPTION" \
+            -e APP_ORIGIN=http://localhost:3000 -e API_HOST=http://localhost:3100 \
+            -e ALLOW_SELF_ORG_CREATION=true -e IS_MULTI_ORG=false -e IS_CLOUD=false \
+            -e ALLOW_UNAUTHENTICATED_API=false -e DISABLE_TELEMETRY=true \
+            "$GB_TEST_IMAGE" node scripts/run-apps.js start ecosystem.config.js --only back-end
+      - name: Verify create, replay, console ownership and SDK convergence
+        run: node tests/integration/helivanta-catalogue.mjs
+      - name: Remove disposable fixtures
+        if: always()
+        run: |
+          docker rm -f catalogue-provider catalogue-mongodb || true
+          docker network rm helivanta-catalogue-contract || true
