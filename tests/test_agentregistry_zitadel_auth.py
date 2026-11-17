@@ -301,6 +301,14 @@ class AgentRegistryZitadelAuthTests(unittest.TestCase):
                 continue
 
             declared_roles = {role["key"] for role in project.get("roles", [])}
+            if project["name"] == "platform-console":
+                # Release controls require an explicitly approved operator grant.
+                # Instance administration is not permission to publish all flags.
+                self.assertEqual(declared_roles, {"manage-feature-flags"})
+                self.assertEqual(project.get("humanGrants", []), [])
+                self.assertEqual(project.get("machineGrants", []), [])
+                continue
+
             grants = {
                 grant["login"]: set(grant["roles"])
                 for grant in project.get("humanGrants", [])
