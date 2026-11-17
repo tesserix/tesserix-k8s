@@ -103,8 +103,11 @@ async function run() {
   const jwt = (await readFile("/var/run/bao/token", "utf8")).trim();
   const login = await json(bao, {}, "POST", "/v1/auth/kubernetes/login", { role: "helivanta-growthbook-writer", jwt });
   const baoHeaders = { "X-Vault-Token": login.auth.client_token };
-  try { await persistReader((...args) => json(bao, baoHeaders, ...args), result.key); }
+  try {
+    await persistReader((...args) => json(bao, baoHeaders, ...args), result.key);
+    if (config.consoleManaged) await ensureManagement((...args) => json(base, headers, ...args), (...args) => json(bao, baoHeaders, ...args), result.project);
+  }
   finally { await json(bao, baoHeaders, "POST", "/v1/auth/token/revoke-self", {}); }
-  console.log(JSON.stringify({ project: result.project, environment: result.environment, flagCount: result.flags, readerStored: true }));
+  console.log(JSON.stringify({ project: result.project, environment: result.environment, flagCount: result.flags, readerStored: true, managementStored: config.consoleManaged === true }));
 }
 if (process.argv.includes("--run")) run().catch((error) => { console.error("Helivanta release provisioning failed: " + (error instanceof Error ? error.message : "unknown error")); process.exitCode = 1; });
