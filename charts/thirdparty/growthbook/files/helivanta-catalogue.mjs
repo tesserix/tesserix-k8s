@@ -9,9 +9,9 @@ function validate(value, schema) {
   if (schema.enum && !schema.enum.includes(value)) throw new Error('Catalogue enumeration mismatch');
   if (schema.type === 'object') {
     if (!value || Array.isArray(value) || typeof value !== 'object') throw new Error('Catalogue object required');
-    for (const name of schema.required ?? []) if (!(name in value)) throw new Error('Catalogue field missing');
+    for (const name of schema.required ?? []) if (!Object.hasOwn(value, name)) throw new Error('Catalogue field missing');
     for (const [name, child] of Object.entries(value)) {
-      if (!schema.properties?.[name]) { if (schema.additionalProperties === false) throw new Error('Unknown catalogue field'); }
+      if (!Object.hasOwn(schema.properties ?? {}, name)) { if (schema.additionalProperties === false) throw new Error('Unknown catalogue field'); }
       else validate(child, schema.properties[name]);
     }
   } else if (schema.type === 'array') {

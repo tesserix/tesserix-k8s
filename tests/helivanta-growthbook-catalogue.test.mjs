@@ -5,7 +5,7 @@ import { validateCatalogue, reconcileCatalogue } from '../charts/thirdparty/grow
 const schema = JSON.parse(await readFile(new URL('../charts/apps/onboarding-service/values.schema.json',import.meta.url))).properties.helivantaFeatureCatalogue.properties.catalogue;
 const catalogue = {version:1,policy_version:'r1',capabilities:[{key:'team_accounts',owner:'platform',eligible:true,dependencies:[]}]};
 test('rejects malformed and unreviewed catalogues before provider calls',async()=>{
- for(const bad of [ {...catalogue,unknown:true}, {...catalogue,capabilities:[{...catalogue.capabilities[0],key:'bad-key'}]}, {...catalogue,capabilities:[...catalogue.capabilities,...catalogue.capabilities]}, {...catalogue,capabilities:[{...catalogue.capabilities[0],dependencies:['missing']}]}, {...catalogue,capabilities:[{...catalogue.capabilities[0],dependencies:['team_accounts']}]} ]) {
+ for(const bad of [ {...catalogue,constructor:{}}, {...catalogue,toString:"unexpected"}, {...catalogue,unknown:true}, {...catalogue,capabilities:[{...catalogue.capabilities[0],key:'bad-key'}]}, {...catalogue,capabilities:[...catalogue.capabilities,...catalogue.capabilities]}, {...catalogue,capabilities:[{...catalogue.capabilities[0],dependencies:['missing']}]}, {...catalogue,capabilities:[{...catalogue.capabilities[0],dependencies:['team_accounts']}]} ]) {
   assert.throws(()=>validateCatalogue(bad,schema));
  }
  let calls=0;
