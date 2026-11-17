@@ -63,3 +63,20 @@ Acceptance requires schema negative tests, actual Helm rendering, replay and
 partial-failure tests, provider creation tests, UI creation tests, local builds,
 hosted provider integration, deployment health and browser verification. Test code
 or a rendered CronJob alone does not establish production acceptance.
+
+
+## Existing console acceptance and API-only cutover
+
+The deployed console authenticated the authorized platform owner, listed all 22
+flags and exercised Pharmacy staff disable and restoration through the durable
+journal. Commands `7e49d731-3cd5-4566-9d38-1eafb3859a55` and
+`6dd90685-30d5-4595-8fdb-7b801ac25495` succeeded with provider revisions 2 and 3;
+the SDK changed from six enabled flags to five and back to six. The original
+provider state was restored. These checks authorize the previously approved
+API-only cutover; they do not claim browser acceptance of new catalogue creation
+or authenticated Helivanta tenant API gating.
+
+The production intent now enables `apiOnly`, retaining the provider backend,
+MongoDB and PVCs. The new catalogue CronJob remains disabled pending ordered
+compatibility deployment and activation. No live flag deletion or value reset is
+part of this change.

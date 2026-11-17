@@ -31,11 +31,11 @@ def test_api_only_mode_keeps_provider_and_database():
     assert "helivanta-management.mjs" in config["data"]
 
 
-def test_live_intent_keeps_ui_until_acceptance_and_mounts_separate_credentials():
+def test_live_intent_uses_api_only_after_console_acceptance_and_separate_credentials():
     app = yaml.safe_load((ROOT / "argocd/prod/apps/helivanta/helivanta-growthbook.yaml").read_text())
     values = yaml.safe_load(app["spec"]["source"]["helm"]["values"])
     assert values["helivantaRelease"]["consoleManaged"] is True
-    assert values.get("apiOnly", False) is False
+    assert values.get("apiOnly", False) is True
     values = yaml.safe_load((ROOT / "charts/apps/platform-api/values-prod.yaml").read_text())
     assert values["featureFlags"] == {"enabled": True, "secretName": "platform-api-helivanta-growthbook"}
     secrets = list(yaml.safe_load_all((ROOT / "external-secrets/prod/tesserix/externalsecret.yaml").read_text()))
