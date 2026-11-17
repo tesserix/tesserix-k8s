@@ -80,3 +80,40 @@ The production intent now enables `apiOnly`, retaining the provider backend,
 MongoDB and PVCs. The new catalogue CronJob remains disabled pending ordered
 compatibility deployment and activation. No live flag deletion or value reset is
 part of this change.
+
+## Adding a future control
+
+1. Add the capability and dependencies to Helivanta's canonical
+   `contracts/release-capabilities.json`. Classify the API routes, pages and panels
+   in that contract and implement their behavior. Keep `eligible: false` until the
+   release tests and review are complete. Run Helivanta's canonical generators and
+   checks; a provider flag alone cannot create an application feature.
+2. Project the reviewed catalogue into the onboarding chart from the infrastructure
+   checkout:
+
+   ```sh
+   python3 scripts/sync-helivanta-feature-catalogue.py ../helivanta/contracts/release-capabilities.json
+   python3 scripts/sync-helivanta-feature-catalogue.py ../helivanta/contracts/release-capabilities.json --check
+   ```
+
+   The generated Helm values contain the full definition list; the same canonical
+   JSON schema validates both Helm input and the mounted runtime catalogue. Current
+   product owners are `platform`, `workforce` and `pharmacy`.
+3. Deploy the reviewed application release and Helm catalogue through GitOps/Kargo.
+   The reconciler refuses a catalogue that differs from the published release
+   contract. Once they match, its next five-minute run creates absent definitions
+   disabled. A failed dependency or lost response can be retried on the next run;
+   existing settings and completed creates are retained.
+4. Alternatively, an authorized operator opens **Platform → Feature flags →
+   Helivanta** in `console.tesserix.app`. Missing reviewed definitions appear as
+   **Not provisioned** with **Create disabled flag**. Confirm a reason to provision
+   one immediately using the durable command journal. When all definitions already
+   exist, that creation action is absent. The console does not accept arbitrary
+   keys outside the reviewed application catalogue.
+5. Enabling is a separate console command. Compiled eligibility and dependencies
+   must permit it; user identity, tenant isolation and business permissions remain
+   independently enforced by Helivanta. Disabling a prerequisite preserves its
+   dependents' desired values and changes their effective availability.
+
+Removing a Helm entry does not delete a flag. Retirement needs an explicit review
+of application references and old replicas before any separately approved deletion.
