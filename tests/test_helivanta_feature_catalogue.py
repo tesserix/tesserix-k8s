@@ -36,3 +36,11 @@ class CatalogueChartTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+def test_activation_intent_enables_only_the_dedicated_catalogue_reconciler():
+    app = yaml.safe_load((ROOT / 'argocd/prod/apps/helivanta/helivanta-growthbook.yaml').read_text())
+    values = yaml.safe_load(app['spec']['source']['helm']['values'])
+    assert values.get('helivantaCatalogue', {}).get('enabled') is True
+    assert values['helivantaDedicated']['enabled'] is True
+    assert values['helivantaRelease']['consoleManaged'] is True
+    assert values['apiOnly'] is True
