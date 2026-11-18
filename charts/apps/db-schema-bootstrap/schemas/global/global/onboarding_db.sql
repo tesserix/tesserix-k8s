@@ -773,6 +773,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS staff_mfa_recovery_account_fence ON staff_mfa_
     WHERE state IN ('prepared','processing','awaiting_enrollment','unconfirmed');
 CREATE INDEX IF NOT EXISTS staff_mfa_recovery_latest_generation ON staff_mfa_recovery_commands(org_id,target_subject,generation DESC)
     WHERE state<>'cancelled';
+CREATE UNIQUE INDEX IF NOT EXISTS staff_mfa_recovery_subject_fence ON staff_mfa_recovery_commands(target_subject)
+    WHERE state IN ('prepared','processing','awaiting_enrollment','unconfirmed');
+CREATE INDEX IF NOT EXISTS staff_mfa_recovery_subject_generation ON staff_mfa_recovery_commands(target_subject,generation DESC)
+    WHERE state<>'cancelled';
 CREATE INDEX IF NOT EXISTS staff_mfa_recovery_product_scope ON staff_mfa_recovery_commands(product_key,org_id);
 
 CREATE OR REPLACE FUNCTION guard_staff_mfa_recovery_command() RETURNS trigger LANGUAGE plpgsql AS $$

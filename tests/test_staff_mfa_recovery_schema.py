@@ -5,6 +5,11 @@ SCHEMA = pathlib.Path(__file__).resolve().parents[1] / "charts/apps/db-schema-bo
 
 
 class StaffMFARecoverySchema(unittest.TestCase):
+    def test_one_physical_subject_has_one_open_recovery_and_indexed_admission(self):
+        text = SCHEMA.read_text()
+        self.assertIn("CREATE UNIQUE INDEX IF NOT EXISTS staff_mfa_recovery_subject_fence ON staff_mfa_recovery_commands(target_subject)\n    WHERE state IN ('prepared','processing','awaiting_enrollment','unconfirmed')", text)
+        self.assertIn("CREATE INDEX IF NOT EXISTS staff_mfa_recovery_subject_generation ON staff_mfa_recovery_commands(target_subject,generation DESC)\n    WHERE state<>'cancelled'", text)
+
     def test_staff_reset_retains_exact_source_and_precise_native_evidence(self):
         text = SCHEMA.read_text()
         start = text.find("CREATE TABLE IF NOT EXISTS staff_mfa_recovery_commands (")
