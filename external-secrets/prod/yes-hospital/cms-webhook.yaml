@@ -1,0 +1,22 @@
+# CMS_WEBHOOK_SECRET for the site's POST /api/revalidate, which tesserix-cms
+# calls on publish. Same OpenBao value the CMS sends (external-secrets/prod/cms),
+# read via the yes-hospital reader in tesserix-cms-openbao-readers.yaml.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: yes-hospital-cms
+  namespace: yes-hospital
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-tesserix-cms-production
+    kind: SecretStore
+  target:
+    name: yes-hospital-cms
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    - secretKey: CMS_WEBHOOK_SECRET
+      remoteRef:
+        key: tesserix-cms/app/tesserix-cms-yes-hospital-webhook-secret
+        property: value
