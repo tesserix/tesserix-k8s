@@ -29,9 +29,16 @@ class PasswordRecoverySchema(unittest.TestCase):
         start = text.find('CREATE TABLE IF NOT EXISTS password_recovery_commands (')
         self.assertGreaterEqual(start, 0)
         table = text[start:text.index('\n);', start)]
-        for clause in ['challenge_id UUID NOT NULL', 'tenant_id UUID NOT NULL', 'subject TEXT NOT NULL', 'native_changed_at TIMESTAMPTZ', "'processing','applied','completed','refused','unconfirmed'", 'password_recovery_delivery_ids(id) ON DELETE RESTRICT']:
+        for clause in ['challenge_id UUID NOT NULL', 'tenant_id UUID NOT NULL', 'subject TEXT NOT NULL', 'native_changed_at TIMESTAMPTZ', "'prepared','processing','applied','completed','refused','unconfirmed','cancelled'", 'password_recovery_delivery_ids(id) ON DELETE RESTRICT']:
             self.assertIn(clause, table)
         self.assertIn('password_recovery_account_fence', text)
-        self.assertIn("WHERE state IN ('processing','applied','unconfirmed')", text)
+        self.assertIn("WHERE state IN ('prepared','processing','applied','unconfirmed')", text)
         self.assertIn('guard_password_recovery_command', text)
         self.assertIn('REVOKE DELETE, TRUNCATE ON password_recovery_commands FROM onboarding', text)
+
+    def test_preparation_and_cancellation_fence_late_password_requests(self):
+        text = SCHEMA.read_text()
+        self.assertIn("DEFAULT 'prepared'", text)
+        self.assertIn("WHERE state IN ('prepared','processing','applied','unconfirmed')", text)
+        self.assertIn("OLD.state='prepared' AND NEW.state IN ('processing','cancelled')", text)
+        self.assertIn("'prepared','processing','applied','completed','refused','unconfirmed','cancelled'", text)

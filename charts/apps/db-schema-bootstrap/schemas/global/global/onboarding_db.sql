@@ -689,7 +689,7 @@ CREATE TABLE IF NOT EXISTS password_recovery_commands (
     tenant_id UUID NOT NULL CHECK (tenant_id <> '00000000-0000-0000-0000-000000000000'::uuid),
     subject TEXT NOT NULL CHECK (subject ~ '^[A-Za-z0-9_-]{1,200}$'),
     baseline_changed_at TIMESTAMPTZ,
-    state TEXT NOT NULL DEFAULT 'processing' CHECK (state IN ('processing','applied','completed','refused','unconfirmed')),
+    state TEXT NOT NULL DEFAULT 'prepared' CHECK (state IN ('prepared','processing','applied','completed','refused','unconfirmed','cancelled')),
     native_sequence TEXT,
     native_changed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
@@ -698,7 +698,7 @@ CREATE TABLE IF NOT EXISTS password_recovery_commands (
     CHECK ((state IN ('applied','completed') AND native_sequence IS NOT NULL AND native_sequence ~ '^[1-9][0-9]{0,19}$' AND native_sequence::numeric <= 18446744073709551615 AND native_changed_at IS NOT NULL AND native_changed_at > '1970-01-01'::timestamptz AND (baseline_changed_at IS NULL OR native_changed_at > baseline_changed_at))
         OR (state NOT IN ('applied','completed') AND native_sequence IS NULL AND native_changed_at IS NULL))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS password_recovery_account_fence ON password_recovery_commands(tenant_id,subject) WHERE state IN ('processing','applied','unconfirmed');
+CREATE UNIQUE INDEX IF NOT EXISTS password_recovery_account_fence ON password_recovery_commands(tenant_id,subject) WHERE state IN ('prepared','processing','applied','unconfirmed');
 CREATE INDEX IF NOT EXISTS password_recovery_command_attempts ON password_recovery_commands(challenge_id,created_at);
 CREATE INDEX IF NOT EXISTS password_recovery_command_cutoff ON password_recovery_commands(tenant_id,subject,native_changed_at) WHERE state='completed';
 
@@ -707,7 +707,8 @@ BEGIN
     IF (NEW.id,NEW.challenge_id,NEW.tenant_id,NEW.subject,NEW.baseline_changed_at,NEW.created_at)
         IS DISTINCT FROM (OLD.id,OLD.challenge_id,OLD.tenant_id,OLD.subject,OLD.baseline_changed_at,OLD.created_at)
        OR NEW.updated_at < OLD.updated_at
-       OR NOT ((OLD.state='processing' AND NEW.state IN ('applied','refused','unconfirmed'))
+       OR NOT ((OLD.state='prepared' AND NEW.state IN ('processing','cancelled'))
+           OR (OLD.state='processing' AND NEW.state IN ('applied','refused','unconfirmed'))
            OR (OLD.state='applied' AND NEW.state='completed'))
        OR (OLD.state='applied' AND (NEW.native_sequence,NEW.native_changed_at) IS DISTINCT FROM (OLD.native_sequence,OLD.native_changed_at)) THEN
         RAISE EXCEPTION 'password recovery command transition refused' USING ERRCODE='23514';
