@@ -632,8 +632,15 @@ GRANT UPDATE (accepted_at, provider_id, consumed_at, proof_attempts, proof_uncer
 REVOKE DELETE, TRUNCATE ON staff_identity_invitation_attempts FROM onboarding;
 
 -- Returning-account mailbox proof is never a signup or account-discovery capability.
-CREATE TABLE IF NOT EXISTS password_recovery_challenges (
+CREATE TABLE IF NOT EXISTS password_recovery_delivery_ids (
     id UUID PRIMARY KEY CHECK (substring(id::text,15,1) = '7'),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+GRANT SELECT, INSERT ON password_recovery_delivery_ids TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON password_recovery_delivery_ids FROM onboarding;
+
+CREATE TABLE IF NOT EXISTS password_recovery_challenges (
+    id UUID PRIMARY KEY REFERENCES password_recovery_delivery_ids(id) ON DELETE RESTRICT CHECK (substring(id::text,15,1) = '7'),
     tenant_id UUID NOT NULL CHECK (tenant_id <> '00000000-0000-0000-0000-000000000000'::uuid),
     browser_hash BYTEA NOT NULL CHECK (octet_length(browser_hash) = 32),
     source_hash BYTEA NOT NULL CHECK (octet_length(source_hash) = 32),

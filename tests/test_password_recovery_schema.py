@@ -17,3 +17,9 @@ class PasswordRecoverySchema(unittest.TestCase):
         self.assertIn('guard_password_recovery_challenge', text)
         self.assertIn('GRANT UPDATE (attempts, verified_at, delivery_outcome, updated_at) ON password_recovery_challenges TO onboarding', text)
         self.assertNotIn('customer_signups, account_discovery_challenges, password_recovery_challenges', text)
+
+    def test_cleanup_retains_non_reusable_command_tombstones(self):
+        text = SCHEMA.read_text()
+        self.assertIn('CREATE TABLE IF NOT EXISTS password_recovery_delivery_ids', text)
+        self.assertIn('REFERENCES password_recovery_delivery_ids(id) ON DELETE RESTRICT', text)
+        self.assertIn('REVOKE UPDATE, DELETE, TRUNCATE ON password_recovery_delivery_ids FROM onboarding', text)
