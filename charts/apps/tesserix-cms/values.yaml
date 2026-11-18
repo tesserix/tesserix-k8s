@@ -1,0 +1,94 @@
+# Default values for tesserix-cms (cms.tesserix.app). Copied from yes-hospital.
+# One replica: Payload's admin is low-traffic, and media lives in GCS, so a
+# second replica buys nothing yet. No HPA.
+replicaCount: 1
+
+image:
+  # In-region Artifact Registry mirror of ghcr.io/tesserix/tesserix-cms (see
+  # docs/artifact-registry-mirror.md); the node SA pulls it, no pull secret.
+  # The tag is pinned in argocd/prod/apps/global/tesserix-cms.yaml.
+  repository: asia-south1-docker.pkg.dev/tesseracthub-480811/ghcr-remote/tesserix/tesserix-cms
+  pullPolicy: IfNotPresent
+  tag: ""
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  # Payload never calls the Kubernetes API.
+  automount: false
+  annotations:
+    # GCS media uploads via Workload Identity (ADC, no key file). GSA and its
+    # objectAdmin binding on the bucket live in terraform-new (06-workload-identity).
+    iam.gke.io/gcp-service-account: tesserix-cms-prod-sa@tesseracthub-480811.iam.gserviceaccount.com
+  # Must stay tesserix-cms: the GSA's Workload Identity binding names cms/tesserix-cms.
+  name: tesserix-cms
+
+podSecurityContext:
+  fsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1001
+  runAsGroup: 1001
+  capabilities:
+    drop:
+      - ALL
+  # Writable paths are the emptyDirs below.
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+host: cms.tesserix.app
+
+resources:
+  requests:
+    memory: 512Mi
+  limits:
+    memory: 1Gi
+
+# GET /api/users/me answers {"user":null} without a token or a database round
+# trip, so a slow database never restarts the pod.
+probePath: /api/users/me
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Plain env. Secrets (DATABASE_URL, PAYLOAD_SECRET, RESEND_API_KEY) come from
+# the `tesserix-cms` Secret rendered by external-secrets/prod/cms/.
+env:
+  NODE_ENV: production
+  NEXT_TELEMETRY_DISABLED: "1"
+  PORT: "3000"
+  HOSTNAME: "0.0.0.0"
+  PAYLOAD_PUBLIC_SERVER_URL: https://cms.tesserix.app
+  GCS_BUCKET: tesserix-cms-media-prod-in
+  EMAIL_FROM: cms@tesserix.app
+
+# Secret holding the runtime keys; owned by external-secrets/prod/cms/.
+secretName: tesserix-cms
+
+# Applies src/migrations before every sync (PreSync hook).
+migrations:
+  enabled: true
+
+# One-off Jobs, off by default (templates/manual-jobs.yaml says how to run one).
+jobs:
+  createSuperAdmin:
+    enabled: false
+    # SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD, rendered from OpenBao by
+    # external-secrets/prod/cms/super-admin.yaml.
+    secretName: tesserix-cms-super-admin
+  seedYesHospital:
+    enabled: false
+    # The YES Hospital site's PUBLIC revalidate URL (https://...). cms -> yes-hospital
+    # in-cluster egress is not allowed by allow-cms-egress; Task 10 decides.
+    revalidateUrl: ""

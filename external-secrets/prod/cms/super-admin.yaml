@@ -1,0 +1,31 @@
+# First super-admin for tesserix-cms, read only by the one-off
+# create-super-admin Job (charts/apps/tesserix-cms/templates/manual-jobs.yaml).
+# Kept apart from `tesserix-cms` so the server never sees it and a missing
+# value here cannot block the app's own Secret.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: tesserix-cms-super-admin
+  namespace: cms
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-tesserix-cms-production
+    kind: SecretStore
+  target:
+    name: tesserix-cms-super-admin
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        SUPER_ADMIN_EMAIL: "{{ .email }}"
+        SUPER_ADMIN_PASSWORD: "{{ .password }}"
+  data:
+    - secretKey: email
+      remoteRef:
+        key: tesserix-cms/app/tesserix-cms-super-admin-email
+        property: value
+    - secretKey: password
+      remoteRef:
+        key: tesserix-cms/app/tesserix-cms-super-admin-password
+        property: value

@@ -469,6 +469,50 @@ spec:
 {{- end }}
 
 # =============================================================================
+# CMS Namespace Policies (tesserix-cms, cms.tesserix.app)
+# Ambient: the gateway arrives over HBONE (15008), which default-deny-ingress drops without this.
+# yes-hospital is not in the mesh and reads the CMS API in-cluster over plain HTTP.
+# =============================================================================
+{{- if .Values.appNamespaces.cms }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cms-ingress
+  namespace: {{ .Values.appNamespaces.cms }}
+  labels:
+    {{- include "istio-config.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.appNamespaces.cms }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: yes-hospital
+      ports:
+        - protocol: TCP
+          port: 3000
+{{- end }}
+
+# =============================================================================
 # GameVerse Namespace Policies
 # Allow from ingress, global, monitoring
 # =============================================================================
