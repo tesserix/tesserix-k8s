@@ -1863,6 +1863,40 @@ buckets = [
   },
 
   # ===========================================================================
+  # TESSERIX CMS - central Payload CMS media (cms.tesserix.app)
+  # ===========================================================================
+  # Public-read images for every tenant site (doctor portraits, banners).
+  # Uploads come only from the tesserix-cms server through Workload Identity
+  # (tesserix-cms-prod-sa, objectAdmin on this bucket only). Payload serves the
+  # object URLs directly, so objects are world-readable via uniform access; no
+  # per-object ACLs. legacyObjectReader, not objectViewer: get only, no list,
+  # so media uploaded for unapproved drafts cannot be discovered by listing.
+  {
+    name                        = "tesserix-cms-media-prod-in"
+    location                    = "asia-south1"
+    storage_class               = "STANDARD"
+    force_destroy               = false
+    uniform_bucket_level_access = true
+    public_access_prevention    = "inherited" # Allow public object reads via IAM
+    versioning                  = false
+    labels = {
+      purpose    = "cms-public-media"
+      product    = "tesserix-cms"
+      region     = "in"
+      compliance = "dpdpa"
+      visibility = "public"
+    }
+    lifecycle_rules = []
+    cors            = []
+    iam_bindings = [
+      {
+        role   = "roles/storage.legacyObjectReader"
+        member = "allUsers"
+      }
+    ]
+  },
+
+  # ===========================================================================
   # SUPPORT-PLATFORM (Otto) — Conversation Exports for LoRA Training
   # ===========================================================================
   # Nightly CronJob in support-platform namespace dumps closed Otto
@@ -3334,6 +3368,31 @@ service_accounts = [
       {
         bucket = "tesseract-prod-assets-au"
         role   = "roles/storage.legacyBucketReader"
+      }
+    ]
+    secret_bindings = []
+  },
+
+  # ===========================================================================
+  # TESSERIX CMS - central Payload CMS (cms namespace)
+  # ===========================================================================
+  # GCS media uploads only. No project roles: secrets come from OpenBao.
+  {
+    name               = "tesserix-cms-prod-sa"
+    self_token_creator = false
+    display_name       = "Tesserix CMS"
+    description        = "tesserix-cms media uploads to tesserix-cms-media-prod-in"
+    project_roles      = []
+    workload_identity_bindings = [
+      {
+        namespace                  = "cms"
+        kubernetes_service_account = "tesserix-cms"
+      }
+    ]
+    bucket_bindings = [
+      {
+        bucket = "tesserix-cms-media-prod-in"
+        role   = "roles/storage.objectAdmin"
       }
     ]
     secret_bindings = []
