@@ -81,6 +81,15 @@ bootstrap:
     - "CREATE DATABASE document_intelligence_roamie_prod_db OWNER global"
     - "CREATE ROLE document_intelligence_homechef_prod LOGIN"
     - "CREATE DATABASE document_intelligence_homechef_prod_db OWNER global"
+    # cms_db (tesserix-cms, cms.tesserix.app — central multi-tenant Payload
+    # CMS). Same shape as kora_db: a distinct owner role (not "global") so the
+    # app's own credentials are scoped to its one database, LOGIN only — no
+    # CREATEDB/CREATEROLE/SUPERUSER (docs/cross-db-admin.md). Payload's
+    # migrations create its tables, so the role must own the database. This
+    # line only makes a rebuild reproduce it; on the running cluster the role
+    # comes from managedRoles and the database from `databases` below.
+    - "CREATE ROLE cms LOGIN"
+    - "CREATE DATABASE cms_db OWNER cms"
   # Runs once against template1 at cluster creation; every database
   # subsequently CREATEd (including from postInitSQL above) inherits
   # whatever is installed here via Postgres's normal template-copy
@@ -156,6 +165,14 @@ managedRoles:
   - name: document_intelligence_homechef_prod
     passwordSecret: global-postgres-document-intelligence-homechef-prod
     comment: homechef prod document intelligence runtime writer
+  - name: cms
+    passwordSecret: global-postgres-cms  # ggignore: Secret name, not a value
+    comment: tesserix-cms (Payload) owner of cms_db
+    # Secret created by ExternalSecret "global-postgres-cms" in
+    # external-secrets/prod/global/, from OpenBao
+    # tesserix-cms/app/tesserix-cms-db-password. The app's DATABASE_URL
+    # (external-secrets/prod/cms/) is built from the same value, so unlike
+    # kora there is no second copy to keep in step.
 
 # PostgreSQL tuning
 postgresql:
@@ -251,6 +268,8 @@ databases:
     owner: global
   - name: document_intelligence_homechef_prod_db
     owner: global
+  - name: cms_db
+    owner: cms
 
   # Retired public OCR sandbox; remove once CNPG reports the databases dropped.
   - name: ocr_public_core_db

@@ -1,0 +1,24 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: {{ include "tesserix-cms.fullname" . }}-vs
+  labels:
+    {{- include "tesserix-cms.labels" . | nindent 4 }}
+spec:
+  gateways:
+  - istio-ingress/tesseract-gateway
+  hosts:
+  - {{ .Values.host }}
+  http:
+  - route:
+    - destination:
+        host: {{ include "tesserix-cms.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+        port:
+          number: {{ .Values.service.port }}
+    # The CMS is an editing tool, not a site: keep it and its API out of search.
+    headers:
+      response:
+        set:
+          X-Robots-Tag: noindex
+    # Media uploads go through the server to GCS.
+    timeout: 60s

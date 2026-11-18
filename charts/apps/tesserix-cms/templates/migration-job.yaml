@@ -1,0 +1,24 @@
+{{- if .Values.migrations.enabled }}
+# Applies Payload's committed migrations before the new pods roll out. Runs as
+# the namespace default SA: PreSync fires before this chart's own
+# ServiceAccount exists on a first sync, and migrations need no GCS access.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "tesserix-cms.fullname" . }}-migrate
+  labels:
+    {{- include "tesserix-cms.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "tesserix-cms.name" . }}-migrate
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      {{- include "tesserix-cms.jobPod" (dict "root" . "name" "migrate" "script" "migrate") | nindent 6 }}
+{{- end }}

@@ -1,0 +1,65 @@
+{{- /*
+One-off Jobs, off by default. To run one, set its `enabled` in the ArgoCD app
+(argocd/prod/apps/global/tesserix-cms.yaml) through a PR, let it complete, then
+remove the setting in a follow-up PR so the Job is pruned. A Job's pod template
+is immutable, so leaving one enabled breaks the next image bump.
+No ttlSecondsAfterFinished and not a hook, on purpose: a completed Job stays in
+place and matches git, so self-heal has nothing to recreate and the Job cannot
+run a second time by itself. (A TTL would let it be garbage-collected and then
+recreated by self-heal; a Sync hook would re-run on every sync.)
+*/}}
+{{- with .Values.jobs.createSuperAdmin }}
+{{- if .enabled }}
+---
+# Creates the first super-admin. Run right after the first deploy: until then
+# /admin shows only a login page (anonymous create-first-user is refused).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "tesserix-cms.fullname" $ }}-create-super-admin
+  labels:
+    {{- include "tesserix-cms.labels" $ | nindent 4 }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "tesserix-cms.name" $ }}-create-super-admin
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+    spec:
+      {{- $env := list }}
+      {{- range list "SUPER_ADMIN_EMAIL" "SUPER_ADMIN_PASSWORD" }}
+      {{- $env = append $env (dict "name" . "valueFrom" (dict "secretKeyRef" (dict "name" $.Values.jobs.createSuperAdmin.secretName "key" .))) }}
+      {{- end }}
+      {{- include "tesserix-cms.jobPod" (dict "root" $ "name" "create-super-admin" "script" "create-super-admin" "env" $env) | nindent 6 }}
+{{- end }}
+{{- end }}
+{{- with .Values.jobs.seedYesHospital }}
+{{- if .enabled }}
+---
+# Seeds the yes-hospital tenant once (a no-op if the tenant exists; SEED_FORCE
+# is deliberately never set here). Uploads media to GCS, so it runs as the
+# app's Workload Identity SA.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "tesserix-cms.fullname" $ }}-seed-yes-hospital
+  labels:
+    {{- include "tesserix-cms.labels" $ | nindent 4 }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "tesserix-cms.name" $ }}-seed-yes-hospital
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+    spec:
+      {{- $env := list (dict "name" "GCS_BUCKET" "value" $.Values.env.GCS_BUCKET) (dict "name" "SEED_WEBHOOK_SECRET" "valueFrom" (dict "secretKeyRef" (dict "name" $.Values.secretName "key" "YES_HOSPITAL_WEBHOOK_SECRET"))) }}
+      {{- with .revalidateUrl }}
+      {{- $env = append $env (dict "name" "SEED_REVALIDATE_URL" "value" .) }}
+      {{- end }}
+      {{- include "tesserix-cms.jobPod" (dict "root" $ "name" "seed-yes-hospital" "script" "seed:yes-hospital" "serviceAccount" (include "tesserix-cms.serviceAccountName" $) "env" $env) | nindent 6 }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,52 @@
+# OpenBao readers for tesserix-cms (cms.tesserix.app). The cms reader renders
+# the app's config; the global reader renders only the CNPG password for the
+# `cms` role on global-postgres. Roles: charts/thirdparty/openbao/values.yaml.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tesserix-cms-production-reader
+  namespace: cms
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-tesserix-cms-production
+  namespace: cms
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-tesserix-cms-cms-production
+          serviceAccountRef:
+            name: tesserix-cms-production-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tesserix-cms-production-reader
+  namespace: global
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: openbao-tesserix-cms-production
+  namespace: global
+spec:
+  provider:
+    vault:
+      server: http://openbao.openbao.svc.cluster.local:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: read-tesserix-cms-global-production
+          serviceAccountRef:
+            name: tesserix-cms-production-reader
