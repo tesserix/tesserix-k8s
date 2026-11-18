@@ -630,3 +630,48 @@ CREATE INDEX IF NOT EXISTS staff_identity_invitation_command_idx
 GRANT SELECT, INSERT ON staff_identity_invitation_attempts TO onboarding;
 GRANT UPDATE (accepted_at, provider_id, consumed_at, proof_attempts, proof_uncertain) ON staff_identity_invitation_attempts TO onboarding;
 REVOKE DELETE, TRUNCATE ON staff_identity_invitation_attempts FROM onboarding;
+
+-- Returning-account mailbox proof is never a signup or account-discovery capability.
+CREATE TABLE IF NOT EXISTS password_recovery_challenges (
+    id UUID PRIMARY KEY CHECK (substring(id::text,15,1) = '7'),
+    tenant_id UUID NOT NULL CHECK (tenant_id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    browser_hash BYTEA NOT NULL CHECK (octet_length(browser_hash) = 32),
+    source_hash BYTEA NOT NULL CHECK (octet_length(source_hash) = 32),
+    email TEXT NOT NULL CHECK (length(email) BETWEEN 3 AND 200 AND email = lower(email)),
+    code_hash BYTEA NOT NULL CHECK (octet_length(code_hash) = 32),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 5),
+    delivery_outcome TEXT NOT NULL DEFAULT 'reserved' CHECK (delivery_outcome IN ('reserved','accepted','unavailable')),
+    verified_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    CHECK (expires_at > created_at AND expires_at <= created_at + INTERVAL '10 minutes'),
+    CHECK (verified_at IS NULL OR (verified_at >= created_at AND verified_at < expires_at AND attempts > 0))
+);
+CREATE INDEX IF NOT EXISTS password_recovery_recipient_budget ON password_recovery_challenges(email,created_at);
+CREATE INDEX IF NOT EXISTS password_recovery_source_budget ON password_recovery_challenges(source_hash,created_at);
+CREATE INDEX IF NOT EXISTS password_recovery_expiry ON password_recovery_challenges(created_at);
+CREATE INDEX IF NOT EXISTS password_recovery_browser_proof ON password_recovery_challenges(tenant_id,browser_hash,email,expires_at) WHERE verified_at IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION guard_password_recovery_challenge() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF (NEW.id,NEW.tenant_id,NEW.browser_hash,NEW.source_hash,NEW.email,NEW.code_hash,NEW.created_at,NEW.expires_at)
+        IS DISTINCT FROM (OLD.id,OLD.tenant_id,OLD.browser_hash,OLD.source_hash,OLD.email,OLD.code_hash,OLD.created_at,OLD.expires_at)
+       OR NEW.updated_at < OLD.updated_at
+       OR NEW.attempts < OLD.attempts OR NEW.attempts > OLD.attempts + 1
+       OR (OLD.verified_at IS NOT NULL AND (NEW.verified_at IS DISTINCT FROM OLD.verified_at OR NEW.attempts <> OLD.attempts))
+       OR (NEW.verified_at IS DISTINCT FROM OLD.verified_at AND NEW.attempts <> OLD.attempts + 1)
+       OR (OLD.delivery_outcome <> 'reserved' AND NEW.delivery_outcome <> OLD.delivery_outcome) THEN
+        RAISE EXCEPTION 'password recovery challenge transition refused' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='password_recovery_challenges'::regclass AND tgname='password_recovery_challenge_guard') THEN
+        CREATE TRIGGER password_recovery_challenge_guard BEFORE UPDATE ON password_recovery_challenges
+            FOR EACH ROW EXECUTE FUNCTION guard_password_recovery_challenge();
+    END IF;
+END $$;
+GRANT SELECT, INSERT, DELETE ON password_recovery_challenges TO onboarding;
+GRANT UPDATE (attempts, verified_at, delivery_outcome, updated_at) ON password_recovery_challenges TO onboarding;
+REVOKE TRUNCATE ON password_recovery_challenges FROM onboarding;
