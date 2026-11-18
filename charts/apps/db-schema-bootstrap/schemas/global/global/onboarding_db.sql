@@ -682,3 +682,44 @@ END $$;
 GRANT SELECT, INSERT, DELETE ON password_recovery_challenges TO onboarding;
 GRANT UPDATE (attempts, verified_at, delivery_outcome, updated_at) ON password_recovery_challenges TO onboarding;
 REVOKE TRUNCATE ON password_recovery_challenges FROM onboarding;
+
+CREATE TABLE IF NOT EXISTS password_recovery_commands (
+    id UUID PRIMARY KEY CHECK (substring(id::text,15,1) = '7'),
+    challenge_id UUID NOT NULL REFERENCES password_recovery_delivery_ids(id) ON DELETE RESTRICT,
+    tenant_id UUID NOT NULL CHECK (tenant_id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    subject TEXT NOT NULL CHECK (subject ~ '^[A-Za-z0-9_-]{1,200}$'),
+    baseline_changed_at TIMESTAMPTZ,
+    state TEXT NOT NULL DEFAULT 'processing' CHECK (state IN ('processing','applied','completed','refused','unconfirmed')),
+    native_sequence TEXT,
+    native_changed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    CHECK (baseline_changed_at IS NULL OR baseline_changed_at > '1970-01-01'::timestamptz),
+    CHECK ((state IN ('applied','completed') AND native_sequence IS NOT NULL AND native_sequence ~ '^[1-9][0-9]{0,19}$' AND native_sequence::numeric <= 18446744073709551615 AND native_changed_at IS NOT NULL AND native_changed_at > '1970-01-01'::timestamptz AND (baseline_changed_at IS NULL OR native_changed_at > baseline_changed_at))
+        OR (state NOT IN ('applied','completed') AND native_sequence IS NULL AND native_changed_at IS NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS password_recovery_account_fence ON password_recovery_commands(tenant_id,subject) WHERE state IN ('processing','applied','unconfirmed');
+CREATE INDEX IF NOT EXISTS password_recovery_command_attempts ON password_recovery_commands(challenge_id,created_at);
+CREATE INDEX IF NOT EXISTS password_recovery_command_cutoff ON password_recovery_commands(tenant_id,subject,native_changed_at) WHERE state='completed';
+
+CREATE OR REPLACE FUNCTION guard_password_recovery_command() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF (NEW.id,NEW.challenge_id,NEW.tenant_id,NEW.subject,NEW.baseline_changed_at,NEW.created_at)
+        IS DISTINCT FROM (OLD.id,OLD.challenge_id,OLD.tenant_id,OLD.subject,OLD.baseline_changed_at,OLD.created_at)
+       OR NEW.updated_at < OLD.updated_at
+       OR NOT ((OLD.state='processing' AND NEW.state IN ('applied','refused','unconfirmed'))
+           OR (OLD.state='applied' AND NEW.state='completed'))
+       OR (OLD.state='applied' AND (NEW.native_sequence,NEW.native_changed_at) IS DISTINCT FROM (OLD.native_sequence,OLD.native_changed_at)) THEN
+        RAISE EXCEPTION 'password recovery command transition refused' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='password_recovery_commands'::regclass AND tgname='password_recovery_command_guard') THEN
+        CREATE TRIGGER password_recovery_command_guard BEFORE UPDATE ON password_recovery_commands
+            FOR EACH ROW EXECUTE FUNCTION guard_password_recovery_command();
+    END IF;
+END $$;
+GRANT SELECT, INSERT ON password_recovery_commands TO onboarding;
+GRANT UPDATE (state,native_sequence,native_changed_at,updated_at) ON password_recovery_commands TO onboarding;
+REVOKE DELETE, TRUNCATE ON password_recovery_commands FROM onboarding;
