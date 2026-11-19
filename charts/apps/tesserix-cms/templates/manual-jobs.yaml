@@ -63,3 +63,30 @@ spec:
       {{- include "tesserix-cms.jobPod" (dict "root" $ "name" "seed-yes-hospital" "script" "seed:yes-hospital" "serviceAccount" (include "tesserix-cms.serviceAccountName" $) "env" $env) | nindent 6 }}
 {{- end }}
 {{- end }}
+{{- with .Values.jobs.seedTesserix }}
+{{- if .enabled }}
+---
+# Seeds the tesserix tenant (the tesserix.app marketing site) once; same contract as
+# seed-yes-hospital. Uploads media to GCS, so it runs as the app's Workload Identity SA.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "tesserix-cms.fullname" $ }}-seed-tesserix
+  labels:
+    {{- include "tesserix-cms.labels" $ | nindent 4 }}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "tesserix-cms.name" $ }}-seed-tesserix
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+    spec:
+      {{- $env := list (dict "name" "GCS_BUCKET" "value" $.Values.env.GCS_BUCKET) (dict "name" "SEED_WEBHOOK_SECRET" "valueFrom" (dict "secretKeyRef" (dict "name" .secretName "key" "SEED_WEBHOOK_SECRET"))) }}
+      {{- with .revalidateUrl }}
+      {{- $env = append $env (dict "name" "SEED_REVALIDATE_URL" "value" .) }}
+      {{- end }}
+      {{- include "tesserix-cms.jobPod" (dict "root" $ "name" "seed-tesserix" "script" "seed:tesserix" "serviceAccount" (include "tesserix-cms.serviceAccountName" $) "env" $env) | nindent 6 }}
+{{- end }}
+{{- end }}

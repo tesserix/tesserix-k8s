@@ -472,6 +472,7 @@ spec:
 # CMS Namespace Policies (tesserix-cms, cms.tesserix.app)
 # Ambient: the gateway arrives over HBONE (15008), which default-deny-ingress drops without this.
 # yes-hospital is not in the mesh and reads the CMS API in-cluster over plain HTTP.
+# tesserix (the company site) is ambient, so its reads arrive over HBONE like the gateway's.
 # =============================================================================
 {{- if .Values.appNamespaces.cms }}
 ---
@@ -510,6 +511,10 @@ spec:
       ports:
         - protocol: TCP
           port: 3000
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.appNamespaces.tesserix }}
 {{- end }}
 
 # =============================================================================

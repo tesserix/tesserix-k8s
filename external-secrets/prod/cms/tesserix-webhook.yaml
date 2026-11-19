@@ -1,0 +1,22 @@
+# Publish-webhook secret shared with tesserix.app's POST /api/revalidate. Read only by the
+# one-off seed Job (SEED_WEBHOOK_SECRET writes it onto the tenant), never by the server, and
+# kept out of the main tesserix-cms secret so a missing path cannot block that one's refresh.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: tesserix-cms-tesserix-webhook
+  namespace: cms
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-tesserix-cms-production
+    kind: SecretStore
+  target:
+    name: tesserix-cms-tesserix-webhook
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    - secretKey: SEED_WEBHOOK_SECRET
+      remoteRef:
+        key: tesserix-cms/app/tesserix-cms-tesserix-webhook-secret
+        property: value
