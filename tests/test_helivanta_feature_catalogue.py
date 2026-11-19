@@ -18,7 +18,7 @@ class CatalogueChartTests(unittest.TestCase):
         )
         return list(yaml.safe_load_all(result.stdout))
 
-    def test_staff_authenticator_recovery_is_published_release_locked(self):
+    def test_staff_authenticator_recovery_publishes_reviewed_release_dependencies(self):
         objects = self.render(
             "charts/apps/onboarding-service",
             "-f",
@@ -38,7 +38,7 @@ class CatalogueChartTests(unittest.TestCase):
             {
                 "key": "staff_mfa_recovery",
                 "owner": "workforce",
-                "eligible": False,
+                "eligible": True,
                 "dependencies": ["staff_core", "team_accounts"],
             },
         )
