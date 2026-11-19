@@ -1,0 +1,22 @@
+# CMS_WEBHOOK_SECRET for tesserix.app's POST /api/revalidate, which tesserix-cms calls on
+# publish (tesserix-home docs/cms.md). Its own Secret, mounted optional, so the company
+# Deployment keeps rolling if the OpenBao path is missing.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: company-cms
+  namespace: tesserix
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: openbao-tesserix-cms-production
+    kind: SecretStore
+  target:
+    name: company-cms
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    - secretKey: CMS_WEBHOOK_SECRET
+      remoteRef:
+        key: tesserix-cms/app/tesserix-cms-tesserix-webhook-secret
+        property: value
