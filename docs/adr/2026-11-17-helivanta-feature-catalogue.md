@@ -117,3 +117,20 @@ part of this change.
 
 Removing a Helm entry does not delete a flag. Retirement needs an explicit review
 of application references and old replicas before any separately approved deletion.
+
+## Staff authenticator recovery candidate
+
+The generated catalogue for policy `2026-11-19-r1` includes
+`staff_mfa_recovery`, owned by Workforce and dependent on `staff_core` and
+`team_accounts`. The recovery candidate makes it eligible after isolated native
+acceptance; its provider definition still starts disabled. The chart render regression checks
+the published ConfigMap, not just the input values. The standard reconciler
+creates the provider definition disabled only after the deployed Helivanta
+contract matches this catalogue; a mismatch stops writes. Existing operator
+values remain untouched.
+
+This publishes the pending control for Console discovery; it does not enable
+MFA resets, change credentials or prove a deployed recovery workflow. Final release
+checks, operator activation and actual hospital/pharmacy acceptance are separate release
+gates. Console currently controls availability across the product's production
+environment; this change introduces no tenant-cohort targeting.

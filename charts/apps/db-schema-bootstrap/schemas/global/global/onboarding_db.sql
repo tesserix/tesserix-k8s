@@ -630,3 +630,185 @@ CREATE INDEX IF NOT EXISTS staff_identity_invitation_command_idx
 GRANT SELECT, INSERT ON staff_identity_invitation_attempts TO onboarding;
 GRANT UPDATE (accepted_at, provider_id, consumed_at, proof_attempts, proof_uncertain) ON staff_identity_invitation_attempts TO onboarding;
 REVOKE DELETE, TRUNCATE ON staff_identity_invitation_attempts FROM onboarding;
+
+-- Returning-account mailbox proof is never a signup or account-discovery capability.
+CREATE TABLE IF NOT EXISTS password_recovery_delivery_ids (
+    id UUID PRIMARY KEY CHECK (substring(id::text,15,1) = '7'),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+);
+GRANT SELECT, INSERT ON password_recovery_delivery_ids TO onboarding;
+REVOKE UPDATE, DELETE, TRUNCATE ON password_recovery_delivery_ids FROM onboarding;
+
+CREATE TABLE IF NOT EXISTS password_recovery_challenges (
+    id UUID PRIMARY KEY REFERENCES password_recovery_delivery_ids(id) ON DELETE RESTRICT CHECK (substring(id::text,15,1) = '7'),
+    tenant_id UUID NOT NULL CHECK (tenant_id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    browser_hash BYTEA NOT NULL CHECK (octet_length(browser_hash) = 32),
+    source_hash BYTEA NOT NULL CHECK (octet_length(source_hash) = 32),
+    email TEXT NOT NULL CHECK (length(email) BETWEEN 3 AND 200 AND email = lower(email)),
+    code_hash BYTEA NOT NULL CHECK (octet_length(code_hash) = 32),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 5),
+    delivery_outcome TEXT NOT NULL DEFAULT 'reserved' CHECK (delivery_outcome IN ('reserved','accepted','unavailable')),
+    verified_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    CHECK (expires_at > created_at AND expires_at <= created_at + INTERVAL '10 minutes'),
+    CHECK (verified_at IS NULL OR (verified_at >= created_at AND verified_at < expires_at AND attempts > 0))
+);
+CREATE INDEX IF NOT EXISTS password_recovery_recipient_budget ON password_recovery_challenges(email,created_at);
+CREATE INDEX IF NOT EXISTS password_recovery_source_budget ON password_recovery_challenges(source_hash,created_at);
+CREATE INDEX IF NOT EXISTS password_recovery_expiry ON password_recovery_challenges(created_at);
+CREATE INDEX IF NOT EXISTS password_recovery_browser_proof ON password_recovery_challenges(tenant_id,browser_hash,email,expires_at) WHERE verified_at IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION guard_password_recovery_challenge() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF (NEW.id,NEW.tenant_id,NEW.browser_hash,NEW.source_hash,NEW.email,NEW.code_hash,NEW.created_at,NEW.expires_at)
+        IS DISTINCT FROM (OLD.id,OLD.tenant_id,OLD.browser_hash,OLD.source_hash,OLD.email,OLD.code_hash,OLD.created_at,OLD.expires_at)
+       OR NEW.updated_at < OLD.updated_at
+       OR NEW.attempts < OLD.attempts OR NEW.attempts > OLD.attempts + 1
+       OR (OLD.verified_at IS NOT NULL AND (NEW.verified_at IS DISTINCT FROM OLD.verified_at OR NEW.attempts <> OLD.attempts))
+       OR (NEW.verified_at IS DISTINCT FROM OLD.verified_at AND NEW.attempts <> OLD.attempts + 1)
+       OR (OLD.delivery_outcome <> 'reserved' AND NEW.delivery_outcome <> OLD.delivery_outcome) THEN
+        RAISE EXCEPTION 'password recovery challenge transition refused' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='password_recovery_challenges'::regclass AND tgname='password_recovery_challenge_guard') THEN
+        CREATE TRIGGER password_recovery_challenge_guard BEFORE UPDATE ON password_recovery_challenges
+            FOR EACH ROW EXECUTE FUNCTION guard_password_recovery_challenge();
+    END IF;
+END $$;
+GRANT SELECT, INSERT, DELETE ON password_recovery_challenges TO onboarding;
+GRANT UPDATE (attempts, verified_at, delivery_outcome, updated_at) ON password_recovery_challenges TO onboarding;
+REVOKE TRUNCATE ON password_recovery_challenges FROM onboarding;
+
+CREATE TABLE IF NOT EXISTS password_recovery_commands (
+    id UUID PRIMARY KEY CHECK (substring(id::text,15,1) = '7'),
+    challenge_id UUID NOT NULL REFERENCES password_recovery_delivery_ids(id) ON DELETE RESTRICT,
+    tenant_id UUID NOT NULL CHECK (tenant_id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    subject TEXT NOT NULL CHECK (subject ~ '^[A-Za-z0-9_-]{1,200}$'),
+    baseline_changed_at TIMESTAMPTZ,
+    state TEXT NOT NULL DEFAULT 'prepared' CHECK (state IN ('prepared','processing','applied','completed','refused','unconfirmed','cancelled')),
+    native_sequence TEXT,
+    native_changed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    CHECK (baseline_changed_at IS NULL OR baseline_changed_at > '1970-01-01'::timestamptz),
+    CHECK ((state IN ('applied','completed') AND native_sequence IS NOT NULL AND native_sequence ~ '^[1-9][0-9]{0,19}$' AND native_sequence::numeric <= 18446744073709551615 AND native_changed_at IS NOT NULL AND native_changed_at > '1970-01-01'::timestamptz AND (baseline_changed_at IS NULL OR native_changed_at > baseline_changed_at))
+        OR (state NOT IN ('applied','completed') AND native_sequence IS NULL AND native_changed_at IS NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS password_recovery_account_fence ON password_recovery_commands(tenant_id,subject) WHERE state IN ('prepared','processing','applied','unconfirmed');
+CREATE INDEX IF NOT EXISTS password_recovery_command_attempts ON password_recovery_commands(challenge_id,created_at);
+CREATE INDEX IF NOT EXISTS password_recovery_command_cutoff ON password_recovery_commands(tenant_id,subject,native_changed_at) WHERE state='completed';
+
+CREATE OR REPLACE FUNCTION guard_password_recovery_command() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF (NEW.id,NEW.challenge_id,NEW.tenant_id,NEW.subject,NEW.baseline_changed_at,NEW.created_at)
+        IS DISTINCT FROM (OLD.id,OLD.challenge_id,OLD.tenant_id,OLD.subject,OLD.baseline_changed_at,OLD.created_at)
+       OR NEW.updated_at < OLD.updated_at
+       OR NOT ((OLD.state='prepared' AND NEW.state IN ('processing','cancelled'))
+           OR (OLD.state='processing' AND NEW.state IN ('applied','refused','unconfirmed'))
+           OR (OLD.state='applied' AND NEW.state='completed'))
+       OR (OLD.state='applied' AND (NEW.native_sequence,NEW.native_changed_at) IS DISTINCT FROM (OLD.native_sequence,OLD.native_changed_at)) THEN
+        RAISE EXCEPTION 'password recovery command transition refused' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='password_recovery_commands'::regclass AND tgname='password_recovery_command_guard') THEN
+        CREATE TRIGGER password_recovery_command_guard BEFORE UPDATE ON password_recovery_commands
+            FOR EACH ROW EXECUTE FUNCTION guard_password_recovery_command();
+    END IF;
+END $$;
+GRANT SELECT, INSERT ON password_recovery_commands TO onboarding;
+GRANT UPDATE (state,native_sequence,native_changed_at,updated_at) ON password_recovery_commands TO onboarding;
+REVOKE DELETE, TRUNCATE ON password_recovery_commands FROM onboarding;
+
+-- Staff authenticator recovery: immutable reviewed source, one native dispatch,
+-- and an admission generation that survives enrollment. Native times remain
+-- exact text because PostgreSQL timestamptz would truncate provider nanoseconds.
+CREATE TABLE IF NOT EXISTS staff_mfa_recovery_commands (
+    id UUID PRIMARY KEY CHECK (substring(id::text,15,1) = '7'),
+    generation BIGINT GENERATED ALWAYS AS IDENTITY UNIQUE,
+    org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
+    product_key TEXT NOT NULL REFERENCES products(key) ON DELETE RESTRICT CHECK (product_key='helivanta'),
+    machine_subject TEXT NOT NULL CHECK (machine_subject ~ '^[A-Za-z0-9_-]{1,200}$'),
+    actor_subject TEXT NOT NULL CHECK (actor_subject ~ '^[A-Za-z0-9_-]{1,200}$'),
+    target_subject TEXT NOT NULL CHECK (target_subject ~ '^[A-Za-z0-9_-]{1,200}$'),
+    provider_org_id TEXT NOT NULL CHECK (provider_org_id='helivanta-' || org_id::text),
+    provider_project_id TEXT NOT NULL CHECK (provider_project_id ~ '^[A-Za-z0-9_-]{1,200}$'),
+    employer_kind TEXT NOT NULL CHECK (employer_kind IN ('hospital','pharmacy','supplier')),
+    employer_id UUID NOT NULL CHECK (employer_id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    staff_id UUID NOT NULL CHECK (staff_id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    staff_version BIGINT NOT NULL CHECK (staff_version BETWEEN 1 AND 9007199254740991),
+    link_id UUID NOT NULL CHECK (substring(link_id::text,15,1) = '7'),
+    link_version BIGINT NOT NULL CHECK (link_version BETWEEN 1 AND 9007199254740991),
+    reason TEXT NOT NULL CHECK (char_length(reason) BETWEEN 1 AND 500 AND reason=btrim(reason) AND reason !~ '[[:cntrl:]]'),
+    state TEXT NOT NULL DEFAULT 'prepared' CHECK (state IN ('prepared','processing','awaiting_enrollment','unconfirmed','cancelled','completed')),
+    application_fence_id UUID,
+    dispatched_at TIMESTAMPTZ,
+    native_sequence TEXT,
+    native_changed_at TEXT,
+    enrollment_sequence TEXT,
+    enrollment_verified_at TEXT,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    CHECK (actor_subject <> target_subject),
+    CHECK ((state IN ('prepared','cancelled') AND application_fence_id IS NULL AND dispatched_at IS NULL)
+        OR (state NOT IN ('prepared','cancelled') AND application_fence_id IS NOT NULL AND application_fence_id = id AND dispatched_at IS NOT NULL)),
+    CHECK ((state IN ('awaiting_enrollment','completed') AND native_sequence IS NOT NULL AND native_sequence ~ '^[1-9][0-9]{0,19}$'
+            AND native_sequence::numeric <= 18446744073709551615 AND native_changed_at IS NOT NULL
+            AND native_changed_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?Z$'
+            AND native_changed_at::timestamptz > '1970-01-01'::timestamptz)
+        OR (state NOT IN ('awaiting_enrollment','completed') AND native_sequence IS NULL AND native_changed_at IS NULL)),
+    CHECK ((state='completed' AND enrollment_sequence IS NOT NULL AND enrollment_sequence ~ '^[1-9][0-9]{0,19}$'
+            AND enrollment_sequence::numeric <= 18446744073709551615 AND enrollment_sequence::numeric > native_sequence::numeric
+            AND enrollment_verified_at IS NOT NULL AND enrollment_verified_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?Z$'
+            AND enrollment_verified_at::timestamptz >= native_changed_at::timestamptz AND completed_at IS NOT NULL)
+        OR (state<>'completed' AND enrollment_sequence IS NULL AND enrollment_verified_at IS NULL AND completed_at IS NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS staff_mfa_recovery_account_fence ON staff_mfa_recovery_commands(org_id,target_subject)
+    WHERE state IN ('prepared','processing','awaiting_enrollment','unconfirmed');
+CREATE INDEX IF NOT EXISTS staff_mfa_recovery_latest_generation ON staff_mfa_recovery_commands(org_id,target_subject,generation DESC)
+    WHERE state<>'cancelled';
+CREATE UNIQUE INDEX IF NOT EXISTS staff_mfa_recovery_subject_fence ON staff_mfa_recovery_commands(target_subject)
+    WHERE state IN ('prepared','processing','awaiting_enrollment','unconfirmed');
+CREATE INDEX IF NOT EXISTS staff_mfa_recovery_subject_generation ON staff_mfa_recovery_commands(target_subject,generation DESC)
+    WHERE state<>'cancelled';
+CREATE INDEX IF NOT EXISTS staff_mfa_recovery_product_scope ON staff_mfa_recovery_commands(product_key,org_id);
+
+CREATE OR REPLACE FUNCTION guard_staff_mfa_recovery_command() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF (NEW.id,NEW.generation,NEW.org_id,NEW.product_key,NEW.machine_subject,NEW.actor_subject,NEW.target_subject,
+            NEW.provider_org_id,NEW.provider_project_id,NEW.employer_kind,NEW.employer_id,NEW.staff_id,NEW.staff_version,
+            NEW.link_id,NEW.link_version,NEW.reason,NEW.created_at)
+        IS DISTINCT FROM (OLD.id,OLD.generation,OLD.org_id,OLD.product_key,OLD.machine_subject,OLD.actor_subject,OLD.target_subject,
+            OLD.provider_org_id,OLD.provider_project_id,OLD.employer_kind,OLD.employer_id,OLD.staff_id,OLD.staff_version,
+            OLD.link_id,OLD.link_version,OLD.reason,OLD.created_at)
+       OR NEW.updated_at < OLD.updated_at
+       OR NOT ((OLD.state='prepared' AND NEW.state IN ('processing','cancelled'))
+           OR (OLD.state='processing' AND NEW.state IN ('awaiting_enrollment','unconfirmed'))
+           OR (OLD.state='awaiting_enrollment' AND NEW.state='completed'))
+       OR (OLD.state IN ('processing','awaiting_enrollment') AND
+           (NEW.application_fence_id,NEW.dispatched_at) IS DISTINCT FROM (OLD.application_fence_id,OLD.dispatched_at))
+       OR (OLD.state='awaiting_enrollment' AND
+           (NEW.native_sequence,NEW.native_changed_at) IS DISTINCT FROM (OLD.native_sequence,OLD.native_changed_at)) THEN
+        RAISE EXCEPTION 'staff MFA recovery command transition refused' USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END $$;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='staff_mfa_recovery_commands'::regclass AND tgname='staff_mfa_recovery_command_guard') THEN
+        CREATE TRIGGER staff_mfa_recovery_command_guard BEFORE UPDATE ON staff_mfa_recovery_commands
+            FOR EACH ROW EXECUTE FUNCTION guard_staff_mfa_recovery_command();
+    END IF;
+END $$;
+GRANT SELECT ON staff_mfa_recovery_commands TO onboarding;
+GRANT INSERT (id,org_id,product_key,machine_subject,actor_subject,target_subject,provider_org_id,provider_project_id,
+    employer_kind,employer_id,staff_id,staff_version,link_id,link_version,reason,state) ON staff_mfa_recovery_commands TO onboarding;
+GRANT UPDATE (state,application_fence_id,dispatched_at,native_sequence,native_changed_at,enrollment_sequence,enrollment_verified_at,completed_at,updated_at)
+    ON staff_mfa_recovery_commands TO onboarding;
+GRANT USAGE ON SEQUENCE staff_mfa_recovery_commands_generation_seq TO onboarding;
+REVOKE DELETE, TRUNCATE ON staff_mfa_recovery_commands FROM onboarding;
