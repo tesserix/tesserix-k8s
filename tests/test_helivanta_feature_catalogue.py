@@ -43,7 +43,7 @@ class CatalogueChartTests(unittest.TestCase):
             },
         )
 
-    def test_hospital_stocktake_is_published_disabled_with_setup_dependency(self):
+    def test_reviewed_stocktake_publishes_only_its_own_release_eligibility(self):
         objects = self.render(
             "charts/apps/onboarding-service",
             "-f",
@@ -55,11 +55,14 @@ class CatalogueChartTests(unittest.TestCase):
         )
         catalogue = json.loads(config["data"]["catalogue.json"])
         definitions = {row["key"]: row for row in catalogue["capabilities"]}
-        self.assertEqual(catalogue["policy_version"], "2026-11-24.hospital-stocktake-departments.v1")
+        self.assertEqual(catalogue["policy_version"], "2026-11-24.pharmacy-stocktake.v1")
         self.assertEqual(definitions.get("pharmacy_stocktake"), {
-            "key": "pharmacy_stocktake", "owner": "pharmacy", "eligible": False,
+            "key": "pharmacy_stocktake", "owner": "pharmacy", "eligible": True,
             "dependencies": ["pharmacy_setup"],
         })
+        for key in ("pharmacy_catalogue", "pharmacy_stock", "pharmacy_counter", "pharmacy_payables", "supplier_collaboration"):
+            self.assertFalse(definitions[key]["eligible"], key)
+
 
     def test_onboarding_publishes_catalogue_and_same_runtime_schema(self):
         objects = self.render(
