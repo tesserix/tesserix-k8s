@@ -134,3 +134,21 @@ MFA resets, change credentials or prove a deployed recovery workflow. Final rele
 checks, operator activation and actual hospital/pharmacy acceptance are separate release
 gates. Console currently controls availability across the product's production
 environment; this change introduces no tenant-cohort targeting.
+
+## Reviewed stocktake release candidate
+
+Candidate application policy `2026-11-24.pharmacy-stocktake.v1` makes only
+`pharmacy_stocktake` eligible, dependent on `pharmacy_setup`. Catalogue, general
+stock, counter, payables and supplier collaboration stay ineligible. The rendered
+ConfigMap regression asserts this exact boundary. Provisioning still creates
+missing definitions disabled and preserves every existing desired value.
+
+Deploy this catalogue after the matching Helivanta application revision is
+published and verified through Kargo. The scheduled job must match the exact
+public release contract before it writes. Eligibility is separate from Console
+activation and grants no Staff, department or outlet authority. Current protected
+checks and authenticated live acceptance remain application release gates.
+
+The preceding catalogue repair merged in #1720. Its live scheduled job created
+one disabled stocktake definition and preserved 23 existing definitions; subsequent
+runs preserved all 24. This candidate does not itself enable that definition.
