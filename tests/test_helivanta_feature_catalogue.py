@@ -43,6 +43,24 @@ class CatalogueChartTests(unittest.TestCase):
             },
         )
 
+    def test_hospital_stocktake_is_published_disabled_with_setup_dependency(self):
+        objects = self.render(
+            "charts/apps/onboarding-service",
+            "-f",
+            str(ROOT / "charts/apps/onboarding-service/values-prod.yaml"),
+        )
+        config = next(
+            row for row in objects if row and row["kind"] == "ConfigMap"
+            and row["metadata"]["name"] == "helivanta-feature-catalogue"
+        )
+        catalogue = json.loads(config["data"]["catalogue.json"])
+        definitions = {row["key"]: row for row in catalogue["capabilities"]}
+        self.assertEqual(catalogue["policy_version"], "2026-11-24.hospital-stocktake-outlet-choices.v1")
+        self.assertEqual(definitions.get("pharmacy_stocktake"), {
+            "key": "pharmacy_stocktake", "owner": "pharmacy", "eligible": False,
+            "dependencies": ["pharmacy_setup"],
+        })
+
     def test_onboarding_publishes_catalogue_and_same_runtime_schema(self):
         objects = self.render(
             "charts/apps/onboarding-service",
