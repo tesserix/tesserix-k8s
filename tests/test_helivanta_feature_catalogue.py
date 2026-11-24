@@ -61,7 +61,7 @@ class CatalogueChartTests(unittest.TestCase):
             "dependencies": ["pharmacy_setup"],
         })
         self.assertEqual(definitions.get("pharmacy_low_stock"), {
-            "key": "pharmacy_low_stock", "owner": "pharmacy", "eligible": False,
+            "key": "pharmacy_low_stock", "owner": "pharmacy", "eligible": True,
             "dependencies": ["pharmacy_setup"],
         })
         self.assertEqual(definitions["pharmacy_stock"]["dependencies"], [
