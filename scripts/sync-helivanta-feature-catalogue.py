@@ -22,7 +22,7 @@ else:
 contract = json.loads(args.contract.read_text())
 catalogue = {key: contract[key] for key in ('version', 'policy_version')}
 catalogue['capabilities'] = [
-    {key: row[key] for key in ('key', 'owner', 'eligible', 'dependencies')}
+    {**{key: row[key] for key in ('key', 'owner', 'eligible', 'dependencies')}, **({'pilot_eligible': True} if row.get('pilot_eligible') is True else {})}
     for row in contract['capabilities']
 ]
 target = Path(__file__).resolve().parents[1] / 'charts/apps/onboarding-service/values-prod.yaml'

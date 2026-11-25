@@ -1,0 +1,19 @@
+{{- if .Values.releaseCapabilities.pilot.enabled }}
+{{- if not .Values.releaseCapabilities.enabled }}{{ fail "pilot requires releaseCapabilities.enabled" }}{{ end }}
+{{- $ids := required "pilot requires tenantIDs" .Values.releaseCapabilities.pilot.tenantIDs }}
+{{- if or (gt (len $ids) 20) (ne (len $ids) (len (uniq $ids))) }}{{ fail "pilot tenant list exceeds bound or has duplicates" }}{{ end }}
+{{- range $id := $ids }}
+{{- if or (not (regexMatch "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" $id)) (eq $id "00000000-0000-0000-0000-000000000000") }}{{ fail "pilot tenant must be a nonzero UUID" }}{{ end }}
+{{- end }}
+{{- $expires := required "pilot requires expiresAt" .Values.releaseCapabilities.pilot.expiresAt }}
+{{- $_ := mustToDate "2006-01-02T15:04:05Z07:00" $expires }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "helivanta-api.fullname" . }}-release-pilot-policy
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "helivanta-api.labels" . | nindent 4 }}
+data:
+  policy.json: {{ dict "tenant_ids" $ids "expires_at" $expires | toJson | quote }}
+{{- end }}

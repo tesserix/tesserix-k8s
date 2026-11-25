@@ -34,14 +34,19 @@ export function validateCatalogue(catalogue, schema) {
     const definition = definitions.get(key);
     if (!definition) throw new Error('Unknown catalogue dependency');
     active.add(key);
-    for (const dependency of definition.dependencies) visit(dependency);
+    for (const dependency of definition.dependencies) {
+      visit(dependency);
+      const target = definitions.get(dependency);
+      if (definition.eligible && !target.eligible) throw new Error('Ineligible catalogue dependency');
+      if (definition.pilot_eligible && !target.eligible && !target.pilot_eligible) throw new Error('Ineligible pilot dependency');
+    }
     active.delete(key); visited.add(key);
   }
   for (const key of definitions.keys()) visit(key);
 }
 
 function projection(catalogue) {
-  return {version:catalogue.version,policy_version:catalogue.policy_version,capabilities:catalogue.capabilities.map(({key,owner,eligible,dependencies})=>({key,owner,eligible,dependencies:[...dependencies].sort()})).sort((a,b)=>a.key.localeCompare(b.key))};
+  return {version:catalogue.version,policy_version:catalogue.policy_version,capabilities:catalogue.capabilities.map(({key,owner,eligible,pilot_eligible,dependencies})=>({key,owner,eligible,dependencies:[...dependencies].sort(),...(pilot_eligible === true ? {pilot_eligible:true} : {})})).sort((a,b)=>a.key.localeCompare(b.key))};
 }
 function validFeature(feature, project) {
   const rules = feature.rules ?? [];

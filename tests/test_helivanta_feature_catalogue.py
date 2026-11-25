@@ -55,7 +55,7 @@ class CatalogueChartTests(unittest.TestCase):
         )
         catalogue = json.loads(config["data"]["catalogue.json"])
         definitions = {row["key"]: row for row in catalogue["capabilities"]}
-        self.assertEqual(catalogue["policy_version"], "2026-11-24.pharmacy-low-stock.v1")
+        self.assertEqual(catalogue["policy_version"], "2026-11-25.pharmacy-retail-pilot.v1")
         self.assertEqual(definitions.get("pharmacy_stocktake"), {
             "key": "pharmacy_stocktake", "owner": "pharmacy", "eligible": True,
             "dependencies": ["pharmacy_setup"],

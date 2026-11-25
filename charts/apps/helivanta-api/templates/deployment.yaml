@@ -27,6 +27,9 @@ spec:
   template:
     metadata:
       annotations:
+        {{- if .Values.releaseCapabilities.pilot.enabled }}
+        checksum/release-pilot-policy: {{ include (print $.Template.BasePath "/release-pilot-policy.yaml") . | sha256sum }}
+        {{- end }}
         {{- if .Values.meshRegistryRevision }}
         tesserix.app/registry-mirror-revision: {{ .Values.meshRegistryRevision | quote }}
         {{- end }}
@@ -71,6 +74,10 @@ spec:
               protocol: TCP
           env:
             {{- if .Values.releaseCapabilities.enabled }}
+            {{- if .Values.releaseCapabilities.pilot.enabled }}
+            - name: RELEASE_PILOT_POLICY_FILE
+              value: /var/run/release-pilot/policy.json
+            {{- end }}
             - name: GROWTHBOOK_API_URL
               value: {{ .Values.releaseCapabilities.url | quote }}
             - name: GROWTHBOOK_SDK_KEY_FILE
@@ -311,6 +318,11 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if .Values.releaseCapabilities.pilot.enabled }}
+            - name: release-pilot-policy
+              mountPath: /var/run/release-pilot
+              readOnly: true
+            {{- end }}
             {{- if .Values.releaseCapabilities.enabled }}
             - name: release-capabilities
               mountPath: /var/run/growthbook
@@ -354,6 +366,11 @@ spec:
               readOnly: true
             {{- end }}
       volumes:
+        {{- if .Values.releaseCapabilities.pilot.enabled }}
+        - name: release-pilot-policy
+          configMap:
+            name: {{ include "helivanta-api.fullname" . }}-release-pilot-policy
+        {{- end }}
         {{- if .Values.releaseCapabilities.enabled }}
         - name: release-capabilities
           secret:
