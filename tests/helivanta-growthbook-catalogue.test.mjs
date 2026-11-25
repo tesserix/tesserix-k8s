@@ -44,3 +44,13 @@ test('recovers partial progress after a lost create response without resetting v
  const result=await reconcileCatalogue(request,config,config,schema,'prj-helivanta');
  assert.equal(attempted,2);assert.equal(result.created,1);assert.equal(result.preserved,1);
 });
+test('pilot metadata is reviewed and cannot silently expand dependency eligibility',async()=>{
+ const pilot={...catalogue,capabilities:[{key:'pharmacy_stock',owner:'pharmacy',eligible:false,pilot_eligible:true,dependencies:[]},{key:'pharmacy_counter',owner:'pharmacy',eligible:false,pilot_eligible:true,dependencies:['pharmacy_stock']}]};
+ validateCatalogue(pilot,schema);
+ const unreviewed=structuredClone(pilot);delete unreviewed.capabilities[0].pilot_eligible;
+ assert.throws(()=>validateCatalogue(unreviewed,schema),/Ineligible pilot dependency/);
+ const released=structuredClone(pilot);delete released.capabilities[1].pilot_eligible;
+ let calls=0;
+ await assert.rejects(reconcileCatalogue(async()=>{calls++;},pilot,released,schema,'prj-helivanta'),/differs from deployed/);
+ assert.equal(calls,0);
+});
