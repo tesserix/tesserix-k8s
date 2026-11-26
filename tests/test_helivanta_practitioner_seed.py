@@ -146,3 +146,37 @@ def test_seed_policy_is_exact_create_only_with_short_single_identity():
     assert role["serviceAccounts"] == ["helivanta-practitioner-evidence-secret-seed"]
     assert role["namespaces"] == ["helivanta"]
     assert role["policies"] == [name] and role["ttl"] == "5m"
+
+
+def test_rendered_initializer_is_bound_to_only_the_professional_credential():
+    seed = initializer()
+    assert seed.ROLE == "seed-helivanta-practitioner-evidence-worker-production"
+    assert (
+        seed.DATA
+        == "kv/data/helivanta/production/helivanta-practitioner-evidence-worker-db-password"
+    )
+    assert (
+        seed.METADATA
+        == "kv/metadata/helivanta/production/helivanta-practitioner-evidence-worker-db-password"
+    )
+    rendered = render(
+        "charts/apps/helivanta-postgres", "practitionerEvidenceWorker.seed.enabled=true"
+    )
+    config = resource(
+        rendered, "ConfigMap", "helivanta-practitioner-evidence-secret-seed"
+    )
+    source = ROOT / "charts/apps/helivanta-postgres/files/practitioner-evidence-seed.py"
+    assert config["data"]["seed.py"] == source.read_text()
+
+
+def test_initializer_refuses_redirects_before_credentials_can_be_forwarded():
+    seed = initializer()
+    with pytest.raises(RuntimeError, match="redirect refused"):
+        seed.NoRedirect().redirect_request(
+            seed.urllib.request.Request("http://openbao.example.invalid/v1/"),
+            None,
+            307,
+            "redirect",
+            {},
+            "https://foreign.example.invalid/",
+        )
