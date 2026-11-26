@@ -25,12 +25,15 @@ supplier or pharmacy evidence credentials.
    Only the `helivanta/helivanta-practitioner-evidence-worker` identity receives
    get access to quarantine and get/create access to released `practitioner`
    object-owner paths. No list/delete or unrelated owner paths are granted.
-3. Through the authorized secret-administration path, provision a fresh random
-   URL-safe database password at OpenBao
-   `kv/helivanta/production/helivanta-practitioner-evidence-worker-db-password`,
-   property `password`. Use create-only/CAS writes, no terminal echo, no overwrite
-   of an existing value and no committed credential. Record metadata, never value.
-   This is credential provisioning, not an automatic rotation procedure.
+3. Enable only `practitionerEvidenceWorker.seed.enabled` in the PostgreSQL
+   Application first. The dedicated job authenticates with its projected workload
+   identity and five-minute OpenBao role, verifies exact-path create-only
+   authority, and writes a fresh random URL-safe password with KV CAS 0 at
+   `kv/helivanta/production/helivanta-practitioner-evidence-worker-db-password`.
+   It reads metadata only, preserves existing versions, refuses deleted/destroyed
+   history and revokes its own token. Verify successful job completion and safe
+   status logs; never read the password into a terminal. Repeating the job does
+   not rotate a credential. LOGIN and worker activation remain off at this stage.
 4. Enable `practitionerEvidenceWorker.credentials.enabled` in the PostgreSQL
    Application values. Verify its dedicated SecretStore and ExternalSecret are
    ready, then enable `practitionerEvidenceWorker.login`. The role is
@@ -73,3 +76,12 @@ Focused rendered Helm tests cover default dormancy, exact credentials, missing
 private-pipeline rejection, scanner/network isolation and scoped OpenBao reader.
 The mocked Terraform plan asserts precisely three path-bound get/create grants.
 Neither test is live IAM/cluster acceptance.
+
+## Credential preparation evidence
+
+The seed capability is tested through the actual initializer and rendered Helm
+resources. Tests cover CAS-0 creation, repeat preservation, deleted/destroyed
+history refusal, excessive-capability refusal and exact namespace/role binding.
+The production seed selection does not enable database LOGIN or the evidence
+worker. Use separate subsequent values changes only after compatible migrations,
+artifact, role, scanner and capacity checks.
