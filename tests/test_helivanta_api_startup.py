@@ -29,6 +29,17 @@ class HelivantaApiStartupTests(unittest.TestCase):
         self.assertEqual(3, api["readinessProbe"]["periodSeconds"])
         self.assertEqual(2, api["readinessProbe"]["failureThreshold"])
 
+    def test_webauthn_relying_party_is_helivanta(self):
+        # helivanta#1898: the API boots only with exactly this value.
+        documents = yaml.safe_load_all(subprocess.check_output(
+            ["helm", "template", "helivanta-api", str(ROOT / "charts/apps/helivanta-api"),
+             "--namespace", "helivanta"], text=True))
+        deployment = next(item for item in documents if item and item["kind"] == "Deployment")
+        api = next(item for item in deployment["spec"]["template"]["spec"]["containers"]
+                   if item["name"] == "api")
+        env = {item["name"]: item.get("value") for item in api["env"]}
+        self.assertEqual("helivanta.app", env["WEBAUTHN_RP_ID"])
+
 
 if __name__ == "__main__":
     unittest.main()
