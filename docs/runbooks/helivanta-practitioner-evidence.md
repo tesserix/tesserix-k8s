@@ -85,3 +85,21 @@ history refusal, excessive-capability refusal and exact namespace/role binding.
 The production seed selection does not enable database LOGIN or the evidence
 worker. Use separate subsequent values changes only after compatible migrations,
 artifact, role, scanner and capacity checks.
+
+## Prepared processing activation — readiness gate
+
+The activation candidate selects its dedicated credential projection and CNPG
+LOGIN, then the existing two-replica worker. It keeps all professional HTTP
+release gates unchanged. Merge only after current upstream scanner definitions
+restore readiness, the compatible signed artifact and all sixteen migrations
+are confirmed, and its own required checks pass. Do not treat the successful
+credential seed as scanner, RLS processing or clinical acceptance.
+
+Read-only namespace measurement before activation: memory limits 18,816 MiB of
+20 GiB, CPU limits 15,450m of 20 cores, requests 2,900m of 4 cores and 6,272 MiB
+of 8 GiB. Two worker pods add 1,280 MiB of declared memory limits. The candidate
+increases only the memory-limit quota to 24 GiB to leave room for simultaneous
+core-service surges and migration/maintenance jobs; it does not change memory
+requests, node sizing, replica counts of existing workloads or CPU ceilings.
+Recheck actual quota and cluster admission at activation; this is a dated
+measurement, not a perpetual capacity guarantee.
